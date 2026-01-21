@@ -1,0 +1,850 @@
+# SEL Interoperability Profile v0.1.0-DRAFT
+
+**Status:** Proposed for Community Review  
+**Version:** 0.1.0-DRAFT  
+**Date:** 2025-01-20  
+**Conformance Level:** MUST for Federation, SHOULD for Ingestion  
+**Authors:** SEL Architecture Working Group (Gemini 3 Pro, Claude Opus 4.5, OpenAI 5.2)
+
+---
+
+## Executive Summary
+
+This document defines the **binding contract** between Shared Events Library (SEL) nodes, external agents (including LLMs), and the Artsdata knowledge graph. It is the authoritative specification for implementation and the "source of truth" for interoperability.
+
+**Design Principles:**
+- **Schema.org First:** All output uses schema.org vocabulary with explicit namespaces for extensions
+- **Artsdata Compatible:** Output validates against Artsdata SHACL shapes
+- **Linked Data Native:** Every entity has a dereferenceable URI; relationships use URIs not strings
+- **Provenance as First-Class:** Every fact traces to a source with confidence and timestamp
+- **Federation by Design:** URIs encode origin; sync protocols assume no central authority
+- **License Clarity:** Only CC0-compatible data enters the public graph
+
+---
+
+## Table of Contents
+
+1. [URI Scheme and Identifier Rules](#1-uri-scheme-and-identifier-rules)
+2. [Canonical JSON-LD Output](#2-canonical-json-ld-output)
+3. [Minimal Required Fields & SHACL Validation](#3-minimal-required-fields--shacl-validation)
+4. [Export Formats & Change Feed Semantics](#4-export-formats--change-feed-semantics)
+5. [Reconciliation Contracts](#5-reconciliation-contracts)
+6. [Provenance Model](#6-provenance-model)
+7. [License Policy](#7-license-policy)
+8. [Test Suite & Conformance](#8-test-suite--conformance)
+9. [Appendices](#9-appendices)
+
+---
+
+## 1. URI Scheme and Identifier Rules
+
+### 1.1 URI Structure
+
+SEL uses a **Federated Identity Model**. Every entity belongs to an "Origin Node" but allows global linking.
+
+**Pattern:**
+```
+https://{node-domain}/{entity-type}/{ulid}
+```
+
+**Components:**
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| `node-domain` | FQDN of authoritative SEL node | `toronto.sel.events` |
+| `entity-type` | Plural lowercase entity type | `events`, `places`, `organizations`, `persons` |
+| `ulid` | Universally Unique Lexicographically Sortable Identifier | `01HYX3KQW7ERTV9XNBM2P8QJZF` |
+
+**Examples:**
+```
+https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF
+https://toronto.sel.events/places/01HYX4ABCD1234567890VENUE
+https://toronto.sel.events/organizations/01HYX5EFGH0987654321ORGAN
+```
+
+**Why ULID?**
+- Timestamp-prefixed (sortable, enables efficient time-range queries)
+- 128-bit cryptographically random suffix (globally unique)
+- URL-safe Base32 encoding
+- First 10 characters encode creation timestamp (debuggable)
+
+### 1.2 Identifier Roles
+
+SEL distinguishes three identifier types:
+
+| Field | Purpose | Controlled By | Example |
+|-------|---------|---------------|---------|
+| `@id` | Canonical URI for linked data | SEL node | `https://toronto.sel.events/events/01HYX...` |
+| `url` | Public webpage for humans | External (venue/ticketing) | `https://masseyhall.com/events/jazz-night` |
+| `sameAs` | Equivalent entities in external systems | External authorities | `http://kg.artsdata.ca/resource/K12-345` |
+
+**Critical Rule:** `@id` ≠ `url`
+
+The `@id` is YOUR stable semantic identifier. The `url` is where the event is promoted publicly.
+
+### 1.3 Federation Rule (Preservation of Origin)
+
+> **MUST:** A node MUST NOT generate an `@id` using another node's domain. When ingesting data from Montreal, the Toronto node MUST preserve the Montreal `@id`.
+
+**Example:**
+```go
+func TestURIMinting(t *testing.T) {
+    mtlEvent := IngestEvent{
+        OriginNode: "https://montreal.sel.events",
+        OriginalID: "01HQ...",
+    }
+    
+    uri := Minters.CanonicalURI(mtlEvent)
+    
+    // Rule: Preserve original URI
+    if uri != "https://montreal.sel.events/events/01HQ..." {
+        t.Errorf("Federated event MUST preserve original URI")
+    }
+}
+```
+
+### 1.4 sameAs Usage
+
+`sameAs` links ONLY to authoritative external identifiers.
+
+**Supported Authorities:**
+
+| Authority | URI Pattern | Example |
+|-----------|-------------|---------|
+| Artsdata | `http://kg.artsdata.ca/resource/K{digits}-{digits}` | `http://kg.artsdata.ca/resource/K11-211` |
+| Wikidata | `http://www.wikidata.org/entity/Q{digits}` | `http://www.wikidata.org/entity/Q636342` |
+| ISNI | `https://isni.org/isni/{16-digits}` | `https://isni.org/isni/0000000121032683` |
+| MusicBrainz | `https://musicbrainz.org/{type}/{uuid}` | `https://musicbrainz.org/artist/...` |
+
+**Validation Regex:**
+```javascript
+const ARTSDATA_ID_PATTERN = /^http:\/\/kg\.artsdata\.ca\/resource\/K\d+-\d+$/;
+const WIKIDATA_ID_PATTERN = /^http:\/\/www\.wikidata\.org\/entity\/Q\d+$/;
+```
+
+**Anti-Pattern:**
+- Do NOT use `sameAs` for a Ticketmaster URL
+- Use `schema:url` for public pages or `prov:wasDerivedFrom` for source attribution
+
+### 1.5 URI Dereferencing
+
+All SEL URIs MUST support content negotiation:
+
+| Accept Header | Response |
+|---------------|----------|
+| `text/html` | Human-readable HTML page |
+| `application/ld+json` | JSON-LD document |
+| `application/json` | JSON-LD document (alias) |
+| `text/turtle` | RDF Turtle serialization |
+
+**Example:**
+```bash
+curl -H "Accept: application/ld+json" \
+  https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF
+```
+
+### 1.6 Tombstone URIs (Deleted Entities)
+
+Deleted entities MUST return **HTTP 410 Gone** with a minimal JSON-LD tombstone:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "@id": "https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
+  "eventStatus": "https://schema.org/EventCancelled",
+  "sel:tombstone": true,
+  "sel:deletedAt": "2025-01-20T15:00:00Z",
+  "sel:deletionReason": "duplicate_merged",
+  "sel:supersededBy": "https://toronto.sel.events/events/01HYX4MERGED..."
+}
+```
+
+### 1.7 Profile Discovery
+
+SEL nodes MUST expose profile information at:
+
+**Endpoint:** `GET /.well-known/sel-profile`
+
+```json
+{
+  "profile": "https://sel.events/profiles/interop",
+  "version": "0.1.0",
+  "node": "https://toronto.sel.events",
+  "updated": "2025-01-20"
+}
+```
+
+---
+
+## 2. Canonical JSON-LD Output
+
+### 2.1 Context Definition
+
+SEL uses a static, versioned context to ensure stability:
+
+**Context URL:** `https://schema.sel.events/context/v1.jsonld`
+
+**Structure:**
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://toronto.sel.events/contexts/sel/v0.1.jsonld"
+  ]
+}
+```
+
+The SEL context defines `sel:*` terms for provenance and lifecycle metadata not native to schema.org.
+
+**Key Extensions:**
+
+| Term | Purpose | Type |
+|------|---------|------|
+| `sel:originNode` | Node that minted this URI | @id |
+| `sel:sourceUrl` | Original source URL | @id |
+| `sel:ingestedAt` | Ingestion timestamp | xsd:dateTime |
+| `sel:confidence` | Confidence score (0-1) | xsd:decimal |
+| `sel:tombstone` | Deletion flag | xsd:boolean |
+
+### 2.2 Event Output
+
+#### 2.2.1 Minimal Event (Required Fields Only)
+
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://schema.sel.events/context/v1.jsonld"
+  ],
+  "@id": "https://toronto.sel.events/events/01J8...",
+  "@type": "Event",
+  "name": "Jazz in the Park",
+  "startDate": "2025-07-15T19:00:00-04:00",
+  "location": {
+    "@id": "https://toronto.sel.events/places/01J9...",
+    "@type": "Place",
+    "name": "Centennial Park"
+  }
+}
+```
+
+#### 2.2.2 Full Event (Recommended Fields)
+
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://schema.sel.events/context/v1.jsonld"
+  ],
+  "@id": "https://toronto.sel.events/events/01J8...",
+  "@type": "Event",
+  "name": "Jazz in the Park: Summer Opener",
+  "description": "An evening of smooth jazz under the stars...",
+  "eventStatus": "https://schema.org/EventScheduled",
+  "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+  
+  "startDate": "2025-07-15T19:00:00-04:00",
+  "endDate": "2025-07-15T22:00:00-04:00",
+  "doorTime": "2025-07-15T18:00:00-04:00",
+  
+  "location": {
+    "@id": "https://toronto.sel.events/places/01J9...",
+    "@type": "Place",
+    "name": "Centennial Park",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "256 Centennial Park Rd",
+      "addressLocality": "Toronto",
+      "addressRegion": "ON",
+      "postalCode": "M9C 5N3",
+      "addressCountry": "CA"
+    },
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": 43.6426,
+      "longitude": -79.5652
+    },
+    "sameAs": [
+      "http://kg.artsdata.ca/resource/K11-234"
+    ]
+  },
+
+  "organizer": {
+    "@id": "https://toronto.sel.events/organizations/01JA...",
+    "@type": "Organization",
+    "name": "Toronto Arts Council",
+    "sameAs": ["http://kg.artsdata.ca/resource/K10-555"]
+  },
+
+  "performer": [
+    {
+      "@type": "Person",
+      "@id": "https://toronto.sel.events/persons/01HYX6...",
+      "name": "Sarah Chen Quartet"
+    }
+  ],
+
+  "offers": {
+    "@type": "Offer",
+    "url": "https://ticketmaster.ca/event/...",
+    "price": "0",
+    "priceCurrency": "CAD",
+    "availability": "https://schema.org/InStock"
+  },
+
+  "image": "https://images.toronto.sel.events/...",
+  "url": "https://torontoartscouncil.org/events/jazz-park-2025",
+  
+  "inLanguage": ["en", "fr"],
+  "isAccessibleForFree": true,
+  
+  "sel:originNode": "https://toronto.sel.events",
+  "sel:ingestedAt": "2025-07-10T12:00:00Z",
+  "sel:confidence": 0.95,
+  
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  
+  "prov:wasDerivedFrom": {
+    "@type": "prov:Entity",
+    "schema:name": "Ticketmaster API",
+    "schema:url": "https://ticketmaster.ca/..."
+  }
+}
+```
+
+#### 2.2.3 Recurring Event (Series with Instances)
+
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://schema.sel.events/context/v1.jsonld"
+  ],
+  "@type": "EventSeries",
+  "@id": "https://toronto.sel.events/events/01HYX7SERIES...",
+  
+  "name": "Friday Night Jazz",
+  "description": "Weekly jazz performances at the Rex Hotel",
+  
+  "location": {
+    "@id": "https://toronto.sel.events/places/01HYX8REXHOTEL..."
+  },
+  
+  "startDate": "2025-01-03T20:00:00-05:00",
+  "endDate": "2025-12-26T23:00:00-05:00",
+  
+  "eventSchedule": {
+    "@type": "Schedule",
+    "repeatFrequency": "P1W",
+    "byDay": "https://schema.org/Friday",
+    "startTime": "20:00:00",
+    "endTime": "23:00:00",
+    "scheduleTimezone": "America/Toronto"
+  },
+  
+  "subEvent": [
+    {
+      "@type": "Event",
+      "@id": "https://toronto.sel.events/events/01HYX7SERIES...001",
+      "startDate": "2025-01-03T20:00:00-05:00",
+      "superEvent": "https://toronto.sel.events/events/01HYX7SERIES..."
+    }
+  ]
+}
+```
+
+### 2.3 Place Output
+
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://schema.sel.events/context/v1.jsonld"
+  ],
+  "@id": "https://toronto.sel.events/places/01HYX4...",
+  "@type": "Place",
+  
+  "name": "Massey Hall",
+  "description": "Historic concert hall renowned for exceptional acoustics",
+  
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "178 Victoria Street",
+    "addressLocality": "Toronto",
+    "addressRegion": "ON",
+    "postalCode": "M5B 1T7",
+    "addressCountry": "CA"
+  },
+  
+  "geo": {
+    "@type": "GeoCoordinates",
+    "latitude": 43.6544,
+    "longitude": -79.3807
+  },
+  
+  "telephone": "+1-416-872-4255",
+  "url": "https://masseyhall.com",
+  "maximumAttendeeCapacity": 2752,
+  
+  "sameAs": [
+    "http://kg.artsdata.ca/resource/K11-456",
+    "http://www.wikidata.org/entity/Q3297877"
+  ],
+  
+  "sel:originNode": "https://toronto.sel.events",
+  "sel:confidence": 0.98
+}
+```
+
+### 2.4 Organization Output
+
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://schema.sel.events/context/v1.jsonld"
+  ],
+  "@id": "https://toronto.sel.events/organizations/01HYX5...",
+  "@type": "Organization",
+  
+  "name": "Toronto Symphony Orchestra",
+  "alternateName": "TSO",
+  "url": "https://tso.ca",
+  
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "60 Simcoe Street",
+    "addressLocality": "Toronto",
+    "addressRegion": "ON",
+    "postalCode": "M5J 2H5",
+    "addressCountry": "CA"
+  },
+  
+  "sameAs": [
+    "http://kg.artsdata.ca/resource/K15-123",
+    "http://www.wikidata.org/entity/Q1818498"
+  ]
+}
+```
+
+---
+
+## 3. Minimal Required Fields & SHACL Validation
+
+### 3.1 Required Fields by Entity Type
+
+#### Event (Minimum Viable)
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `@id` | URI | MUST | Valid SEL URI pattern |
+| `@type` | String | MUST | `Event`, `EventSeries`, or `Festival` |
+| `name` | String | MUST | Non-empty, max 500 chars |
+| `startDate` | DateTime | MUST | ISO 8601 with timezone |
+| `location` | Place/VirtualLocation/URI | MUST | Valid Place object or SEL URI |
+| `eventStatus` | URI | SHOULD | schema.org EventStatusType (defaults to EventScheduled) |
+
+#### Place (Minimum Viable)
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `@id` | URI | MUST | Valid SEL URI pattern |
+| `@type` | String | MUST | `Place` |
+| `name` | String | MUST | Non-empty, max 300 chars |
+| `address` OR `geo` | Object | MUST (one) | Valid PostalAddress or GeoCoordinates |
+
+#### Organization (Minimum Viable)
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `@id` | URI | MUST | Valid SEL URI pattern |
+| `@type` | String | MUST | `Organization` |
+| `name` | String | MUST | Non-empty, max 300 chars |
+
+### 3.2 SHACL Shapes
+
+#### Event Shape (Turtle)
+
+```turtle
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sel: <https://schema.sel.events/ns#> .
+
+sel:EventShape
+    a sh:NodeShape ;
+    sh:targetClass schema:Event ;
+    sh:nodeKind sh:IRI ;
+    
+    # Required: name
+    sh:property [
+        sh:path schema:name ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:maxLength 500 ;
+        sh:message "Event must have exactly one name (1-500 characters)" ;
+    ] ;
+    
+    # Required: startDate
+    sh:property [
+        sh:path schema:startDate ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:or (
+            [ sh:datatype xsd:dateTime ]
+            [ sh:datatype xsd:date ]
+        ) ;
+        sh:pattern "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}" ;
+        sh:message "Event must have startDate in ISO8601 with time" ;
+    ] ;
+    
+    # Required: location
+    sh:property [
+        sh:path schema:location ;
+        sh:minCount 1 ;
+        sh:or (
+            [ sh:class schema:Place ]
+            [ sh:class schema:VirtualLocation ]
+            [ sh:nodeKind sh:IRI ]
+        ) ;
+        sh:message "Event must have a Place, VirtualLocation, or URI" ;
+    ] ;
+    
+    # Constraint: endDate >= startDate
+    sh:sparql [
+        sh:message "endDate must be >= startDate" ;
+        sh:select """
+            SELECT $this
+            WHERE {
+                $this schema:startDate ?start .
+                $this schema:endDate ?end .
+                FILTER (?end < ?start)
+            }
+        """ ;
+    ] ;
+    
+    # Optional: eventStatus (must be valid enum)
+    sh:property [
+        sh:path schema:eventStatus ;
+        sh:maxCount 1 ;
+        sh:in (
+            schema:EventScheduled
+            schema:EventCancelled
+            schema:EventPostponed
+            schema:EventRescheduled
+            schema:EventMovedOnline
+        ) ;
+    ] .
+```
+
+#### Place Shape
+
+```turtle
+sel:PlaceShape
+    a sh:NodeShape ;
+    sh:targetClass schema:Place ;
+    sh:nodeKind sh:IRI ;
+    
+    # Required: name
+    sh:property [
+        sh:path schema:name ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:maxLength 300 ;
+    ] ;
+    
+    # Required: address OR geo
+    sh:or (
+        [ sh:property [
+            sh:path schema:address ;
+            sh:minCount 1 ;
+            sh:class schema:PostalAddress ;
+        ] ]
+        [ sh:property [
+            sh:path schema:geo ;
+            sh:minCount 1 ;
+            sh:class schema:GeoCoordinates ;
+        ] ]
+    ) .
+```
+
+### 3.3 Implementation Tests
+
+```go
+func TestCanonicalJSONLD(t *testing.T) {
+    event := factories.CreateEvent()
+    jsonld := serializers.ToJSONLD(event)
+
+    // Rule: @id must start with node domain
+    if !strings.HasPrefix(jsonld["@id"].(string), "https://test.node") {
+        t.Errorf("Invalid @id scheme")
+    }
+
+    // Rule: Must have license
+    if jsonld["license"] != "https://creativecommons.org/publicdomain/zero/1.0/" {
+        t.Errorf("Missing CC0 license")
+    }
+}
+
+func TestEventValidation(t *testing.T) {
+    // Invalid Event (No Location)
+    evt := map[string]interface{}{
+        "@type": "Event",
+        "name": "Floating Concert",
+    }
+    
+    report, valid := shacl.Validate(evt, "event-shape.ttl")
+    
+    if valid {
+        t.Error("Event without location should fail SHACL validation")
+    }
+}
+```
+
+---
+
+## 4. Export Formats & Change Feed Semantics
+
+### 4.1 Export Formats
+
+SEL nodes MUST support:
+
+| Format | Content-Type | Use Case |
+|--------|--------------|----------|
+| JSON-LD | `application/ld+json` | Semantic web consumption |
+| JSON | `application/json` | Non-LD convenience view |
+| Turtle | `text/turtle` | RDF tooling |
+| N-Triples | `application/n-triples` | RDF dumps |
+| NDJSON | `application/x-ndjson` | Bulk streaming |
+
+### 4.2 Bulk Dataset Export
+
+**Endpoints:**
+- `GET /api/v1/exports/events.jsonld` (single JSON-LD graph)
+- `GET /api/v1/exports/events.ndjson` (newline-delimited JSON-LD)
+- `GET /datasets/events.jsonld.gz` (compressed nightly dump)
+
+**Query Parameters:**
+- `changed_since` (RFC3339 timestamp)
+- `start_from`, `start_to` (date range filter)
+- `include_deleted=true|false` (default false)
+
+**Structure (NDJSON):**
+```
+{"@context":"...","@id":"...","@type":"Event",...}
+{"@context":"...","@id":"...","@type":"Event",...}
+```
+
+### 4.3 Change Feed
+
+**Endpoint:** `GET /api/v1/feeds/changes?since={cursor}&limit={n}`
+
+Returns ordered list of change envelopes:
+
+```json
+{
+  "cursor": "01HYX3KQW7...",
+  "changes": [
+    {
+      "action": "create",
+      "uri": "https://toronto.sel.events/events/01HYX3...",
+      "changed_at": "2025-07-10T12:00:00Z",
+      "snapshot": { "@id": "...", "@type": "Event", ... }
+    },
+    {
+      "action": "update",
+      "uri": "https://toronto.sel.events/events/01HYX4...",
+      "changed_at": "2025-07-10T12:05:00Z",
+      "changed_fields": ["/name", "/startDate"],
+      "snapshot": { ... }
+    },
+    {
+      "action": "delete",
+      "uri": "https://toronto.sel.events/events/01HYX5...",
+      "changed_at": "2025-07-10T12:10:00Z",
+      "tombstone": { "@id": "...", "sel:deletedAt": "..." }
+    }
+  ],
+  "next_cursor": "01HYX6..."
+}
+```
+
+**Cursor Rules:**
+- Cursor MUST be opaque but stable
+- Ordering MUST be deterministic (changed_at, then uri)
+- Delete MUST be represented even if tombstone-only
+
+---
+
+## 5. Reconciliation Contracts
+
+### 5.1 Request Contract (Artsdata Reconciliation)
+
+```json
+{
+  "type": "Place|Organization|Person",
+  "name": "The Drake Hotel",
+  "url": "https://thedrake.ca",
+  "limit": 3,
+  "properties": [
+    { "pid": "schema:addressLocality", "v": "Toronto" },
+    { "pid": "schema:postalCode", "v": "M6J" }
+  ]
+}
+```
+
+### 5.2 Response Contract
+
+```json
+{
+  "candidates": [
+    {
+      "id": "http://kg.artsdata.ca/resource/K12-999",
+      "name": "The Drake Hotel",
+      "score": 98.5,
+      "match": true
+    }
+  ],
+  "decision": {
+    "status": "auto_high",
+    "selected_id": "http://kg.artsdata.ca/resource/K12-999",
+    "confidence": 0.985
+  }
+}
+```
+
+### 5.3 Confidence Thresholds (MVP Defaults)
+
+| Threshold | Score Range | Action |
+|-----------|-------------|--------|
+| `auto_high` | >= 95 AND `match=true` | Accept automatically |
+| `auto_low` | 80-94 | Store as candidate, require review |
+| `reject` | < 80 | No match (cache negative for TTL) |
+
+Thresholds MUST be configurable per entity type.
+
+### 5.4 Minting Rule (Hard Constraint)
+
+> **MUST:** SEL MUST NOT mint an Artsdata ID if reconciliation returns any candidate above `auto_low` unless explicitly overridden by admin with audit trail.
+
+---
+
+## 6. Provenance Model
+
+### 6.1 Sources Registry
+
+Every ingestion MUST come from a registered Source:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | String | Unique source identifier |
+| `name` | String | Human-readable name |
+| `type` | Enum | `scraper`, `partner`, `user`, `federation` |
+| `base_url` | URL | Source base URL |
+| `license` | String | CC0, CC-BY, proprietary, unknown |
+| `trust_level` | Integer | 1 (Low) to 10 (High) |
+| `contact` | String | Email/URL for source contact |
+
+### 6.2 Event Source Observations
+
+Each ingestion creates an immutable observation:
+
+```sql
+event_sources (
+  event_id,
+  source_id,
+  source_url,
+  retrieved_at,
+  payload,           -- raw JSON/JSON-LD
+  payload_hash
+)
+```
+
+### 6.3 Field-Level Provenance
+
+SEL SHOULD track:
+
+```sql
+field_claims (
+  event_id,
+  field_path,        -- JSON Pointer: /name, /location/address/postalCode
+  value_hash,
+  source_id,
+  confidence,
+  observed_at
+)
+```
+
+### 6.4 Merge Policy (Normative)
+
+**Rules:**
+- SEL MUST preserve all source observations
+- SEL MUST NOT silently overwrite higher-trust fields with lower-trust fields
+- Conflicts between equal-trust sources SHOULD be flagged for review
+- Winner selection: `trust_level DESC, confidence DESC, observed_at DESC`
+
+### 6.5 Attribution in Export
+
+```json
+"prov:wasDerivedFrom": {
+  "@type": "prov:Entity",
+  "schema:name": "Ticketmaster API",
+  "schema:url": "https://ticketmaster.ca/..."
+}
+```
+
+---
+
+## 7. License Policy
+
+### 7.1 Ingestion Policy
+
+SEL accepts data under these terms:
+
+1. **Public Facts:** Name, Date, Location, Price (facts are not copyrightable)
+2. **Licensed Content:** Descriptions/Images MUST be compatible with **CC0** or **CC-BY**
+
+**If source has restrictive license:**
+- Ingest facts only
+- Omit or LLM-summarize descriptions (transformation creates new work)
+
+### 7.2 Publication Policy
+
+All data emitted by SEL API is **CC0 1.0 Universal** (Public Domain Dedication).
+
+**License URI:** `https://creativecommons.org/publicdomain/zero/1.0/`
+
+This MUST appear in:
+- Every exported JSON-LD document
+- Dataset-level metadata
+
+### 7.3 Attribution
+
+While CC0 doesn't legally require attribution, SEL requests downstream users credit:
+
+**Attribution String:** "Shared Events Library - {City Node}"
+
+Example:
+```json
+"sel:provenance": {
+  "sel:source": "https://toronto.sel.events/sources/ticketing-scraper",
+  "sel:retrievedAt": "2026-07-10T10:00:00Z",
+  "sel:sourceName": "Ticketmaster API",
+  "sel:license": "https://creativecommons.org/publicdomain/zero/1.0/"
+}
+```
+
+---
+
+## 8. Test Suite & Conformance
+
+### 8.1 Repository Structure
+
+```
+/docs/interop/SEL-Interop-Profile-v0.1.0.md
+/contexts/sel/v0.1.jsonld
+/frames/event-v0.1.frame.json
