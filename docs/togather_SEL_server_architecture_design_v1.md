@@ -1,0 +1,979 @@
+# Shared Events Library (SEL) Backend Architecture Plan
+
+**Version:** 0.2  
+**Date:** 2026-01-20  
+**Status:** Updated with Interoperability Profile v0.1 Requirements
+
+---
+
+## 0. URI Scheme and Linked Data Foundation
+
+Before describing components, we must establish the **foundational linked data contracts** that define how SEL participates in the broader semantic web and federated event ecosystem.
+
+### 0.1 URI Scheme and Identifier Rules
+
+SEL uses a **Federated Identity Model** where every entity belongs to an origin node but allows global linking.
+
+**Canonical URI Pattern:**
+```
+https://{node-domain}/{entity-type}/{ulid}
+```
+
+**Components:**
+- `node-domain`: Fully qualified domain name of authoritative SEL node (e.g., `toronto.sel.events`)
+- `entity-type`: Plural lowercase entity type (`events`, `places`, `organizations`, `persons`)
+- `ulid`: Universally Unique Lexicographically Sortable Identifier (26-character Base32)
+
+**Examples:**
+```
+https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF
+https://toronto.sel.events/places/01HYX4ABCD1234567890VENUE
+https://toronto.sel.events/organizations/01HYX5EFGH0987654321ORGAN
+```
+
+**Why ULID?**
+- Timestamp-prefixed (first 10 chars encode creation time)
+- 128-bit cryptographically random suffix (globally unique)
+- URL-safe Base32 encoding
+- Sortable by creation time (enables efficient queries)
+- No coordination needed between nodes
+
+### 0.2 Identifier Roles
+
+SEL distinguishes three identifier types with different purposes:
+
+| Field | Purpose | Controlled By | Example |
+|-------|---------|---------------|--------|
+| `@id` | Canonical URI for linked data | SEL node (this system) | `https://toronto.sel.events/events/01HYX...` |
+| `url` | Public webpage for humans | External (venue/ticketing) | `https://masseyhall.com/events/jazz-night` |
+| `sameAs` | Equivalent entities in external systems | External authorities | `http://kg.artsdata.ca/resource/K12-345` |
+
+**Critical Rule:** `@id` ≠ `url`
+
+The `@id` is YOUR stable semantic identifier. The `url` is where the event is promoted publicly.
+
+### 0.3 Federation Rule (Preservation of Origin)
+
+> **MUST:** A node MUST NOT generate an `@id` using another node's domain. When ingesting data from a peer node, the receiving node MUST preserve the original `@id`.
+
+This ensures URI stability across the federation and prevents identifier collisions.
+
+**Implementation:** Store `origin_node_id` with each event to track which node minted the URI.
+
+### 0.4 Supported External Authorities
+
+`sameAs` links ONLY to authoritative external identifiers:
+
+| Authority | URI Pattern | Example |
+|-----------|-------------|--------|
+| Artsdata | `http://kg.artsdata.ca/resource/K{digits}-{digits}` | `http://kg.artsdata.ca/resource/K11-211` |
+| Wikidata | `http://www.wikidata.org/entity/Q{digits}` | `http://www.wikidata.org/entity/Q636342` |
+| ISNI | `https://isni.org/isni/{16-digits}` | `https://isni.org/isni/0000000121032683` |
+| MusicBrainz | `https://musicbrainz.org/{type}/{uuid}` | `https://musicbrainz.org/artist/...` |
+
+**Validation:** All external identifiers MUST be validated using regex patterns during ingestion.
+
+### 0.5 Content Negotiation
+
+All SEL URIs MUST support content negotiation:
+
+| Accept Header | Response Format |
+|---------------|----------------|
+| `text/html` | Human-readable HTML page |
+| `application/ld+json` | Canonical JSON-LD document |
+| `application/json` | JSON-LD document (alias) |
+| `text/turtle` | RDF Turtle serialization |
+
+### 0.6 Tombstones for Deleted Entities
+
+Deleted entities MUST return **HTTP 410 Gone** with a minimal JSON-LD tombstone:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "@id": "https://toronto.sel.events/events/01HYX3KQW7...",
+  "eventStatus": "https://schema.org/EventCancelled",
+  "sel:tombstone": true,
+  "sel:deletedAt": "2025-01-20T15:00:00Z",
+  "sel:deletionReason": "duplicate_merged",
+  "sel:supersededBy": "https://toronto.sel.events/events/01HYX4MERGED..."
+}
+```
+
+**Implementation:** Store tombstones in dedicated table, serve via special endpoint handler.
+
+---
+
+## 1. Component Overview
+
+The SEL backend is designed as a **single Go service** (with potential for minimal auxiliary services) to maximize simplicity and ease of deployment. All major functionality is contained within one modular codebase, leveraging stable open-source Go libraries for each concern. The primary components include:
+
+- **Ingestion API Server:** An HTTP RESTful API built with **Huma** (which provides auto-generated OpenAPI 3.1 specs) that accepts incoming event submissions and serves event queries. This layer handles request validation, authentication, content negotiation (supporting JSON-LD), and routing of requests to the appropriate internal services. **Content negotiation** allows clients to request `application/ld+json` for semantic web consumption or `application/json` for convenience.
+
+- **Core Processing Pipeline:** Logic for **validation, normalization, enrichment, and deduplication** of incoming events. Submissions from external scrapers (or future public forms) pass through this pipeline before persistence. The pipeline ensures data quality and consistency (e.g. normalizing date formats, cleaning text, enriching locations, timezone handling) and filters out duplicates. **SHACL validation** is applied to ensure outputs conform to Artsdata shapes.
+
+- **Relational Data Store (PostgreSQL):** A robust PostgreSQL database serves as the **source of truth** for all event data. It stores events using a **split model**: `events` table for canonical identity and `event_occurrences` table for temporal instances. This separation cleanly handles reschedules, postponements, and recurring events. Related entities like places and organizations are normalized into separate tables. PostgreSQL is chosen for reliability and query capabilities (including full-text, JSON, and geospatial with PostGIS). Use **SQLc** to generate type-safe Go from explicit SQL queries rather than a heavy ORM — this keeps the SQL schema explicit, deterministic, and easy for agents and humans to inspect.
+
+- **Vector Search (pgvector ± USearch):** Store embeddings in Postgres using **pgvector** as the source-of-truth and use vector search via SQL for MVP simplicity. This avoids an extra external service and ensures ACID semantics for embeddings and index updates. For production performance, consider a hybrid: keep pgvector as the canonical store and add **USearch** as an in-memory acceleration cache that is rebuilt from the DB on startup and kept in sync via queued jobs (River) to update/remove vectors. This hybrid approach provides the best of both worlds — correctness and speed — while keeping initial deployment simple.
+
+- **Provenance Tracking System:** A comprehensive system for tracking **field-level provenance** and source trust. Every piece of data is attributed to a source with confidence scores. The `sources` registry maintains trust levels (1-10) and license information. The `field_provenance` table tracks which source provided each critical field value, enabling explainable conflict resolution and audit trails. This is critical for federation where multiple nodes may provide conflicting information about the same event.
+
+- **Artsdata Integration Module:** A component responsible for **entity reconciliation and enrichment** using the Artsdata knowledge graph. This module communicates with Artsdata's reconciliation API to link event entities (like venue or organizer names) to stable Artsdata IDs when possible, adding external context to our events. Reconciliation uses **confidence thresholds**: ≥95% auto-accept, 80-94% flag for review, <80% reject. Results are cached to avoid repeated API calls. A **reconciliation cache** stores lookup results with TTL (see Section 4).
+
+- **Authentication & RBAC Layer:** Manages user accounts, API keys, and role-based access control. This includes JWT verification or API key checking and enforcing role permissions (public vs. agent vs. admin) on each API endpoint. **Rate limiting** is applied per-role to prevent abuse while allowing legitimate high-volume users (see Section 7 for details).
+
+- **Background Jobs & Utilities:** Use a **transactional job queue** (River) instead of best-effort in-process goroutines. Background work (reconciliation, vector index updates, bulk ingestion processing, periodic re-indexing, occurrence expansion for recurring events, and cleanup) should be queued atomically in the same DB transaction that persists the event so work is never silently lost on restarts. This avoids invisible failure modes from ephemeral goroutines and provides observable job status, retries, and auditability. Jobs can be processed by workers in the same binary or by separate workers if you later split responsibilities.
+
+- **Federation Layer:** Components for multi-node federation enabling data sharing between SEL instances. Includes: **node registry** (tracks peer nodes with trust levels), **change feed** (exposes ordered stream of changes via cursor-based pagination), **bulk export** (dataset downloads in multiple RDF formats), and **sync protocol** (accept/send events to/from peer nodes while preserving origin). The `event_changes` outbox table captures all create/update/delete actions for change feed generation.
+
+- **MCP Server (Model Context Protocol):** An **embedded server** running alongside the HTTP API that exposes tool-based interfaces optimized for LLM agents. Provides high-level tools like `find_events(query)`, `reconcile_entity(type, name, properties)`, and `get_event(id)` that handle complexity internally and return agent-friendly summaries. Shares the same database and service layer as the HTTP API. Includes an `/agent-context.md` endpoint with natural language documentation of the schema and domain rules.
+
+- **External Dependencies:** Aside from PostgreSQL (which can run as a separate container or service), the system avoids heavy external dependencies. The vector index is in-process, and any ML model for embeddings can be self-contained or called via an internal library. By using libraries instead of separate microservices, we keep the footprint small and **reduce operational complexity**.
+
+All components are designed to be **modular and composable**. For example, the vector index module is abstracted behind an interface so it could be swapped out in the future, and the Artsdata integration is optional (can be toggled on for deployments that need it). The entire system emphasizes **open-source** solutions and standard protocols, ensuring a clean, inspectable development surface that an automated tool or LLM-based coding agent could readily understand. The monolithic-but-modular approach also means a new developer (or AI agent) can run the whole system easily and iterate on parts in isolation, which aligns with our low-maintenance goal.
+
+## 2. API and Endpoint Design
+
+The SEL will expose a **RESTful HTTP API** with clear, versioned endpoints to allow both data submission and retrieval. Responses support **content negotiation** and can return canonical **JSON-LD** (`Accept: application/ld+json`) with a proper `@context` (e.g. `https://schema.org`) in addition to standard JSON. APIs will support bulk ingestion endpoints with job semantics, idempotency keys, cursor-based pagination for large result sets, and standardized RFC 7807-style error payloads to improve reliability and agent integration. Key endpoints include:
+
+- **Event Submission Endpoint:** `POST /api/v1/events` – Allows external agents (authenticated as “agent” role) to submit a new event. Payloads follow a schema based on **schema.org/Event** (fields like `name`, `startDate`, `location`, `organizer`, `description`, and a `source` block). Requests may include an `Idempotency-Key` header (or `source` + `source_event_id`) so retries are safe and the service can return a cached response for duplicates. Reconciliation and enrichment work is enqueued transactionally via a job queue (River) as part of the same DB transaction so background work cannot be lost. For bulk imports use `POST /api/v1/events:batch` which returns `202 Accepted` with `{ "job_id": "...", "status_url": "/api/v1/jobs/{id}" }`. Job status can be polled at `GET /api/v1/jobs/{id}` to track progress, failures, and errors.
+
+- **Event Query Endpoint:** `GET /api/v1/events` – Provides **filtered queries** over events. Clients can filter by date range (`startDate`/`endDate`), location (city or venue), or free-text search. Responses support cursor-based pagination (e.g. `after=2025-08-15T19:00:00Z_evt1234&limit=50`) to avoid offset pagination pitfalls on large datasets. Content negotiation allows consumers to request canonical JSON-LD (`Accept: application/ld+json`). This endpoint is **publicly accessible** for read, though heavy consumers should use the bulk export or data feeds.
+
+- **Event Detail Endpoint:** `GET /api/v1/events/{id}` – Returns full details of a single event by its unique ID. This includes all structured fields and any enrichment (like linked entity IDs) in JSON-LD compatible format. Publicly accessible for transparency.
+
+- **Semantic Search Endpoint:** `GET /api/v1/events/search` – Allows **vector-based semantic querying** of events. Clients provide a text query (e.g. `?query="free outdoor jazz concert"`) and the service generates an embedding using the configured model (Ollama sidecar or similar). The search will use Postgres `pgvector` for MVP queries and may use an in-memory USearch index for accelerated queries in production. Results return event IDs with similarity scores. Expect rate limits or API-key gating for heavy usage given embedding costs.
+
+- **Admin and Management Endpoints:** Under a protected path (e.g. `/api/v1/admin/...`) for users with **admin/editor roles**. These might include:
+
+    - `GET /api/v1/admin/events/pending` – list events awaiting approval (if we implement moderation or public submissions that require review).
+
+    - `PUT /api/v1/admin/events/{id}` – update or correct an event’s data (for editors to fix details or add missing info).
+
+    - `DELETE /api/v1/admin/events/{id}` – remove an event (or mark it canceled) if it’s invalid or duplicated.
+
+    - `GET /api/v1/admin/duplicates` – a report of suspected duplicate events detected, allowing an admin to confirm/merge them.
+
+    - `POST /api/v1/admin/reconcile` – (optional) trigger reconciliation on events or venues that are not yet linked to Artsdata, in case an admin wants to manually force an update.
+
+- **Authentication Endpoints:** If using a login system for admins, e.g. `POST /api/v1/auth/login` for admin login (returns JWT). However, agent authentication might be handled via API keys or pre-issued tokens rather than a login flow, so this may be minimal.
+
+- **Health Check Endpoint:** `GET /health` – a simple unauthenticated endpoint that returns 200 OK (and possibly some status info) to indicate the service is up. This is used by deployment scripts or Docker/Kubernetes health checks to verify the service status.
+
+The API design follows **REST principles** with clear resource-oriented URLs, uses standard HTTP verbs (GET for retrieval, POST for creation, etc.), and returns appropriate status codes (201 Created, 400 Bad Request for validation errors, 401 Unauthorized, etc.). **Input validation** errors (e.g. missing required fields) will produce a JSON error message with details for easier debugging by API clients.
+
+**Data format:** We aim to align responses with schema.org as much as possible and make **JSON-LD a first-class output** via content negotiation (`Accept: application/ld+json`). For example, an event in the response might look like:
+
+```json
+{
+  "id": "evt1234",
+  "name": "Jazz in the Park",
+  "description": "Free outdoor jazz concert featuring local bands.",
+  "startDate": "2025-08-15T19:00:00-04:00",
+  "endDate": "2025-08-15T21:00:00-04:00",
+  "location": {
+    "name": "Centennial Park",
+    "address": "123 Main St, Toronto, ON",
+    "latitude": 43.6,
+    "longitude": -79.5,
+    "sameAs": "http://kg.artsdata.ca/resource/XX-123"  // Example Artsdata link if available
+  },
+  "organizer": {
+    "name": "Toronto Arts Council",
+    "sameAs": "http://kg.artsdata.ca/resource/ORG-456"
+  },
+  "source": {
+    "url": "https://example.com/events/jazz-in-the-park",
+    "retrievedAt": "2025-07-10T10:00:00Z"
+  }
+}
+```
+
+The above is illustrative – notably, `sameAs` fields are used to link to Artsdata or other identifiers for enrichment (if known), and a `source` block tracks from where/when the event was gathered. Use `piprate/json-gold` to produce compact/framed JSON-LD outputs and to validate framing that Artsdata expects. The API returns data in this structured form so that consumers can directly utilize schema.org fields (for example, web UIs could embed JSON-LD for SEO using these fields).
+
+To implement these endpoints cleanly, we will use **Huma** (which builds on Chi) to auto-generate **OpenAPI 3.1** from Go structs, keeping API contracts in sync with code and making the API immediately usable by agents and client-code generators. Huma reduces spec drift, supports detailed field descriptions for agents, and still allows standard middleware for auth, logging, and validation.
+
+## 3. Schema Design (Event Model)
+
+The internal data schema for events is based on the **schema.org/Event** vocabulary, ensuring compatibility with common standards for event information. Each event stored in PostgreSQL corresponds to a real-world event (e.g. a concert, exhibition, etc.), enriched with additional internal metadata for our system’s needs. The schema is composed of several tables/models:
+
+- **Events Table:** Represents the core event entity. Key fields (columns) include:
+
+    - `id` – Primary key for the event (could be a UUID/ULID for global uniqueness).
+
+    - `name` – Text, the title of the event (`schema:name`).
+
+    - `description` – Text, a description or summary of the event (`schema:description`).
+
+    - `start_time` – Timestamp (with timezone), the start date/time (`schema:startDate`).
+
+    - `end_time` – Timestamp, the end date/time (`schema:endDate`) if applicable.
+
+    - `event_status` – Enum or text, status of the event (e.g. scheduled, canceled) (`schema:eventStatus`), potentially using schema.org EventStatusType values.
+
+    - `attendance_mode` – Enum, whether the event is online, offline, or mixed (`schema:eventAttendanceMode`), if provided by source.
+
+    - **Foreign keys to related entities:** `venue_id` (link to a Places table for the location/venue), `organizer_id` (link to an Organization/Person table for the organizer). These capture `schema:location` and `schema:organizer` relationships.
+
+    - `source_url` – Text, the original URL where the event was sourced (if scraped or submitted with a reference).
+
+    - `source_type` – Text or code indicating the source (e.g. which scraper or “user-submitted”) for provenance tracking.
+
+    - `source_retrieved_at` – Timestamp for when the source was last fetched (for confirming freshness).
+
+    - `dedup_hash` – Text or bytea, a computed fingerprint of the event content used for deduplication (see Section 5). For example, a hash of normalized name+date+venue.
+
+    - `artsdata_event_id` – (Optional) If the event itself is matched to an Artsdata entry (less common, as Artsdata mainly provides venues/orgs), but this could store an Artsdata URI if the event was known in the knowledge graph.
+
+    - `embedding_vector` – (Optional, Vector type or JSON) the vector embedding of this event’s content used for semantic search. We might store this as a Postgres **vector** (using something like the `pgvector` extension) or as a blob of floats. Storing allows us to rebuild the USearch index quickly on restart. However, if not stored here, we can always recompute from text or maintain the index separately.
+
+    - Timestamps: `created_at`, `updated_at` – for auditing changes.
+
+- **Places (Venues) Table:** Represents venues or locations (corresponding to schema.org **Place** or **PostalAddress** if needed). Fields:
+
+    - `id` – primary key.
+
+    - `name` – name of the venue/place.
+
+    - `address` – structured address (we can store full address as one text, or break into columns like street, city, region, postal code, country for better query/filtering). Using separate fields for city, region, country is useful for filtering by location.
+
+    - `latitude`, `longitude` – coordinates if available (from geocoding the address or provided by source).
+
+    - `artsdata_id` – text for Artsdata URI if this place has been reconciled (e.g. `"http://kg.artsdata.ca/resource/K11-211"`). We store this to avoid re-reconciling known venues.
+
+    - `wikidata_id` or other IDs – optional, if Artsdata links to Wikidata or if we directly have a Wikidata ID, could be stored for enrichment.
+
+    - Unique constraints: We may enforce that (name + address) or some combination is unique to avoid duplicate venue entries, or we use this table exactly to normalize venues across events.
+
+    - Many events can reference one place (1-to-many relationship).
+
+- **Organizations Table:** Represents organizers or event creators (schema.org **Organization** or **Person**). Fields are similar: `name`, maybe `type` (if we want to distinguish person vs organization), contact info (if available), and `artsdata_id` if reconciled to Artsdata (they have organization/person IDs as well). Many events can link to one organizer.
+
+- **Users Table (for auth):** If we manage admin/editor accounts or API clients in the database: fields might be `id`, `email`, `password_hash` (for admin login), `api_key` or token (for agent access), and `role` (enum: public/agent/admin). This table ties into the RBAC system (detailed in Section 7).
+
+- **Provenance & Sources (event_sources):** Track each observed source in an `event_sources` table (id, event_id, source_url, source_type, source_agent_id, retrieved_at, payload_hash, confidence). Treat provenance as a first-class concept to enable auditable merges, trust-based conflict resolution, and explainable reconciliation decisions. - **Change Capture / Outbox (event_changes):** Add an `event_changes` outbox table to record create/update/delete actions (`id, event_id, action, changed_fields JSONB, created_at`) to enable webhooks, ActivityPub outbox generation, and downstream synchronization. - **Identifiers (entity_identifiers):** Normalize external IDs into an `entity_identifiers` table (entity_type, entity_id, scheme, uri, confidence, source) rather than ad-hoc columns like `artsdata_id` or `wikidata_id`. This scales to arbitrary identifier schemes and maps directly to `sameAs` semantics. - **Reconciliation cache:** Cache reconciliation results in a `reconciliation_cache` table keyed on a normalized lookup key to avoid repeated Artsdata calls and to persist confidence scores and method (`auto_high`, `auto_low`, `manual`).
+
+The **data model adheres to schema.org semantics** as closely as practical. The Artsdata project itself models events as a subset of Schema.org[docs.artsdata.ca](null), which confirms our approach of using Schema.org’s classes/properties as the foundation. By using standard schema.org fields (Event, Place, Organization, etc.), we ensure compatibility with other systems and ease integration – for instance, our JSON output can be interpreted as JSON-LD with minimal transformation.
+
+We will also include some **internal fields** for system use (like deduplication keys, source info, and status flags). For example, a boolean `approved` or `status` field might mark whether a submitted event is confirmed/published or awaiting review (particularly useful if we allow public submissions that require moderation). Another internal field could be `score` or `quality` to indicate our confidence in the data (e.g., if enrichment finds conflicting info).
+
+**Schema enforcement and explicit validation:** The database will enforce types, check constraints, and enums (e.g. status). Application-level validators (e.g. `go-playground/validator`) and optional CUE schemas will codify business invariants (minimum fields, start <= end, address formats). Add explicit identifier validators (e.g. `validateArtsdataID` regex to ensure Artsdata URIs match `^http://kg\.artsdata\.ca/resource/K\d+-\d+$`) so externally-managed IDs are checked at ingestion time. These rules mirror Artsdata’s SHACL-based expectations and prevent invalid data from entering the system.
+
+We aim for a **3NF style schema** separating events, places, and organizations, which avoids data duplication (e.g. the same venue string repeated in many events) and simplifies reconciliation (one place record can be linked to Artsdata and all referencing events inherit that link). This modular data design aligns with a **linked data** mindset: events link to entities (places/orgs) by IDs, which can themselves carry external identifiers like Artsdata URIs[docs.artsdata.ca](null). Such normalization makes it easy to update a venue’s info in one place and have all events reflect the change.
+
+When serving data via the API, these linked entities can be **embedded or referenced**. For simplicity, the API might embed venue and organizer details inside each event JSON (as shown in the example earlier), but internally they are normalized. This dual approach (normalized storage, but flexible JSON responses) yields maintainable storage without sacrificing API usability.
+
+The schema is designed to be extensible: new fields from schema.org (or custom internal fields) can be added with minimal impact (especially if using an ORM or code generation tool like Ent which can update the schema). We deliberately keep the model **compatible with open data practices**, meaning we can easily output events as JSON-LD, or even as RDF triples if needed, to participate in linked open data ecosystems like Artsdata. Each event could be assigned a URI (e.g., our own stable ID that could be dereferenced in future), preparing the system for future federation and data sharing.
+
+## 4. Integration with Artsdata Knowledge Graph (Entity Resolution & Enrichment)
+
+One of SEL’s key value-adds is the ability to **enrich and interlink event data** with the broader cultural knowledge graph managed by Artsdata.ca. Artsdata is a pan-Canadian knowledge graph for the arts, publishing linked open data about events, venues, organizations, etc., with persistent IDs[docs.artsdata.ca](null). By integrating with Artsdata, our system can enhance events with authoritative identifiers and additional context:
+
+- **Entity Reconciliation:** When a new event is ingested or updated, the system first consults a **reconciliation cache** to avoid repeated Artsdata calls. If no cached result exists or the confidence is low, SEL enqueues a reconciliation job in the transactional job queue (River) as part of the same database transaction that created/updated the event. This guarantees reconciliation work is not lost on restarts and enables retries, observability, and auditability. We use robust HTTP clients (e.g. `go-retryablehttp` or `resty`) with sensible backoff and caching behavior for Artsdata calls.
+
+    - If a high-confidence match is found (e.g., Artsdata returns `K11-211`), SEL **stores the Artsdata URI** in `entity_identifiers` and/or the venue record and exposes it as `sameAs` in event output. We persist confidence and method used (`auto_high`, `auto_low`, `manual`) in the `reconciliation_cache` so downstream processing can be conservative or aggressive as needed.
+
+    - Low-confidence or ambiguous matches are recorded, and may be deferred for **manual review** via an admin UI. The admin UX will surface candidate matches with match features and scores for human confirmation.
+
+    - Batch reconciliation jobs are supported and executed via the same River queue so large imports can be reconciled without blocking ingestion. A reconciled result is cached to avoid repeated lookups for the same normalized key.
+
+    - Artsdata’s reconciliation covers **Places, Organizations, Persons, and Events**; we focus first on venues and organizers, and extend to persons when it adds value.
+
+- **Enrichment using Artsdata IDs:** Once an Artsdata ID is linked, we can use it to fetch authoritative structured data (JSON-LD/Turtle) from Artsdata’s APIs to fill missing fields like geo-coordinates or canonical names. We recommend using `piprate/json-gold` for JSON-LD processing and framing when publishing or validating JSON-LD output.
+
+    - For example, if we have a venue’s Artsdata URI, we can retrieve the structured data for that place (Artsdata likely provides JSON-LD or Turtle via content negotiation or their Query API[docs.artsdata.ca](null)). This could give us standardized address components, geo-coordinates, links to Wikidata or other identifiers, etc. Our system can choose to store some of this (e.g. lat/long if not already known).
+
+    - We will store at least the **persistent ID** (the Artsdata URI), which ensures that our event data can be linked into the wider graph. Artsdata emphasizes using such IDs to connect events to artists, venues, organizations[docs.artsdata.ca](null), so by capturing those, our events become part of that linked data web.
+
+    - Additionally, if Artsdata has classification data (like event genre or type from controlled vocabularies), we might use the reconciliation to tag events with those. For instance, if Artsdata knows that “Salle André-Mathieu” is a theater venue, we could infer event type (just a hypothetical example).
+
+    - The integration also means if others use Artsdata IDs, our system can ingest data already containing `sameAs` links. For example, if a scraper or user submission includes an Artsdata sameAs in the structured data, we will recognize and store it, avoiding duplicate reconciliation.
+
+- **Artsdata Minter API:** Artsdata allows minting new IDs for entities via their APIs (like creating a new Artsdata entry for a venue not seen before, possibly using Wikidata as a bridge)[docs.artsdata.ca](null). In our initial design, automatic minting is **optional** and likely off by default (to avoid creating erroneous duplicates in Artsdata). However, our architecture leaves room to incorporate such a feature in the future:
+
+    - For instance, if a venue isn’t found, an admin could trigger a “Mint” operation: our system would call Artsdata’s Mint API (if credentials for an Artsdata account are configured) to create a new Artsdata record for that venue (perhaps leveraging the “Mint using Wikidata” if the venue is known on Wikidata[docs.artsdata.ca](null)). The new Artsdata ID would then be stored.
+
+    - This ensures SEL can contribute back to the knowledge graph, not just consume it. Initially, though, we assume manual involvement for minting (as automated creation of entities might require curation).
+
+- **Benefits of Integration:** By linking to Artsdata (and through it, to other LOD sources), SEL’s event data gains context and **global identifiers**. For example, if an event’s venue is linked to Artsdata (which might link to Wikidata), consumers of our API or data will know exactly which venue (disambiguated globally) the event is at. They can then fetch additional info like venue capacity or official site if needed. It also prevents siloing – our events can be easily cross-referenced with other datasets using these IDs. In short, we transform string names into rich entities.
+
+- **Internal Data Handling:** The reconciliation module will likely run as part of the event ingestion flow. After basic validation, the system calls the Artsdata recon service (over HTTPS) with the entity name and type. This can be done synchronously (before final save) or asynchronously:
+
+    - **Synchronous approach:** Attempt reconciliation during the API request. This gives immediate enrichment but could slow the API response (network call latency). Given the likely small volume of event submissions, this may be acceptable. We can mitigate latency by caching results for names we’ve seen recently.
+
+    - **Asynchronous approach:** Save the event immediately, then push a task to a background worker to perform reconciliation and update the event record with any found IDs. This approach keeps ingestion fast and handles enrichment later (eventually consistent enrichment). The event record might initially have null `artsdata_id`s and get filled in shortly after.
+
+    - We might adopt a hybrid: for known frequently repeated entities (like major venues), we could cache their Artsdata IDs, making lookup instant. Unknown ones could be reconciled asynchronously and marked as “pending enrichment” in the meantime.
+
+- **SameAs and output:** In the database, we store Artsdata IDs in separate fields as described. In the API output, we will expose them via `sameAs` links or within a nested `identifier` field. This aligns with how Artsdata expects data providers to include Artsdata IDs in their structured data[docs.artsdata.ca](null)[docs.artsdata.ca](null). For example, a user of our public API might see an event’s location includes `"sameAs": "http://kg.artsdata.ca/resource/K11-211"`, which they know they can dereference or look up.
+
+- **Artsdata Data Consumption:** We also consider the reverse – Artsdata or others consuming our data. By using schema.org and including sameAs, we make it easy for Artsdata’s crawler or databus to ingest our events if desired. In the future, our SEL instance could register as a data feed for Artsdata (they have a Databus API for contributors[docs.artsdata.ca](null)[docs.artsdata.ca](null)). The architecture, therefore, keeps event data compatible (CC0 license for data might be required; we would ensure any data we integrate is license-compliant if we feed Artsdata).
+
+In summary, integration with Artsdata is a cornerstone of SEL’s design to situate local events in a **global context**. We use Artsdata’s stable URIs and reconciliation service to link events to the broader knowledge graph, enriching our data and avoiding reinventing an entity database. This approach follows the linked open data philosophy: our event data model is a true subset of Schema.org plus links[docs.artsdata.ca](null), and leverages **persistent identifiers** for entities to achieve reconciliation[docs.artsdata.ca](null). These design choices ensure that SEL’s events can seamlessly interoperate with other platforms and that we minimize duplication of effort by reusing the knowledge graph that Artsdata and others maintain.
+
+## 5. Deduplication and Validation Process
+
+Data quality is paramount in SEL. All incoming events undergo a **validation and normalization step** followed by a **deduplication check** to prevent multiple entries for the same real-world event.
+
+**Validation & Normalization:**
+
+When an event is submitted (via API or any ingestion mechanism), the system first validates the payload against required fields and expected formats:
+
+- **Required Fields:** At minimum, an event must have a name/title, a start date/time, and a location. These are the core of an event’s identity. If any of these are missing or clearly invalid, the submission is rejected with a 400 error (or logged for later review if it came via batch process). This principle mirrors Artsdata’s requirement of minimal data completeness for accepting an event[docs.artsdata.ca](null). Additional fields like description or organizer are optional but encouraged.
+
+- **Schema Conformance:** The incoming data (which ideally is already in a schema.org-like shape) is checked for type correctness (e.g., dates should be ISO8601 strings or timestamps, URLs valid, etc.). We might use a Go validation library (such as `go-playground/validator`) to enforce basic rules (like string lengths, allowed values for status, etc.).
+
+- **Normalization:** The system then cleans and normalizes data:
+
+    - Dates/times are converted to a standard timezone (e.g. UTC) or stored along with a timezone offset for consistency. We ensure format consistency (e.g., always storing in ISO8601 in the DB).
+
+    - Text fields like name and description are trimmed of excessive whitespace or HTML tags (if any) and maybe decoded from HTML entities if scraped.
+
+    - Location processing: We might standardize addresses (for example, ensure the address components are in a consistent format, capitalize state codes, etc.). If a venue name is in all-caps or all lowercase, we could normalize to Title Case for uniformity.
+
+    - If possible, we can perform light **geocoding** on addresses to obtain lat/long if the source didn’t provide it. This could be done via an open geocoding API or a local database. However, this is optional and might be added later or offline to avoid slowing the ingest. If coordinates are present or easily obtainable, they are normalized to a standard projection (WGS84).
+
+    - Categorization normalization: If the event source provides a category (e.g. "Music" vs "Live Music Event"), we might map those to a controlled vocabulary or at least store them as provided. This could tie into Artsdata’s controlled vocabularies in the future.
+
+- **Enrichment in validation stage:** Some enrichment overlaps with validation. For example, if the source only provides a venue name but no address, and we have that venue in our database (from a previous event) with a known address, we might fill in the missing address to make the event complete. Or if the event has a URL, we could fetch metadata (like ensure the URL is reachable – though that is more of a confirmation step).
+
+- **SHACL validation (conceptual):** While we won’t literally run SHACL shapes like Artsdata does[docs.artsdata.ca](null), we mimic the intent by coding equivalent rules. E.g., we might enforce that `end_time` is not before `start_time`, or that `start_time` is a future date (for upcoming events, though past events could be allowed if archiving historical data). These rules ensure logical consistency.
+
+If validation passes, the event is then considered “normalized” and ready for deduplication and storage. If any validation fails, the submission is either rejected (with detailed error messages) or logged (depending on source). For agent API submissions, immediate feedback is given; for automated pipelines, we’d log and possibly quarantine bad records.
+
+**Deduplication:**
+
+Duplicate events can occur when multiple sources submit the same event (e.g., two different scrapers may pick up the same concert from different websites, or a user might submit an event that a scraper already captured). The SEL backend implements a deduplication strategy to identify and handle these collisions:
+
+- **Duplicate Detection Key & Layered Deduplication:** We define a fingerprint (`dedup_hash`) for deterministic exact matches (normalized venue + start time + normalized name), and add a **layered deduplication strategy** for more nuanced cases:
+
+    - **Layer 1 (Exact):** source_url or source_event_id match, exact dedup_hash.
+    - **Layer 2 (Strong):** Same resolved `venue_id` + `start_time` (±15min) + pg_trgm name similarity > 0.8.
+    - **Layer 3 (Weak):** Vector similarity + geo proximity + wider time window.
+
+    Store candidate pairs in a `duplicate_candidates` table with similarity score and match features for human review, and maintain `event_aliases` for redirects when merges occur so URIs remain stable.
+
+- On inserting a new event, we compute its dedup_hash and check if any existing event in the database has the same hash (or a hash within some similarity threshold, if we allow fuzzy matching). If a match is found, we flag it as a duplicate.
+
+- **Handling Duplicates:** There are a few ways to handle a detected duplicate:
+
+    - **Merge and Update:** We can treat the existing record as the canonical event and update it with any new information the incoming submission has. For instance, if the existing event lacked a description but the new submission has one, we add it. We would also merge the source information – e.g., append the new source URL to the event’s source list. This way, one event entry accumulates all references (provenance)[docs.artsdata.ca](null). If there is conflicting data (one source says the event starts at 7:00 pm, another at 7:30 pm), the system might either choose one based on source reliability or leave it for admin review. We might tag the event as “conflict” in that case.
+
+    - **Ignore/Skip:** Simpler approach initially – if a duplicate is found, we can drop the incoming submission (perhaps logging that it was duplicate). This avoids creating another record, but risks losing any extra details the new submission had. A better variant is to **acknowledge** the submission (HTTP 200 OK) but respond that the event already exists, so the client knows it wasn’t added again.
+
+    - **Create Draft vs Confirm:** If the system isn’t sure it’s a duplicate (say name is same and date close but not exact), we could store the new one as a “draft” linked to the original for human verification.
+
+- We will implement the conservative approach of **merging** duplicates automatically when confident, and flagging ambiguous cases. For merging, the system updates the existing event record’s fields non-destructively (only filling blanks or appending sources, unless a strong reason to overwrite exists).
+
+- **Fuzzy Matching:** We account for minor variations in event name or times:
+
+    - The dedup check can use similarity measures for the name (e.g., a trigram similarity or Levenshtein distance via PostgreSQL’s pg_trgm if available). If "Summer Jazz Fest" vs "Summer Jazz Festival" are on same date/venue, we treat them as same. We might set a threshold (say > 0.8 similarity).
+
+    - Similarly, if times differ by a short interval (7:00 vs 7:15), it could be a data error – we might still treat as duplicate but mark the time discrepancy.
+
+    - Our semantic vector index could assist here as well: if two events have extremely similar embeddings, and occur close in time/location, that’s another signal of duplication. This is advanced usage, but feasible as an extra check.
+
+- **Dedup within a source:** We also guard against a single data source accidentally sending the same event twice (maybe in two subsequent API calls). The same dedup logic covers this – the second insert finds the first. We might additionally have source-specific identifiers (if source provides an event ID) and store those to prevent reingestion of the exact same item.
+
+- **Admin Review of Duplicates:** All merges or drops can be logged. We can maintain an “activity log” that admin can check, e.g., “Event X was merged with Y (duplicate detected from source Z)”. If our automated merge logic ever makes a mistake, an admin can spot it and manually adjust.
+
+- **Provenance and Trust:** In cases of conflicting information from duplicates, we note the different values and their sources. This aligns with the idea of tracking provenance to decide which source is more trustworthy[docs.artsdata.ca](null). Our system might rank certain sources higher (for example, an official venue’s feed might trump a third-party aggregator in date accuracy). We could implement a simple source priority and have the merge logic prefer data from the higher-priority source when conflicts arise. The lower priority data could be stored as a note or simply discarded.
+
+- **User-facing Impact:** The dedup process ensures that when a consumer queries events, they won’t see the same event listed twice. Instead, they see one consolidated entry. This improves user experience and prevents confusion. It also means any downstream system (like Artsdata or a public website) gets clean, non-duplicated data.
+
+In practice, after passing validation, the flow will be: compute dedup fingerprint -> if a duplicate is found, merge or flag -> else insert new event. This happens within a database transaction to avoid race conditions (especially if we ever ingest in parallel). We might use a **unique index on dedup_hash** as an initial cheap way to prevent exact duplicates from ever inserting twice (the transaction would roll back if duplicate key). However, because our matching might be fuzzy and not just exact hash, we’ll mostly rely on queries rather than a strict unique index (which might be too aggressive).
+
+**Example:** Two sources submit “Diane Dufresne | Sur rendez-vous” concert at the same venue and date. Our system normalizes both to same name format and same venue reference, then generates identical dedup_hash. The second submission finds the first. The system merges any new fields (say the second source had an image URL, which gets added to the event). It logs that it merged and does not create a new row. In the event’s record, now two `source_url` entries exist. If those sources provided different start times, the event might carry one as official and note the other in a log for admins. This ensures in the front-facing data, we have one event (with the best info possible, and maybe a link to “updated date/time” if corrections come).
+
+**Validation Post-Dedup:** If an event was merged, we might re-run validation on the merged data (since new info came in) to ensure consistency. Generally, the fields are the same type so it should remain valid.
+
+**Ongoing Duplicate Scanning:** Beyond initial insertion, we might occasionally run a job to scan for any duplicates that slipped through (perhaps due to slight mismatches that our algorithm didn’t catch initially). This job could use more expensive comparisons (like full text similarity or human-in-the-loop cues) to cluster events. Any found can be merged retroactively. This is especially useful if data sources change or if our logic improves over time – we can retroactively clean the DB.
+
+**Summary:** The deduplication strategy ensures **each real-world event is stored once** in SEL. It combines deterministic keys and heuristic checks to catch duplicates. By merging data, we preserve all useful information and sources, aligning with a “collect once, use many” philosophy. This keeps the dataset tidy and trustworthy, preventing double-counting and confusion, which is crucial when multiple feeds contribute overlapping data.
+
+## 6. Vector Indexing Strategy
+
+Decision: use **pgvector** in Postgres as the source of truth for embeddings for the MVP, and optionally add **USearch** as an in-memory acceleration layer in production. This keeps the system simple and correct while allowing a fast cache when needed.
+
+**Embedding Generation:** We will represent each event as a vector in a semantic space (embedding) so that similar events are near each other. Likely, we’ll use the event’s textual data (title + description + maybe venue name) as input to an embedding model. This model could be an open-source sentence transformer or a smaller model fine-tuned for event data. For initial implementation, a pragmatic approach is to use a pre-trained model (e.g. all-MiniLM-L6-v2) via a Go wrapper or call out to a Python service. The embeddings might be, say, 384-dimensional float vectors. We ensure the model is reasonably compact so it can run without a GPU in real-time, aligning with our goal of self-contained deployment (for example, using a smaller model yields faster inference).
+
+**Index Building (Add):** When a new event is stored:
+
+- The service will compute its embedding vector. This could be done synchronously during the request or by an async worker right after. If the model is fast (a few milliseconds per item on CPU), doing it inline is fine. Otherwise, we may push to a background job so as not to slow the API response.
+
+- Once the vector is obtained, we **add it to the USearch index** with the event’s ID as the key. USearch’s Go integration supports adding vectors, removing, and querying in memory[github.com](https://github.com/unum-cloud/USearch#:~:text=C%2B%2B%2011%20Python%203%20C,%E2%9D%8C%20%E2%9D%8C%20%E2%9C%85%20%E2%9D%8C%20%E2%9D%8C).
+
+- The index uses a similarity metric appropriate for embeddings. Likely **cosine similarity**, which USearch supports (as MetricKind.Cos). Cosine is standard for text embeddings since it normalizes out magnitude differences.
+
+- USearch uses an HNSW (Hierarchical Navigable Small World) graph under the hood for approximate nearest neighbor search, meaning search is very fast and sub-linear in the number of vectors. In benchmarks, USearch can perform thousands of queries per second on CPU for sizable datasets[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=Enter%20USearch.%20It%E2%80%99s%20a%20lesser,runs%20on%20CPU%2C%20which%20means). It’s designed to be highly optimized with SIMD and multi-threading, delivering _blazing speed without needing any GPU_[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=Enter%20USearch.%20It%E2%80%99s%20a%20lesser,runs%20on%20CPU%2C%20which%20means). This “CPU-only, no external server” approach fits our single-service deployment model perfectly. It avoids the complexity of running a separate vector database or faiss server, and **keeps dependencies minimal**[github.com](https://github.com/unum-cloud/USearch#:~:text=significantly%20in%20their%20design%20principles,defined%20metrics%20and%20fewer%20dependencies).
+
+- If using HNSW, we can configure index parameters (M, ef) to balance recall vs performance. For initial rollout, defaults or moderate values can be used to get high recall.
+
+**Index Storage & Persistence:** Because the index is in-process memory, we plan for persistence in one of two ways:
+
+- **Rebuild on Startup:** On service startup, load all events from DB and compute or retrieve their embeddings, then add to the index. This ensures the index is up-to-date. This can be time-consuming if there are tens of thousands of events, but still feasible (and can be done in the background as the service starts). If we store embeddings in the DB, we can load them directly; if not, we recompute each (which is slower).
+
+- **Snapshot/Load index:** USearch provides the ability to save and load indexes to disk[github.com](https://github.com/unum-cloud/USearch#:~:text=C%2B%2B%2011%20Python%203%20C,%E2%9D%8C%20%E2%9D%8C%20%E2%9C%85%20%E2%9D%8C%20%E2%9D%8C). We can periodically save the index (e.g., to a file on a mounted volume) and on restart simply load that binary snapshot, which is faster than recomputing. We’d still reconcile it with any new events added since last snapshot (which we can track via sequence numbers).
+
+- In either case, because our dataset per instance (e.g. per city) is not huge (likely on the order of thousands to low millions of events at most), the memory usage is manageable and the rebuild times are acceptable. USearch is known to be compact in memory usage and designed for broad compatibility[github.com](https://github.com/unum-cloud/USearch#:~:text=significantly%20in%20their%20design%20principles,defined%20metrics%20and%20fewer%20dependencies).
+
+**Querying:**
+
+- The semantic search endpoint will take a user’s query text, generate an embedding for the query using the same model (ensuring we use a “query” mode if the model distinguishes between query vs document embedding, or otherwise just same embedding space).
+
+- We then call USearch’s **search** function with that query vector to retrieve the top _K_ nearest event vectors (K might default to, say, 10 or 20 results, configurable via query param).
+
+- USearch returns the IDs of the nearest neighbors, along with similarity scores (or distances). We take those IDs and fetch the corresponding events from PostgreSQL to get their full details. Because the number of results is small, these lookups are very fast (and we can even cache the event objects if needed).
+
+- The results are then returned to the client, sorted by similarity. This allows users to find events that are semantically related to their query – for instance, a query for “jazz outdoors in August” might match an event described as “Summer jazz concert in the park” even if it doesn’t share keywords explicitly.
+
+- We can also support vector queries directly. For advanced clients who might have their own embeddings (less common), we could allow a POST with a vector to search. But typically the text input is fine.
+
+**Maintenance of the Index:**
+
+- When events are updated (say an admin edits an event’s description or time), if those changes could affect the embedding, we should update the vector:
+
+    - The simplest approach is to **remove** the old vector (USearch supports removal by ID) and then add the new vector. This ensures the index stays correct. Because updates are relatively infrequent compared to queries, this slight overhead is fine.
+
+- When events are deleted or archived, we remove their vectors to keep the index clean.
+
+- If the index ever needs rebalancing or rebuilding (HNSW can accumulate some fragmentation after many insertions/removals), we could rebuild from scratch periodically, but likely unnecessary given moderate data volumes.
+
+**USearch Advantages Recap:** USearch was chosen because it’s **small, fast, and Go-integrated**. It doesn’t require us to run a separate service or complex dependencies – it’s a drop-in library with broad compatibility and minimal footprint[github.com](https://github.com/unum-cloud/USearch#:~:text=significantly%20in%20their%20design%20principles,defined%20metrics%20and%20fewer%20dependencies). It provides both exact and approximate search with SIMD optimizations, and critically **“everything runs on CPU”** – no GPU needed[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=Enter%20USearch.%20It%E2%80%99s%20a%20lesser,runs%20on%20CPU%2C%20which%20means). This greatly simplifies deployment and reduces cost, since we can run on a standard CPU server and still get sub-millisecond vector search speeds. As one analysis noted, avoiding GPUs can cut infrastructure costs by 70-80% while still delivering high throughput for vector queries[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=Enter%20USearch.%20It%E2%80%99s%20a%20lesser,runs%20on%20CPU%2C%20which%20means).
+
+By using USearch, the SEL can handle semantic queries in real-time even on modest hardware. For example, with a well-built index, we might achieve query latencies on the order of a few milliseconds for thousands of events, which means we can support interactive search features. The library’s design focus on **fewer dependencies and a compact core** aligns with our goal of a lean service[github.com](https://github.com/unum-cloud/USearch#:~:text=significantly%20in%20their%20design%20principles,defined%20metrics%20and%20fewer%20dependencies). (USearch’s design philosophy emphasizes being lightweight and broadly compatible, as opposed to heavy frameworks[github.com](https://github.com/unum-cloud/USearch#:~:text=significantly%20in%20their%20design%20principles,defined%20metrics%20and%20fewer%20dependencies).)
+
+**Vector Dimensions and Optimization:** We will choose an embedding dimension that balances semantic accuracy and performance. Many sentence embeddings are 384 or 768-dimensional floats. If needed, we can apply dimensionality reduction (like PCA or even use model techniques to get a smaller vector) to improve speed. USearch and our hardware can handle 768d, but using a smaller vector (256d) could give big speed and memory gains with only slight recall loss, as demonstrated in some cases[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=,recall%4050)[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=USearch%3A%20From%2053%20to%202%2C880,on%20Just%20a%20CPU). We will monitor search quality; since we can always generate vectors offline and experiment, the system can iterate on the chosen embedding scheme without affecting the rest of the architecture (thanks to modularity).
+
+**Security** (just to note): The vector search is read-only for the public; there’s no risk of information leak beyond what’s in the events. We might implement some rate limit if the embedding generation is costly (to prevent spam causing heavy CPU usage), or cache frequent query embeddings.
+
+In summary, the vector indexing strategy for MVP is: **generate embeddings for events -> store embeddings in pgvector -> answer semantic queries via pgvector**. For production, optionally add USearch as an in-memory acceleration layer (pgvector remains canonical). This approach balances correctness, simplicity, and the option for very low-latency queries later.
+
+## 7. Access Control and Authentication Design
+
+SEL’s access control is designed with **Role-Based Access Control (RBAC)** in mind, dividing capabilities among three primary roles: **public**, **agent**, and **admin/editor**. The goal is to enforce security best practices while keeping the system simple to use for trusted agents and administrators.
+
+**Roles and Permissions:**
+
+- **Public (Unauthenticated Users):** These are end users or applications that do not present any credentials. By default, public users have **read-only access** to published event data. They can query events via the public GET endpoints (with filtering, searching, etc.). They cannot create or modify events directly. Public users also might be allowed to submit suggestions or new events in a limited way (e.g., via a future public submission form) but such submissions would either be moderated or require some identity verification (to prevent spam – more on that in Expansion Hooks).
+
+- **Agent (Authenticated API Client):** Agents are external systems (like local event scrapers, partner organizations’ systems, or any authorized feed contributor) that have permission to **submit events via the API**. They authenticate using an API token or key. Agents can call the `POST /events` endpoint to push new events (or updates). They might also have read access to their own submissions or all public data, but typically their main role is data ingestion. Agents do not have privileges to edit or delete events outside their submissions, nor to view any unpublished events other than those they submitted if we have a moderation workflow.
+
+- **Admin/Editor (Authenticated Staff):** Admins (or editors) are trusted users who have full control over the system’s data. They can do everything: create, edit, or remove events, approve or reject submitted events, manage duplicates, curate enrichment links, and manage user accounts or agent keys. This role is restricted to the SEL maintainers. They have access to the admin endpoints (under `/admin/*`). In a refined model, we could separate “Admin” (full access including user management and configuration) and “Editor” (who can edit events but not manage users). The architecture can accommodate that granularity if needed by simply defining an additional role and corresponding permissions.
+
+**Authentication Mechanisms:**
+
+- **JWT-based Auth:** We will likely use **JSON Web Tokens (JWT)** for authenticating requests. Admins and agents would possess JWTs containing their identity and role. For example, an admin logs in (or is pre-created) and receives a JWT with a claim `role: "admin"`. An agent might use a long-lived JWT or a signed token that we issue out-of-band. We will use an established Go JWT library (like `golang-jwt`) for signing and verifying tokens. The token signing secret (or private key if using RSA) will be configured via environment variable.
+
+- **API Keys (Alternative for Agents):** In some cases, it might be simpler for agent integrations to use an API key (a random token we generate) rather than handling JWT issuance. We could implement this by generating a key and storing it (hashed) in the database with an associated agent identity and role. The agent then includes this key in an Authorization header or query param. The server looks it up and if valid, treats the request as agent role. This is an implementation detail; from an RBAC perspective it’s equivalent (an API key is effectively a credential with an associated role).
+
+- **Login for Admins:** We can have a minimal user table for admins with username/email and hashed password. A `/auth/login` endpoint verifies credentials and issues a JWT. Admins could also be provisioned via config for simplicity (e.g., an admin token defined in an env var for early stages), but a proper login flow is better for long-term. We’ll enforce strong password hashing (using bcrypt or Argon2 via Go’s x/crypto library).
+
+- **Token security:** Tokens (JWT or keys) will have appropriate scope and expiration. For JWT, we might give a reasonably long expiration for agents (or use non-expiring tokens rotated manually), and shorter for admin logins (with refresh tokens if needed). We will use **HTTPS** for all API traffic, as is standard, to protect tokens in transit.
+
+**RBAC Enforcement:**
+
+We will implement RBAC checks in the middleware or handler level. For example:
+
+- The event ingestion endpoint (`POST /events`) will require an Authorization header. If missing or if the token is not an agent or admin, the request is refused with 401/403. Agents and admins are allowed. Public cannot post here.
+
+- Admin endpoints (like `/admin/events/pending`) will check that the role in JWT is admin (or editor). Otherwise, 403 Forbidden.
+
+- Public endpoints (`GET /events`) may optionally allow agent or admin tokens too (they simply get the same data, maybe with more detail if we decide e.g. admins can see unpublished events via a flag).
+
+- If we implement a “pending events” concept, the GET /events for public would filter out unapproved ones, whereas admin role could see everything. That filtering can be based on role.
+
+We will likely utilize a proven library like **Casbin** for fine-grained RBAC policy management. Casbin allows defining roles, permissions, and even role hierarchies via a config file or policy definitions[reddit.com](https://www.reddit.com/r/golang/comments/1az5zhg/best_authentication_library_for_access_control/#:~:text=Casbin%20for%20RBAC%20is%20a,you%20will%20probably%20need%20a). For instance, we can define that:
+
+- role "admin" -> can perform any action on any resource,
+
+- role "agent" -> can create events (POST /events) and read events, but cannot access `/admin/*` routes,
+
+- public (no role) -> can read events.  
+
+Using Casbin, we could write policy lines or use their built-in RBAC model which is quite straightforward for this scenario (Casbin supports user-role assignments and role-permission assignments). This saves us from hardcoding checks everywhere and makes it easier to adjust in the future (for example, if we add a "city-curator" role that can only edit events in their city, Casbin can handle domain-specific roles). Casbin is a stable OSS library recommended for RBAC in Go[reddit.com](https://www.reddit.com/r/golang/comments/1az5zhg/best_authentication_library_for_access_control/#:~:text=Casbin%20for%20RBAC%20is%20a,you%20will%20probably%20need%20a). Alternatively, given the simplicity of our roles, we may implement our own middleware: essentially check JWT claims and route patterns. The Reddit discussion on Go auth suggests either a library like Casbin or a custom JWT middleware for roles[reddit.com](https://www.reddit.com/r/golang/comments/1az5zhg/best_authentication_library_for_access_control/#:~:text=Casbin%20for%20RBAC%20is%20a,you%20will%20probably%20need%20a) – in our case, we might start with a straightforward middleware since roles are few, then move to Casbin if we need more complex rules.
+
+For example, a custom middleware could parse the JWT, extract `role`, and attach it to the request context. Then route handlers or another middleware layer checks required role. In Gin or Chi, we can set up groups of routes that require certain roles, failing early if not met.
+
+**Password and Key Management:** Admin credentials will be stored hashed (using bcrypt with a high cost factor). API keys for agents will be long random strings; we will hash them in DB for security (so even if DB is leaked, the actual keys aren’t in plain text). The system that issues keys (maybe an admin creates a new agent via an admin UI) will show the key once. We might also restrict what agents can do by scope (like an agent could be tied to a specific city’s events if we had multi-city in one DB, but since we plan per-city deployments, that’s moot for now).
+
+**Public submission authentication:** While public users typically won’t auth, if we allow them to submit events (in the future UI), we may use a different mechanism like email verification or captcha, rather than giving them a JWT (they could still get a temporary token after, but this is more of a form submission protection, which we’ll discuss in expansion).
+
+**Session Management:** Given JWT stateless nature, we do not need server-side sessions for API. Admin UI could use the JWT in browser storage. If we wanted to revoke tokens, we might keep a denylist or track token IDs in DB, but simpler approach: short token life for admin with refresh, or manual rotation of agent keys if needed.
+
+**Audit Logging:** For security, every admin or agent action can be logged (with timestamp, user, action) to an audit log table. This way, if an agent integration misbehaves or an admin error occurs, we have a trail. This is good practice especially since multiple external agents might use the system.
+
+**Principle of Least Privilege:** Each endpoint checks only the necessary role. Agents cannot escalate privileges – e.g., even if they tried to call an admin endpoint with their token, the middleware will block it. The code will be organized to avoid any role mixing. For example, internal functions that perform deletions will still require an admin check even if somehow called.
+
+**Preventing Misuse:** With an open API for reads and possibly open submission, we have to mitigate abuse:
+
+- Rate limiting: Implement a rate limiter (maybe via a library or simple token bucket per IP) on endpoints to prevent denial of service or excessive spam submissions.
+
+- For writes, since only authorized agents can write (and we trust those to some extent), rate limiting is less of an issue, but we still guard against a buggy agent flooding duplicates – which our dedup helps with, and we can throttle if necessary.
+
+- Public reads might be subject to heavy usage; caching and rate limiting ensure performance stability. Since events data is mostly public, we might also consider enabling caching headers or a public data dump for heavy consumers instead of hammering the API.
+
+By leveraging robust libraries and patterns, we ensure that **auth and access control are not an afterthought** but a core aspect. Many security breaches happen due to misconfigured access control, which is why it ranks high in OWASP risks[dev.to](https://dev.to/bensonmacharia/role-based-access-control-in-golang-with-jwt-go-ijn#:~:text=Surprisingly%2C%20access%20control%20is%20one,of%20common%20API%20security%20risks). Our plan explicitly addresses this by using well-tested mechanisms (JWT, role checks, possibly Casbin). As one expert noted, Casbin is a solid choice and if not used, a custom JWT middleware can enforce roles route-by-route[reddit.com](https://www.reddit.com/r/golang/comments/1az5zhg/best_authentication_library_for_access_control/#:~:text=Casbin%20for%20RBAC%20is%20a,you%20will%20probably%20need%20a) – we will implement accordingly.
+
+In conclusion, SEL’s authentication and RBAC design provides a **secure gate** around sensitive operations, while keeping the public-facing data open and accessible. It offers external contributors a controlled way to add data (agents with keys) and ensures only authorized staff can perform moderation or system changes. The design is flexible enough to accommodate more roles in the future or integrate with external identity providers if needed (e.g., hooking into an OAuth service for admin login, or using something like Keycloak). But the immediate plan favors a lightweight, self-contained auth system consistent with the overall simple deployment theme.
+
+## 8. Deployment Strategy (Docker, Configuration, Healthchecks)
+
+Deployment for SEL is intended to be **straightforward and reproducible**, relying on containerization and minimal moving parts. The entire backend (aside from the database) compiles into a single Go binary, which we will ship via Docker for consistency across environments.
+
+**Containerization:**
+
+- We will create a Dockerfile that uses a **multi-stage build**. In the build stage, we use the official Go image (e.g. `golang:1.20`), fetch dependencies (Go modules), and compile the SEL service with optimizations (e.g. `-ldflags="-s -w"` to strip debug, reducing binary size). In the final stage, we use a lightweight base image. Likely **Alpine** or even **Distroless** (gcr.io/distroless/static) to minimize the footprint and attack surface. If USearch or other C dependencies are statically linked, we can use `scratch` or distroless; if dynamic, Alpine might be easier.
+
+- The resulting container will contain just the Go binary and necessary config (no dev tools). We’ll expose the listening port (default say 8080) and set the entrypoint to the service binary.
+
+- The image will be compact (tens of MB at most, since Go binaries are self-contained). USearch does increase binary size slightly, but nothing significant compared to including an OS.
+
+- The container will mount volumes as needed (see below for volumes).
+
+**PostgreSQL Deployment:**
+
+- We expect PostgreSQL either as a separate service/container in a Docker Compose setup or a managed DB in production. For local dev or small deployments, a Docker Compose file can bring up both the SEL service and a Postgres container, with a network link between them.
+
+- We’ll use the official Postgres image and mount a volume for data persistence (so data isn’t lost on container restart).
+
+- The SEL service will wait for Postgres to be ready (we might include a simple retry-on-start if connection fails, or use Docker Compose’s dependency ordering).
+
+- Database schema migrations can be handled at startup: e.g., the service can run an auto-migration if using an ORM or we include a SQL migration folder and a tool (like `golang-migrate` or `embed` the schema SQL and execute if tables not found). Alternatively, we provide a separate migration step in deployment.
+
+**Configuration:**
+
+- All configuration will be done via environment variables (12-factor style) to avoid baking secrets into images. Key config values include:
+
+    - `DATABASE_URL` (or separate `DB_HOST`, `DB_NAME`, etc.) for connecting to Postgres.
+
+    - `PORT` for the HTTP server (default 8080).
+
+    - Auth secrets: e.g. `JWT_SECRET` for signing tokens (if symmetric) or path to keys if asymmetric.
+
+    - `ARTSDATA_API_URL` (defaults to `https://api.artsdata.ca/recon`) in case Artsdata provides different endpoints or for testing, and possibly an `ARTSDATA_API_KEY` if in future required (currently Artsdata recon doesn’t require auth for reads).
+
+    - `EMBEDDING_MODEL` or settings for the vector embedding (if we allow switching model or need API keys for an embedding service, e.g. an OpenAI key if we ever used that).
+
+    - `ENV` (environment name like dev/prod) to toggle debug modes or more verbose logging.
+
+- We will also allow config via a file or CLI flags for flexibility, but env is primary for Docker. We might use a library like `spf13/viper` to combine env/flags easily.
+
+- Secrets (like DB password, JWT secret) will be provided securely via env (or Docker secrets in swarm/k8s).
+
+**Health Checks:**
+
+- Use separate liveness and readiness endpoints: `GET /healthz` (liveness - process alive) and `GET /readyz` (readiness - DB connected, migrations applied, index loaded, and any required sidecars reachable). Readiness should only return 200 when the service is actually able to serve production traffic (so an orchestrator won’t route traffic to it until it is ready).
+
+- In the Dockerfile, use Docker’s `HEALTHCHECK` to call `/healthz` periodically. Example:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD wget -qO- http://localhost:8080/healthz || exit 1
+```
+
+- In Kubernetes, configure liveness to use `/healthz` and readiness to use `/readyz`. The `/metrics` endpoint remains available for Prometheus scraping and is not a health endpoint.
+
+- Implement readiness gating on critical initialization tasks (e.g., DB migrations complete, vector index loaded or PG vector accessible, and job queue connected) so the instance only receives traffic when it’s fully operational.
+
+**Scaling and Federation:**
+
+- Initially, we anticipate deploying one instance of the SEL service per database (e.g., per city or region). This simplifies consistency (no multi-instance writes to coordinate). That one container could handle many requests given Go’s concurrency, and the bottleneck would likely be the DB or embedding model CPU.
+
+- If we needed to scale horizontally (multiple instances for load), we would put them behind a load balancer. They would all connect to the same Postgres. The stateless parts (HTTP handling, etc.) are fine, but one consideration is the **vector index**: Each instance would have its own USearch index in memory. That means when one instance ingests a new event, the others wouldn’t know about it immediately. To address that, we could:
+
+    - Use a message broker or Postgres NOTIFY to tell other instances to fetch the new event and update their index.
+
+    - Or designate one instance as the “writer” that does ingestion and vector indexing, and others just serve read queries (less ideal).
+
+    - Alternatively, use a shared external vector store (contrary to our single-service principle).
+
+    - Given our scope of "single service for easy deploy", we likely won’t scale out in initial phase. Instead, if more capacity is needed, we’d scale up (use a VM with more CPU/RAM).
+
+    - For multiple cities, we’ll deploy multiple instances each with its own DB. Federation between them is at a higher level (not via a single load balancer).
+
+- In summary, the typical deployment is one Docker container for SEL and one for Postgres (plus perhaps one for Nginx as a reverse proxy if serving through web, or directly exposing the port).
+
+**Volumes & Data Persistence:**
+
+- **Postgres Data Volume:** Mounted to host or managed volume to persist DB across restarts.
+
+- **Index Snapshot Volume:** If we implement USearch index persistence to disk, we’ll mount a volume for the index file. For example, a volume at `/data/index` where the service can read/write a file `event_index.bin`. This allows the index to survive container restarts (though it would also persist in DB if we rebuild).
+
+- **Logs:** Our service will log to stdout/stderr (so Docker can capture logs). If file logging was needed, we’d mount a volume, but typically docker logging drivers or cloud log services are used, so we stick to stdout.
+
+- **Config Files:** We might not need a config file if using env, but if we had one (like a YAML for Casbin policy, or a static config for some mappings), we could bake it into the image or mount it. Casbin policies could be embedded or in a configMap for k8s.
+
+**Environment Promotion:**
+
+- For development, one can run the Go service directly or via Docker Compose with Postgres.
+
+- For production, we can deploy the same image. If using an orchestrator (Kubernetes, ECS, etc.), the image is ready to go with minimal runtime config needed (just supply env vars and secrets). The small footprint means it can run on modest infrastructure.
+
+- We will tag images appropriately (e.g., semver or git commit tags) for version tracking. Rolling updates can be done since the service is stateless except DB – using a migration strategy (apply DB migrations then update containers).
+
+**Integration with CI/CD & Testing:**
+
+- We’ll set up CI to build the Docker image, run unit and integration tests, and publish artifacts. Use **testcontainers-go** for integration tests (real Postgres instance) to validate DB interactions and migrations.
+
+- Add **Artsdata integration tests** (optionally against a sandbox or recorded responses) to validate reconciliation logic and caching behaviors.
+
+- Add a CI step to run SHACL validation (via pySHACL or a containerized validator) on exported JSON-LD samples to keep our JSON-LD output compatible with Artsdata shapes.
+
+- Add tests for idempotency, bulk ingestion job semantics, and River job handling (including retries) to ensure reliability under failure conditions.
+
+**Potential Docker Compose Setup:**
+
+```yaml
+version: '3'
+services:
+  sel-backend:
+    image: sel-backend:latest
+    build: .
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://seluser:password@db:5432/sel_db?sslmode=disable
+      - JWT_SECRET=supersecretjwt
+      - ARTSDATA_API_URL=https://api.artsdata.ca/recon
+    ports:
+      - "8080:8080"
+    volumes:
+      - index-data:/data/index
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=seluser
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=sel_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
+  index-data:
+```
+
+This snippet outlines how it could be deployed for a single instance. The volumes ensure data persists.
+
+**Health and Monitoring in Deployment:**
+
+- The Docker/K8s health checks will restart the container if it becomes unresponsive (e.g., if it crashes or hangs).
+
+- We will set resource limits (like memory/CPU limits in K8s or appropriate instance sizing) to ensure the service has enough memory for the vector index plus overhead. If memory is tight, we can adjust how many events or how we handle indexing (but presumably fine for thousands of events – vector index memory is roughly (#events * dimension * 4 bytes) plus overhead).
+
+- Using a minimal base image improves security (smaller attack surface). We will also run the process as a non-root user in the container for best practices (the Dockerfile can add a user and chown volumes accordingly).
+
+Overall, the deployment strategy focuses on **simplicity and reliability**: a small number of containers, environment-based config, and built-in health management. It’s designed so that someone can quickly spin up a new SEL instance (for a new city, for example) by configuring a couple of env variables and launching the stack – minimal DevOps burden. Maintenance (like upgrading the service) is as easy as building/pulling a new image and redeploying, with backward-compatible DB migrations handled in-app or via a migration tool.
+
+This approach ensures **low maintenance**: no cluster of microservices to manage, just one service that can be redeployed as needed. It also fits well in automated cloud environments and can be integrated with monitoring and logging easily, which we cover next.
+
+## Recommended Tech Stack & Extensions
+
+A concise stack reflecting the analysis and production-readiness recommendations:
+
+- **API Framework:** Huma (auto-generates OpenAPI 3.1 from Go structs) 🔧
+- **Database Access:** SQLc (explicit SQL -> type-safe Go) 🧭
+- **Job Queue:** River (Postgres-backed transactional job queue) ✅
+- **Migrations:** pressly/goose (supports hybrid SQL/Go migrations) 🛠️
+- **Vector Storage:** Start with **pgvector** (MVP) → add **USearch** as in-memory acceleration later (hybrid) ⚖️
+- **Embedding Model:** Ollama sidecar (local, single binary) for privacy and repeatability 🧠
+- **JSON-LD:** piprate/json-gold for JSON-LD framing/compaction 🌐
+- **Validation:** CUE or go-playground/validator for rules and SHACL-like invariants ✔️
+- **HTTP Clients:** go-retryablehttp or resty for Artsdata calls 🔁
+- **Logging:** zerolog or stdlib `slog` for structured logs 🪵
+- **Observability:** OpenTelemetry + Prometheus (export traces and metrics) 📈
+
+This stack prioritizes deterministic behavior, agent-readability (SQLc + Huma), and operational determinism (River, pgvector, JSON-LD). It also minimizes new infra while keeping production optimizations open.
+
+**Recommended Postgres extensions to enable early:**
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;       -- Fuzzy text matching
+CREATE EXTENSION IF NOT EXISTS unaccent;      -- Normalize diacritics
+CREATE EXTENSION IF NOT EXISTS pgvector;      -- Vector similarity
+CREATE EXTENSION IF NOT EXISTS btree_gist;    -- Time-range indexes
+```
+
+---
+
+## 9. Maintenance and Monitoring Considerations
+
+To keep SEL running smoothly in production and allow easy operation by a small team (or even automated agents), we incorporate various maintenance and monitoring features into the architecture:
+
+**Logging:**
+
+- The service will emit **structured logs** for important events. Each API request will be logged (at least in summary: method, path, status, duration, user-agent), which aids debugging and allows analyzing usage patterns. We can use a logging library like Logrus or Zap for structured JSON logs (including fields like request ID, user role, etc.).
+
+- Key actions (especially those that modify data) are logged with context: e.g., "Agent X added event Y", "Admin Z approved event Y", "Duplicate merge: event A merged into B". These logs help trace what happened if something goes wrong.
+
+- Error traces are logged with stack traces (in debug mode) or at least error messages in production. We’ll ensure not to leak sensitive info in logs (e.g., not logging full JWTs or passwords).
+
+- The logging level can be adjusted via config (info by default, debug in dev, etc.). In production, we’d keep it to info/warning/error to avoid verbosity, but with enough detail to diagnose issues.
+
+**Monitoring and Metrics:**
+
+- Use **OpenTelemetry** from day one for traces (HTTP spans, DB spans, background job spans) and export to a tracing backend. Also expose **Prometheus** metrics (`/metrics`) for counters and histograms. This combination gives both high-cardinality metrics and distributed tracing for diagnosing cross-cutting issues. We will add custom metrics such as:
+
+    - `events_ingested_total{source, status}` ✅
+    - `reconciliation_attempts_total{entity_type, outcome}` ✅
+    - `vector_search_latency_seconds` ✅
+    - `duplicate_merges_total` ✅
+    - `ingestion_job_queue_depth` (River job queue depth) ✅
+    - HTTP request latencies and status distributions by route (histograms/counters)
+
+    - Number of events ingested (counters, possibly tagged by source or status).
+
+    - Number of events served in queries.
+
+    - HTTP request metrics (counts and latencies by route and status code).
+
+    - Vector search metrics: e.g., count of vector queries, and maybe average query time (though we expect these to be very fast).
+
+    - Deduplication events: how many duplicates detected/merged.
+
+    - Errors: count of validation failures, auth failures, etc.
+
+- These metrics allow us (or an automated system) to monitor the health and performance. For example, if ingestion rate drops or error count spikes, that triggers investigation.
+
+- If not using Prometheus, we could integrate with another APM, but Prometheus is a common OSS choice. We ensure any sensitive data is not in metrics (just aggregated counts/timings).
+
+**Alerting:**
+
+- Based on metrics, ops can set up alerts (e.g., if the health check fails repeatedly, or if error rate > X%, or if vector query latency suddenly increases).
+
+- We might also implement internal alerts: for example, if the Artsdata reconciliation API starts failing (network issues), the system could send an alert (maybe via email or just log for ops to see).
+
+- Using an error monitoring service (like Sentry or Rollbar) could be helpful: we can send uncaught exception details to Sentry, which will alert maintainers of new bugs. This is not strictly needed if logs are monitored, but it improves response to issues.
+
+**Database Maintenance:**
+
+- We will use migrations for schema changes to ensure upgrading the service is smooth. Tools like `golang-migrate` or embedding migrations allow us to apply updates without manual DB fiddling.
+
+- For performance, we add necessary indexes (e.g., index on event start_date for time-based queries, full-text index on name/description if needed for keyword search (though semantic search covers meaning, sometimes a direct text search is useful too)).
+
+- We should periodically **vacuum and analyze** the Postgres DB (especially if lots of events are inserted and old ones removed). If using a managed DB, this is automatic; if self-hosted, we ensure autovacuum is on.
+
+- If events data grows very large, we might consider table partitioning (e.g., by year) to keep queries snappy and allow archiving old partitions. Archive segregation (discussed in Expansion) could be implemented via partitions or separate DB.
+
+- **Backups:** Regular DB backups are crucial. We can schedule daily dumps or use PG’s continuous archiving. In a simple setup, we might run a cron in the host or a sidecar container to `pg_dump` the database to a secure location. Because events are not highly confidential and often reconstructable from sources, backups are more for convenience and protection against accidental deletion.
+
+- **Retention Policy:** If desired, we can decide to purge or archive events that are very old (say events older than X years) to keep the working set small. This could be a maintenance script or a manual decision. Archiving could mean moving them to an “archive” schema or different database. This ties into expansion hooks (archive segregation).
+
+**System Maintenance and Updates:**
+
+- Since this is a single service, updating the system means deploying a new container version. We ensure backward compatibility on API (versioning helps – we can run v1 and later v2 concurrently if needed).
+
+- We will maintain **documentation** (in-code and external). The code will be well-commented, and we’ll provide a README or developer guide for how to run, how to configure, etc. This helps when an LLM or new developer is introduced, as they can quickly get context. Additionally, the OpenAPI spec of the API serves as up-to-date documentation for usage.
+
+- The code structure will be clean: organized into packages like api (handlers), service (business logic), model (DB access), etc. This separation means one can modify e.g. the dedup logic without touching API endpoints, reducing chance of unintended side effects – a boon for maintainability. It also means automated tools could target specific packages (for example, an LLM agent tasked with improving dedup only needs to load that context).
+
+- We strive to use **idiomatic Go patterns**, making the codebase more approachable. Avoiding overly clever meta-programming ensures that automated static analysis or code generation tools (which an AI might use) can navigate easily. For instance, by using a popular web framework and ORM, we allow leveraging community knowledge and documentation.
+
+**Testing and CI:**
+
+- We will have unit tests for critical functions (validation, dedup matching, vector search integration, etc.). Before deployment, CI will run these tests. This reduces runtime errors in production.
+
+- Integration tests might run against a test DB and, if possible, a test Artsdata API (perhaps using a sandbox or mocked responses) to ensure the integration works.
+
+- These tests also act as documentation for expected behaviors (and an LLM could infer correct usage from tests, interestingly).
+
+**Security Maintenance:**
+
+- We commit to keeping dependencies updated. Dependabot or Renovate can notify us of updates to Go libraries (especially important for security patches in things like JWT library or database driver). We’ll periodically update and redeploy.
+
+- We will also regularly rebuild the Docker base image to get security patches in the OS (if using Alpine or distroless, they occasionally update).
+
+- The RBAC system ensures that even if an agent’s token were compromised, the damage is limited (they can only add events, not delete or mess with others). Admin accounts will be protected with strong passwords and possibly 2FA if integrated with an IdP in the future.
+
+**Monitoring usage and performance:**
+
+- We will keep an eye on database performance (if queries start slowing, we can add indexes or optimize queries, e.g. heavy filters).
+
+- The vector search being in-memory means memory usage is a key metric. We’ll monitor memory and possibly add alerts if memory usage grows unexpectedly (which could indicate a leak or an explosion in event count).
+
+- CPU usage monitoring ensures that if, say, embedding generation is too heavy, we can identify it (maybe an agent dumping thousands of events at once causing CPU spikes). We could implement a queue/throttle for embeddings if needed to smooth CPU usage.
+
+**Automated Agents and LLM Coding Assistant Consideration:**
+
+- The architecture and code are intentionally kept **human-readable and modular**, which also makes it machine-readable. For instance, if an LLM agent were to manage or extend the system, it would have the API spec, the clearly defined components (maybe a `components.md` that describes each module), and logs/metrics to learn from system behavior.
+
+- We will document not just the “what” but the “why” in code comments (e.g., explaining the dedup strategy or the reasoning behind a threshold). This context can guide future maintainers or AI debuggers.
+
+- By emphasizing use of **stable OSS libraries**, we ensure that an AI agent can find documentation or Q&A about them if needed (for example, Casbin usage is well documented, so an AI can utilize that knowledge rather than dealing with a custom homegrown RBAC).
+
+- If tasks like updating the schema to add a new field are needed, our use of an ORM or codegen can simplify that (change in one place, regen models). Even without an ORM, having a central schema definition and maybe using something like SQLc (which generates Go code from SQL definitions) could make it easier to maintain consistency.
+
+- The idea is that the development surface is "clean" – there's a reduced chance of weird side effects because components communicate through well-defined interfaces (HTTP, database transactions, etc.). This determinism is friendlier for automated reasoning.
+
+**Maintenance Procedures:**
+
+- Rolling restarts or deployments can be done with zero downtime (use two instances temporarily or LB draining).
+
+- If an upgrade fails, we can roll back by redeploying the last image (since migrations are incremental and can be rolled back if we write down migrations carefully).
+
+- For major changes (like v2 of API), we would run both versions concurrently to ensure consumers have time to migrate – our architecture can handle multiple API versions under feature flags or separate route prefixes.
+
+In summary, maintenance and monitoring are embedded at every level: from code quality and documentation to runtime logging and metrics. The system is built to require **minimal manual intervention** day-to-day, but provides the necessary hooks (logs, alerts, admin tools) to intervene or adjust when needed. This approach aligns with having possibly a small team or even an AI agent oversee operations – by observing metrics and logs, anomalies can be detected and addressed promptly. The heavy use of open standards and OSS means we aren’t locked into black boxes; we can always introspect or replace components if better options arise, ensuring long-term maintainability of the platform.
+
+## 10. Expansion Hooks (Future Public UI, Archive Sync, Federation, AD4M/PDS Compatibility)
+
+While the initial SEL implementation focuses on a single back-end service, the architecture is designed with **future expansion and integration** in mind. Several potential expansion avenues have been anticipated and simple hooks or designs are put in place to enable them with minimal friction:
+
+**Public UI and User Interaction:**
+
+- _Public Events Portal_: We envision a future where a public-facing web UI can sit on top of the SEL API, allowing end-users to browse events, search semantically, and possibly personalize views (by city, category, etc.). The back-end is already equipped with a robust public API that the UI can use. Because responses use schema.org fields, we could easily make the UI embed JSON-LD for SEO or share data with search engines (improving discoverability of events).
+
+- _Event Submission by Public_: To crowdsource event data, a UI form could allow anyone to submit an event. Our backend can handle this by exposing a **public submission endpoint**, but such events would be flagged as needing confirmation. We can assign submissions from unauthenticated users to the “public” role implicitly, which means they don’t get auto-published. The event could be stored with a status like `pending` or `unverified`. The admin role can then review these pending events in their dashboard. This workflow leverages our RBAC and status fields introduced earlier.
+
+- _Confirmability via HEAD/GET of source_url_: If a public user submits an event, we would typically ask for a “source URL” (some official page or reference for the event). The system can automatically attempt to verify this source. For example, upon submission, the back-end could perform a **HEAD request** to the provided URL to ensure it returns 200 OK (exists). We might also do a **GET request** and perhaps scan the page for the event title or date (simple heuristic to confirm the content matches). This can be done asynchronously (so the user isn’t waiting on it). If the check fails (404 or content mismatch), the event could be flagged for closer review or auto-rejected if it seems invalid. If it succeeds, it builds trust that the event is real. We can log this verification status and even display it to admins (“source verified on X date”). In the future, this could be extended to periodically re-check source URLs to update event status (e.g., if an event is canceled and the source page is updated, a HEAD could return 404 or content might change; we could catch that and mark our event as canceled).
+
+- _User Accounts for Public_: If needed, we could allow users to create accounts to submit events, which might help with spam control (only verified emails can submit, etc.). Our auth system could extend to a “public contributor” role. This is not necessary initially, but the RBAC design allows adding roles easily. A “contributor” role might have permission to POST events but those events still go to pending state, whereas an “agent” (trusted) posts go directly to published.
+
+- _Rating/Feedback_: In a UI, users might report duplicates or errors. We could add an endpoint for feedback (authenticated or not) which just records a message for admins. This is an ancillary feature but easy to add with our setup.
+
+- The **clean API design** and adherence to standard schemas make building a UI (web or mobile) relatively straightforward. We would also provide **CORS support** on the API so that a JavaScript front-end on a different domain can query the API securely.
+
+**Archive Segregation and Sync:**
+
+- Over time, the number of past events will grow. To prevent the main database (focused on upcoming or recent events) from becoming sluggish or unwieldy, we plan for **archive segregation**:
+
+    - One strategy is to periodically move events whose end_date is far in the past (say >1 year old) to an archive store. This archive could be a separate schema or database, or even a data lake (like a set of JSON or CSV files) for long-term storage.
+
+    - The architecture could include an **Archiver component** (as a future service or a batch job) that queries events older than a threshold and transfers them to an archive. If using Postgres, we might simply copy those rows to a separate “events_archive” table or another DB and then delete from main. If keeping them in the same DB, we might partition tables by year so older partitions can be marked read-only or moved to cheaper storage.
+
+    - The system should continue to allow querying archived events but perhaps through a different endpoint or flag (e.g., `GET /events?includeArchived=true`). Alternatively, we could spin up a separate SEL instance that serves archived data (especially if archive is in a different store).
+
+    - Archive segregation ensures the primary vector index remains small and relevant (we likely only index upcoming or recent events for semantic search because users usually search for current events).
+
+    - That said, archived events could themselves be useful for historical analysis or training recommendation models. We preserve them in a form that could be federated or exported.
+
+    - If integrating with Artsdata, note that Artsdata likely _keeps_ past events in its knowledge graph. We might not need to keep local copies indefinitely if we can rely on the knowledge graph for history. But to be safe, we design archiving into our system too.
+
+    - We might implement an **archive sync job** that pushes older events to a centralized archive (could be a national SEL or Artsdata’s triple store if they ingest from us). Perhaps once an event is past, we ensure Artsdata got it (maybe via their databus) for permanent storage, and then we can drop it locally. This delegation of archive duty to Artsdata is an intriguing possibility (since Artsdata’s mission includes being an archive of arts events).
+
+**Federation Layer (Per-city SELs and Beyond):**
+
+- The architecture anticipates multiple SEL deployments (for different cities or regions). Eventually, we want these to **federate** – i.e., share data or allow queries across them. There are multiple approaches to federation:
+
+1. **Central Aggregator:** A simple approach is to have a central service that aggregates data from all city SEL APIs. This could be a meta-API or a search index that pulls from each city regularly. Because each SEL exposes a similar API, the aggregator can easily fetch or receive updates. For example, each city SEL could publish an RSS/Atom feed or webhook of new events which the central aggregator subscribes to. The aggregator could then either store all events in one big database (like Artsdata does in a graph) or just forward queries to the respective city APIs. However, this introduces a centralized element (which might be fine for a national site, but maybe we want something more decentralized).
+
+2. **Inter-SEL Communication:** We could enable SEL instances to communicate peer-to-peer. For instance, if a user in one instance searches for events in another city, the local instance could proxy the request to the remote instance's API. This is feasible but requires network trust and some discovery mechanism (knowing the URLs of other city APIs).
+
+3. **Standard Protocol Federation (ActivityPub/ActivityStreams):** Embracing the Fediverse model, each SEL could act as a federated server that “follows” others. For example, using **ActivityPub**, an SEL could represent each event as an `ActivityStream` object and each city’s SEL as an actor (or each organizer as an actor). There are already attempts to federate events via ActivityPub[event-federation.eu](https://event-federation.eu/#:~:text=Federated%20Event%20Calendars). If we support ActivityPub, our SEL could automatically send event objects to a federated inbox of a central aggregator or to subscribers who follow certain topics/locations. The Event Federation project in ActivityPub shows that events can be distributed to remote calendars or timelines[event-federation.eu](https://event-federation.eu/#:~:text=Federated%20Event%20Calendars). We would likely adapt our data model to an ActivityStreams vocabulary (which, conveniently, has a lot of overlap with schema.org through ActivityPub extensions for events).
+
+    - We will keep an eye on evolving standards like ActivityPub for events. Our use of schema.org means converting to ActivityStreams is straightforward (there are known mappings, and the Fediverse community is actively discussing event schemas).
+
+    - Concretely, we might add an **ActivityPub outbox** to SEL: when a new event is published, it gets posted to a global feed or to followers. And an **inbox** to receive events from others. But implementing a full federated server (with inbox forwarding etc.) is complex and might be a later iteration.
+
+- **AD4M Integration:** AD4M (Agent-Centric Distributed Application Meta-ontology) offers a framework for truly decentralized knowledge graphs where users/community nodes hold data and share what they choose. In an AD4M context, each city SEL or even each user could hold a _Perspective_ (a private knowledge graph) and join _Neighbourhoods_ (shared graphs) for events[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=One%20of%20AD4M%27s%20key%20features,and%20the%20relationships%20between%20them)[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=Each%20user%20can%20decide%20what,a%20way%20that%20enables%20interoperability). The SEL architecture can adapt to AD4M by serving as a bridge:
+
+    - We could create an **AD4M Language** for events: essentially a module that translates between our Postgres-backed store and the AD4M runtime, allowing events to be shared in a neighborhood. For example, each event could be represented as a triple in AD4M’s graph, with the same properties (name, date, etc.). AD4M emphasizes that data is stored on users' machines in a distributed way[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=By%20storing%20this%20data%20on,advantage%20of%20it%20for%20themselves). Perhaps an SEL instance could itself be an agent in AD4M, or individual organizations could run their own AD4M agent with events, and SEL just facilitates discovery.
+
+    - Since AD4M is an evolving technology for interoperability and user control, our main preparation is **aligning with open standards** (which we do via schema.org and linked data) and keeping the system modular so that a new integration (like an AD4M connector) can be added without redesign. The description of AD4M highlights that it’s about consistent data exchange and giving communities control[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=AD4M%20%28A%20gent,exchange%20data%20in%20consistent%20ways)[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=AD4M%20supports%20the%20aggregation%20of,shared%2C%20enhancing%20privacy%20and%20agency). Our design allowing per-city instances and eventual user-contributed events fits well with an agent-centric model (each city or org could be an agent controlling their data share).
+
+    - In practice, to be AD4M-compatible, we might build an **export function** that can output all events (or recent events) as a set of RDF/JSON-LD that AD4M could ingest, or directly interface with AD4M APIs to publish data into a shared space. The specifics would depend on AD4M’s maturity and libraries (which we can integrate since we are modular).
+
+    - AD4M’s goal of **interoperability across decentralized apps**[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=AD4M%20%28A%20gent,exchange%20data%20in%20consistent%20ways) means if events are an important data type, our adherence to schema.org and linked data will pay off – AD4M can likely incorporate our event schema easily. We could also consider adopting any ontologies from AD4M’s ecosystem if they have, say, a standard “Event” language.
+
+- **PDS (Personal Data Server) / AT Protocol Compatibility:** The AT Protocol (as used by Bluesky) envisions each user having a **Personal Data Server** that stores their data (posts, etc.) and federates it via a network of relays. For events, a similar concept could allow each event organizer or venue to host their own PDS with events, and our SEL would then aggregate or index them. Conversely, our SEL could act as a PDS for a community’s events.
+
+    - The PDS concept is about data portability and user control[box464.com](https://box464.com/posts/bluesky-pds/#:~:text=Post%20Summary). To be compatible, we might ensure each event or organizer has a **DID (decentralized ID)** and that our system can publish events in a format the AT Protocol can consume (AT Protocol uses lexicons to define record types). We might create a lexicon for “Event” record type, and then each event in SEL could be exposed on an XRPC API of a PDS.
+
+    - Perhaps more straightforward: provide an AT Protocol **Feed Generator** service for events. Bluesky’s network allows custom feeds – an events feed generator could query SEL’s database and output a feed of events (as posts). This is outside the core SEL, but something we could build alongside. However, to keep it generic, focusing on DIDs and data schemas might be enough now.
+
+    - The idea of **data portability** means if an organizer using SEL decides to switch to another system, they should be able to take their events data. Our use of common standards and providing export capabilities (CSV, JSON-LD) ensures compliance with that ethos. In an ATproto world, they might migrate their DID from our service to another without losing data – this is abstract for events but the principle stands.
+
+    - We recall that PDS aims to let users own identity and data and move freely[box464.com](https://box464.com/posts/bluesky-pds/#:~:text=Post%20Summary). If SEL at some point allows user accounts (for contributors or organizers), we could integrate DIDs for those users such that their events are linked to a decentralized identity. This is forward-thinking, but shows the architecture is not painting us into a proprietary corner.
+
+- **ActivityPub and Fediverse integration:** Mentioned partly in federation, but to expand:
+
+    - Projects like **Gancio** (open source events platform) support ActivityPub federation of events[gancio.org](https://gancio.org/federation#:~:text=Federation%20%2F%20ActivityPub%20,Supported%20federation%20protocols%20and%20standards). We could ensure our system could federate with those – meaning, a Gancio server could follow our SEL and receive events updates, and vice versa. By using the same standards (ActivityStreams objects for events, possibly using the schema.org vocab), we can talk to those platforms. We may need to implement WebFinger for discovery and OAuth for authenticated federation – these are non-trivial but many libraries exist given Mastodon etc.
+
+    - Another example: A WordPress site with an ActivityPub events plugin could subscribe to SEL’s feed of events and automatically import them. If we publish an ActivityPub actor representing “Toronto SEL Events”, WordPress admins could follow that actor to get updates in their calendar. All of this is enabled by implementing the protocols rather than any core logic change – our internal model is already compatible.
+
+    - We note from Event Federation initiative: _“Event platforms supporting ActivityPub can send their events to other remote event calendars or aggregate Calendars...”_[event-federation.eu](https://event-federation.eu/#:~:text=Federated%20Event%20Calendars) – SEL aims to be one of those platforms. We would implement sending out Create activities for new events and Accepting incoming ones. The modular design means we could add an “ActivityPubAdapter” that listens to event creation events internally and transforms them to outgoing HTTP POSTs, and an incoming handler for ActivityPub inbox requests that creates events in our system (likely flagged as federated ones).
+
+**Modularity for Expansion:**
+
+- Each of these expansions (UI, archive, federation) can be achieved by adding new modules or services without fundamental changes to the core:
+
+    - The public UI is entirely a separate layer using the API.
+
+    - Archive sync could be a periodic job or an external script using the API/DB.
+
+    - Federation adapters (ActivityPub, AD4M, ATproto) can be added as sidecar processes or integrated libraries that react to events (we could have a simple event bus in the app where certain actions trigger hooks).
+
+    - Because our system uses standard formats, integrating with external tools is easier – e.g., exporting data for analysis or for feeding into an AI model (perhaps an LLM that offers event recommendations) is straightforward JSON thanks to schema.org compliance.
+
+**Stable OSS & Protocols for Expansion:**
+
+- We will continue to prefer stable OSS libraries when implementing expansions:
+
+    - For ActivityPub: use something like Go-Fed library (if available) rather than writing from scratch, to handle the protocol details.
+
+    - For AD4M: use their SDKs or APIs documented, which should be easier since they align with linked data (maybe just use a SPARQL update or GraphQL if AD4M provides).
+
+    - For ATproto: if needed, use official client libs or follow their lexicon specs.
+
+    - For UI: use popular frameworks (React/Vue) which can easily consume our API, possibly use existing components for event display or maps.
+
+By planning these expansion hooks now, we ensure the decisions we make today (schema design, ID structures, etc.) won’t hinder those future features. The guiding principle is to **stay aligned with open standards and keep components loosely coupled**, so adding a new integration doesn’t require a major refactor. The SEL backend will evolve from a single-city event collector to a node in a larger **federated network of event data**, and possibly to a user-driven platform, all built on the solid foundation laid out in this architecture.
+
+**Agentic computing readiness:** Add `docs/system_context.md` describing schema, API capabilities, and data contracts for LLM agents, and consider embedding a lightweight **MCP** (Model Context Protocol) server to expose tools like `search_events` and `reconcile_entity` to local/remote LLMs.
+
+### Priority Implementation Checklist
+
+**Phase 1: Foundation**
+- [ ] SQLc for DB access
+- [ ] Implement River job queue for background tasks and use transactional enqueues
+- [ ] Add `event_sources` provenance table
+- [ ] Add `event_changes` outbox table (change capture)
+- [ ] Implement proper JSON-LD output with content negotiation and `@context`
+- [ ] Add idempotency support to POST endpoints
+
+**Phase 2: Artsdata Alignment (MVP)**
+- [ ] Implement reconciliation cache (`reconciliation_cache`) and store confidence
+- [ ] Add structured identifier storage (`entity_identifiers` table)
+- [ ] Build layered deduplication with stored decisions and `duplicate_candidates`
+- [ ] Add Artsdata ID validation and SHACL checks for export
+- [ ] Write integration tests against live or recorded Artsdata endpoints
+- [ ] Add SHACL validation to CI pipeline
+
+**Phase 3: Production Hardening**
+- [ ] Add OpenTelemetry instrumentation and export traces
+- [ ] Implement cursor-based pagination and bulk ingestion job tracking
+- [ ] Add `/healthz` and `/readyz` readiness/liveness endpoints
+- [ ] Add Prometheus metrics and alerting for key signals
+- [ ] Implement rate limiting per agent and more robust RBAC policies
+
+---
+
+In conclusion, the Shared Events Library backend in Go is structured not just to solve the immediate needs of event ingestion and search, but to serve as a future-proof, **interoperable hub** for event data. Its components are open-source-first and modular, making it both developer-friendly and automation-friendly. It can scale from a local deployment to a federated web of deployments, integrating with initiatives like Artsdata, ActivityPub (Fediverse), AD4M, and AT Protocol, thereby ensuring the event data can flow freely and reliably wherever it’s needed – all while remaining easy to deploy and maintain by a small team (or even by intelligent agents) in the long run.
+
+**Sources:**
+
+- Artsdata Data Model – Schema.org alignment and linked open data design[docs.artsdata.ca](null)[docs.artsdata.ca](null)
+
+- Artsdata Reconciliation API – linking venues/organizations via Artsdata IDs[docs.artsdata.ca](null)[docs.artsdata.ca](null)
+
+- Example of adding Artsdata `sameAs` for an event’s location[docs.artsdata.ca](null)[docs.artsdata.ca](null)
+
+- Artsdata validation requirements (minimal data, SHACL)[docs.artsdata.ca](null)
+
+- Provenance tracking example (conflicting event info from two sources)[docs.artsdata.ca](null)
+
+- USearch library – compact, dependency-light vector search (HNSW)[github.com](https://github.com/unum-cloud/USearch#:~:text=significantly%20in%20their%20design%20principles,defined%20metrics%20and%20fewer%20dependencies)
+
+- USearch performance and CPU-only advantage[medium.com](https://medium.com/@adlumal/how-i-built-lightning-fast-vector-search-for-legal-documents-fbc3eaad55ea#:~:text=Enter%20USearch.%20It%E2%80%99s%20a%20lesser,runs%20on%20CPU%2C%20which%20means)
+
+- Reddit discussion recommending Casbin for Go RBAC (or JWT role middleware)[reddit.com](https://www.reddit.com/r/golang/comments/1az5zhg/best_authentication_library_for_access_control/#:~:text=Casbin%20for%20RBAC%20is%20a,you%20will%20probably%20need%20a)
+
+- Event federation via ActivityPub (Fediverse calendars)[event-federation.eu](https://event-federation.eu/#:~:text=Federated%20Event%20Calendars)
+
+- AD4M – open source framework for distributed social data, enabling interoperability and user control[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=AD4M%20%28A%20gent,exchange%20data%20in%20consistent%20ways)[happeningscommunity.substack.com](https://happeningscommunity.substack.com/p/exploring-ad4m-social-sensemaking#:~:text=AD4M%20supports%20the%20aggregation%20of,shared%2C%20enhancing%20privacy%20and%20agency)
+
+- AT Protocol PDS – personal data servers give individuals control/portability of their data and identity[box464.com](https://box464.com/posts/bluesky-pds/#:~:text=Post%20Summary)
+
+![](https://www.google.com/s2/favicons?domain=https://dev.to&sz=32)![](https://www.google.com/s2/favicons?domain=https://www.reddit.com&sz=32)![](https://www.google.com/s2/favicons?domain=https://medium.com&sz=32)![](https://www.google.com/s2/favicons?domain=http://docs.artsdata.ca&sz=32)Sources
+
