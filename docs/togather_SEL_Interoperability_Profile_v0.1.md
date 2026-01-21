@@ -4,7 +4,7 @@
 **Version:** 0.1.0-DRAFT  
 **Date:** 2025-01-20  
 **Conformance Level:** MUST for Federation, SHOULD for Ingestion  
-**Authors:** SEL Architecture Working Group (Gemini 3 Pro, Claude Opus 4.5, OpenAI 5.2)
+**Authors:** SEL Architecture Working Group (Ryan Kelln, Gemini 3 Pro, Claude Opus 4.5, OpenAI ChatGPT 5.2)
 
 ---
 
@@ -51,15 +51,15 @@ https://{node-domain}/{entity-type}/{ulid}
 
 | Component | Description | Example |
 |-----------|-------------|---------|
-| `node-domain` | FQDN of authoritative SEL node | `toronto.sel.events` |
+| `node-domain` | FQDN of authoritative SEL node | `toronto.togather.foundation` |
 | `entity-type` | Plural lowercase entity type | `events`, `places`, `organizations`, `persons` |
 | `ulid` | Universally Unique Lexicographically Sortable Identifier | `01HYX3KQW7ERTV9XNBM2P8QJZF` |
 
 **Examples:**
 ```
-https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF
-https://toronto.sel.events/places/01HYX4ABCD1234567890VENUE
-https://toronto.sel.events/organizations/01HYX5EFGH0987654321ORGAN
+https://toronto.togather.foundation/events/01HYX3KQW7ERTV9XNBM2P8QJZF
+https://toronto.togather.foundation/places/01HYX4ABCD1234567890VENUE
+https://toronto.togather.foundation/organizations/01HYX5EFGH0987654321ORGAN
 ```
 
 **Why ULID?**
@@ -74,7 +74,7 @@ SEL distinguishes three identifier types:
 
 | Field | Purpose | Controlled By | Example |
 |-------|---------|---------------|---------|
-| `@id` | Canonical URI for linked data | SEL node | `https://toronto.sel.events/events/01HYX...` |
+| `@id` | Canonical URI for linked data | SEL node | `https://toronto.togather.foundation/events/01HYX...` |
 | `url` | Public webpage for humans | External (venue/ticketing) | `https://masseyhall.com/events/jazz-night` |
 | `sameAs` | Equivalent entities in external systems | External authorities | `http://kg.artsdata.ca/resource/K12-345` |
 
@@ -90,14 +90,14 @@ The `@id` is YOUR stable semantic identifier. The `url` is where the event is pr
 ```go
 func TestURIMinting(t *testing.T) {
     mtlEvent := IngestEvent{
-        OriginNode: "https://montreal.sel.events",
+        OriginNode: "https://montreal.togather.foundation",
         OriginalID: "01HQ...",
     }
     
     uri := Minters.CanonicalURI(mtlEvent)
     
     // Rule: Preserve original URI
-    if uri != "https://montreal.sel.events/events/01HQ..." {
+    if uri != "https://montreal.togather.foundation/events/01HQ..." {
         t.Errorf("Federated event MUST preserve original URI")
     }
 }
@@ -140,7 +140,7 @@ All SEL URIs MUST support content negotiation:
 **Example:**
 ```bash
 curl -H "Accept: application/ld+json" \
-  https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF
+  https://toronto.togather.foundation/events/01HYX3KQW7ERTV9XNBM2P8QJZF
 ```
 
 ### 1.6 Tombstone URIs (Deleted Entities)
@@ -151,12 +151,12 @@ Deleted entities MUST return **HTTP 410 Gone** with a minimal JSON-LD tombstone:
 {
   "@context": "https://schema.org",
   "@type": "Event",
-  "@id": "https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
+  "@id": "https://toronto.togather.foundation/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
   "eventStatus": "https://schema.org/EventCancelled",
   "sel:tombstone": true,
   "sel:deletedAt": "2025-01-20T15:00:00Z",
   "sel:deletionReason": "duplicate_merged",
-  "sel:supersededBy": "https://toronto.sel.events/events/01HYX4MERGED..."
+  "sel:supersededBy": "https://toronto.togather.foundation/events/01HYX4MERGED..."
 }
 ```
 
@@ -170,7 +170,7 @@ SEL nodes MUST expose profile information at:
 {
   "profile": "https://sel.events/profiles/interop",
   "version": "0.1.0",
-  "node": "https://toronto.sel.events",
+  "node": "https://toronto.togather.foundation",
   "updated": "2025-01-20"
 }
 ```
@@ -183,14 +183,14 @@ SEL nodes MUST expose profile information at:
 
 SEL uses a static, versioned context to ensure stability:
 
-**Context URL:** `https://schema.sel.events/context/v1.jsonld`
+**Context URL:** `https://schema.togather.foundation/context/v1.jsonld`
 
 **Structure:**
 ```json
 {
   "@context": [
     "https://schema.org",
-    "https://toronto.sel.events/contexts/sel/v0.1.jsonld"
+    "https://toronto.togather.foundation/contexts/sel/v0.1.jsonld"
   ]
 }
 ```
@@ -215,14 +215,14 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.sel.events/context/v1.jsonld"
+    "https://schema.togather.foundation/context/v1.jsonld"
   ],
-  "@id": "https://toronto.sel.events/events/01J8...",
+  "@id": "https://toronto.togather.foundation/events/01J8...",
   "@type": "Event",
   "name": "Jazz in the Park",
   "startDate": "2025-07-15T19:00:00-04:00",
   "location": {
-    "@id": "https://toronto.sel.events/places/01J9...",
+    "@id": "https://toronto.togather.foundation/places/01J9...",
     "@type": "Place",
     "name": "Centennial Park"
   }
@@ -235,9 +235,9 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.sel.events/context/v1.jsonld"
+    "https://schema.togather.foundation/context/v1.jsonld"
   ],
-  "@id": "https://toronto.sel.events/events/01J8...",
+  "@id": "https://toronto.togather.foundation/events/01J8...",
   "@type": "Event",
   "name": "Jazz in the Park: Summer Opener",
   "description": "An evening of smooth jazz under the stars...",
@@ -249,7 +249,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
   "doorTime": "2025-07-15T18:00:00-04:00",
   
   "location": {
-    "@id": "https://toronto.sel.events/places/01J9...",
+    "@id": "https://toronto.togather.foundation/places/01J9...",
     "@type": "Place",
     "name": "Centennial Park",
     "address": {
@@ -271,7 +271,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
   },
 
   "organizer": {
-    "@id": "https://toronto.sel.events/organizations/01JA...",
+    "@id": "https://toronto.togather.foundation/organizations/01JA...",
     "@type": "Organization",
     "name": "Toronto Arts Council",
     "sameAs": ["http://kg.artsdata.ca/resource/K10-555"]
@@ -280,7 +280,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
   "performer": [
     {
       "@type": "Person",
-      "@id": "https://toronto.sel.events/persons/01HYX6...",
+      "@id": "https://toronto.togather.foundation/persons/01HYX6...",
       "name": "Sarah Chen Quartet"
     }
   ],
@@ -293,13 +293,13 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
     "availability": "https://schema.org/InStock"
   },
 
-  "image": "https://images.toronto.sel.events/...",
+  "image": "https://images.toronto.togather.foundation/...",
   "url": "https://torontoartscouncil.org/events/jazz-park-2025",
   
   "inLanguage": ["en", "fr"],
   "isAccessibleForFree": true,
   
-  "sel:originNode": "https://toronto.sel.events",
+  "sel:originNode": "https://toronto.togather.foundation",
   "sel:ingestedAt": "2025-07-10T12:00:00Z",
   "sel:confidence": 0.95,
   
@@ -319,16 +319,16 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.sel.events/context/v1.jsonld"
+    "https://schema.togather.foundation/context/v1.jsonld"
   ],
   "@type": "EventSeries",
-  "@id": "https://toronto.sel.events/events/01HYX7SERIES...",
+  "@id": "https://toronto.togather.foundation/events/01HYX7SERIES...",
   
   "name": "Friday Night Jazz",
   "description": "Weekly jazz performances at the Rex Hotel",
   
   "location": {
-    "@id": "https://toronto.sel.events/places/01HYX8REXHOTEL..."
+    "@id": "https://toronto.togather.foundation/places/01HYX8REXHOTEL..."
   },
   
   "startDate": "2025-01-03T20:00:00-05:00",
@@ -346,9 +346,9 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
   "subEvent": [
     {
       "@type": "Event",
-      "@id": "https://toronto.sel.events/events/01HYX7SERIES...001",
+      "@id": "https://toronto.togather.foundation/events/01HYX7SERIES...001",
       "startDate": "2025-01-03T20:00:00-05:00",
-      "superEvent": "https://toronto.sel.events/events/01HYX7SERIES..."
+      "superEvent": "https://toronto.togather.foundation/events/01HYX7SERIES..."
     }
   ]
 }
@@ -360,9 +360,9 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.sel.events/context/v1.jsonld"
+    "https://schema.togather.foundation/context/v1.jsonld"
   ],
-  "@id": "https://toronto.sel.events/places/01HYX4...",
+  "@id": "https://toronto.togather.foundation/places/01HYX4...",
   "@type": "Place",
   
   "name": "Massey Hall",
@@ -392,7 +392,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
     "http://www.wikidata.org/entity/Q3297877"
   ],
   
-  "sel:originNode": "https://toronto.sel.events",
+  "sel:originNode": "https://toronto.togather.foundation",
   "sel:confidence": 0.98
 }
 ```
@@ -403,9 +403,9 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.sel.events/context/v1.jsonld"
+    "https://schema.togather.foundation/context/v1.jsonld"
   ],
-  "@id": "https://toronto.sel.events/organizations/01HYX5...",
+  "@id": "https://toronto.togather.foundation/organizations/01HYX5...",
   "@type": "Organization",
   
   "name": "Toronto Symphony Orchestra",
@@ -470,7 +470,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix schema: <https://schema.org/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix sel: <https://schema.sel.events/ns#> .
+@prefix sel: <https://schema.togather.foundation/ns#> .
 
 sel:EventShape
     a sh:NodeShape ;
@@ -651,20 +651,20 @@ Returns ordered list of change envelopes:
   "changes": [
     {
       "action": "create",
-      "uri": "https://toronto.sel.events/events/01HYX3...",
+      "uri": "https://toronto.togather.foundation/events/01HYX3...",
       "changed_at": "2025-07-10T12:00:00Z",
       "snapshot": { "@id": "...", "@type": "Event", ... }
     },
     {
       "action": "update",
-      "uri": "https://toronto.sel.events/events/01HYX4...",
+      "uri": "https://toronto.togather.foundation/events/01HYX4...",
       "changed_at": "2025-07-10T12:05:00Z",
       "changed_fields": ["/name", "/startDate"],
       "snapshot": { ... }
     },
     {
       "action": "delete",
-      "uri": "https://toronto.sel.events/events/01HYX5...",
+      "uri": "https://toronto.togather.foundation/events/01HYX5...",
       "changed_at": "2025-07-10T12:10:00Z",
       "tombstone": { "@id": "...", "sel:deletedAt": "..." }
     }
@@ -831,7 +831,7 @@ While CC0 doesn't legally require attribution, SEL requests downstream users cre
 Example:
 ```json
 "sel:provenance": {
-  "sel:source": "https://toronto.sel.events/sources/ticketing-scraper",
+  "sel:source": "https://toronto.togather.foundation/sources/ticketing-scraper",
   "sel:retrievedAt": "2026-07-10T10:00:00Z",
   "sel:sourceName": "Ticketmaster API",
   "sel:license": "https://creativecommons.org/publicdomain/zero/1.0/"
@@ -844,7 +844,6 @@ Example:
 
 ### 8.1 Repository Structure
 
-```
-/docs/interop/SEL-Interop-Profile-v0.1.0.md
+[/docs/togather_SEL_Interoperability_Profile_v0.1.md](./togather_SEL_Interoperability_Profile_v0.1.md)
 /contexts/sel/v0.1.jsonld
 /frames/event-v0.1.frame.json

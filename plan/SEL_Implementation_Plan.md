@@ -35,7 +35,7 @@ This document provides the prioritized implementation checklist for the Shared E
 
 ### 0.2 JSON-LD Context and Framing
 - [ ] **Create versioned JSON-LD context**
-  - Host at `https://schema.sel.events/context/v1.jsonld`
+  - Host at `https://schema.togather.foundation/context/v1.jsonld`
   - Define `sel:` namespace extensions
   - Document context evolution policy
 - [ ] **Define canonical JSON-LD frames**

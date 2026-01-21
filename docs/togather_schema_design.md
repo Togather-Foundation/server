@@ -1,0 +1,1497 @@
+# SEL Comprehensive Schema Design
+
+**Version:** 0.1.0-DRAFT
+**Date:** 2026-01-21  
+**Status:** Living Document  
+**Related Documents:**
+- [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md)
+- [SEL Architecture Design v1](./togather_SEL_server_architecture_design_v1.md)
+- [Critical Gaps Analysis](../research/SEL_Architecture_Critical_Gaps_Analysis_Comprehensive.md)
+
+---
+
+## Executive Summary
+
+This document provides the **comprehensive database schema design** for the Shared Events Library (SEL), addressing critical gaps identified in the architecture review and ensuring full compliance with the [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md).
+
+The schema implements a **three-layer hybrid architecture**:
+
+1. **Document Truth Layer (JSONB):** Original payloads preserved with full provenance
+2. **Relational Core Layer (Postgres):** Fast queries, time-range filtering, geospatial operations
+3. **Semantic Export Layer (JSON-LD):** Generated on-demand, cached, serves federation and Artsdata
+
+**Key Design Principles:**
+- **Schema.org aligned** with explicit semantic mappings
+- **Federated by design** with origin tracking and URI preservation
+- **Provenance as first-class** with field-level attribution
+- **Temporal correctness** with timezone handling and lifecycle states
+- **Bitemporal tracking** for audit and rollback capabilities
+- **License clarity** with per-source validation
+
+---
+
+## Table of Contents
+
+1. [Core Entity Tables](#1-core-entity-tables)
+2. [Temporal and Lifecycle Management](#2-temporal-and-lifecycle-management)
+3. [Provenance and Source Tracking](#3-provenance-and-source-tracking)
+4. [Federation Infrastructure](#4-federation-infrastructure)
+5. [Reconciliation and External Identifiers](#5-reconciliation-and-external-identifiers)
+6. [Search and Discovery](#6-search-and-discovery)
+7. [Access Control and Authentication](#7-access-control-and-authentication)
+8. [Operational Tables](#8-operational-tables)
+9. [Schema.org Mappings](#9-schemaorg-mappings)
+10. [Migration Strategy](#10-migration-strategy)
+
+---
+
+## 1. Core Entity Tables
+
+### 1.1 Events Table
+
+The primary entity representing a cultural event. Stores canonical identity while delegating temporal instances to `event_occurrences`.
+
+```sql
+CREATE TABLE events (
+  -- Identity (URI components)
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ulid TEXT NOT NULL UNIQUE GENERATED ALWAYS AS (
+    encode(uuid_send(id), 'base32')
+  ) STORED,
+  
+  -- Core schema.org properties
+  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 500),
+  description TEXT CHECK (length(description) <= 10000),
+  
+  -- Lifecycle management
+  lifecycle_state TEXT NOT NULL DEFAULT 'draft' CHECK (
+    lifecycle_state IN (
+      'draft',        -- Not yet published
+      'published',    -- Publicly visible
+      'postponed',    -- Postponed without new date
+      'rescheduled',  -- Rescheduled with new time
+      'sold_out',     -- Still happening, no tickets
+      'cancelled',    -- Not happening
+      'completed',    -- Past event, archived
+      'deleted'       -- Removed (spam/duplicate)
+    )
+  ),
+  event_status TEXT DEFAULT 'https://schema.org/EventScheduled' CHECK (
+    event_status IN (
+      'https://schema.org/EventScheduled',
+      'https://schema.org/EventCancelled',
+      'https://schema.org/EventPostponed',
+      'https://schema.org/EventRescheduled',
+      'https://schema.org/EventMovedOnline'
+    )
+  ),
+  attendance_mode TEXT DEFAULT 'https://schema.org/OfflineEventAttendanceMode' CHECK (
+    attendance_mode IN (
+      'https://schema.org/OfflineEventAttendanceMode',
+      'https://schema.org/OnlineEventAttendanceMode',
+      'https://schema.org/MixedEventAttendanceMode'
+    )
+  ),
+  
+  -- Relationships (normalized entities)
+  organizer_id UUID REFERENCES organizations(id),
+  primary_venue_id UUID REFERENCES places(id),
+  series_id UUID REFERENCES event_series(id),
+  
+  -- Rich content
+  image_url TEXT,
+  public_url TEXT, -- Human-facing page (schema:url)
+  
+  -- Accessibility and classification
+  keywords TEXT[],
+  in_language TEXT[] DEFAULT ARRAY['en'],
+  default_language TEXT DEFAULT 'en',
+  is_accessible_for_free BOOLEAN DEFAULT NULL,
+  accessibility_features TEXT[],
+  
+  -- Federation and origin tracking
+  origin_node_id UUID REFERENCES federation_nodes(id),
+  federation_uri TEXT, -- Original URI if federated
+  
+  -- Deduplication
+  dedup_hash TEXT GENERATED ALWAYS AS (
+    md5(
+      lower(trim(name)) || 
+      COALESCE(primary_venue_id::text, 'null') ||
+      COALESCE(series_id::text, 'single')
+    )
+  ) STORED,
+  
+  -- License and provenance metadata
+  license_url TEXT NOT NULL DEFAULT 'https://creativecommons.org/publicdomain/zero/1.0/',
+  
+  -- Quality indicators
+  confidence DECIMAL(3, 2) CHECK (confidence BETWEEN 0 AND 1),
+  quality_score INTEGER CHECK (quality_score BETWEEN 0 AND 100),
+  
+  -- Versioning and timestamps
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
+  
+  -- Soft delete tracking
+  merged_into_id UUID REFERENCES events(id),
+  deletion_reason TEXT
+);
+
+-- Indexes
+CREATE INDEX idx_events_lifecycle ON events (lifecycle_state, updated_at);
+CREATE INDEX idx_events_dedup ON events (dedup_hash) WHERE lifecycle_state NOT IN ('deleted');
+CREATE INDEX idx_events_organizer ON events (organizer_id);
+CREATE INDEX idx_events_venue ON events (primary_venue_id);
+CREATE INDEX idx_events_series ON events (series_id);
+CREATE INDEX idx_events_origin ON events (origin_node_id, updated_at);
+CREATE INDEX idx_events_federated ON events (federation_uri) WHERE federation_uri IS NOT NULL;
+CREATE INDEX idx_events_published ON events (published_at) WHERE published_at IS NOT NULL;
+CREATE INDEX idx_events_search_vector ON events USING GIN (
+  to_tsvector('english', 
+    COALESCE(name, '') || ' ' || 
+    COALESCE(description, '')
+  )
+);
+
+-- Name similarity for fuzzy matching
+CREATE INDEX idx_events_name_trgm ON events USING GIN (name gin_trgm_ops);
+```
+
+**Schema.org Mapping:**
+- `@type`: `Event`, `EventSeries`, or `Festival`
+- `name` → `schema:name`
+- `description` → `schema:description`
+- `event_status` → `schema:eventStatus`
+- `attendance_mode` → `schema:eventAttendanceMode`
+- `organizer_id` → `schema:organizer` (resolved to entity)
+- `primary_venue_id` → `schema:location` (resolved to Place)
+- `image_url` → `schema:image`
+- `public_url` → `schema:url`
+- `keywords` → `schema:keywords`
+- `in_language` → `schema:inLanguage`
+- `is_accessible_for_free` → `schema:isAccessibleForFree`
+
+### 1.2 Event Occurrences Table
+
+Temporal instances of events, handling reschedules, postponements, and recurring events.
+
+```sql
+CREATE TABLE event_occurrences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  
+  -- Temporal data with timezone preservation
+  start_time TIMESTAMPTZ NOT NULL,
+  end_time TIMESTAMPTZ,
+  timezone TEXT NOT NULL DEFAULT 'America/Toronto',
+  door_time TIMESTAMPTZ,
+  
+  -- Computed local time for calendar queries
+  local_date DATE GENERATED ALWAYS AS (
+    (start_time AT TIME ZONE timezone)::date
+  ) STORED,
+  local_start_time TIME GENERATED ALWAYS AS (
+    (start_time AT TIME ZONE timezone)::time
+  ) STORED,
+  local_day_of_week INTEGER GENERATED ALWAYS AS (
+    EXTRACT(ISODOW FROM (start_time AT TIME ZONE timezone))
+  ) STORED,
+  
+  -- Occurrence-specific overrides
+  venue_id UUID REFERENCES places(id),
+  status_override TEXT,
+  cancellation_reason TEXT,
+  
+  -- Series tracking
+  occurrence_index INTEGER, -- Position in series
+  
+  -- Tickets and offers
+  ticket_url TEXT,
+  price_min DECIMAL(10, 2),
+  price_max DECIMAL(10, 2),
+  price_currency TEXT DEFAULT 'CAD',
+  availability TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  CONSTRAINT valid_end_time CHECK (end_time IS NULL OR end_time >= start_time),
+  CONSTRAINT valid_price_range CHECK (
+    (price_min IS NULL AND price_max IS NULL) OR
+    (price_min IS NOT NULL AND price_max >= price_min)
+  )
+);
+
+-- Indexes
+CREATE INDEX idx_occurrences_event ON event_occurrences (event_id, start_time);
+CREATE INDEX idx_occurrences_time_range ON event_occurrences (start_time, end_time);
+CREATE INDEX idx_occurrences_venue ON event_occurrences (venue_id, start_time);
+CREATE INDEX idx_occurrences_local_date ON event_occurrences (local_date, local_start_time);
+CREATE INDEX idx_occurrences_day_of_week ON event_occurrences (local_day_of_week, local_start_time);
+
+-- Efficient "events on Friday evening" queries
+CREATE INDEX idx_occurrences_calendar ON event_occurrences (
+  local_day_of_week, 
+  local_start_time, 
+  venue_id
+) WHERE local_start_time >= '17:00' AND local_start_time <= '23:00';
+```
+
+**Schema.org Mapping:**
+- `start_time` → `schema:startDate`
+- `end_time` → `schema:endDate`
+- `door_time` → `schema:doorTime`
+- `venue_id` → `schema:location` (overrides event default)
+- Price fields → `schema:offers` with `schema:Offer` type
+
+### 1.3 Event Series Table
+
+Represents recurring events with schedule patterns.
+
+```sql
+CREATE TABLE event_series (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Core properties
+  name TEXT NOT NULL,
+  description TEXT,
+  
+  -- Schedule pattern (RFC 5545-inspired)
+  series_start_date DATE NOT NULL,
+  series_end_date DATE,
+  repeat_frequency TEXT, -- e.g., 'P1W' (weekly), 'P1M' (monthly)
+  repeat_on_days TEXT[], -- ['MONDAY', 'WEDNESDAY']
+  repeat_on_dates INTEGER[], -- [1, 15] (1st and 15th of month)
+  schedule_timezone TEXT NOT NULL DEFAULT 'America/Toronto',
+  
+  -- Default properties for instances
+  default_venue_id UUID REFERENCES places(id),
+  default_start_time TIME,
+  default_end_time TIME,
+  
+  -- Metadata
+  organizer_id UUID REFERENCES organizations(id),
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_series_organizer ON event_series (organizer_id);
+CREATE INDEX idx_series_venue ON event_series (default_venue_id);
+CREATE INDEX idx_series_date_range ON event_series (series_start_date, series_end_date);
+```
+
+**Schema.org Mapping:**
+- `@type`: `EventSeries`
+- Schedule fields → `schema:eventSchedule` with `schema:Schedule` type
+- Individual occurrences → `schema:subEvent`
+
+### 1.4 Places Table
+
+Venues and locations with structured addresses and geospatial support.
+
+```sql
+CREATE TABLE places (
+  -- Identity
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ulid TEXT NOT NULL UNIQUE GENERATED ALWAYS AS (
+    encode(uuid_send(id), 'base32')
+  ) STORED,
+  
+  -- Core properties
+  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 300),
+  description TEXT,
+  
+  -- Structured address
+  street_address TEXT,
+  address_locality TEXT, -- City
+  address_region TEXT,   -- Province/State
+  postal_code TEXT,
+  address_country TEXT DEFAULT 'CA',
+  
+  -- Full address for geocoding/display
+  full_address TEXT GENERATED ALWAYS AS (
+    COALESCE(street_address || ', ', '') ||
+    COALESCE(address_locality || ', ', '') ||
+    COALESCE(address_region || ' ', '') ||
+    COALESCE(postal_code || ', ', '') ||
+    COALESCE(address_country, '')
+  ) STORED,
+  
+  -- Geospatial
+  latitude NUMERIC(10, 7),
+  longitude NUMERIC(11, 7),
+  geo_point GEOMETRY(Point, 4326) GENERATED ALWAYS AS (
+    CASE 
+      WHEN latitude IS NOT NULL AND longitude IS NOT NULL
+      THEN ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+      ELSE NULL
+    END
+  ) STORED,
+  
+  -- Contact and metadata
+  telephone TEXT,
+  email TEXT,
+  url TEXT,
+  
+  -- Venue characteristics
+  maximum_attendee_capacity INTEGER,
+  venue_type TEXT,
+  
+  -- Accessibility
+  accessibility_features TEXT[],
+  
+  -- Federation
+  origin_node_id UUID REFERENCES federation_nodes(id),
+  
+  -- Quality
+  confidence DECIMAL(3, 2) CHECK (confidence BETWEEN 0 AND 1),
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_places_locality ON places (address_locality);
+CREATE INDEX idx_places_region ON places (address_region);
+CREATE INDEX idx_places_geo ON places USING GIST (geo_point);
+CREATE INDEX idx_places_name_trgm ON places USING GIN (name gin_trgm_ops);
+CREATE INDEX idx_places_search ON places USING GIN (
+  to_tsvector('english', 
+    COALESCE(name, '') || ' ' || 
+    COALESCE(full_address, '')
+  )
+);
+```
+
+**Schema.org Mapping:**
+- `@type`: `Place`
+- `name` → `schema:name`
+- Address fields → `schema:address` with `schema:PostalAddress` type
+- `latitude`, `longitude` → `schema:geo` with `schema:GeoCoordinates` type
+- `telephone` → `schema:telephone`
+- `url` → `schema:url`
+- `maximum_attendee_capacity` → `schema:maximumAttendeeCapacity`
+
+### 1.5 Organizations Table
+
+Event organizers, producers, and cultural organizations.
+
+```sql
+CREATE TABLE organizations (
+  -- Identity
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ulid TEXT NOT NULL UNIQUE GENERATED ALWAYS AS (
+    encode(uuid_send(id), 'base32')
+  ) STORED,
+  
+  -- Core properties
+  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 300),
+  alternate_name TEXT,
+  description TEXT,
+  
+  -- Contact
+  email TEXT,
+  telephone TEXT,
+  url TEXT,
+  
+  -- Address
+  street_address TEXT,
+  address_locality TEXT,
+  address_region TEXT,
+  postal_code TEXT,
+  address_country TEXT DEFAULT 'CA',
+  
+  -- Type
+  organization_type TEXT, -- e.g., 'arts_organization', 'venue', 'producer'
+  
+  -- Federation
+  origin_node_id UUID REFERENCES federation_nodes(id),
+  
+  -- Quality
+  confidence DECIMAL(3, 2) CHECK (confidence BETWEEN 0 AND 1),
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_organizations_name ON organizations (name);
+CREATE INDEX idx_organizations_name_trgm ON organizations USING GIN (name gin_trgm_ops);
+CREATE INDEX idx_organizations_locality ON organizations (address_locality);
+```
+
+**Schema.org Mapping:**
+- `@type`: `Organization`
+- `name` → `schema:name`
+- `alternate_name` → `schema:alternateName`
+- `description` → `schema:description`
+- Address fields → `schema:address`
+- `email` → `schema:email`
+- `telephone` → `schema:telephone`
+- `url` → `schema:url`
+
+### 1.6 Persons Table
+
+Performers, artists, speakers, and cultural workers.
+
+```sql
+CREATE TABLE persons (
+  -- Identity
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ulid TEXT NOT NULL UNIQUE GENERATED ALWAYS AS (
+    encode(uuid_send(id), 'base32')
+  ) STORED,
+  
+  -- Core properties
+  name TEXT NOT NULL,
+  alternate_names TEXT[],
+  description TEXT,
+  
+  -- Metadata
+  birth_date DATE,
+  email TEXT,
+  url TEXT,
+  
+  -- Federation
+  origin_node_id UUID REFERENCES federation_nodes(id),
+  
+  -- Quality
+  confidence DECIMAL(3, 2) CHECK (confidence BETWEEN 0 AND 1),
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_persons_name ON persons (name);
+CREATE INDEX idx_persons_name_trgm ON persons USING GIN (name gin_trgm_ops);
+```
+
+**Schema.org Mapping:**
+- `@type`: `Person`
+- `name` → `schema:name`
+- `alternate_names` → `schema:alternateName`
+- `description` → `schema:description`
+- `birth_date` → `schema:birthDate`
+
+### 1.7 Event Performers Junction Table
+
+Many-to-many relationship between events and performers.
+
+```sql
+CREATE TABLE event_performers (
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  person_id UUID NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+  role TEXT, -- e.g., 'headliner', 'opening_act', 'speaker'
+  display_order INTEGER,
+  
+  PRIMARY KEY (event_id, person_id),
+  
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_event_performers_person ON event_performers (person_id);
+```
+
+**Schema.org Mapping:**
+- `person_id` → `schema:performer` (resolved to Person entity)
+
+---
+
+## 2. Temporal and Lifecycle Management
+
+### 2.1 Event History Table
+
+Bitemporal tracking for audit trails and rollback capabilities.
+
+```sql
+CREATE TABLE event_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  
+  -- Snapshot of event state
+  snapshot JSONB NOT NULL,
+  
+  -- Change metadata
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  changed_fields JSONB, -- Array of field paths that changed
+  change_type TEXT NOT NULL CHECK (
+    change_type IN ('create', 'update', 'delete', 'merge', 'restore')
+  ),
+  
+  -- Provenance
+  changed_by_source_id UUID REFERENCES sources(id),
+  changed_by_user_id UUID REFERENCES users(id),
+  change_reason TEXT,
+  
+  -- Approval tracking
+  requires_approval BOOLEAN DEFAULT false,
+  approved_at TIMESTAMPTZ,
+  approved_by_user_id UUID REFERENCES users(id)
+);
+
+CREATE INDEX idx_event_history_event ON event_history (event_id, changed_at DESC);
+CREATE INDEX idx_event_history_changed_at ON event_history (changed_at DESC);
+CREATE INDEX idx_event_history_pending_approval ON event_history (requires_approval, changed_at) 
+  WHERE requires_approval = true AND approved_at IS NULL;
+```
+
+### 2.2 Change Tracking Trigger
+
+```sql
+CREATE OR REPLACE FUNCTION track_event_changes()
+RETURNS TRIGGER AS $$
+DECLARE
+  changed_fields_json JSONB := '[]'::jsonb;
+  old_values_json JSONB := '{}'::jsonb;
+  new_values_json JSONB := '{}'::jsonb;
+BEGIN
+  -- Only track if this is an UPDATE
+  IF TG_OP = 'UPDATE' THEN
+    -- Compare each significant field
+    IF OLD.name IS DISTINCT FROM NEW.name THEN
+      changed_fields_json := changed_fields_json || '"/name"'::jsonb;
+      old_values_json := old_values_json || jsonb_build_object('name', OLD.name);
+      new_values_json := new_values_json || jsonb_build_object('name', NEW.name);
+    END IF;
+    
+    IF OLD.description IS DISTINCT FROM NEW.description THEN
+      changed_fields_json := changed_fields_json || '"/description"'::jsonb;
+      old_values_json := old_values_json || jsonb_build_object('description', OLD.description);
+      new_values_json := new_values_json || jsonb_build_object('description', NEW.description);
+    END IF;
+    
+    IF OLD.lifecycle_state IS DISTINCT FROM NEW.lifecycle_state THEN
+      changed_fields_json := changed_fields_json || '"/lifecycle_state"'::jsonb;
+      old_values_json := old_values_json || jsonb_build_object('lifecycle_state', OLD.lifecycle_state);
+      new_values_json := new_values_json || jsonb_build_object('lifecycle_state', NEW.lifecycle_state);
+    END IF;
+    
+    -- Add more field comparisons as needed
+    
+    -- Only insert history if something changed
+    IF changed_fields_json != '[]'::jsonb THEN
+      INSERT INTO event_history (
+        event_id,
+        snapshot,
+        changed_at,
+        changed_fields,
+        change_type
+      ) VALUES (
+        NEW.id,
+        to_jsonb(NEW),
+        now(),
+        changed_fields_json,
+        TG_OP::text
+      );
+    END IF;
+  ELSIF TG_OP = 'INSERT' THEN
+    INSERT INTO event_history (
+      event_id,
+      snapshot,
+      change_type
+    ) VALUES (
+      NEW.id,
+      to_jsonb(NEW),
+      'create'
+    );
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER event_change_tracker
+  AFTER INSERT OR UPDATE ON events
+  FOR EACH ROW
+  EXECUTE FUNCTION track_event_changes();
+```
+
+### 2.3 Event Aliases (Redirect Table)
+
+Preserves URI stability when events are merged.
+
+```sql
+CREATE TABLE event_aliases (
+  old_id UUID PRIMARY KEY,
+  canonical_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  aliased_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reason TEXT
+);
+
+CREATE INDEX idx_event_aliases_canonical ON event_aliases (canonical_id);
+```
+
+---
+
+## 3. Provenance and Source Tracking
+
+### 3.1 Sources Registry
+
+Tracks all data sources with trust levels and license information.
+
+```sql
+CREATE TABLE sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Identification
+  name TEXT NOT NULL UNIQUE,
+  source_type TEXT NOT NULL CHECK (
+    source_type IN ('scraper', 'api', 'partner', 'user', 'federation', 'manual')
+  ),
+  
+  -- Connection details
+  base_url TEXT,
+  api_endpoint TEXT,
+  
+  -- Trust and quality
+  trust_level INTEGER NOT NULL DEFAULT 5 CHECK (trust_level BETWEEN 1 AND 10),
+  
+  -- License
+  license_url TEXT NOT NULL,
+  license_type TEXT NOT NULL CHECK (
+    license_type IN ('CC0', 'CC-BY', 'CC-BY-SA', 'proprietary', 'unknown')
+  ),
+  
+  -- Access control
+  requires_authentication BOOLEAN DEFAULT false,
+  api_key_encrypted BYTEA,
+  
+  -- Rate limiting
+  rate_limit_requests INTEGER,
+  rate_limit_window_seconds INTEGER,
+  
+  -- Contact
+  contact_email TEXT,
+  contact_url TEXT,
+  
+  -- Status
+  is_active BOOLEAN DEFAULT true,
+  last_successful_fetch TIMESTAMPTZ,
+  last_error TIMESTAMPTZ,
+  last_error_message TEXT,
+  
+  -- Configuration
+  config JSONB,
+  
+  -- Notes
+  notes TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_sources_active ON sources (is_active, trust_level DESC);
+CREATE INDEX idx_sources_type ON sources (source_type);
+```
+
+### 3.2 Event Sources (Row-Level Provenance)
+
+Tracks which sources contributed to each event.
+
+```sql
+CREATE TABLE event_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  source_id UUID NOT NULL REFERENCES sources(id),
+  
+  -- Source reference
+  source_url TEXT NOT NULL,
+  source_event_id TEXT, -- External system's ID
+  
+  -- Retrieval metadata
+  retrieved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  -- Document preservation
+  payload JSONB NOT NULL, -- Original raw data
+  payload_hash TEXT NOT NULL,
+  
+  -- Quality
+  confidence DECIMAL(3, 2) CHECK (confidence BETWEEN 0 AND 1),
+  
+  UNIQUE (event_id, source_id, source_url)
+);
+
+CREATE INDEX idx_event_sources_event ON event_sources (event_id);
+CREATE INDEX idx_event_sources_source ON event_sources (source_id, retrieved_at DESC);
+CREATE INDEX idx_event_sources_hash ON event_sources (payload_hash);
+CREATE INDEX idx_event_sources_external_id ON event_sources (source_id, source_event_id);
+```
+
+### 3.3 Field Provenance (Field-Level Attribution)
+
+Tracks which source provided each critical field value.
+
+```sql
+CREATE TABLE field_provenance (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Entity reference
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  field_path TEXT NOT NULL, -- JSON Pointer: /name, /startDate, /location/address
+  
+  -- Value tracking
+  value_hash TEXT NOT NULL,
+  value_preview TEXT, -- First 100 chars for human review
+  
+  -- Provenance
+  source_id UUID NOT NULL REFERENCES sources(id),
+  confidence DECIMAL(3, 2) NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+  
+  -- Temporal tracking
+  observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  applied_to_canonical BOOLEAN NOT NULL DEFAULT true,
+  superseded_at TIMESTAMPTZ,
+  superseded_by_id UUID REFERENCES field_provenance(id),
+  
+  UNIQUE (event_id, field_path, source_id, observed_at)
+);
+
+CREATE INDEX idx_field_provenance_event ON field_provenance (event_id, field_path);
+CREATE INDEX idx_field_provenance_active ON field_provenance (event_id, field_path) 
+  WHERE applied_to_canonical = true AND superseded_at IS NULL;
+CREATE INDEX idx_field_provenance_source ON field_provenance (source_id, observed_at DESC);
+```
+
+### 3.4 Field Conflicts View
+
+Identifies fields with multiple conflicting values.
+
+```sql
+CREATE VIEW field_conflicts AS
+SELECT 
+  fp.event_id,
+  fp.field_path,
+  COUNT(DISTINCT fp.value_hash) as value_count,
+  array_agg(
+    jsonb_build_object(
+      'source', s.name,
+      'trust_level', s.trust_level,
+      'confidence', fp.confidence,
+      'value_preview', fp.value_preview,
+      'observed_at', fp.observed_at
+    ) ORDER BY s.trust_level DESC, fp.confidence DESC
+  ) as conflicting_values
+FROM field_provenance fp
+JOIN sources s ON fp.source_id = s.id
+WHERE fp.applied_to_canonical = true 
+  AND fp.superseded_at IS NULL
+GROUP BY fp.event_id, fp.field_path
+HAVING COUNT(DISTINCT fp.value_hash) > 1;
+```
+
+---
+
+## 4. Federation Infrastructure
+
+### 4.1 Federation Nodes Registry
+
+Tracks peer SEL nodes in the federation network.
+
+```sql
+CREATE TABLE federation_nodes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Node identity
+  node_domain TEXT NOT NULL UNIQUE, -- e.g., 'toronto.togather.foundation'
+  node_name TEXT NOT NULL,
+  
+  -- Network details
+  base_url TEXT NOT NULL,
+  api_version TEXT NOT NULL DEFAULT 'v1',
+  
+  -- Geographic scope
+  geographic_scope TEXT, -- e.g., 'Toronto, Ontario, Canada'
+  service_area_geojson JSONB, -- Optional boundary polygon
+  
+  -- Trust and federation
+  trust_level INTEGER NOT NULL DEFAULT 5 CHECK (trust_level BETWEEN 1 AND 10),
+  federation_status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    federation_status IN ('pending', 'active', 'paused', 'blocked')
+  ),
+  
+  -- Synchronization
+  sync_enabled BOOLEAN DEFAULT true,
+  sync_direction TEXT DEFAULT 'bidirectional' CHECK (
+    sync_direction IN ('bidirectional', 'pull_only', 'push_only', 'disabled')
+  ),
+  last_sync_at TIMESTAMPTZ,
+  last_successful_sync_at TIMESTAMPTZ,
+  sync_cursor TEXT, -- Opaque cursor for incremental sync
+  
+  -- Authentication
+  requires_authentication BOOLEAN DEFAULT true,
+  api_key_encrypted BYTEA,
+  
+  -- Contact
+  contact_email TEXT,
+  contact_name TEXT,
+  
+  -- Configuration
+  config JSONB,
+  
+  -- Monitoring
+  is_online BOOLEAN DEFAULT true,
+  last_health_check_at TIMESTAMPTZ,
+  last_error_at TIMESTAMPTZ,
+  last_error_message TEXT,
+  
+  -- Notes
+  notes TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_federation_nodes_status ON federation_nodes (federation_status, is_online);
+CREATE INDEX idx_federation_nodes_sync ON federation_nodes (sync_enabled, last_sync_at);
+```
+
+### 4.2 Federation Sync Log
+
+Tracks synchronization activity between nodes.
+
+```sql
+CREATE TABLE federation_sync_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Node reference
+  remote_node_id UUID NOT NULL REFERENCES federation_nodes(id),
+  
+  -- Sync operation
+  sync_type TEXT NOT NULL CHECK (sync_type IN ('push', 'pull', 'full')),
+  sync_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sync_completed_at TIMESTAMPTZ,
+  
+  -- Cursors
+  start_cursor TEXT,
+  end_cursor TEXT,
+  
+  -- Results
+  status TEXT NOT NULL DEFAULT 'running' CHECK (
+    status IN ('running', 'completed', 'failed', 'partial')
+  ),
+  events_processed INTEGER DEFAULT 0,
+  events_created INTEGER DEFAULT 0,
+  events_updated INTEGER DEFAULT 0,
+  events_skipped INTEGER DEFAULT 0,
+  events_errored INTEGER DEFAULT 0,
+  
+  -- Error tracking
+  error_message TEXT,
+  error_details JSONB,
+  
+  -- Audit
+  initiated_by_user_id UUID REFERENCES users(id),
+  
+  -- Details
+  details JSONB
+);
+
+CREATE INDEX idx_federation_sync_node ON federation_sync_log (remote_node_id, sync_started_at DESC);
+CREATE INDEX idx_federation_sync_status ON federation_sync_log (status, sync_started_at DESC);
+```
+
+### 4.3 Event Changes Outbox
+
+Captures all create/update/delete actions for change feed generation.
+
+```sql
+CREATE TABLE event_changes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Event reference
+  event_id UUID NOT NULL, -- Don't use FK to preserve deleted event references
+  
+  -- Change details
+  action TEXT NOT NULL CHECK (action IN ('create', 'update', 'delete')),
+  changed_fields JSONB, -- Array of JSON Pointers
+  
+  -- Snapshot
+  snapshot JSONB, -- Full event state after change (or tombstone)
+  
+  -- Metadata
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sequence_number BIGSERIAL UNIQUE, -- Monotonic ordering
+  
+  -- Provenance
+  source_id UUID REFERENCES sources(id),
+  user_id UUID REFERENCES users(id)
+);
+
+CREATE INDEX idx_event_changes_event ON event_changes (event_id, changed_at DESC);
+CREATE INDEX idx_event_changes_sequence ON event_changes (sequence_number);
+CREATE INDEX idx_event_changes_action ON event_changes (action, changed_at DESC);
+```
+
+---
+
+## 5. Reconciliation and External Identifiers
+
+### 5.1 Entity Identifiers Table
+
+Normalizes external IDs (sameAs semantics) into a unified table.
+
+```sql
+CREATE TABLE entity_identifiers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Entity reference (polymorphic)
+  entity_type TEXT NOT NULL CHECK (
+    entity_type IN ('event', 'place', 'organization', 'person')
+  ),
+  entity_id UUID NOT NULL,
+  
+  -- External identifier
+  scheme TEXT NOT NULL, -- 'artsdata', 'wikidata', 'isni', 'musicbrainz'
+  identifier_uri TEXT NOT NULL,
+  
+  -- Reconciliation metadata
+  confidence DECIMAL(3, 2) CHECK (confidence BETWEEN 0 AND 1),
+  reconciliation_method TEXT CHECK (
+    reconciliation_method IN ('auto_high', 'auto_low', 'manual', 'provided')
+  ),
+  reconciled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reconciled_by_source_id UUID REFERENCES sources(id),
+  reconciled_by_user_id UUID REFERENCES users(id),
+  
+  -- Status
+  is_canonical BOOLEAN DEFAULT true,
+  verified BOOLEAN DEFAULT false,
+  verified_at TIMESTAMPTZ,
+  verified_by_user_id UUID REFERENCES users(id),
+  
+  UNIQUE (entity_type, entity_id, scheme, identifier_uri)
+);
+
+CREATE INDEX idx_entity_identifiers_entity ON entity_identifiers (entity_type, entity_id);
+CREATE INDEX idx_entity_identifiers_scheme ON entity_identifiers (scheme, identifier_uri);
+CREATE INDEX idx_entity_identifiers_canonical ON entity_identifiers (entity_type, entity_id, is_canonical) 
+  WHERE is_canonical = true;
+```
+
+**Supported Schemes:**
+- `artsdata`: `http://kg.artsdata.ca/resource/K{digits}-{digits}`
+- `wikidata`: `http://www.wikidata.org/entity/Q{digits}`
+- `isni`: `https://isni.org/isni/{16-digits}`
+- `musicbrainz`: `https://musicbrainz.org/{type}/{uuid}`
+
+### 5.2 Reconciliation Cache
+
+Caches reconciliation lookups to avoid repeated API calls.
+
+```sql
+CREATE TABLE reconciliation_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Lookup key
+  entity_type TEXT NOT NULL,
+  lookup_key TEXT NOT NULL, -- Normalized search key
+  lookup_properties JSONB, -- Disambiguating properties
+  
+  -- Result
+  found BOOLEAN NOT NULL,
+  candidates JSONB, -- Array of candidate matches with scores
+  selected_id TEXT, -- Winning identifier URI
+  confidence DECIMAL(3, 2),
+  
+  -- Method
+  reconciliation_method TEXT NOT NULL,
+  
+  -- Cache metadata
+  cached_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '30 days',
+  hit_count INTEGER DEFAULT 0,
+  last_accessed_at TIMESTAMPTZ DEFAULT now(),
+  
+  UNIQUE (entity_type, lookup_key)
+);
+
+CREATE INDEX idx_reconciliation_cache_lookup ON reconciliation_cache (entity_type, lookup_key);
+CREATE INDEX idx_reconciliation_cache_expiry ON reconciliation_cache (expires_at) 
+  WHERE expires_at < now();
+
+-- Cleanup expired entries
+CREATE OR REPLACE FUNCTION cleanup_expired_reconciliation_cache()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM reconciliation_cache WHERE expires_at < now();
+END;
+$$ LANGUAGE plpgsql;
+```
+
+---
+
+## 6. Search and Discovery
+
+### 6.1 Vector Embeddings
+
+Stores semantic embeddings for vector search.
+
+```sql
+-- Enable pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE event_embeddings (
+  event_id UUID PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+  
+  -- Embedding vector
+  embedding vector(384), -- Dimension depends on model (e.g., 384 for MiniLM)
+  
+  -- Metadata
+  model_name TEXT NOT NULL,
+  model_version TEXT NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  -- Source text
+  source_text TEXT, -- Text that was embedded
+  source_text_hash TEXT
+);
+
+-- Vector similarity index
+CREATE INDEX idx_event_embeddings_vector ON event_embeddings 
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+```
+
+### 6.2 Duplicate Candidates Table
+
+Tracks potential duplicates for review.
+
+```sql
+CREATE TABLE duplicate_candidates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Event pair
+  event_a_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  event_b_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  
+  -- Similarity metrics
+  similarity_score DECIMAL(5, 4) NOT NULL CHECK (similarity_score BETWEEN 0 AND 1),
+  match_features JSONB, -- Details: name_similarity, time_diff, geo_distance, etc.
+  detection_method TEXT NOT NULL, -- 'hash', 'fuzzy', 'vector', 'manual'
+  
+  -- Review status
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'confirmed_duplicate', 'not_duplicate', 'merged')
+  ),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by_user_id UUID REFERENCES users(id),
+  review_notes TEXT,
+  
+  -- Timestamps
+  detected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  UNIQUE (event_a_id, event_b_id),
+  CHECK (event_a_id < event_b_id) -- Ensure canonical ordering
+);
+
+CREATE INDEX idx_duplicate_candidates_status ON duplicate_candidates (status, similarity_score DESC);
+CREATE INDEX idx_duplicate_candidates_events ON duplicate_candidates (event_a_id, event_b_id);
+```
+
+---
+
+## 7. Access Control and Authentication
+
+### 7.1 Users Table
+
+Manages admin, editor, and agent accounts.
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Authentication
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT, -- NULL for API-only accounts
+  
+  -- Role-based access control
+  role TEXT NOT NULL DEFAULT 'viewer' CHECK (
+    role IN ('admin', 'editor', 'agent', 'viewer')
+  ),
+  
+  -- API access
+  api_key_hash TEXT UNIQUE,
+  api_key_prefix TEXT, -- First 8 chars for identification
+  
+  -- Rate limiting
+  rate_limit_tier TEXT DEFAULT 'standard' CHECK (
+    rate_limit_tier IN ('standard', 'premium', 'unlimited')
+  ),
+  
+  -- Status
+  is_active BOOLEAN DEFAULT true,
+  email_verified BOOLEAN DEFAULT false,
+  email_verified_at TIMESTAMPTZ,
+  
+  -- Profile
+  display_name TEXT,
+  organization TEXT,
+  
+  -- Security
+  last_login_at TIMESTAMPTZ,
+  last_login_ip INET,
+  password_changed_at TIMESTAMPTZ,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_users_email ON users (email);
+CREATE INDEX idx_users_api_key ON users (api_key_hash) WHERE api_key_hash IS NOT NULL;
+CREATE INDEX idx_users_role ON users (role, is_active);
+```
+
+### 7.2 API Keys Table
+
+Separate table for managing multiple API keys per user.
+
+```sql
+CREATE TABLE api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  
+  -- Key details
+  key_hash TEXT NOT NULL UNIQUE,
+  key_prefix TEXT NOT NULL, -- First 8 chars
+  name TEXT NOT NULL,
+  
+  -- Permissions
+  scopes TEXT[], -- e.g., ['events:read', 'events:write', 'admin']
+  
+  -- Rate limiting
+  rate_limit_requests INTEGER,
+  rate_limit_window_seconds INTEGER,
+  
+  -- Status
+  is_active BOOLEAN DEFAULT true,
+  expires_at TIMESTAMPTZ,
+  
+  -- Usage tracking
+  last_used_at TIMESTAMPTZ,
+  usage_count INTEGER DEFAULT 0,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ,
+  revoked_by_user_id UUID REFERENCES users(id)
+);
+
+CREATE INDEX idx_api_keys_user ON api_keys (user_id, is_active);
+CREATE INDEX idx_api_keys_hash ON api_keys (key_hash);
+CREATE INDEX idx_api_keys_expiry ON api_keys (expires_at) WHERE expires_at IS NOT NULL;
+```
+
+---
+
+## 8. Operational Tables
+
+### 8.1 Idempotency Keys
+
+Prevents duplicate API operations.
+
+```sql
+CREATE TABLE idempotency_keys (
+  key TEXT PRIMARY KEY,
+  
+  -- Request details
+  request_path TEXT NOT NULL,
+  request_method TEXT NOT NULL,
+  request_body_hash TEXT,
+  
+  -- Response
+  response_status INTEGER,
+  response_body JSONB,
+  
+  -- Metadata
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '24 hours',
+  
+  -- User tracking
+  user_id UUID REFERENCES users(id)
+);
+
+CREATE INDEX idx_idempotency_expiry ON idempotency_keys (expires_at) 
+  WHERE expires_at < now();
+```
+
+### 8.2 Webhook Subscriptions
+
+Enables event notifications for downstream systems.
+
+```sql
+CREATE TABLE webhook_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Subscriber
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  
+  -- Webhook details
+  url TEXT NOT NULL,
+  secret TEXT, -- For HMAC signature verification
+  
+  -- Filters
+  event_types TEXT[], -- e.g., ['event.created', 'event.updated', 'event.deleted']
+  filter_conditions JSONB, -- Additional filters (geography, categories, etc.)
+  
+  -- Status
+  is_active BOOLEAN DEFAULT true,
+  is_verified BOOLEAN DEFAULT false,
+  
+  -- Retry configuration
+  max_retries INTEGER DEFAULT 3,
+  retry_backoff_seconds INTEGER DEFAULT 60,
+  
+  -- Health
+  consecutive_failures INTEGER DEFAULT 0,
+  last_success_at TIMESTAMPTZ,
+  last_failure_at TIMESTAMPTZ,
+  last_failure_reason TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_webhook_subscriptions_user ON webhook_subscriptions (user_id, is_active);
+CREATE INDEX idx_webhook_subscriptions_active ON webhook_subscriptions (is_active, last_success_at);
+```
+
+### 8.3 Webhook Deliveries
+
+Tracks webhook delivery attempts.
+
+```sql
+CREATE TABLE webhook_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id UUID NOT NULL REFERENCES webhook_subscriptions(id) ON DELETE CASCADE,
+  
+  -- Event reference
+  event_change_id UUID REFERENCES event_changes(id),
+  
+  -- Delivery details
+  payload JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'sent', 'delivered', 'failed', 'cancelled')
+  ),
+  
+  -- Retry tracking
+  attempt_number INTEGER DEFAULT 1,
+  max_attempts INTEGER DEFAULT 3,
+  next_retry_at TIMESTAMPTZ,
+  
+  -- Response
+  response_status INTEGER,
+  response_body TEXT,
+  response_time_ms INTEGER,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  failed_at TIMESTAMPTZ,
+  error_message TEXT
+);
+
+CREATE INDEX idx_webhook_deliveries_subscription ON webhook_deliveries (subscription_id, created_at DESC);
+CREATE INDEX idx_webhook_deliveries_status ON webhook_deliveries (status, next_retry_at);
+CREATE INDEX idx_webhook_deliveries_event ON webhook_deliveries (event_change_id);
+```
+
+---
+
+## 9. Schema.org Mappings
+
+### Complete Event Mapping
+
+```json
+{
+  "@context": [
+    "https://schema.org",
+    "https://schema.togather.foundation/context/v1.jsonld"
+  ],
+  "@type": "Event",
+  "@id": "https://toronto.togather.foundation/events/{ulid}",
+  
+  "name": "events.name",
+  "description": "events.description",
+  "image": "events.image_url",
+  "url": "events.public_url",
+  
+  "startDate": "event_occurrences.start_time",
+  "endDate": "event_occurrences.end_time",
+  "doorTime": "event_occurrences.door_time",
+  "eventStatus": "events.event_status",
+  "eventAttendanceMode": "events.attendance_mode",
+  
+  "location": {
+    "@type": "Place",
+    "@id": "https://toronto.togather.foundation/places/{places.ulid}",
+    "name": "places.name",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "places.street_address",
+      "addressLocality": "places.address_locality",
+      "addressRegion": "places.address_region",
+      "postalCode": "places.postal_code",
+      "addressCountry": "places.address_country"
+    },
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": "places.latitude",
+      "longitude": "places.longitude"
+    },
+    "sameAs": "entity_identifiers[entity_type=place].identifier_uri[]"
+  },
+  
+  "organizer": {
+    "@type": "Organization",
+    "@id": "https://toronto.togather.foundation/organizations/{organizations.ulid}",
+    "name": "organizations.name",
+    "sameAs": "entity_identifiers[entity_type=organization].identifier_uri[]"
+  },
+  
+  "performer": [
+    {
+      "@type": "Person",
+      "@id": "https://toronto.togather.foundation/persons/{persons.ulid}",
+      "name": "persons.name",
+      "sameAs": "entity_identifiers[entity_type=person].identifier_uri[]"
+    }
+  ],
+  
+  "offers": {
+    "@type": "Offer",
+    "url": "event_occurrences.ticket_url",
+    "priceCurrency": "event_occurrences.price_currency",
+    "price": "event_occurrences.price_min",
+    "highPrice": "event_occurrences.price_max",
+    "availability": "event_occurrences.availability"
+  },
+  
+  "inLanguage": "events.in_language[]",
+  "keywords": "events.keywords[]",
+  "isAccessibleForFree": "events.is_accessible_for_free",
+  
+  "sel:originNode": "https://{federation_nodes.node_domain}",
+  "sel:confidence": "events.confidence",
+  
+  "license": "events.license_url",
+  
+  "prov:wasDerivedFrom": {
+    "@type": "prov:Entity",
+    "schema:name": "sources.name",
+    "schema:url": "event_sources.source_url"
+  }
+}
+```
+
+---
+
+## 10. Migration Strategy
+
+### Phase 1: Core Tables (Week 1)
+- Events, Event Occurrences, Places, Organizations, Persons
+- Basic indexes and constraints
+- Foreign key relationships
+
+### Phase 2: Provenance (Week 2)
+- Sources registry
+- Event Sources
+- Field Provenance
+- History tracking
+
+### Phase 3: Federation (Week 3)
+- Federation Nodes
+- Sync Log
+- Event Changes outbox
+- Aliases table
+
+### Phase 4: Reconciliation (Week 4)
+- Entity Identifiers
+- Reconciliation Cache
+- External ID validators
+
+### Phase 5: Search & Operational (Week 5)
+- Vector embeddings
+- Duplicate candidates
+- Idempotency keys
+- Webhook infrastructure
+
+### Phase 6: Access Control (Week 6)
+- Users table
+- API keys
+- Role-based permissions
+
+---
+
+## Appendices
+
+### A. Required PostgreSQL Extensions
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";     -- UUID generation
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";      -- Cryptographic functions
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";       -- Trigram similarity
+CREATE EXTENSION IF NOT EXISTS "btree_gin";     -- Composite indexes
+CREATE EXTENSION IF NOT EXISTS "btree_gist";    -- Composite indexes
+CREATE EXTENSION IF NOT EXISTS "vector";        -- pgvector for embeddings
+CREATE EXTENSION IF NOT EXISTS "postgis";       -- Geospatial support
+```
+
+### B. Schema Validation Checklist
+
+- [ ] All tables have primary keys
+- [ ] All foreign keys use ON DELETE CASCADE or explicit handling
+- [ ] All timestamps use TIMESTAMPTZ
+- [ ] All enums use CHECK constraints
+- [ ] All sensitive data encrypted or hashed
+- [ ] All UNIQUE constraints on natural keys
+- [ ] All indexes on foreign keys
+- [ ] All JSON columns use JSONB
+- [ ] All text columns have length limits
+- [ ] All numeric columns have precision/scale
+
+### C. Performance Tuning
+
+```sql
+-- Adjust for high-concurrency workloads
+ALTER SYSTEM SET max_connections = 200;
+ALTER SYSTEM SET shared_buffers = '4GB';
+ALTER SYSTEM SET effective_cache_size = '12GB';
+ALTER SYSTEM SET maintenance_work_mem = '1GB';
+ALTER SYSTEM SET work_mem = '16MB';
+
+-- Enable query planning statistics
+ALTER SYSTEM SET track_activities = on;
+ALTER SYSTEM SET track_counts = on;
+ALTER SYSTEM SET track_io_timing = on;
+
+-- Autovacuum tuning
+ALTER SYSTEM SET autovacuum_max_workers = 4;
+ALTER SYSTEM SET autovacuum_naptime = '30s';
+```
+
+---
+
+**Document Control:**
+- This is a living document that will be updated as the schema evolves
+- All changes must be documented in migration scripts
+- Breaking changes require major version bump
+- Schema changes must pass SHACL validation in CI/CD

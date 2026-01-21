@@ -20,15 +20,15 @@ https://{node-domain}/{entity-type}/{ulid}
 ```
 
 **Components:**
-- `node-domain`: Fully qualified domain name of authoritative SEL node (e.g., `toronto.sel.events`)
+- `node-domain`: Fully qualified domain name of authoritative SEL node (e.g., `toronto.togather.foundation`)
 - `entity-type`: Plural lowercase entity type (`events`, `places`, `organizations`, `persons`)
 - `ulid`: Universally Unique Lexicographically Sortable Identifier (26-character Base32)
 
 **Examples:**
 ```
-https://toronto.sel.events/events/01HYX3KQW7ERTV9XNBM2P8QJZF
-https://toronto.sel.events/places/01HYX4ABCD1234567890VENUE
-https://toronto.sel.events/organizations/01HYX5EFGH0987654321ORGAN
+https://toronto.togather.foundation/events/01HYX3KQW7ERTV9XNBM2P8QJZF
+https://toronto.togather.foundation/places/01HYX4ABCD1234567890VENUE
+https://toronto.togather.foundation/organizations/01HYX5EFGH0987654321ORGAN
 ```
 
 **Why ULID?**
@@ -44,7 +44,7 @@ SEL distinguishes three identifier types with different purposes:
 
 | Field | Purpose | Controlled By | Example |
 |-------|---------|---------------|--------|
-| `@id` | Canonical URI for linked data | SEL node (this system) | `https://toronto.sel.events/events/01HYX...` |
+| `@id` | Canonical URI for linked data | SEL node (this system) | `https://toronto.togather.foundation/events/01HYX...` |
 | `url` | Public webpage for humans | External (venue/ticketing) | `https://masseyhall.com/events/jazz-night` |
 | `sameAs` | Equivalent entities in external systems | External authorities | `http://kg.artsdata.ca/resource/K12-345` |
 
@@ -92,12 +92,12 @@ Deleted entities MUST return **HTTP 410 Gone** with a minimal JSON-LD tombstone:
 {
   "@context": "https://schema.org",
   "@type": "Event",
-  "@id": "https://toronto.sel.events/events/01HYX3KQW7...",
+  "@id": "https://toronto.togather.foundation/events/01HYX3KQW7...",
   "eventStatus": "https://schema.org/EventCancelled",
   "sel:tombstone": true,
   "sel:deletedAt": "2025-01-20T15:00:00Z",
   "sel:deletionReason": "duplicate_merged",
-  "sel:supersededBy": "https://toronto.sel.events/events/01HYX4MERGED..."
+  "sel:supersededBy": "https://toronto.togather.foundation/events/01HYX4MERGED..."
 }
 ```
 
@@ -196,75 +196,225 @@ To implement these endpoints cleanly, we will use **Huma** (which builds on Chi)
 
 ## 3. Schema Design (Event Model)
 
-The internal data schema for events is based on the **schema.org/Event** vocabulary, ensuring compatibility with common standards for event information. Each event stored in PostgreSQL corresponds to a real-world event (e.g. a concert, exhibition, etc.), enriched with additional internal metadata for our system’s needs. The schema is composed of several tables/models:
+### Overview
 
-- **Events Table:** Represents the core event entity. Key fields (columns) include:
+The SEL database schema implements a **three-layer hybrid architecture** designed to balance semantic correctness, query performance, and federation requirements:
 
-    - `id` – Primary key for the event (could be a UUID/ULID for global uniqueness).
+1. **Document Truth Layer (JSONB):** Preserves original payloads with full provenance
+2. **Relational Core Layer (Postgres):** Enables fast queries, time-range filtering, and geospatial operations
+3. **Semantic Export Layer (JSON-LD):** Generated on-demand, cached, serves federation and Artsdata
 
-    - `name` – Text, the title of the event (`schema:name`).
+The schema is based on **schema.org/Event** vocabulary with extensions for provenance, federation, and lifecycle management. All design decisions address critical gaps identified in the [Critical Gaps Analysis](../research/SEL_Architecture_Critical_Gaps_Analysis_Comprehensive.md) and ensure compliance with the [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md).
 
-    - `description` – Text, a description or summary of the event (`schema:description`).
+**For comprehensive schema details, see:** [SEL Schema Design Documentation](./togather_schema_design.md)
 
-    - `start_time` – Timestamp (with timezone), the start date/time (`schema:startDate`).
+### Key Design Principles
 
-    - `end_time` – Timestamp, the end date/time (`schema:endDate`) if applicable.
+- **Schema.org aligned** with explicit semantic mappings
+- **Federated by design** with origin tracking and URI preservation
+- **Provenance as first-class** with field-level attribution and conflict resolution
+- **Temporal correctness** with timezone handling, lifecycle states, and bitemporal tracking
+- **License clarity** with per-source validation (CC0 requirement)
+- **SHACL validation** against Artsdata shapes in CI/CD
 
-    - `event_status` – Enum or text, status of the event (e.g. scheduled, canceled) (`schema:eventStatus`), potentially using schema.org EventStatusType values.
+### Core Entity Summary
 
-    - `attendance_mode` – Enum, whether the event is online, offline, or mixed (`schema:eventAttendanceMode`), if provided by source.
+The database separates **identity from temporal instances** to handle reschedules, postponements, and recurring events cleanly:
 
-    - **Foreign keys to related entities:** `venue_id` (link to a Places table for the location/venue), `organizer_id` (link to an Organization/Person table for the organizer). These capture `schema:location` and `schema:organizer` relationships.
+**Events Table (`events`):**
+- Canonical identity and metadata
+- Lifecycle states: draft, published, postponed, rescheduled, sold_out, cancelled, completed, deleted
+- Federation tracking: `origin_node_id`, `federation_uri`
+- Deduplication fingerprints
+- Quality indicators and confidence scores
 
-    - `source_url` – Text, the original URL where the event was sourced (if scraped or submitted with a reference).
+**Event Occurrences Table (`event_occurrences`):**
+- Temporal instances with timezone preservation
+- Stores UTC + timezone + computed local time for accurate queries
+- Occurrence-specific overrides (venue, status, tickets)
+- Enables "events on Friday evening" without runtime TZ math
 
-    - `source_type` – Text or code indicating the source (e.g. which scraper or “user-submitted”) for provenance tracking.
+**Event Series Table (`event_series`):**
+- Recurring event patterns (RFC 5545-inspired)
+- Default properties for instances
 
-    - `source_retrieved_at` – Timestamp for when the source was last fetched (for confirming freshness).
+**Related Entities:**
+- **Places:** Venues with structured addresses, geocoding, PostGIS support
+- **Organizations:** Event organizers with reconciled external IDs
+- **Persons:** Performers and artists
+- **Event Performers:** Many-to-many junction table
 
-    - `dedup_hash` – Text or bytea, a computed fingerprint of the event content used for deduplication (see Section 5). For example, a hash of normalized name+date+venue.
+### Provenance and Trust Model
 
-    - `artsdata_event_id` – (Optional) If the event itself is matched to an Artsdata entry (less common, as Artsdata mainly provides venues/orgs), but this could store an Artsdata URI if the event was known in the knowledge graph.
+**Sources Registry (`sources`):**
+- Trust levels (1-10 scale)
+- License information (CC0, CC-BY, proprietary)
+- Rate limiting configuration
+- Contact information
 
-    - `embedding_vector` – (Optional, Vector type or JSON) the vector embedding of this event’s content used for semantic search. We might store this as a Postgres **vector** (using something like the `pgvector` extension) or as a blob of floats. Storing allows us to rebuild the USearch index quickly on restart. However, if not stored here, we can always recompute from text or maintain the index separately.
+**Field-Level Provenance (`field_provenance`):**
+- Tracks which source provided each critical field
+- Confidence scores per field
+- Temporal tracking with supersession
+- Enables explainable conflict resolution
 
-    - Timestamps: `created_at`, `updated_at` – for auditing changes.
+**Conflict Resolution:**
+- Priority: `trust_level DESC, confidence DESC, observed_at DESC`
+- View `field_conflicts` identifies fields with multiple values
+- Admin UI for manual review
 
-- **Places (Venues) Table:** Represents venues or locations (corresponding to schema.org **Place** or **PostalAddress** if needed). Fields:
+### Federation Infrastructure
 
-    - `id` – primary key.
+**Federation Nodes Registry (`federation_nodes`):**
+- Tracks peer SEL nodes
+- Trust levels and sync configuration
+- Geographic scope definitions
 
-    - `name` – name of the venue/place.
+**Event Changes Outbox (`event_changes`):**
+- Captures all create/update/delete actions
+- Monotonic sequence numbers for ordering
+- Enables change feed API and webhooks
 
-    - `address` – structured address (we can store full address as one text, or break into columns like street, city, region, postal code, country for better query/filtering). Using separate fields for city, region, country is useful for filtering by location.
+**Sync Protocol:**
+- Cursor-based pagination
+- Preserves origin URIs (never re-mint federated events)
+- Conflict detection with trust-based resolution
 
-    - `latitude`, `longitude` – coordinates if available (from geocoding the address or provided by source).
+### Reconciliation System
 
-    - `artsdata_id` – text for Artsdata URI if this place has been reconciled (e.g. `"http://kg.artsdata.ca/resource/K11-211"`). We store this to avoid re-reconciling known venues.
+**Entity Identifiers (`entity_identifiers`):**
+- Normalized external IDs (Artsdata, Wikidata, ISNI, MusicBrainz)
+- Maps to `sameAs` semantics
+- Confidence scores and reconciliation method tracking
+- Supports multiple identifiers per entity
 
-    - `wikidata_id` or other IDs – optional, if Artsdata links to Wikidata or if we directly have a Wikidata ID, could be stored for enrichment.
+**Reconciliation Cache (`reconciliation_cache`):**
+- Avoids repeated API calls
+- Configurable TTL (30 days default)
+- Stores candidates and confidence scores
+- Negative caching for "no match" results
 
-    - Unique constraints: We may enforce that (name + address) or some combination is unique to avoid duplicate venue entries, or we use this table exactly to normalize venues across events.
+**Confidence Thresholds:**
+- `auto_high` (≥95%): Accept automatically
+- `auto_low` (80-94%): Flag for review
+- `reject` (<80%): No match, cache negative
 
-    - Many events can reference one place (1-to-many relationship).
+### Temporal and Lifecycle Management
 
-- **Organizations Table:** Represents organizers or event creators (schema.org **Organization** or **Person**). Fields are similar: `name`, maybe `type` (if we want to distinguish person vs organization), contact info (if available), and `artsdata_id` if reconciled to Artsdata (they have organization/person IDs as well). Many events can link to one organizer.
+**Event History (`event_history`):**
+- Bitemporal tracking for audit and rollback
+- Field-level change tracking
+- Approval workflow support
+- Triggered automatically on updates
 
-- **Users Table (for auth):** If we manage admin/editor accounts or API clients in the database: fields might be `id`, `email`, `password_hash` (for admin login), `api_key` or token (for agent access), and `role` (enum: public/agent/admin). This table ties into the RBAC system (detailed in Section 7).
+**Event Aliases (`event_aliases`):**
+- Preserves URI stability when events merge
+- HTTP 301/410 redirects for deleted/merged events
 
-- **Provenance & Sources (event_sources):** Track each observed source in an `event_sources` table (id, event_id, source_url, source_type, source_agent_id, retrieved_at, payload_hash, confidence). Treat provenance as a first-class concept to enable auditable merges, trust-based conflict resolution, and explainable reconciliation decisions. - **Change Capture / Outbox (event_changes):** Add an `event_changes` outbox table to record create/update/delete actions (`id, event_id, action, changed_fields JSONB, created_at`) to enable webhooks, ActivityPub outbox generation, and downstream synchronization. - **Identifiers (entity_identifiers):** Normalize external IDs into an `entity_identifiers` table (entity_type, entity_id, scheme, uri, confidence, source) rather than ad-hoc columns like `artsdata_id` or `wikidata_id`. This scales to arbitrary identifier schemes and maps directly to `sameAs` semantics. - **Reconciliation cache:** Cache reconciliation results in a `reconciliation_cache` table keyed on a normalized lookup key to avoid repeated Artsdata calls and to persist confidence scores and method (`auto_high`, `auto_low`, `manual`).
+**Timezone Handling:**
+- Stores UTC + IANA timezone identifier
+- Computed local date/time for calendar queries
+- Handles DST transitions correctly
 
-The **data model adheres to schema.org semantics** as closely as practical. The Artsdata project itself models events as a subset of Schema.org[docs.artsdata.ca](null), which confirms our approach of using Schema.org’s classes/properties as the foundation. By using standard schema.org fields (Event, Place, Organization, etc.), we ensure compatibility with other systems and ease integration – for instance, our JSON output can be interpreted as JSON-LD with minimal transformation.
+### Search and Discovery
 
-We will also include some **internal fields** for system use (like deduplication keys, source info, and status flags). For example, a boolean `approved` or `status` field might mark whether a submitted event is confirmed/published or awaiting review (particularly useful if we allow public submissions that require moderation). Another internal field could be `score` or `quality` to indicate our confidence in the data (e.g., if enrichment finds conflicting info).
+**Vector Embeddings (`event_embeddings`):**
+- pgvector storage (384-dimensional)
+- Model version tracking
+- Source text preservation for reindexing
 
-**Schema enforcement and explicit validation:** The database will enforce types, check constraints, and enums (e.g. status). Application-level validators (e.g. `go-playground/validator`) and optional CUE schemas will codify business invariants (minimum fields, start <= end, address formats). Add explicit identifier validators (e.g. `validateArtsdataID` regex to ensure Artsdata URIs match `^http://kg\.artsdata\.ca/resource/K\d+-\d+$`) so externally-managed IDs are checked at ingestion time. These rules mirror Artsdata’s SHACL-based expectations and prevent invalid data from entering the system.
+**Full-Text Search:**
+- GIN indexes on name + description
+- pg_trgm for fuzzy matching
+- Ranked results
 
-We aim for a **3NF style schema** separating events, places, and organizations, which avoids data duplication (e.g. the same venue string repeated in many events) and simplifies reconciliation (one place record can be linked to Artsdata and all referencing events inherit that link). This modular data design aligns with a **linked data** mindset: events link to entities (places/orgs) by IDs, which can themselves carry external identifiers like Artsdata URIs[docs.artsdata.ca](null). Such normalization makes it easy to update a venue’s info in one place and have all events reflect the change.
+**Geospatial Queries:**
+- PostGIS support
+- Bounding box and radius queries
+- Distance-based sorting
 
-When serving data via the API, these linked entities can be **embedded or referenced**. For simplicity, the API might embed venue and organizer details inside each event JSON (as shown in the example earlier), but internally they are normalized. This dual approach (normalized storage, but flexible JSON responses) yields maintainable storage without sacrificing API usability.
+**Duplicate Detection (`duplicate_candidates`):**
+- Layered strategy: exact hash, fuzzy matching, vector similarity
+- Match features with similarity scores
+- Review workflow for ambiguous cases
 
-The schema is designed to be extensible: new fields from schema.org (or custom internal fields) can be added with minimal impact (especially if using an ORM or code generation tool like Ent which can update the schema). We deliberately keep the model **compatible with open data practices**, meaning we can easily output events as JSON-LD, or even as RDF triples if needed, to participate in linked open data ecosystems like Artsdata. Each event could be assigned a URI (e.g., our own stable ID that could be dereferenced in future), preparing the system for future federation and data sharing.
+### Access Control
+
+**Users Table (`users`):**
+- Role-based access: admin, editor, agent, viewer
+- API key management
+- Rate limiting tiers
+
+**API Keys (`api_keys`):**
+- Multiple keys per user
+- Scoped permissions
+- Usage tracking and expiration
+
+### Operational Tables
+
+**Idempotency Keys (`idempotency_keys`):**
+- Prevents duplicate operations
+- 24-hour TTL
+- Request/response caching
+
+**Webhook System (`webhook_subscriptions`, `webhook_deliveries`):**
+- Event notifications for downstream systems
+- Retry with exponential backoff
+- Health tracking and failure recovery
+
+### Schema.org Mappings
+
+All entities map explicitly to schema.org types:
+
+| SEL Table | schema.org Type | Key Properties |
+|-----------|----------------|----------------|
+| `events` | `Event` | name, description, eventStatus, eventAttendanceMode |
+| `event_occurrences` | (temporal data) | startDate, endDate, doorTime |
+| `places` | `Place` | name, address (PostalAddress), geo (GeoCoordinates) |
+| `organizations` | `Organization` | name, alternateName, address |
+| `persons` | `Person` | name, alternateName, birthDate |
+| `entity_identifiers` | (sameAs semantics) | Links to Artsdata, Wikidata, ISNI, MusicBrainz |
+
+**Complete mapping examples and JSON-LD output specifications:** [Schema Design Doc §9](./togather_schema_design.md#9-schemaorg-mappings)
+
+### Implementation Notes
+
+**Database Extensions Required:**
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";     -- UUID generation
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";      -- Cryptographic functions
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";       -- Trigram similarity
+CREATE EXTENSION IF NOT EXISTS "vector";        -- pgvector for embeddings
+CREATE EXTENSION IF NOT EXISTS "postgis";       -- Geospatial support
+```
+
+**Query Patterns:**
+- Use `SQLc` for type-safe SQL generation
+- Avoid ORMs to keep schema explicit and agent-readable
+- Leverage generated columns for computed values
+- Use GIN/GIST indexes for complex queries
+
+**Migration Strategy:**
+The schema will be implemented in phases (see [Schema Design §10](./togather_schema_design.md#10-migration-strategy)):
+1. Core tables (Events, Places, Organizations)
+2. Provenance system
+3. Federation infrastructure
+4. Reconciliation and external identifiers
+5. Search and operational tables
+6. Access control
+
+**Validation:**
+- Database-level: CHECK constraints, foreign keys, UNIQUE indexes
+- Application-level: `go-playground/validator`, CUE schemas
+- Identifier validators: Regex patterns for Artsdata, Wikidata, ISNI URIs
+- SHACL validation in CI/CD pipeline
+
+### Links to Detailed Documentation
+
+- **Full Schema DDL:** [togather_schema_design.md](./togather_schema_design.md)
+- **Interoperability Profile:** [togather_SEL_Interoperability_Profile_v0.1.md](./togather_SEL_Interoperability_Profile_v0.1.md)
+
+The schema design ensures SEL is not just "an event database with JSON output" but **a node in the linked open data web** with stable URIs, explicit provenance, and federation-ready contracts.
 
 ## 4. Integration with Artsdata Knowledge Graph (Entity Resolution & Enrichment)
 
