@@ -21,10 +21,12 @@ This document provides the prioritized implementation checklist for the Shared E
   - Format: `https://{node-domain}/{entity-type}/{ulid}`
   - Configure node domain per deployment
   - Document ULID generation (timestamp + random)
+  - Require true ULIDs (not UUID re-encodings)
 - [ ] **Establish identifier roles**
   - `@id` = canonical SEL URI
   - `url` = public human-readable webpage
   - `sameAs` = external authority links (Artsdata, Wikidata, ISNI, MusicBrainz)
+  - Normalize `sameAs` to full URIs (e.g., `http://www.wikidata.org/entity/Q...`)
 - [ ] **Define federation rules**
   - MUST preserve origin node URIs when syncing
   - Document cross-node reference patterns
@@ -44,9 +46,10 @@ This document provides the prioritized implementation checklist for the Shared E
   - Organization frame (`frames/organization-v1.frame.json`)
   - EventSeries frame for recurring events
 - [ ] **Specify minimal required fields per entity type**
-  - Event: `@id`, `@type`, `name`, `startDate`, `location`, `eventStatus`
-  - Place: `@id`, `@type`, `name`, `address` OR `geo`
-  - Organization: `@id`, `@type`, `name`
+  - Event: `@id`, `@type` (`Event`, `EventSeries`, or `Festival`), `name` (max 500), `startDate` (ISO 8601 with timezone), `location` (Place/VirtualLocation/URI)
+  - Place: `@id`, `@type`, `name` (max 300), `address` OR `geo`
+  - Organization: `@id`, `@type`, `name` (max 300)
+  - Attendance rules: online events require `VirtualLocation` with `url`; mixed SHOULD include both Place + VirtualLocation
 - [ ] **Document optional enrichment fields**
   - Recommended vs optional distinction
   - Mapping to schema.org properties
@@ -62,7 +65,7 @@ This document provides the prioritized implementation checklist for the Shared E
   - Generate local date/time fields for query optimization
   - Handle DST transitions correctly
 - [ ] **Define lifecycle states**
-  - States: `draft`, `published`, `postponed`, `cancelled`, `rescheduled`, `completed`, `deleted`
+  - States: `draft`, `published`, `postponed`, `rescheduled`, `sold_out`, `cancelled`, `completed`, `deleted`
   - Document state transition rules
   - Define which states require occurrences
 - [ ] **Design recurring event model**
@@ -70,6 +73,9 @@ This document provides the prioritized implementation checklist for the Shared E
   - Use `event_series` table for patterns
   - Document expansion job mechanics
   - Plan future RRULE support (deferred)
+  - JSON-LD output: EventSeries MUST include `eventSchedule`
+  - EventSeries MAY include bounded `subEvent` list (configurable window)
+  - Serialize occurrences as `Event` with `superEvent` pointing to series; allow location overrides
 
 ### 0.4 Provenance and Trust Model
 - [ ] **Design sources registry**
@@ -82,6 +88,7 @@ This document provides the prioritized implementation checklist for the Shared E
   - Document when to track (critical fields only vs all)
 - [ ] **Define conflict resolution policy**
   - Merge algorithm: trust_level DESC, confidence DESC, observed_at DESC
+  - Never overwrite higher-trust values with lower-trust values
   - Document when to flag for manual review
   - Define conflict notification mechanism
 - [ ] **Design observation storage**
@@ -97,7 +104,7 @@ This document provides the prioritized implementation checklist for the Shared E
 - [ ] **Select SHACL shapes for validation**
   - Pin Artsdata shapes versions
   - Define custom SEL shapes for extensions
-  - Store shapes in `/shacl/` directory
+  - Store shapes in `/shapes/` directory
 - [ ] **Choose SHACL validation library**
   - Evaluate Go SHACL libraries or call external validator
   - Document validation integration points
@@ -120,12 +127,13 @@ This document provides the prioritized implementation checklist for the Shared E
   - Preserve original URIs from federated nodes
   - Use `sameAs` for cross-node equivalence
 - [ ] **Design simple sync protocol (pre-ActivityPub)**
-  - Bulk export endpoint: `GET /api/v1/datasets/events.jsonld`
-  - Change feed endpoint: `GET /api/v1/feeds/changes`
-  - Query parameters: `changed_since`, `start_from`, `start_to`, `include_deleted`
+  - Bulk export endpoint: `GET /api/v1/exports/events.jsonld`
+  - Change feed endpoint: `GET /api/v1/feeds/changes?since={cursor}&limit={n}`
+  - Export query parameters: `changed_since`, `start_from`, `start_to`, `include_deleted`
+  - Authenticate federation requests via API keys (`Authorization: Bearer <key>`)
 - [ ] **Design change capture mechanism**
   - Table: `event_changes` outbox
-  - Fields: `id`, `event_id`, `action`, `changed_fields JSONB`, `created_at`
+  - Fields: `id`, `seq`, `event_id`, `action`, `changed_fields JSONB`, `snapshot JSONB`, `tombstone JSONB`, `created_at`
   - Enable webhook notifications
   - Support ActivityPub outbox generation (future)
 
@@ -134,13 +142,26 @@ This document provides the prioritized implementation checklist for the Shared E
   - Accept: CC0, CC-BY, public facts
   - Reject: proprietary copyrighted content
   - Transform: LLM-summarize descriptions from non-CC0 sources
+  - If source is restrictive: ingest facts only; retain descriptions with takedown flags + provenance
 - [ ] **Define publication policy**
   - All outputs under CC0 1.0 Universal
   - Include license in every JSON-LD document
   - Dataset-level metadata includes license
+- [ ] **Define license flags and takedown handling**
+  - `sel:licenseStatus` values: `cc0`, `cc-by`, `proprietary`, `unknown`
+  - `sel:takedownRequested` boolean + timestamp
+  - Support removal on request
 - [ ] **Create attribution guidelines**
   - Requested format: "Shared Events Library - {City Node}"
   - Document provenance blocks in JSON-LD
+
+### 0.8 Content Negotiation and HTML Rendering
+- [ ] **Define content negotiation rules**
+  - `text/html`, `application/ld+json`, `application/json`, `text/turtle`
+  - Require dereferenceable URIs to support HTML + JSON-LD
+- [ ] **Specify HTML minimums**
+  - Render `name`, `startDate`, `location`, `organizer` when available
+  - Embed canonical JSON-LD in the page
 
 ---
 
@@ -267,13 +288,15 @@ This document provides the prioritized implementation checklist for the Shared E
   - Business rule validation (e.g., start <= end)
   - External ID format validation
   - Use go-playground/validator
+  - Enforce online/mixed attendance location rules
 - [ ] **Implement normalization**
   - Date/time parsing and timezone handling
   - Text cleaning (trim, normalize whitespace)
   - Address normalization
   - URL validation and normalization
 - [ ] **Implement deduplication**
-  - Content-based hashing
+  - Identity key: normalized name + startDate (±15 min, round to 5 min) + location/virtual_url
+  - If series, include occurrence index in identity key
   - Similarity detection (fuzzy match)
   - Merge vs reject decisions
   - Deduplication audit trail
@@ -281,6 +304,7 @@ This document provides the prioritized implementation checklist for the Shared E
   - Record source metadata
   - Store raw payload
   - Link to source registry
+  - Require ingestion from a registered source
 - [ ] **Enqueue enrichment jobs**
   - Reconciliation job
   - Embedding generation job
@@ -293,6 +317,8 @@ This document provides the prioritized implementation checklist for the Shared E
   - Filter by location (city, venue)
   - Filter by status
   - Cursor-based pagination
+  - Response envelope: `items[]` + `next_cursor`
+  - Pagination defaults: limit 50, max 200
 - [ ] **Implement event detail endpoint**
   - `GET /api/v1/events/{id}`
   - Support both UUID and ULID
@@ -302,12 +328,20 @@ This document provides the prioritized implementation checklist for the Shared E
   - Use piprate/json-gold for framing
   - Apply versioned frames
   - Include @context in responses
+  - Include license in every JSON-LD response
+  - Include `prov:wasDerivedFrom` when source is known
+  - Provide `text/html` rendering for dereferenceable URIs
+  - Embed canonical JSON-LD in HTML pages
 - [ ] **Implement place listing/detail**
   - `GET /api/v1/places`
   - `GET /api/v1/places/{id}`
 - [ ] **Implement organization listing/detail**
   - `GET /api/v1/organizations`
   - `GET /api/v1/organizations/{id}`
+- [ ] **Publish OpenAPI reference**
+  - `GET /api/v1/openapi.json`
+- [ ] **Standardize error responses**
+  - RFC 7807 problem+json envelope
 
 ### 1.7 Soft Delete and Tombstones
 - [ ] **Implement soft delete mechanism**
@@ -318,6 +352,7 @@ This document provides the prioritized implementation checklist for the Shared E
   - Trigger on soft delete
   - Store minimal tombstone JSON-LD
   - Record deletion reason and timestamp
+  - Include `eventStatus`, `sel:tombstone`, `sel:deletedAt`, `sel:deletionReason`, `sel:supersededBy` when applicable
 - [ ] **Implement tombstone endpoint behavior**
   - Return 410 Gone for deleted entities
   - Return tombstone JSON-LD
@@ -335,6 +370,7 @@ This document provides the prioritized implementation checklist for the Shared E
   - Implement exponential backoff
   - Handle rate limiting (429 responses)
   - Configurable timeout and retry policy
+  - Follow W3C Reconciliation API spec
 - [ ] **Implement request builder**
   - Build reconciliation requests per entity type
   - Include disambiguating properties
@@ -350,6 +386,9 @@ This document provides the prioritized implementation checklist for the Shared E
 - [ ] **Implement graph scoping strategy**
   - Document when to use core vs all-graphs
   - Track provenance of facts by graph
+- [ ] **Implement Query API client (optional)**
+  - Support event list retrieval with source graph scoping
+  - Allow selecting frames and formats per Artsdata docs
 
 ### 2.2 Reconciliation Service
 - [ ] **Implement reconciliation job handler**
@@ -361,11 +400,16 @@ This document provides the prioritized implementation checklist for the Shared E
   - Check reconciliation_cache before API call
   - Use normalized lookup key
   - Respect cache TTL
+- [ ] **Define deterministic resolution order**
+  - Use existing Artsdata URI if present
+  - Otherwise reconcile, then mint only when no match exists
 - [ ] **Implement confidence thresholds**
   - `auto_high`: >= 95% + match=true → accept
   - `auto_low`: 80-94% → flag for review
   - `reject`: < 80% → no match
   - Make thresholds configurable per entity type
+- [ ] **Enforce Artsdata minting rule**
+  - Do not mint Artsdata IDs if any candidate >= auto_low unless admin overrides with audit trail
 - [ ] **Implement decision recording**
   - Store decision in cache
   - Record method (auto_high, auto_low, manual)
@@ -378,6 +422,10 @@ This document provides the prioritized implementation checklist for the Shared E
   - Cache "no match" results
   - Shorter TTL for negatives
   - Avoid repeated failed lookups
+- [ ] **Define reconciliation cache normalization + TTLs**
+  - Normalize type/name/url/locality/postal code
+  - Positive TTL: 30 days, negative TTL: 7 days
+  - Cache lookups must be deterministic for same normalized key
 - [ ] **Implement manual review workflow**
   - Flag low-confidence matches
   - Admin endpoint to approve/reject
@@ -402,7 +450,21 @@ This document provides the prioritized implementation checklist for the Shared E
   - Flag conflicts for review
   - Preserve all observations
 
-### 2.4 SHACL Validation
+### 2.4 Artsdata Contribution (Optional)
+- [ ] **Define Databus publishing workflow**
+  - Publish RDF dataset artifacts (JSON-LD, Turtle, N-Quads)
+  - Ensure dataset URL remains downloadable
+  - Provide dataset metadata for Databus
+- [ ] **Enforce contribution constraints**
+  - Do not upload triples with `kg.artsdata.ca` subject URIs
+  - Do not upload ontologies via Databus
+  - Validate with SHACL before upload
+  - Require credentials (X-API-KEY or WebID)
+- [ ] **Implement Artsdata minting integration (optional)**
+  - Mint only after reconciliation yields no match
+  - Validate Artsdata ID format on receipt
+
+### 2.5 SHACL Validation
 - [ ] **Integrate SHACL validator**
   - Choose library (or external service)
   - Validate on ingestion (optional)
@@ -424,9 +486,9 @@ This document provides the prioritized implementation checklist for the Shared E
 
 ### 3.1 Bulk Export API
 - [ ] **Implement dataset export endpoint**
-  - `GET /api/v1/datasets/events.jsonld`
+  - `GET /api/v1/exports/events.jsonld`
   - Support filters: `changed_since`, `start_from`, `start_to`
-  - Include/exclude deleted events
+  - Include/exclude deleted events (default false)
   - Single JSON-LD graph output
 - [ ] **Implement NDJSON export**
   - `GET /api/v1/exports/events.ndjson`
@@ -443,30 +505,45 @@ This document provides the prioritized implementation checklist for the Shared E
 - [ ] **Implement N-Triples export**
   - `GET /api/v1/exports/events.nt`
   - For RDF tooling compatibility
+- [ ] **Support export content types**
+  - JSON-LD (`application/ld+json`)
+  - JSON (`application/json`)
+  - Turtle (`text/turtle`)
+  - N-Triples (`application/n-triples`)
+  - NDJSON (`application/x-ndjson`)
 
 ### 3.2 Change Feed API
 - [ ] **Implement change feed endpoint**
   - `GET /api/v1/feeds/changes`
   - Query param: `since={cursor}`, `limit={n}`
-  - Return ordered change envelopes
+  - Return ordered change envelopes with `cursor` and `next_cursor`
 - [ ] **Implement cursor-based pagination**
   - Opaque but stable cursors
-  - Based on timestamp + ID for determinism
+  - Based on per-node monotonic sequence
   - Document cursor format
 - [ ] **Implement change envelope format**
   - Include: action, event_id, event_uri, changed_at, changed_fields
+  - Require `snapshot` for create/update
+  - Require `tombstone` for delete
   - Embed entity data or reference only
   - Handle deletes/tombstones
+- [ ] **Guarantee delete visibility**
+  - Emit delete changes even if tombstone-only
 - [ ] **Implement change capture**
   - Use `event_changes` outbox table
   - Record on create/update/delete
   - Capture changed fields as JSONB
 
 ### 3.3 Inter-Node Sync
+- [ ] **Implement profile discovery endpoint**
+  - `GET /.well-known/sel-profile`
+  - Return `{ node, version, profile }`
 - [ ] **Implement sync protocol**
   - `POST /api/v1/federation/sync`
   - Accept bulk event submissions from peer nodes
   - Validate source node identity
+  - Ensure sync is idempotent; do not advance cursor past failed item
+  - Authenticate peer requests with API keys (Authorization Bearer)
 - [ ] **Implement origin preservation**
   - Store `origin_node_id` for federated events
   - Never mint URIs with another node's domain
@@ -810,6 +887,8 @@ This document provides the prioritized implementation checklist for the Shared E
   - Enrichment flow
   - Cache behavior
   - Error handling
+  - SPARQL smoke tests (core vs all graphs)
+  - Identifier format validation (Artsdata, Wikidata)
 
 ### Contract Tests
 - [ ] **Test JSON-LD output**
@@ -944,5 +1023,3 @@ This document provides the prioritized implementation checklist for the Shared E
   
 - **Risk:** Maintenance burden  
   **Mitigation:** Simple architecture, good documentation, automated testing
-
-
