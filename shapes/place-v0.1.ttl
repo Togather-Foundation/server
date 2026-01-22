@@ -1,0 +1,30 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sel: <https://schema.togather.foundation/ns#> .
+
+sel:PlaceShape
+    a sh:NodeShape ;
+    sh:targetClass schema:Place ;
+    sh:nodeKind sh:IRI ;
+
+    sh:property [
+        sh:path schema:name ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:maxLength 300 ;
+    ] ;
+
+    sh:or (
+        [ sh:property [
+            sh:path schema:address ;
+            sh:minCount 1 ;
+            sh:class schema:PostalAddress ;
+        ] ]
+        [ sh:property [
+            sh:path schema:geo ;
+            sh:minCount 1 ;
+            sh:class schema:GeoCoordinates ;
+        ] ]
+    ) .

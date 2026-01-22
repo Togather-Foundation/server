@@ -1,0 +1,39 @@
+{
+  "@context": {
+    "sel": "https://schema.togather.foundation/ns#",
+    "prov": "http://www.w3.org/ns/prov#",
+    "schema": "https://schema.org/",
+    "originNode": {
+      "@id": "sel:originNode",
+      "@type": "@id"
+    },
+    "sourceUrl": {
+      "@id": "sel:sourceUrl",
+      "@type": "@id"
+    },
+    "ingestedAt": {
+      "@id": "sel:ingestedAt",
+      "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+    },
+    "confidence": {
+      "@id": "sel:confidence",
+      "@type": "http://www.w3.org/2001/XMLSchema#decimal"
+    },
+    "tombstone": {
+      "@id": "sel:tombstone",
+      "@type": "http://www.w3.org/2001/XMLSchema#boolean"
+    },
+    "licenseStatus": {
+      "@id": "sel:licenseStatus",
+      "@type": "http://www.w3.org/2001/XMLSchema#string"
+    },
+    "takedownRequested": {
+      "@id": "sel:takedownRequested",
+      "@type": "http://www.w3.org/2001/XMLSchema#boolean"
+    },
+    "takedownRequestedAt": {
+      "@id": "sel:takedownRequestedAt",
+      "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+    }
+  }
+}

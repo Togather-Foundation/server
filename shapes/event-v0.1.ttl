@@ -1,0 +1,53 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix sel: <https://schema.togather.foundation/ns#> .
+
+sel:EventShape
+    a sh:NodeShape ;
+    sh:targetClass schema:Event ;
+    sh:nodeKind sh:IRI ;
+
+    sh:property [
+        sh:path schema:name ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:maxLength 500 ;
+        sh:message "Event must have exactly one name (1-500 characters)" ;
+    ] ;
+
+    sh:property [
+        sh:path schema:startDate ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:or (
+            [ sh:datatype xsd:dateTime ]
+            [ sh:datatype xsd:date ]
+        ) ;
+        sh:message "Event must have startDate in ISO8601" ;
+    ] ;
+
+    sh:property [
+        sh:path schema:location ;
+        sh:minCount 1 ;
+        sh:or (
+            [ sh:class schema:Place ]
+            [ sh:class schema:VirtualLocation ]
+            [ sh:nodeKind sh:IRI ]
+        ) ;
+        sh:message "Event must have a Place, VirtualLocation, or URI" ;
+    ] ;
+
+    sh:property [
+        sh:path schema:eventStatus ;
+        sh:maxCount 1 ;
+        sh:in (
+            schema:EventScheduled
+            schema:EventCancelled
+            schema:EventPostponed
+            schema:EventRescheduled
+            schema:EventMovedOnline
+        ) ;
+    ] .
