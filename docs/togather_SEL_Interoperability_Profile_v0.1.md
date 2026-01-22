@@ -68,6 +68,11 @@ https://toronto.togather.foundation/organizations/01HYX5EFGH0987654321ORGAN
 - URL-safe Base32 encoding
 - First 10 characters encode creation timestamp (debuggable)
 
+**Requirement:** ULIDs MUST be **true ULIDs** (not UUID re-encodings).
+
+**Implementation Default (MVP):** ULIDs are generated in the application using a ULID library with UTC timestamps and Crockford Base32 encoding (26 chars).
+**Recommended Go Library:** `github.com/oklog/ulid/v2`
+
 ### 1.2 Identifier Roles
 
 SEL distinguishes three identifier types:
@@ -137,6 +142,13 @@ All SEL URIs MUST support content negotiation:
 | `application/json` | JSON-LD document (alias) |
 | `text/turtle` | RDF Turtle serialization |
 
+**MVP requirement:** Provide **both HTML and JSON-LD** for dereferenceable URIs (HTML for human review, JSON-LD for agents).
+
+**HTML Rendering Minimums:**
+- Render `name`, `startDate`, `location` (Place or VirtualLocation), and `organizer` when available.
+- Embed canonical JSON-LD in `<script type="application/ld+json">...</script>`.
+- Include the canonical `@id` and `url` (if present).
+
 **Example:**
 ```bash
 curl -H "Accept: application/ld+json" \
@@ -185,6 +197,8 @@ SEL uses a static, versioned context to ensure stability:
 
 **Context URL:** `https://schema.togather.foundation/context/v1.jsonld`
 
+**Local Source (repo):** `contexts/sel/v0.1.jsonld`
+
 **Structure:**
 ```json
 {
@@ -206,6 +220,9 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 | `sel:ingestedAt` | Ingestion timestamp | xsd:dateTime |
 | `sel:confidence` | Confidence score (0-1) | xsd:decimal |
 | `sel:tombstone` | Deletion flag | xsd:boolean |
+| `sel:licenseStatus` | License classification | xsd:string |
+| `sel:takedownRequested` | Takedown flag | xsd:boolean |
+| `sel:takedownRequestedAt` | Takedown timestamp | xsd:dateTime |
 
 ### 2.2 Event Output
 
@@ -354,6 +371,15 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 }
 ```
 
+**Serialization Rules (Series ↔ Occurrences):**
+- `event_series` maps to a single `EventSeries` object.
+- Each `event_occurrence` maps to a child `Event` with:
+  - `@id` = occurrence URI (or series URI + suffix)
+  - `superEvent` = series `@id`
+  - `startDate`, `endDate`, `doorTime`
+  - `location` = occurrence override (`venue_id` or `virtual_url`), otherwise series default
+- The `EventSeries` MAY include `subEvent` with a bounded list of upcoming occurrences (configurable window), and MUST expose `eventSchedule` for recurrence rules.
+
 ### 2.3 Place Output
 
 ```json
@@ -442,8 +468,26 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 | `@type` | String | MUST | `Event`, `EventSeries`, or `Festival` |
 | `name` | String | MUST | Non-empty, max 500 chars |
 | `startDate` | DateTime | MUST | ISO 8601 with timezone |
-| `location` | Place/VirtualLocation/URI | MUST | Valid Place object or SEL URI |
+| `location` | Place/VirtualLocation/URI | MUST | Valid Place or VirtualLocation object or SEL URI |
 | `eventStatus` | URI | SHOULD | schema.org EventStatusType (defaults to EventScheduled) |
+
+### 3.4 Deduplication Identity Rules (MVP)
+
+An event identity is defined by **name + startDate + location** (or virtual URL), with tolerance windows.
+
+**Rules:**
+- Primary identity key: normalized `name` + normalized `startDate` (±15 minutes) + `location` (venue or virtual URL).
+- If `series_id` is present, include `occurrence_index` in the identity key.
+- If `eventAttendanceMode` is online, use `virtual_url` in place of venue.
+
+**Normalization:**
+- `name`: lowercased, trimmed, collapse whitespace
+- `startDate`: round to nearest 5 minutes for identity comparisons
+- `location`: resolve to canonical Place `@id` where available
+
+**Virtual / Hybrid Events:**
+- If `eventAttendanceMode` is `OnlineEventAttendanceMode`, `location` MUST be `VirtualLocation` with a `url`.
+- If `MixedEventAttendanceMode`, `location` SHOULD include both a `Place` and a `VirtualLocation`.
 
 #### Place (Minimum Viable)
 
@@ -605,9 +649,60 @@ func TestEventValidation(t *testing.T) {
 }
 ```
 
+**Local SHACL Sources (repo):**
+- `shapes/event-v0.1.ttl`
+- `shapes/place-v0.1.ttl`
+- `shapes/organization-v0.1.ttl`
+
+**CI Expectation:** Validate exported JSON-LD against these shapes on every release build.
+
 ---
 
 ## 4. Export Formats & Change Feed Semantics
+
+### 4.0 Public Read API (Open Data)
+
+SEL nodes SHOULD expose a simple, public read API for open-data access:
+
+- `GET /api/v1/events` (filtered list)
+- `GET /api/v1/events/{id}` (single event)
+- `GET /api/v1/events/search` (optional semantic search)
+
+Responses MUST support content negotiation for JSON-LD (`Accept: application/ld+json`).
+Write/ingestion endpoints are **implementation-specific** and out of scope for the interoperability profile.
+
+**Response Envelope (List):**
+
+```json
+{
+  "items": [
+    { "@id": "https://toronto.togather.foundation/events/01J...", "@type": "Event", "name": "Jazz Night" }
+  ],
+  "next_cursor": "seq_1048602"
+}
+```
+
+**Pagination Defaults:**
+- Default `limit`: 50
+- Max `limit`: 200
+
+**Error Envelope (RFC 7807):**
+
+```json
+{
+  "type": "https://sel.events/problems/validation-error",
+  "title": "Invalid request",
+  "status": 400,
+  "detail": "Missing required field: startDate",
+  "instance": "/api/v1/events"
+}
+```
+
+### 4.0.1 OpenAPI Reference
+
+Implementations SHOULD publish an OpenAPI 3.1 document for these endpoints at:
+
+`GET /api/v1/openapi.json`
 
 ### 4.1 Export Formats
 
@@ -647,7 +742,7 @@ Returns ordered list of change envelopes:
 
 ```json
 {
-  "cursor": "01HYX3KQW7...",
+  "cursor": "seq_1048576",
   "changes": [
     {
       "action": "create",
@@ -669,14 +764,44 @@ Returns ordered list of change envelopes:
       "tombstone": { "@id": "...", "sel:deletedAt": "..." }
     }
   ],
-  "next_cursor": "01HYX6..."
+  "next_cursor": "seq_1048602"
 }
 ```
 
 **Cursor Rules:**
 - Cursor MUST be opaque but stable
-- Ordering MUST be deterministic (changed_at, then uri)
+- Ordering MUST be deterministic using a **per-node monotonic sequence** (append-only bigint)
 - Delete MUST be represented even if tombstone-only
+
+**Change Feed Contract (MVP):**
+- `cursor` and `next_cursor` MUST be sequence-based.
+- `snapshot` is REQUIRED for `create` and `update`.
+- `tombstone` is REQUIRED for `delete`.
+
+### 4.4 Federation Sync Protocol (MVP)
+
+**Discovery:**
+- Nodes MUST expose `GET /.well-known/sel-profile` with `{ node, version, profile }`.
+
+**Authentication (MVP):**
+- Federation sync uses API keys (shared secret per peer).
+- Send `Authorization: Bearer <key>` on change feed and export requests.
+
+**Pull Sync Algorithm:**
+1. Resolve peer profile and verify `profile` + `version`.
+2. Fetch `GET /api/v1/feeds/changes?since={cursor}&limit={n}`.
+3. Apply changes in sequence order; do NOT advance cursor past a failed item.
+4. Persist `sync_cursor` per peer node after successful batch.
+
+**Conflict Resolution:**
+- Preserve origin URIs; never re-mint.
+- If two nodes provide conflicting values, prefer higher `trust_level`, then higher confidence, then most recent `observed_at`.
+- Keep all source observations for audit.
+
+**Partial Failures & Retries:**
+- Use exponential backoff on HTTP 5xx/timeouts.
+- If a single change fails validation, isolate it, log, and continue with subsequent changes only if ordering is not violated.
+- Sync MUST be idempotent (reapplying same change must be safe).
 
 ---
 
@@ -730,6 +855,20 @@ Thresholds MUST be configurable per entity type.
 ### 5.4 Minting Rule (Hard Constraint)
 
 > **MUST:** SEL MUST NOT mint an Artsdata ID if reconciliation returns any candidate above `auto_low` unless explicitly overridden by admin with audit trail.
+
+### 5.5 Reconciliation Cache Rules (MVP)
+
+**Cache Key Normalization:**
+- `type` lowercased
+- `name` trimmed, lowercased, collapse whitespace
+- `url` canonicalized (strip query + fragment)
+- `addressLocality`, `postalCode` normalized (upper-case, trim)
+
+**TTL Defaults:**
+- Positive match: 30 days
+- Negative match: 7 days
+
+**Idempotency:** Cache lookups MUST be deterministic for the same normalized key.
 
 ---
 
@@ -809,8 +948,14 @@ SEL accepts data under these terms:
 2. **Licensed Content:** Descriptions/Images MUST be compatible with **CC0** or **CC-BY**
 
 **If source has restrictive license:**
-- Ingest facts only
-- Omit or LLM-summarize descriptions (transformation creates new work)
+- Ingest facts
+- Descriptions MAY be retained **with explicit takedown flags** and provenance
+- Implementers MUST support removal on request
+
+**License Flags (MVP):**
+- `sel:licenseStatus` values: `cc0`, `cc-by`, `proprietary`, `unknown`
+- `sel:takedownRequested` boolean (default false)
+- `sel:takedownRequestedAt` when applicable
 
 ### 7.2 Publication Policy
 
