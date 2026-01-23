@@ -1,0 +1,77 @@
+# .gitignore for a Go project
+# Ignore common build outputs, dependency directories, local files, and editor settings
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary and coverage outputs
+*.test
+coverage.out
+cover.out
+*.cover
+
+# Build and output directories
+/bin/
+_build/
+dist/
+
+# Vendor directory (when vendoring dependencies)
+/vendor/
+
+# Go module download cache (relative path)
+pkg/mod/
+
+# Go workspace file (optional to ignore if local)
+go.work
+
+# Local environment and config files
+.env
+.env.*.local
+.envrc
+*.local
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Database / generated files
+*.sqlite3
+*.db
+
+# Node (if frontend parts exist)
+node_modules/
+
+# Coverage and reports folders
+coverage/
+reports/
+
+# Ignore swap files and backup files
+*~
+*.swp
+*.swo
+
+# Optional: add project-specific ignores below
+# e.g. Docker, CI, or editor-specific files
+
+# github
+.github/
+
+# Spec kit
+.specify/
