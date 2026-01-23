@@ -121,6 +121,15 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - What happens when content negotiation header is missing or invalid?
   - Default to `application/json` (aliased to JSON-LD)
 
+## Clarifications
+
+### Session 2026-01-23
+
+- Q: When do submitted events become visible to public queries? Do agents submit directly to "published" or require admin approval? → A: Auto-publish with flagging — events publish immediately and are visible to public queries; low-confidence or flagged events appear in admin review queue for reactive oversight
+- Q: How are API keys created and managed for agent authentication? → A: Admin-provisioned only — admins create API keys via admin UI/API; no self-service registration for MVP
+- Q: What filters should the public query endpoint support? → A: Extended filters — date range (startDate/endDate), city/region, venue ID, organizer ID, lifecycle state, free-text search on name/description, keywords/tags, and event domain (arts/music/culture/etc)
+- Q: What rate limiting approach should be applied? → A: Role-based tiers — Public: 60 req/min, Agents: 300 req/min, Admins: unlimited
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -131,17 +140,20 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-004**: System MUST provide content negotiation supporting `text/html`, `application/ld+json`, `application/json`, and `text/turtle`
 - **FR-005**: System MUST track field-level provenance for all event data with source attribution
 - **FR-006**: System MUST implement cursor-based pagination for all list endpoints with configurable limit (default 50, max 200)
-- **FR-007**: System MUST authenticate agent writes via API keys
+- **FR-007**: System MUST authenticate agent writes via API keys provisioned by admins
 - **FR-008**: System MUST authenticate admin access via JWT tokens
 - **FR-009**: System MUST allow public read-only access without authentication
 - **FR-010**: System MUST return RFC 7807 compliant error responses for all failures
 - **FR-011**: System MUST return HTTP 410 Gone with JSON-LD tombstone for deleted entities
 - **FR-012**: System MUST expose OpenAPI 3.1 specification at `/api/v1/openapi.json`
-- **FR-013**: System MUST provide admin endpoints for event review, editing, and lifecycle management
+- **FR-013**: System MUST provide admin endpoints for event review, editing, lifecycle management, and API key provisioning
 - **FR-014**: System MUST provide change feed endpoint with cursor-based sync for federation
 - **FR-015**: System MUST reject events from non-CC0 compatible sources at ingestion boundary
 - **FR-016**: System MUST render human-readable HTML pages for event URIs with embedded JSON-LD
 - **FR-017**: System MUST provide health check endpoints at `/healthz` (liveness) and `/readyz` (readiness)
+- **FR-018**: System MUST auto-publish submitted events immediately; low-confidence or flagged events also appear in admin review queue
+- **FR-019**: System MUST support query filters: date range, city/region, venue ID, organizer ID, lifecycle state, free-text search, keywords, and event domain
+- **FR-020**: System MUST apply role-based rate limits: Public 60 req/min, Agents 300 req/min, Admins unlimited
 
 ### Key Entities
 
