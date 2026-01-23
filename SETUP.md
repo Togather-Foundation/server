@@ -4,6 +4,8 @@
 
 This setup uses Ubuntu, with Spec kit and beads and the copilot model with opencode and openskills.
 
+Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
+
 1. Install `uv`
    1. `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. Install opencode
@@ -14,6 +16,7 @@ This setup uses Ubuntu, with Spec kit and beads and the copilot model with openc
       2. See https://nodejs.org/en/download
    2. `npx openskills install anthropics/skills --universal`
    3. `npx openskills sync`
+   4. Make symlink for compatibility: `ln -s .agent .claude`
 4. Install Spec Kit
    1. `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git`
 5. Install beads
@@ -34,5 +37,4 @@ This setup uses Ubuntu, with Spec kit and beads and the copilot model with openc
 
 Notes for setting up new projects:
 1. Run `opencode`
-   1. `/init`
-   2. 
+   1. `/init` to create `AGENTS.md`
