@@ -230,3 +230,10 @@ Usage notes:
 <!-- SKILLS_TABLE_END -->
 
 </skills_system>
+
+## Active Technologies
+- Go 1.22+ + Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10 (001-sel-backend)
+- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions (001-sel-backend)
+
+## Recent Changes
+- 001-sel-backend: Added Go 1.22+ + Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10

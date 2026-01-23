@@ -37,6 +37,9 @@ beads.right.meta.json
 .sync.lock
 sync_base.jsonl
 
+# export state (local-only, per-machine)
+export-state/
+
 # NOTE: Do NOT add negation patterns (e.g., !issues.jsonl) here.
 # They would override fork protection in .git/info/exclude, allowing
 # contributors to accidentally commit upstream issue databases.

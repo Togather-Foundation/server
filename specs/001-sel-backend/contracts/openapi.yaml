@@ -1,0 +1,1142 @@
+openapi: 3.1.0
+info:
+  title: Shared Events Library (SEL) API
+  version: 1.0.0
+  description: |
+    RESTful API for the Shared Events Library, a federated events commons 
+    enabling discovery, submission, and management of cultural events.
+    
+    ## Authentication
+    - **Public**: No authentication required for read endpoints
+    - **Agents**: API key in `Authorization: Bearer <key>` header
+    - **Admins**: JWT token in `Authorization: Bearer <token>` header
+    
+    ## Content Negotiation
+    All entity endpoints support content negotiation via `Accept` header:
+    - `application/ld+json` - JSON-LD (default)
+    - `application/json` - JSON-LD (alias)
+    - `text/html` - Human-readable HTML
+    - `text/turtle` - RDF Turtle
+    
+    ## Pagination
+    List endpoints use cursor-based pagination with `after` and `limit` parameters.
+    Default limit is 50, maximum is 200.
+  contact:
+    name: SEL Team
+    url: https://togather.foundation
+  license:
+    name: CC0 1.0
+    url: https://creativecommons.org/publicdomain/zero/1.0/
+
+servers:
+  - url: https://{node}/api/v1
+    description: SEL Node API
+    variables:
+      node:
+        default: toronto.togather.foundation
+        description: SEL node domain
+
+tags:
+  - name: Events
+    description: Event discovery and submission
+  - name: Places
+    description: Venue information
+  - name: Organizations
+    description: Organizer information
+  - name: Admin
+    description: Administrative operations (requires admin auth)
+  - name: Feeds
+    description: Change feeds for federation
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /events:
+    get:
+      operationId: listEvents
+      summary: List events
+      description: Query events with optional filters. Returns paginated JSON-LD.
+      tags: [Events]
+      parameters:
+        - $ref: '#/components/parameters/startDate'
+        - $ref: '#/components/parameters/endDate'
+        - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/venueId'
+        - $ref: '#/components/parameters/organizerId'
+        - $ref: '#/components/parameters/lifecycleState'
+        - $ref: '#/components/parameters/eventDomain'
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/keywords'
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated list of events
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    post:
+      operationId: createEvent
+      summary: Submit a new event
+      description: |
+        Submit a new event to the library. Requires agent or admin authentication.
+        Events are auto-published immediately and appear in admin review queue
+        if flagged or low-confidence.
+      tags: [Events]
+      security:
+        - apiKey: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/ld+json:
+            schema:
+              $ref: '#/components/schemas/EventInput'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventInput'
+      responses:
+        '201':
+          description: Event created successfully
+          headers:
+            Location:
+              description: URI of the created event
+              schema:
+                type: string
+                format: uri
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Duplicate event (idempotent - returns existing event)
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Event'
+
+  /events/{id}:
+    get:
+      operationId: getEvent
+      summary: Get event by ID
+      description: Retrieve a single event by its ULID. Supports content negotiation.
+      tags: [Events]
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      responses:
+        '200':
+          description: Event details
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Event'
+            text/html:
+              schema:
+                type: string
+            text/turtle:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+
+  /places:
+    get:
+      operationId: listPlaces
+      summary: List places
+      tags: [Places]
+      parameters:
+        - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated list of places
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/PlaceListResponse'
+
+  /places/{id}:
+    get:
+      operationId: getPlace
+      summary: Get place by ID
+      tags: [Places]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Place details
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Place'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /organizations:
+    get:
+      operationId: listOrganizations
+      summary: List organizations
+      tags: [Organizations]
+      parameters:
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated list of organizations
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/OrganizationListResponse'
+
+  /organizations/{id}:
+    get:
+      operationId: getOrganization
+      summary: Get organization by ID
+      tags: [Organizations]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/events/pending:
+    get:
+      operationId: listPendingEvents
+      summary: List events awaiting review
+      description: Returns events flagged for admin review (low confidence, validation issues, etc.)
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated list of pending events
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/events/{id}:
+    put:
+      operationId: updateEvent
+      summary: Update an event
+      description: Admin endpoint to edit event details. Increments version and logs change.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdateInput'
+      responses:
+        '200':
+          description: Event updated
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Version conflict (optimistic locking)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      operationId: deleteEvent
+      summary: Delete an event
+      description: Soft delete - returns 410 Gone with tombstone thereafter
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      responses:
+        '204':
+          description: Event deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/duplicates:
+    get:
+      operationId: listDuplicates
+      summary: List suspected duplicate events
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: List of duplicate candidates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicateListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/duplicates/{id}/merge:
+    post:
+      operationId: mergeDuplicates
+      summary: Merge duplicate events
+      description: Merge source event into target. Source returns 410 Gone with sameAs link.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Source event ID (will be merged into target)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId]
+              properties:
+                targetId:
+                  type: string
+                  description: Target event ID (canonical)
+      responses:
+        '200':
+          description: Events merged
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of API keys (without secrets)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKeyInfo'
+
+    post:
+      operationId: createApiKey
+      summary: Create a new API key
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                sourceId:
+                  type: string
+                  format: uuid
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: API key created (secret shown once)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreated'
+
+  /feeds/changes:
+    get:
+      operationId: getChangeFeed
+      summary: Get change feed
+      description: |
+        Ordered stream of changes for federation sync. Returns events in 
+        sequence order with action type and snapshot.
+      tags: [Feeds]
+      parameters:
+        - name: since
+          in: query
+          description: Cursor from previous response (e.g., seq_1048576)
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Change feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeFeedResponse'
+
+  /auth/login:
+    post:
+      operationId: login
+      summary: Admin login
+      description: Authenticate admin user and receive JWT token
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /healthz:
+    get:
+      operationId: healthLiveness
+      summary: Liveness probe
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      operationId: healthReadiness
+      summary: Readiness probe
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  checks:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+        '503':
+          description: Service not ready
+
+  /openapi.json:
+    get:
+      operationId: getOpenApiSpec
+      summary: OpenAPI specification
+      tags: [Health]
+      responses:
+        '200':
+          description: OpenAPI 3.1 specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: API key for agent access
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for admin access
+
+  parameters:
+    eventId:
+      name: id
+      in: path
+      required: true
+      description: Event ULID
+      schema:
+        type: string
+        pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    startDate:
+      name: startDate
+      in: query
+      description: Filter events starting on or after this date (ISO8601)
+      schema:
+        type: string
+        format: date
+
+    endDate:
+      name: endDate
+      in: query
+      description: Filter events starting on or before this date (ISO8601)
+      schema:
+        type: string
+        format: date
+
+    city:
+      name: city
+      in: query
+      description: Filter by city/locality
+      schema:
+        type: string
+
+    venueId:
+      name: venueId
+      in: query
+      description: Filter by venue ULID
+      schema:
+        type: string
+
+    organizerId:
+      name: organizerId
+      in: query
+      description: Filter by organizer ULID
+      schema:
+        type: string
+
+    lifecycleState:
+      name: state
+      in: query
+      description: Filter by lifecycle state
+      schema:
+        type: string
+        enum: [draft, published, postponed, rescheduled, sold_out, cancelled, completed]
+
+    eventDomain:
+      name: domain
+      in: query
+      description: Filter by event domain
+      schema:
+        type: string
+        enum: [arts, music, culture, sports, community, education, general]
+
+    query:
+      name: q
+      in: query
+      description: Free-text search on name and description
+      schema:
+        type: string
+
+    keywords:
+      name: keywords
+      in: query
+      description: Filter by keywords (comma-separated)
+      schema:
+        type: string
+
+    after:
+      name: after
+      in: query
+      description: Cursor for pagination (from previous response)
+      schema:
+        type: string
+
+    limit:
+      name: limit
+      in: query
+      description: Maximum results per page (default 50, max 200)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  schemas:
+    Event:
+      type: object
+      required: ['@id', '@type', name, startDate, location]
+      properties:
+        '@context':
+          type: array
+          items:
+            type: string
+        '@id':
+          type: string
+          format: uri
+          description: Canonical URI for this event
+        '@type':
+          type: string
+          enum: [Event, EventSeries]
+        name:
+          type: string
+        description:
+          type: string
+        eventStatus:
+          type: string
+          format: uri
+        eventAttendanceMode:
+          type: string
+          format: uri
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        doorTime:
+          type: string
+          format: date-time
+        location:
+          $ref: '#/components/schemas/Place'
+        organizer:
+          $ref: '#/components/schemas/Organization'
+        image:
+          type: string
+          format: uri
+        url:
+          type: string
+          format: uri
+        inLanguage:
+          type: array
+          items:
+            type: string
+        isAccessibleForFree:
+          type: boolean
+        offers:
+          $ref: '#/components/schemas/Offer'
+        sameAs:
+          type: array
+          items:
+            type: string
+            format: uri
+        'sel:originNode':
+          type: string
+          format: uri
+        'sel:ingestedAt':
+          type: string
+          format: date-time
+        'sel:confidence':
+          type: number
+          minimum: 0
+          maximum: 1
+        license:
+          type: string
+          format: uri
+
+    EventInput:
+      type: object
+      required: [name, startDate]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+          maxLength: 10000
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        doorTime:
+          type: string
+          format: date-time
+        location:
+          oneOf:
+            - $ref: '#/components/schemas/PlaceInput'
+            - $ref: '#/components/schemas/VirtualLocationInput'
+        virtualLocation:
+          $ref: '#/components/schemas/VirtualLocationInput'
+        organizer:
+          $ref: '#/components/schemas/OrganizationInput'
+        image:
+          type: string
+          format: uri
+        url:
+          type: string
+          format: uri
+        keywords:
+          type: array
+          items:
+            type: string
+        inLanguage:
+          type: array
+          items:
+            type: string
+        isAccessibleForFree:
+          type: boolean
+        offers:
+          $ref: '#/components/schemas/OfferInput'
+        source:
+          $ref: '#/components/schemas/SourceInput'
+
+    EventUpdateInput:
+      allOf:
+        - $ref: '#/components/schemas/EventInput'
+        - type: object
+          properties:
+            version:
+              type: integer
+              description: Current version for optimistic locking
+            lifecycleState:
+              type: string
+              enum: [draft, published, postponed, rescheduled, sold_out, cancelled, completed]
+
+    Place:
+      type: object
+      required: ['@type', name]
+      properties:
+        '@id':
+          type: string
+          format: uri
+        '@type':
+          type: string
+          enum: [Place]
+        name:
+          type: string
+        address:
+          $ref: '#/components/schemas/PostalAddress'
+        geo:
+          $ref: '#/components/schemas/GeoCoordinates'
+        telephone:
+          type: string
+        url:
+          type: string
+          format: uri
+        sameAs:
+          type: array
+          items:
+            type: string
+            format: uri
+
+    PlaceInput:
+      type: object
+      required: [name]
+      properties:
+        '@id':
+          type: string
+          format: uri
+          description: Reference to existing place by URI
+        name:
+          type: string
+        streetAddress:
+          type: string
+        addressLocality:
+          type: string
+        addressRegion:
+          type: string
+        postalCode:
+          type: string
+        addressCountry:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    VirtualLocationInput:
+      type: object
+      required: [url]
+      properties:
+        '@type':
+          type: string
+          enum: [VirtualLocation]
+        url:
+          type: string
+          format: uri
+        name:
+          type: string
+
+    PostalAddress:
+      type: object
+      properties:
+        '@type':
+          type: string
+          enum: [PostalAddress]
+        streetAddress:
+          type: string
+        addressLocality:
+          type: string
+        addressRegion:
+          type: string
+        postalCode:
+          type: string
+        addressCountry:
+          type: string
+
+    GeoCoordinates:
+      type: object
+      properties:
+        '@type':
+          type: string
+          enum: [GeoCoordinates]
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    Organization:
+      type: object
+      required: ['@type', name]
+      properties:
+        '@id':
+          type: string
+          format: uri
+        '@type':
+          type: string
+          enum: [Organization]
+        name:
+          type: string
+        alternateName:
+          type: string
+        url:
+          type: string
+          format: uri
+        sameAs:
+          type: array
+          items:
+            type: string
+            format: uri
+
+    OrganizationInput:
+      type: object
+      required: [name]
+      properties:
+        '@id':
+          type: string
+          format: uri
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+
+    Offer:
+      type: object
+      properties:
+        '@type':
+          type: string
+          enum: [Offer]
+        url:
+          type: string
+          format: uri
+        price:
+          type: string
+        priceCurrency:
+          type: string
+        availability:
+          type: string
+          format: uri
+
+    OfferInput:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        price:
+          type: string
+        priceCurrency:
+          type: string
+          default: CAD
+
+    SourceInput:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Source URL for provenance
+        eventId:
+          type: string
+          description: External system's event ID
+
+    EventListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        next_cursor:
+          type: string
+          description: Cursor for next page
+
+    PlaceListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Place'
+        next_cursor:
+          type: string
+
+    OrganizationListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organization'
+        next_cursor:
+          type: string
+
+    ChangeFeedResponse:
+      type: object
+      required: [cursor, changes]
+      properties:
+        cursor:
+          type: string
+          description: Current cursor position
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeEntry'
+        next_cursor:
+          type: string
+          description: Cursor for next page
+
+    ChangeEntry:
+      type: object
+      required: [action, uri, changed_at]
+      properties:
+        action:
+          type: string
+          enum: [create, update, delete]
+        uri:
+          type: string
+          format: uri
+        changed_at:
+          type: string
+          format: date-time
+        changed_fields:
+          type: array
+          items:
+            type: string
+        snapshot:
+          $ref: '#/components/schemas/Event'
+
+    DuplicateListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DuplicateCandidate'
+        next_cursor:
+          type: string
+
+    DuplicateCandidate:
+      type: object
+      properties:
+        eventA:
+          $ref: '#/components/schemas/Event'
+        eventB:
+          $ref: '#/components/schemas/Event'
+        similarity:
+          type: number
+          minimum: 0
+          maximum: 1
+        matchFeatures:
+          type: array
+          items:
+            type: string
+
+    ApiKeyInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prefix:
+          type: string
+          description: First 8 chars of key
+        sourceId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        isActive:
+          type: boolean
+
+    ApiKeyCreated:
+      allOf:
+        - $ref: '#/components/schemas/ApiKeyInfo'
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: Full API key (shown only once)
+
+    ProblemDetails:
+      type: object
+      required: [type, title, status]
+      description: RFC 7807 Problem Details
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+    Tombstone:
+      type: object
+      description: Response for deleted entities (HTTP 410)
+      properties:
+        '@context':
+          type: string
+        '@type':
+          type: string
+        '@id':
+          type: string
+          format: uri
+        eventStatus:
+          type: string
+          format: uri
+        'sel:tombstone':
+          type: boolean
+        'sel:deletedAt':
+          type: string
+          format: date-time
+        'sel:deletionReason':
+          type: string
+        'sel:supersededBy':
+          type: string
+          format: uri
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Gone:
+      description: Resource deleted
+      content:
+        application/ld+json:
+          schema:
+            $ref: '#/components/schemas/Tombstone'
