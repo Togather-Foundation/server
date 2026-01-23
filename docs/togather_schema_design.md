@@ -6,13 +6,12 @@
 **Related Documents:**
 - [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md)
 - [SEL Architecture Design v1](./togather_SEL_server_architecture_design_v1.md)
-- [Critical Gaps Analysis](../research/SEL_Architecture_Critical_Gaps_Analysis_Comprehensive.md)
 
 ---
 
 ## Executive Summary
 
-This document provides the **comprehensive database schema design** for the Shared Events Library (SEL), addressing critical gaps identified in the architecture review and ensuring full compliance with the [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md).
+This document provides the **comprehensive database schema design** for the Shared Events Library (SEL), ensuring full compliance with the [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md).
 
 The schema implements a **three-layer hybrid architecture**:
 
@@ -108,6 +107,17 @@ CREATE TABLE events (
   default_language TEXT DEFAULT 'en',
   is_accessible_for_free BOOLEAN DEFAULT NULL,
   accessibility_features TEXT[],
+  event_domain TEXT DEFAULT 'arts' CHECK (
+    event_domain IN (
+      'arts',        -- Visual arts, theatre, dance
+      'music',       -- Concerts, performances
+      'culture',     -- Cultural festivals, heritage
+      'sports',      -- Athletic events, games
+      'community',   -- Community gatherings, fairs
+      'education',   -- Workshops, lectures
+      'general'      -- Uncategorized events
+    )
+  ),
   
   -- Federation and origin tracking
   origin_node_id UUID REFERENCES federation_nodes(id),
@@ -984,7 +994,126 @@ CREATE INDEX idx_event_changes_action ON event_changes (action, changed_at DESC)
 
 ## 5. Reconciliation and External Identifiers
 
-### 5.1 Entity Identifiers Table
+### 5.1 Knowledge Graph Authorities Registry
+
+Registers supported knowledge graphs and their reconciliation endpoints for multi-graph integration.
+
+```sql
+CREATE TABLE knowledge_graph_authorities (
+  authority_code TEXT PRIMARY KEY,
+  
+  -- Authority details
+  authority_name TEXT NOT NULL,
+  description TEXT,
+  base_uri_pattern TEXT NOT NULL,  -- Regex pattern for validation
+  
+  -- Integration endpoints
+  reconciliation_endpoint TEXT,    -- W3C Reconciliation API endpoint
+  sparql_endpoint TEXT,            -- SPARQL query endpoint
+  dereferencing_supported BOOLEAN DEFAULT true,
+  
+  -- Domain applicability
+  applicable_domains TEXT[] NOT NULL DEFAULT ARRAY['general'],
+  -- e.g., ['arts', 'culture'] for Artsdata, ['general'] for Wikidata
+  
+  -- Trust and priority
+  trust_level INTEGER NOT NULL DEFAULT 5 CHECK (trust_level BETWEEN 1 AND 10),
+  priority_order INTEGER NOT NULL DEFAULT 50,  -- Lower = higher priority
+  
+  -- Entity type support
+  supports_events BOOLEAN DEFAULT true,
+  supports_places BOOLEAN DEFAULT true,
+  supports_organizations BOOLEAN DEFAULT true,
+  supports_persons BOOLEAN DEFAULT true,
+  
+  -- Status
+  is_active BOOLEAN DEFAULT true,
+  requires_authentication BOOLEAN DEFAULT false,
+  api_key_encrypted BYTEA,
+  
+  -- Rate limiting
+  rate_limit_per_minute INTEGER,
+  rate_limit_per_day INTEGER,
+  
+  -- Documentation
+  documentation_url TEXT,
+  terms_of_service_url TEXT,
+  
+  -- Configuration
+  config JSONB,  -- Authority-specific settings
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_kg_authorities_active ON knowledge_graph_authorities (is_active, priority_order);
+CREATE INDEX idx_kg_authorities_domain ON knowledge_graph_authorities USING GIN (applicable_domains);
+
+-- Initial authorities
+INSERT INTO knowledge_graph_authorities (
+  authority_code, authority_name, base_uri_pattern, reconciliation_endpoint,
+  sparql_endpoint, applicable_domains, trust_level, priority_order,
+  documentation_url
+) VALUES
+  (
+    'artsdata',
+    'Artsdata Knowledge Graph',
+    '^http://kg\.artsdata\.ca/resource/K\d+-\d+$',
+    'https://api.artsdata.ca/recon',
+    'https://query.artsdata.ca/sparql',
+    ARRAY['arts', 'culture', 'music'],
+    9,  -- High trust for arts events
+    10, -- Highest priority for arts domain
+    'https://docs.artsdata.ca/'
+  ),
+  (
+    'wikidata',
+    'Wikidata',
+    '^http://www\.wikidata\.org/entity/Q\d+$',
+    'https://www.wikidata.org/w/api.php',
+    'https://query.wikidata.org/sparql',
+    ARRAY['general', 'arts', 'culture', 'sports', 'community', 'education'],
+    8,  -- High trust, broad coverage
+    20, -- Secondary priority
+    'https://www.wikidata.org/wiki/Wikidata:Data_access'
+  ),
+  (
+    'isni',
+    'International Standard Name Identifier',
+    '^https://isni\.org/isni/\d{16}$',
+    NULL,
+    NULL,
+    ARRAY['general'],
+    9,  -- Authoritative for persons/organizations
+    30,
+    'https://isni.org/'
+  ),
+  (
+    'musicbrainz',
+    'MusicBrainz',
+    '^https://musicbrainz\.org/(artist|event|place)/[0-9a-f-]{36}$',
+    NULL,
+    NULL,
+    ARRAY['music'],
+    8,  -- Authoritative for music
+    15, -- High priority for music events
+    'https://musicbrainz.org/doc/MusicBrainz_API'
+  ),
+  (
+    'osm',
+    'OpenStreetMap',
+    '^https://www\.openstreetmap\.org/(node|way|relation)/\d+$',
+    NULL,
+    NULL,
+    ARRAY['general'],
+    7,  -- Good for venues/places
+    40,
+    'https://wiki.openstreetmap.org/wiki/API'
+  );
+```
+
+### 5.2 Entity Identifiers Table
 
 Normalizes external IDs (sameAs semantics) into a unified table.
 
@@ -999,7 +1128,7 @@ CREATE TABLE entity_identifiers (
   entity_id UUID NOT NULL,
   
   -- External identifier
-  scheme TEXT NOT NULL, -- 'artsdata', 'wikidata', 'isni', 'musicbrainz'
+  authority_code TEXT NOT NULL REFERENCES knowledge_graph_authorities(authority_code),
   identifier_uri TEXT NOT NULL,
   
   -- Reconciliation metadata
@@ -1017,22 +1146,23 @@ CREATE TABLE entity_identifiers (
   verified_at TIMESTAMPTZ,
   verified_by_user_id UUID REFERENCES users(id),
   
-  UNIQUE (entity_type, entity_id, scheme, identifier_uri)
+  UNIQUE (entity_type, entity_id, authority_code, identifier_uri)
 );
 
 CREATE INDEX idx_entity_identifiers_entity ON entity_identifiers (entity_type, entity_id);
-CREATE INDEX idx_entity_identifiers_scheme ON entity_identifiers (scheme, identifier_uri);
+CREATE INDEX idx_entity_identifiers_authority ON entity_identifiers (authority_code, identifier_uri);
 CREATE INDEX idx_entity_identifiers_canonical ON entity_identifiers (entity_type, entity_id, is_canonical) 
   WHERE is_canonical = true;
 ```
 
-**Supported Schemes:**
-- `artsdata`: `http://kg.artsdata.ca/resource/K{digits}-{digits}`
-- `wikidata`: `http://www.wikidata.org/entity/Q{digits}`
-- `isni`: `https://isni.org/isni/{16-digits}`
-- `musicbrainz`: `https://musicbrainz.org/{type}/{uuid}`
+**Authority Validation:**
 
-### 5.2 Reconciliation Cache
+All external identifiers are validated against the `knowledge_graph_authorities` registry:
+- URI must match the authority's `base_uri_pattern`
+- Authority must support the entity type being reconciled
+- Authority must be active (`is_active = true`)
+
+### 5.3 Reconciliation Cache
 
 Caches reconciliation lookups to avoid repeated API calls.
 
@@ -1047,6 +1177,7 @@ CREATE TABLE reconciliation_cache (
   
   -- Lookup key
   entity_type TEXT NOT NULL,
+  authority_code TEXT NOT NULL REFERENCES knowledge_graph_authorities(authority_code),
   lookup_key TEXT NOT NULL, -- Normalized search key
   lookup_properties JSONB, -- Disambiguating properties
   
@@ -1065,7 +1196,7 @@ CREATE TABLE reconciliation_cache (
   hit_count INTEGER DEFAULT 0,
   last_accessed_at TIMESTAMPTZ DEFAULT now(),
   
-  UNIQUE (entity_type, lookup_key)
+  UNIQUE (entity_type, authority_code, lookup_key)
 );
 
 CREATE INDEX idx_reconciliation_cache_lookup ON reconciliation_cache (entity_type, lookup_key);

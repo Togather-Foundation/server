@@ -36,7 +36,7 @@ We are creating an events commons using shared standards (Schema.org, ActivityPu
 The ecosystem works in three layers:
 
 1.  **Data Publishing (Structured Metadata):** Events are published on source websites using AI-assisted Schema.org markup.
-2.  **Shared Infrastructure (This Project):** A distributed collection system and "Shared Event Library" that aggregates, validates, and serves this data as a public utility.
+2.  **Shared Infrastructure (This Project):** A distributed collection system and "Shared Event Library" that aggregates, validates, and serves this data as a public utility. SEL integrates with multiple knowledge graphs (Artsdata, Wikidata, MusicBrainz, etc.) to enrich events with linked open data, supporting both arts and non-arts events.
 3.  **Discovery Applications:** Personal AI curators and apps that read from the commons to verify and recommend events to users locally.
 
 ## Why This Matters

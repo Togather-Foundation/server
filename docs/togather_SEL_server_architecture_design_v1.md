@@ -360,26 +360,65 @@ The database separates **identity from temporal instances** to handle reschedule
 
 ### Reconciliation System
 
+**Multi-Graph Knowledge Graph Integration:**
+
+SEL supports reconciliation with **multiple knowledge graphs** to enable linking for both arts and non-arts events. The system uses domain-aware routing to select appropriate authorities based on event type.
+
+**Knowledge Graph Authorities Registry (`knowledge_graph_authorities`):**
+- Configures supported knowledge graphs (Artsdata, Wikidata, MusicBrainz, ISNI, OpenStreetMap)
+- Domain applicability (e.g., Artsdata for arts/culture, Wikidata for universal)
+- Priority ordering for reconciliation routing
+- Trust levels (1-10) for conflict resolution
+- API endpoints (reconciliation, SPARQL, dereferencing)
+- Rate limiting configuration
+
+**Domain-Based Reconciliation Routing:**
+- **Arts/Culture/Music**: Artsdata → Wikidata (fallback)
+- **Sports/Community/Education**: Wikidata (primary)
+- **Places**: Multi-graph parallel reconciliation (Artsdata + OpenStreetMap + Wikidata)
+- See [Knowledge Graph Integration Strategy](./knowledge_graph_integration_strategy.md) for complete routing rules
+
 **Entity Identifiers (`entity_identifiers`):**
-- Normalized external IDs (Artsdata, Wikidata, ISNI, MusicBrainz)
-- Maps to `sameAs` semantics
+- Normalized external IDs from registered authorities
+- Maps to `sameAs` semantics in JSON-LD output
+- References `authority_code` from authorities registry
+- Supports **multiple identifiers per entity** (e.g., both Artsdata AND Wikidata)
 - Confidence scores and reconciliation method tracking
-- Supports multiple identifiers per entity
+- Canonical flag for primary identifier selection
 
 **Reconciliation Cache (`reconciliation_cache`):**
-- Avoids repeated API calls
-- Configurable TTL (30 days default)
+- **Per-authority caching** to avoid repeated API calls
+- Keyed by `(entity_type, authority_code, lookup_key)`
+- Configurable TTL (30 days default for positive, 7 days for negative)
 - Stores candidates and confidence scores
-- Negative caching for "no match" results
+- Hit count tracking for cache effectiveness
 
 **Cache Rules (MVP):**
 - Normalize keys (type, name, url, locality, postal code) before lookup
 - TTL: 30 days (positive), 7 days (negative)
+- Invalidate on entity update or authority configuration change
 
 **Confidence Thresholds:**
-- `auto_high` (≥95%): Accept automatically
-- `auto_low` (80-94%): Flag for review
-- `reject` (<80%): No match, cache negative
+- `auto_high` (≥95%): Accept automatically and add to `entity_identifiers`
+- `auto_low` (80-94%): Add to candidates, flag for manual review
+- `reject` (<80%): No match, cache negative result
+
+**Reconciliation Pipeline:**
+1. Extract `event_domain` from event
+2. Query authorities registry for applicable graphs (ordered by priority)
+3. Check cache for each authority
+4. Call reconciliation APIs in sequence until high-confidence match found
+5. Fall back to Wikidata if no domain-specific match
+6. Store all identifiers (multi-graph linking supported)
+
+**Example: Music Event Reconciliation**
+```
+Event domain: "music"
+→ Query authorities: [MusicBrainz (priority 15), Artsdata (20), Wikidata (30)]
+→ MusicBrainz: confidence 0.97 → Accept, add to entity_identifiers
+→ Also reconcile with Artsdata: confidence 0.92 → Accept, add as secondary
+→ Result: Event has sameAs = [musicbrainz_uri, artsdata_uri]
+```
 
 ### Temporal and Lifecycle Management
 

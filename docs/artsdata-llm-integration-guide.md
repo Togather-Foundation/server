@@ -2,11 +2,24 @@
 
 ## 0) Target outcome
 
+**Note**: This guide focuses on Artsdata integration specifically. SEL also integrates with other knowledge graphs (Wikidata, MusicBrainz, ISNI, OpenStreetMap). For the complete multi-graph integration strategy, see [Knowledge Graph Integration Strategy](./knowledge_graph_integration_strategy.md).
+
 - **Read** Artsdata knowledge graph data (events/places/people/orgs/concepts) reliably.
 - **Reconcile** local entities → **Artsdata IDs** + external IDs (Wikidata/ISNI/VIAF/etc.).
 - **Mint** Artsdata IDs only when needed (and only after reconciliation).
 - **Publish/ingest** interoperable RDF/JSON-LD datasets (via Databus) when acting as a contributor.
 - Remain compatible with the broader open-data ecosystem (Schema.org / Wikidata / W3C standards).
+
+**When to use Artsdata**:
+- Primary reconciliation for **arts, culture, and music events** (especially Canadian content)
+- Event organizers and venues in the arts sector
+- When enriching events with curated arts-specific metadata
+
+**When to use other graphs**:
+- **Wikidata**: Universal fallback for all domains, especially non-arts events (sports, community, education)
+- **MusicBrainz**: Music-specific events, artists, recordings
+- **OpenStreetMap**: Venue locations and geographic data
+- **ISNI**: Authoritative person/organization identifiers
 
 
 ## 1) Canonical URLs

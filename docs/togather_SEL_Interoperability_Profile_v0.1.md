@@ -110,26 +110,53 @@ func TestURIMinting(t *testing.T) {
 
 ### 1.4 sameAs Usage
 
-`sameAs` links ONLY to authoritative external identifiers.
+`sameAs` links ONLY to authoritative external identifiers from registered knowledge graphs.
 
 **Supported Authorities:**
 
-| Authority | URI Pattern | Example |
-|-----------|-------------|---------|
-| Artsdata | `http://kg.artsdata.ca/resource/K{digits}-{digits}` | `http://kg.artsdata.ca/resource/K11-211` |
-| Wikidata | `http://www.wikidata.org/entity/Q{digits}` | `http://www.wikidata.org/entity/Q636342` |
-| ISNI | `https://isni.org/isni/{16-digits}` | `https://isni.org/isni/0000000121032683` |
-| MusicBrainz | `https://musicbrainz.org/{type}/{uuid}` | `https://musicbrainz.org/artist/...` |
+SEL supports multiple knowledge graphs to enable linking for both arts and non-arts events. The complete registry is maintained in the `knowledge_graph_authorities` database table. Core authorities include:
 
-**Validation Regex:**
-```javascript
-const ARTSDATA_ID_PATTERN = /^http:\/\/kg\.artsdata\.ca\/resource\/K\d+-\d+$/;
-const WIKIDATA_ID_PATTERN = /^http:\/\/www\.wikidata\.org\/entity\/Q\d+$/;
+| Authority | URI Pattern | Domain Coverage | Example |
+|-----------|-------------|-----------------|---------|
+| **Artsdata** | `http://kg.artsdata.ca/resource/K{digits}-{digits}` | Arts, Culture, Music | `http://kg.artsdata.ca/resource/K11-211` |
+| **Wikidata** | `http://www.wikidata.org/entity/Q{digits}` | Universal (all domains) | `http://www.wikidata.org/entity/Q636342` |
+| **MusicBrainz** | `https://musicbrainz.org/{type}/{uuid}` | Music | `https://musicbrainz.org/artist/...` |
+| **ISNI** | `https://isni.org/isni/{16-digits}` | Persons, Organizations | `https://isni.org/isni/0000000121032683` |
+| **OpenStreetMap** | `https://www.openstreetmap.org/{type}/{id}` | Places, Venues | `https://www.openstreetmap.org/node/123456` |
+
+**Multi-Graph Linking:**
+
+Events MAY include `sameAs` links to **multiple authorities** simultaneously. For example, a music event might link to:
+- Artsdata (Canadian arts context)
+- MusicBrainz (music-specific data)
+- Wikidata (universal identifier)
+
+```json
+{
+  "@id": "https://toronto.togather.foundation/events/01J8...",
+  "sameAs": [
+    "http://kg.artsdata.ca/resource/K11-456",
+    "https://musicbrainz.org/event/abc-123-def",
+    "http://www.wikidata.org/entity/Q12345"
+  ]
+}
 ```
 
+**Domain-Based Reconciliation:**
+
+SEL uses domain-aware reconciliation routing (see [Knowledge Graph Integration Strategy](./knowledge_graph_integration_strategy.md)):
+- **Arts/Culture/Music events**: Reconcile with Artsdata first, fall back to Wikidata
+- **Sports/Community/Education events**: Reconcile with Wikidata directly
+- **Places**: Attempt multiple graphs (Artsdata, OpenStreetMap, Wikidata) and merge results
+
+**Validation:**
+
+All authority URIs MUST match the registered `base_uri_pattern` in the `knowledge_graph_authorities` table. Implementations SHOULD validate `sameAs` URIs against these patterns before accepting submissions.
+
 **Anti-Pattern:**
-- Do NOT use `sameAs` for a Ticketmaster URL
+- Do NOT use `sameAs` for a Ticketmaster URL or other promotional pages
 - Use `schema:url` for public pages or `prov:wasDerivedFrom` for source attribution
+- Do NOT fabricate or guess external identifiers — only include verified links
 
 ### 1.5 URI Dereferencing
 
