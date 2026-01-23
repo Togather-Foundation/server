@@ -74,6 +74,7 @@ reports/
 .agent/
 .agents/
 .claude/
+.claude
 
 # github
 .github/

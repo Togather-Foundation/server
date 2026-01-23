@@ -1,0 +1,232 @@
+# Agent Instructions
+
+This repository is for the Togather server, a Shared Events Library (SEL) backend implemented in Go.
+
+This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+
+## Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --status in_progress  # Claim work
+bd close <id>         # Complete work
+bd sync               # Sync with git
+```
+
+## Build, Lint, Test Commands
+
+The project uses a `Makefile` for common build tasks. Use `make help` to see all available targets.
+
+```bash
+# Build the server
+make build
+
+# Run all tests
+make test
+
+# Run tests with verbose output
+make test-v
+
+# Run tests with race detector
+make test-race
+
+# Generate coverage report
+make coverage
+
+# Run linter (requires golangci-lint)
+make lint
+
+# Format all Go files
+make fmt
+
+# Clean build artifacts
+make clean
+
+# Build and run the server
+make run
+
+# Run in development mode (with live reload if air is available)
+make dev
+
+# Install development tools (golangci-lint, air)
+make install-tools
+```
+
+Standard Go commands also work:
+```bash
+go build ./...
+go test ./...
+go test -v ./path/to/package -run TestName
+gofmt -w path/to/file.go
+```
+
+## Code Style and Architecture Guidelines
+
+Use idiomatic Go, consistent with SEL docs in `docs/` and `plan/`.
+
+### Packages and Structure
+
+- Organize by feature/domain instead of layer-only folders when possible (e.g., `events`, `places`, `organizations`).
+- Keep HTTP handlers thin; push business logic into services.
+- Prefer explicit constructors over global state.
+- Avoid circular imports; create shared packages for common domain concepts.
+
+### Naming Conventions
+
+- Package names: lowercase, short, no underscores (e.g., `events`, `jsonld`).
+- Types: PascalCase, exported only when needed externally.
+- Methods/functions: verbs for actions (`ValidateEvent`, `Publish`), nouns for getters (`EventByID`).
+- File names: snake_case where helpful (`event_service.go`, `jsonld_encoder.go`).
+
+### Imports
+
+- Group imports in standard Go format: stdlib, third-party, local.
+- Avoid dot imports; avoid aliasing unless required for conflicts.
+- Prefer context-aware packages (e.g., `net/http`, `database/sql`, `context`).
+
+### Formatting
+
+- Use `gofmt` and keep line length reasonable (no hard cap).
+- Prefer one responsibility per function; keep functions short.
+- Use early returns to reduce nesting.
+
+### Types and Validation
+
+- Use strong types for domain IDs (e.g., ULID wrappers) rather than raw `string` when possible.
+- Validate inputs at the boundary (HTTP handlers, ingestion jobs).
+- Follow SEL requirements: CC0 license defaults, JSON-LD export support, and SHACL validation paths.
+- Preserve source provenance and avoid lossy conversions.
+
+### Error Handling
+
+- Wrap errors with context: `fmt.Errorf("...: %w", err)`.
+- Return sentinel errors for domain-specific conditions.
+- Use RFC 7807 style error envelopes for API responses (see SEL Interoperability Profile).
+- Avoid panics except for truly unrecoverable startup failures.
+
+### Logging and Observability
+
+- Prefer structured logging (zap/logrus/zerolog) once selected.
+- Log request IDs, correlation IDs, and core identifiers (event ULID, source URI).
+- Avoid logging sensitive material (tokens, credentials, full payloads).
+
+### Concurrency and Context
+
+- Use `context.Context` for all external calls and DB operations.
+- Propagate cancellation and timeouts from request boundaries.
+- Avoid goroutine leaks; ensure each goroutine has a clear lifecycle.
+
+### Database and Migrations
+
+- Use migrations for schema changes; keep them backwards compatible.
+- Prefer parameterized queries; avoid string concatenation for SQL.
+- Keep JSONB payloads intact for provenance; store normalized fields for queries.
+
+### API and Serialization
+
+- Support `Accept: application/ld+json` content negotiation.
+- Use stable response envelopes with `items` and `next_cursor`.
+- For errors, use `type`, `title`, `status`, `detail`, `instance` fields.
+
+### Testing
+
+- Table-driven tests for validators and transformers.
+- Use test factories for event/place/org fixtures.
+- Include JSON-LD validation tests against `shapes/*.ttl` where relevant.
+- Keep unit tests deterministic; isolate external dependencies with fakes.
+
+### Documentation
+
+- Update `docs/` when behavior changes to profiles/schemas.
+- Keep schema and context artifacts (`contexts/`, `shapes/`) in sync with code changes.
+
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+
+<skills_system priority="1">
+
+## Available Skills
+
+<!-- SKILLS_TABLE_START -->
+<usage>
+When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
+
+How to use skills:
+- Invoke: `npx openskills read <skill-name>` (run in your shell)
+  - For multiple: `npx openskills read skill-one,skill-two`
+- The skill content will load with detailed instructions on how to complete the task
+- Base directory provided in output for resolving bundled resources (references/, scripts/, assets/)
+
+Usage notes:
+- Only use skills listed in <available_skills> below
+- Do not invoke a skill that is already loaded in your context
+- Each skill invocation is stateless
+</usage>
+
+<available_skills>
+
+<skill>
+<name>frontend-design</name>
+<description>Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.</description>
+<location>project</location>
+</skill>
+
+<skill>
+<name>internal-comms</name>
+<description>A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Claude should use this skill whenever asked to write some sort of internal communications (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).</description>
+<location>project</location>
+</skill>
+
+<skill>
+<name>pdf</name>
+<description>Comprehensive PDF manipulation toolkit for extracting text and tables, creating new PDFs, merging/splitting documents, and handling forms. When Claude needs to fill in a PDF form or programmatically process, generate, or analyze PDF documents at scale.</description>
+<location>project</location>
+</skill>
+
+<skill>
+<name>pptx</name>
+<description>"Presentation creation, editing, and analysis. When Claude needs to work with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks"</description>
+<location>project</location>
+</skill>
+
+<skill>
+<name>skill-creator</name>
+<description>Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.</description>
+<location>project</location>
+</skill>
+
+<skill>
+<name>webapp-testing</name>
+<description>Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs.</description>
+<location>project</location>
+</skill>
+
+</available_skills>
+<!-- SKILLS_TABLE_END -->
+
+</skills_system>
