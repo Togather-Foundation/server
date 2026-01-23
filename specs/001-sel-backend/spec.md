@@ -7,24 +7,42 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Submit and Query Events via API (Priority: P1)
+### User Story 1 - Clients Discover and Consume Events (Priority: P1)
 
-An external event aggregation agent (scraper, partner system, or data provider) needs to submit event data to SEL and retrieve events for downstream consumption. This is the foundational capability that makes SEL useful as infrastructure.
+Discovery applications, personal AI curators, and developers need to query and retrieve events from SEL to build user-facing event discovery experiences. This is the primary value proposition of the Shared Events Library.
 
-**Why this priority**: Without event ingestion and retrieval, there is no events library. This is the core data flow that all other capabilities depend on.
+**Why this priority**: SEL exists to make events discoverable. Without public read access, there's no events commons. This is the most common use case—many readers consuming data that few writers provide.
 
-**Independent Test**: An agent can POST a valid Schema.org/Event payload to `/api/v1/events`, receive a 201 Created response with the event's canonical URI, and immediately GET that event back with full JSON-LD output. The event persists across server restarts.
+**Independent Test**: A client application can query `/api/v1/events` with filters (date range, location), receive a paginated JSON-LD response, and use the data to display events to users. No authentication required.
 
 **Acceptance Scenarios**:
 
-1. **Given** an authenticated agent with valid API key, **When** the agent POSTs a JSON-LD event payload with name, startDate, and location, **Then** the system returns 201 Created with the event's canonical `@id` URI and the event is queryable via GET
-2. **Given** a public user with no authentication, **When** the user requests GET `/api/v1/events?startDate=2026-02-01`, **Then** the system returns a paginated list of events in JSON-LD format with proper `@context`
-3. **Given** an event submission with missing required field (startDate), **When** the agent POSTs, **Then** the system returns 400 Bad Request with RFC 7807 error envelope explaining the validation failure
-4. **Given** multiple events exist, **When** a client requests GET `/api/v1/events/{ulid}`, **Then** the system returns the single event with full details including provenance metadata
+1. **Given** events exist in the system, **When** a public client requests GET `/api/v1/events?startDate=2026-02-01&endDate=2026-02-28`, **Then** the system returns a paginated list of events in JSON-LD format with proper `@context` and `next_cursor` for pagination
+2. **Given** events exist in multiple cities, **When** a client requests GET `/api/v1/events?city=Toronto`, **Then** the system returns only events in Toronto with location details
+3. **Given** a specific event exists, **When** a client requests GET `/api/v1/events/{ulid}`, **Then** the system returns the full event with all Schema.org fields, location, organizer, and source attribution
+4. **Given** a large result set, **When** a client paginates using `after={cursor}&limit=50`, **Then** the system returns the next page of results with a new cursor for continued pagination
+5. **Given** an invalid query parameter, **When** a client makes a malformed request, **Then** the system returns 400 Bad Request with RFC 7807 error explaining the issue
 
 ---
 
-### User Story 2 - Admin Reviews and Edits Events (Priority: P2)
+### User Story 2 - Agents Submit Events (Priority: P1)
+
+External event aggregation agents (scrapers, partner systems, data providers) need to submit event data to SEL so it becomes part of the shared commons. This is how data enters the system.
+
+**Why this priority**: Without event ingestion, there's nothing to discover. Agents are the primary data source for populating the events library.
+
+**Independent Test**: An authenticated agent can POST a valid Schema.org/Event payload to `/api/v1/events`, receive a 201 Created response with the event's canonical URI, and the event immediately appears in query results.
+
+**Acceptance Scenarios**:
+
+1. **Given** an authenticated agent with valid API key, **When** the agent POSTs a JSON-LD event payload with name, startDate, and location, **Then** the system returns 201 Created with the event's canonical `@id` URI
+2. **Given** an event submission with missing required field (startDate), **When** the agent POSTs, **Then** the system returns 400 Bad Request with RFC 7807 error envelope explaining the validation failure
+3. **Given** an agent submits the same event twice (same source + source_event_id), **When** using idempotency, **Then** the system returns the existing event without creating a duplicate
+4. **Given** an unauthenticated request, **When** attempting to POST an event, **Then** the system returns 401 Unauthorized
+
+---
+
+### User Story 3 - Admin Reviews and Edits Events (Priority: P2)
 
 An administrator or editor needs to review submitted events, correct data quality issues, approve pending submissions, and manage event lifecycle (cancel, mark complete, merge duplicates). This enables human oversight of automated ingestion.
 
@@ -41,7 +59,7 @@ An administrator or editor needs to review submitted events, correct data qualit
 
 ---
 
-### User Story 3 - Content Negotiation and Dereferenceable URIs (Priority: P3)
+### User Story 4 - Content Negotiation and Dereferenceable URIs (Priority: P3)
 
 External systems (knowledge graphs, search engines, linked data consumers) need to resolve SEL URIs and receive appropriate representations based on their Accept header. Humans browsing should see HTML; machines should get JSON-LD or Turtle.
 
@@ -58,7 +76,7 @@ External systems (knowledge graphs, search engines, linked data consumers) need 
 
 ---
 
-### User Story 4 - Provenance Tracking and Source Attribution (Priority: P3)
+### User Story 5 - Provenance Tracking and Source Attribution (Priority: P3)
 
 Data consumers need to understand where event information came from, which source provided which fields, and the confidence level of the data. This enables trust decisions and attribution requirements.
 
@@ -74,7 +92,7 @@ Data consumers need to understand where event information came from, which sourc
 
 ---
 
-### User Story 5 - Change Feed for Federation (Priority: P4)
+### User Story 6 - Change Feed for Federation (Priority: P4)
 
 Peer SEL nodes and external consumers need to sync changes efficiently without polling all events repeatedly. A cursor-based change feed enables incremental synchronization.
 
