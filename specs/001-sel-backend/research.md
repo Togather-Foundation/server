@@ -314,6 +314,97 @@ RATE_LIMIT_AGENT=300
 
 ---
 
+---
+
+## 13. Additional Libraries for MVP Acceleration
+
+### Logging: rs/zerolog
+
+**Decision**: zerolog for structured logging
+
+**Rationale**: Zero-allocation JSON logging, ~10x faster than alternatives. Constitution requires structured logging for observability.
+
+```go
+import "github.com/rs/zerolog"
+```
+
+**Alternative**: Go 1.21+ `log/slog` (stdlib) is also excellent if preferring zero dependencies.
+
+---
+
+### Configuration: knadh/koanf
+
+**Decision**: koanf for configuration management
+
+**Rationale**: Cleaner than viper with smaller dependency tree. Supports env vars, files, and flags with type-safe binding.
+
+```go
+import "github.com/knadh/koanf/v2"
+```
+
+---
+
+### HTTP Client: hashicorp/go-retryablehttp
+
+**Decision**: go-retryablehttp for external API calls
+
+**Rationale**: Automatic retries with exponential backoff for Artsdata reconciliation and external link validation. Battle-tested by HashiCorp.
+
+```go
+import "github.com/hashicorp/go-retryablehttp"
+```
+
+---
+
+### Testing: stretchr/testify
+
+**Decision**: testify for test assertions
+
+**Rationale**: Reduces test boilerplate by ~50%. `require` for fatal assertions, `assert` for continued execution. Ubiquitous in Go ecosystem.
+
+```go
+import "github.com/stretchr/testify/assert"
+import "github.com/stretchr/testify/require"
+```
+
+---
+
+### Rate Limiting: golang.org/x/time/rate
+
+**Decision**: x/time/rate for token bucket rate limiting
+
+**Rationale**: Official Go extended library, zero external dependencies. Token bucket algorithm matches spec requirements exactly (FR-020).
+
+```go
+import "golang.org/x/time/rate"
+```
+
+---
+
+### Graceful Shutdown: oklog/run
+
+**Decision**: oklog/run for coordinating goroutines
+
+**Rationale**: Actor pattern for clean shutdown of HTTP server + River workers + signal handlers. From same maintainers as ulid.
+
+```go
+import "github.com/oklog/run"
+```
+
+---
+
+### In-Memory Cache (Optional): dgraph-io/ristretto
+
+**Decision**: ristretto if reconciliation cache becomes a bottleneck
+
+**Rationale**: Contention-free, high-performance cache with automatic eviction. Defer until profiling indicates need (YAGNI).
+
+```go
+import "github.com/dgraph-io/ristretto"
+```
+
+---
+
 ## References
 
 1. [Huma Documentation](https://huma.rocks/)
@@ -323,3 +414,9 @@ RATE_LIMIT_AGENT=300
 5. [oklog/ulid](https://github.com/oklog/ulid)
 6. [golang-migrate](https://github.com/golang-migrate/migrate)
 7. [testcontainers-go](https://golang.testcontainers.org/)
+8. [rs/zerolog](https://github.com/rs/zerolog)
+9. [knadh/koanf](https://github.com/knadh/koanf)
+10. [hashicorp/go-retryablehttp](https://github.com/hashicorp/go-retryablehttp)
+11. [stretchr/testify](https://github.com/stretchr/testify)
+12. [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate)
+13. [oklog/run](https://github.com/oklog/run)
