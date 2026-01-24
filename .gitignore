@@ -75,9 +75,15 @@ reports/
 .agents/
 .claude/
 .claude
+.opencode/
+.openpackage/
 
 # github
 .github/
 
 # Spec kit
 .specify/
+
+# beads
+# beads state (kept on beads-sync)
+.beads/issues.jsonl

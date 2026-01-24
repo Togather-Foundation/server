@@ -33,6 +33,10 @@ Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
             }
             ```
    5. `bd quickstart`
+6. Set up beads for separate sync branch
+   1. 'bd config set sync.branch beads-sync'
+   2. `git branch -c beads-sync`
+   3. `bd hooks install`
 
 
 Notes for setting up new projects:

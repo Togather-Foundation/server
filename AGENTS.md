@@ -2,17 +2,39 @@
 
 This repository is for the Togather server, a Shared Events Library (SEL) backend implemented in Go.
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+IMPORTANT:
+- Use Beads (`bd`) for task discovery + progress tracking (NOT markdown TODO lists).
+- Use Spec Kit artifacts as the source of intent: constitution → spec → plan → tasks.
 
-## Quick Reference
+## Issue Tracking
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
-```
+This project uses **bd (beads)** for issue tracking.
+Run `bd prime` for workflow context, or install hooks (`bd hooks install`) for auto-injection.
+
+**Quick reference:**
+- `bd ready` - Find unblocked work
+- `bd create "Title" --type task --priority 2` - Create issue
+- `bd update <id> --status in_progress` - Claim work
+- `bd close <id>` - Complete work
+- `bd sync` - Sync with git (run at session end)
+
+For full workflow details: `bd prime`
+
+
+## Workflow (do this every task)
+1) Pick work:
+   - `bd list --status ready` (or equivalent) and choose ONE task.
+2) Bind to the spec:
+   - Ensure the bead description links to the relevant spec/plan section.
+3) Claim bead:
+   - `bd update <id> --status in_progress` at start.
+4) Implement:
+   - Small commits, tests where appropriate, keep diffs reviewable.
+5) Update bead:
+   - `bd update <id> --status closed --close-reason "<what changed + why>"` when done.
+6) Sync Beads state:
+   - `bd sync` (safe to run often).
+7) Never merge `beads-sync` into main.
 
 ## Build, Lint, Test Commands
 
@@ -116,6 +138,7 @@ Use idiomatic Go, consistent with SEL docs in `docs/` and `plan/`.
 - Use `context.Context` for all external calls and DB operations.
 - Propagate cancellation and timeouts from request boundaries.
 - Avoid goroutine leaks; ensure each goroutine has a clear lifecycle.
+- Mutexes are used for protecting shared state, otherwise use channels.
 
 ### Database and Migrations
 
