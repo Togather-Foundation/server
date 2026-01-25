@@ -21,7 +21,7 @@ Build a Go backend server implementing the Shared Events Library (SEL) with:
 
 **Language/Version**: Go 1.22+  
 **Primary Dependencies**: Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10  
-**Supporting Libraries**: rs/zerolog (logging), knadh/koanf (config), hashicorp/go-retryablehttp (HTTP client), stretchr/testify (testing), golang.org/x/time/rate (rate limiting), oklog/run (graceful shutdown), golang-migrate/migrate (migrations)  
+**Supporting Libraries**: rs/zerolog (logging), knadh/koanf (config), spf13/cobra (CLI framework), hashicorp/go-retryablehttp (HTTP client), stretchr/testify (testing), golang.org/x/time/rate (rate limiting), oklog/run (graceful shutdown), golang-migrate/migrate (migrations)  
 **Storage**: PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions  
 **Testing**: go test, testcontainers-go for integration tests, go test -race  
 **Target Platform**: Linux server (Docker), single binary deployment  

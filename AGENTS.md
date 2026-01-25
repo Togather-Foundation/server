@@ -87,6 +87,14 @@ gofmt -w path/to/file.go
 
 Use idiomatic Go, consistent with SEL docs in `docs/` and `plan/`.
 
+This project uses Specification Driven Development:
+
+**Observability Over Opacity**: Everything must be inspectable through CLI interfaces
+**Simplicity Over Cleverness**: Start simple, add complexity only when proven necessary
+**Integration Over Isolation**: Test with real dependencies in real environments
+**Modularity Over Monoliths**: Every feature is a reusable library with clear boundaries
+
+
 ### Packages and Structure
 
 - Organize by feature/domain instead of layer-only folders when possible (e.g., `events`, `places`, `organizations`).
@@ -220,26 +228,8 @@ Usage notes:
 </skill>
 
 <skill>
-<name>internal-comms</name>
-<description>A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Claude should use this skill whenever asked to write some sort of internal communications (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).</description>
-<location>project</location>
-</skill>
-
-<skill>
-<name>pdf</name>
-<description>Comprehensive PDF manipulation toolkit for extracting text and tables, creating new PDFs, merging/splitting documents, and handling forms. When Claude needs to fill in a PDF form or programmatically process, generate, or analyze PDF documents at scale.</description>
-<location>project</location>
-</skill>
-
-<skill>
-<name>pptx</name>
-<description>"Presentation creation, editing, and analysis. When Claude needs to work with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks"</description>
-<location>project</location>
-</skill>
-
-<skill>
 <name>skill-creator</name>
-<description>Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.</description>
+<description>Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends assistants capabilities with specialized knowledge, workflows, or tool integrations.</description>
 <location>project</location>
 </skill>
 
@@ -255,7 +245,7 @@ Usage notes:
 </skills_system>
 
 ## Active Technologies
-- Go 1.22+ + Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10 (001-sel-backend)
+- Go 1.22+ + Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI) (001-sel-backend)
 - PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions (001-sel-backend)
 
 ## Recent Changes
