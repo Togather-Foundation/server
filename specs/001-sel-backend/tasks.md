@@ -32,10 +32,10 @@ description: "Task list for SEL backend implementation"
 **Purpose**: Core infrastructure required before any user story
 
  - [X] T005 Create base config loader (include auth + rate limit tiers + admin bootstrap env vars: ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL + job retry policies) in internal/config/config.go
-- [ ] T006 [P] Add structured logger setup in internal/config/logging.go
-- [ ] T007 Implement HTTP server bootstrap in cmd/server/main.go
-- [ ] T007a Implement bootstrap admin user creation from env vars (ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL) on first startup (FR-027) in cmd/server/main.go
-- [ ] T008 Implement router wiring in internal/api/router.go
+ - [X] T006 [P] Add structured logger setup in internal/config/logging.go
+ - [X] T007 Implement HTTP server bootstrap in cmd/server/main.go
+ - [X] T007a Implement bootstrap admin user creation from env vars (ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL) on first startup (FR-027) in cmd/server/main.go
+ - [X] T008 Implement router wiring in internal/api/router.go
 - [ ] T009 [P] Expose OpenAPI at /api/v1/openapi.json in internal/api/router.go
 - [ ] T010 [P] Add RFC 7807 error helpers with environment-aware detail levels (stack traces in dev/test, sanitized in production) in internal/api/problem/problem.go
 - [ ] T011 [P] Add content negotiation middleware in internal/api/middleware/negotiate.go
@@ -46,9 +46,9 @@ description: "Task list for SEL backend implementation"
 - [ ] T016 [P] Add JWT generation and validation in internal/auth/jwt.go
 - [ ] T016b [P] Add JWT cookie middleware for /admin/* HTML routes in internal/api/middleware/auth_cookie.go (validates HttpOnly cookie; API routes use Authorization header)
 - [ ] T017 [P] Add RBAC helpers in internal/auth/rbac.go
-- [ ] T018 Create migrations for core tables (events, event_occurrences, event_series) in internal/storage/postgres/migrations/000001_core.up.sql
-- [ ] T019 Create migrations for provenance tables in internal/storage/postgres/migrations/000002_provenance.up.sql
-- [ ] T020 Create migrations for federation/changefeed + tombstones tables in internal/storage/postgres/migrations/000003_federation.up.sql
+ - [X] T018 Create migrations for core tables (events, event_occurrences, event_series) in internal/storage/postgres/migrations/000001_core.up.sql
+ - [X] T019 Create migrations for provenance tables in internal/storage/postgres/migrations/000002_provenance.up.sql
+- [X] T020 Create migrations for federation/changefeed + tombstones tables in internal/storage/postgres/migrations/000003_federation.up.sql
 - [ ] T021 Create migrations for auth tables in internal/storage/postgres/migrations/000004_auth.up.sql (admin users + API keys)
 - [ ] T022 [P] Add down migrations in internal/storage/postgres/migrations/00000X_*.down.sql
 - [ ] T023 [P] Add SQLc query files per domain in internal/storage/postgres/queries/events.sql, places.sql, organizations.sql, sources.sql, provenance.sql, feeds.sql, federation.sql, auth.sql
