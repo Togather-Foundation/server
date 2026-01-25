@@ -31,7 +31,7 @@ description: "Task list for SEL backend implementation"
 
 **Purpose**: Core infrastructure required before any user story
 
-- [ ] T005 Create base config loader (include auth + rate limit tiers) in internal/config/config.go
+- [ ] T005 Create base config loader (include auth + rate limit tiers + admin bootstrap env vars) in internal/config/config.go
 - [ ] T006 [P] Add structured logger setup in internal/config/logging.go
 - [ ] T007 Implement HTTP server bootstrap in cmd/server/main.go
 - [ ] T008 Implement router wiring in internal/api/router.go
@@ -42,12 +42,12 @@ description: "Task list for SEL backend implementation"
 - [ ] T013 [P] Add rate limiter middleware with tiered limits (public/agent/admin) in internal/api/middleware/ratelimit.go
 - [ ] T014 [P] Add idempotency key middleware in internal/api/middleware/idempotency.go
 - [ ] T015 [P] Add API key auth in internal/auth/apikey.go
-- [ ] T016 [P] Add JWT auth in internal/auth/jwt.go
+- [ ] T016 [P] Add JWT auth in internal/auth/jwt.go (Authorization header + HttpOnly cookie support)
 - [ ] T017 [P] Add RBAC helpers in internal/auth/rbac.go
 - [ ] T018 Create migrations for core tables (events, event_occurrences, event_series) in internal/storage/postgres/migrations/000001_core.up.sql
 - [ ] T019 Create migrations for provenance tables in internal/storage/postgres/migrations/000002_provenance.up.sql
 - [ ] T020 Create migrations for federation/changefeed + tombstones tables in internal/storage/postgres/migrations/000003_federation.up.sql
-- [ ] T021 Create migrations for auth tables in internal/storage/postgres/migrations/000004_auth.up.sql
+- [ ] T021 Create migrations for auth tables in internal/storage/postgres/migrations/000004_auth.up.sql (admin users + API keys)
 - [ ] T022 [P] Add down migrations in internal/storage/postgres/migrations/00000X_*.down.sql
 - [ ] T023 [P] Add SQLc query files per domain in internal/storage/postgres/queries/events.sql, places.sql, organizations.sql, sources.sql, provenance.sql, feeds.sql, federation.sql, auth.sql
 - [ ] T024 [P] Add SQLc build targets to Makefile (sqlc-generate, migrate-up/down)
@@ -139,7 +139,7 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 3 (TDD - write first)
 
-- [ ] T068 [P] [US3] Integration tests for admin login in tests/integration/admin_auth_test.go
+- [ ] T068 [P] [US3] Integration tests for admin login + JWT transport (header + cookie) in tests/integration/admin_auth_test.go
 - [ ] T069 [P] [US3] Integration tests for admin pending list in tests/integration/admin_events_pending_test.go
 - [ ] T070 [P] [US3] Integration tests for admin update event in tests/integration/admin_events_update_test.go
 - [ ] T071 [P] [US3] Integration tests for admin merge duplicates in tests/integration/admin_events_merge_test.go
@@ -148,12 +148,12 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 3
 
-- [ ] T074 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go
+- [ ] T074 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go (login + cookie issuance)
 - [ ] T075 [US3] Implement admin event review handlers + federation node registry endpoints in internal/api/handlers/admin.go
 - [ ] T076 [US3] Implement admin services for review/merge + federation node registry in internal/domain/events/admin_service.go and internal/domain/federation/nodes.go
 - [ ] T077 [US3] Implement API key management in internal/domain/auth/apikeys.go
 - [ ] T078 [US3] Implement admin delete (soft delete + tombstone generation) in internal/domain/events/admin_service.go and internal/api/handlers/admin.go
-- [ ] T079 [US3] Add admin templates in web/admin/templates/*.html
+- [ ] T079 [US3] Add admin templates in web/admin/templates/*.html (include login screen)
 - [ ] T080 [US3] Add admin static assets in web/admin/static/*
 - [ ] T081 [US3] Wire admin routes + auth in internal/api/router.go
 
@@ -200,7 +200,7 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 5
 
-- [ ] T094 [US5] Implement provenance repository queries in internal/storage/postgres/queries/provenance.sql
+- [ ] T094 [US5] Implement provenance repository queries in internal/storage/postgres/queries/provenance.sql (include source + received timestamps)
 - [ ] T095 [US5] Implement provenance service in internal/domain/provenance/service.go
 - [ ] T096 [US5] Embed provenance + license in JSON-LD responses in internal/jsonld/serializer.go
 - [ ] T097 [US5] Add provenance query param handling in internal/api/handlers/events.go
@@ -226,7 +226,7 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 6
 
-- [ ] T104 [US6] Implement change capture SQL in internal/storage/postgres/queries/feeds.sql
+- [ ] T104 [US6] Implement change capture SQL in internal/storage/postgres/queries/feeds.sql (include source + received timestamps)
 - [ ] T105 [US6] Implement change feed service in internal/domain/federation/changefeed.go
 - [ ] T106 [US6] Implement change feed handler in internal/api/handlers/feeds.go
 - [ ] T107 [US6] Implement federation sync SQL in internal/storage/postgres/queries/federation.sql

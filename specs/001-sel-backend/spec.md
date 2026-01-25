@@ -48,7 +48,7 @@ An administrator or editor needs to review submitted events, correct data qualit
 
 **Why this priority**: Automated ingestion requires human quality control. Admins need to fix errors, handle edge cases, and maintain data quality standards.
 
-**Independent Test**: An admin can log in, view a list of pending/problematic events, edit an event's details, and see those changes reflected in API responses. Changes are logged with admin attribution.
+**Independent Test**: An admin can log in via `POST /api/v1/admin/login`, view a list of pending/problematic events, edit an event's details, and see those changes reflected in API responses. Changes are logged with admin attribution.
 
 **Acceptance Scenarios**:
 
@@ -130,6 +130,13 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - Q: What filters should the public query endpoint support? → A: Extended filters — date range (startDate/endDate), city/region, venue ID, organizer ID, lifecycle state, free-text search on name/description, keywords/tags, and event domain (arts/music/culture/etc)
 - Q: What rate limiting approach should be applied? → A: Role-based tiers — Public: 60 req/min, Agents: 300 req/min, Admins: unlimited
 
+### Session 2026-01-24
+
+- Q: What admin authentication approach should be used? → A: Local admin credentials stored in the database with `POST /api/v1/admin/login` issuing JWTs
+- Q: How is the first admin created? → A: Bootstrap first admin from environment variables, then manage admins via admin UI/API
+- Q: How should admin JWTs be transported? → A: Authorization header for API requests; HttpOnly cookie for admin HTML UI
+- Q: Where should source vs server timestamps be recorded? → A: Both provenance fields and change feed entries should include source-provided and server-received timestamps
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -159,6 +166,10 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-023**: System MUST create at least one occurrence record when ingesting an event
 - **FR-024**: System MUST include license information in JSON-LD responses
 - **FR-025**: System MUST provide admin management for federation node registry
+- **FR-026**: System MUST authenticate admins via local credentials stored in the database and issue JWTs from `POST /api/v1/admin/login`
+- **FR-027**: System MUST bootstrap the first admin from environment variables and allow subsequent admin management via admin UI/API
+- **FR-028**: System MUST accept admin JWTs via `Authorization: Bearer` for API requests and via HttpOnly cookie for the admin HTML UI
+- **FR-029**: System MUST record both source-provided timestamps and server-received timestamps in provenance fields and in change feed entries
 
 ### Key Entities
 
