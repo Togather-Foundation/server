@@ -34,12 +34,7 @@ func Frame(document any, frame map[string]any, opts *ld.JsonLdOptions) (map[stri
 		return nil, err
 	}
 
-	framed, ok := result.(map[string]any)
-	if !ok {
-		return nil, ErrInvalidFrame
-	}
-
-	return framed, nil
+	return result, nil
 }
 
 // EntityFrame builds a frame for a single entity type (Event, Place, Organization).

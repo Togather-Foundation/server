@@ -41,11 +41,7 @@ func (s *Serializer) Compact(document any, version string) (map[string]any, erro
 		return nil, err
 	}
 
-	compacted, ok := result.(map[string]any)
-	if !ok {
-		return nil, ErrInvalidDocument
-	}
-	return compacted, nil
+	return result, nil
 }
 
 // Frame applies a JSON-LD frame to a document with optional framing options.
