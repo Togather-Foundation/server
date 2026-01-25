@@ -47,7 +47,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	require.NoError(t, err)
 
 	migrationsPath := filepath.Join(projectRoot(t), "internal", "storage", "postgres", "migrations")
-	require.NoError(t, postgres.MigrateUp(dbURL, migrationsPath))
+	require.NoError(t, migrateWithRetry(dbURL, migrationsPath, 10*time.Second))
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
@@ -108,4 +108,18 @@ func projectRoot(t *testing.T) string {
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+}
+
+func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if err := postgres.MigrateUp(databaseURL, migrationsPath); err != nil {
+			if time.Now().After(deadline) {
+				return err
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
 }
