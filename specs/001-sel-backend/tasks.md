@@ -80,15 +80,15 @@ description: "Task list for SEL backend implementation"
 - [X] T035 [P] [US1] Integration tests for GET /api/v1/events/{id} in tests/integration/events_get_test.go
 - [X] T036 [P] [US1] Integration tests for GET /api/v1/places and /places/{id} in tests/integration/places_test.go
 - [X] T037 [P] [US1] Integration tests for GET /api/v1/organizations and /organizations/{id} in tests/integration/organizations_test.go
-- [ ] T038a [P] [US1] Contract test for RFC 7807 errors: invalid ULID format in tests/contracts/problem_details_test.go
-- [ ] T038b [P] [US1] Contract test for RFC 7807 errors: malformed date range parameters in tests/contracts/problem_details_test.go
-- [ ] T038c [P] [US1] Contract test for RFC 7807 errors: missing/invalid Accept header handling (default to application/json) in tests/contracts/problem_details_test.go
-- [ ] T038d [P] [US1] Contract test for RFC 7807 environment-aware detail levels (stack traces in dev, sanitized in prod) in tests/contracts/problem_details_test.go
-- [ ] T039 [P] [US1] JSON-LD framing tests for list + detail in tests/contracts/jsonld_events_test.go
-- [ ] T039a [P] [US1] Integration tests for /healthz and /readyz endpoints (FR-017) in tests/integration/health_test.go
-- [ ] T039b [P] [US1] Contract test for OpenAPI spec validation (FR-012): ensure /api/v1/openapi.json matches implemented routes in tests/contracts/openapi_validation_test.go
-- [ ] T039c [P] [US1] Contract test for pagination cursor encoding/decoding and next_cursor behavior (FR-006) in tests/contracts/pagination_test.go
-- [ ] T039d [P] [US1] Contract test for URI validation: ULID format, canonical URI pattern, sameAs normalization (FR-022) in tests/contracts/uri_validation_test.go
+- [X] T038a [P] [US1] Contract test for RFC 7807 errors: invalid ULID format in tests/contracts/problem_details_test.go
+- [X] T038b [P] [US1] Contract test for RFC 7807 errors: malformed date range parameters in tests/contracts/problem_details_test.go
+- [X] T038c [P] [US1] Contract test for RFC 7807 errors: missing/invalid Accept header handling (default to application/json) in tests/contracts/problem_details_test.go
+- [X] T038d [P] [US1] Contract test for RFC 7807 environment-aware detail levels (stack traces in dev, sanitized in prod) in tests/contracts/problem_details_test.go
+- [X] T039 [P] [US1] JSON-LD framing tests for list + detail in tests/contracts/jsonld_events_test.go
+- [X] T039a [P] [US1] Integration tests for /healthz and /readyz endpoints (FR-017) in tests/integration/health_test.go
+- [X] T039b [P] [US1] Contract test for OpenAPI spec validation (FR-012): ensure /api/v1/openapi.json matches implemented routes in tests/contracts/openapi_validation_test.go
+- [X] T039c [P] [US1] Contract test for pagination cursor encoding/decoding and next_cursor behavior (FR-006) in tests/contracts/pagination_test.go
+- [X] T039d [P] [US1] Contract test for URI validation: ULID format, canonical URI pattern, sameAs normalization (FR-022) in tests/contracts/uri_validation_test.go
 
 ### Implementation for User Story 1
 
