@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,9 +11,11 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api"
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -122,4 +125,41 @@ func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Du
 		}
 		return nil
 	}
+}
+
+func insertAPIKey(t *testing.T, env *testEnv, name string) string {
+	t.Helper()
+
+	key := ulid.Make().String() + "secret"
+	prefix := key[:8]
+	hash := auth.HashAPIKey(key)
+
+	_, err := env.Pool.Exec(env.Context,
+		`INSERT INTO api_keys (prefix, key_hash, name) VALUES ($1, $2, $3)`,
+		prefix, hash, name,
+	)
+	require.NoError(t, err)
+
+	return key
+}
+
+func createdEventLocation(payload map[string]any) (map[string]any, error) {
+	if payload == nil {
+		return nil, errors.New("missing payload")
+	}
+	location, ok := payload["location"].(map[string]any)
+	if !ok {
+		return nil, errors.New("missing location")
+	}
+	return location, nil
+}
+
+func eventIDFromPayload(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	if value, ok := payload["@id"].(string); ok {
+		return value
+	}
+	return ""
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api"
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	storagepostgres "github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -175,6 +176,22 @@ func insertEventWithOccurrence(t *testing.T, env *testEnv, name string, organize
 	require.NoError(t, err)
 
 	return ulidValue
+}
+
+func insertAPIKey(t *testing.T, env *testEnv, name string) string {
+	t.Helper()
+
+	key := ulid.Make().String() + "secret"
+	prefix := key[:8]
+	hash := auth.HashAPIKey(key)
+
+	_, err := env.Pool.Exec(env.Context,
+		`INSERT INTO api_keys (prefix, key_hash, name) VALUES ($1, $2, $3)`,
+		prefix, hash, name,
+	)
+	require.NoError(t, err)
+
+	return key
 }
 
 func eventNameFromPayload(payload map[string]any) string {

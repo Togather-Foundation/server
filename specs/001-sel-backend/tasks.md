@@ -118,12 +118,12 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 2 (TDD - write first)
 
-- [ ] T052 [P] [US2] Integration tests for POST /api/v1/events (happy path) in tests/integration/events_create_test.go
-- [ ] T053 [P] [US2] Integration tests for validation errors in tests/integration/events_create_validation_test.go
-- [ ] T054 [P] [US2] Integration tests for auth failures in tests/integration/events_create_auth_test.go
-- [ ] T055 [P] [US2] Integration tests for idempotency in tests/integration/events_idempotency_test.go
-- [ ] T056 [P] [US2] Unit tests for validation rules in internal/domain/events/validation_test.go
-- [ ] T057 [P] [US2] Contract tests for license rejection (FR-015) in tests/contracts/license_rejection_test.go
+- [X] T052 [P] [US2] Integration tests for POST /api/v1/events (happy path) in tests/integration/events_create_test.go
+- [X] T053 [P] [US2] Integration tests for validation errors in tests/integration/events_create_validation_test.go
+- [X] T054 [P] [US2] Integration tests for auth failures in tests/integration/events_create_auth_test.go
+- [X] T055 [P] [US2] Integration tests for idempotency in tests/integration/events_idempotency_test.go
+- [X] T056 [P] [US2] Unit tests for validation rules in internal/domain/events/validation_test.go
+- [X] T057 [P] [US2] Contract tests for license rejection (FR-015) in tests/contracts/license_rejection_test.go
 
 ### Implementation for User Story 2
 
