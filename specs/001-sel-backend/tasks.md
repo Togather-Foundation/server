@@ -21,7 +21,7 @@ description: "Task list for SEL backend implementation"
 **Purpose**: Project initialization and repo scaffolding per plan.md
 
 - [ ] T001 Create sqlc configuration in sqlc.yaml
-- [ ] T002 [P] Add migration tooling config in internal/storage/postgres/migrate.go
+- [ ] T002 [P] Add golang-migrate/migrate tooling config in internal/storage/postgres/migrate.go
 - [ ] T003 [P] Scaffold base package folders per plan.md (cmd/server, internal/api, internal/domain, internal/jsonld, internal/storage, internal/auth, internal/jobs, internal/config, web/admin)
 - [ ] T004 [P] Add env config template in .env.example and update SETUP.md
 
@@ -31,12 +31,12 @@ description: "Task list for SEL backend implementation"
 
 **Purpose**: Core infrastructure required before any user story
 
-- [ ] T005 Create base config loader (include auth + rate limit tiers + admin bootstrap env vars) in internal/config/config.go
+- [ ] T005 Create base config loader (include auth + rate limit tiers + admin bootstrap env vars + job retry policies) in internal/config/config.go
 - [ ] T006 [P] Add structured logger setup in internal/config/logging.go
 - [ ] T007 Implement HTTP server bootstrap in cmd/server/main.go
 - [ ] T008 Implement router wiring in internal/api/router.go
 - [ ] T009 [P] Expose OpenAPI at /api/v1/openapi.json in internal/api/router.go
-- [ ] T010 [P] Add RFC 7807 error helpers in internal/api/problem/problem.go
+- [ ] T010 [P] Add RFC 7807 error helpers with environment-aware detail levels (stack traces in dev/test, sanitized in production) in internal/api/problem/problem.go
 - [ ] T011 [P] Add content negotiation middleware in internal/api/middleware/negotiate.go
 - [ ] T012 [P] Add request logging middleware in internal/api/middleware/logging.go
 - [ ] T013 [P] Add rate limiter middleware with tiered limits (public/agent/admin) in internal/api/middleware/ratelimit.go
@@ -59,6 +59,8 @@ description: "Task list for SEL backend implementation"
 - [ ] T030 [P] Add JSON-LD serializer in internal/jsonld/serializer.go
 - [ ] T031 Add SHACL validation harness for tests in tests/contracts/shacl_validation_test.go
 - [ ] T032 [P] Add /healthz and /readyz endpoints in internal/api/handlers/health.go
+- [ ] T033a [P] Setup River job queue with job-type-specific retry configuration (deduplication: 1 attempt, reconciliation/enrichment: 5-10 attempts, exponential backoff) in internal/jobs/river.go
+- [ ] T033b [P] Add job failure alerting hooks in internal/jobs/alerts.go
 
 **Checkpoint**: Foundation ready
 
@@ -72,28 +74,28 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 1 (TDD - write first)
 
-- [ ] T033 [P] [US1] Integration tests for GET /api/v1/events filters/pagination in tests/integration/events_list_test.go
-- [ ] T034 [P] [US1] Integration tests for GET /api/v1/events/{id} in tests/integration/events_get_test.go
-- [ ] T035 [P] [US1] Integration tests for GET /api/v1/places and /places/{id} in tests/integration/places_test.go
-- [ ] T036 [P] [US1] Integration tests for GET /api/v1/organizations and /organizations/{id} in tests/integration/organizations_test.go
-- [ ] T037 [P] [US1] Contract test for RFC 7807 errors in tests/contracts/problem_details_test.go
-- [ ] T038 [P] [US1] JSON-LD framing tests for list + detail in tests/contracts/jsonld_events_test.go
+- [ ] T034 [P] [US1] Integration tests for GET /api/v1/events filters/pagination in tests/integration/events_list_test.go
+- [ ] T035 [P] [US1] Integration tests for GET /api/v1/events/{id} in tests/integration/events_get_test.go
+- [ ] T036 [P] [US1] Integration tests for GET /api/v1/places and /places/{id} in tests/integration/places_test.go
+- [ ] T037 [P] [US1] Integration tests for GET /api/v1/organizations and /organizations/{id} in tests/integration/organizations_test.go
+- [ ] T038 [P] [US1] Contract test for RFC 7807 errors with environment-aware detail levels in tests/contracts/problem_details_test.go
+- [ ] T039 [P] [US1] JSON-LD framing tests for list + detail in tests/contracts/jsonld_events_test.go
 
 ### Implementation for User Story 1
 
-- [ ] T039 [P] [US1] Implement event query SQL with required filters in internal/storage/postgres/queries/events.sql
-- [ ] T040 [P] [US1] Implement place query SQL in internal/storage/postgres/queries/places.sql
-- [ ] T041 [P] [US1] Implement organization query SQL in internal/storage/postgres/queries/organizations.sql
-- [ ] T042 [US1] Implement event repository in internal/domain/events/repository.go
-- [ ] T043 [US1] Implement event service in internal/domain/events/service.go
-- [ ] T044 [US1] Implement filter parsing/validation (date range, city/region, venue ID, organizer ID, lifecycle state, query, keywords, event domain) in internal/domain/events/service.go and internal/api/handlers/events.go
-- [ ] T045 [US1] Implement place repository/service in internal/domain/places/repository.go and internal/domain/places/service.go
-- [ ] T046 [US1] Implement organization repository/service in internal/domain/organizations/repository.go and internal/domain/organizations/service.go
-- [ ] T047 [US1] Implement handlers for list/get events in internal/api/handlers/events.go
-- [ ] T048 [US1] Implement handlers for list/get places in internal/api/handlers/places.go
-- [ ] T049 [US1] Implement handlers for list/get organizations in internal/api/handlers/organizations.go
-- [ ] T050 [US1] Implement cursor pagination helpers in internal/api/pagination/cursor.go
-- [ ] T051 [US1] Wire routes for public endpoints in internal/api/router.go
+- [ ] T040 [P] [US1] Implement event query SQL with required filters (including occurrence date range filtering) in internal/storage/postgres/queries/events.sql
+- [ ] T041 [P] [US1] Implement place query SQL in internal/storage/postgres/queries/places.sql
+- [ ] T042 [P] [US1] Implement organization query SQL in internal/storage/postgres/queries/organizations.sql
+- [ ] T043 [US1] Implement event repository in internal/domain/events/repository.go
+- [ ] T044 [US1] Implement event service in internal/domain/events/service.go
+- [ ] T045 [US1] Implement filter parsing/validation (date range, city/region, venue ID, organizer ID, lifecycle state, query, keywords, event domain) in internal/domain/events/service.go and internal/api/handlers/events.go
+- [ ] T046 [US1] Implement place repository/service in internal/domain/places/repository.go and internal/domain/places/service.go
+- [ ] T047 [US1] Implement organization repository/service in internal/domain/organizations/repository.go and internal/domain/organizations/service.go
+- [ ] T048 [US1] Implement handlers for list/get events in internal/api/handlers/events.go
+- [ ] T049 [US1] Implement handlers for list/get places in internal/api/handlers/places.go
+- [ ] T050 [US1] Implement handlers for list/get organizations in internal/api/handlers/organizations.go
+- [ ] T051 [US1] Implement cursor pagination helpers in internal/api/pagination/cursor.go
+- [ ] T052 [US1] Wire routes for public endpoints in internal/api/router.go
 
 **Checkpoint**: User Story 1 functional and independently testable
 
@@ -120,12 +122,13 @@ description: "Task list for SEL backend implementation"
 - [ ] T059 [US2] Implement normalization utilities in internal/domain/events/normalize.go
 - [ ] T060 [US2] Implement deduplication logic in internal/domain/events/dedup.go
 - [ ] T061 [US2] Implement event creation repository methods in internal/domain/events/repository.go
-- [ ] T062 [US2] Implement ingestion service (create event + default occurrence rows) in internal/domain/events/ingest.go
+- [ ] T062 [US2] Implement ingestion service (create event + one or more occurrence rows based on event data) in internal/domain/events/ingest.go
 - [ ] T063 [US2] Implement auto-publish + review-queue flagging rules in internal/domain/events/ingest.go
 - [ ] T064 [US2] Implement source registry access in internal/domain/provenance/service.go
 - [ ] T065 [US2] Implement POST handler in internal/api/handlers/events.go
 - [ ] T066 [US2] Add idempotency storage queries in internal/storage/postgres/queries/events.sql
 - [ ] T067 [US2] Wire auth + rate limit middleware for write endpoints in internal/api/router.go
+- [ ] T067a [US2] Implement background job workers for reconciliation/enrichment with retry policies in internal/jobs/workers.go
 
 **Checkpoint**: User Story 2 functional and independently testable
 
@@ -139,23 +142,23 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 3 (TDD - write first)
 
-- [ ] T068 [P] [US3] Integration tests for admin login + JWT transport (header + cookie) in tests/integration/admin_auth_test.go
-- [ ] T069 [P] [US3] Integration tests for admin pending list in tests/integration/admin_events_pending_test.go
-- [ ] T070 [P] [US3] Integration tests for admin update event in tests/integration/admin_events_update_test.go
-- [ ] T071 [P] [US3] Integration tests for admin merge duplicates in tests/integration/admin_events_merge_test.go
-- [ ] T072 [P] [US3] Integration tests for admin delete + tombstone in tests/integration/admin_events_delete_test.go
-- [ ] T073 [P] [US3] E2E HTML smoke tests for /admin pages in tests/e2e/admin_ui_test.go
+- [ ] T069 [P] [US3] Integration tests for admin login + JWT transport (header + cookie) in tests/integration/admin_auth_test.go
+- [ ] T070 [P] [US3] Integration tests for admin pending list in tests/integration/admin_events_pending_test.go
+- [ ] T071 [P] [US3] Integration tests for admin update event in tests/integration/admin_events_update_test.go
+- [ ] T072 [P] [US3] Integration tests for admin merge duplicates in tests/integration/admin_events_merge_test.go
+- [ ] T073 [P] [US3] Integration tests for admin delete + tombstone in tests/integration/admin_events_delete_test.go
+- [ ] T074 [P] [US3] E2E HTML smoke tests for /admin pages in tests/e2e/admin_ui_test.go
 
 ### Implementation for User Story 3
 
-- [ ] T074 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go (login + cookie issuance)
-- [ ] T075 [US3] Implement admin event review handlers + federation node registry endpoints in internal/api/handlers/admin.go
-- [ ] T076 [US3] Implement admin services for review/merge + federation node registry in internal/domain/events/admin_service.go and internal/domain/federation/nodes.go
-- [ ] T077 [US3] Implement API key management in internal/domain/auth/apikeys.go
-- [ ] T078 [US3] Implement admin delete (soft delete + tombstone generation) in internal/domain/events/admin_service.go and internal/api/handlers/admin.go
-- [ ] T079 [US3] Add admin templates in web/admin/templates/*.html (include login screen)
-- [ ] T080 [US3] Add admin static assets in web/admin/static/*
-- [ ] T081 [US3] Wire admin routes + auth in internal/api/router.go
+- [ ] T075 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go (login + cookie issuance)
+- [ ] T076 [US3] Implement admin event review handlers + federation node registry endpoints in internal/api/handlers/admin.go
+- [ ] T077 [US3] Implement admin services for review/merge + federation node registry in internal/domain/events/admin_service.go and internal/domain/federation/nodes.go
+- [ ] T078 [US3] Implement API key management in internal/domain/auth/apikeys.go
+- [ ] T079 [US3] Implement admin delete (soft delete + tombstone generation) in internal/domain/events/admin_service.go and internal/api/handlers/admin.go
+- [ ] T080 [US3] Add admin templates in web/admin/templates/*.html (include login screen)
+- [ ] T081 [US3] Add admin static assets in web/admin/static/*
+- [ ] T082 [US3] Wire admin routes + auth in internal/api/router.go
 
 **Checkpoint**: User Story 3 functional and independently testable
 
@@ -169,18 +172,18 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 4 (TDD - write first)
 
-- [ ] T082 [P] [US4] Integration tests for Accept header behavior in tests/integration/content_negotiation_test.go
-- [ ] T083 [P] [US4] Contract tests for HTML with embedded JSON-LD in tests/contracts/html_embedding_test.go
-- [ ] T084 [P] [US4] Contract tests for Turtle output in tests/contracts/turtle_output_test.go
-- [ ] T085 [P] [US4] Integration tests for 410 tombstone on deleted event in tests/integration/events_tombstone_test.go
+- [ ] T083 [P] [US4] Integration tests for Accept header behavior in tests/integration/content_negotiation_test.go
+- [ ] T084 [P] [US4] Contract tests for HTML with embedded JSON-LD in tests/contracts/html_embedding_test.go
+- [ ] T085 [P] [US4] Contract tests for Turtle output in tests/contracts/turtle_output_test.go
+- [ ] T086 [P] [US4] Integration tests for 410 tombstone on deleted event in tests/integration/events_tombstone_test.go
 
 ### Implementation for User Story 4
 
-- [ ] T086 [US4] Implement HTML render helpers (name, startDate, location, organizer, embedded JSON-LD) in internal/api/render/html.go
-- [ ] T087 [US4] Implement Turtle serialization in internal/jsonld/turtle.go
-- [ ] T088 [US4] Add event URI handlers for /events/{id} without /api prefix in internal/api/handlers/public_pages.go
-- [ ] T089 [US4] Return 410 with tombstone JSON-LD for deleted events in internal/api/handlers/events.go and internal/api/handlers/public_pages.go
-- [ ] T090 [US4] Wire dereferenceable routes in internal/api/router.go
+- [ ] T087 [US4] Implement HTML render helpers (name, startDate, location, organizer, embedded JSON-LD) in internal/api/render/html.go
+- [ ] T088 [US4] Implement Turtle serialization in internal/jsonld/turtle.go
+- [ ] T089 [US4] Add event URI handlers for /events/{id} without /api prefix in internal/api/handlers/public_pages.go
+- [ ] T090 [US4] Return 410 with tombstone JSON-LD for deleted events in internal/api/handlers/events.go and internal/api/handlers/public_pages.go
+- [ ] T091 [US4] Wire dereferenceable routes in internal/api/router.go
 
 **Checkpoint**: User Story 4 functional and independently testable
 
@@ -194,16 +197,16 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 5 (TDD - write first)
 
-- [ ] T091 [P] [US5] Integration tests for source attribution in tests/integration/provenance_event_source_test.go
-- [ ] T092 [P] [US5] Integration tests for field provenance parameter in tests/integration/provenance_field_test.go
-- [ ] T093 [P] [US5] Unit tests for conflict resolution in internal/domain/provenance/conflict_test.go
+- [ ] T092 [P] [US5] Integration tests for source attribution in tests/integration/provenance_event_source_test.go
+- [ ] T093 [P] [US5] Integration tests for field provenance parameter in tests/integration/provenance_field_test.go
+- [ ] T094 [P] [US5] Unit tests for conflict resolution in internal/domain/provenance/conflict_test.go
 
 ### Implementation for User Story 5
 
-- [ ] T094 [US5] Implement provenance repository queries in internal/storage/postgres/queries/provenance.sql (include source + received timestamps)
-- [ ] T095 [US5] Implement provenance service in internal/domain/provenance/service.go
-- [ ] T096 [US5] Embed provenance + license in JSON-LD responses in internal/jsonld/serializer.go
-- [ ] T097 [US5] Add provenance query param handling in internal/api/handlers/events.go
+- [ ] T095 [US5] Implement provenance repository queries in internal/storage/postgres/queries/provenance.sql (include source + received timestamps)
+- [ ] T096 [US5] Implement provenance service in internal/domain/provenance/service.go
+- [ ] T097 [US5] Embed provenance + license in JSON-LD responses in internal/jsonld/serializer.go
+- [ ] T098 [US5] Add provenance query param handling in internal/api/handlers/events.go
 
 **Checkpoint**: User Story 5 functional and independently testable
 
@@ -217,22 +220,22 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 6 (TDD - write first)
 
-- [ ] T098 [P] [US6] Integration tests for change feed pagination in tests/integration/feeds_changes_test.go
-- [ ] T099 [P] [US6] Integration tests for delete tombstones in tests/integration/feeds_tombstone_test.go
-- [ ] T100 [P] [US6] Unit tests for cursor encoding in internal/domain/federation/cursor_test.go
-- [ ] T101 [P] [US6] Integration tests for federation sync auth + validation in tests/integration/federation_sync_auth_test.go
-- [ ] T102 [P] [US6] Integration tests for federation sync idempotency in tests/integration/federation_sync_idempotency_test.go
-- [ ] T103 [P] [US6] Integration tests for federation sync URI preservation in tests/integration/federation_sync_uri_preservation_test.go
+- [ ] T099 [P] [US6] Integration tests for change feed pagination in tests/integration/feeds_changes_test.go
+- [ ] T100 [P] [US6] Integration tests for delete tombstones in tests/integration/feeds_tombstone_test.go
+- [ ] T101 [P] [US6] Unit tests for cursor encoding in internal/domain/federation/cursor_test.go
+- [ ] T102 [P] [US6] Integration tests for federation sync auth + validation in tests/integration/federation_sync_auth_test.go
+- [ ] T103 [P] [US6] Integration tests for federation sync idempotency in tests/integration/federation_sync_idempotency_test.go
+- [ ] T104 [P] [US6] Integration tests for federation sync URI preservation in tests/integration/federation_sync_uri_preservation_test.go
 
 ### Implementation for User Story 6
 
-- [ ] T104 [US6] Implement change capture SQL in internal/storage/postgres/queries/feeds.sql (include source + received timestamps)
-- [ ] T105 [US6] Implement change feed service in internal/domain/federation/changefeed.go
-- [ ] T106 [US6] Implement change feed handler in internal/api/handlers/feeds.go
-- [ ] T107 [US6] Implement federation sync SQL in internal/storage/postgres/queries/federation.sql
-- [ ] T108 [US6] Implement federation sync service in internal/domain/federation/sync.go
-- [ ] T109 [US6] Implement federation sync handler in internal/api/handlers/federation.go
-- [ ] T110 [US6] Wire feed + federation sync routes in internal/api/router.go
+- [ ] T105 [US6] Implement change capture SQL in internal/storage/postgres/queries/feeds.sql (include source + received timestamps)
+- [ ] T106 [US6] Implement change feed service in internal/domain/federation/changefeed.go
+- [ ] T107 [US6] Implement change feed handler in internal/api/handlers/feeds.go
+- [ ] T108 [US6] Implement federation sync SQL in internal/storage/postgres/queries/federation.sql
+- [ ] T109 [US6] Implement federation sync service in internal/domain/federation/sync.go
+- [ ] T110 [US6] Implement federation sync handler in internal/api/handlers/federation.go
+- [ ] T111 [US6] Wire feed + federation sync routes in internal/api/router.go
 
 **Checkpoint**: User Story 6 functional and independently testable
 
@@ -240,13 +243,13 @@ description: "Task list for SEL backend implementation"
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T111 [P] Update docs/ and specs/001-sel-backend/quickstart.md with TDD steps and test commands
-- [ ] T112 [P] Add Go coverage thresholds in Makefile (go test -coverprofile + coverage check)
-- [ ] T113 [P] Add CI test targets for contract + integration tests in .github/workflows/ci.yml
-- [ ] T114 [P] Add CI target for SHACL validation against shapes/*.ttl in .github/workflows/ci.yml
-- [ ] T115 [P] Add CI target for federation sync contract/integration tests in .github/workflows/ci.yml
-- [ ] T116 [P] Add docs updates referencing SEL_Implementation_Plan.md in docs/README.md
-- [ ] T117 Run full test suite and record results in specs/001-sel-backend/quickstart.md
+- [ ] T112 [P] Update docs/ and specs/001-sel-backend/quickstart.md with TDD steps and test commands
+- [ ] T113 [P] Add Go coverage thresholds in Makefile (go test -coverprofile + coverage check)
+- [ ] T114 [P] Add CI test targets for contract + integration tests in .github/workflows/ci.yml
+- [ ] T115 [P] Add CI target for SHACL validation against shapes/*.ttl in .github/workflows/ci.yml
+- [ ] T116 [P] Add CI target for federation sync contract/integration tests in .github/workflows/ci.yml
+- [ ] T117 [P] Add docs updates referencing SEL_Implementation_Plan.md in docs/README.md
+- [ ] T118 Run full test suite and record results in specs/001-sel-backend/quickstart.md
 
 ---
 

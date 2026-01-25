@@ -136,6 +136,10 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - Q: How is the first admin created? → A: Bootstrap first admin from environment variables, then manage admins via admin UI/API
 - Q: How should admin JWTs be transported? → A: Authorization header for API requests; HttpOnly cookie for admin HTML UI
 - Q: Where should source vs server timestamps be recorded? → A: Both provenance fields and change feed entries should include source-provided and server-received timestamps
+- Q: What database migration strategy should be used? → A: golang-migrate/migrate for sequential versioned migrations, supporting potential multi-database future
+- Q: How should event occurrences be handled at MVP? → A: Multiple occurrences - events can have multiple occurrence records with API support for querying by occurrence date range to handle festivals, runs, and recurring events from the start
+- Q: What level of error detail should be exposed in responses? → A: Environment-aware verbosity - stack traces and SQL errors in dev/test environments; sanitized messages only in production
+- Q: How should background job failures be handled? → A: Exponential backoff with alerting - configurable max attempts per job type (deduplication: 1 attempt, reconciliation/enrichment: 5-10 attempts); alert admins on final failure
 
 ## Requirements *(mandatory)*
 
@@ -150,7 +154,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-007**: System MUST authenticate agent writes via API keys provisioned by admins
 - **FR-008**: System MUST authenticate admin access via JWT tokens
 - **FR-009**: System MUST allow public read-only access without authentication
-- **FR-010**: System MUST return RFC 7807 compliant error responses for all failures
+- **FR-010**: System MUST return RFC 7807 compliant error responses for all failures with environment-aware detail levels: stack traces and SQL errors in dev/test; sanitized messages only in production
 - **FR-011**: System MUST return HTTP 410 Gone with JSON-LD tombstone for deleted entities
 - **FR-012**: System MUST expose OpenAPI 3.1 specification at `/api/v1/openapi.json`
 - **FR-013**: System MUST provide admin endpoints for event review, editing, lifecycle management, and API key provisioning
@@ -163,7 +167,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-020**: System MUST apply role-based rate limits: Public 60 req/min, Agents 300 req/min, Admins unlimited
 - **FR-021**: System MUST accept authenticated federation sync submissions at `POST /api/v1/federation/sync` and preserve foreign `@id` values
 - **FR-022**: System MUST validate canonical URI patterns and normalize `sameAs` links to full URIs
-- **FR-023**: System MUST create at least one occurrence record when ingesting an event
+- **FR-023**: System MUST support multiple occurrences per event; queries filter by occurrence date ranges to handle recurring events, festivals, and rescheduling
 - **FR-024**: System MUST include license information in JSON-LD responses
 - **FR-025**: System MUST provide admin management for federation node registry
 - **FR-026**: System MUST authenticate admins via local credentials stored in the database and issue JWTs from `POST /api/v1/admin/login`
@@ -174,7 +178,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 ### Key Entities
 
 - **Event**: A cultural or community happening with name, timing, location, organizer. Has lifecycle states (draft, published, cancelled, etc.) and quality indicators. Core entity of the system.
-- **Event Occurrence**: A specific temporal instance of an event. Separates identity from timing to handle reschedules, recurring events, and postponements cleanly.
+- **Event Occurrence**: A specific temporal instance of an event. Events can have multiple occurrences to handle recurring events, festival runs, and rescheduling. Queries filter by occurrence date ranges. At least one occurrence must exist per event.
 - **Place**: A physical venue or location. Normalized to enable venue-based queries and reconciliation with external place identifiers (Artsdata, Wikidata).
 - **Organization**: An entity that organizes events. Normalized for reconciliation and to enable "events by this organizer" queries.
 - **Source**: A data provider (scraper, partner API, manual entry). Has trust level (1-10), license status, and metadata for attribution.
@@ -207,8 +211,10 @@ The following assumptions were made based on the architecture documentation and 
 - **Artsdata reconciliation**: Background enrichment exists but automatic reconciliation is out of scope for MVP
 - **Admin frontend**: Minimal HTML-based interface embedded in Go binary; not a separate SPA application
 - **Database**: PostgreSQL with JSONB and PostGIS; SQLc for type-safe queries
+- **Database migrations**: golang-migrate/migrate for sequential versioned migrations to support potential multi-database expansion
+- **Duplicate detection**: Layered strategy per architecture doc (exact hash, fuzzy matching, vector similarity) with `duplicate_candidates` table and admin review workflow
 - **Timezone handling**: Events store UTC + timezone string + computed local time as specified in schema design
-- **Background jobs**: River queue for async work (reconciliation, cleanup) but minimal MVP scope
+- **Background jobs**: River queue for async work with exponential backoff and job-type-specific retry limits (deduplication: 1 attempt, reconciliation/enrichment: 5-10 attempts); admin alerts on final failure
 
 ## Out of Scope
 
