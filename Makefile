@@ -1,4 +1,6 @@
-.PHONY: help build test lint fmt clean run dev install-tools
+.PHONY: help build test lint fmt clean run dev install-tools sqlc-generate migrate-up migrate-down
+
+MIGRATIONS_DIR := internal/storage/postgres/migrations
 
 # Default target
 help:
@@ -16,6 +18,9 @@ help:
 	@echo "  make run           - Build and run the server"
 	@echo "  make dev           - Run in development mode (with air if available)"
 	@echo "  make install-tools - Install development tools"
+	@echo "  make sqlc-generate - Generate SQLc code"
+	@echo "  make migrate-up    - Run database migrations"
+	@echo "  make migrate-down  - Roll back one migration"
 
 # Build the server
 build:
@@ -86,4 +91,25 @@ install-tools:
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Installing air (live reload)..."
 	@go install github.com/air-verse/air@latest
+	@echo "Installing sqlc..."
+	@go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+	@echo "Installing migrate..."
+	@go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "Tools installed successfully!"
+
+# SQLc generate
+sqlc-generate:
+	@echo "Generating SQLc code..."
+	@which sqlc > /dev/null || (echo "sqlc not found. Install with 'make install-tools'" && exit 1)
+	@sqlc generate
+
+# Database migrations
+migrate-up:
+	@echo "Running migrations..."
+	@which migrate > /dev/null || (echo "migrate not found. Install with 'make install-tools'" && exit 1)
+	@DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$${DATABASE_URL}" up
+
+migrate-down:
+	@echo "Rolling back last migration..."
+	@which migrate > /dev/null || (echo "migrate not found. Install with 'make install-tools'" && exit 1)
+	@DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$${DATABASE_URL}" down 1
