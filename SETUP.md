@@ -42,3 +42,10 @@ Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
 Notes for setting up new projects:
 1. Run `opencode`
    1. `/init` to create `AGENTS.md`
+
+## SEL Server Configuration
+
+1. Copy the environment template:
+   1. `cp .env.example .env`
+2. Update `.env` with your local database credentials and secrets.
+3. Keep `.env` local only (it is gitignored).

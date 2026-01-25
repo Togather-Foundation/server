@@ -20,10 +20,10 @@ description: "Task list for SEL backend implementation"
 
 **Purpose**: Project initialization and repo scaffolding per plan.md
 
-- [ ] T001 Create sqlc configuration in sqlc.yaml
-- [ ] T002 [P] Add golang-migrate/migrate tooling config in internal/storage/postgres/migrate.go
-- [ ] T003 [P] Scaffold base package folders per plan.md (cmd/server, internal/api, internal/domain, internal/jsonld, internal/storage, internal/auth, internal/jobs, internal/config, web/admin)
-- [ ] T004 [P] Create .env file from .env.example template and update SETUP.md with configuration instructions
+ - [X] T001 Create sqlc configuration in sqlc.yaml
+ - [X] T002 [P] Add golang-migrate/migrate tooling config in internal/storage/postgres/migrate.go
+ - [X] T003 [P] Scaffold base package folders per plan.md (cmd/server, internal/api, internal/domain, internal/jsonld, internal/storage, internal/auth, internal/jobs, internal/config, web/admin)
+ - [X] T004 [P] Create .env file from .env.example template and update SETUP.md with configuration instructions
 
 ---
 
@@ -31,7 +31,7 @@ description: "Task list for SEL backend implementation"
 
 **Purpose**: Core infrastructure required before any user story
 
-- [ ] T005 Create base config loader (include auth + rate limit tiers + admin bootstrap env vars: ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL + job retry policies) in internal/config/config.go
+ - [X] T005 Create base config loader (include auth + rate limit tiers + admin bootstrap env vars: ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL + job retry policies) in internal/config/config.go
 - [ ] T006 [P] Add structured logger setup in internal/config/logging.go
 - [ ] T007 Implement HTTP server bootstrap in cmd/server/main.go
 - [ ] T007a Implement bootstrap admin user creation from env vars (ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_EMAIL) on first startup (FR-027) in cmd/server/main.go
