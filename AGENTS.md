@@ -234,6 +234,12 @@ Usage notes:
 </skill>
 
 <skill>
+<name>speckit-to-beads</name>
+<description>Convert Spec Kit tasks.md into beads with proper epics, priorities, and dependencies. Use when the user wants to import tasks from a spec kit tasks.md file into the bd issue tracker, or when they ask to sync tasks, create beads from spec kit, or convert spec kit to beads.</description>
+<location>project</location>
+</skill>
+
+<skill>
 <name>webapp-testing</name>
 <description>Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs.</description>
 <location>project</location>
