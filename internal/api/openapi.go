@@ -1,15 +1,14 @@
 package api
 
 import (
-	_ "embed"
 	"net/http"
+	"os"
 	"sync"
 
 	"sigs.k8s.io/yaml"
 )
 
-//go:embed ../../specs/001-sel-backend/contracts/openapi.yaml
-var openAPISource []byte
+const openAPISourcePath = "specs/001-sel-backend/contracts/openapi.yaml"
 
 var (
 	openAPIJSON    []byte
@@ -25,7 +24,12 @@ func OpenAPIHandler() http.HandlerFunc {
 		}
 
 		openAPIOnce.Do(func() {
-			openAPIJSON, openAPIJSONErr = yaml.YAMLToJSON(openAPISource)
+			data, err := os.ReadFile(openAPISourcePath)
+			if err != nil {
+				openAPIJSONErr = err
+				return
+			}
+			openAPIJSON, openAPIJSONErr = yaml.YAMLToJSON(data)
 		})
 
 		if openAPIJSONErr != nil {
