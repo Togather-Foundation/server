@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 	"time"
+
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -88,9 +89,9 @@ func seedEventsListData(t *testing.T, env *testEnv) listSeedData {
 	eventAName := "Jazz in the Park"
 	eventBName := "Summer Arts Expo"
 
-	insertEventWithOccurrence(t, env, eventAName, orgA.ID, placeA.ID, "music", "published", []string{"jazz", "summer"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
-	insertEventWithOccurrence(t, env, eventBName, orgB.ID, placeB.ID, "arts", "draft", []string{"gallery"}, time.Date(2026, 7, 20, 18, 0, 0, 0, time.UTC))
-	insertEventWithOccurrence(t, env, "Ottawa Winter Fest", orgB.ID, placeC.ID, "culture", "published", []string{"winter"}, time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, eventAName, orgA.ID, placeA.ID, "music", "published", []string{"jazz", "summer"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, eventBName, orgB.ID, placeB.ID, "arts", "draft", []string{"gallery"}, time.Date(2026, 7, 20, 18, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Ottawa Winter Fest", orgB.ID, placeC.ID, "culture", "published", []string{"winter"}, time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC))
 
 	return listSeedData{
 		EventAName: eventAName,
@@ -151,7 +152,7 @@ func insertPlace(t *testing.T, env *testEnv, name string, city string) seededEnt
 	return seededEntity{ID: id, ULID: ulidValue}
 }
 
-func insertEventWithOccurrence(t *testing.T, env *testEnv, name string, organizerID string, venueID string, domain string, state string, keywords []string, start time.Time) {
+func insertEventWithOccurrence(t *testing.T, env *testEnv, name string, organizerID string, venueID string, domain string, state string, keywords []string, start time.Time) string {
 	t.Helper()
 
 	ulidValue := ulid.Make().String()
@@ -170,6 +171,8 @@ func insertEventWithOccurrence(t *testing.T, env *testEnv, name string, organize
 		eventID, start, start.Add(2*time.Hour), venueID,
 	)
 	require.NoError(t, err)
+
+	return ulidValue
 }
 
 func eventNames(items []map[string]any) []string {

@@ -77,7 +77,7 @@ description: "Task list for SEL backend implementation"
 ### Tests for User Story 1 (TDD - write first)
 
 - [X] T034 [P] [US1] Integration tests for GET /api/v1/events filters/pagination in tests/integration/events_list_test.go
-- [ ] T035 [P] [US1] Integration tests for GET /api/v1/events/{id} in tests/integration/events_get_test.go
+- [X] T035 [P] [US1] Integration tests for GET /api/v1/events/{id} in tests/integration/events_get_test.go
 - [ ] T036 [P] [US1] Integration tests for GET /api/v1/places and /places/{id} in tests/integration/places_test.go
 - [ ] T037 [P] [US1] Integration tests for GET /api/v1/organizations and /organizations/{id} in tests/integration/organizations_test.go
 - [ ] T038a [P] [US1] Contract test for RFC 7807 errors: invalid ULID format in tests/contracts/problem_details_test.go
