@@ -1,4 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-beads"]
+  "plugin": ["opencode-beads"],
+  "mcp": {
+    "context7": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "npx",
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ]
+    }
+  }
 }
