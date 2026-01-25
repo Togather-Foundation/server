@@ -428,6 +428,7 @@ CREATE TABLE organizations (
   
   -- Core properties
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 300),
+  legal_name TEXT,
   alternate_name TEXT,
   description TEXT,
   
@@ -445,6 +446,7 @@ CREATE TABLE organizations (
   
   -- Type
   organization_type TEXT, -- e.g., 'arts_organization', 'venue', 'producer'
+  founding_date DATE,
   
   -- Federation
   origin_node_id UUID REFERENCES federation_nodes(id),
@@ -466,8 +468,10 @@ CREATE INDEX idx_organizations_locality ON organizations (address_locality);
 **Schema.org Mapping:**
 - `@type`: `Organization`
 - `name` → `schema:name`
+- `legal_name` → `schema:legalName`
 - `alternate_name` → `schema:alternateName`
 - `description` → `schema:description`
+- `founding_date` → `schema:foundingDate`
 - Address fields → `schema:address`
 - `email` → `schema:email`
 - `telephone` → `schema:telephone`

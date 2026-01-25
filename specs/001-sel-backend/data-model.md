@@ -36,6 +36,7 @@ This document provides a condensed reference for implementation. Full DDL is in 
                         │ version              │  └─►│ id              │
                         └──────────────────────┘     │ ulid            │
                                  │                   │ name            │
+                                 │                   │ legal_name      │
                                  │                   │ url             │
                         ┌────────┴────────┐          └─────────────────┘
                         ▼                 ▼
@@ -160,6 +161,7 @@ Event organizers, producers, and cultural organizations.
 | `id` | UUID | PK | — |
 | `ulid` | TEXT | UNIQUE, NOT NULL | `@id` (URI component) |
 | `name` | TEXT | NOT NULL, 1-300 chars | `schema:name` |
+| `legal_name` | TEXT | — | `schema:legalName` |
 | `alternate_name` | TEXT | — | `schema:alternateName` |
 | `description` | TEXT | — | `schema:description` |
 | `email` | TEXT | — | `schema:email` |
@@ -168,7 +170,10 @@ Event organizers, producers, and cultural organizations.
 | `street_address` | TEXT | — | `schema:address/streetAddress` |
 | `address_locality` | TEXT | — | `schema:address/addressLocality` |
 | `address_region` | TEXT | — | `schema:address/addressRegion` |
+| `postal_code` | TEXT | — | `schema:address/postalCode` |
+| `address_country` | TEXT | default 'CA' | `schema:address/addressCountry` |
 | `organization_type` | TEXT | — | — |
+| `founding_date` | DATE | — | `schema:foundingDate` |
 | `confidence` | DECIMAL(3,2) | 0-1 | `sel:confidence` |
 
 ---
@@ -245,8 +250,8 @@ Peer SEL nodes in the federation.
 | Field | Type | Constraints |
 |-------|------|-------------|
 | `id` | UUID | PK |
-| `domain` | TEXT | UNIQUE, NOT NULL |
-| `name` | TEXT | — |
+| `node_domain` | TEXT | UNIQUE, NOT NULL |
+| `node_name` | TEXT | NOT NULL |
 | `trust_level` | INTEGER | 1-10 |
 | `is_active` | BOOLEAN | default true |
 | `last_sync_at` | TIMESTAMPTZ | — |
@@ -261,12 +266,16 @@ Change log for federation sync and change feed API.
 | Field | Type | Constraints |
 |-------|------|-------------|
 | `id` | UUID | PK |
-| `sequence` | BIGSERIAL | Monotonic, per-node ordering |
+| `sequence_number` | BIGSERIAL | Monotonic, per-node ordering (UNIQUE) |
 | `event_id` | UUID | FK → events |
 | `action` | TEXT | ENUM: create/update/delete |
 | `changed_at` | TIMESTAMPTZ | default now() |
 | `changed_fields` | JSONB | Array of field paths |
 | `snapshot` | JSONB | Event state at change time |
+
+**Indexes**:
+- `idx_event_changes_sequence` on `(sequence_number)`
+- `idx_event_changes_event` on `(event_id, changed_at DESC)`
 
 ---
 
@@ -364,7 +373,7 @@ Any state → deleted (admin action, returns 410 Gone)
 - `idx_places_name_trgm` GIN trigram
 
 ### Event Changes
-- `idx_event_changes_cursor` on `(sequence)`
+- `idx_event_changes_sequence` on `(sequence_number)`
 - `idx_event_changes_event` on `(event_id, changed_at DESC)`
 
 ---

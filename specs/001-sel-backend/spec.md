@@ -127,7 +127,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 
 - Q: When do submitted events become visible to public queries? Do agents submit directly to "published" or require admin approval? → A: Auto-publish with flagging — events publish immediately and are visible to public queries; low-confidence or flagged events appear in admin review queue for reactive oversight
 - Q: How are API keys created and managed for agent authentication? → A: Admin-provisioned only — admins create API keys via admin UI/API; no self-service registration for MVP
-- Q: What filters should the public query endpoint support? → A: Extended filters — date range (startDate/endDate), city/region, venue ID, organizer ID, lifecycle state, free-text search on name/description, keywords/tags, and event domain (arts/music/culture/etc)
+- Q: What filters should the public query endpoint support? → A: Extended filters — date range (startDate/endDate), city/region, venue ID, organizer ID, lifecycle_state, free-text search on name/description, keywords/tags, and event domain (arts/music/culture/etc)
 - Q: What rate limiting approach should be applied? → A: Role-based tiers — Public: 60 req/min, Agents: 300 req/min, Admins: unlimited
 
 ### Session 2026-01-24
@@ -140,6 +140,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - Q: How should event occurrences be handled at MVP? → A: Multiple occurrences - events can have multiple occurrence records with API support for querying by occurrence date range to handle festivals, runs, and recurring events from the start
 - Q: What level of error detail should be exposed in responses? → A: Environment-aware verbosity - stack traces and SQL errors in dev/test environments; sanitized messages only in production
 - Q: How should background job failures be handled? → A: Exponential backoff with alerting - configurable max attempts per job type (deduplication: 1 attempt, reconciliation/enrichment: 5-10 attempts); alert admins on final failure
+- Q: What defines "low-confidence or flagged events" for admin review? → A: Events with confidence score < 0.6, missing optional Schema.org fields (description, image, offers), unresolved external links (HTTP 4xx/5xx on image_url/url), or events with startDate >730 days in future
 
 ## Requirements *(mandatory)*
 
@@ -163,7 +164,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-016**: System MUST render human-readable HTML pages for event URIs with embedded JSON-LD
 - **FR-017**: System MUST provide health check endpoints at `/healthz` (liveness) and `/readyz` (readiness)
 - **FR-018**: System MUST auto-publish submitted events immediately; low-confidence or flagged events also appear in admin review queue
-- **FR-019**: System MUST support query filters: date range, city/region, venue ID, organizer ID, lifecycle state, free-text search, keywords, and event domain
+- **FR-019**: System MUST support query filters: date range, city/region, venue ID, organizer ID, lifecycle_state, free-text search, keywords, and event domain
 - **FR-020**: System MUST apply role-based rate limits: Public 60 req/min, Agents 300 req/min, Admins unlimited
 - **FR-021**: System MUST accept authenticated federation sync submissions at `POST /api/v1/federation/sync` and preserve foreign `@id` values
 - **FR-022**: System MUST validate canonical URI patterns and normalize `sameAs` links to full URIs
@@ -174,10 +175,12 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-027**: System MUST bootstrap the first admin from environment variables and allow subsequent admin management via admin UI/API
 - **FR-028**: System MUST accept admin JWTs via `Authorization: Bearer` for API requests and via HttpOnly cookie for the admin HTML UI
 - **FR-029**: System MUST record both source-provided timestamps and server-received timestamps in provenance fields and in change feed entries
+- **FR-030**: System MUST support Schema.org Place properties: `name`, `address` (PostalAddress with `streetAddress`, `addressLocality`, `addressRegion`, `postalCode`, `addressCountry`), `geo` (GeoCoordinates with `latitude`, `longitude`), `telephone`, `url`, and `sameAs` for external identifiers
+- **FR-031**: System MUST support Schema.org Organization properties: `name`, `legalName`, `alternateName`, `description`, `email`, `telephone`, `url`, `address`, and `sameAs` for external identifiers
 
 ### Key Entities
 
-- **Event**: A cultural or community happening with name, timing, location, organizer. Has lifecycle states (draft, published, cancelled, etc.) and quality indicators. Core entity of the system.
+- **Event**: A cultural or community happening with name, timing, location, organizer. Has lifecycle_state field (draft, published, cancelled, etc.) and quality indicators. Core entity of the system.
 - **Event Occurrence**: A specific temporal instance of an event. Events can have multiple occurrences to handle recurring events, festival runs, and rescheduling. Queries filter by occurrence date ranges. At least one occurrence must exist per event.
 - **Place**: A physical venue or location. Normalized to enable venue-based queries and reconciliation with external place identifiers (Artsdata, Wikidata).
 - **Organization**: An entity that organizes events. Normalized for reconciliation and to enable "events by this organizer" queries.
