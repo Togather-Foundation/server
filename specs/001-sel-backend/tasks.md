@@ -127,18 +127,18 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 2
 
-- [ ] T058 [US2] Implement event validation (required fields, license compliance FR-015, URI validation FR-022) in internal/domain/events/validation.go
-- [ ] T059 [US2] Implement normalization utilities in internal/domain/events/normalize.go
-- [ ] T059a [US2] Implement occurrence validation (at least one occurrence required, valid dates, timezone handling) in internal/domain/events/validation.go
-- [ ] T060 [US2] Implement deduplication logic (exact hash: SHA-256 of normalized JSON-LD canonical name+venue+startDate; fuzzy: pg_trgm; vector: deferred) in internal/domain/events/dedup.go
-- [ ] T061 [US2] Implement event creation repository methods in internal/domain/events/repository.go
-- [ ] T062 [US2] Implement ingestion service (create event + one or more occurrence rows based on event data) in internal/domain/events/ingest.go
-- [ ] T063 [US2] Implement auto-publish + review-queue flagging rules (low-confidence threshold: confidence < 0.6, missing description/image, invalid external links returning HTTP 4xx/5xx, startDate >730 days future) in internal/domain/events/ingest.go
-- [ ] T064 [US2] Implement source registry access in internal/domain/provenance/service.go
-- [ ] T065 [US2] Implement POST handler in internal/api/handlers/events.go
-- [ ] T066 [US2] Add idempotency storage queries in internal/storage/postgres/queries/events.sql
-- [ ] T067 [US2] Wire auth + rate limit middleware for write endpoints in internal/api/router.go
-- [ ] T067a [US2] Implement background job workers for reconciliation/enrichment with retry policies in internal/jobs/workers.go
+- [X] T058 [US2] Implement event validation (required fields, license compliance FR-015, URI validation FR-022) in internal/domain/events/validation.go
+- [X] T059 [US2] Implement normalization utilities in internal/domain/events/normalize.go
+- [X] T059a [US2] Implement occurrence validation (at least one occurrence required, valid dates, timezone handling) in internal/domain/events/validation.go
+- [X] T060 [US2] Implement deduplication logic (exact hash: SHA-256 of normalized JSON-LD canonical name+venue+startDate; fuzzy: pg_trgm; vector: deferred) in internal/domain/events/dedup.go
+- [X] T061 [US2] Implement event creation repository methods in internal/domain/events/repository.go
+- [X] T062 [US2] Implement ingestion service (create event + one or more occurrence rows based on event data) in internal/domain/events/ingest.go
+- [X] T063 [US2] Implement auto-publish + review-queue flagging rules (low-confidence threshold: confidence < 0.6, missing description/image, invalid external links returning HTTP 4xx/5xx, startDate >730 days future) in internal/domain/events/ingest.go
+- [X] T064 [US2] Implement source registry access in internal/domain/provenance/service.go
+- [X] T065 [US2] Implement POST handler in internal/api/handlers/events.go
+- [X] T066 [US2] Add idempotency storage queries in internal/storage/postgres/queries/events.sql
+- [X] T067 [US2] Wire auth + rate limit middleware for write endpoints in internal/api/router.go
+- [X] T067a [US2] Implement background job workers for reconciliation/enrichment with retry policies in internal/jobs/workers.go
 
 **Checkpoint**: User Story 2 functional and independently testable
 

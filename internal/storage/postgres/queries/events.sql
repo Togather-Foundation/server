@@ -56,4 +56,17 @@ SELECT e.id,
   FROM events e
   LEFT JOIN event_occurrences o ON o.event_id = e.id
  WHERE e.ulid = $1
- ORDER BY o.start_time ASC;
+  ORDER BY o.start_time ASC;
+
+-- name: GetIdempotencyKey :one
+SELECT key,
+       request_hash,
+       event_id,
+       event_ulid
+  FROM idempotency_keys
+ WHERE key = $1;
+
+-- name: InsertIdempotencyKey :one
+INSERT INTO idempotency_keys (key, request_hash, event_id, event_ulid)
+VALUES ($1, $2, $3, $4)
+RETURNING key, request_hash, event_id, event_ulid;

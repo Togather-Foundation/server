@@ -105,3 +105,7 @@ type AuthRepository struct {
 	pool *pgxpool.Pool
 	tx   pgx.Tx
 }
+
+func (r *AuthRepository) APIKeys() storage.APIKeyRepository {
+	return &APIKeyRepository{pool: r.pool, tx: r.tx}
+}

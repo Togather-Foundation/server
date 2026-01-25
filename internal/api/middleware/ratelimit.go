@@ -28,6 +28,15 @@ func WithRateLimitTier(ctx context.Context, tier RateLimitTier) context.Context 
 	return context.WithValue(ctx, rateLimitTierKey, tier)
 }
 
+func WithRateLimitTierHandler(tier RateLimitTier) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := WithRateLimitTier(r.Context(), tier)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 func RateLimit(cfg config.RateLimitConfig) func(http.Handler) http.Handler {
 	store := newLimiterStore(cfg)
 	return func(next http.Handler) http.Handler {

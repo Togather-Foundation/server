@@ -13,11 +13,13 @@ import (
 
 type EventsHandler struct {
 	Service *events.Service
+	Ingest  *events.IngestService
 	Env     string
+	BaseURL string
 }
 
-func NewEventsHandler(service *events.Service, env string) *EventsHandler {
-	return &EventsHandler{Service: service, Env: env}
+func NewEventsHandler(service *events.Service, ingest *events.IngestService, env string, baseURL string) *EventsHandler {
+	return &EventsHandler{Service: service, Ingest: ingest, Env: env, BaseURL: baseURL}
 }
 
 type listResponse struct {
@@ -54,6 +56,55 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
+}
+
+func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Ingest == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	var input events.EventInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	var (
+		result *events.IngestResult
+		err    error
+	)
+	if key := idempotencyKey(r); key != "" {
+		result, err = h.Ingest.IngestWithIdempotency(r.Context(), input, key)
+	} else {
+		result, err = h.Ingest.Ingest(r.Context(), input)
+	}
+	if err != nil {
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Conflict", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	status := http.StatusCreated
+	if result != nil && result.IsDuplicate {
+		status = http.StatusConflict
+	}
+
+	location := eventLocationPayload(input)
+	payload := map[string]any{
+		"@context": loadDefaultContext(),
+		"@type":    "Event",
+		"@id":      eventURI(h.BaseURL, result),
+		"name":     input.Name,
+	}
+	if location != nil {
+		payload["location"] = location
+	}
+
+	writeJSON(w, status, payload, contentTypeFromRequest(r))
 }
 
 func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -123,4 +174,39 @@ func pathParam(r *http.Request, key string) string {
 		return ""
 	}
 	return r.PathValue(key)
+}
+
+func eventURI(baseURL string, result *events.IngestResult) string {
+	if result == nil || result.Event == nil {
+		return ""
+	}
+	uri, err := ids.BuildCanonicalURI(baseURL, "events", result.Event.ULID)
+	if err != nil {
+		return ""
+	}
+	return uri
+}
+
+func eventLocationPayload(input events.EventInput) map[string]any {
+	if input.Location != nil {
+		return map[string]any{
+			"@type": "Place",
+			"name":  input.Location.Name,
+		}
+	}
+	if input.VirtualLocation != nil {
+		return map[string]any{
+			"@type": "VirtualLocation",
+			"url":   input.VirtualLocation.URL,
+			"name":  input.VirtualLocation.Name,
+		}
+	}
+	return nil
+}
+
+func idempotencyKey(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 }

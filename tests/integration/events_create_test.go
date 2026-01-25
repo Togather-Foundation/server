@@ -44,7 +44,11 @@ func TestCreateEventHappyPath(t *testing.T) {
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
-	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
+	}
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -222,7 +226,16 @@ func TestCreateEventIdempotencyReturnsSameEvent(t *testing.T) {
 	firstResp, err := env.Server.Client().Do(firstReq)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = firstResp.Body.Close() })
-	require.Equal(t, http.StatusCreated, firstResp.StatusCode)
+	if firstResp.StatusCode == http.StatusConflict {
+		var failure map[string]any
+		_ = json.NewDecoder(firstResp.Body).Decode(&failure)
+		require.Failf(t, "unexpected conflict", "status=%d response=%v", firstResp.StatusCode, failure)
+	}
+	if firstResp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(firstResp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", firstResp.StatusCode, failure)
+	}
 
 	var firstPayload map[string]any
 	require.NoError(t, json.NewDecoder(firstResp.Body).Decode(&firstPayload))

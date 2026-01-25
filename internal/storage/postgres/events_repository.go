@@ -9,6 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -19,10 +20,18 @@ type eventRow struct {
 	ULID           string
 	Name           string
 	Description    *string
+	LicenseURL     *string
+	LicenseStatus  *string
+	DedupHash      *string
 	LifecycleState string
 	EventDomain    string
 	OrganizerID    *string
 	PrimaryVenueID *string
+	VirtualURL     *string
+	ImageURL       *string
+	PublicURL      *string
+	Confidence     *float64
+	QualityScore   *int32
 	Keywords       []string
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
@@ -57,10 +66,11 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 	}
 
 	rows, err := queryer.Query(ctx, `
-SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
-       e.organizer_id, e.primary_venue_id, e.keywords, e.created_at, e.updated_at,
-       o.start_time
-  FROM events e
+SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
+	   e.keywords, e.created_at, e.updated_at, o.start_time
+	  FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
   LEFT JOIN places p ON p.id = COALESCE(o.venue_id, e.primary_venue_id)
   LEFT JOIN organizations org ON org.id = e.organizer_id
@@ -109,10 +119,18 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 			&row.ULID,
 			&row.Name,
 			&row.Description,
+			&row.LicenseURL,
+			&row.LicenseStatus,
+			&row.DedupHash,
 			&row.LifecycleState,
 			&row.EventDomain,
 			&row.OrganizerID,
 			&row.PrimaryVenueID,
+			&row.VirtualURL,
+			&row.ImageURL,
+			&row.PublicURL,
+			&row.Confidence,
+			&row.QualityScore,
 			&row.Keywords,
 			&row.CreatedAt,
 			&row.UpdatedAt,
@@ -125,10 +143,18 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 			ULID:           row.ULID,
 			Name:           row.Name,
 			Description:    derefString(row.Description),
+			LicenseURL:     derefString(row.LicenseURL),
+			LicenseStatus:  derefString(row.LicenseStatus),
+			DedupHash:      derefString(row.DedupHash),
 			LifecycleState: row.LifecycleState,
 			EventDomain:    row.EventDomain,
 			OrganizerID:    row.OrganizerID,
 			PrimaryVenueID: row.PrimaryVenueID,
+			VirtualURL:     derefString(row.VirtualURL),
+			ImageURL:       derefString(row.ImageURL),
+			PublicURL:      derefString(row.PublicURL),
+			Confidence:     row.Confidence,
+			QualityScore:   intPtr(row.QualityScore),
 			Keywords:       row.Keywords,
 			CreatedAt:      time.Time{},
 			UpdatedAt:      time.Time{},
@@ -164,12 +190,13 @@ func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.E
 	queryer := r.queryer()
 
 	rows, err := queryer.Query(ctx, `
-SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
-       e.organizer_id, e.primary_venue_id, e.keywords, e.created_at, e.updated_at,
-       o.id, o.start_time, o.end_time, o.timezone, o.venue_id, o.virtual_url
-  FROM events e
-  LEFT JOIN event_occurrences o ON o.event_id = e.id
- WHERE e.ulid = $1
+SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
+	   e.keywords, e.created_at, e.updated_at, o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, o.virtual_url
+	  FROM events e
+	  LEFT JOIN event_occurrences o ON o.event_id = e.id
+	 WHERE e.ulid = $1
  ORDER BY o.start_time ASC
 `, ulid)
 	if err != nil {
@@ -184,10 +211,18 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 			eventULID      string
 			name           string
 			description    *string
+			licenseURL     *string
+			licenseStatus  *string
+			dedupHash      *string
 			lifecycleState string
 			eventDomain    string
 			organizerID    *string
 			primaryVenueID *string
+			virtualURL     *string
+			imageURL       *string
+			publicURL      *string
+			confidence     *float64
+			qualityScore   *int32
 			keywords       []string
 			createdAt      pgtype.Timestamptz
 			updatedAt      pgtype.Timestamptz
@@ -195,18 +230,27 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 			startTime      pgtype.Timestamptz
 			endTime        pgtype.Timestamptz
 			timezone       *string
+			doorTime       pgtype.Timestamptz
 			venueID        *string
-			virtualURL     *string
+			occurrenceURL  *string
 		)
 		if err := rows.Scan(
 			&eventID,
 			&eventULID,
 			&name,
 			&description,
+			&licenseURL,
+			&licenseStatus,
+			&dedupHash,
 			&lifecycleState,
 			&eventDomain,
 			&organizerID,
 			&primaryVenueID,
+			&virtualURL,
+			&imageURL,
+			&publicURL,
+			&confidence,
+			&qualityScore,
 			&keywords,
 			&createdAt,
 			&updatedAt,
@@ -214,8 +258,9 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 			&startTime,
 			&endTime,
 			&timezone,
+			&doorTime,
 			&venueID,
-			&virtualURL,
+			&occurrenceURL,
 		); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
@@ -226,10 +271,18 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 				ULID:           eventULID,
 				Name:           name,
 				Description:    derefString(description),
+				LicenseURL:     derefString(licenseURL),
+				LicenseStatus:  derefString(licenseStatus),
+				DedupHash:      derefString(dedupHash),
 				LifecycleState: lifecycleState,
 				EventDomain:    eventDomain,
 				OrganizerID:    organizerID,
 				PrimaryVenueID: primaryVenueID,
+				VirtualURL:     derefString(virtualURL),
+				ImageURL:       derefString(imageURL),
+				PublicURL:      derefString(publicURL),
+				Confidence:     confidence,
+				QualityScore:   intPtr(qualityScore),
 				Keywords:       keywords,
 				CreatedAt:      time.Time{},
 				UpdatedAt:      time.Time{},
@@ -247,7 +300,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 				ID:         *occurrenceID,
 				Timezone:   derefString(timezone),
 				VenueID:    venueID,
-				VirtualURL: virtualURL,
+				VirtualURL: occurrenceURL,
 			}
 			if startTime.Valid {
 				occ.StartTime = startTime.Time
@@ -255,6 +308,10 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 			if endTime.Valid {
 				value := endTime.Time
 				occ.EndTime = &value
+			}
+			if doorTime.Valid {
+				value := doorTime.Time
+				occ.DoorTime = &value
 			}
 			event.Occurrences = append(event.Occurrences, occ)
 		}
@@ -268,9 +325,463 @@ SELECT e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_domain,
 	return event, nil
 }
 
+func (r *EventRepository) Create(ctx context.Context, params events.EventCreateParams) (*events.Event, error) {
+	queryer := r.queryer()
+
+	row := queryer.QueryRow(ctx, `
+INSERT INTO events (
+	ulid,
+	name,
+	description,
+	lifecycle_state,
+	event_domain,
+	organizer_id,
+	primary_venue_id,
+	virtual_url,
+	image_url,
+	public_url,
+	keywords,
+	license_url,
+	license_status,
+	confidence,
+	quality_score
+) VALUES (
+	$1,
+	$2,
+	NULLIF($3, ''),
+	$4,
+	$5,
+	$6,
+	$7,
+	NULLIF($8, ''),
+	NULLIF($9, ''),
+	NULLIF($10, ''),
+	$11,
+	$12,
+	$13,
+	$14,
+	$15
+)
+RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
+	  lifecycle_state, event_domain, organizer_id, primary_venue_id,
+	  virtual_url, image_url, public_url, confidence, quality_score,
+	  keywords, created_at, updated_at
+`,
+		params.ULID,
+		params.Name,
+		params.Description,
+		params.LifecycleState,
+		params.EventDomain,
+		params.OrganizerID,
+		params.PrimaryVenueID,
+		params.VirtualURL,
+		params.ImageURL,
+		params.PublicURL,
+		params.Keywords,
+		params.LicenseURL,
+		params.LicenseStatus,
+		params.Confidence,
+		params.QualityScore,
+	)
+
+	var data eventRow
+	if err := row.Scan(
+		&data.ID,
+		&data.ULID,
+		&data.Name,
+		&data.Description,
+		&data.LicenseURL,
+		&data.LicenseStatus,
+		&data.DedupHash,
+		&data.LifecycleState,
+		&data.EventDomain,
+		&data.OrganizerID,
+		&data.PrimaryVenueID,
+		&data.VirtualURL,
+		&data.ImageURL,
+		&data.PublicURL,
+		&data.Confidence,
+		&data.QualityScore,
+		&data.Keywords,
+		&data.CreatedAt,
+		&data.UpdatedAt,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("create event: %w", err)
+	}
+
+	event := &events.Event{
+		ID:             data.ID,
+		ULID:           data.ULID,
+		Name:           data.Name,
+		Description:    derefString(data.Description),
+		LicenseURL:     derefString(data.LicenseURL),
+		LicenseStatus:  derefString(data.LicenseStatus),
+		DedupHash:      derefString(data.DedupHash),
+		LifecycleState: data.LifecycleState,
+		EventDomain:    data.EventDomain,
+		OrganizerID:    data.OrganizerID,
+		PrimaryVenueID: data.PrimaryVenueID,
+		VirtualURL:     derefString(data.VirtualURL),
+		ImageURL:       derefString(data.ImageURL),
+		PublicURL:      derefString(data.PublicURL),
+		Confidence:     data.Confidence,
+		QualityScore:   intPtr(data.QualityScore),
+		Keywords:       data.Keywords,
+	}
+	if data.CreatedAt.Valid {
+		event.CreatedAt = data.CreatedAt.Time
+	}
+	if data.UpdatedAt.Valid {
+		event.UpdatedAt = data.UpdatedAt.Time
+	}
+	return event, nil
+}
+
+func (r *EventRepository) CreateOccurrence(ctx context.Context, params events.OccurrenceCreateParams) error {
+	queryer := r.queryer()
+
+	_, err := queryer.Exec(ctx, `
+INSERT INTO event_occurrences (
+	event_id,
+	start_time,
+	end_time,
+	timezone,
+	door_time,
+	venue_id,
+	virtual_url
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+`,
+		params.EventID,
+		params.StartTime,
+		params.EndTime,
+		params.Timezone,
+		params.DoorTime,
+		params.VenueID,
+		params.VirtualURL,
+	)
+	if err != nil {
+		return fmt.Errorf("create occurrence: %w", err)
+	}
+	return nil
+}
+
+func (r *EventRepository) CreateSource(ctx context.Context, params events.EventSourceCreateParams) error {
+	queryer := r.queryer()
+
+	_, err := queryer.Exec(ctx, `
+INSERT INTO event_sources (
+	event_id,
+	source_id,
+	source_url,
+	source_event_id,
+	payload,
+	payload_hash,
+	confidence
+) VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
+`,
+		params.EventID,
+		params.SourceID,
+		params.SourceURL,
+		params.SourceEventID,
+		params.Payload,
+		params.PayloadHash,
+		params.Confidence,
+	)
+	if err != nil {
+		return fmt.Errorf("create event source: %w", err)
+	}
+	return nil
+}
+
+func (r *EventRepository) FindBySourceExternalID(ctx context.Context, sourceID string, sourceEventID string) (*events.Event, error) {
+	if strings.TrimSpace(sourceID) == "" || strings.TrimSpace(sourceEventID) == "" {
+		return nil, events.ErrNotFound
+	}
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	   e.virtual_url, e.image_url, e.public_url, e.keywords, e.created_at, e.updated_at
+  FROM events e
+  JOIN event_sources es ON es.event_id = e.id
+ WHERE es.source_id = $1 AND es.source_event_id = $2
+ LIMIT 1
+`, sourceID, sourceEventID)
+
+	var data eventRow
+	if err := row.Scan(
+		&data.ID,
+		&data.ULID,
+		&data.Name,
+		&data.Description,
+		&data.LicenseURL,
+		&data.LicenseStatus,
+		&data.DedupHash,
+		&data.LifecycleState,
+		&data.EventDomain,
+		&data.OrganizerID,
+		&data.PrimaryVenueID,
+		&data.VirtualURL,
+		&data.ImageURL,
+		&data.PublicURL,
+		&data.Keywords,
+		&data.CreatedAt,
+		&data.UpdatedAt,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("find event by source: %w", err)
+	}
+
+	event := &events.Event{
+		ID:             data.ID,
+		ULID:           data.ULID,
+		Name:           data.Name,
+		Description:    derefString(data.Description),
+		LicenseURL:     derefString(data.LicenseURL),
+		LicenseStatus:  derefString(data.LicenseStatus),
+		DedupHash:      derefString(data.DedupHash),
+		LifecycleState: data.LifecycleState,
+		EventDomain:    data.EventDomain,
+		OrganizerID:    data.OrganizerID,
+		PrimaryVenueID: data.PrimaryVenueID,
+		VirtualURL:     derefString(data.VirtualURL),
+		ImageURL:       derefString(data.ImageURL),
+		PublicURL:      derefString(data.PublicURL),
+		Keywords:       data.Keywords,
+	}
+	if data.CreatedAt.Valid {
+		event.CreatedAt = data.CreatedAt.Time
+	}
+	if data.UpdatedAt.Valid {
+		event.UpdatedAt = data.UpdatedAt.Time
+	}
+	return event, nil
+}
+
+func (r *EventRepository) FindByDedupHash(ctx context.Context, dedupHash string) (*events.Event, error) {
+	if strings.TrimSpace(dedupHash) == "" {
+		return nil, events.ErrNotFound
+	}
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	   e.virtual_url, e.image_url, e.public_url, e.keywords, e.created_at, e.updated_at
+  FROM events e
+ WHERE e.dedup_hash = $1
+ LIMIT 1
+`, dedupHash)
+
+	var data eventRow
+	if err := row.Scan(
+		&data.ID,
+		&data.ULID,
+		&data.Name,
+		&data.Description,
+		&data.LicenseURL,
+		&data.LicenseStatus,
+		&data.DedupHash,
+		&data.LifecycleState,
+		&data.EventDomain,
+		&data.OrganizerID,
+		&data.PrimaryVenueID,
+		&data.VirtualURL,
+		&data.ImageURL,
+		&data.PublicURL,
+		&data.Keywords,
+		&data.CreatedAt,
+		&data.UpdatedAt,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("find event by dedup hash: %w", err)
+	}
+
+	event := &events.Event{
+		ID:             data.ID,
+		ULID:           data.ULID,
+		Name:           data.Name,
+		Description:    derefString(data.Description),
+		LicenseURL:     derefString(data.LicenseURL),
+		LicenseStatus:  derefString(data.LicenseStatus),
+		DedupHash:      derefString(data.DedupHash),
+		LifecycleState: data.LifecycleState,
+		EventDomain:    data.EventDomain,
+		OrganizerID:    data.OrganizerID,
+		PrimaryVenueID: data.PrimaryVenueID,
+		VirtualURL:     derefString(data.VirtualURL),
+		ImageURL:       derefString(data.ImageURL),
+		PublicURL:      derefString(data.PublicURL),
+		Keywords:       data.Keywords,
+	}
+	if data.CreatedAt.Valid {
+		event.CreatedAt = data.CreatedAt.Time
+	}
+	if data.UpdatedAt.Valid {
+		event.UpdatedAt = data.UpdatedAt.Time
+	}
+	return event, nil
+}
+
+func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.SourceLookupParams) (string, error) {
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+SELECT id
+  FROM sources
+ WHERE base_url = $1
+ LIMIT 1
+`, strings.TrimSpace(params.BaseURL))
+
+	var id string
+	if err := row.Scan(&id); err == nil {
+		return id, nil
+	} else if err != pgx.ErrNoRows {
+		return "", fmt.Errorf("get source: %w", err)
+	}
+
+	row = queryer.QueryRow(ctx, `
+INSERT INTO sources (
+	name,
+	source_type,
+	base_url,
+	license_url,
+	license_type,
+	trust_level
+) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6)
+RETURNING id
+`,
+		params.Name,
+		params.SourceType,
+		params.BaseURL,
+		params.LicenseURL,
+		params.LicenseType,
+		params.TrustLevel,
+	)
+	if err := row.Scan(&id); err != nil {
+		return "", fmt.Errorf("create source: %w", err)
+	}
+	return id, nil
+}
+
+func (r *EventRepository) GetIdempotencyKey(ctx context.Context, key string) (*events.IdempotencyKey, error) {
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+SELECT key, request_hash, event_id, event_ulid
+  FROM idempotency_keys
+ WHERE key = $1
+`, strings.TrimSpace(key))
+
+	var (
+		id     *string
+		ulid   *string
+		result events.IdempotencyKey
+	)
+	if err := row.Scan(&result.Key, &result.RequestHash, &id, &ulid); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get idempotency key: %w", err)
+	}
+	result.EventID = id
+	result.EventULID = ulid
+	return &result, nil
+}
+
+func (r *EventRepository) InsertIdempotencyKey(ctx context.Context, params events.IdempotencyKeyCreateParams) (*events.IdempotencyKey, error) {
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+INSERT INTO idempotency_keys (key, request_hash, event_id, event_ulid)
+VALUES ($1, $2, NULLIF($3, '')::uuid, NULLIF($4, ''))
+RETURNING key, request_hash, event_id, event_ulid
+`,
+		params.Key,
+		params.RequestHash,
+		params.EventID,
+		params.EventULID,
+	)
+	var (
+		id     *string
+		ulid   *string
+		result events.IdempotencyKey
+	)
+	if err := row.Scan(&result.Key, &result.RequestHash, &id, &ulid); err != nil {
+		return nil, fmt.Errorf("insert idempotency key: %w", err)
+	}
+	result.EventID = id
+	result.EventULID = ulid
+	return &result, nil
+}
+
+func (r *EventRepository) UpdateIdempotencyKeyEvent(ctx context.Context, key string, eventID string, eventULID string) error {
+	queryer := r.queryer()
+	command, err := queryer.Exec(ctx, `
+UPDATE idempotency_keys
+   SET event_id = $2, event_ulid = $3
+ WHERE key = $1
+`, strings.TrimSpace(key), eventID, eventULID)
+	if err != nil {
+		return fmt.Errorf("update idempotency key: %w", err)
+	}
+	if command.RowsAffected() == 0 {
+		return events.ErrNotFound
+	}
+	return nil
+}
+
+func (r *EventRepository) UpsertPlace(ctx context.Context, params events.PlaceCreateParams) (*events.PlaceRecord, error) {
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+INSERT INTO places (ulid, name, address_locality, address_region, address_country)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (ulid) DO UPDATE
+SET name = EXCLUDED.name
+RETURNING id, ulid
+`,
+		params.ULID,
+		params.Name,
+		params.AddressLocality,
+		params.AddressRegion,
+		params.AddressCountry,
+	)
+	var record events.PlaceRecord
+	if err := row.Scan(&record.ID, &record.ULID); err != nil {
+		return nil, fmt.Errorf("upsert place: %w", err)
+	}
+	return &record, nil
+}
+
+func (r *EventRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
+	queryer := r.queryer()
+	row := queryer.QueryRow(ctx, `
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (ulid) DO UPDATE
+SET name = EXCLUDED.name
+RETURNING id, ulid
+`,
+		params.ULID,
+		params.Name,
+		params.AddressLocality,
+		params.AddressRegion,
+		params.AddressCountry,
+	)
+	var record events.OrganizationRecord
+	if err := row.Scan(&record.ID, &record.ULID); err != nil {
+		return nil, fmt.Errorf("upsert organization: %w", err)
+	}
+	return &record, nil
+}
+
 type queryer interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
 func (r *EventRepository) queryer() queryer {
@@ -285,4 +796,12 @@ func derefString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func intPtr(value *int32) *int {
+	if value == nil {
+		return nil
+	}
+	converted := int(*value)
+	return &converted
 }

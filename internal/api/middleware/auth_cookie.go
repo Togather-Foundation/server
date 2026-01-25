@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/auth"
 )
 
@@ -51,6 +52,38 @@ func AdminClaims(r *http.Request) *auth.Claims {
 	}
 	if claims, ok := r.Context().Value(adminClaimsKey).(*auth.Claims); ok {
 		return claims
+	}
+	return nil
+}
+
+type contextKeyAgent string
+
+const agentKey contextKeyAgent = "agentKey"
+
+func AgentAuth(store auth.APIKeyStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if store == nil {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", problem.ErrUnauthorized, "")
+				return
+			}
+			key, err := auth.ValidateAPIKey(r.Context(), store, r.Header.Get("Authorization"))
+			if err != nil {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", err, "")
+				return
+			}
+			ctx := context.WithValue(r.Context(), agentKey, key)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func AgentKey(r *http.Request) *auth.APIKey {
+	if r == nil {
+		return nil
+	}
+	if key, ok := r.Context().Value(agentKey).(*auth.APIKey); ok {
+		return key
 	}
 	return nil
 }

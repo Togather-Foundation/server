@@ -5,6 +5,7 @@ This repository is for the Togather server, a Shared Events Library (SEL) backen
 IMPORTANT:
 - Use Beads (`bd`) for task discovery + progress tracking (NOT markdown TODO lists).
 - Use Spec Kit artifacts as the source of intent: constitution → spec → plan → tasks.
+- Use context7 to look up docs for external libs
 
 ## Issue Tracking
 
