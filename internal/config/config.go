@@ -14,6 +14,7 @@ type Config struct {
 	RateLimit      RateLimitConfig
 	AdminBootstrap AdminBootstrapConfig
 	Jobs           JobsConfig
+	Logging        LoggingConfig
 	Environment    string
 }
 
@@ -52,6 +53,11 @@ type JobsConfig struct {
 	RetryEnrichment     int
 }
 
+type LoggingConfig struct {
+	Level  string
+	Format string
+}
+
 func Load() (Config, error) {
 	cfg := Config{
 		Server: ServerConfig{
@@ -82,6 +88,10 @@ func Load() (Config, error) {
 			RetryDeduplication:  getEnvInt("JOB_RETRY_DEDUPLICATION", 1),
 			RetryReconciliation: getEnvInt("JOB_RETRY_RECONCILIATION", 5),
 			RetryEnrichment:     getEnvInt("JOB_RETRY_ENRICHMENT", 10),
+		},
+		Logging: LoggingConfig{
+			Level:  getEnv("LOG_LEVEL", "info"),
+			Format: getEnv("LOG_FORMAT", "json"),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
