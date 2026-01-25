@@ -61,7 +61,7 @@ description: "Task list for SEL backend implementation"
 - [X] T030 [P] Add JSON-LD serializer in internal/jsonld/serializer.go
 - [X] T031 Add SHACL validation harness for tests in tests/contracts/shacl_validation_test.go
 - [X] T032 [P] Add /healthz and /readyz endpoints in internal/api/handlers/health.go
-- [ ] T033a [P] Setup River job queue with job-type-specific retry configuration (deduplication: 1 attempt, reconciliation/enrichment: 5-10 attempts, exponential backoff) in internal/jobs/river.go
+- [X] T033a [P] Setup River job queue with job-type-specific retry configuration (deduplication: 1 attempt, reconciliation/enrichment: 5-10 attempts, exponential backoff) in internal/jobs/river.go
 - [ ] T033b [P] Add job failure alerting hooks in internal/jobs/alerts.go
 
 **Checkpoint**: Foundation ready
