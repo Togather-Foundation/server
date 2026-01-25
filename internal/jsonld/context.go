@@ -29,7 +29,7 @@ type ContextLoader struct {
 // NewContextLoader creates a loader rooted at baseDir. If baseDir is empty, DefaultContextDir is used.
 func NewContextLoader(baseDir string) *ContextLoader {
 	if baseDir == "" {
-		baseDir = DefaultContextDir
+		baseDir = resolveDefaultContextDir()
 	}
 	return &ContextLoader{
 		cache:   make(map[string]map[string]any),
@@ -82,3 +82,37 @@ func LoadDefaultContext() (map[string]any, error) {
 }
 
 var defaultLoader = NewContextLoader("")
+
+func resolveDefaultContextDir() string {
+	if existsContextDir(DefaultContextDir) {
+		return DefaultContextDir
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return DefaultContextDir
+	}
+
+	for i := 0; i < 10; i++ {
+		candidate := filepath.Join(cwd, DefaultContextDir)
+		if existsContextDir(candidate) {
+			return candidate
+		}
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			break
+		}
+		cwd = parent
+	}
+
+	return DefaultContextDir
+}
+
+func existsContextDir(dir string) bool {
+	path := filepath.Join(dir, fmt.Sprintf("%s.jsonld", DefaultContextVersion))
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}

@@ -33,6 +33,7 @@ func TestPlacesListFiltersAndPagination(t *testing.T) {
 	params.Set("after", first.NextCursor)
 	second := fetchPlacesList(t, env, params)
 	require.Len(t, second.Items, 1)
+	require.Empty(t, second.NextCursor)
 
 	got := placeNames(append(first.Items, second.Items...))
 	require.ElementsMatch(t, []string{"Centennial Park", "Riverside Gallery"}, got)

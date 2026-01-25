@@ -38,6 +38,7 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	require.Len(t, second.Items, 1)
 	require.NotEqual(t, first.Items[0], second.Items[0])
 	require.Equal(t, seed.EventBName, eventName(second.Items[0]))
+	require.Empty(t, second.NextCursor)
 
 	filters = url.Values{}
 	filters.Set("venueId", seed.PlaceAULID)

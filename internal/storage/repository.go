@@ -1,6 +1,12 @@
 package storage
 
-import "context"
+import (
+	"context"
+
+	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/domain/places"
+)
 
 // Repository groups data access by domain.
 type Repository interface {
@@ -15,11 +21,11 @@ type Repository interface {
 	WithTx(ctx context.Context, fn func(context.Context, Repository) error) error
 }
 
-type EventRepository interface{}
+type EventRepository = events.Repository
 
-type PlaceRepository interface{}
+type PlaceRepository = places.Repository
 
-type OrganizationRepository interface{}
+type OrganizationRepository = organizations.Repository
 
 type SourceRepository interface{}
 

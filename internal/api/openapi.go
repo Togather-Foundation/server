@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 
 	"sigs.k8s.io/yaml"
@@ -26,8 +28,11 @@ func OpenAPIHandler() http.HandlerFunc {
 		openAPIOnce.Do(func() {
 			data, err := os.ReadFile(openAPISourcePath)
 			if err != nil {
-				openAPIJSONErr = err
-				return
+				data, err = os.ReadFile(resolveOpenAPIPath())
+				if err != nil {
+					openAPIJSONErr = err
+					return
+				}
 			}
 			openAPIJSON, openAPIJSONErr = yaml.YAMLToJSON(data)
 		})
@@ -41,4 +46,35 @@ func OpenAPIHandler() http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(openAPIJSON)
 	}
+}
+
+func resolveOpenAPIPath() string {
+	root, err := repoRoot()
+	if err != nil {
+		return openAPISourcePath
+	}
+	return filepath.Join(root, openAPISourcePath)
+}
+
+func repoRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for i := 0; i < 10; i++ {
+		if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
+			return cwd, nil
+		}
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			break
+		}
+		cwd = parent
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	base := filepath.Dir(file)
+	return filepath.Join(base, "..", "..", ".."), nil
 }

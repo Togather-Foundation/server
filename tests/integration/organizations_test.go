@@ -28,17 +28,21 @@ func TestOrganizationsListPaginationAndQuery(t *testing.T) {
 
 	first := fetchOrganizationsList(t, env, params)
 	require.Len(t, first.Items, 1)
-	require.NotEmpty(t, first.NextCursor)
 	require.Equal(t, "Toronto Arts Org", organizationNameFromPayload(first.Items[0]))
-
-	params.Set("after", first.NextCursor)
-	second := fetchOrganizationsList(t, env, params)
-	require.Len(t, second.Items, 0)
+	require.Empty(t, first.NextCursor)
 
 	params = url.Values{}
 	params.Set("limit", "2")
-	all := fetchOrganizationsList(t, env, params)
-	require.ElementsMatch(t, []string{"Toronto Arts Org", "City Gallery", "Ottawa Culture Hub"}, organizationNames(all.Items))
+	page1 := fetchOrganizationsList(t, env, params)
+	require.Len(t, page1.Items, 2)
+	require.NotEmpty(t, page1.NextCursor)
+
+	params.Set("after", page1.NextCursor)
+	page2 := fetchOrganizationsList(t, env, params)
+	require.Len(t, page2.Items, 1)
+
+	all := append(page1.Items, page2.Items...)
+	require.ElementsMatch(t, []string{"Toronto Arts Org", "City Gallery", "Ottawa Culture Hub"}, organizationNames(all))
 }
 
 func TestGetOrganizationByID(t *testing.T) {

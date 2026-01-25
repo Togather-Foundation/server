@@ -92,19 +92,19 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 1
 
-- [ ] T040 [P] [US1] Implement event query SQL with required filters (including occurrence date range filtering) in internal/storage/postgres/queries/events.sql
-- [ ] T041 [P] [US1] Implement place query SQL in internal/storage/postgres/queries/places.sql
-- [ ] T042 [P] [US1] Implement organization query SQL in internal/storage/postgres/queries/organizations.sql
-- [ ] T043 [US1] Implement event repository in internal/domain/events/repository.go
-- [ ] T044 [US1] Implement event service in internal/domain/events/service.go
-- [ ] T045 [US1] Implement filter parsing/validation (date range, city/region, venue ID, organizer ID, lifecycle_state, query, keywords, event domain) in internal/domain/events/service.go and internal/api/handlers/events.go
-- [ ] T046 [US1] Implement place repository/service in internal/domain/places/repository.go and internal/domain/places/service.go
-- [ ] T047 [US1] Implement organization repository/service in internal/domain/organizations/repository.go and internal/domain/organizations/service.go
-- [ ] T048 [US1] Implement handlers for list/get events in internal/api/handlers/events.go
-- [ ] T049 [US1] Implement handlers for list/get places in internal/api/handlers/places.go
-- [ ] T050 [US1] Implement handlers for list/get organizations in internal/api/handlers/organizations.go
-- [ ] T051 [US1] Implement cursor pagination helpers (for events list: base64(timestamp+ULID) for stable ordering; for change feed: base64(sequence_number BIGSERIAL) per schema design) in internal/api/pagination/cursor.go
-- [ ] T052 [US1] Wire routes for public endpoints in internal/api/router.go
+- [X] T040 [P] [US1] Implement event query SQL with required filters (including occurrence date range filtering) in internal/storage/postgres/queries/events.sql
+- [X] T041 [P] [US1] Implement place query SQL in internal/storage/postgres/queries/places.sql
+- [X] T042 [P] [US1] Implement organization query SQL in internal/storage/postgres/queries/organizations.sql
+- [X] T043 [US1] Implement event repository in internal/domain/events/repository.go
+- [X] T044 [US1] Implement event service in internal/domain/events/service.go
+- [X] T045 [US1] Implement filter parsing/validation (date range, city/region, venue ID, organizer ID, lifecycle_state, query, keywords, event domain) in internal/domain/events/service.go and internal/api/handlers/events.go
+- [X] T046 [US1] Implement place repository/service in internal/domain/places/repository.go and internal/domain/places/service.go
+- [X] T047 [US1] Implement organization repository/service in internal/domain/organizations/repository.go and internal/domain/organizations/service.go
+- [X] T048 [US1] Implement handlers for list/get events in internal/api/handlers/events.go
+- [X] T049 [US1] Implement handlers for list/get places in internal/api/handlers/places.go
+- [X] T050 [US1] Implement handlers for list/get organizations in internal/api/handlers/organizations.go
+- [X] T051 [US1] Implement cursor pagination helpers (for events list: base64(timestamp+ULID) for stable ordering; for change feed: base64(sequence_number BIGSERIAL) per schema design) in internal/api/pagination/cursor.go
+- [X] T052 [US1] Wire routes for public endpoints in internal/api/router.go
 
 **Checkpoint**: User Story 1 functional and independently testable
 
