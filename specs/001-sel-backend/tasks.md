@@ -51,7 +51,7 @@ description: "Task list for SEL backend implementation"
 - [X] T020 Create migrations for federation/changefeed + tombstones tables in internal/storage/postgres/migrations/000003_federation.up.sql
 - [X] T021 Create migrations for auth tables in internal/storage/postgres/migrations/000004_auth.up.sql (admin users + API keys)
 - [X] T022 [P] Add down migrations in internal/storage/postgres/migrations/00000X_*.down.sql
-- [ ] T023 [P] Add SQLc query files per domain in internal/storage/postgres/queries/events.sql, places.sql, organizations.sql, sources.sql, provenance.sql, feeds.sql, federation.sql, auth.sql
+- [X] T023 [P] Add SQLc query files per domain in internal/storage/postgres/queries/events.sql, places.sql, organizations.sql, sources.sql, provenance.sql, feeds.sql, federation.sql, auth.sql
 - [ ] T024 [P] Add SQLc build targets to Makefile (sqlc-generate, migrate-up/down)
 - [ ] T025 Implement repository interfaces in internal/storage/repository.go
 - [ ] T026 Implement Postgres repo wiring in internal/storage/postgres/db.go
