@@ -9,5 +9,6 @@ import (
 
 func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
 	return mux
 }
