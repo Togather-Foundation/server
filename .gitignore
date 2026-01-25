@@ -76,6 +76,7 @@ reports/
 .agents/
 .claude/
 .claude
+.serena/
 .opencode/
 .openpackage/
 
