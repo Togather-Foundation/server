@@ -9,10 +9,13 @@ Build a Go backend server implementing the Shared Events Library (SEL) with:
 - RESTful API for event submission (agents) and discovery (public)
 - JSON-LD serialization with Schema.org alignment and content negotiation
 - PostgreSQL storage with ULID identifiers, field-level provenance, and federated URI preservation
+- Event occurrences + series model with tombstone handling
 - Cursor-based pagination and RFC 7807 error responses
+- HTTP 410 tombstones for deleted entities
 - API key auth for agents, JWT for admins, public read access
 - Minimal admin HTML UI embedded in the binary
-- Change feed endpoint for federation sync
+- OpenAPI 3.1 spec served at /api/v1/openapi.json
+- Change feed endpoint plus minimal federation sync endpoint and node registry for peer submissions
 
 ## Technical Context
 
@@ -111,6 +114,7 @@ internal/
 │   │   ├── organizations.go
 │   │   ├── admin.go
 │   │   ├── feeds.go
+│   │   ├── federation.go
 │   │   └── health.go
 │   ├── middleware/          # Auth, rate limiting, content negotiation
 │   │   ├── auth.go

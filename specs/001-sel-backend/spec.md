@@ -154,6 +154,11 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-018**: System MUST auto-publish submitted events immediately; low-confidence or flagged events also appear in admin review queue
 - **FR-019**: System MUST support query filters: date range, city/region, venue ID, organizer ID, lifecycle state, free-text search, keywords, and event domain
 - **FR-020**: System MUST apply role-based rate limits: Public 60 req/min, Agents 300 req/min, Admins unlimited
+- **FR-021**: System MUST accept authenticated federation sync submissions at `POST /api/v1/federation/sync` and preserve foreign `@id` values
+- **FR-022**: System MUST validate canonical URI patterns and normalize `sameAs` links to full URIs
+- **FR-023**: System MUST create at least one occurrence record when ingesting an event
+- **FR-024**: System MUST include license information in JSON-LD responses
+- **FR-025**: System MUST provide admin management for federation node registry
 
 ### Key Entities
 
@@ -200,7 +205,7 @@ The following capabilities are explicitly excluded from this specification:
 
 - Vector/semantic search (future feature)
 - Automatic Artsdata reconciliation (requires separate integration work)
-- Multi-node federation sync protocol (change feed enables it; actual sync is future)
+- Full multi-node federation sync protocol is deferred; a minimal sync endpoint for peer submissions is in scope
 - MCP server for LLM agents (future feature)
 - Public event submission forms (agents only for MVP)
 - Full-featured admin SPA (minimal embedded HTML only)
