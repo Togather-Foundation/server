@@ -56,7 +56,7 @@ description: "Task list for SEL backend implementation"
 - [X] T025 Implement repository interfaces in internal/storage/repository.go
 - [X] T026 Implement Postgres repo wiring in internal/storage/postgres/db.go
 - [X] T027 [P] Implement ULID + canonical URI helpers (regex validation, identifier roles: canonical=local entity, foreign=federated entity with origin_node_id, alias=sameAs link; sameAs normalization to full URIs) in internal/domain/ids/ids.go
-- [ ] T028 [P] Add versioned JSON-LD context loader in internal/jsonld/context.go
+- [X] T028 [P] Add versioned JSON-LD context loader in internal/jsonld/context.go
 - [ ] T029 [P] Add canonical JSON-LD frames and framing utilities in internal/jsonld/framing.go
 - [ ] T030 [P] Add JSON-LD serializer in internal/jsonld/serializer.go
 - [ ] T031 Add SHACL validation harness for tests in tests/contracts/shacl_validation_test.go
