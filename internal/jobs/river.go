@@ -108,6 +108,7 @@ func NewClientConfig(workers *river.Workers, logger *slog.Logger) *river.Config 
 	}
 	if logger != nil {
 		config.Logger = logger
+		config.ErrorHandler = NewAlertingErrorHandler(logger, nil)
 	}
 	return config
 }
