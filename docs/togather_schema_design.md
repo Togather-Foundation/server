@@ -34,6 +34,7 @@ The schema implements a **three-layer hybrid architecture**:
 1. [Core Entity Tables](#1-core-entity-tables)
 2. [Temporal and Lifecycle Management](#2-temporal-and-lifecycle-management)
 3. [Provenance and Source Tracking](#3-provenance-and-source-tracking)
+   - 3.5 [Performance Indexes](#35-performance-indexes)
 4. [Federation Infrastructure](#4-federation-infrastructure)
 5. [Reconciliation and External Identifiers](#5-reconciliation-and-external-identifiers)
 6. [Search and Discovery](#6-search-and-discovery)
@@ -848,6 +849,94 @@ WHERE fp.applied_to_canonical = true
 GROUP BY fp.event_id, fp.field_path
 HAVING COUNT(DISTINCT fp.value_hash) > 1;
 ```
+
+---
+
+### 3.5 Performance Indexes
+
+Strategic indexes optimize common query patterns for events, occurrences, and federation.
+
+#### 3.5.1 Event Occurrences Index
+
+**Index**: `idx_event_occurrences_event_start`  
+**Columns**: `(event_id, start_time)`  
+**Table**: `event_occurrences`
+
+**Purpose**: Optimize joins between events and their occurrences, particularly for time-based filtering.
+
+**Query Patterns Optimized**:
+- Event detail pages loading occurrence lists
+- Filtering events by upcoming/past occurrences
+- Calendar views with time-range queries
+
+**Example Queries**:
+```sql
+-- Load event with upcoming occurrences
+SELECT * FROM events e 
+JOIN event_occurrences eo ON e.id = eo.event_id 
+WHERE e.ulid = ? AND eo.start_time > NOW()
+ORDER BY eo.start_time LIMIT 10;
+
+-- Find all occurrences for an event
+SELECT * FROM event_occurrences 
+WHERE event_id = ? 
+ORDER BY start_time;
+```
+
+#### 3.5.2 Federation Queries Index
+
+**Index**: `idx_events_federation`  
+**Columns**: `(origin_node_id, federation_uri)`  
+**Table**: `events`
+
+**Purpose**: Optimize federation sync operations and federated event lookups.
+
+**Query Patterns Optimized**:
+- Change feed queries filtered by origin node
+- Federation sync from remote nodes
+- Idempotent event upserts by federation URI
+
+**Example Queries**:
+```sql
+-- Look up federated event by URI
+SELECT * FROM events 
+WHERE origin_node_id = ? AND federation_uri = ?;
+
+-- Sync events from specific federation node
+SELECT * FROM events 
+WHERE origin_node_id = ? 
+FOR UPDATE;
+```
+
+#### 3.5.3 Tombstone (Soft Delete) Index
+
+**Index**: `idx_events_deleted` (partial index)  
+**Columns**: `(deleted_at)`  
+**Condition**: `WHERE deleted_at IS NOT NULL`  
+**Table**: `events`
+
+**Purpose**: Optimize soft delete queries (tombstone lookups) with minimal index size.
+
+**Query Patterns Optimized**:
+- 410 Gone responses for deleted events
+- Tombstone cleanup jobs
+- Federation tombstone synchronization
+
+**Design Note**: This is a **partial index** that only indexes rows where `deleted_at IS NOT NULL`, making it significantly smaller than a full index while still optimizing tombstone queries.
+
+**Example Queries**:
+```sql
+-- Check if event is deleted (tombstone lookup)
+SELECT * FROM events 
+WHERE ulid = ? AND deleted_at IS NOT NULL;
+
+-- Find all tombstones for cleanup
+SELECT ulid, deleted_at FROM events 
+WHERE deleted_at IS NOT NULL 
+AND deleted_at < NOW() - INTERVAL '90 days';
+```
+
+**Migration**: See `internal/storage/postgres/migrations/000007_performance_indexes.up.sql`
 
 ---
 

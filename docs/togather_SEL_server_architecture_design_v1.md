@@ -827,6 +827,8 @@ Rate limiting protects against denial-of-service attacks and resource exhaustion
 
 **HTTP Server Hardening:**
 
+- **Performance Indexes:** Strategic database indexes optimize common query patterns and reduce query times for event occurrence joins, federation sync operations, and tombstone lookups (see migration `000007_performance_indexes.up.sql`)
+
 The HTTP server implements timeout and resource limit configurations to prevent slowloris and resource exhaustion attacks:
 
 - **ReadTimeout:** 10 seconds - Prevents slow read attacks where clients send data byte-by-byte
