@@ -14,6 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/sanitize"
+	"github.com/Togather-Foundation/server/internal/validation"
 )
 
 type AdminHandler struct {
@@ -89,6 +90,50 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
 }
 
+// ListEvents handles GET /api/v1/admin/events
+// Returns events for admin review
+func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Service == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	filters, pagination, err := events.ParseFilters(r.URL.Query())
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	result, err := h.Service.List(r.Context(), filters, pagination)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	contextValue := loadDefaultContext()
+	items := make([]map[string]any, 0, len(result.Events))
+	for _, event := range result.Events {
+		item := map[string]any{
+			"@context": contextValue,
+			"@type":    "Event",
+			"@id":      buildEventURI(h.BaseURL, event.ULID),
+			"name":     event.Name,
+		}
+		if event.Description != "" {
+			item["description"] = event.Description
+		}
+		if event.Confidence != nil {
+			item["confidence"] = *event.Confidence
+		}
+		if event.LifecycleState != "" {
+			item["lifecycle_state"] = event.LifecycleState
+		}
+		items = append(items, item)
+	}
+
+	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
+}
+
 // UpdateEvent handles PUT /api/v1/admin/events/{id}
 // Allows admin to update event fields
 func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +184,12 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		// Check for FilterError
 		var filterErr events.FilterError
 		if errors.As(err, &filterErr) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+			return
+		}
+		// Check for URL validation errors
+		var urlErr validation.URLValidationError
+		if errors.As(err, &urlErr) {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 			return
 		}
@@ -301,6 +352,14 @@ func (h *AdminHandler) MergeEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DuplicateID == "" {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing duplicate_id", nil, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.PrimaryID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid primary_id", events.FilterError{Field: "primary_id", Message: "invalid ULID"}, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.DuplicateID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid duplicate_id", events.FilterError{Field: "duplicate_id", Message: "invalid ULID"}, h.Env)
 		return
 	}
 

@@ -117,7 +117,7 @@ func TestAdminDeleteEventNotFound(t *testing.T) {
 	insertAdminUser(t, env, username, password, email, "admin")
 	adminToken := adminLogin(t, env, username, password)
 
-	deleteReq, err := http.NewRequest(http.MethodDelete, env.Server.URL+"/api/v1/admin/events/01FAKE000000000000000000", nil)
+	deleteReq, err := http.NewRequest(http.MethodDelete, env.Server.URL+"/api/v1/admin/events/01KFXH2N3D5QJRA8WJ6Q8BGV4W", nil)
 	require.NoError(t, err)
 	deleteReq.Header.Set("Authorization", "Bearer "+adminToken)
 

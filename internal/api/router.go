@@ -113,6 +113,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	adminPendingEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.ListPendingEvents)))
 	mux.Handle("/api/v1/admin/events/pending", adminPendingEvents)
 
+	adminListEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.ListEvents)))
+	mux.Handle("/api/v1/admin/events", methodMux(map[string]http.Handler{
+		http.MethodGet: adminListEvents,
+	}))
+
 	adminUpdateEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UpdateEvent)))
 	adminDeleteEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeleteEvent)))
 	mux.Handle("/api/v1/admin/events/{id}", methodMux(map[string]http.Handler{
@@ -176,12 +181,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	}))
 
 	// Admin HTML pages (T080) - placeholder routes for future implementation
-	// mux.Handle("/admin/dashboard", adminHTMLHandler)
-	// mux.Handle("/admin/events", adminHTMLHandler)
-	// mux.Handle("/admin/duplicates", adminHTMLHandler)
-	// mux.Handle("/admin/api-keys", adminHTMLHandler)
-	// mux.Handle("/admin/federation", adminHTMLHandler)
-	// mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", http.FileServer(http.Dir("web/admin/static"))))
+	adminCookieAuth := middleware.AdminAuthCookie(jwtManager)
+	adminHTML := adminCookieAuth(http.HandlerFunc(handlers.AdminHTMLPlaceholder(cfg.Environment)))
+	mux.Handle("/admin", adminHTML)
+	mux.Handle("/admin/", adminHTML)
+	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
 
 	// Wrap entire router with middleware stack
 	// Order: CorrelationID -> RequestLogging -> RateLimit

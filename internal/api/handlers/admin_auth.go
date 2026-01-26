@@ -109,7 +109,7 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
-	token, err := h.JWTManager.Generate(userID.String(), user.Role)
+	token, err := h.JWTManager.Generate(user.Username, user.Role)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return

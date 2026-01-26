@@ -9,7 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/auth"
 )
 
-const AdminAuthCookieName = "sel_admin_token"
+const AdminAuthCookieName = "auth_token"
 
 type contextKeyAuth string
 
@@ -23,15 +23,20 @@ func AdminAuthCookie(manager *auth.JWTManager) func(http.Handler) http.Handler {
 				return
 			}
 
+			if strings.HasPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer ") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
 			cookie, err := r.Cookie(AdminAuthCookieName)
 			if err != nil || strings.TrimSpace(cookie.Value) == "" {
-				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
 			claims, err := manager.Validate(cookie.Value)
 			if err != nil {
-				http.Redirect(w, r, "/admin/login", http.StatusFound)
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 

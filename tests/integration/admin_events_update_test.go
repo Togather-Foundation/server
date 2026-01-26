@@ -189,7 +189,7 @@ func TestAdminUpdateEventNotFound(t *testing.T) {
 	updateBody, err := json.Marshal(updates)
 	require.NoError(t, err)
 
-	updateReq, err := http.NewRequest(http.MethodPut, env.Server.URL+"/api/v1/admin/events/01FAKE000000000000000000", bytes.NewReader(updateBody))
+	updateReq, err := http.NewRequest(http.MethodPut, env.Server.URL+"/api/v1/admin/events/01KFXK2N3D5QJRA8WJ6Q8BGV4W", bytes.NewReader(updateBody))
 	require.NoError(t, err)
 	updateReq.Header.Set("Authorization", "Bearer "+adminToken)
 	updateReq.Header.Set("Content-Type", "application/json")
@@ -228,8 +228,8 @@ func TestAdminUpdateEventValidation(t *testing.T) {
 			updates: map[string]any{"lifecycle_state": "invalid_state"},
 		},
 		{
-			name:    "invalid date format",
-			updates: map[string]any{"startDate": "not-a-date"},
+			name:    "invalid public_url",
+			updates: map[string]any{"public_url": "not-a-url"},
 		},
 	}
 

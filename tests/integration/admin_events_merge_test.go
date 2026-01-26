@@ -215,8 +215,8 @@ func TestAdminMergeDuplicatesNotFound(t *testing.T) {
 	adminToken := adminLogin(t, env, username, password)
 
 	mergeRequest := map[string]any{
-		"primary_id":   "01FAKE000000000000000000",
-		"duplicate_id": "01FAKE000000000000000001",
+		"primary_id":   "01KFXJ2N3D5QJRA8WJ6Q8BGV4W",
+		"duplicate_id": "01KFXJ2N3D5QJRA8WJ6Q8BGV4X",
 	}
 
 	mergeBody, err := json.Marshal(mergeRequest)
