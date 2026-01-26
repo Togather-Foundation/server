@@ -19,6 +19,7 @@ CREATE TABLE api_keys (
 
   prefix TEXT NOT NULL UNIQUE,
   key_hash TEXT NOT NULL,
+  hash_version INTEGER NOT NULL DEFAULT 2,
   name TEXT NOT NULL,
 
   source_id UUID REFERENCES sources(id),

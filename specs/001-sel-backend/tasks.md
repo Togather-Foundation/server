@@ -152,13 +152,13 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 3 (TDD - write first)
 
-- [ ] T069 [P] [US3] Integration tests for admin login + JWT transport (header + cookie) in tests/integration/admin_auth_test.go
-- [ ] T069a [P] [US3] Integration tests for JWT routing: /api/v1/admin/* accepts Bearer token, /admin/* HTML routes require cookie (FR-028) in tests/integration/admin_auth_routing_test.go
-- [ ] T070 [P] [US3] Integration tests for admin pending list in tests/integration/admin_events_pending_test.go
-- [ ] T071 [P] [US3] Integration tests for admin update event in tests/integration/admin_events_update_test.go
-- [ ] T072 [P] [US3] Integration tests for admin merge duplicates in tests/integration/admin_events_merge_test.go
-- [ ] T073 [P] [US3] Integration tests for admin delete + tombstone in tests/integration/admin_events_delete_test.go
-- [ ] T074 [P] [US3] E2E HTML smoke tests for /admin pages in tests/e2e/admin_ui_test.go
+- [X] T069 [P] [US3] Integration tests for admin login + JWT transport (header + cookie) in tests/integration/admin_auth_test.go
+- [X] T069a [P] [US3] Integration tests for JWT routing: /api/v1/admin/* accepts Bearer token, /admin/* HTML routes require cookie (FR-028) in tests/integration/admin_auth_routing_test.go
+- [X] T070 [P] [US3] Integration tests for admin pending list in tests/integration/admin_events_pending_test.go
+- [X] T071 [P] [US3] Integration tests for admin update event in tests/integration/admin_events_update_test.go
+- [X] T072 [P] [US3] Integration tests for admin merge duplicates in tests/integration/admin_events_merge_test.go
+- [X] T073 [P] [US3] Integration tests for admin delete + tombstone in tests/integration/admin_events_delete_test.go
+- [X] T074 [P] [US3] E2E HTML smoke tests for /admin pages in tests/e2e/admin_ui_test.go
 
 ### Implementation for User Story 3
 
