@@ -205,6 +205,11 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		payload["license"] = "https://creativecommons.org/publicdomain/zero/1.0/"
 	}
 
+	// Add federation URI as sameAs if present (federated events)
+	if item.FederationURI != nil && *item.FederationURI != "" {
+		payload["sameAs"] = *item.FederationURI
+	}
+
 	// Check if provenance is requested (FR-029, US5)
 	includeProvenance := strings.EqualFold(r.URL.Query().Get("include_provenance"), "true")
 	provenanceFields := parseProvenanceFields(r.URL.Query().Get("provenance_fields"))

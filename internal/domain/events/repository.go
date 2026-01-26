@@ -28,6 +28,7 @@ type Event struct {
 	Confidence     *float64
 	QualityScore   *int
 	Keywords       []string
+	FederationURI  *string
 	Occurrences    []Occurrence
 	CreatedAt      time.Time
 	UpdatedAt      time.Time

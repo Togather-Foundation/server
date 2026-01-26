@@ -47,6 +47,7 @@ SELECT e.id,
        e.organizer_id,
        e.primary_venue_id,
        e.keywords,
+       e.federation_uri,
        e.created_at,
        e.updated_at,
        o.id AS occurrence_id,
@@ -71,6 +72,7 @@ type GetEventByULIDRow struct {
 	OrganizerID    pgtype.UUID        `json:"organizer_id"`
 	PrimaryVenueID pgtype.UUID        `json:"primary_venue_id"`
 	Keywords       []string           `json:"keywords"`
+	FederationUri  pgtype.Text        `json:"federation_uri"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	OccurrenceID   pgtype.UUID        `json:"occurrence_id"`
@@ -100,6 +102,7 @@ func (q *Queries) GetEventByULID(ctx context.Context, ulid string) ([]GetEventBy
 			&i.OrganizerID,
 			&i.PrimaryVenueID,
 			&i.Keywords,
+			&i.FederationUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.OccurrenceID,

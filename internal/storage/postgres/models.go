@@ -220,6 +220,7 @@ type Organization struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	DeletionReason   pgtype.Text        `json:"deletion_reason"`
+	FederationUri    pgtype.Text        `json:"federation_uri"`
 }
 
 type OrganizationTombstone struct {
@@ -258,6 +259,7 @@ type Place struct {
 	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt               pgtype.Timestamptz `json:"deleted_at"`
 	DeletionReason          pgtype.Text        `json:"deletion_reason"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
 }
 
 type PlaceTombstone struct {
