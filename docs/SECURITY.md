@@ -185,25 +185,31 @@ func validateJWTSecret(secret string) error {
 
 ### 5. API Key Hashing
 
-**Current Implementation**: SHA-256 hashing (fast but vulnerable to offline brute-force)
+**Implementation**: Dual-hash support with bcrypt (secure) and SHA-256 (legacy)
 
-**Planned Improvement (P1)**: Migration to bcrypt
+**Current Status**: ✅ **Completed** (v0.1.2) - Migration implemented with zero-downtime support
 
 ```go
-// Current (SHA-256)
-hash := sha256.Sum256([]byte(apiKey))
-
-// Planned (bcrypt with cost factor 12)
+// New keys use bcrypt (hash_version=2)
 hash, err := bcrypt.GenerateFromPassword([]byte(apiKey), 12)
+
+// Legacy SHA-256 validation supported (hash_version=1)
+// Backwards compatible during migration period
 ```
+
+**Migration Details**:
+- **Dual-hash support**: System validates both SHA-256 (legacy) and bcrypt (secure) simultaneously
+- **Zero-downtime migration**: Existing SHA-256 keys continue working during gradual agent update
+- **Hash version tracking**: Database column `hash_version` (1=SHA-256, 2=bcrypt)
+- **Complete guide**: See `docs/API_KEY_MIGRATION.md` for detailed migration procedures
 
 **Rationale for Migration**:
 - SHA-256 is too fast (~billions of hashes/sec on modern GPUs)
 - bcrypt's adaptive work factor (cost 12) makes brute-force attacks infeasible
 - Cost factor 12 = ~300ms per attempt (acceptable for auth, prohibitive for cracking)
-- Requires re-issuing API keys to agents (cannot reverse-hash SHA-256)
+- Security improvement: 8-character key brute-force time: 30 minutes (SHA-256) → 190+ years (bcrypt)
 
-**Migration Plan**: Tracked in bead `server-jjf` (Priority 1)
+**Migration Status**: Tracked in bead `server-jjf` (✅ Closed)
 
 ### 6. Connection Pool Management
 
@@ -370,10 +376,10 @@ DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
 - ✅ Missing rate limiting on public endpoints (`server-u3v`)
 - ✅ Weak JWT secret validation (`server-j61`)
 
-**P1 (High) - Partially Resolved**:
+**P1 (High) - All Resolved**:
 - ✅ HTTP server timeout configuration (`server-9zn`)
 - ✅ Connection pool leak on error path (`server-0eo`)
-- 🔄 API key hashing migration SHA-256 → bcrypt (`server-jjf`) - **In Progress**
+- ✅ API key hashing migration SHA-256 → bcrypt (`server-jjf`) - **Completed** (see `docs/API_KEY_MIGRATION.md`)
 
 **P2 (Medium) - Tracked**:
 - 📋 Idempotency key expiration (`server-brb`)

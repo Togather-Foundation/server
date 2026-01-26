@@ -171,7 +171,7 @@ See above in Core Architecture section.
    - Rate limiting (role-based: 60/300/0 req/min)
    - HTTP server hardening (timeouts, header limits)
    - JWT secret validation (32+ character minimum)
-   - API key security (SHA-256 with bcrypt migration planned)
+   - API key security (bcrypt migration completed with zero-downtime support)
    - Connection pool leak fixes
 
 3. **Code Review**: `CODE_REVIEW.md` (NEW)
@@ -191,7 +191,9 @@ See above in Core Architecture section.
 - ✅ Weak JWT secret validation (bead `server-j61`)
 - ✅ HTTP server timeouts (bead `server-9zn`)
 - ✅ Connection pool leak (bead `server-0eo`)
-- 🔄 API key hashing migration (bead `server-jjf`) - In Progress (P1)
+- ✅ API key hashing migration SHA-256 → bcrypt (bead `server-jjf`) - see [API_KEY_MIGRATION.md](./API_KEY_MIGRATION.md)
+
+**Result**: All P0 and P1 security issues resolved. Production-ready security posture achieved.
 
 ---
 
