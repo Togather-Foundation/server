@@ -219,10 +219,10 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 5
 
-- [ ] T095 [US5] Implement provenance repository queries in internal/storage/postgres/queries/provenance.sql (include source + received timestamps)
-- [ ] T096 [US5] Implement provenance service in internal/domain/provenance/service.go
-- [ ] T097 [US5] Embed provenance + license in JSON-LD responses in internal/jsonld/serializer.go
-- [ ] T098 [US5] Add provenance query param handling in internal/api/handlers/events.go
+- [X] T095 [US5] Implement provenance repository queries in internal/storage/postgres/queries/provenance.sql (include source + received timestamps)
+- [X] T096 [US5] Implement provenance service in internal/domain/provenance/service.go
+- [X] T097 [US5] Embed provenance + license in JSON-LD responses (implemented in internal/api/handlers/events.go)
+- [X] T098 [US5] Add provenance query param handling in internal/api/handlers/events.go
 
 **Checkpoint**: User Story 5 functional and independently testable
 
