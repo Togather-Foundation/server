@@ -19,7 +19,7 @@ type APIKeyRepository struct {
 func (r *APIKeyRepository) LookupByPrefix(ctx context.Context, prefix string) (*auth.APIKey, error) {
 	queryer := r.queryer()
 	row := queryer.QueryRow(ctx, `
-SELECT id, prefix, key_hash, name, source_id, role, rate_limit_tier, is_active, expires_at
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at
   FROM api_keys
  WHERE prefix = $1
  LIMIT 1
@@ -29,6 +29,7 @@ SELECT id, prefix, key_hash, name, source_id, role, rate_limit_tier, is_active, 
 		ID            string
 		Prefix        string
 		Hash          string
+		HashVersion   int
 		Name          string
 		SourceID      *string
 		Role          string
@@ -40,6 +41,7 @@ SELECT id, prefix, key_hash, name, source_id, role, rate_limit_tier, is_active, 
 		&data.ID,
 		&data.Prefix,
 		&data.Hash,
+		&data.HashVersion,
 		&data.Name,
 		&data.SourceID,
 		&data.Role,
@@ -57,6 +59,7 @@ SELECT id, prefix, key_hash, name, source_id, role, rate_limit_tier, is_active, 
 		ID:            data.ID,
 		Prefix:        data.Prefix,
 		Hash:          data.Hash,
+		HashVersion:   data.HashVersion,
 		Name:          data.Name,
 		Role:          data.Role,
 		RateLimitTier: data.RateLimitTier,

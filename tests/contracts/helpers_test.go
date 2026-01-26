@@ -183,11 +183,12 @@ func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 
 	key := ulid.Make().String() + "secret"
 	prefix := key[:8]
-	hash := auth.HashAPIKey(key)
+	hash, err := auth.HashAPIKey(key)
+	require.NoError(t, err, "failed to hash API key")
 
-	_, err := env.Pool.Exec(env.Context,
-		`INSERT INTO api_keys (prefix, key_hash, name) VALUES ($1, $2, $3)`,
-		prefix, hash, name,
+	_, err = env.Pool.Exec(env.Context,
+		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
+		prefix, hash, auth.HashVersionBcrypt, name,
 	)
 	require.NoError(t, err)
 
