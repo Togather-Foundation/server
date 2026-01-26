@@ -8,6 +8,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -49,13 +50,15 @@ type ListEventChangesRow struct {
 
 // ChangeFeedService provides business logic for change feed operations.
 type ChangeFeedService struct {
-	repo ChangeFeedRepository
+	repo   ChangeFeedRepository
+	logger zerolog.Logger
 }
 
 // NewChangeFeedService creates a new change feed service.
-func NewChangeFeedService(repo ChangeFeedRepository) *ChangeFeedService {
+func NewChangeFeedService(repo ChangeFeedRepository, logger zerolog.Logger) *ChangeFeedService {
 	return &ChangeFeedService{
-		repo: repo,
+		repo:   repo,
+		logger: logger,
 	}
 }
 
@@ -94,6 +97,8 @@ type ChangeFeedResult struct {
 
 // GetChanges retrieves event changes with pagination and filtering.
 func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedParams) (*ChangeFeedResult, error) {
+	start := time.Now()
+
 	// Check for context cancellation
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -104,11 +109,17 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 		params.Limit = 50
 	}
 	if params.Limit > 1000 {
+		s.logger.Warn().
+			Int("requested_limit", params.Limit).
+			Msg("change feed: limit exceeds maximum, using 1000")
 		return nil, ErrInvalidLimit
 	}
 
 	// Validate action filter
 	if params.Action != "" && params.Action != "create" && params.Action != "update" && params.Action != "delete" {
+		s.logger.Warn().
+			Str("action", params.Action).
+			Msg("change feed: invalid action filter")
 		return nil, ErrInvalidAction
 	}
 
@@ -117,10 +128,22 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 	if params.After != "" {
 		seq, err := pagination.DecodeChangeCursor(params.After)
 		if err != nil {
+			s.logger.Warn().
+				Err(err).
+				Str("cursor", params.After).
+				Msg("change feed: invalid cursor")
 			return nil, ErrInvalidCursor
 		}
 		afterSeq = seq
 	}
+
+	s.logger.Debug().
+		Int64("after_sequence", afterSeq).
+		Str("action", params.Action).
+		Time("since", params.Since).
+		Int("limit", params.Limit).
+		Bool("include_snapshot", params.IncludeSnapshot).
+		Msg("change feed: fetching changes")
 
 	// Build query parameters
 	queryParams := ListEventChangesParams{
@@ -145,8 +168,19 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 	// Execute query
 	rows, err := s.repo.ListEventChanges(ctx, queryParams)
 	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("after_sequence", afterSeq).
+			Str("action", params.Action).
+			Dur("duration_ms", time.Since(start)).
+			Msg("change feed: database query failed")
 		return nil, err
 	}
+
+	s.logger.Debug().
+		Int("row_count", len(rows)).
+		Dur("query_duration_ms", time.Since(start)).
+		Msg("change feed: query completed")
 
 	// Check for context cancellation before processing results
 	if err := ctx.Err(); err != nil {
@@ -205,6 +239,13 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 		lastSeq := items[len(items)-1].SequenceNumber
 		nextCursor = pagination.EncodeChangeCursor(lastSeq)
 	}
+
+	s.logger.Info().
+		Int("item_count", len(items)).
+		Bool("has_more", hasMore).
+		Str("next_cursor", nextCursor).
+		Dur("duration_ms", time.Since(start)).
+		Msg("change feed: completed successfully")
 
 	return &ChangeFeedResult{
 		Items:      items,

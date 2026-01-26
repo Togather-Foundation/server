@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,7 @@ import (
 func TestChangeFeedService_ErrorPaths(t *testing.T) {
 	t.Run("invalid limit", func(t *testing.T) {
 		repo := &mockChangeFeedRepo{}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		_, err := service.GetChanges(context.Background(), ChangeFeedParams{
 			Limit: 1001, // Exceeds max of 1000
@@ -26,7 +27,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 
 	t.Run("invalid action", func(t *testing.T) {
 		repo := &mockChangeFeedRepo{}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		_, err := service.GetChanges(context.Background(), ChangeFeedParams{
 			Action: "invalid",
@@ -37,7 +38,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 
 	t.Run("invalid cursor", func(t *testing.T) {
 		repo := &mockChangeFeedRepo{}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		_, err := service.GetChanges(context.Background(), ChangeFeedParams{
 			After: "invalid-cursor",
@@ -50,7 +51,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 		repo := &mockChangeFeedRepoWithError{
 			err: errors.New("database connection failed"),
 		}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		_, err := service.GetChanges(context.Background(), ChangeFeedParams{})
 		require.Error(t, err)
@@ -59,7 +60,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 
 	t.Run("context cancelled before query", func(t *testing.T) {
 		repo := &mockChangeFeedRepo{}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -71,7 +72,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 
 	t.Run("context timeout during query", func(t *testing.T) {
 		repo := &slowChangeFeedRepo{delay: 100 * time.Millisecond}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
@@ -83,7 +84,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 
 	t.Run("default limit applied when zero", func(t *testing.T) {
 		repo := &mockChangeFeedRepo{}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		result, err := service.GetChanges(context.Background(), ChangeFeedParams{
 			Limit: 0, // Should default to 50
@@ -96,7 +97,7 @@ func TestChangeFeedService_ErrorPaths(t *testing.T) {
 
 	t.Run("valid actions accepted", func(t *testing.T) {
 		repo := &mockChangeFeedRepo{}
-		service := NewChangeFeedService(repo)
+		service := NewChangeFeedService(repo, zerolog.Nop())
 
 		validActions := []string{"create", "update", "delete", ""}
 		for _, action := range validActions {

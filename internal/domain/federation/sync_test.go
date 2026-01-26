@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,7 +87,7 @@ func (m *mockSyncRepo) InsertIdempotencyKey(ctx context.Context, params Idempote
 
 func TestSyncEvent_CreatesOccurrence(t *testing.T) {
 	repo := &mockSyncRepo{}
-	service := NewSyncService(repo, nil)
+	service := NewSyncService(repo, nil, zerolog.Nop())
 
 	payload := map[string]any{
 		"@context":  "https://schema.org",
@@ -111,7 +112,7 @@ func TestSyncEvent_CreatesOccurrence(t *testing.T) {
 
 func TestSyncEvent_WithoutURL_UsesFederationURI(t *testing.T) {
 	repo := &mockSyncRepo{}
-	service := NewSyncService(repo, nil)
+	service := NewSyncService(repo, nil, zerolog.Nop())
 
 	payload := map[string]any{
 		"@context":  "https://schema.org",
@@ -137,7 +138,7 @@ func TestSyncEvent_WithoutURL_UsesFederationURI(t *testing.T) {
 func TestSyncEvent_IdempotencyKey(t *testing.T) {
 	t.Run("first request with idempotency key stores it", func(t *testing.T) {
 		repo := &mockSyncRepo{}
-		service := NewSyncService(repo, nil)
+		service := NewSyncService(repo, nil, zerolog.Nop())
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -162,7 +163,7 @@ func TestSyncEvent_IdempotencyKey(t *testing.T) {
 		repo := &mockSyncRepo{
 			idempotencyKeys: make(map[string]*IdempotencyKey),
 		}
-		service := NewSyncService(repo, nil)
+		service := NewSyncService(repo, nil, zerolog.Nop())
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -196,7 +197,7 @@ func TestSyncEvent_IdempotencyKey(t *testing.T) {
 		repo := &mockSyncRepo{
 			idempotencyKeys: make(map[string]*IdempotencyKey),
 		}
-		service := NewSyncService(repo, nil)
+		service := NewSyncService(repo, nil, zerolog.Nop())
 
 		payload1 := map[string]any{
 			"@context":  "https://schema.org",

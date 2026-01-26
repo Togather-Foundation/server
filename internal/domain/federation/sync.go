@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -110,14 +111,16 @@ type UpsertFederatedEventParams struct {
 type SyncService struct {
 	repo      SyncRepository
 	validator *jsonld.Validator
+	logger    zerolog.Logger
 }
 
 // NewSyncService creates a new sync service.
 // validator can be nil to disable SHACL validation.
-func NewSyncService(repo SyncRepository, validator *jsonld.Validator) *SyncService {
+func NewSyncService(repo SyncRepository, validator *jsonld.Validator, logger zerolog.Logger) *SyncService {
 	return &SyncService{
 		repo:      repo,
 		validator: validator,
+		logger:    logger,
 	}
 }
 
@@ -137,6 +140,8 @@ type SyncEventResult struct {
 
 // SyncEvent processes an incoming federated event and upserts it.
 func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*SyncEventResult, error) {
+	start := time.Now()
+
 	// Check for context cancellation
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -144,12 +149,20 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 
 	// Validate JSON-LD structure
 	if err := s.validateJSONLD(params.Payload); err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("idempotency_key", params.IdempotencyKey).
+			Msg("federation sync: invalid JSON-LD payload")
 		return nil, err
 	}
 
 	// Validate against SHACL shapes (if validator is configured)
 	if s.validator != nil {
 		if err := s.validator.ValidateEvent(ctx, params.Payload); err != nil {
+			s.logger.Error().
+				Err(err).
+				Str("idempotency_key", params.IdempotencyKey).
+				Msg("federation sync: SHACL validation failed")
 			return nil, fmt.Errorf("%w: %v", ErrInvalidJSONLD, err)
 		}
 	}
@@ -157,21 +170,44 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 	// Extract @id (federation URI)
 	federationURI, err := s.extractID(params.Payload)
 	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("idempotency_key", params.IdempotencyKey).
+			Msg("federation sync: failed to extract @id")
 		return nil, err
 	}
 
 	// Extract and validate @type
 	eventType, err := s.extractType(params.Payload)
 	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("federation_uri", federationURI).
+			Str("idempotency_key", params.IdempotencyKey).
+			Msg("federation sync: failed to extract @type")
 		return nil, err
 	}
 	if eventType != "Event" {
+		s.logger.Error().
+			Str("federation_uri", federationURI).
+			Str("type", eventType).
+			Str("idempotency_key", params.IdempotencyKey).
+			Msg("federation sync: unsupported @type")
 		return nil, fmt.Errorf("%w: expected Event, got %s", ErrUnsupportedType, eventType)
 	}
+
+	s.logger.Info().
+		Str("federation_uri", federationURI).
+		Str("idempotency_key", params.IdempotencyKey).
+		Msg("federation sync: starting event sync")
 
 	// Compute payload hash for idempotency checks
 	payloadHash, err := computePayloadHash(params.Payload)
 	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("federation_uri", federationURI).
+			Msg("federation sync: failed to compute payload hash")
 		return nil, fmt.Errorf("failed to compute payload hash: %w", err)
 	}
 
@@ -184,6 +220,12 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 				// Same payload, return existing event
 				existing, err := s.repo.GetEventByFederationURI(ctx, federationURI)
 				if err == nil {
+					s.logger.Info().
+						Str("federation_uri", federationURI).
+						Str("event_ulid", existing.ULID).
+						Str("idempotency_key", params.IdempotencyKey).
+						Dur("duration_ms", time.Since(start)).
+						Msg("federation sync: deduplicated via idempotency key")
 					return &SyncEventResult{
 						EventULID:     existing.ULID,
 						FederationURI: federationURI,
@@ -193,6 +235,10 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 				}
 			}
 			// Different payload with same key - conflict
+			s.logger.Warn().
+				Str("federation_uri", federationURI).
+				Str("idempotency_key", params.IdempotencyKey).
+				Msg("federation sync: idempotency key conflict")
 			return nil, fmt.Errorf("idempotency key conflict: different payload for same key")
 		}
 	}
@@ -212,6 +258,10 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 		// Extract origin node from federation URI
 		originNodeID, err := s.extractOriginNode(ctx, txRepo, federationURI)
 		if err != nil {
+			s.logger.Error().
+				Err(err).
+				Str("federation_uri", federationURI).
+				Msg("federation sync: failed to determine origin node")
 			return fmt.Errorf("failed to determine origin node: %w", err)
 		}
 
@@ -270,12 +320,38 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 			IsNew:         isNew,
 			IsDuplicate:   false,
 		}
+
+		// Log successful sync within transaction
+		parsedURL, _ := url.Parse(federationURI)
+		nodeDomain := ""
+		if parsedURL != nil {
+			nodeDomain = parsedURL.Host
+		}
+		s.logger.Info().
+			Str("federation_uri", federationURI).
+			Str("event_ulid", localULID).
+			Str("node_domain", nodeDomain).
+			Bool("is_new", isNew).
+			Msg("federation sync: event upserted")
+
 		return nil
 	})
 
 	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("federation_uri", federationURI).
+			Dur("duration_ms", time.Since(start)).
+			Msg("federation sync: transaction failed")
 		return nil, err
 	}
+
+	s.logger.Info().
+		Str("federation_uri", federationURI).
+		Str("event_ulid", result.EventULID).
+		Bool("is_new", result.IsNew).
+		Dur("duration_ms", time.Since(start)).
+		Msg("federation sync: completed successfully")
 
 	return result, nil
 }
