@@ -187,17 +187,17 @@ description: "Task list for SEL backend implementation"
 - [X] T083 [P] [US4] Integration tests for Accept header behavior in tests/integration/content_negotiation_test.go
 - [X] T084 [P] [US4] Contract tests for HTML with embedded JSON-LD in tests/contracts/html_embedding_test.go
 - [X] T085 [P] [US4] Contract tests for Turtle output in tests/contracts/turtle_output_test.go
-- [ ] T086 [P] [US4] Integration tests for 410 Gone tombstone on deleted events in tests/integration/events_tombstone_test.go
-- [ ] T086a [P] [US4] Integration tests for 410 Gone tombstone on deleted places in tests/integration/places_tombstone_test.go
-- [ ] T086b [P] [US4] Integration tests for 410 Gone tombstone on deleted organizations in tests/integration/organizations_tombstone_test.go
+- [X] T086 [P] [US4] Integration tests for 410 Gone tombstone on deleted events in tests/integration/events_tombstone_test.go
+- [X] T086a [P] [US4] Integration tests for 410 Gone tombstone on deleted places in tests/integration/places_tombstone_test.go
+- [X] T086b [P] [US4] Integration tests for 410 Gone tombstone on deleted organizations in tests/integration/organizations_tombstone_test.go
 
 ### Implementation for User Story 4
 
-- [ ] T087 [US4] Implement HTML render helpers (name, startDate, location, organizer, embedded JSON-LD) in internal/api/render/html.go
-- [ ] T088 [US4] Implement Turtle serialization in internal/jsonld/turtle.go
-- [ ] T089 [US4] Add event URI handlers for /events/{id} without /api prefix in internal/api/handlers/public_pages.go
-- [ ] T090 [US4] Return 410 with tombstone JSON-LD for deleted events in internal/api/handlers/events.go and internal/api/handlers/public_pages.go
-- [ ] T091 [US4] Wire dereferenceable routes in internal/api/router.go
+- [X] T087 [US4] Implement HTML render helpers (name, startDate, location, organizer, embedded JSON-LD) in internal/api/render/html.go
+- [X] T088 [US4] Implement Turtle serialization in internal/jsonld/turtle.go
+- [X] T089 [US4] Add event URI handlers for /events/{id} without /api prefix in internal/api/handlers/public_pages.go
+- [X] T090 [US4] Return 410 with tombstone JSON-LD for deleted events in internal/api/handlers/events.go and internal/api/handlers/public_pages.go
+- [X] T091 [US4] Wire dereferenceable routes in internal/api/router.go
 
 **Checkpoint**: User Story 4 functional and independently testable
 
