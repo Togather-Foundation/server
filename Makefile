@@ -1,4 +1,4 @@
-.PHONY: help build test lint fmt clean run dev install-tools sqlc-generate migrate-up migrate-down
+.PHONY: help build test lint fmt clean run dev install-tools sqlc sqlc-generate migrate-up migrate-down
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 
@@ -18,7 +18,8 @@ help:
 	@echo "  make run           - Build and run the server"
 	@echo "  make dev           - Run in development mode (with air if available)"
 	@echo "  make install-tools - Install development tools"
-	@echo "  make sqlc-generate - Generate SQLc code"
+	@echo "  make sqlc          - Generate SQLc code (alias for sqlc-generate)"
+	@echo "  make sqlc-generate - Generate SQLc code from SQL queries"
 	@echo "  make migrate-up    - Run database migrations"
 	@echo "  make migrate-down  - Roll back one migration"
 
@@ -98,18 +99,50 @@ install-tools:
 	@echo "Tools installed successfully!"
 
 # SQLc generate
+.PHONY: sqlc-generate
 sqlc-generate:
 	@echo "Generating SQLc code..."
-	@which sqlc > /dev/null || (echo "sqlc not found. Install with 'make install-tools'" && exit 1)
-	@sqlc generate
+	@if command -v sqlc > /dev/null 2>&1; then \
+		sqlc generate; \
+	elif [ -f $(HOME)/go/bin/sqlc ]; then \
+		$(HOME)/go/bin/sqlc generate; \
+	elif [ -f $(GOPATH)/bin/sqlc ]; then \
+		$(GOPATH)/bin/sqlc generate; \
+	else \
+		echo "sqlc not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
+	@echo "SQLc code generation complete!"
+
+# Alias for sqlc-generate
+.PHONY: sqlc
+sqlc: sqlc-generate
 
 # Database migrations
+.PHONY: migrate-up
 migrate-up:
 	@echo "Running migrations..."
-	@which migrate > /dev/null || (echo "migrate not found. Install with 'make install-tools'" && exit 1)
-	@DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$${DATABASE_URL}" up
+	@if command -v migrate > /dev/null 2>&1; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
+	elif [ -f $(HOME)/go/bin/migrate ]; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(HOME)/go/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
+	elif [ -f $(GOPATH)/bin/migrate ]; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(GOPATH)/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
+	else \
+		echo "migrate not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
 
+.PHONY: migrate-down
 migrate-down:
 	@echo "Rolling back last migration..."
-	@which migrate > /dev/null || (echo "migrate not found. Install with 'make install-tools'" && exit 1)
-	@DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$${DATABASE_URL}" down 1
+	@if command -v migrate > /dev/null 2>&1; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
+	elif [ -f $(HOME)/go/bin/migrate ]; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(HOME)/go/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
+	elif [ -f $(GOPATH)/bin/migrate ]; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(GOPATH)/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
+	else \
+		echo "migrate not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
