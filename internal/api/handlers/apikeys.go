@@ -39,6 +39,7 @@ type CreateAPIKeyResponse struct {
 	Name      string     `json:"name"`
 	Role      string     `json:"role"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Warning   string     `json:"warning"` // Security warning to save the key
 }
 
 // CreateAPIKey handles POST /api/v1/admin/api-keys
@@ -120,6 +121,7 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		Name:      key.Name,
 		Role:      key.Role,
 		ExpiresAt: expiresAt,
+		Warning:   "IMPORTANT: Save this API key now. You won't be able to see it again. Store it securely.",
 	}
 
 	writeJSON(w, http.StatusCreated, resp, "application/json")
