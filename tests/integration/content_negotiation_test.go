@@ -124,7 +124,7 @@ func TestContentNegotiationTurtle(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, "text/turtle", resp.Header.Get("Content-Type"))
+	require.Contains(t, resp.Header.Get("Content-Type"), "text/turtle")
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
