@@ -18,6 +18,7 @@ const (
 	TierPublic RateLimitTier = "public"
 	TierAgent  RateLimitTier = "agent"
 	TierAdmin  RateLimitTier = "admin"
+	TierLogin  RateLimitTier = "login" // Aggressive rate limiting for login attempts
 )
 
 type rateLimitKey string
@@ -58,7 +59,12 @@ func RateLimit(cfg config.RateLimitConfig) func(http.Handler) http.Handler {
 			}
 
 			if !limiter.Allow() {
-				w.Header().Set("Retry-After", "60")
+				// Set appropriate Retry-After header based on tier
+				retryAfter := "60" // Default: 1 minute
+				if tier == TierLogin {
+					retryAfter = "180" // Login: 3 minutes (token refill rate)
+				}
+				w.Header().Set("Retry-After", retryAfter)
 				w.WriteHeader(http.StatusTooManyRequests)
 				return
 			}
@@ -81,6 +87,7 @@ func newLimiterStore(cfg config.RateLimitConfig) *limiterStore {
 			TierPublic: cfg.PublicPerMinute,
 			TierAgent:  cfg.AgentPerMinute,
 			TierAdmin:  cfg.AdminPerMinute,
+			TierLogin:  cfg.LoginPer15Minutes, // Special handling below
 		},
 	}
 }
@@ -103,8 +110,18 @@ func (s *limiterStore) limiter(tier RateLimitTier, key string) *rate.Limiter {
 		return limiter
 	}
 
-	interval := time.Minute / time.Duration(limit)
-	limiter := rate.NewLimiter(rate.Every(interval), limit)
+	// Special handling for login tier: 5 attempts per 15 minutes
+	// Uses token bucket: rate = 5/(15 min) = 1 token every 3 minutes
+	var limiter *rate.Limiter
+	if tier == TierLogin {
+		// Allow burst of 5 requests, refill at 1 token per 3 minutes
+		limiter = rate.NewLimiter(rate.Every(3*time.Minute), limit)
+	} else {
+		// Standard per-minute rate limiting for other tiers
+		interval := time.Minute / time.Duration(limit)
+		limiter = rate.NewLimiter(rate.Every(interval), limit)
+	}
+
 	s.limiters[lookup] = limiter
 	return limiter
 }

@@ -96,8 +96,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
 
 	// Admin routes (T075, T076)
-	// Admin auth endpoints
-	mux.Handle("/api/v1/admin/login", http.HandlerFunc(adminAuthHandler.Login))
+	// Admin auth endpoints - login has aggressive rate limiting
+	rateLimitLogin := middleware.WithRateLimitTierHandler(middleware.TierLogin)
+	mux.Handle("/api/v1/admin/login", rateLimitLogin(http.HandlerFunc(adminAuthHandler.Login)))
 	mux.Handle("/api/v1/admin/logout", http.HandlerFunc(adminAuthHandler.Logout))
 
 	// Admin event management endpoints (requires JWT auth)

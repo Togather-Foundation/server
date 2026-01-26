@@ -36,9 +36,10 @@ type AuthConfig struct {
 }
 
 type RateLimitConfig struct {
-	PublicPerMinute int
-	AgentPerMinute  int
-	AdminPerMinute  int
+	PublicPerMinute   int
+	AgentPerMinute    int
+	AdminPerMinute    int
+	LoginPer15Minutes int // Login attempts allowed per 15-minute window per IP
 }
 
 type AdminBootstrapConfig struct {
@@ -75,9 +76,10 @@ func Load() (Config, error) {
 			JWTExpiry: time.Duration(getEnvInt("JWT_EXPIRY_HOURS", 24)) * time.Hour,
 		},
 		RateLimit: RateLimitConfig{
-			PublicPerMinute: getEnvInt("RATE_LIMIT_PUBLIC", 60),
-			AgentPerMinute:  getEnvInt("RATE_LIMIT_AGENT", 300),
-			AdminPerMinute:  getEnvInt("RATE_LIMIT_ADMIN", 0),
+			PublicPerMinute:   getEnvInt("RATE_LIMIT_PUBLIC", 60),
+			AgentPerMinute:    getEnvInt("RATE_LIMIT_AGENT", 300),
+			AdminPerMinute:    getEnvInt("RATE_LIMIT_ADMIN", 0),
+			LoginPer15Minutes: getEnvInt("RATE_LIMIT_LOGIN", 5),
 		},
 		AdminBootstrap: AdminBootstrapConfig{
 			Username: getEnv("ADMIN_USERNAME", ""),
