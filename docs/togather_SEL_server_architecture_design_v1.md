@@ -795,6 +795,133 @@ By leveraging robust libraries and patterns, we ensure that **auth and access co
 
 In conclusion, SEL’s authentication and RBAC design provides a **secure gate** around sensitive operations, while keeping the public-facing data open and accessible. It offers external contributors a controlled way to add data (agents with keys) and ensures only authorized staff can perform moderation or system changes. The design is flexible enough to accommodate more roles in the future or integrate with external identity providers if needed (e.g., hooking into an OAuth service for admin login, or using something like Keycloak). But the immediate plan favors a lightweight, self-contained auth system consistent with the overall simple deployment theme.
 
+###
+
+ 7.1 Security Hardening
+
+SEL implements defense-in-depth security measures to protect against common attack vectors while maintaining operational simplicity. Security hardening was informed by a comprehensive code review (see `CODE_REVIEW.md`) that identified and prioritized vulnerabilities across the codebase.
+
+**SQL Injection Protection:**
+
+All database queries that accept user input implement proper escaping to prevent SQL injection attacks:
+
+- **Pattern Escaping for ILIKE Queries:** Custom escape function (`escapeILIKEPattern()`) neutralizes SQL wildcard characters (`%`, `_`, `\`) in user input used with PostgreSQL ILIKE queries
+- **ESCAPE Clause Required:** All ILIKE queries MUST include explicit `ESCAPE '\'` clause to ensure consistent escaping behavior
+- **Protected Fields:** City, region, and free-text search parameters are sanitized before query construction
+- **SQLc Safety:** Using SQLc for type-safe query generation provides additional protection by parameterizing queries at compile time
+
+**Rate Limiting:**
+
+Rate limiting protects against denial-of-service attacks and resource exhaustion while allowing legitimate usage:
+
+- **Role-Based Tiers:**
+  - Public (unauthenticated): 60 requests/minute (default)
+  - Agent (authenticated): 300 requests/minute (default)
+  - Admin: Unlimited (rate_limit=0)
+- **Configurable Limits:** Rate limits are configurable via environment variables:
+  - `RATE_LIMIT_PUBLIC` - Public tier limit
+  - `RATE_LIMIT_AGENT` - Agent tier limit
+  - `RATE_LIMIT_ADMIN` - Admin tier limit (0 = unlimited)
+- **Per-Endpoint Protection:** Rate limiting middleware applied to ALL public-facing endpoints (events, places, organizations query endpoints)
+- **Global Fallback:** Router-level rate limiting provides defense-in-depth if endpoint-specific limits are bypassed
+
+**HTTP Server Hardening:**
+
+The HTTP server implements timeout and resource limit configurations to prevent slowloris and resource exhaustion attacks:
+
+- **ReadTimeout:** 10 seconds - Prevents slow read attacks where clients send data byte-by-byte
+- **WriteTimeout:** 30 seconds - Prevents slow write attacks and ensures timely response completion
+- **MaxHeaderBytes:** 1 MB (1 << 20) - Prevents memory exhaustion from oversized header attacks
+- **Rationale:** These timeouts balance legitimate slow connections (mobile, rural areas) with protection against malicious actors
+
+**JWT Secret Validation:**
+
+Strong JWT signing secrets are enforced at application startup to prevent weak credential attacks:
+
+- **Minimum Length:** JWT_SECRET must be at least 32 characters
+- **Startup Validation:** Application fails fast on startup if secret is too weak (fail-safe design)
+- **Error Messaging:** Clear error shows current vs required length to guide administrators
+- **Prevents Weak Secrets:** Blocks common weak patterns like "secret", "123456", "test", etc.
+- **Production Requirement:** Secrets should be cryptographically random (e.g., generated via `openssl rand -base64 48`)
+
+**API Key Security:**
+
+API keys for agent authentication are hashed before storage to protect against database compromise:
+
+- **Current Implementation:** SHA-256 hashing (fast but vulnerable to offline brute-force)
+- **Planned Improvement (P1):** Migration to bcrypt for adaptive work factor (tracked in bead `server-jjf`)
+- **Rationale for Migration:** bcrypt's configurable cost factor (10-12) makes offline brute-force attacks computationally infeasible even if database is compromised
+- **Migration Strategy:** Will require re-issuing API keys to agents during transition (bcrypt cannot reverse-hash SHA-256)
+
+**Connection Pool Management:**
+
+Proper resource lifecycle management prevents connection leaks:
+
+- **Initialization Error Path:** Database connection pool is explicitly closed on initialization failure
+- **Deferred Cleanup:** Connection cleanup uses deferred close handlers where appropriate
+- **Monitoring:** Connection pool metrics should be exposed for operational visibility (future work)
+
+**Security Configuration Defaults:**
+
+Default configuration values prioritize security while allowing customization for specific deployments:
+
+```bash
+# Required - No default (must be 32+ characters)
+JWT_SECRET=<cryptographically-random-secret>
+
+# Database connection
+DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
+
+# Rate limiting (requests per minute)
+RATE_LIMIT_PUBLIC=60      # Conservative for public tier
+RATE_LIMIT_AGENT=300      # Higher for trusted agents
+RATE_LIMIT_ADMIN=0        # Unlimited for administrators
+
+# HTTP server (values in seconds)
+HTTP_READ_TIMEOUT=10      # Balance mobile networks with DoS protection
+HTTP_WRITE_TIMEOUT=30     # Allow time for large responses
+HTTP_MAX_HEADER_BYTES=1048576  # 1 MB header limit
+```
+
+**Security Review and Testing:**
+
+- **Code Review:** Comprehensive security review documented in `CODE_REVIEW.md` (20 issues categorized P0-P2)
+- **P0 Vulnerabilities:** All critical (P0) issues resolved in v0.1.2
+- **Integration Tests:** Security fixes include regression tests (e.g., SQL injection attempt tests in `events_repository_escape_test.go`)
+- **Ongoing Monitoring:** Security is tracked through beads issue system for transparency and prioritization
+
+**Threat Model Summary:**
+
+SEL's security design addresses these primary threat vectors:
+
+| Threat | Mitigation | Status |
+|--------|-----------|--------|
+| SQL Injection | Pattern escaping + SQLc parameterization | ✅ Implemented |
+| DoS (Rate-based) | Role-based rate limiting | ✅ Implemented |
+| DoS (Slowloris) | HTTP timeouts + header size limits | ✅ Implemented |
+| Weak JWT Secrets | Startup validation (32+ chars) | ✅ Implemented |
+| API Key Compromise | SHA-256 hashing (bcrypt planned) | 🔄 P1 Migration |
+| Connection Leaks | Explicit pool cleanup | ✅ Implemented |
+| XSS/CSRF | Content-Security-Policy headers (future) | 📋 Backlog |
+
+**Security Best Practices for Operators:**
+
+1. **Generate Strong Secrets:** Use `openssl rand -base64 48` or similar for JWT_SECRET
+2. **Enable HTTPS:** Always run behind TLS termination (nginx, Traefik, or cloud load balancer)
+3. **Database Security:** Use `sslmode=require` in DATABASE_URL and restrict network access via firewall rules
+4. **Monitor Rate Limits:** Watch for 429 errors indicating potential attacks or misconfigured clients
+5. **Rotate API Keys:** Implement key rotation policy for long-lived agent credentials
+6. **Review Audit Logs:** Monitor admin and agent actions for suspicious activity patterns
+
+**Future Security Work (Tracked in Beads):**
+
+- `server-jjf` (P1): Migrate API key hashing from SHA-256 to bcrypt
+- `server-itg` (P2): Sanitize production logs to prevent sensitive data leakage
+- `server-brb` (P2): Implement idempotency key expiration to limit cache growth
+- Security audit: Third-party penetration testing before public production deployment
+
+For complete security findings and prioritization, see `CODE_REVIEW.md` in the repository root.
+
 ## 8. Deployment Strategy (Docker, Configuration, Healthchecks)
 
 Deployment for SEL is intended to be **straightforward and reproducible**, relying on containerization and minimal moving parts. The entire backend (aside from the database) compiles into a single Go binary, which we will ship via Docker for consistency across environments.

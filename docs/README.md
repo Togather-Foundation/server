@@ -1,7 +1,7 @@
 # SEL Documentation Index
 
-**Version:** 0.1.0-DRAFT  
-**Last Updated:** 2026-01-23
+**Version:** 0.1.2  
+**Last Updated:** 2026-01-25
 
 This directory contains the comprehensive technical documentation for the Shared Events Library (SEL) backend.
 
@@ -22,7 +22,7 @@ The authoritative specification for SEL federation, API contracts, and linked da
 - Provenance model
 
 ### 🏗️ [SEL Server Architecture Design v1](./togather_SEL_server_architecture_design_v1.md)
-**Status:** Updated 2026-01-20  
+**Status:** Updated 2026-01-25  
 Complete system architecture including component design, API endpoints, and implementation guidelines.
 
 **Key Topics:**
@@ -31,8 +31,25 @@ Complete system architecture including component design, API endpoints, and impl
 - Database strategy (PostgreSQL + pgvector)
 - Background jobs (River queue)
 - Authentication & RBAC
+- **§ 7.1 Security Hardening** (NEW)
 - Federation layer
 - MCP server integration
+
+### 🔒 [SEL Security Model](./SECURITY.md)
+**Status:** Living Document (NEW - v0.1.2)  
+Comprehensive security architecture, threat model, implemented protections, and operational security practices.
+
+**Key Topics:**
+- Threat model and attack vectors
+- SQL injection prevention
+- Rate limiting (role-based)
+- HTTP server hardening
+- JWT secret validation
+- API key security (SHA-256 → bcrypt migration)
+- Configuration requirements
+- Operational security best practices
+- Security audit history
+- Responsible disclosure policy
 
 ### 🗄️ [SEL Comprehensive Schema Design](./togather_schema_design.md)
 **Status:** Living Document  
@@ -96,8 +113,9 @@ See above in Core Architecture section.
 
 1. **Start Here**: [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) — understand the contracts
 2. **System Design**: [Architecture Design](./togather_SEL_server_architecture_design_v1.md) — see how it all fits together
-3. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
-4. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
+3. **Security**: [Security Model](./SECURITY.md) — threat model, protections, and operational practices
+4. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
+5. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
 
 **For API Consumers:**
 
@@ -106,6 +124,13 @@ See above in Core Architecture section.
    - § 3: Minimal Required Fields
    - § 4: Export Formats
 2. Check the OpenAPI spec at `/api/v1/openapi.json` (once deployed)
+3. Review [Security Model](./SECURITY.md) for rate limits and authentication requirements
+
+**For Operators:**
+
+1. [Security Model](./SECURITY.md) — configuration requirements and operational best practices
+2. [Architecture Design § 7.1](./togather_SEL_server_architecture_design_v1.md#71-security-hardening) — security implementation details
+3. [Schema Design](./togather_schema_design.md) — database setup and migrations
 
 **For Knowledge Graph Integrators:**
 
@@ -120,10 +145,53 @@ See above in Core Architecture section.
 | Document | Status | Last Updated | Next Review |
 |----------|--------|--------------|-------------|
 | Interoperability Profile | Proposed for Review | 2026-01-20 | 2026-02-20 |
-| Architecture Design | Updated | 2026-01-20 | 2026-02-20 |
+| Architecture Design | Updated | 2026-01-25 | 2026-02-25 |
+| **Security Model** | **Living Document** | **2026-01-25** | **Ongoing** |
 | Schema Design | Living Document | 2026-01-21 | Ongoing |
 | **Multi-Graph Strategy** | **Draft** | **2026-01-23** | **2026-02-23** |
 | Artsdata Integration | Updated | 2026-01-23 | 2026-03-23 |
+
+---
+
+## Key Changes in v0.1.2 (2026-01-25)
+
+### 🔒 Security Hardening
+
+**Major security improvements based on comprehensive code review:**
+
+1. **New Documentation**: [Security Model](./SECURITY.md)
+   - Comprehensive threat model and attack vector analysis
+   - Detailed documentation of implemented protections
+   - Operational security best practices
+   - Security audit history
+   - Responsible disclosure policy
+
+2. **Architecture Updates**: [Architecture § 7.1](./togather_SEL_server_architecture_design_v1.md#71-security-hardening)
+   - SQL injection prevention (ILIKE escaping)
+   - Rate limiting (role-based: 60/300/0 req/min)
+   - HTTP server hardening (timeouts, header limits)
+   - JWT secret validation (32+ character minimum)
+   - API key security (SHA-256 with bcrypt migration planned)
+   - Connection pool leak fixes
+
+3. **Code Review**: `CODE_REVIEW.md` (NEW)
+   - 20 issues identified and categorized (P0-P2)
+   - All 3 critical (P0) vulnerabilities resolved
+   - 3 high-priority (P1) issues tracked (1 resolved, 2 in progress)
+   - 14 medium-priority (P2) improvements backlogged
+
+4. **Configuration Requirements**: `SETUP.md` updated
+   - Security-focused environment variable documentation
+   - Strong secret generation guidance
+   - Production deployment checklist
+
+**Security Fixes (v0.1.2)**:
+- ✅ SQL injection in ILIKE queries (bead `server-byy`)
+- ✅ Missing rate limiting on public endpoints (bead `server-u3v`)
+- ✅ Weak JWT secret validation (bead `server-j61`)
+- ✅ HTTP server timeouts (bead `server-9zn`)
+- ✅ Connection pool leak (bead `server-0eo`)
+- 🔄 API key hashing migration (bead `server-jjf`) - In Progress (P1)
 
 ---
 

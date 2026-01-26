@@ -50,5 +50,25 @@ Events are the heartbeat of local culture. By building this shared infrastructur
 
 The [**Togather Foundation**](https://togather.foundation) is a coordination point, not a platform owner. We provide reference implementations (like this library), documentation, and standards guidance. We do not own the data or monetize the community.
 
+## Security
+
+This server implements defense-in-depth security measures including:
+
+- **SQL Injection Protection**: Pattern escaping for all user inputs in database queries
+- **Rate Limiting**: Role-based request throttling (60/min public, 300/min agent)
+- **HTTP Hardening**: Timeout configuration to prevent DoS attacks
+- **JWT Secret Validation**: Enforced minimum 32-character secrets at startup
+- **API Key Hashing**: SHA-256 hashing (bcrypt migration planned)
+
+**Required Configuration:**
+- `JWT_SECRET` must be at least 32 characters (generate with `openssl rand -base64 48`)
+- Database connections should use `sslmode=require` in production
+- Server must run behind HTTPS termination (nginx, Traefik, cloud LB)
+
+For complete security documentation, see:
+- `CODE_REVIEW.md` - Security audit and findings
+- `docs/togather_SEL_server_architecture_design_v1.md` § 7.1 - Security hardening details
+- `SETUP.md` - Security configuration guide
+
 ---
 *This README provides a high-level overview. Technical documentation can be found in the `docs/` directory.*
