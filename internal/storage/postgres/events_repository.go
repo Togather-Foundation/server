@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // escapeILIKEPattern escapes special characters in ILIKE patterns to prevent SQL injection.
@@ -27,6 +28,11 @@ func escapeILIKEPattern(pattern string) string {
 }
 
 var _ events.Repository = (*EventRepository)(nil)
+
+type EventRepository struct {
+	pool *pgxpool.Pool
+	tx   pgx.Tx
+}
 
 type eventRow struct {
 	ID             string

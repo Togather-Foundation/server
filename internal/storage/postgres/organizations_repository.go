@@ -10,9 +10,15 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var _ organizations.Repository = (*OrganizationRepository)(nil)
+
+type OrganizationRepository struct {
+	pool *pgxpool.Pool
+	tx   pgx.Tx
+}
 
 type organizationRow struct {
 	ID        string

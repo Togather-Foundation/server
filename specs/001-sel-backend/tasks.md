@@ -162,7 +162,7 @@ description: "Task list for SEL backend implementation"
 
 ### Implementation for User Story 3
 
-- [ ] T075 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go (POST /api/v1/admin/login issues JWT as Authorization header for API clients AND HttpOnly cookie for HTML UI; GET /admin/login renders login page)
+- [X] T075 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go (POST /api/v1/admin/login issues JWT as Authorization header for API clients AND HttpOnly cookie for HTML UI; GET /admin/login renders login page)
 - [ ] T076 [US3] Implement admin event review handlers in internal/api/handlers/admin.go
 - [ ] T077 [US3] Implement admin services for review/merge in internal/domain/events/admin_service.go
 - [ ] T081b [US3] Implement federation node registry CRUD (create/list/update/delete trusted peer nodes for federation sync) in internal/api/handlers/admin.go and internal/domain/federation/nodes.go
