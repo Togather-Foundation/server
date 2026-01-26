@@ -86,8 +86,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	publicPlaceGet := rateLimitPublic(http.HandlerFunc(placesHandler.Get))
 	publicOrgs := rateLimitPublic(http.HandlerFunc(orgHandler.List))
 	publicOrgGet := rateLimitPublic(http.HandlerFunc(orgHandler.Get))
-	publicHTML := rateLimitPublic(http.HandlerFunc(handlers.PublicHTMLPlaceholder(cfg.Environment)))
-	publicTurtle := rateLimitPublic(http.HandlerFunc(handlers.TurtlePlaceholder(cfg.Environment)))
+	publicPages := handlers.NewPublicPagesHandler(eventsService, placesService, orgService, cfg.Environment, cfg.Server.BaseURL)
+	publicEventPage := rateLimitPublic(http.HandlerFunc(publicPages.GetEvent))
+	publicPlacePage := rateLimitPublic(http.HandlerFunc(publicPages.GetPlace))
+	publicOrgPage := rateLimitPublic(http.HandlerFunc(publicPages.GetOrganization))
 
 	// Authenticated write endpoints with agent rate limiting
 	createEvents := apiKeyAuth(rateLimitAgent(http.HandlerFunc(eventsHandler.Create)))
@@ -103,14 +105,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
 
 	// Public HTML and Turtle placeholders for content negotiation tests
-	mux.Handle("/events/", methodMux(map[string]http.Handler{
-		http.MethodGet: publicTurtle,
-	}))
-	mux.Handle("/events/{id}", methodMux(map[string]http.Handler{
-		http.MethodGet: publicTurtle,
-	}))
-	mux.Handle("/places/{id}", publicHTML)
-	mux.Handle("/organizations/{id}", publicHTML)
+	mux.Handle("/events/{id}", publicEventPage)
+	mux.Handle("/places/{id}", publicPlacePage)
+	mux.Handle("/organizations/{id}", publicOrgPage)
 
 	// Admin routes (T075, T076)
 	// Admin auth endpoints - login has aggressive rate limiting
