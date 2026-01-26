@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createEventTombstone = `-- name: CreateEventTombstone :exec
+INSERT INTO event_tombstones (event_id, event_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateEventTombstoneParams struct {
+	EventID         pgtype.UUID        `json:"event_id"`
+	EventUri        string             `json:"event_uri"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason  pgtype.Text        `json:"deletion_reason"`
+	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
+	Payload         []byte             `json:"payload"`
+}
+
+func (q *Queries) CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error {
+	_, err := q.db.Exec(ctx, createEventTombstone,
+		arg.EventID,
+		arg.EventUri,
+		arg.DeletedAt,
+		arg.DeletionReason,
+		arg.SupersededByUri,
+		arg.Payload,
+	)
+	return err
+}
+
 const getEventByULID = `-- name: GetEventByULID :many
 SELECT e.id,
        e.ulid,
@@ -272,4 +298,111 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]ListE
 		return nil, err
 	}
 	return items, nil
+}
+
+const mergeEventIntoDuplicate = `-- name: MergeEventIntoDuplicate :exec
+UPDATE events e1
+   SET merged_into_id = (SELECT e2.id FROM events e2 WHERE e2.ulid = $2),
+       deleted_at = now(),
+       lifecycle_state = 'deleted',
+       updated_at = now()
+ WHERE e1.ulid = $1
+   AND e1.deleted_at IS NULL
+`
+
+type MergeEventIntoDuplicateParams struct {
+	Ulid   string `json:"ulid"`
+	Ulid_2 string `json:"ulid_2"`
+}
+
+func (q *Queries) MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error {
+	_, err := q.db.Exec(ctx, mergeEventIntoDuplicate, arg.Ulid, arg.Ulid_2)
+	return err
+}
+
+const softDeleteEvent = `-- name: SoftDeleteEvent :exec
+UPDATE events
+   SET deleted_at = now(),
+       deletion_reason = $2,
+       lifecycle_state = 'deleted',
+       updated_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL
+`
+
+type SoftDeleteEventParams struct {
+	Ulid           string      `json:"ulid"`
+	DeletionReason pgtype.Text `json:"deletion_reason"`
+}
+
+func (q *Queries) SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error {
+	_, err := q.db.Exec(ctx, softDeleteEvent, arg.Ulid, arg.DeletionReason)
+	return err
+}
+
+const updateEvent = `-- name: UpdateEvent :one
+UPDATE events
+   SET name = COALESCE($2, name),
+       description = COALESCE($3, description),
+       lifecycle_state = COALESCE($4, lifecycle_state),
+       image_url = COALESCE($5, image_url),
+       public_url = COALESCE($6, public_url),
+       event_domain = COALESCE($7, event_domain),
+       keywords = COALESCE($8, keywords),
+       updated_at = now()
+ WHERE ulid = $1
+RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, created_at, updated_at
+`
+
+type UpdateEventParams struct {
+	Ulid           string      `json:"ulid"`
+	Name           pgtype.Text `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	LifecycleState pgtype.Text `json:"lifecycle_state"`
+	ImageUrl       pgtype.Text `json:"image_url"`
+	PublicUrl      pgtype.Text `json:"public_url"`
+	EventDomain    pgtype.Text `json:"event_domain"`
+	Keywords       []string    `json:"keywords"`
+}
+
+type UpdateEventRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Ulid           string             `json:"ulid"`
+	Name           string             `json:"name"`
+	Description    pgtype.Text        `json:"description"`
+	LifecycleState string             `json:"lifecycle_state"`
+	EventDomain    pgtype.Text        `json:"event_domain"`
+	ImageUrl       pgtype.Text        `json:"image_url"`
+	PublicUrl      pgtype.Text        `json:"public_url"`
+	Keywords       []string           `json:"keywords"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (UpdateEventRow, error) {
+	row := q.db.QueryRow(ctx, updateEvent,
+		arg.Ulid,
+		arg.Name,
+		arg.Description,
+		arg.LifecycleState,
+		arg.ImageUrl,
+		arg.PublicUrl,
+		arg.EventDomain,
+		arg.Keywords,
+	)
+	var i UpdateEventRow
+	err := row.Scan(
+		&i.ID,
+		&i.Ulid,
+		&i.Name,
+		&i.Description,
+		&i.LifecycleState,
+		&i.EventDomain,
+		&i.ImageUrl,
+		&i.PublicUrl,
+		&i.Keywords,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

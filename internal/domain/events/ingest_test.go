@@ -287,6 +287,70 @@ func (m *MockRepository) UpsertOrganization(ctx context.Context, params Organiza
 	return org, nil
 }
 
+// Admin operations (stub implementations for testing)
+func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	event, ok := m.events[ulid]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	// Apply updates in memory
+	if params.Name != nil {
+		event.Name = *params.Name
+	}
+	if params.Description != nil {
+		event.Description = *params.Description
+	}
+	if params.LifecycleState != nil {
+		event.LifecycleState = *params.LifecycleState
+	}
+	event.UpdatedAt = time.Now()
+
+	return event, nil
+}
+
+func (m *MockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, ok := m.events[ulid]
+	if !ok {
+		return ErrNotFound
+	}
+
+	// Mark as deleted (in real implementation, would set deleted_at)
+	return nil
+}
+
+func (m *MockRepository) MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, ok := m.events[duplicateULID]
+	if !ok {
+		return ErrNotFound
+	}
+
+	_, ok = m.events[primaryULID]
+	if !ok {
+		return ErrNotFound
+	}
+
+	// Mark duplicate as merged (in real implementation, would set merged_into_id)
+	return nil
+}
+
+func (m *MockRepository) CreateTombstone(ctx context.Context, params TombstoneCreateParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Stub implementation - in real implementation would insert into event_tombstones table
+	return nil
+}
+
 // Helper methods for testing
 func (m *MockRepository) AddExistingEvent(sourceID, sourceEventID string, event *Event) {
 	m.mu.Lock()

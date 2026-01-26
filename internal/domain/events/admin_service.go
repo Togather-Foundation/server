@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -64,11 +65,12 @@ func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params Upda
 		return existing, nil
 	}
 
-	// TODO: Persist updates via repository
-	// For now, return the existing event with applied changes in memory
-	// This will be completed when we add UpdateEvent to the repository interface
+	// Persist updates via repository
+	updated, err := s.repo.UpdateEvent(ctx, ulid, params)
+	if err != nil {
+		return nil, fmt.Errorf("update event: %w", err)
+	}
 
-	updated := applyUpdatesInMemory(existing, params)
 	return updated, nil
 }
 
@@ -146,15 +148,38 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		return fmt.Errorf("duplicate event not found: %w", err)
 	}
 
-	// TODO: Implement merge logic:
-	// 1. Soft delete duplicate event (set deleted_at)
-	// 2. Add sameAs link pointing to primary
-	// 3. Optionally merge data from duplicate into primary (enrich)
-	// 4. Record merge in event_changes table for audit trail
+	// Merge duplicate into primary (soft delete + set merged_into_id)
+	err = s.repo.MergeEvents(ctx, params.DuplicateULID, params.PrimaryULID)
+	if err != nil {
+		return fmt.Errorf("merge events: %w", err)
+	}
 
-	// For now, just validate that both events exist
+	// Generate tombstone for the duplicate event
+	// Build canonical URI for primary event (supersededBy)
+	primaryURI := fmt.Sprintf("https://togather.foundation/events/%s", params.PrimaryULID)
+
+	tombstonePayload, err := buildTombstonePayload(duplicate.ULID, duplicate.Name, &primaryURI, "duplicate_merged")
+	if err != nil {
+		return fmt.Errorf("build tombstone: %w", err)
+	}
+
+	tombstoneParams := TombstoneCreateParams{
+		EventID:      duplicate.ID,
+		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", duplicate.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       "duplicate_merged",
+		SupersededBy: &primaryURI,
+		Payload:      tombstonePayload,
+	}
+
+	err = s.repo.CreateTombstone(ctx, tombstoneParams)
+	if err != nil {
+		return fmt.Errorf("create tombstone: %w", err)
+	}
+
+	// Note: The actual event record remains in DB with deleted_at set and merged_into_id pointing to primary
+	// Future enhancement: merge data from duplicate into primary (enrichment)
 	_ = primary
-	_ = duplicate
 
 	return nil
 }
@@ -172,17 +197,32 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 		return err
 	}
 
-	// TODO: Implement soft delete logic:
-	// 1. Set deleted_at = NOW() on events table
-	// 2. Generate tombstone JSON-LD payload
-	// 3. Insert into event_tombstones table with:
-	//    - event_id, event_uri, deleted_at, deletion_reason
-	//    - tombstone payload (JSON-LD with @type: Tombstone, deleted, formerType: Event)
-	// 4. Record deletion in event_changes table for audit trail
+	// Soft delete the event
+	err = s.repo.SoftDeleteEvent(ctx, ulid, reason)
+	if err != nil {
+		return fmt.Errorf("soft delete event: %w", err)
+	}
 
-	// For now, just validate that event exists
-	_ = event
-	_ = reason
+	// Generate tombstone JSON-LD payload
+	tombstonePayload, err := buildTombstonePayload(event.ULID, event.Name, nil, reason)
+	if err != nil {
+		return fmt.Errorf("build tombstone: %w", err)
+	}
+
+	// Create tombstone record
+	tombstoneParams := TombstoneCreateParams{
+		EventID:      event.ID,
+		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", event.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       reason,
+		SupersededBy: nil,
+		Payload:      tombstonePayload,
+	}
+
+	err = s.repo.CreateTombstone(ctx, tombstoneParams)
+	if err != nil {
+		return fmt.Errorf("create tombstone: %w", err)
+	}
 
 	return nil
 }
@@ -307,4 +347,32 @@ func equalKeywords(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// buildTombstonePayload generates a JSON-LD tombstone payload according to SEL spec
+// See: docs/togather_SEL_Interoperability_Profile_v0.1.md section 1.6
+func buildTombstonePayload(ulid, name string, supersededBy *string, reason string) ([]byte, error) {
+	eventURI := fmt.Sprintf("https://togather.foundation/events/%s", ulid)
+
+	tombstone := map[string]interface{}{
+		"@context":           "https://schema.org",
+		"@type":              "Event",
+		"@id":                eventURI,
+		"name":               name,
+		"eventStatus":        "https://schema.org/EventCancelled",
+		"sel:tombstone":      true,
+		"sel:deletedAt":      time.Now().Format(time.RFC3339),
+		"sel:deletionReason": reason,
+	}
+
+	if supersededBy != nil {
+		tombstone["sel:supersededBy"] = *supersededBy
+	}
+
+	payload, err := json.Marshal(tombstone)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tombstone: %w", err)
+	}
+
+	return payload, nil
 }

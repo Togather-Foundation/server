@@ -829,3 +829,128 @@ func intPtr(value *int32) *int {
 	converted := int(*value)
 	return &converted
 }
+
+// UpdateEvent updates an event by ULID with the provided parameters
+func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
+	queries := Queries{db: r.queryer()}
+
+	// Build update parameters for SQLc
+	updateParams := UpdateEventParams{
+		Ulid: ulid,
+	}
+
+	if params.Name != nil {
+		updateParams.Name = pgtype.Text{String: *params.Name, Valid: true}
+	}
+	if params.Description != nil {
+		updateParams.Description = pgtype.Text{String: *params.Description, Valid: true}
+	}
+	if params.LifecycleState != nil {
+		updateParams.LifecycleState = pgtype.Text{String: *params.LifecycleState, Valid: true}
+	}
+	if params.ImageURL != nil {
+		updateParams.ImageUrl = pgtype.Text{String: *params.ImageURL, Valid: true}
+	}
+	if params.PublicURL != nil {
+		updateParams.PublicUrl = pgtype.Text{String: *params.PublicURL, Valid: true}
+	}
+	if params.EventDomain != nil {
+		updateParams.EventDomain = pgtype.Text{String: *params.EventDomain, Valid: true}
+	}
+	if len(params.Keywords) > 0 {
+		updateParams.Keywords = params.Keywords
+	}
+
+	row, err := queries.UpdateEvent(ctx, updateParams)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("update event: %w", err)
+	}
+
+	// Map back to domain Event (convert pgtype values to native Go types)
+	var eventID string
+	_ = row.ID.Scan(&eventID)
+
+	event := &events.Event{
+		ID:             eventID,
+		ULID:           row.Ulid,
+		Name:           row.Name,
+		Description:    row.Description.String,
+		LifecycleState: row.LifecycleState,
+		EventDomain:    row.EventDomain.String,
+		ImageURL:       row.ImageUrl.String,
+		PublicURL:      row.PublicUrl.String,
+		Keywords:       row.Keywords,
+		CreatedAt:      row.CreatedAt.Time,
+		UpdatedAt:      row.UpdatedAt.Time,
+	}
+
+	return event, nil
+}
+
+// SoftDeleteEvent marks an event as deleted
+func (r *EventRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
+	queries := Queries{db: r.queryer()}
+
+	err := queries.SoftDeleteEvent(ctx, SoftDeleteEventParams{
+		Ulid:           ulid,
+		DeletionReason: pgtype.Text{String: reason, Valid: reason != ""},
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return events.ErrNotFound
+		}
+		return fmt.Errorf("soft delete event: %w", err)
+	}
+
+	return nil
+}
+
+// MergeEvents merges a duplicate event into a primary event
+func (r *EventRepository) MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error {
+	queries := Queries{db: r.queryer()}
+
+	err := queries.MergeEventIntoDuplicate(ctx, MergeEventIntoDuplicateParams{
+		Ulid:   duplicateULID,
+		Ulid_2: primaryULID,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return events.ErrNotFound
+		}
+		return fmt.Errorf("merge events: %w", err)
+	}
+
+	return nil
+}
+
+// CreateTombstone creates a tombstone record for a deleted event
+func (r *EventRepository) CreateTombstone(ctx context.Context, params events.TombstoneCreateParams) error {
+	queries := Queries{db: r.queryer()}
+
+	var eventIDUUID pgtype.UUID
+	if err := eventIDUUID.Scan(params.EventID); err != nil {
+		return fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	var supersededBy pgtype.Text
+	if params.SupersededBy != nil {
+		supersededBy = pgtype.Text{String: *params.SupersededBy, Valid: true}
+	}
+
+	err := queries.CreateEventTombstone(ctx, CreateEventTombstoneParams{
+		EventID:         eventIDUUID,
+		EventUri:        params.EventURI,
+		DeletedAt:       pgtype.Timestamptz{Time: params.DeletedAt, Valid: true},
+		DeletionReason:  pgtype.Text{String: params.Reason, Valid: params.Reason != ""},
+		SupersededByUri: supersededBy,
+		Payload:         params.Payload,
+	})
+	if err != nil {
+		return fmt.Errorf("create tombstone: %w", err)
+	}
+
+	return nil
+}

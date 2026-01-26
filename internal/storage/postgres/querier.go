@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
+	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error
 	// SQLc queries for federation sync.
 	CreateFederationNode(ctx context.Context, arg CreateFederationNodeParams) (FederationNode, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
@@ -38,7 +39,10 @@ type Querier interface {
 	// SQLc queries for places domain.
 	ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
+	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
+	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
+	UpdateEvent(ctx context.Context, arg UpdateEventParams) (UpdateEventRow, error)
 	UpdateFederationNode(ctx context.Context, arg UpdateFederationNodeParams) (FederationNode, error)
 	UpdateFederationNodeHealth(ctx context.Context, arg UpdateFederationNodeHealthParams) error
 	UpdateFederationNodeSyncStatus(ctx context.Context, arg UpdateFederationNodeSyncStatusParams) error

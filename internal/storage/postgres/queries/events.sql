@@ -70,3 +70,38 @@ SELECT key,
 INSERT INTO idempotency_keys (key, request_hash, event_id, event_ulid)
 VALUES ($1, $2, $3, $4)
 RETURNING key, request_hash, event_id, event_ulid;
+
+-- name: UpdateEvent :one
+UPDATE events
+   SET name = COALESCE(sqlc.narg('name'), name),
+       description = COALESCE(sqlc.narg('description'), description),
+       lifecycle_state = COALESCE(sqlc.narg('lifecycle_state'), lifecycle_state),
+       image_url = COALESCE(sqlc.narg('image_url'), image_url),
+       public_url = COALESCE(sqlc.narg('public_url'), public_url),
+       event_domain = COALESCE(sqlc.narg('event_domain'), event_domain),
+       keywords = COALESCE(sqlc.narg('keywords'), keywords),
+       updated_at = now()
+ WHERE ulid = $1
+RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, created_at, updated_at;
+
+-- name: SoftDeleteEvent :exec
+UPDATE events
+   SET deleted_at = now(),
+       deletion_reason = $2,
+       lifecycle_state = 'deleted',
+       updated_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL;
+
+-- name: MergeEventIntoDuplicate :exec
+UPDATE events e1
+   SET merged_into_id = (SELECT e2.id FROM events e2 WHERE e2.ulid = $2),
+       deleted_at = now(),
+       lifecycle_state = 'deleted',
+       updated_at = now()
+ WHERE e1.ulid = $1
+   AND e1.deleted_at IS NULL;
+
+-- name: CreateEventTombstone :exec
+INSERT INTO event_tombstones (event_id, event_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
+VALUES ($1, $2, $3, $4, $5, $6);

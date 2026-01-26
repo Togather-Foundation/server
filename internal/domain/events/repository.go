@@ -143,6 +143,22 @@ type Repository interface {
 	UpdateIdempotencyKeyEvent(ctx context.Context, key string, eventID string, eventULID string) error
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
 	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
+
+	// Admin operations
+	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
+	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
+	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error
+	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
+}
+
+// TombstoneCreateParams contains data for creating a tombstone
+type TombstoneCreateParams struct {
+	EventID      string
+	EventURI     string
+	DeletedAt    time.Time
+	Reason       string
+	SupersededBy *string
+	Payload      []byte
 }
 
 type PlaceCreateParams struct {
