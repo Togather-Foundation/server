@@ -209,10 +209,26 @@ func (h *PublicPagesHandler) GetOrganization(w http.ResponseWriter, r *http.Requ
 }
 
 // serveWithContentNegotiation performs content negotiation based on Accept header.
+//
+// Current implementation uses simple string matching to determine content type preference.
+// Supported formats (in priority order):
+//  1. text/html - Human-readable HTML with embedded JSON-LD
+//  2. text/turtle - RDF Turtle serialization
+//  3. application/ld+json, application/json, */* - JSON-LD (default)
+//
+// Limitations:
+//   - Does not parse quality values (q parameters) from Accept header
+//   - Uses first-match logic rather than RFC 7231 content negotiation
+//   - Example: "Accept: text/html;q=0.8, application/ld+json;q=0.9" will serve HTML
+//     (incorrectly prefers HTML over higher-quality JSON-LD)
+//
+// This simplified approach is sufficient for most SEL clients. For stricter RFC 7231
+// compliance, consider using a proper Accept header parser (e.g., github.com/elnormous/contenttype).
 func (h *PublicPagesHandler) serveWithContentNegotiation(w http.ResponseWriter, r *http.Request, payload map[string]any) {
 	accept := r.Header.Get("Accept")
 
-	// Determine preferred format
+	// Determine preferred format using first-match logic (does not parse q values)
+	// Priority: HTML > Turtle > JSON-LD (default)
 	switch {
 	case strings.Contains(accept, "text/html"):
 		// Serve HTML with embedded JSON-LD
