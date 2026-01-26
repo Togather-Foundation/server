@@ -114,22 +114,25 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/api/v1/admin/events/pending", adminPendingEvents)
 
 	adminUpdateEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UpdateEvent)))
+	adminDeleteEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeleteEvent)))
 	mux.Handle("/api/v1/admin/events/{id}", methodMux(map[string]http.Handler{
-		http.MethodPut: adminUpdateEvent,
+		http.MethodPut:    adminUpdateEvent,
+		http.MethodDelete: adminDeleteEvent,
 	}))
 
 	adminPublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.PublishEvent)))
-	mux.Handle("/api/v1/admin/events/{id}/publish", adminPublishEvent)
+	mux.Handle("/api/v1/admin/events/{id}/publish", methodMux(map[string]http.Handler{
+		http.MethodPost: adminPublishEvent,
+	}))
 
 	adminUnpublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UnpublishEvent)))
-	mux.Handle("/api/v1/admin/events/{id}/unpublish", adminUnpublishEvent)
+	mux.Handle("/api/v1/admin/events/{id}/unpublish", methodMux(map[string]http.Handler{
+		http.MethodPost: adminUnpublishEvent,
+	}))
 
 	adminMergeEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.MergeEvents)))
-	mux.Handle("/api/v1/admin/events/merge", adminMergeEvents)
-
-	adminDeleteEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeleteEvent)))
-	mux.Handle("/api/v1/admin/events/{id}/delete", methodMux(map[string]http.Handler{
-		http.MethodDelete: adminDeleteEvent,
+	mux.Handle("/api/v1/admin/events/merge", methodMux(map[string]http.Handler{
+		http.MethodPost: adminMergeEvents,
 	}))
 
 	// Admin API key management (T078)

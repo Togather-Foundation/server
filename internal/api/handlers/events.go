@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -126,10 +127,57 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	item, err := h.Service.GetByULID(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
+			// Check if there's a tombstone for this event
+			tombstone, tombErr := h.Service.GetTombstoneByEventULID(r.Context(), ulidValue)
+			if tombErr == nil && tombstone != nil {
+				// Return 410 Gone with tombstone payload
+				var payload map[string]any
+				if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
+					// Fallback to minimal tombstone if payload parsing fails
+					payload = map[string]any{
+						"@context":      loadDefaultContext(),
+						"@type":         "Event",
+						"sel:tombstone": true,
+						"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
+					}
+				}
+				writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+				return
+			}
+			// No tombstone found, return 404
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Not found", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if strings.EqualFold(item.LifecycleState, "deleted") {
+		tombstone, tombErr := h.Service.GetTombstoneByEventULID(r.Context(), ulidValue)
+		if tombErr == nil && tombstone != nil {
+			var payload map[string]any
+			if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
+				payload = map[string]any{
+					"@context":      loadDefaultContext(),
+					"@type":         "Event",
+					"sel:tombstone": true,
+					"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
+				}
+			}
+			writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+			return
+		}
+
+		payload := map[string]any{
+			"@context":      loadDefaultContext(),
+			"@type":         "Event",
+			"sel:tombstone": true,
+			"sel:deletedAt": time.Now().Format(time.RFC3339),
+		}
+		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "events", ulidValue); err == nil {
+			payload["@id"] = uri
+		}
+		writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
 		return
 	}
 

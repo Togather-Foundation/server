@@ -351,6 +351,14 @@ func (m *MockRepository) CreateTombstone(ctx context.Context, params TombstoneCr
 	return nil
 }
 
+func (m *MockRepository) GetTombstoneByEventID(ctx context.Context, eventID string) (*Tombstone, error) {
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
+	return nil, ErrNotFound
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

@@ -119,6 +119,65 @@ func (q *Queries) GetEventByULID(ctx context.Context, ulid string) ([]GetEventBy
 	return items, nil
 }
 
+const getEventTombstoneByEventID = `-- name: GetEventTombstoneByEventID :one
+SELECT id,
+       event_id,
+       event_uri,
+       deleted_at,
+       deletion_reason,
+       superseded_by_uri,
+       payload
+  FROM event_tombstones
+ WHERE event_id = $1
+ ORDER BY deleted_at DESC
+ LIMIT 1
+`
+
+func (q *Queries) GetEventTombstoneByEventID(ctx context.Context, eventID pgtype.UUID) (EventTombstone, error) {
+	row := q.db.QueryRow(ctx, getEventTombstoneByEventID, eventID)
+	var i EventTombstone
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.EventUri,
+		&i.DeletedAt,
+		&i.DeletionReason,
+		&i.SupersededByUri,
+		&i.Payload,
+	)
+	return i, err
+}
+
+const getEventTombstoneByEventULID = `-- name: GetEventTombstoneByEventULID :one
+SELECT t.id,
+       t.event_id,
+       t.event_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM event_tombstones t
+  JOIN events e ON e.id = t.event_id
+ WHERE e.ulid = $1
+ ORDER BY t.deleted_at DESC
+ LIMIT 1
+`
+
+func (q *Queries) GetEventTombstoneByEventULID(ctx context.Context, ulid string) (EventTombstone, error) {
+	row := q.db.QueryRow(ctx, getEventTombstoneByEventULID, ulid)
+	var i EventTombstone
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.EventUri,
+		&i.DeletedAt,
+		&i.DeletionReason,
+		&i.SupersededByUri,
+		&i.Payload,
+	)
+	return i, err
+}
+
 const getIdempotencyKey = `-- name: GetIdempotencyKey :one
 SELECT key,
        request_hash,

@@ -149,6 +149,8 @@ type Repository interface {
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
 	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
+	GetTombstoneByEventID(ctx context.Context, eventID string) (*Tombstone, error)
+	GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error)
 
 	// Transaction support
 	BeginTx(ctx context.Context) (Repository, TxCommitter, error)
@@ -158,6 +160,17 @@ type Repository interface {
 type TxCommitter interface {
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
+}
+
+// Tombstone represents a deleted event record
+type Tombstone struct {
+	ID           string
+	EventID      string
+	EventURI     string
+	DeletedAt    time.Time
+	Reason       string
+	SupersededBy *string
+	Payload      []byte
 }
 
 // TombstoneCreateParams contains data for creating a tombstone

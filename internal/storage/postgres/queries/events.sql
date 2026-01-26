@@ -105,3 +105,30 @@ UPDATE events e1
 -- name: CreateEventTombstone :exec
 INSERT INTO event_tombstones (event_id, event_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
 VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: GetEventTombstoneByEventID :one
+SELECT id,
+       event_id,
+       event_uri,
+       deleted_at,
+       deletion_reason,
+       superseded_by_uri,
+       payload
+  FROM event_tombstones
+ WHERE event_id = $1
+ ORDER BY deleted_at DESC
+ LIMIT 1;
+
+-- name: GetEventTombstoneByEventULID :one
+SELECT t.id,
+       t.event_id,
+       t.event_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM event_tombstones t
+  JOIN events e ON e.id = t.event_id
+ WHERE e.ulid = $1
+ ORDER BY t.deleted_at DESC
+ LIMIT 1;

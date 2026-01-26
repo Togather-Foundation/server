@@ -27,6 +27,10 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Event, error) {
 	return s.repo.GetByULID(ctx, ulid)
 }
 
+func (s *Service) GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
+	return s.repo.GetTombstoneByEventULID(ctx, eventULID)
+}
+
 type FilterError struct {
 	Field   string
 	Message string

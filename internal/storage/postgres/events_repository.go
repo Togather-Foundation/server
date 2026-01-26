@@ -986,3 +986,68 @@ func (r *EventRepository) CreateTombstone(ctx context.Context, params events.Tom
 
 	return nil
 }
+
+// GetTombstoneByEventID retrieves the tombstone for a deleted event by UUID
+func (r *EventRepository) GetTombstoneByEventID(ctx context.Context, eventID string) (*events.Tombstone, error) {
+	queries := Queries{db: r.queryer()}
+
+	var eventIDUUID pgtype.UUID
+	if err := eventIDUUID.Scan(eventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	row, err := queries.GetEventTombstoneByEventID(ctx, eventIDUUID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get tombstone: %w", err)
+	}
+
+	var supersededBy *string
+	if row.SupersededByUri.Valid {
+		supersededBy = &row.SupersededByUri.String
+	}
+
+	tombstone := &events.Tombstone{
+		ID:           row.ID.String(),
+		EventID:      eventID,
+		EventURI:     row.EventUri,
+		DeletedAt:    row.DeletedAt.Time,
+		Reason:       row.DeletionReason.String,
+		SupersededBy: supersededBy,
+		Payload:      row.Payload,
+	}
+
+	return tombstone, nil
+}
+
+// GetTombstoneByEventULID retrieves the tombstone for a deleted event by ULID
+func (r *EventRepository) GetTombstoneByEventULID(ctx context.Context, eventULID string) (*events.Tombstone, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetEventTombstoneByEventULID(ctx, eventULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get tombstone by ulid: %w", err)
+	}
+
+	var supersededBy *string
+	if row.SupersededByUri.Valid {
+		supersededBy = &row.SupersededByUri.String
+	}
+
+	tombstone := &events.Tombstone{
+		ID:           row.ID.String(),
+		EventID:      row.EventID.String(),
+		EventURI:     row.EventUri,
+		DeletedAt:    row.DeletedAt.Time,
+		Reason:       row.DeletionReason.String,
+		SupersededBy: supersededBy,
+		Payload:      row.Payload,
+	}
+
+	return tombstone, nil
+}

@@ -82,7 +82,7 @@ func TestAdminDeleteEventSuccess(t *testing.T) {
 	var tombstone map[string]any
 	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&tombstone))
 
-	assert.NotNil(t, tombstone["deletedAt"], "tombstone should include deletedAt")
+	assert.NotNil(t, tombstone["sel:deletedAt"], "tombstone should include deletedAt")
 	assert.Equal(t, eventID, eventIDFromPayload(tombstone), "tombstone should preserve event ID")
 }
 

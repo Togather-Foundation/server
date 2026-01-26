@@ -8,14 +8,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
@@ -167,7 +170,31 @@ func eventIDFromPayload(payload map[string]any) string {
 		return ""
 	}
 	if value, ok := payload["@id"].(string); ok {
-		return value
+		candidate := strings.TrimSpace(value)
+		if candidate == "" {
+			return ""
+		}
+		if ids.IsULID(candidate) {
+			return strings.ToUpper(candidate)
+		}
+		parsed, err := url.Parse(candidate)
+		if err == nil && parsed.Host != "" {
+			nodeDomain := parsed.Host
+			if parsed.Scheme != "" {
+				nodeDomain = parsed.Scheme + "://" + parsed.Host
+			}
+			entity, err := ids.ParseEntityURI(nodeDomain, "events", candidate, "")
+			if err == nil {
+				return entity.ULID
+			}
+			pathParts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+			if len(pathParts) > 1 {
+				ulidCandidate := pathParts[len(pathParts)-1]
+				if ids.IsULID(ulidCandidate) {
+					return strings.ToUpper(ulidCandidate)
+				}
+			}
+		}
 	}
 	return ""
 }

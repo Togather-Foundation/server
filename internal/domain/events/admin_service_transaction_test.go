@@ -176,6 +176,14 @@ func (m *mockTransactionalRepo) CreateTombstone(ctx context.Context, params Tomb
 	return nil
 }
 
+func (m *mockTransactionalRepo) GetTombstoneByEventID(ctx context.Context, eventID string) (*Tombstone, error) {
+	return nil, ErrNotFound
+}
+
+func (m *mockTransactionalRepo) GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
+	return nil, ErrNotFound
+}
+
 // Unimplemented Repository methods
 func (m *mockTransactionalRepo) List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error) {
 	return ListResult{}, errors.New("not implemented")

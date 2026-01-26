@@ -14,8 +14,9 @@ import (
 )
 
 type stubEventsRepo struct {
-	listFn func(filters events.Filters, pagination events.Pagination) (events.ListResult, error)
-	getFn  func(ulid string) (*events.Event, error)
+	listFn      func(filters events.Filters, pagination events.Pagination) (events.ListResult, error)
+	getFn       func(ulid string) (*events.Event, error)
+	tombstoneFn func(ulid string) (*events.Tombstone, error)
 }
 
 func (s stubEventsRepo) List(_ context.Context, filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
@@ -24,6 +25,17 @@ func (s stubEventsRepo) List(_ context.Context, filters events.Filters, paginati
 
 func (s stubEventsRepo) GetByULID(_ context.Context, ulid string) (*events.Event, error) {
 	return s.getFn(ulid)
+}
+
+func (s stubEventsRepo) GetTombstoneByEventID(_ context.Context, _ string) (*events.Tombstone, error) {
+	return nil, events.ErrNotFound
+}
+
+func (s stubEventsRepo) GetTombstoneByEventULID(_ context.Context, ulid string) (*events.Tombstone, error) {
+	if s.tombstoneFn == nil {
+		return nil, events.ErrNotFound
+	}
+	return s.tombstoneFn(ulid)
 }
 
 func (s stubEventsRepo) Create(_ context.Context, _ events.EventCreateParams) (*events.Event, error) {
@@ -101,6 +113,9 @@ func TestEventsHandlerListSuccess(t *testing.T) {
 		},
 		getFn: func(_ string) (*events.Event, error) {
 			return nil, nil
+		},
+		tombstoneFn: func(_ string) (*events.Tombstone, error) {
+			return nil, events.ErrNotFound
 		},
 	}
 

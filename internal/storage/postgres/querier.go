@@ -20,6 +20,8 @@ type Querier interface {
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
+	GetEventTombstoneByEventID(ctx context.Context, eventID pgtype.UUID) (EventTombstone, error)
+	GetEventTombstoneByEventULID(ctx context.Context, ulid string) (EventTombstone, error)
 	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
 	GetFederationNodeByID(ctx context.Context, id pgtype.UUID) (FederationNode, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
