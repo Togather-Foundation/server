@@ -763,19 +763,49 @@ UPDATE idempotency_keys
 
 func (r *EventRepository) UpsertPlace(ctx context.Context, params events.PlaceCreateParams) (*events.PlaceRecord, error) {
 	queryer := r.queryer()
-	row := queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (ulid) DO UPDATE
-SET name = EXCLUDED.name
+
+	// If federation_uri is present, upsert by federation_uri; otherwise by ulid
+	var row pgx.Row
+	if params.FederationURI != nil && *params.FederationURI != "" {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
 RETURNING id, ulid
 `,
-		params.ULID,
-		params.Name,
-		params.AddressLocality,
-		params.AddressRegion,
-		params.AddressCountry,
-	)
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	} else {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (ulid)
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
+RETURNING id, ulid
+`,
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	}
+
 	var record events.PlaceRecord
 	if err := row.Scan(&record.ID, &record.ULID); err != nil {
 		return nil, fmt.Errorf("upsert place: %w", err)
@@ -785,19 +815,49 @@ RETURNING id, ulid
 
 func (r *EventRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	queryer := r.queryer()
-	row := queryer.QueryRow(ctx, `
-INSERT INTO organizations (ulid, name, address_locality, address_region, address_country)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (ulid) DO UPDATE
-SET name = EXCLUDED.name
+
+	// If federation_uri is present, upsert by federation_uri; otherwise by ulid
+	var row pgx.Row
+	if params.FederationURI != nil && *params.FederationURI != "" {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
 RETURNING id, ulid
 `,
-		params.ULID,
-		params.Name,
-		params.AddressLocality,
-		params.AddressRegion,
-		params.AddressCountry,
-	)
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	} else {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (ulid)
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
+RETURNING id, ulid
+`,
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	}
+
 	var record events.OrganizationRecord
 	if err := row.Scan(&record.ID, &record.ULID); err != nil {
 		return nil, fmt.Errorf("upsert organization: %w", err)

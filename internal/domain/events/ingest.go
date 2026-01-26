@@ -153,11 +153,13 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			return nil, fmt.Errorf("generate place ulid: %w", err)
 		}
 		place, err := s.repo.UpsertPlace(ctx, PlaceCreateParams{
-			ULID:            placeULID,
-			Name:            normalized.Location.Name,
-			AddressLocality: normalized.Location.AddressLocality,
-			AddressRegion:   normalized.Location.AddressRegion,
-			AddressCountry:  normalized.Location.AddressCountry,
+			EntityCreateFields: EntityCreateFields{
+				ULID:            placeULID,
+				Name:            normalized.Location.Name,
+				AddressLocality: normalized.Location.AddressLocality,
+				AddressRegion:   normalized.Location.AddressRegion,
+				AddressCountry:  normalized.Location.AddressCountry,
+			},
 		})
 		if err != nil {
 			return nil, err
@@ -179,11 +181,13 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			addressCountry = normalized.Location.AddressCountry
 		}
 		org, err := s.repo.UpsertOrganization(ctx, OrganizationCreateParams{
-			ULID:            orgULID,
-			Name:            normalized.Organizer.Name,
-			AddressLocality: addressLocality,
-			AddressRegion:   addressRegion,
-			AddressCountry:  addressCountry,
+			EntityCreateFields: EntityCreateFields{
+				ULID:            orgULID,
+				Name:            normalized.Organizer.Name,
+				AddressLocality: addressLocality,
+				AddressRegion:   addressRegion,
+				AddressCountry:  addressCountry,
+			},
 		})
 		if err != nil {
 			return nil, err

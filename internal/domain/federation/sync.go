@@ -31,6 +31,8 @@ type SyncRepository interface {
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
 	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
 	CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error
+	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
+	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
 	WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error
 	GetIdempotencyKey(ctx context.Context, key string) (*IdempotencyKey, error)
 	InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyParams) error
@@ -58,6 +60,38 @@ type OccurrenceCreateParams struct {
 	EndTime    *time.Time
 	Timezone   string
 	VirtualURL *string
+}
+
+// PlaceCreateParams holds parameters for creating or upserting a place.
+type PlaceCreateParams struct {
+	ULID            string
+	Name            string
+	AddressLocality string
+	AddressRegion   string
+	AddressCountry  string
+	FederationURI   *string
+}
+
+// PlaceRecord represents a place record returned from database operations.
+type PlaceRecord struct {
+	ID   string
+	ULID string
+}
+
+// OrganizationCreateParams holds parameters for creating or upserting an organization.
+type OrganizationCreateParams struct {
+	ULID            string
+	Name            string
+	AddressLocality string
+	AddressRegion   string
+	AddressCountry  string
+	FederationURI   *string
+}
+
+// OrganizationRecord represents an organization record returned from database operations.
+type OrganizationRecord struct {
+	ID   string
+	ULID string
 }
 
 // Event represents a minimal event structure (matching database model).
@@ -286,6 +320,38 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 		dbParams, occurrenceData, err := s.mapJSONLDToEvent(params.Payload, localULID, federationURI, originNodeID)
 		if err != nil {
 			return fmt.Errorf("map JSON-LD to event: %w", err)
+		}
+
+		// Extract and upsert place/location if present
+		if placeParams, err := extractPlaceFromPayload(params.Payload); err != nil {
+			return fmt.Errorf("extract place: %w", err)
+		} else if placeParams != nil {
+			place, err := txRepo.UpsertPlace(ctx, *placeParams)
+			if err != nil {
+				return fmt.Errorf("upsert place: %w", err)
+			}
+			// Link place to event
+			var placeUUID pgtype.UUID
+			if err := placeUUID.Scan(place.ID); err != nil {
+				return fmt.Errorf("parse place UUID: %w", err)
+			}
+			dbParams.PrimaryVenueID = placeUUID
+		}
+
+		// Extract and upsert organization if present
+		if orgParams, err := extractOrganizationFromPayload(params.Payload); err != nil {
+			return fmt.Errorf("extract organization: %w", err)
+		} else if orgParams != nil {
+			org, err := txRepo.UpsertOrganization(ctx, *orgParams)
+			if err != nil {
+				return fmt.Errorf("upsert organization: %w", err)
+			}
+			// Link organization to event
+			var orgUUID pgtype.UUID
+			if err := orgUUID.Scan(org.ID); err != nil {
+				return fmt.Errorf("parse organization UUID: %w", err)
+			}
+			dbParams.OrganizerID = orgUUID
 		}
 
 		// Upsert event
@@ -567,6 +633,94 @@ func extractOccurrenceData(payload map[string]any, federationURI string) (*Occur
 	}
 
 	return occurrence, nil
+}
+
+// extractPlaceFromPayload extracts place/location information from JSON-LD payload.
+// Returns nil if no location is present.
+func extractPlaceFromPayload(payload map[string]any) (*PlaceCreateParams, error) {
+	location, ok := payload["location"].(map[string]any)
+	if !ok || location == nil {
+		return nil, nil // No location present
+	}
+
+	// Extract name (required for places)
+	name, ok := location["name"].(string)
+	if !ok || name == "" {
+		return nil, nil // Skip invalid places
+	}
+
+	// Generate ULID for this place
+	placeULID, err := ids.NewULID()
+	if err != nil {
+		return nil, fmt.Errorf("generate place ulid: %w", err)
+	}
+
+	params := &PlaceCreateParams{
+		ULID: placeULID,
+		Name: name,
+	}
+
+	// Extract optional fields
+	if locality, ok := location["addressLocality"].(string); ok {
+		params.AddressLocality = locality
+	}
+	if region, ok := location["addressRegion"].(string); ok {
+		params.AddressRegion = region
+	}
+	if country, ok := location["addressCountry"].(string); ok {
+		params.AddressCountry = country
+	}
+
+	// Extract federation URI from @id
+	if id, ok := location["@id"].(string); ok && id != "" {
+		params.FederationURI = &id
+	}
+
+	return params, nil
+}
+
+// extractOrganizationFromPayload extracts organizer information from JSON-LD payload.
+// Returns nil if no organizer is present.
+func extractOrganizationFromPayload(payload map[string]any) (*OrganizationCreateParams, error) {
+	organizer, ok := payload["organizer"].(map[string]any)
+	if !ok || organizer == nil {
+		return nil, nil // No organizer present
+	}
+
+	// Extract name (required for organizations)
+	name, ok := organizer["name"].(string)
+	if !ok || name == "" {
+		return nil, nil // Skip invalid organizers
+	}
+
+	// Generate ULID for this organization
+	orgULID, err := ids.NewULID()
+	if err != nil {
+		return nil, fmt.Errorf("generate organization ulid: %w", err)
+	}
+
+	params := &OrganizationCreateParams{
+		ULID: orgULID,
+		Name: name,
+	}
+
+	// Extract optional fields
+	if locality, ok := organizer["addressLocality"].(string); ok {
+		params.AddressLocality = locality
+	}
+	if region, ok := organizer["addressRegion"].(string); ok {
+		params.AddressRegion = region
+	}
+	if country, ok := organizer["addressCountry"].(string); ok {
+		params.AddressCountry = country
+	}
+
+	// Extract federation URI from @id
+	if id, ok := organizer["@id"].(string); ok && id != "" {
+		params.FederationURI = &id
+	}
+
+	return params, nil
 }
 
 // computePayloadHash generates a SHA-256 hash of the JSON-LD payload for idempotency checks.

@@ -229,3 +229,109 @@ func (r *SyncRepository) InsertIdempotencyKey(ctx context.Context, params federa
 
 	return nil
 }
+
+// UpsertPlace upserts a place with federation URI support.
+func (r *SyncRepository) UpsertPlace(ctx context.Context, params federation.PlaceCreateParams) (*federation.PlaceRecord, error) {
+	queryer := r.queryer()
+
+	// If federation_uri is present, upsert by federation_uri; otherwise by ulid
+	var row pgx.Row
+	if params.FederationURI != nil && *params.FederationURI != "" {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
+RETURNING id, ulid
+`,
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	} else {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (ulid)
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
+RETURNING id, ulid
+`,
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	}
+
+	var record federation.PlaceRecord
+	if err := row.Scan(&record.ID, &record.ULID); err != nil {
+		return nil, fmt.Errorf("upsert place: %w", err)
+	}
+	return &record, nil
+}
+
+// UpsertOrganization upserts an organization with federation URI support.
+func (r *SyncRepository) UpsertOrganization(ctx context.Context, params federation.OrganizationCreateParams) (*federation.OrganizationRecord, error) {
+	queryer := r.queryer()
+
+	// If federation_uri is present, upsert by federation_uri; otherwise by ulid
+	var row pgx.Row
+	if params.FederationURI != nil && *params.FederationURI != "" {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
+RETURNING id, ulid
+`,
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	} else {
+		row = queryer.QueryRow(ctx, `
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (ulid)
+  DO UPDATE SET 
+    name = EXCLUDED.name,
+    address_locality = EXCLUDED.address_locality,
+    address_region = EXCLUDED.address_region,
+    address_country = EXCLUDED.address_country
+RETURNING id, ulid
+`,
+			params.ULID,
+			params.Name,
+			params.AddressLocality,
+			params.AddressRegion,
+			params.AddressCountry,
+			params.FederationURI,
+		)
+	}
+
+	var record federation.OrganizationRecord
+	if err := row.Scan(&record.ID, &record.ULID); err != nil {
+		return nil, fmt.Errorf("upsert organization: %w", err)
+	}
+	return &record, nil
+}

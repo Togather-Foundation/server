@@ -184,12 +184,18 @@ type TombstoneCreateParams struct {
 	Payload      []byte
 }
 
-type PlaceCreateParams struct {
+// EntityCreateFields contains common fields for creating places and organizations
+type EntityCreateFields struct {
 	ULID            string
 	Name            string
 	AddressLocality string
 	AddressRegion   string
 	AddressCountry  string
+	FederationURI   *string
+}
+
+type PlaceCreateParams struct {
+	EntityCreateFields
 }
 
 type PlaceRecord struct {
@@ -198,11 +204,7 @@ type PlaceRecord struct {
 }
 
 type OrganizationCreateParams struct {
-	ULID            string
-	Name            string
-	AddressLocality string
-	AddressRegion   string
-	AddressCountry  string
+	EntityCreateFields
 }
 
 type OrganizationRecord struct {
