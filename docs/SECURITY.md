@@ -1,7 +1,7 @@
 # SEL Security Model
 
-**Version:** 0.1.2  
-**Last Updated:** 2026-01-25  
+**Version:** 0.1.3  
+**Last Updated:** 2026-01-26  
 **Status:** Living Document
 
 This document describes the security architecture, threat model, implemented protections, and operational security practices for the Shared Events Library (SEL) backend server.
@@ -88,7 +88,13 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 **Mitigation**: Input sanitization with bluemonday, Content-Security-Policy headers (planned)  
 **Status**: ✅ Mitigated (v0.1.3) - Input sanitization complete, CSP headers planned for P2
 
-#### 6. Information Disclosure
+#### 6. Cross-Site Request Forgery (CSRF)
+**Risk**: Medium  
+**Impact**: Unauthorized state-changing operations via malicious websites  
+**Mitigation**: CSRF tokens for cookie-based admin endpoints (double-submit cookie pattern)  
+**Status**: ✅ Mitigated (v0.1.3)
+
+#### 7. Information Disclosure
 **Risk**: Low-Medium  
 **Impact**: Sensitive data in logs (PII, tokens)  
 **Mitigation**: Environment-based log sanitization (production mode redacts PII)  
@@ -167,6 +173,17 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 - Allows in descriptions: `<p>`, `<b>`, `<i>`, `<em>`, `<strong>`, `<a>`, `<ul>`, `<ol>`, `<li>`, `<br>`
 - Comprehensive test coverage: 18 XSS attack vectors tested
 
+**CSRF Protection**:
+- Double-submit cookie pattern using gorilla/csrf middleware
+- Applied to cookie-based admin HTML routes (GET /admin/*)
+- NOT applied to API endpoints using Bearer token authentication (already CSRF-resistant)
+- Token validation on all state-changing operations (POST/PUT/DELETE/PATCH)
+- 32-byte encryption key required for token generation (configurable via `CSRF_KEY`)
+- Cookie properties: HttpOnly, SameSite=Lax, Secure in production
+- Custom error handler returns RFC 7807 JSON error responses
+- **When to use**: Only for HTML forms rendered by admin UI
+- **When NOT to use**: API endpoints with Bearer tokens, JSON APIs, stateless services
+
 **License Enforcement**:
 - All event data defaults to CC0-1.0 (Public Domain)
 - Non-CC0 licenses rejected at validation layer
@@ -222,6 +239,13 @@ openssl rand -base64 48
 ```bash
 # Database connection (always use sslmode=require in production)
 DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
+
+# CSRF Protection Key (REQUIRED for admin HTML forms - 32+ characters)
+# Only needed if admin UI HTML routes are enabled
+CSRF_KEY=<32-byte-cryptographically-random-key>
+
+# Generate CSRF key:
+openssl rand -base64 48
 
 # Rate limiting (requests per minute, except login which is per 15 min)
 RATE_LIMIT_PUBLIC=60
@@ -347,8 +371,8 @@ DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
 **P1 (High) - In Progress**:
 - ✅ Add rate limiting to admin login endpoint (`server-d6r`) - **Completed**
 - ✅ Add input sanitization for admin event fields (`server-1p9`) - **Completed**
+- ✅ Add CSRF protection for admin endpoints (`server-y07`) - **Completed**
 - 📋 Add audit logging for all admin operations (`server-xje`) - Backlog
-- 📋 Add CSRF protection for admin endpoints (`server-y07`) - Backlog
 
 **Completed Security Enhancements**:
 - **Brute Force Protection**: Login endpoint now has aggressive rate limiting (5 attempts per 15 min per IP)
@@ -356,9 +380,12 @@ DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
 - **Per-IP Tracking**: Uses X-Forwarded-For / X-Real-IP headers for accurate client identification
 - **XSS Prevention**: All admin text input sanitized with bluemonday (strict for names/URLs, UGC for descriptions)
 - **Comprehensive XSS Testing**: 18 attack vectors tested including script tags, event handlers, data URIs, SVG attacks
-- **Test Coverage**: 100% for rate limiting (18 tests), 100% for input sanitization (23 tests)
+- **CSRF Protection**: Double-submit cookie pattern with gorilla/csrf for admin HTML forms
+- **CSRF Token Encryption**: 32-byte key for secure token generation and validation
+- **HTTP-Only Cookies**: CSRF cookies set with HttpOnly, SameSite=Lax, and Secure (production) flags
+- **Test Coverage**: 100% for rate limiting (18 tests), 100% for input sanitization (23 tests), 100% for CSRF (11 tests)
 
-**Status**: 🔒 **Login brute force + XSS protections implemented** - Admin authentication and input handling hardened
+**Status**: 🔒 **Admin authentication, XSS, and CSRF protections implemented** - Admin interface fully hardened
 
 ---
 

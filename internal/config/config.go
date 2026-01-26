@@ -33,6 +33,7 @@ type DatabaseConfig struct {
 type AuthConfig struct {
 	JWTSecret string
 	JWTExpiry time.Duration
+	CSRFKey   string // 32-byte key for CSRF token encryption (required for admin HTML forms)
 }
 
 type RateLimitConfig struct {
@@ -74,6 +75,7 @@ func Load() (Config, error) {
 		Auth: AuthConfig{
 			JWTSecret: getEnv("JWT_SECRET", ""),
 			JWTExpiry: time.Duration(getEnvInt("JWT_EXPIRY_HOURS", 24)) * time.Hour,
+			CSRFKey:   getEnv("CSRF_KEY", ""),
 		},
 		RateLimit: RateLimitConfig{
 			PublicPerMinute:   getEnvInt("RATE_LIMIT_PUBLIC", 60),
@@ -106,6 +108,10 @@ func Load() (Config, error) {
 	}
 	if len(cfg.Auth.JWTSecret) < 32 {
 		return Config{}, fmt.Errorf("JWT_SECRET must be at least 32 characters for security (currently %d characters)", len(cfg.Auth.JWTSecret))
+	}
+	// CSRF key is optional but recommended if admin HTML UI is enabled
+	if cfg.Auth.CSRFKey != "" && len(cfg.Auth.CSRFKey) < 32 {
+		return Config{}, fmt.Errorf("CSRF_KEY must be at least 32 characters when provided (currently %d characters)", len(cfg.Auth.CSRFKey))
 	}
 	return cfg, nil
 }
