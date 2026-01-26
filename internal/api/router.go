@@ -238,8 +238,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
 
 	// Wrap entire router with middleware stack
-	// Order: CorrelationID -> RequestLogging -> RateLimit
-	handler := middleware.CorrelationID(logger)(mux)
+	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit
+	// Note: Security headers and CORS must be applied first to ensure they're set on all responses
+	handler := middleware.SecurityHeaders(requireHTTPS)(mux)
+	handler = middleware.CORS(cfg.CORS)(handler)
+	handler = middleware.CorrelationID(logger)(handler)
 	handler = middleware.RequestLogging(logger)(handler)
 	handler = middleware.RateLimit(cfg.RateLimit)(handler)
 

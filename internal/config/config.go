@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type Config struct {
 	Database       DatabaseConfig
 	Auth           AuthConfig
 	RateLimit      RateLimitConfig
+	CORS           CORSConfig
 	AdminBootstrap AdminBootstrapConfig
 	Jobs           JobsConfig
 	Logging        LoggingConfig
@@ -61,6 +63,11 @@ type LoggingConfig struct {
 	Format string
 }
 
+type CORSConfig struct {
+	AllowAllOrigins bool     // Development mode: allow all origins
+	AllowedOrigins  []string // Production mode: whitelist of allowed origins
+}
+
 func Load() (Config, error) {
 	cfg := Config{
 		Server: ServerConfig{
@@ -100,6 +107,32 @@ func Load() (Config, error) {
 			Format: getEnv("LOG_FORMAT", "json"),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
+	}
+
+	// CORS configuration
+	env := cfg.Environment
+	if env == "development" || env == "test" {
+		// Development/test: allow all origins
+		cfg.CORS = CORSConfig{
+			AllowAllOrigins: true,
+			AllowedOrigins:  nil,
+		}
+	} else {
+		// Production: require explicit whitelist
+		allowedOrigins := getEnv("CORS_ALLOWED_ORIGINS", "")
+		origins := []string{}
+		if allowedOrigins != "" {
+			for _, origin := range strings.Split(allowedOrigins, ",") {
+				trimmed := strings.TrimSpace(origin)
+				if trimmed != "" {
+					origins = append(origins, trimmed)
+				}
+			}
+		}
+		cfg.CORS = CORSConfig{
+			AllowAllOrigins: false,
+			AllowedOrigins:  origins,
+		}
 	}
 
 	if cfg.Database.URL == "" {
