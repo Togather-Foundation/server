@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
+	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/sanitize"
@@ -16,14 +17,16 @@ import (
 type AdminHandler struct {
 	Service      *events.Service
 	AdminService *events.AdminService
+	AuditLogger  *audit.Logger
 	Env          string
 	BaseURL      string
 }
 
-func NewAdminHandler(service *events.Service, adminService *events.AdminService, env string, baseURL string) *AdminHandler {
+func NewAdminHandler(service *events.Service, adminService *events.AdminService, auditLogger *audit.Logger, env string, baseURL string) *AdminHandler {
 	return &AdminHandler{
 		Service:      service,
 		AdminService: adminService,
+		AuditLogger:  auditLogger,
 		Env:          env,
 		BaseURL:      baseURL,
 	}
@@ -112,6 +115,13 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	// Call admin service to update event
 	updated, err := h.AdminService.UpdateEvent(r.Context(), ulidValue, params)
 	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.event.update", "event", ulidValue, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return
@@ -128,6 +138,11 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.event.update", "event", ulidValue, "success", nil)
 	}
 
 	contextValue := loadDefaultContext()
@@ -169,12 +184,24 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 	// Call admin service to publish event
 	published, err := h.AdminService.PublishEvent(r.Context(), ulidValue)
 	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.event.publish", "event", ulidValue, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.event.publish", "event", ulidValue, "success", nil)
 	}
 
 	contextValue := loadDefaultContext()
@@ -211,12 +238,24 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 	// Call admin service to unpublish event
 	unpublished, err := h.AdminService.UnpublishEvent(r.Context(), ulidValue)
 	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.event.unpublish", "event", ulidValue, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.event.unpublish", "event", ulidValue, "success", nil)
 	}
 
 	contextValue := loadDefaultContext()
@@ -267,6 +306,14 @@ func (h *AdminHandler) MergeEvents(w http.ResponseWriter, r *http.Request) {
 	// Call admin service to merge events
 	err := h.AdminService.MergeEvents(r.Context(), params)
 	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.event.merge", "event", req.PrimaryID, "failure", map[string]string{
+				"error":        err.Error(),
+				"duplicate_id": req.DuplicateID,
+			})
+		}
+
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return
@@ -277,6 +324,13 @@ func (h *AdminHandler) MergeEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.event.merge", "event", req.PrimaryID, "success", map[string]string{
+			"duplicate_id": req.DuplicateID,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "merged"}, contentTypeFromRequest(r))
@@ -310,12 +364,32 @@ func (h *AdminHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	// Call admin service to delete event
 	err := h.AdminService.DeleteEvent(r.Context(), ulidValue, req.Reason)
 	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			details := map[string]string{
+				"error": err.Error(),
+			}
+			if req.Reason != "" {
+				details["reason"] = req.Reason
+			}
+			h.AuditLogger.LogFromRequest(r, "admin.event.delete", "event", ulidValue, "failure", details)
+		}
+
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		details := map[string]string{}
+		if req.Reason != "" {
+			details["reason"] = req.Reason
+		}
+		h.AuditLogger.LogFromRequest(r, "admin.event.delete", "event", ulidValue, "success", details)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

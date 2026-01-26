@@ -9,6 +9,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/handlers"
 	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -47,14 +48,17 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment)
 
+	// Create audit logger for admin operations
+	auditLogger := audit.NewLogger()
+
 	// Admin handlers
 	queries := postgres.New(pool)
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
-	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, cfg.Environment, nil)
+	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, nil)
 
 	// Create AdminService
 	adminService := events.NewAdminService(repo.Events())
-	adminHandler := handlers.NewAdminHandler(eventsService, adminService, cfg.Environment, cfg.Server.BaseURL)
+	adminHandler := handlers.NewAdminHandler(eventsService, adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
+	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/google/uuid"
@@ -15,18 +16,20 @@ import (
 )
 
 type AdminAuthHandler struct {
-	Queries    *postgres.Queries
-	JWTManager *auth.JWTManager
-	Env        string
-	Templates  *template.Template
+	Queries     *postgres.Queries
+	JWTManager  *auth.JWTManager
+	AuditLogger *audit.Logger
+	Env         string
+	Templates   *template.Template
 }
 
-func NewAdminAuthHandler(queries *postgres.Queries, jwtManager *auth.JWTManager, env string, templates *template.Template) *AdminAuthHandler {
+func NewAdminAuthHandler(queries *postgres.Queries, jwtManager *auth.JWTManager, auditLogger *audit.Logger, env string, templates *template.Template) *AdminAuthHandler {
 	return &AdminAuthHandler{
-		Queries:    queries,
-		JWTManager: jwtManager,
-		Env:        env,
-		Templates:  templates,
+		Queries:     queries,
+		JWTManager:  jwtManager,
+		AuditLogger: auditLogger,
+		Env:         env,
+		Templates:   templates,
 	}
 }
 
@@ -70,6 +73,14 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Fetch user by username
 	user, err := h.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
+		// Log failed login attempt
+		if h.AuditLogger != nil {
+			ipAddress := extractClientIP(r)
+			h.AuditLogger.LogFailure("admin.login", req.Username, ipAddress, map[string]string{
+				"reason": "user_not_found",
+			})
+		}
+
 		if err == pgx.ErrNoRows {
 			problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Invalid credentials", nil, h.Env)
 			return
@@ -80,6 +91,14 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		// Log failed login attempt
+		if h.AuditLogger != nil {
+			ipAddress := extractClientIP(r)
+			h.AuditLogger.LogFailure("admin.login", req.Username, ipAddress, map[string]string{
+				"reason": "invalid_password",
+			})
+		}
+
 		problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Invalid credentials", nil, h.Env)
 		return
 	}
@@ -98,6 +117,12 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Update last login timestamp
 	_ = h.Queries.UpdateLastLogin(r.Context(), user.ID)
+
+	// Log successful login
+	if h.AuditLogger != nil {
+		ipAddress := extractClientIP(r)
+		h.AuditLogger.LogSuccess("admin.login", user.Username, "user", userID.String(), ipAddress, nil)
+	}
 
 	// Calculate expiry time
 	expiresAt := time.Now().Add(24 * time.Hour) // TODO: use config value
@@ -160,6 +185,20 @@ func (h *AdminAuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 // Logout handles POST /api/v1/admin/logout
 // Clears the auth cookie
 func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Extract username from context for audit log
+	username := "unknown"
+	if claims, ok := r.Context().Value("claims").(map[string]interface{}); ok {
+		if un, ok := claims["username"].(string); ok {
+			username = un
+		}
+	}
+
+	// Log logout
+	if h.AuditLogger != nil {
+		ipAddress := extractClientIP(r)
+		h.AuditLogger.LogSuccess("admin.logout", username, "", "", ipAddress, nil)
+	}
+
 	// Clear the auth cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
@@ -174,4 +213,21 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "logged out"})
+}
+
+// extractClientIP gets the client IP from request headers or RemoteAddr
+func extractClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header (set by reverse proxies)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For can contain multiple IPs, take the first
+		return xff
+	}
+
+	// Check X-Real-IP header (alternative proxy header)
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	return r.RemoteAddr
 }
