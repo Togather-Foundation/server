@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	JobKindDeduplication  = "deduplication"
-	JobKindReconciliation = "reconciliation"
-	JobKindEnrichment     = "enrichment"
+	JobKindDeduplication      = "deduplication"
+	JobKindReconciliation     = "reconciliation"
+	JobKindEnrichment         = "enrichment"
+	JobKindIdempotencyCleanup = "idempotency_cleanup"
 )
 
 const (
