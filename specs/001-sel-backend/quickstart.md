@@ -262,10 +262,38 @@ curl "http://localhost:8080/api/v1/events?city=Toronto&startDate=2026-07-01"
 
 # Request JSON-LD
 curl -H "Accept: application/ld+json" http://localhost:8080/api/v1/events
-
-# Pagination
-curl "http://localhost:8080/api/v1/events?limit=10&after=seq_1000"
 ```
+
+### Pagination
+
+All list endpoints use cursor-based pagination. Cursors are opaque base64url-encoded strings that should be treated as black boxes.
+
+**Key Points:**
+- Use the `next_cursor` value from responses as-is
+- Do NOT parse, decode, or modify cursor values
+- Default limit: 50, maximum: 200
+- Cursor format uses base64.RawURLEncoding (URL-safe, no padding)
+
+**Example:**
+
+```bash
+# First page (no cursor)
+curl "http://localhost:8080/api/v1/events?limit=10"
+
+# Response includes next_cursor:
+# {
+#   "items": [...],
+#   "next_cursor": "MTcwNjg4NjAwMDAwMDAwMDAwMDowMUhZWDNLUVc3RVJUV jlYTkJNMlA4UUpaRg"
+# }
+
+# Next page (use the cursor from previous response)
+curl "http://localhost:8080/api/v1/events?limit=10&after=MTcwNjg4NjAwMDAwMDAwMDAwMDowMUhZWDNLUVc3RVJUV jlYTkJNMlA4UUpaRg"
+```
+
+**Internal Format (for reference only):**
+- Event cursors: `base64url(timestamp_unix_nano:ULID)`
+- Change feed cursors: `base64url(seq_<sequence_number>)`
+
 
 ### Get Single Event
 

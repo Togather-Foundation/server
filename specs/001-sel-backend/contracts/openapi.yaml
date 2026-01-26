@@ -21,6 +21,23 @@ info:
     ## Pagination
     List endpoints use cursor-based pagination with `after` and `limit` parameters.
     Default limit is 50, maximum is 200.
+    
+    ### Cursor Format
+    Cursors are opaque base64url-encoded strings (RFC 4648, URL-safe, no padding).
+    - **Event cursors**: Encode timestamp + ULID for stable ordering
+    - **Change feed cursors**: Encode sequence number for federation sync
+    
+    **Important**: Treat cursors as opaque strings. Use the `next_cursor` value from
+    API responses as-is. Do not parse, decode, or modify cursor values.
+    
+    Example pagination:
+    ```
+    GET /api/v1/events?limit=50
+    -> returns { items: [...], next_cursor: "MTcwNjg4NjAwMD..." }
+    
+    GET /api/v1/events?limit=50&after=MTcwNjg4NjAwMD...
+    -> returns next page
+    ```
   contact:
     name: SEL Team
     url: https://togather.foundation
@@ -615,9 +632,13 @@ components:
     after:
       name: after
       in: query
-      description: Cursor for pagination (from previous response)
+      description: |
+        Opaque cursor for pagination (obtained from previous response's `next_cursor`).
+        Cursors are base64url-encoded strings - treat as opaque, do not parse or modify.
+        Example: `MTcwNjg4NjAwMDAwMDAwMDAwMDowMUhZWDNLUVc3RVJUV jlYTkJNMlA4UUpaRg`
       schema:
         type: string
+        example: "MTcwNjg4NjAwMDAwMDAwMDAwMDowMUhZWDNLUVc3RVJUV jlYTkJNMlA4UUpaRg"
 
     limit:
       name: limit
