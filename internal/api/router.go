@@ -26,10 +26,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 		logger.Error().Err(err).Msg("database connection failed")
 		return http.NewServeMux()
 	}
+	// Note: Connection pool is intentionally not closed here as it's used by the router
+	// throughout the application lifecycle. It will be cleaned up on process exit.
 
 	repo, err := postgres.NewRepository(pool)
 	if err != nil {
 		logger.Error().Err(err).Msg("repository init failed")
+		pool.Close() // Clean up pool if repository init fails
 		return http.NewServeMux()
 	}
 
@@ -46,23 +49,36 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/healthz", handlers.Healthz())
 	mux.Handle("/readyz", handlers.Readyz())
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
+
+	// Middleware setup
 	apiKeyRepo := repo.Auth().APIKeys()
 	apiKeyAuth := middleware.AgentAuth(apiKeyRepo)
+	rateLimitPublic := middleware.WithRateLimitTierHandler(middleware.TierPublic)
 	rateLimitAgent := middleware.WithRateLimitTierHandler(middleware.TierAgent)
 
-	publicEvents := http.HandlerFunc(eventsHandler.List)
+	// Apply rate limiting to public read endpoints
+	publicEvents := rateLimitPublic(http.HandlerFunc(eventsHandler.List))
+	publicEventGet := rateLimitPublic(http.HandlerFunc(eventsHandler.Get))
+	publicPlaces := rateLimitPublic(http.HandlerFunc(placesHandler.List))
+	publicPlaceGet := rateLimitPublic(http.HandlerFunc(placesHandler.Get))
+	publicOrgs := rateLimitPublic(http.HandlerFunc(orgHandler.List))
+	publicOrgGet := rateLimitPublic(http.HandlerFunc(orgHandler.Get))
+
+	// Authenticated write endpoints with agent rate limiting
 	createEvents := apiKeyAuth(rateLimitAgent(http.HandlerFunc(eventsHandler.Create)))
 
 	mux.Handle("/api/v1/events", methodMux(map[string]http.Handler{
 		http.MethodGet:  publicEvents,
 		http.MethodPost: createEvents,
 	}))
-	mux.Handle("/api/v1/events/{id}", http.HandlerFunc(eventsHandler.Get))
-	mux.Handle("/api/v1/places", http.HandlerFunc(placesHandler.List))
-	mux.Handle("/api/v1/places/{id}", http.HandlerFunc(placesHandler.Get))
-	mux.Handle("/api/v1/organizations", http.HandlerFunc(orgHandler.List))
-	mux.Handle("/api/v1/organizations/{id}", http.HandlerFunc(orgHandler.Get))
-	return mux
+	mux.Handle("/api/v1/events/{id}", publicEventGet)
+	mux.Handle("/api/v1/places", publicPlaces)
+	mux.Handle("/api/v1/places/{id}", publicPlaceGet)
+	mux.Handle("/api/v1/organizations", publicOrgs)
+	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
+
+	// Wrap entire router with rate limiting middleware
+	return middleware.RateLimit(cfg.RateLimit)(mux)
 }
 
 func methodMux(handlers map[string]http.Handler) http.Handler {

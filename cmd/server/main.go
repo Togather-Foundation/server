@@ -37,7 +37,10 @@ func main() {
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 		Handler:           api.NewRouter(cfg, logger),
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second, // Total time to read request
+		WriteTimeout:      30 * time.Second, // Total time to write response
+		ReadHeaderTimeout: 5 * time.Second,  // Time to read headers
+		MaxHeaderBytes:    1 << 20,          // 1 MB max header size
 	}
 
 	go func() {

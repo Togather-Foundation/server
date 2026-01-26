@@ -13,6 +13,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// escapeILIKEPattern escapes special characters in ILIKE patterns to prevent SQL injection.
+// PostgreSQL ILIKE uses % and _ as wildcards, and \ as escape character.
+func escapeILIKEPattern(pattern string) string {
+	if pattern == "" {
+		return ""
+	}
+	// Escape backslashes first, then % and _
+	escaped := strings.ReplaceAll(pattern, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `%`, `\%`)
+	escaped = strings.ReplaceAll(escaped, `_`, `\_`)
+	return escaped
+}
+
 var _ events.Repository = (*EventRepository)(nil)
 
 type eventRow struct {
@@ -65,6 +78,11 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 		keywordArray = filters.Keywords
 	}
 
+	// Escape ILIKE patterns to prevent SQL injection
+	escapedCity := escapeILIKEPattern(filters.City)
+	escapedRegion := escapeILIKEPattern(filters.Region)
+	escapedQuery := escapeILIKEPattern(filters.Query)
+
 	rows, err := queryer.Query(ctx, `
 SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
@@ -76,13 +94,13 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
   LEFT JOIN organizations org ON org.id = e.organizer_id
   WHERE ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
     AND ($2::timestamptz IS NULL OR o.start_time <= $2::timestamptz)
-    AND ($3 = '' OR p.address_locality ILIKE '%' || $3 || '%')
-    AND ($4 = '' OR p.address_region ILIKE '%' || $4 || '%')
+    AND ($3 = '' OR p.address_locality ILIKE '%' || $3 || '%' ESCAPE '\')
+    AND ($4 = '' OR p.address_region ILIKE '%' || $4 || '%' ESCAPE '\')
     AND ($5 = '' OR p.ulid = $5)
     AND ($6 = '' OR org.ulid = $6)
     AND ($7 = '' OR e.lifecycle_state = $7)
     AND ($8 = '' OR e.event_domain = $8)
-    AND ($9 = '' OR (e.name ILIKE '%' || $9 || '%' OR e.description ILIKE '%' || $9 || '%'))
+    AND ($9 = '' OR (e.name ILIKE '%' || $9 || '%' ESCAPE '\' OR e.description ILIKE '%' || $9 || '%' ESCAPE '\'))
     AND (coalesce(cardinality($10::text[]), 0) = 0 OR e.keywords && $10::text[])
     AND (
       $11::timestamptz IS NULL OR
@@ -94,13 +112,13 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 `,
 		filters.StartDate,
 		filters.EndDate,
-		filters.City,
-		filters.Region,
+		escapedCity,
+		escapedRegion,
 		filters.VenueULID,
 		filters.OrganizerULID,
 		filters.LifecycleState,
 		filters.Domain,
-		filters.Query,
+		escapedQuery,
 		keywordArray,
 		cursorTimestamp,
 		cursorULID,

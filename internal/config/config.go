@@ -102,6 +102,9 @@ func Load() (Config, error) {
 	if cfg.Auth.JWTSecret == "" {
 		return Config{}, fmt.Errorf("JWT_SECRET is required")
 	}
+	if len(cfg.Auth.JWTSecret) < 32 {
+		return Config{}, fmt.Errorf("JWT_SECRET must be at least 32 characters for security (currently %d characters)", len(cfg.Auth.JWTSecret))
+	}
 	return cfg, nil
 }
 
