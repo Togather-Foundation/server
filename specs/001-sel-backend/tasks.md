@@ -164,13 +164,13 @@ description: "Task list for SEL backend implementation"
 
 - [X] T075 [US3] Implement admin auth handlers in internal/api/handlers/admin_auth.go (POST /api/v1/admin/login issues JWT as Authorization header for API clients AND HttpOnly cookie for HTML UI; GET /admin/login renders login page)
 - [X] T076 [US3] Implement admin event review handlers in internal/api/handlers/admin.go
-- [ ] T077 [US3] Implement admin services for review/merge in internal/domain/events/admin_service.go
-- [ ] T081b [US3] Implement federation node registry CRUD (create/list/update/delete trusted peer nodes for federation sync) in internal/api/handlers/admin.go and internal/domain/federation/nodes.go
-- [ ] T078 [US3] Implement API key management in internal/domain/auth/apikeys.go
-- [ ] T079 [US3] Implement admin delete (soft delete + tombstone generation) in internal/domain/events/admin_service.go and internal/api/handlers/admin.go
-- [ ] T080 [US3] Add admin templates in web/admin/templates/*.html (login.html for GET /admin/login, dashboard.html, events_list.html, event_edit.html, duplicates.html, api_keys.html)
-- [ ] T081 [US3] Add admin static assets in web/admin/static/*
-- [ ] T082 [US3] Wire admin routes + auth in internal/api/router.go
+- [X] T077 [US3] Implement admin services for review/merge in internal/domain/events/admin_service.go
+- [X] T081b [US3] Implement federation node registry CRUD (create/list/update/delete trusted peer nodes for federation sync) in internal/api/handlers/admin.go and internal/domain/federation/nodes.go
+- [X] T078 [US3] Implement API key management in internal/domain/auth/apikeys.go
+- [X] T079 [US3] Implement admin delete (soft delete + tombstone generation) in internal/domain/events/admin_service.go and internal/api/handlers/admin.go
+- [X] T080 [US3] Add admin templates in web/admin/templates/*.html (login.html for GET /admin/login, dashboard.html, events_list.html, event_edit.html, duplicates.html, api_keys.html)
+- [X] T081 [US3] Add admin static assets in web/admin/static/*
+- [X] T082 [US3] Wire admin routes + auth in internal/api/router.go
 
 **Checkpoint**: User Story 3 functional and independently testable
 
@@ -184,9 +184,9 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 4 (TDD - write first)
 
-- [ ] T083 [P] [US4] Integration tests for Accept header behavior in tests/integration/content_negotiation_test.go
-- [ ] T084 [P] [US4] Contract tests for HTML with embedded JSON-LD in tests/contracts/html_embedding_test.go
-- [ ] T085 [P] [US4] Contract tests for Turtle output in tests/contracts/turtle_output_test.go
+- [X] T083 [P] [US4] Integration tests for Accept header behavior in tests/integration/content_negotiation_test.go
+- [X] T084 [P] [US4] Contract tests for HTML with embedded JSON-LD in tests/contracts/html_embedding_test.go
+- [X] T085 [P] [US4] Contract tests for Turtle output in tests/contracts/turtle_output_test.go
 - [ ] T086 [P] [US4] Integration tests for 410 Gone tombstone on deleted events in tests/integration/events_tombstone_test.go
 - [ ] T086a [P] [US4] Integration tests for 410 Gone tombstone on deleted places in tests/integration/places_tombstone_test.go
 - [ ] T086b [P] [US4] Integration tests for 410 Gone tombstone on deleted organizations in tests/integration/organizations_tombstone_test.go
