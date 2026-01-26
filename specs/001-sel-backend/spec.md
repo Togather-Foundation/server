@@ -94,6 +94,8 @@ Data consumers need to understand where event information came from, which sourc
 
 ### User Story 6 - Change Feed for Federation (Priority: P4)
 
+**Status:** ✅ **Implemented** (Phase 8, 2026-01-26)
+
 Peer SEL nodes and external consumers need to sync changes efficiently without polling all events repeatedly. A cursor-based change feed enables incremental synchronization.
 
 **Why this priority**: Federation requires efficient sync. Change feeds enable peer nodes and downstream systems to stay current with minimal bandwidth.
@@ -105,6 +107,16 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 1. **Given** events have been created and modified, **When** a consumer requests GET `/api/v1/feeds/changes?since=seq_1000&limit=50`, **Then** the system returns ordered changes (create, update, delete) with action type, changed_at timestamp, and event snapshot
 2. **Given** a consumer has a valid cursor, **When** events are modified after that cursor, **Then** the next request returns only the new changes, and the `next_cursor` advances correctly
 3. **Given** an event is deleted, **When** the change feed includes that event, **Then** the action is "delete" and the snapshot includes tombstone information
+4. **Given** a trusted peer node with valid API key, **When** the node POSTs a JSON-LD event to `/api/v1/federation/sync`, **Then** the system preserves the original `@id` URI and stores it as `federation_uri` without re-minting
+5. **Given** a federated event is submitted multiple times, **When** using the same `@id`, **Then** the system upserts (updates existing record) based on URI idempotency
+
+**Implementation Notes:**
+
+- Change feed uses sequence-based cursors (BIGSERIAL) for guaranteed ordering and no-skip sync guarantees
+- Federation sync preserves original URIs and tracks `origin_node_id` for provenance
+- Idempotency handled via `ON CONFLICT (federation_uri)` upsert semantics
+- API key authentication required for federation sync endpoint
+- See [Federation Architecture](../../docs/FEDERATION_ARCHITECTURE.md) for complete design details
 
 ---
 
