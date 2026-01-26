@@ -274,3 +274,117 @@ func TestEscapeLiteral(t *testing.T) {
 		}
 	}
 }
+
+func TestSerializeToTurtle_EmptyValues(t *testing.T) {
+	data := map[string]any{
+		"@context":    "https://schema.org",
+		"@id":         "https://example.org/events/test",
+		"@type":       "Event",
+		"name":        "",           // empty string
+		"description": "Valid text", // non-empty for comparison
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// Empty string should still be serialized as ""
+	if !strings.Contains(turtle, `schema:name ""`) {
+		t.Error("Empty string should be serialized as empty literal")
+	}
+}
+
+func TestSerializeToTurtle_DateTimeCoercion(t *testing.T) {
+	data := map[string]any{
+		"@context":  "https://schema.org",
+		"@id":       "https://example.org/events/test",
+		"@type":     "Event",
+		"name":      "Test Event",
+		"startDate": "2024-07-15T19:00:00Z",
+		"endDate":   "2024-07-15T21:00:00Z",
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// Check that dateTime properties get xsd:dateTime type
+	if !strings.Contains(turtle, `"2024-07-15T19:00:00Z"^^xsd:dateTime`) {
+		t.Error("startDate should have xsd:dateTime type coercion")
+	}
+	if !strings.Contains(turtle, `"2024-07-15T21:00:00Z"^^xsd:dateTime`) {
+		t.Error("endDate should have xsd:dateTime type coercion")
+	}
+}
+
+func TestSerializeToTurtle_DateCoercion(t *testing.T) {
+	data := map[string]any{
+		"@context":     "https://schema.org",
+		"@id":          "https://example.org/organizations/test",
+		"@type":        "Organization",
+		"name":         "Test Org",
+		"foundingDate": "1995-03-20",
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// Check that date properties get xsd:date type
+	if !strings.Contains(turtle, `"1995-03-20"^^xsd:date`) {
+		t.Error("foundingDate should have xsd:date type coercion")
+	}
+}
+
+func TestSerializeToTurtle_EmptyArray(t *testing.T) {
+	data := map[string]any{
+		"@context":  "https://schema.org",
+		"@id":       "https://example.org/events/test",
+		"@type":     "Event",
+		"name":      "Test Event",
+		"performer": []interface{}{}, // empty array
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// Empty array should be skipped (not cause errors)
+	// The property should not appear in output
+	performerCount := strings.Count(turtle, "schema:performer")
+	if performerCount != 0 {
+		t.Error("Empty array should not produce property triples")
+	}
+}
+
+func TestSerializeToTurtle_NestedObjectWithoutID(t *testing.T) {
+	data := map[string]any{
+		"@context": "https://schema.org",
+		"@id":      "https://example.org/events/test",
+		"@type":    "Event",
+		"name":     "Test Event",
+		"location": map[string]any{
+			// No @id - should fall back to JSON serialization
+			"@type": "Place",
+			"name":  "Unnamed Venue",
+		},
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// Should contain schema:location with a JSON-serialized value
+	if !strings.Contains(turtle, "schema:location") {
+		t.Error("Missing location property")
+	}
+	// Should be serialized as JSON string literal (not a URI reference)
+	if strings.Contains(turtle, "schema:location <") {
+		t.Error("Nested object without @id should not be serialized as URI reference")
+	}
+}
