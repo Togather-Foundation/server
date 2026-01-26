@@ -133,8 +133,11 @@ func (r *ProvenanceRepository) GetEventSources(ctx context.Context, eventID stri
 		}
 
 		if row.Confidence.Valid {
-			val := float64(row.Confidence.Int.Int64()) / 100.0
-			attr.Confidence = &val
+			f64, err := row.Confidence.Float64Value()
+			if err == nil {
+				val := f64.Float64
+				attr.Confidence = &val
+			}
 		}
 
 		if row.SourceEventID.Valid {
@@ -201,6 +204,15 @@ func (r *ProvenanceRepository) GetCanonicalFieldValue(ctx context.Context, event
 		return nil, fmt.Errorf("get canonical field value: %w", err)
 	}
 
+	// Convert confidence from pgtype.Numeric to float64
+	confidence := 0.0
+	if row.Confidence.Valid {
+		f64, err := row.Confidence.Float64Value()
+		if err == nil {
+			confidence = f64.Float64
+		}
+	}
+
 	info := provenance.FieldProvenanceInfo{
 		FieldPath:   row.FieldPath,
 		SourceID:    uuidToString(row.SourceID),
@@ -209,7 +221,7 @@ func (r *ProvenanceRepository) GetCanonicalFieldValue(ctx context.Context, event
 		TrustLevel:  int(row.TrustLevel),
 		LicenseURL:  row.LicenseUrl,
 		LicenseType: row.LicenseType,
-		Confidence:  float64(row.Confidence.Int.Int64()) / 100.0,
+		Confidence:  confidence,
 		ObservedAt:  row.ObservedAt.Time,
 	}
 
@@ -258,6 +270,14 @@ func mapSourceRow(data sourceRow) *provenance.Source {
 func mapFieldProvenanceRows(rows []GetFieldProvenanceRow) []provenance.FieldProvenanceInfo {
 	result := make([]provenance.FieldProvenanceInfo, 0, len(rows))
 	for _, row := range rows {
+		confidence := 0.0
+		if row.Confidence.Valid {
+			f64, err := row.Confidence.Float64Value()
+			if err == nil {
+				confidence = f64.Float64
+			}
+		}
+
 		info := provenance.FieldProvenanceInfo{
 			FieldPath:   row.FieldPath,
 			SourceID:    uuidToString(row.SourceID),
@@ -266,7 +286,7 @@ func mapFieldProvenanceRows(rows []GetFieldProvenanceRow) []provenance.FieldProv
 			TrustLevel:  int(row.TrustLevel),
 			LicenseURL:  row.LicenseUrl,
 			LicenseType: row.LicenseType,
-			Confidence:  float64(row.Confidence.Int.Int64()) / 100.0,
+			Confidence:  confidence,
 			ObservedAt:  row.ObservedAt.Time,
 		}
 
@@ -282,6 +302,14 @@ func mapFieldProvenanceRows(rows []GetFieldProvenanceRow) []provenance.FieldProv
 func mapFieldProvenanceRowsFromPaths(rows []GetFieldProvenanceForPathsRow) []provenance.FieldProvenanceInfo {
 	result := make([]provenance.FieldProvenanceInfo, 0, len(rows))
 	for _, row := range rows {
+		confidence := 0.0
+		if row.Confidence.Valid {
+			f64, err := row.Confidence.Float64Value()
+			if err == nil {
+				confidence = f64.Float64
+			}
+		}
+
 		info := provenance.FieldProvenanceInfo{
 			FieldPath:   row.FieldPath,
 			SourceID:    uuidToString(row.SourceID),
@@ -290,7 +318,7 @@ func mapFieldProvenanceRowsFromPaths(rows []GetFieldProvenanceForPathsRow) []pro
 			TrustLevel:  int(row.TrustLevel),
 			LicenseURL:  row.LicenseUrl,
 			LicenseType: row.LicenseType,
-			Confidence:  float64(row.Confidence.Int.Int64()) / 100.0,
+			Confidence:  confidence,
 			ObservedAt:  row.ObservedAt.Time,
 		}
 

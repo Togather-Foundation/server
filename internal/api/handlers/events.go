@@ -302,6 +302,7 @@ func idempotencyKey(r *http.Request) string {
 }
 
 // parseProvenanceFields parses comma-separated field paths from query parameter
+// Validates field paths per JSON Pointer spec (RFC 6901)
 func parseProvenanceFields(fieldsParam string) []string {
 	if fieldsParam == "" {
 		return nil
@@ -310,15 +311,71 @@ func parseProvenanceFields(fieldsParam string) []string {
 	result := make([]string, 0, len(fields))
 	for _, f := range fields {
 		field := strings.TrimSpace(f)
-		if field != "" {
-			// Ensure field path starts with "/"
-			if !strings.HasPrefix(field, "/") {
-				field = "/" + field
-			}
-			result = append(result, field)
+		if field == "" {
+			continue
 		}
+
+		// Ensure field path starts with "/"
+		if !strings.HasPrefix(field, "/") {
+			field = "/" + field
+		}
+
+		// Validate field path format per JSON Pointer (RFC 6901)
+		if !isValidFieldPath(field) {
+			continue // Skip invalid paths
+		}
+
+		result = append(result, field)
 	}
 	return result
+}
+
+// isValidFieldPath validates field path per JSON Pointer spec (RFC 6901)
+// and prevents common security issues
+func isValidFieldPath(path string) bool {
+	if path == "" || path == "/" {
+		return false
+	}
+
+	// Must start with /
+	if !strings.HasPrefix(path, "/") {
+		return false
+	}
+
+	// Prevent directory traversal
+	if strings.Contains(path, "..") {
+		return false
+	}
+
+	// Limit path depth to prevent abuse
+	const maxDepth = 5
+	segments := strings.Split(path[1:], "/") // Skip leading /
+	if len(segments) > maxDepth {
+		return false
+	}
+
+	// Validate each segment
+	for _, segment := range segments {
+		if segment == "" {
+			return false // No empty segments
+		}
+		// Allow alphanumeric, underscore, hyphen, and tilde (JSON Pointer escape char)
+		for _, ch := range segment {
+			if !isValidFieldChar(ch) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// isValidFieldChar checks if character is valid in field path
+func isValidFieldChar(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '_' || ch == '-' || ch == '~'
 }
 
 // buildSourcesPayload constructs sources attribution array for JSON-LD response (FR-024)

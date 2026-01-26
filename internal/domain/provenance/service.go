@@ -81,6 +81,12 @@ func (s *Service) GetFieldProvenance(ctx context.Context, eventID string, fieldP
 		return nil, fmt.Errorf("provenance service not configured")
 	}
 
+	// Validate field paths array size to prevent performance issues
+	const maxFieldPaths = 100
+	if len(fieldPaths) > maxFieldPaths {
+		return nil, fmt.Errorf("too many field paths requested (max %d, got %d)", maxFieldPaths, len(fieldPaths))
+	}
+
 	if len(fieldPaths) > 0 {
 		return s.repo.GetFieldProvenanceForPaths(ctx, eventID, fieldPaths)
 	}
