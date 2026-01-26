@@ -17,12 +17,12 @@ type changeFeedResponse struct {
 }
 
 type changeFeedItem struct {
-	SequenceNumber int64          `json:"sequence_number"`
-	EventID        string         `json:"event_id"`
-	Action         string         `json:"action"`
-	ChangedAt      string         `json:"changed_at"`
-	ChangedFields  []string       `json:"changed_fields,omitempty"`
-	Snapshot       map[string]any `json:"snapshot,omitempty"`
+	SequenceNumber int64           `json:"sequence_number"`
+	EventID        string          `json:"event_id"`
+	Action         string          `json:"action"`
+	ChangedAt      string          `json:"changed_at"`
+	ChangedFields  json.RawMessage `json:"changed_fields,omitempty"`
+	Snapshot       json.RawMessage `json:"snapshot,omitempty"`
 }
 
 // TestChangeFeedPagination verifies cursor-based pagination for the change feed
@@ -151,12 +151,16 @@ func TestChangeFeedPagination(t *testing.T) {
 		// Verify at least one item has snapshot data
 		foundSnapshot := false
 		for _, item := range resp.Items {
-			if item.Snapshot != nil && len(item.Snapshot) > 0 {
+			if len(item.Snapshot) > 0 {
 				foundSnapshot = true
+				// Unmarshal snapshot to check fields
+				var snapshot map[string]any
+				err := json.Unmarshal(item.Snapshot, &snapshot)
+				require.NoError(t, err, "snapshot should be valid JSON")
 				// Verify snapshot contains expected fields
-				require.NotNil(t, item.Snapshot["@id"], "snapshot should include @id")
-				require.NotNil(t, item.Snapshot["@type"], "snapshot should include @type")
-				require.NotNil(t, item.Snapshot["name"], "snapshot should include name")
+				require.NotNil(t, snapshot["@id"], "snapshot should include @id")
+				require.NotNil(t, snapshot["@type"], "snapshot should include @type")
+				require.NotNil(t, snapshot["name"], "snapshot should include name")
 			}
 		}
 		require.True(t, foundSnapshot, "should have at least one item with snapshot data")

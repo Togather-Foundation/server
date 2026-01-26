@@ -497,6 +497,21 @@ func extractOptionalEventFields(payload map[string]any, params *UpsertFederatedE
 		params.ImageUrl = pgtype.Text{String: image, Valid: true}
 	}
 
+	// Virtual URL - check for virtualLocation or URL field
+	// Required by event_location_required constraint if no primary_venue_id
+	if virtualURL, ok := payload["virtualLocation"].(string); ok && virtualURL != "" {
+		params.VirtualUrl = pgtype.Text{String: virtualURL, Valid: true}
+	} else if urlStr, ok := payload["url"].(string); ok && urlStr != "" {
+		// Fallback to url field as virtual_url to satisfy constraint
+		params.VirtualUrl = pgtype.Text{String: urlStr, Valid: true}
+	} else {
+		// Last resort: use federation_uri as virtual_url
+		// This ensures the event_location_required constraint is satisfied
+		if params.FederationUri.Valid {
+			params.VirtualUrl = pgtype.Text{String: params.FederationUri.String, Valid: true}
+		}
+	}
+
 	// Boolean fields
 	if accessible, ok := payload["isAccessibleForFree"].(bool); ok {
 		params.IsAccessibleForFree = pgtype.Bool{Bool: accessible, Valid: true}

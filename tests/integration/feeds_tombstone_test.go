@@ -85,14 +85,16 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 		// Find our deleted event
 		var foundWithSnapshot bool
 		for _, item := range resp.Items {
-			if item.EventID == eventID && item.Snapshot != nil {
+			if item.EventID == eventID && len(item.Snapshot) > 0 {
 				foundWithSnapshot = true
 
-				// Verify tombstone metadata in snapshot
-				require.NotNil(t, item.Snapshot, "delete event should have snapshot")
+				// Unmarshal snapshot to check fields
+				var snapshot map[string]any
+				err := json.Unmarshal(item.Snapshot, &snapshot)
+				require.NoError(t, err, "snapshot should be valid JSON")
 
 				// Tombstone should indicate deleted status
-				if deletedAt, ok := item.Snapshot["deletedAt"].(string); ok {
+				if deletedAt, ok := snapshot["deletedAt"].(string); ok {
 					parsedTime, err := time.Parse(time.RFC3339, deletedAt)
 					require.NoError(t, err, "deletedAt should be valid RFC3339 timestamp")
 					require.False(t, parsedTime.IsZero(), "deletedAt should not be zero time")
