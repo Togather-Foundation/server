@@ -26,6 +26,7 @@ type SyncRepository interface {
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
 	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
 	CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error
+	WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error
 }
 
 // OccurrenceCreateParams holds parameters for creating an event occurrence.
@@ -135,63 +136,74 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 		return nil, fmt.Errorf("%w: expected Event, got %s", ErrUnsupportedType, eventType)
 	}
 
-	// Check for context cancellation before database operations
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	// Execute all database operations in a transaction
+	var result *SyncEventResult
+	err = s.repo.WithTransaction(ctx, func(txRepo SyncRepository) error {
+		// Check for context cancellation before database operations
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 
-	// Check if event already exists
-	existing, err := s.repo.GetEventByFederationURI(ctx, federationURI)
-	isNew := err != nil // If error, event doesn't exist
+		// Check if event already exists
+		existing, err := txRepo.GetEventByFederationURI(ctx, federationURI)
+		isNew := err != nil // If error, event doesn't exist
 
-	// Extract origin node from federation URI
-	originNodeID, err := s.extractOriginNode(ctx, federationURI)
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine origin node: %w", err)
-	}
-
-	// Check for context cancellation before upsert
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	// Generate local ULID (or reuse existing one)
-	var localULID string
-	if isNew {
-		ulid, err := ids.NewULID()
+		// Extract origin node from federation URI
+		originNodeID, err := s.extractOriginNode(ctx, txRepo, federationURI)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate ULID: %w", err)
+			return fmt.Errorf("failed to determine origin node: %w", err)
 		}
-		localULID = ulid
-	} else {
-		localULID = existing.ULID
-	}
 
-	// Map JSON-LD to database params
-	dbParams, occurrenceData, err := s.mapJSONLDToEvent(params.Payload, localULID, federationURI, originNodeID)
+		// Check for context cancellation before upsert
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Generate local ULID (or reuse existing one)
+		var localULID string
+		if isNew {
+			ulid, err := ids.NewULID()
+			if err != nil {
+				return fmt.Errorf("failed to generate ULID: %w", err)
+			}
+			localULID = ulid
+		} else {
+			localULID = existing.ULID
+		}
+
+		// Map JSON-LD to database params
+		dbParams, occurrenceData, err := s.mapJSONLDToEvent(params.Payload, localULID, federationURI, originNodeID)
+		if err != nil {
+			return err
+		}
+
+		// Upsert event
+		event, err := txRepo.UpsertFederatedEvent(ctx, dbParams)
+		if err != nil {
+			return fmt.Errorf("failed to upsert event: %w", err)
+		}
+
+		// Create occurrence if we have occurrence data
+		if occurrenceData != nil {
+			occurrenceData.EventID = event.ID
+			if err := txRepo.CreateOccurrence(ctx, *occurrenceData); err != nil {
+				return fmt.Errorf("failed to create occurrence: %w", err)
+			}
+		}
+
+		result = &SyncEventResult{
+			EventULID:     localULID,
+			FederationURI: federationURI,
+			IsNew:         isNew,
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
 
-	// Upsert event
-	event, err := s.repo.UpsertFederatedEvent(ctx, dbParams)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upsert event: %w", err)
-	}
-
-	// Create occurrence if we have occurrence data
-	if occurrenceData != nil {
-		occurrenceData.EventID = event.ID
-		if err := s.repo.CreateOccurrence(ctx, *occurrenceData); err != nil {
-			return nil, fmt.Errorf("failed to create occurrence: %w", err)
-		}
-	}
-
-	return &SyncEventResult{
-		EventULID:     localULID,
-		FederationURI: federationURI,
-		IsNew:         isNew,
-	}, nil
+	return result, nil
 }
 
 // validateJSONLD performs basic JSON-LD validation.
@@ -245,14 +257,14 @@ func (s *SyncService) extractType(payload map[string]any) (string, error) {
 }
 
 // extractOriginNode determines the origin node ID from the federation URI.
-func (s *SyncService) extractOriginNode(ctx context.Context, federationURI string) (pgtype.UUID, error) {
+func (s *SyncService) extractOriginNode(ctx context.Context, repo SyncRepository, federationURI string) (pgtype.UUID, error) {
 	parsedURL, err := url.Parse(federationURI)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
 
 	// Get federation node by domain
-	node, err := s.repo.GetFederationNodeByDomain(ctx, parsedURL.Host)
+	node, err := repo.GetFederationNodeByDomain(ctx, parsedURL.Host)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("origin node not found for domain %s", parsedURL.Host)
 	}

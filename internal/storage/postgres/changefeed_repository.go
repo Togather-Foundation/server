@@ -53,6 +53,8 @@ func (r *ChangeFeedRepository) ListEventChanges(ctx context.Context, arg federat
 			SequenceNumber:    row.SequenceNumber,
 			EventUlid:         row.EventUlid,
 			FederationUri:     row.FederationUri,
+			LicenseUrl:        row.LicenseUrl,
+			LicenseStatus:     row.LicenseStatus,
 			SourceTimestamp:   row.SourceTimestamp,
 			ReceivedTimestamp: row.ReceivedTimestamp,
 		}

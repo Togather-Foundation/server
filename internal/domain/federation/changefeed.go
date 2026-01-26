@@ -41,6 +41,8 @@ type ListEventChangesRow struct {
 	SequenceNumber    pgtype.Int8
 	EventUlid         string
 	FederationUri     pgtype.Text
+	LicenseUrl        string
+	LicenseStatus     string
 	SourceTimestamp   pgtype.Timestamptz
 	ReceivedTimestamp pgtype.Timestamptz
 }
@@ -77,6 +79,8 @@ type ChangeEntry struct {
 	ChangedAt         time.Time `json:"changed_at"`
 	SequenceNumber    int64     `json:"sequence_number"`
 	FederationURI     string    `json:"federation_uri,omitempty"`
+	LicenseURL        string    `json:"license_url"`
+	LicenseStatus     string    `json:"license_status"`
 	SourceTimestamp   time.Time `json:"source_timestamp,omitempty"`
 	ReceivedTimestamp time.Time `json:"received_timestamp"`
 }
@@ -165,6 +169,8 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 			Action:         row.Action,
 			ChangedAt:      row.ChangedAt.Time,
 			SequenceNumber: row.SequenceNumber.Int64,
+			LicenseURL:     row.LicenseUrl,
+			LicenseStatus:  row.LicenseStatus,
 		}
 
 		// Include federation URI if present

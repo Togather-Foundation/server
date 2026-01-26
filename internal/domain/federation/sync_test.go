@@ -41,6 +41,11 @@ func (m *mockSyncRepo) CreateOccurrence(ctx context.Context, params OccurrenceCr
 	return nil
 }
 
+func (m *mockSyncRepo) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {
+	// For mock, just execute the function with the same repo (no real transaction)
+	return fn(m)
+}
+
 func TestSyncEvent_CreatesOccurrence(t *testing.T) {
 	repo := &mockSyncRepo{}
 	service := NewSyncService(repo)

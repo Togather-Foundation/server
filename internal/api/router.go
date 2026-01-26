@@ -71,7 +71,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	changeFeedService := federation.NewChangeFeedService(changeFeedRepo)
 	feedsHandler := handlers.NewFeedsHandler(changeFeedService, cfg.Environment, cfg.Server.BaseURL)
 
-	syncRepo := postgres.NewSyncRepository(queries)
+	syncRepo := postgres.NewSyncRepository(pool, queries)
 	syncService := federation.NewSyncService(syncRepo)
 	federationService := federation.NewService(repo.Federation(), requireHTTPS)
 	federationHandler := handlers.NewFederationHandler(federationService, syncService, cfg.Environment)

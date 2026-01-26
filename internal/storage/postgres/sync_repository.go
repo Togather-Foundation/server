@@ -8,18 +8,65 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // SyncRepository implements federation.SyncRepository using SQLc queries.
 type SyncRepository struct {
+	pool    *pgxpool.Pool
 	queries *Queries
+	tx      pgx.Tx
 }
 
 // NewSyncRepository creates a new sync repository.
-func NewSyncRepository(queries *Queries) *SyncRepository {
+func NewSyncRepository(pool *pgxpool.Pool, queries *Queries) *SyncRepository {
 	return &SyncRepository{
+		pool:    pool,
 		queries: queries,
 	}
+}
+
+// queryer returns the appropriate database interface (transaction or pool).
+func (r *SyncRepository) queryer() DBTX {
+	if r.tx != nil {
+		return r.tx
+	}
+	return r.pool
+}
+
+// WithTransaction executes the given function within a database transaction.
+// If fn returns an error, the transaction is rolled back. Otherwise it's committed.
+func (r *SyncRepository) WithTransaction(ctx context.Context, fn func(txRepo federation.SyncRepository) error) error {
+	if r.tx != nil {
+		return fmt.Errorf("already in transaction")
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Create a new repository instance with the transaction
+	txRepo := &SyncRepository{
+		pool:    r.pool,
+		queries: r.queries.WithTx(tx),
+		tx:      tx,
+	}
+
+	// Execute the function
+	if err := fn(txRepo); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			return fmt.Errorf("transaction error: %w, rollback error: %v", err, rbErr)
+		}
+		return err
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // GetEventByFederationURI fetches an event by its federation URI.

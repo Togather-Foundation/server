@@ -240,6 +240,10 @@ func (m *mockSyncRepoWithErrors) CreateOccurrence(ctx context.Context, params Oc
 	return nil
 }
 
+func (m *mockSyncRepoWithErrors) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {
+	return fn(m)
+}
+
 // Mock repository with artificial delay for timeout testing
 type slowMockSyncRepo struct {
 	delay time.Duration
@@ -270,4 +274,8 @@ func (m *slowMockSyncRepo) GetFederationNodeByDomain(ctx context.Context, nodeDo
 func (m *slowMockSyncRepo) CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error {
 	time.Sleep(m.delay)
 	return nil
+}
+
+func (m *slowMockSyncRepo) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {
+	return fn(m)
 }

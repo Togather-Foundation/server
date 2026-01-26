@@ -10,6 +10,8 @@ SELECT ec.id,
        ec.sequence_number,
        e.ulid AS event_ulid,
        e.federation_uri,
+       e.license_url,
+       e.license_status,
        es.retrieved_at AS source_timestamp,
        e.created_at AS received_timestamp
   FROM event_changes ec
@@ -31,6 +33,8 @@ SELECT ec.id,
        ec.sequence_number,
        e.ulid AS event_ulid,
        e.federation_uri,
+       e.license_url,
+       e.license_status,
        es.retrieved_at AS source_timestamp,
        e.created_at AS received_timestamp
   FROM event_changes ec

@@ -21,6 +21,8 @@ SELECT ec.id,
        ec.sequence_number,
        e.ulid AS event_ulid,
        e.federation_uri,
+       e.license_url,
+       e.license_status,
        es.retrieved_at AS source_timestamp,
        e.created_at AS received_timestamp
   FROM event_changes ec
@@ -40,6 +42,8 @@ type GetEventChangeByIDRow struct {
 	SequenceNumber    pgtype.Int8        `json:"sequence_number"`
 	EventUlid         string             `json:"event_ulid"`
 	FederationUri     pgtype.Text        `json:"federation_uri"`
+	LicenseUrl        string             `json:"license_url"`
+	LicenseStatus     string             `json:"license_status"`
 	SourceTimestamp   pgtype.Timestamptz `json:"source_timestamp"`
 	ReceivedTimestamp pgtype.Timestamptz `json:"received_timestamp"`
 }
@@ -57,6 +61,8 @@ func (q *Queries) GetEventChangeByID(ctx context.Context, id pgtype.UUID) (GetEv
 		&i.SequenceNumber,
 		&i.EventUlid,
 		&i.FederationUri,
+		&i.LicenseUrl,
+		&i.LicenseStatus,
 		&i.SourceTimestamp,
 		&i.ReceivedTimestamp,
 	)
@@ -122,6 +128,8 @@ SELECT ec.id,
        ec.sequence_number,
        e.ulid AS event_ulid,
        e.federation_uri,
+       e.license_url,
+       e.license_status,
        es.retrieved_at AS source_timestamp,
        e.created_at AS received_timestamp
   FROM event_changes ec
@@ -151,6 +159,8 @@ type ListEventChangesRow struct {
 	SequenceNumber    pgtype.Int8        `json:"sequence_number"`
 	EventUlid         string             `json:"event_ulid"`
 	FederationUri     pgtype.Text        `json:"federation_uri"`
+	LicenseUrl        string             `json:"license_url"`
+	LicenseStatus     string             `json:"license_status"`
 	SourceTimestamp   pgtype.Timestamptz `json:"source_timestamp"`
 	ReceivedTimestamp pgtype.Timestamptz `json:"received_timestamp"`
 }
@@ -180,6 +190,8 @@ func (q *Queries) ListEventChanges(ctx context.Context, arg ListEventChangesPara
 			&i.SequenceNumber,
 			&i.EventUlid,
 			&i.FederationUri,
+			&i.LicenseUrl,
+			&i.LicenseStatus,
 			&i.SourceTimestamp,
 			&i.ReceivedTimestamp,
 		); err != nil {
