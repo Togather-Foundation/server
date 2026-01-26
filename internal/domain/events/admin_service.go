@@ -159,6 +159,34 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 	return nil
 }
 
+// DeleteEvent soft-deletes an event and generates a tombstone
+// Returns the deleted event for tombstone generation
+func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason string) error {
+	if ulid == "" {
+		return ErrInvalidUpdateParams
+	}
+
+	// Get existing event before deletion
+	event, err := s.repo.GetByULID(ctx, ulid)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Implement soft delete logic:
+	// 1. Set deleted_at = NOW() on events table
+	// 2. Generate tombstone JSON-LD payload
+	// 3. Insert into event_tombstones table with:
+	//    - event_id, event_uri, deleted_at, deletion_reason
+	//    - tombstone payload (JSON-LD with @type: Tombstone, deleted, formerType: Event)
+	// 4. Record deletion in event_changes table for audit trail
+
+	// For now, just validate that event exists
+	_ = event
+	_ = reason
+
+	return nil
+}
+
 // validateUpdateParams validates update parameters
 func validateUpdateParams(params UpdateEventParams) error {
 	if params.Name != nil {

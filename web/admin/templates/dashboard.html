@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SEL Admin</title>
+    <link rel="stylesheet" href="/admin/static/css/admin.css">
+</head>
+<body>
+    <nav class="admin-nav">
+        <h1>SEL Admin</h1>
+        <ul>
+            <li><a href="/admin/dashboard">Dashboard</a></li>
+            <li><a href="/admin/events">Events</a></li>
+            <li><a href="/admin/duplicates">Duplicates</a></li>
+            <li><a href="/admin/api-keys">API Keys</a></li>
+            <li><a href="/admin/federation">Federation Nodes</a></li>
+            <li><a href="/api/v1/admin/logout">Logout</a></li>
+        </ul>
+    </nav>
+    <main>
+        <h2>Dashboard</h2>
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Pending Reviews</h3>
+                <p id="pending-count">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Total Events</h3>
+                <p id="total-events">Loading...</p>
+            </div>
+        </div>
+    </main>
+    <script src="/admin/static/js/dashboard.js"></script>
+</body>
+</html>

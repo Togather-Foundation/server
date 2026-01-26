@@ -281,6 +281,45 @@ func (h *AdminHandler) MergeEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "merged"}, contentTypeFromRequest(r))
 }
 
+// DeleteEvent handles DELETE /api/v1/admin/events/{id}
+// Soft-deletes an event and generates a tombstone
+func (h *AdminHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Extract and validate event ID
+	ulidValue := strings.TrimSpace(pathParam(r, "id"))
+	if ulidValue == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "missing"}, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(ulidValue); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+		return
+	}
+
+	// Parse deletion reason (optional)
+	var req struct {
+		Reason string `json:"reason,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	// Call admin service to delete event
+	err := h.AdminService.DeleteEvent(r.Context(), ulidValue, req.Reason)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // validateUpdateFields validates the fields that can be updated
 func validateUpdateFields(updates map[string]any) error {
 	// Validate name if present

@@ -12,6 +12,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -54,6 +55,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	// Create AdminService
 	adminService := events.NewAdminService(repo.Events())
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, cfg.Environment, cfg.Server.BaseURL)
+
+	// Create API Key handler
+	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
+
+	// Create Federation handler
+	federationService := federation.NewService(repo.Federation())
+	federationHandler := handlers.NewFederationHandler(federationService, cfg.Environment)
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", handlers.Healthz())
@@ -112,6 +120,49 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 
 	adminMergeEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.MergeEvents)))
 	mux.Handle("/api/v1/admin/events/merge", adminMergeEvents)
+
+	adminDeleteEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeleteEvent)))
+	mux.Handle("/api/v1/admin/events/{id}/delete", methodMux(map[string]http.Handler{
+		http.MethodDelete: adminDeleteEvent,
+	}))
+
+	// Admin API key management (T078)
+	adminCreateAPIKey := jwtAuth(adminRateLimit(http.HandlerFunc(apiKeyHandler.CreateAPIKey)))
+	adminListAPIKeys := jwtAuth(adminRateLimit(http.HandlerFunc(apiKeyHandler.ListAPIKeys)))
+	adminRevokeAPIKey := jwtAuth(adminRateLimit(http.HandlerFunc(apiKeyHandler.RevokeAPIKey)))
+
+	mux.Handle("/api/v1/admin/api-keys", methodMux(map[string]http.Handler{
+		http.MethodPost: adminCreateAPIKey,
+		http.MethodGet:  adminListAPIKeys,
+	}))
+	mux.Handle("/api/v1/admin/api-keys/{id}", methodMux(map[string]http.Handler{
+		http.MethodDelete: adminRevokeAPIKey,
+	}))
+
+	// Admin federation node management (T081b)
+	adminCreateNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.CreateNode)))
+	adminListNodes := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.ListNodes)))
+	adminGetNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.GetNode)))
+	adminUpdateNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.UpdateNode)))
+	adminDeleteNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.DeleteNode)))
+
+	mux.Handle("/api/v1/admin/federation/nodes", methodMux(map[string]http.Handler{
+		http.MethodPost: adminCreateNode,
+		http.MethodGet:  adminListNodes,
+	}))
+	mux.Handle("/api/v1/admin/federation/nodes/{id}", methodMux(map[string]http.Handler{
+		http.MethodGet:    adminGetNode,
+		http.MethodPut:    adminUpdateNode,
+		http.MethodDelete: adminDeleteNode,
+	}))
+
+	// Admin HTML pages (T080) - placeholder routes for future implementation
+	// mux.Handle("/admin/dashboard", adminHTMLHandler)
+	// mux.Handle("/admin/events", adminHTMLHandler)
+	// mux.Handle("/admin/duplicates", adminHTMLHandler)
+	// mux.Handle("/admin/api-keys", adminHTMLHandler)
+	// mux.Handle("/admin/federation", adminHTMLHandler)
+	// mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", http.FileServer(http.Dir("web/admin/static"))))
 
 	// Wrap entire router with middleware stack
 	// Order: CorrelationID -> RequestLogging -> RateLimit
