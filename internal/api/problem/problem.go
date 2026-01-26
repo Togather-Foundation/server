@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/rs/zerolog"
 )
 
 const contentType = "application/problem+json"
@@ -59,6 +61,29 @@ func Write(w http.ResponseWriter, r *http.Request, status int, typ, title string
 
 	if problem.Instance == "" && r != nil {
 		problem.Instance = r.URL.Path
+	}
+
+	// Log error with structured logging from context
+	if err != nil && status >= 500 {
+		// Log server errors (5xx) at error level
+		logger := zerolog.Ctx(r.Context())
+		logger.Error().
+			Err(err).
+			Int("status", status).
+			Str("type", typ).
+			Str("path", r.URL.Path).
+			Str("method", r.Method).
+			Msg(title)
+	} else if err != nil && status >= 400 {
+		// Log client errors (4xx) at warn level
+		logger := zerolog.Ctx(r.Context())
+		logger.Warn().
+			Err(err).
+			Int("status", status).
+			Str("type", typ).
+			Str("path", r.URL.Path).
+			Str("method", r.Method).
+			Msg(title)
 	}
 
 	WriteProblem(w, problem)

@@ -77,8 +77,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/api/v1/organizations", publicOrgs)
 	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
 
-	// Wrap entire router with rate limiting middleware
-	return middleware.RateLimit(cfg.RateLimit)(mux)
+	// Wrap entire router with middleware stack
+	// Order: CorrelationID -> RequestLogging -> RateLimit
+	handler := middleware.CorrelationID(logger)(mux)
+	handler = middleware.RequestLogging(logger)(handler)
+	handler = middleware.RateLimit(cfg.RateLimit)(handler)
+
+	return handler
 }
 
 func methodMux(handlers map[string]http.Handler) http.Handler {

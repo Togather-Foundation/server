@@ -36,7 +36,14 @@ func RequestLogging(logger zerolog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(rw, r)
 
 			duration := time.Since(start)
-			logger.Info().
+
+			// Use logger from context (includes correlation ID) or fall back to provided logger
+			reqLogger := zerolog.Ctx(r.Context())
+			if reqLogger.GetLevel() == zerolog.Disabled {
+				reqLogger = &logger
+			}
+
+			reqLogger.Info().
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Int("status", rw.status).
