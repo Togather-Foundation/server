@@ -287,15 +287,16 @@ func (h *PublicPagesHandler) serveJSONLD(w http.ResponseWriter, payload map[stri
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-// serveEventTombstone serves a 410 Gone response for event tombstones.
-func (h *PublicPagesHandler) serveEventTombstone(w http.ResponseWriter, r *http.Request, tombstone *events.Tombstone) {
+// serveTombstoneHelper is a generic helper for serving tombstones with content negotiation.
+// Reduces duplication across serveEventTombstone, servePlaceTombstone, serveOrganizationTombstone.
+func (h *PublicPagesHandler) serveTombstoneHelper(w http.ResponseWriter, r *http.Request, deletedAt time.Time, payloadBytes json.RawMessage, entityType string) {
 	var payload map[string]any
-	if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
 		payload = map[string]any{
 			"@context":      loadDefaultContext(),
-			"@type":         "Event",
+			"@type":         entityType,
 			"sel:tombstone": true,
-			"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
+			"sel:deletedAt": deletedAt.Format(time.RFC3339),
 		}
 	}
 
@@ -304,7 +305,7 @@ func (h *PublicPagesHandler) serveEventTombstone(w http.ResponseWriter, r *http.
 		payload["sel:tombstone"] = true
 	}
 	if _, ok := payload["sel:deletedAt"]; !ok {
-		payload["sel:deletedAt"] = tombstone.DeletedAt.Format(time.RFC3339)
+		payload["sel:deletedAt"] = deletedAt.Format(time.RFC3339)
 	}
 
 	// Perform content negotiation for tombstone
@@ -318,72 +319,21 @@ func (h *PublicPagesHandler) serveEventTombstone(w http.ResponseWriter, r *http.
 		w.WriteHeader(http.StatusGone)
 		_ = json.NewEncoder(w).Encode(payload)
 	}
+}
+
+// serveEventTombstone serves a 410 Gone response for event tombstones.
+func (h *PublicPagesHandler) serveEventTombstone(w http.ResponseWriter, r *http.Request, tombstone *events.Tombstone) {
+	h.serveTombstoneHelper(w, r, tombstone.DeletedAt, tombstone.Payload, "Event")
 }
 
 // servePlaceTombstone serves a 410 Gone response for place tombstones.
 func (h *PublicPagesHandler) servePlaceTombstone(w http.ResponseWriter, r *http.Request, tombstone *places.Tombstone) {
-	var payload map[string]any
-	if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-		payload = map[string]any{
-			"@context":      loadDefaultContext(),
-			"@type":         "Place",
-			"sel:tombstone": true,
-			"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-		}
-	}
-
-	// Ensure tombstone fields are present
-	if _, ok := payload["sel:tombstone"]; !ok {
-		payload["sel:tombstone"] = true
-	}
-	if _, ok := payload["sel:deletedAt"]; !ok {
-		payload["sel:deletedAt"] = tombstone.DeletedAt.Format(time.RFC3339)
-	}
-
-	// Perform content negotiation for tombstone
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "text/html") {
-		h.serveHTMLWithStatus(w, r, payload, http.StatusGone)
-	} else if strings.Contains(accept, "text/turtle") {
-		h.serveTurtleWithStatus(w, r, payload, http.StatusGone)
-	} else {
-		w.Header().Set("Content-Type", "application/ld+json; charset=utf-8")
-		w.WriteHeader(http.StatusGone)
-		_ = json.NewEncoder(w).Encode(payload)
-	}
+	h.serveTombstoneHelper(w, r, tombstone.DeletedAt, tombstone.Payload, "Place")
 }
 
 // serveOrganizationTombstone serves a 410 Gone response for organization tombstones.
 func (h *PublicPagesHandler) serveOrganizationTombstone(w http.ResponseWriter, r *http.Request, tombstone *organizations.Tombstone) {
-	var payload map[string]any
-	if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-		payload = map[string]any{
-			"@context":      loadDefaultContext(),
-			"@type":         "Organization",
-			"sel:tombstone": true,
-			"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-		}
-	}
-
-	// Ensure tombstone fields are present
-	if _, ok := payload["sel:tombstone"]; !ok {
-		payload["sel:tombstone"] = true
-	}
-	if _, ok := payload["sel:deletedAt"]; !ok {
-		payload["sel:deletedAt"] = tombstone.DeletedAt.Format(time.RFC3339)
-	}
-
-	// Perform content negotiation for tombstone
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "text/html") {
-		h.serveHTMLWithStatus(w, r, payload, http.StatusGone)
-	} else if strings.Contains(accept, "text/turtle") {
-		h.serveTurtleWithStatus(w, r, payload, http.StatusGone)
-	} else {
-		w.Header().Set("Content-Type", "application/ld+json; charset=utf-8")
-		w.WriteHeader(http.StatusGone)
-		_ = json.NewEncoder(w).Encode(payload)
-	}
+	h.serveTombstoneHelper(w, r, tombstone.DeletedAt, tombstone.Payload, "Organization")
 }
 
 // Helper functions to build payloads
