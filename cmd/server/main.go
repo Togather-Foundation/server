@@ -86,7 +86,12 @@ VALUES (gen_random_uuid(), $1, $2, $3, 'admin', true, now())`
 		return fmt.Errorf("create admin user: %w", err)
 	}
 
-	logger.Info().Str("email", bootstrap.Email).Msg("bootstrapped admin user")
+	// Log admin creation - redact email in production to avoid PII leaks
+	if cfg.Environment == "production" {
+		logger.Info().Str("username", bootstrap.Username).Msg("bootstrapped admin user")
+	} else {
+		logger.Info().Str("email", bootstrap.Email).Str("username", bootstrap.Username).Msg("bootstrapped admin user")
+	}
 	return nil
 }
 
