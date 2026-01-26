@@ -11,12 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createOrganizationTombstone = `-- name: CreateOrganizationTombstone :exec
+INSERT INTO organization_tombstones (organization_id, organization_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateOrganizationTombstoneParams struct {
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	OrganizationUri string             `json:"organization_uri"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason  pgtype.Text        `json:"deletion_reason"`
+	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
+	Payload         []byte             `json:"payload"`
+}
+
+func (q *Queries) CreateOrganizationTombstone(ctx context.Context, arg CreateOrganizationTombstoneParams) error {
+	_, err := q.db.Exec(ctx, createOrganizationTombstone,
+		arg.OrganizationID,
+		arg.OrganizationUri,
+		arg.DeletedAt,
+		arg.DeletionReason,
+		arg.SupersededByUri,
+		arg.Payload,
+	)
+	return err
+}
+
 const getOrganizationByULID = `-- name: GetOrganizationByULID :one
 SELECT o.id,
        o.ulid,
        o.name,
        o.legal_name,
        o.url,
+       o.deleted_at,
+       o.deletion_reason,
        o.created_at,
        o.updated_at
   FROM organizations o
@@ -24,13 +52,15 @@ SELECT o.id,
 `
 
 type GetOrganizationByULIDRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Ulid      string             `json:"ulid"`
-	Name      string             `json:"name"`
-	LegalName pgtype.Text        `json:"legal_name"`
-	Url       pgtype.Text        `json:"url"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID             pgtype.UUID        `json:"id"`
+	Ulid           string             `json:"ulid"`
+	Name           string             `json:"name"`
+	LegalName      pgtype.Text        `json:"legal_name"`
+	Url            pgtype.Text        `json:"url"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason pgtype.Text        `json:"deletion_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error) {
@@ -42,8 +72,40 @@ func (q *Queries) GetOrganizationByULID(ctx context.Context, ulid string) (GetOr
 		&i.Name,
 		&i.LegalName,
 		&i.Url,
+		&i.DeletedAt,
+		&i.DeletionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getOrganizationTombstoneByULID = `-- name: GetOrganizationTombstoneByULID :one
+SELECT t.id,
+       t.organization_id,
+       t.organization_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM organization_tombstones t
+  JOIN organizations o ON o.id = t.organization_id
+ WHERE o.ulid = $1
+ ORDER BY t.deleted_at DESC
+ LIMIT 1
+`
+
+func (q *Queries) GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error) {
+	row := q.db.QueryRow(ctx, getOrganizationTombstoneByULID, ulid)
+	var i OrganizationTombstone
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.OrganizationUri,
+		&i.DeletedAt,
+		&i.DeletionReason,
+		&i.SupersededByUri,
+		&i.Payload,
 	)
 	return i, err
 }
@@ -117,4 +179,23 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteOrganization = `-- name: SoftDeleteOrganization :exec
+UPDATE organizations
+   SET deleted_at = now(),
+       deletion_reason = $2,
+       updated_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL
+`
+
+type SoftDeleteOrganizationParams struct {
+	Ulid           string      `json:"ulid"`
+	DeletionReason pgtype.Text `json:"deletion_reason"`
+}
+
+func (q *Queries) SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error {
+	_, err := q.db.Exec(ctx, softDeleteOrganization, arg.Ulid, arg.DeletionReason)
+	return err
 }

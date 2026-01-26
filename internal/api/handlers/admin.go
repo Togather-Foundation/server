@@ -11,27 +11,30 @@ import (
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/sanitize"
 )
 
 type AdminHandler struct {
-	Service      *events.Service
-	AdminService *events.AdminService
-	Places       *places.Service
-	AuditLogger  *audit.Logger
-	Env          string
-	BaseURL      string
+	Service       *events.Service
+	AdminService  *events.AdminService
+	Places        *places.Service
+	Organizations *organizations.Service
+	AuditLogger   *audit.Logger
+	Env           string
+	BaseURL       string
 }
 
-func NewAdminHandler(service *events.Service, adminService *events.AdminService, placeService *places.Service, auditLogger *audit.Logger, env string, baseURL string) *AdminHandler {
+func NewAdminHandler(service *events.Service, adminService *events.AdminService, placeService *places.Service, orgService *organizations.Service, auditLogger *audit.Logger, env string, baseURL string) *AdminHandler {
 	return &AdminHandler{
-		Service:      service,
-		AdminService: adminService,
-		Places:       placeService,
-		AuditLogger:  auditLogger,
-		Env:          env,
-		BaseURL:      baseURL,
+		Service:       service,
+		AdminService:  adminService,
+		Places:        placeService,
+		Organizations: orgService,
+		AuditLogger:   auditLogger,
+		Env:           env,
+		BaseURL:       baseURL,
 	}
 }
 
@@ -486,6 +489,100 @@ func buildPlaceURI(baseURL, ulid string) string {
 		return ""
 	}
 	uri, err := ids.BuildCanonicalURI(baseURL, "places", ulid)
+	if err != nil {
+		return ""
+	}
+	return uri
+}
+
+// DeleteOrganization handles DELETE /api/v1/admin/organizations/{id}
+// Soft-deletes an organization and generates a tombstone
+func (h *AdminHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Organizations == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	ulidValue := strings.TrimSpace(pathParam(r, "id"))
+	if ulidValue == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "missing"}, h.Env)
+		return
+	}
+	if err := organizations.ValidateULID(ulidValue); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	org, err := h.Organizations.GetByULID(r.Context(), ulidValue)
+	if err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if err := h.Organizations.SoftDelete(r.Context(), ulidValue, req.Reason); err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	payload, err := buildOrganizationTombstonePayload(ulidValue, org.Name, req.Reason, h.BaseURL)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	params := organizations.TombstoneCreateParams{
+		OrgID:     org.ID,
+		OrgURI:    buildOrganizationURI(h.BaseURL, ulidValue),
+		DeletedAt: time.Now(),
+		Reason:    req.Reason,
+		Payload:   payload,
+	}
+
+	if err := h.Organizations.CreateTombstone(r.Context(), params); err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func buildOrganizationTombstonePayload(ulid, name, reason, baseURL string) ([]byte, error) {
+	orgURI := buildOrganizationURI(baseURL, ulid)
+	if orgURI == "" {
+		orgURI = "https://togather.foundation/organizations/" + strings.ToUpper(ulid)
+	}
+
+	payload := map[string]any{
+		"@context":           "https://schema.org",
+		"@type":              "Organization",
+		"@id":                orgURI,
+		"name":               name,
+		"sel:tombstone":      true,
+		"sel:deletedAt":      time.Now().Format(time.RFC3339),
+		"sel:deletionReason": reason,
+	}
+
+	return json.Marshal(payload)
+}
+
+func buildOrganizationURI(baseURL, ulid string) string {
+	if baseURL == "" || ulid == "" {
+		return ""
+	}
+	uri, err := ids.BuildCanonicalURI(baseURL, "organizations", ulid)
 	if err != nil {
 		return ""
 	}

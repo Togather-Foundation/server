@@ -138,16 +138,6 @@ type EventTombstone struct {
 	Payload         []byte             `json:"payload"`
 }
 
-type PlaceTombstone struct {
-	ID              pgtype.UUID        `json:"id"`
-	PlaceID         pgtype.UUID        `json:"place_id"`
-	PlaceUri        string             `json:"place_uri"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	DeletionReason  pgtype.Text        `json:"deletion_reason"`
-	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
-	Payload         []byte             `json:"payload"`
-}
-
 type FederationNode struct {
 	ID                     pgtype.UUID        `json:"id"`
 	NodeDomain             string             `json:"node_domain"`
@@ -228,6 +218,18 @@ type Organization struct {
 	Confidence       pgtype.Numeric     `json:"confidence"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason   pgtype.Text        `json:"deletion_reason"`
+}
+
+type OrganizationTombstone struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	OrganizationUri string             `json:"organization_uri"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason  pgtype.Text        `json:"deletion_reason"`
+	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
+	Payload         []byte             `json:"payload"`
 }
 
 type Place struct {
@@ -256,6 +258,16 @@ type Place struct {
 	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt               pgtype.Timestamptz `json:"deleted_at"`
 	DeletionReason          pgtype.Text        `json:"deletion_reason"`
+}
+
+type PlaceTombstone struct {
+	ID              pgtype.UUID        `json:"id"`
+	PlaceID         pgtype.UUID        `json:"place_id"`
+	PlaceUri        string             `json:"place_uri"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason  pgtype.Text        `json:"deletion_reason"`
+	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
+	Payload         []byte             `json:"payload"`
 }
 
 type Source struct {

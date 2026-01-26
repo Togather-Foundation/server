@@ -9,6 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -26,6 +27,8 @@ type organizationRow struct {
 	Name      string
 	LegalName *string
 	URL       *string
+	DeletedAt pgtype.Timestamptz
+	Reason    pgtype.Text
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
@@ -123,7 +126,7 @@ func (r *OrganizationRepository) GetByULID(ctx context.Context, ulid string) (*o
 	queryer := r.queryer()
 
 	row := queryer.QueryRow(ctx, `
-SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reason, o.created_at, o.updated_at
   FROM organizations o
  WHERE o.ulid = $1
 `, ulid)
@@ -135,6 +138,8 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
 		&data.Name,
 		&data.LegalName,
 		&data.URL,
+		&data.DeletedAt,
+		&data.Reason,
 		&data.CreatedAt,
 		&data.UpdatedAt,
 	); err != nil {
@@ -150,6 +155,7 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
 		Name:      data.Name,
 		LegalName: derefString(data.LegalName),
 		URL:       derefString(data.URL),
+		Lifecycle: "",
 		CreatedAt: time.Time{},
 		UpdatedAt: time.Time{},
 	}
@@ -159,12 +165,93 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
 	if data.UpdatedAt.Valid {
 		org.UpdatedAt = data.UpdatedAt.Time
 	}
+	if data.DeletedAt.Valid {
+		org.Lifecycle = "deleted"
+	}
 	return org, nil
+}
+
+// SoftDelete marks an organization as deleted
+func (r *OrganizationRepository) SoftDelete(ctx context.Context, ulid string, reason string) error {
+	queries := Queries{db: r.queryer()}
+
+	err := queries.SoftDeleteOrganization(ctx, SoftDeleteOrganizationParams{
+		Ulid:           ulid,
+		DeletionReason: pgtype.Text{String: reason, Valid: reason != ""},
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return organizations.ErrNotFound
+		}
+		return fmt.Errorf("soft delete organization: %w", err)
+	}
+
+	return nil
+}
+
+// CreateTombstone creates a tombstone record for a deleted organization
+func (r *OrganizationRepository) CreateTombstone(ctx context.Context, params organizations.TombstoneCreateParams) error {
+	queries := Queries{db: r.queryer()}
+
+	var orgIDUUID pgtype.UUID
+	if err := orgIDUUID.Scan(params.OrgID); err != nil {
+		return fmt.Errorf("invalid organization ID: %w", err)
+	}
+
+	var supersededBy pgtype.Text
+	if params.SupersededBy != nil {
+		supersededBy = pgtype.Text{String: *params.SupersededBy, Valid: true}
+	}
+
+	err := queries.CreateOrganizationTombstone(ctx, CreateOrganizationTombstoneParams{
+		OrganizationID:  orgIDUUID,
+		OrganizationUri: params.OrgURI,
+		DeletedAt:       pgtype.Timestamptz{Time: params.DeletedAt, Valid: true},
+		DeletionReason:  pgtype.Text{String: params.Reason, Valid: params.Reason != ""},
+		SupersededByUri: supersededBy,
+		Payload:         params.Payload,
+	})
+	if err != nil {
+		return fmt.Errorf("create tombstone: %w", err)
+	}
+
+	return nil
+}
+
+// GetTombstoneByULID retrieves the tombstone for a deleted organization by ULID
+func (r *OrganizationRepository) GetTombstoneByULID(ctx context.Context, ulid string) (*organizations.Tombstone, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetOrganizationTombstoneByULID(ctx, ulid)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, organizations.ErrNotFound
+		}
+		return nil, fmt.Errorf("get tombstone by ulid: %w", err)
+	}
+
+	var supersededBy *string
+	if row.SupersededByUri.Valid {
+		supersededBy = &row.SupersededByUri.String
+	}
+
+	tombstone := &organizations.Tombstone{
+		ID:           row.ID.String(),
+		OrgID:        row.OrganizationID.String(),
+		OrgURI:       row.OrganizationUri,
+		DeletedAt:    row.DeletedAt.Time,
+		Reason:       row.DeletionReason.String,
+		SupersededBy: supersededBy,
+		Payload:      row.Payload,
+	}
+
+	return tombstone, nil
 }
 
 type organizationQueryer interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
 func (r *OrganizationRepository) queryer() organizationQueryer {

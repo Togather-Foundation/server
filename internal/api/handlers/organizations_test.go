@@ -13,8 +13,9 @@ import (
 )
 
 type stubOrganizationsRepo struct {
-	listFn func(filters organizations.Filters, pagination organizations.Pagination) (organizations.ListResult, error)
-	getFn  func(ulid string) (*organizations.Organization, error)
+	listFn      func(filters organizations.Filters, pagination organizations.Pagination) (organizations.ListResult, error)
+	getFn       func(ulid string) (*organizations.Organization, error)
+	tombstoneFn func(ulid string) (*organizations.Tombstone, error)
 }
 
 func (s stubOrganizationsRepo) List(_ context.Context, filters organizations.Filters, pagination organizations.Pagination) (organizations.ListResult, error) {
@@ -25,6 +26,21 @@ func (s stubOrganizationsRepo) GetByULID(_ context.Context, ulid string) (*organ
 	return s.getFn(ulid)
 }
 
+func (s stubOrganizationsRepo) SoftDelete(_ context.Context, _ string, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (s stubOrganizationsRepo) CreateTombstone(_ context.Context, _ organizations.TombstoneCreateParams) error {
+	return errors.New("not implemented")
+}
+
+func (s stubOrganizationsRepo) GetTombstoneByULID(_ context.Context, ulid string) (*organizations.Tombstone, error) {
+	if s.tombstoneFn == nil {
+		return nil, organizations.ErrNotFound
+	}
+	return s.tombstoneFn(ulid)
+}
+
 func TestOrganizationsHandlerListSuccess(t *testing.T) {
 	repo := stubOrganizationsRepo{
 		listFn: func(filters organizations.Filters, pagination organizations.Pagination) (organizations.ListResult, error) {
@@ -33,9 +49,12 @@ func TestOrganizationsHandlerListSuccess(t *testing.T) {
 		getFn: func(_ string) (*organizations.Organization, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
 	}
 
-	h := NewOrganizationsHandler(organizations.NewService(repo), "test")
+	h := NewOrganizationsHandler(organizations.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations", nil)
 	res := httptest.NewRecorder()
 
@@ -59,9 +78,12 @@ func TestOrganizationsHandlerListValidationError(t *testing.T) {
 		getFn: func(_ string) (*organizations.Organization, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
 	}
 
-	h := NewOrganizationsHandler(organizations.NewService(repo), "test")
+	h := NewOrganizationsHandler(organizations.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations?limit=abc", nil)
 	res := httptest.NewRecorder()
 
@@ -78,9 +100,12 @@ func TestOrganizationsHandlerGetNotFound(t *testing.T) {
 		getFn: func(_ string) (*organizations.Organization, error) {
 			return nil, organizations.ErrNotFound
 		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
 	}
 
-	h := NewOrganizationsHandler(organizations.NewService(repo), "test")
+	h := NewOrganizationsHandler(organizations.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -98,9 +123,12 @@ func TestOrganizationsHandlerGetInvalidID(t *testing.T) {
 		getFn: func(_ string) (*organizations.Organization, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
 	}
 
-	h := NewOrganizationsHandler(organizations.NewService(repo), "test")
+	h := NewOrganizationsHandler(organizations.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations/bad", nil)
 	req.SetPathValue("id", "bad")
 	res := httptest.NewRecorder()
@@ -118,9 +146,12 @@ func TestOrganizationsHandlerListServiceError(t *testing.T) {
 		getFn: func(_ string) (*organizations.Organization, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
 	}
 
-	h := NewOrganizationsHandler(organizations.NewService(repo), "test")
+	h := NewOrganizationsHandler(organizations.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations", nil)
 	res := httptest.NewRecorder()
 

@@ -15,6 +15,7 @@ type Querier interface {
 	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error
 	// SQLc queries for federation sync.
 	CreateFederationNode(ctx context.Context, arg CreateFederationNodeParams) (FederationNode, error)
+	CreateOrganizationTombstone(ctx context.Context, arg CreateOrganizationTombstoneParams) error
 	CreatePlaceTombstone(ctx context.Context, arg CreatePlaceTombstoneParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeactivateAPIKey(ctx context.Context, id pgtype.UUID) error
@@ -27,6 +28,7 @@ type Querier interface {
 	GetFederationNodeByID(ctx context.Context, id pgtype.UUID) (FederationNode, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
+	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
 	// SQLc queries for authentication.
@@ -45,6 +47,7 @@ type Querier interface {
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
+	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (UpdateEventRow, error)
