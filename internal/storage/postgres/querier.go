@@ -26,12 +26,16 @@ type Querier interface {
 	// Gets the canonical (winning) field value based on conflict resolution rules
 	// Priority: trust_level DESC, confidence DESC, observed_at DESC
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
+	// Federation Sync Queries
+	GetEventByFederationURI(ctx context.Context, federationUri pgtype.Text) (Event, error)
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
+	GetEventChangeByID(ctx context.Context, id pgtype.UUID) (GetEventChangeByIDRow, error)
 	// SQLc queries for provenance tracking.
 	// Retrieves all sources for a given event with source metadata and timestamps (FR-029)
 	GetEventSources(ctx context.Context, eventID pgtype.UUID) ([]GetEventSourcesRow, error)
 	GetEventTombstoneByEventID(ctx context.Context, eventID pgtype.UUID) (EventTombstone, error)
 	GetEventTombstoneByEventULID(ctx context.Context, ulid string) (EventTombstone, error)
+	GetEventTombstoneByURI(ctx context.Context, eventUri string) (EventTombstone, error)
 	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
 	GetFederationNodeByID(ctx context.Context, id pgtype.UUID) (FederationNode, error)
 	// Retrieves field-level provenance for an event, optionally filtered by field paths
@@ -40,6 +44,7 @@ type Querier interface {
 	// Retrieves field-level provenance for specific field paths on an event
 	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
+	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
@@ -58,6 +63,9 @@ type Querier interface {
 	InsertFieldProvenance(ctx context.Context, arg InsertFieldProvenanceParams) (FieldProvenance, error)
 	InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) (InsertIdempotencyKeyRow, error)
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
+	// SQLc queries for change feeds.
+	ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error)
+	ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error)
 	// SQLc queries for events domain.
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]ListEventsRow, error)
 	ListFederationNodes(ctx context.Context, arg ListFederationNodesParams) ([]FederationNode, error)
@@ -80,6 +88,7 @@ type Querier interface {
 	UpdateLastLogin(ctx context.Context, id pgtype.UUID) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
+	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
 }
 
 var _ Querier = (*Queries)(nil)

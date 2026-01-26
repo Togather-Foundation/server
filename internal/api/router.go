@@ -66,9 +66,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
 
-	// Create Federation handler
+	// Create Federation handlers (T111)
+	changeFeedRepo := postgres.NewChangeFeedRepository(queries)
+	changeFeedService := federation.NewChangeFeedService(changeFeedRepo)
+	feedsHandler := handlers.NewFeedsHandler(changeFeedService, cfg.Environment, cfg.Server.BaseURL)
+
+	syncRepo := postgres.NewSyncRepository(queries)
+	syncService := federation.NewSyncService(syncRepo)
 	federationService := federation.NewService(repo.Federation(), requireHTTPS)
-	federationHandler := handlers.NewFederationHandler(federationService, cfg.Environment)
+	federationHandler := handlers.NewFederationHandler(federationService, syncService, cfg.Environment)
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", handlers.Healthz())
@@ -189,6 +195,16 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 		http.MethodGet:    adminGetNode,
 		http.MethodPut:    adminUpdateNode,
 		http.MethodDelete: adminDeleteNode,
+	}))
+
+	// Federation change feed endpoint (T111 - public, rate limited)
+	changeFeedList := rateLimitPublic(http.HandlerFunc(feedsHandler.ListChanges))
+	mux.Handle("/api/v1/feeds/changes", changeFeedList)
+
+	// Federation sync endpoint (T111 - requires API key auth, agent rate limit)
+	federationSync := apiKeyAuth(rateLimitAgent(http.HandlerFunc(federationHandler.Sync)))
+	mux.Handle("/api/v1/federation/sync", methodMux(map[string]http.Handler{
+		http.MethodPost: federationSync,
 	}))
 
 	// Admin HTML pages (T080) - placeholder routes for future implementation

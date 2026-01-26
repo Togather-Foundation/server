@@ -78,3 +78,71 @@ SET
   last_health_check_at = now(),
   updated_at = now()
 WHERE id = $1;
+
+-- Federation Sync Queries
+
+-- name: GetEventByFederationURI :one
+SELECT *
+FROM events
+WHERE federation_uri = $1
+LIMIT 1;
+
+-- name: UpsertFederatedEvent :one
+INSERT INTO events (
+  ulid,
+  name,
+  description,
+  lifecycle_state,
+  event_status,
+  attendance_mode,
+  organizer_id,
+  primary_venue_id,
+  series_id,
+  image_url,
+  public_url,
+  virtual_url,
+  keywords,
+  in_language,
+  default_language,
+  is_accessible_for_free,
+  accessibility_features,
+  event_domain,
+  origin_node_id,
+  federation_uri,
+  license_url,
+  license_status,
+  confidence,
+  quality_score,
+  version,
+  created_at,
+  updated_at,
+  published_at
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+  $21, $22, $23, $24, $25, $26, $27, $28
+)
+ON CONFLICT (federation_uri)
+WHERE federation_uri IS NOT NULL
+DO UPDATE SET
+  name = EXCLUDED.name,
+  description = EXCLUDED.description,
+  lifecycle_state = EXCLUDED.lifecycle_state,
+  event_status = EXCLUDED.event_status,
+  attendance_mode = EXCLUDED.attendance_mode,
+  organizer_id = EXCLUDED.organizer_id,
+  primary_venue_id = EXCLUDED.primary_venue_id,
+  image_url = EXCLUDED.image_url,
+  public_url = EXCLUDED.public_url,
+  virtual_url = EXCLUDED.virtual_url,
+  keywords = EXCLUDED.keywords,
+  in_language = EXCLUDED.in_language,
+  default_language = EXCLUDED.default_language,
+  is_accessible_for_free = EXCLUDED.is_accessible_for_free,
+  accessibility_features = EXCLUDED.accessibility_features,
+  event_domain = EXCLUDED.event_domain,
+  confidence = EXCLUDED.confidence,
+  quality_score = EXCLUDED.quality_score,
+  version = events.version + 1,
+  updated_at = now()
+RETURNING *;

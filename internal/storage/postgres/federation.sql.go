@@ -105,6 +105,59 @@ func (q *Queries) DeleteFederationNode(ctx context.Context, id pgtype.UUID) erro
 	return err
 }
 
+const getEventByFederationURI = `-- name: GetEventByFederationURI :one
+
+SELECT id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason
+FROM events
+WHERE federation_uri = $1
+LIMIT 1
+`
+
+// Federation Sync Queries
+func (q *Queries) GetEventByFederationURI(ctx context.Context, federationUri pgtype.Text) (Event, error) {
+	row := q.db.QueryRow(ctx, getEventByFederationURI, federationUri)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.Ulid,
+		&i.Name,
+		&i.Description,
+		&i.LifecycleState,
+		&i.EventStatus,
+		&i.AttendanceMode,
+		&i.OrganizerID,
+		&i.PrimaryVenueID,
+		&i.SeriesID,
+		&i.ImageUrl,
+		&i.PublicUrl,
+		&i.VirtualUrl,
+		&i.Keywords,
+		&i.InLanguage,
+		&i.DefaultLanguage,
+		&i.IsAccessibleForFree,
+		&i.AccessibilityFeatures,
+		&i.EventDomain,
+		&i.OriginNodeID,
+		&i.FederationUri,
+		&i.DedupHash,
+		&i.LicenseUrl,
+		&i.LicenseStatus,
+		&i.TakedownRequested,
+		&i.TakedownRequestedAt,
+		&i.TakedownRequestNotes,
+		&i.Confidence,
+		&i.QualityScore,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PublishedAt,
+		&i.DeletedAt,
+		&i.MergedIntoID,
+		&i.DeletionReason,
+	)
+	return i, err
+}
+
 const getFederationNodeByDomain = `-- name: GetFederationNodeByDomain :one
 SELECT id, node_domain, node_name, base_url, api_version, geographic_scope, service_area_geojson, trust_level, federation_status, sync_enabled, sync_direction, last_sync_at, last_successful_sync_at, sync_cursor, requires_authentication, api_key_encrypted, contact_email, contact_name, config, is_online, last_health_check_at, last_error_at, last_error_message, notes, created_at, updated_at
 FROM federation_nodes
@@ -383,4 +436,169 @@ func (q *Queries) UpdateFederationNodeSyncStatus(ctx context.Context, arg Update
 		arg.LastErrorMessage,
 	)
 	return err
+}
+
+const upsertFederatedEvent = `-- name: UpsertFederatedEvent :one
+INSERT INTO events (
+  ulid,
+  name,
+  description,
+  lifecycle_state,
+  event_status,
+  attendance_mode,
+  organizer_id,
+  primary_venue_id,
+  series_id,
+  image_url,
+  public_url,
+  virtual_url,
+  keywords,
+  in_language,
+  default_language,
+  is_accessible_for_free,
+  accessibility_features,
+  event_domain,
+  origin_node_id,
+  federation_uri,
+  license_url,
+  license_status,
+  confidence,
+  quality_score,
+  version,
+  created_at,
+  updated_at,
+  published_at
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+  $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+  $21, $22, $23, $24, $25, $26, $27, $28
+)
+ON CONFLICT (federation_uri)
+WHERE federation_uri IS NOT NULL
+DO UPDATE SET
+  name = EXCLUDED.name,
+  description = EXCLUDED.description,
+  lifecycle_state = EXCLUDED.lifecycle_state,
+  event_status = EXCLUDED.event_status,
+  attendance_mode = EXCLUDED.attendance_mode,
+  organizer_id = EXCLUDED.organizer_id,
+  primary_venue_id = EXCLUDED.primary_venue_id,
+  image_url = EXCLUDED.image_url,
+  public_url = EXCLUDED.public_url,
+  virtual_url = EXCLUDED.virtual_url,
+  keywords = EXCLUDED.keywords,
+  in_language = EXCLUDED.in_language,
+  default_language = EXCLUDED.default_language,
+  is_accessible_for_free = EXCLUDED.is_accessible_for_free,
+  accessibility_features = EXCLUDED.accessibility_features,
+  event_domain = EXCLUDED.event_domain,
+  confidence = EXCLUDED.confidence,
+  quality_score = EXCLUDED.quality_score,
+  version = events.version + 1,
+  updated_at = now()
+RETURNING id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason
+`
+
+type UpsertFederatedEventParams struct {
+	Ulid                  string             `json:"ulid"`
+	Name                  string             `json:"name"`
+	Description           pgtype.Text        `json:"description"`
+	LifecycleState        string             `json:"lifecycle_state"`
+	EventStatus           pgtype.Text        `json:"event_status"`
+	AttendanceMode        pgtype.Text        `json:"attendance_mode"`
+	OrganizerID           pgtype.UUID        `json:"organizer_id"`
+	PrimaryVenueID        pgtype.UUID        `json:"primary_venue_id"`
+	SeriesID              pgtype.UUID        `json:"series_id"`
+	ImageUrl              pgtype.Text        `json:"image_url"`
+	PublicUrl             pgtype.Text        `json:"public_url"`
+	VirtualUrl            pgtype.Text        `json:"virtual_url"`
+	Keywords              []string           `json:"keywords"`
+	InLanguage            []string           `json:"in_language"`
+	DefaultLanguage       pgtype.Text        `json:"default_language"`
+	IsAccessibleForFree   pgtype.Bool        `json:"is_accessible_for_free"`
+	AccessibilityFeatures []string           `json:"accessibility_features"`
+	EventDomain           pgtype.Text        `json:"event_domain"`
+	OriginNodeID          pgtype.UUID        `json:"origin_node_id"`
+	FederationUri         pgtype.Text        `json:"federation_uri"`
+	LicenseUrl            string             `json:"license_url"`
+	LicenseStatus         string             `json:"license_status"`
+	Confidence            pgtype.Numeric     `json:"confidence"`
+	QualityScore          pgtype.Int4        `json:"quality_score"`
+	Version               int32              `json:"version"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+}
+
+func (q *Queries) UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error) {
+	row := q.db.QueryRow(ctx, upsertFederatedEvent,
+		arg.Ulid,
+		arg.Name,
+		arg.Description,
+		arg.LifecycleState,
+		arg.EventStatus,
+		arg.AttendanceMode,
+		arg.OrganizerID,
+		arg.PrimaryVenueID,
+		arg.SeriesID,
+		arg.ImageUrl,
+		arg.PublicUrl,
+		arg.VirtualUrl,
+		arg.Keywords,
+		arg.InLanguage,
+		arg.DefaultLanguage,
+		arg.IsAccessibleForFree,
+		arg.AccessibilityFeatures,
+		arg.EventDomain,
+		arg.OriginNodeID,
+		arg.FederationUri,
+		arg.LicenseUrl,
+		arg.LicenseStatus,
+		arg.Confidence,
+		arg.QualityScore,
+		arg.Version,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.PublishedAt,
+	)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.Ulid,
+		&i.Name,
+		&i.Description,
+		&i.LifecycleState,
+		&i.EventStatus,
+		&i.AttendanceMode,
+		&i.OrganizerID,
+		&i.PrimaryVenueID,
+		&i.SeriesID,
+		&i.ImageUrl,
+		&i.PublicUrl,
+		&i.VirtualUrl,
+		&i.Keywords,
+		&i.InLanguage,
+		&i.DefaultLanguage,
+		&i.IsAccessibleForFree,
+		&i.AccessibilityFeatures,
+		&i.EventDomain,
+		&i.OriginNodeID,
+		&i.FederationUri,
+		&i.DedupHash,
+		&i.LicenseUrl,
+		&i.LicenseStatus,
+		&i.TakedownRequested,
+		&i.TakedownRequestedAt,
+		&i.TakedownRequestNotes,
+		&i.Confidence,
+		&i.QualityScore,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PublishedAt,
+		&i.DeletedAt,
+		&i.MergedIntoID,
+		&i.DeletionReason,
+	)
+	return i, err
 }

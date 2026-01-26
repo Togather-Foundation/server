@@ -236,22 +236,22 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 6 (TDD - write first)
 
-- [ ] T099 [P] [US6] Integration tests for change feed pagination in tests/integration/feeds_changes_test.go
-- [ ] T100 [P] [US6] Integration tests for delete tombstones in tests/integration/feeds_tombstone_test.go
-- [ ] T101 [P] [US6] Unit tests for cursor encoding in internal/domain/federation/cursor_test.go
-- [ ] T102 [P] [US6] Integration tests for federation sync auth + validation in tests/integration/federation_sync_auth_test.go
-- [ ] T103 [P] [US6] Integration tests for federation sync idempotency in tests/integration/federation_sync_idempotency_test.go
-- [ ] T104 [P] [US6] Integration tests for federation sync URI preservation in tests/integration/federation_sync_uri_preservation_test.go
+- [X] T099 [P] [US6] Integration tests for change feed pagination in tests/integration/feeds_changes_test.go
+- [X] T100 [P] [US6] Integration tests for delete tombstones in tests/integration/feeds_tombstone_test.go
+- [X] T101 [P] [US6] Unit tests for cursor encoding in internal/domain/federation/cursor_test.go
+- [X] T102 [P] [US6] Integration tests for federation sync auth + validation in tests/integration/federation_sync_auth_test.go
+- [X] T103 [P] [US6] Integration tests for federation sync idempotency in tests/integration/federation_sync_idempotency_test.go
+- [X] T104 [P] [US6] Integration tests for federation sync URI preservation in tests/integration/federation_sync_uri_preservation_test.go
 
 ### Implementation for User Story 6
 
-- [ ] T105 [US6] Implement change capture SQL in internal/storage/postgres/queries/feeds.sql (include source + received timestamps)
-- [ ] T106 [US6] Implement change feed service in internal/domain/federation/changefeed.go
-- [ ] T107 [US6] Implement change feed handler in internal/api/handlers/feeds.go
-- [ ] T108 [US6] Implement federation sync SQL in internal/storage/postgres/queries/federation.sql
-- [ ] T109 [US6] Implement federation sync service in internal/domain/federation/sync.go
-- [ ] T110 [US6] Implement federation sync handler in internal/api/handlers/federation.go
-- [ ] T111 [US6] Wire feed + federation sync routes in internal/api/router.go
+- [X] T105 [US6] Implement change capture SQL in internal/storage/postgres/queries/feeds.sql (include source + received timestamps)
+- [X] T106 [US6] Implement change feed service in internal/domain/federation/changefeed.go
+- [X] T107 [US6] Implement change feed handler in internal/api/handlers/feeds.go
+- [X] T108 [US6] Implement federation sync SQL in internal/storage/postgres/queries/federation.sql
+- [X] T109 [US6] Implement federation sync service in internal/domain/federation/sync.go
+- [X] T110 [US6] Implement federation sync handler in internal/api/handlers/federation.go
+- [X] T111 [US6] Wire feed + federation sync routes in internal/api/router.go
 
 **Checkpoint**: User Story 6 functional and independently testable
 

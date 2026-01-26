@@ -11,14 +11,16 @@ import (
 )
 
 type FederationHandler struct {
-	Service *federation.Service
-	Env     string
+	Service     *federation.Service
+	SyncService *federation.SyncService
+	Env         string
 }
 
-func NewFederationHandler(service *federation.Service, env string) *FederationHandler {
+func NewFederationHandler(service *federation.Service, syncService *federation.SyncService, env string) *FederationHandler {
 	return &FederationHandler{
-		Service: service,
-		Env:     env,
+		Service:     service,
+		SyncService: syncService,
+		Env:         env,
 	}
 }
 
@@ -147,4 +149,66 @@ func (h *FederationHandler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Sync handles POST /api/v1/federation/sync
+func (h *FederationHandler) Sync(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.SyncService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Parse JSON-LD payload
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid JSON-LD payload", err, h.Env)
+		return
+	}
+
+	// Call sync service
+	result, err := h.SyncService.SyncEvent(r.Context(), federation.SyncEventParams{
+		Payload: payload,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, federation.ErrInvalidJSONLD):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid JSON-LD", err, h.Env)
+			return
+		case errors.Is(err, federation.ErrMissingID):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing @id field", err, h.Env)
+			return
+		case errors.Is(err, federation.ErrMissingType):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing @type field", err, h.Env)
+			return
+		case errors.Is(err, federation.ErrUnsupportedType):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Unsupported @type", err, h.Env)
+			return
+		case errors.Is(err, federation.ErrMissingRequiredField):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing required field", err, h.Env)
+			return
+		case errors.Is(err, federation.ErrInvalidDateFormat):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid date format", err, h.Env)
+			return
+		default:
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+			return
+		}
+	}
+
+	// Return appropriate status code
+	statusCode := http.StatusOK
+	if result.IsNew {
+		statusCode = http.StatusCreated
+	}
+
+	// Return JSON-LD response with local ULID and federation URI
+	response := map[string]any{
+		"@context":      payload["@context"],
+		"@type":         "Event",
+		"@id":           result.FederationURI,
+		"localId":       result.EventULID,
+		"federationUri": result.FederationURI,
+	}
+
+	writeJSON(w, statusCode, response, contentTypeFromRequest(r))
 }
