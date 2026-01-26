@@ -57,14 +57,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, nil)
 
 	// Create AdminService
-	adminService := events.NewAdminService(repo.Events())
+	requireHTTPS := cfg.Environment == "production"
+	adminService := events.NewAdminService(repo.Events(), requireHTTPS)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
 
 	// Create Federation handler
-	federationService := federation.NewService(repo.Federation())
+	federationService := federation.NewService(repo.Federation(), requireHTTPS)
 	federationHandler := handlers.NewFederationHandler(federationService, cfg.Environment)
 
 	mux := http.NewServeMux()

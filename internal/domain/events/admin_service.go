@@ -7,15 +7,21 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/validation"
 )
 
 // AdminService provides admin operations for event management
 type AdminService struct {
-	repo Repository
+	repo         Repository
+	requireHTTPS bool
 }
 
-func NewAdminService(repo Repository) *AdminService {
-	return &AdminService{repo: repo}
+func NewAdminService(repo Repository, requireHTTPS bool) *AdminService {
+	return &AdminService{
+		repo:         repo,
+		requireHTTPS: requireHTTPS,
+	}
 }
 
 // UpdateEventParams contains fields that can be updated by admins
@@ -48,7 +54,7 @@ func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params Upda
 	}
 
 	// Validate parameters
-	if err := validateUpdateParams(params); err != nil {
+	if err := s.validateUpdateParams(params); err != nil {
 		return nil, err
 	}
 
@@ -228,7 +234,7 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 }
 
 // validateUpdateParams validates update parameters
-func validateUpdateParams(params UpdateEventParams) error {
+func (s *AdminService) validateUpdateParams(params UpdateEventParams) error {
 	if params.Name != nil {
 		name := strings.TrimSpace(*params.Name)
 		if name == "" {
@@ -268,6 +274,20 @@ func validateUpdateParams(params UpdateEventParams) error {
 		}
 		if !validDomains[domain] {
 			return FilterError{Field: "event_domain", Message: "invalid domain"}
+		}
+	}
+
+	// Validate image_url
+	if params.ImageURL != nil && *params.ImageURL != "" {
+		if err := validation.ValidateURL(*params.ImageURL, "image_url", s.requireHTTPS); err != nil {
+			return err
+		}
+	}
+
+	// Validate public_url
+	if params.PublicURL != nil && *params.PublicURL != "" {
+		if err := validation.ValidateURL(*params.PublicURL, "public_url", s.requireHTTPS); err != nil {
+			return err
 		}
 	}
 

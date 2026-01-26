@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Togather-Foundation/server/internal/validation"
 	"github.com/google/uuid"
 )
 
@@ -16,17 +17,21 @@ var (
 
 // Service provides business logic for federation node management
 type Service struct {
-	repo Repository
+	repo         Repository
+	requireHTTPS bool
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, requireHTTPS bool) *Service {
+	return &Service{
+		repo:         repo,
+		requireHTTPS: requireHTTPS,
+	}
 }
 
 // CreateNode creates a new federation node with validation
 func (s *Service) CreateNode(ctx context.Context, params CreateNodeParams) (*Node, error) {
 	// Validate required fields
-	if err := validateCreateParams(params); err != nil {
+	if err := s.validateCreateParams(params); err != nil {
 		return nil, err
 	}
 
@@ -68,7 +73,7 @@ func (s *Service) ListNodes(ctx context.Context, filters ListNodesFilters) ([]*N
 // UpdateNode updates a federation node
 func (s *Service) UpdateNode(ctx context.Context, id uuid.UUID, params UpdateNodeParams) (*Node, error) {
 	// Validate update parameters
-	if err := validateUpdateParams(params); err != nil {
+	if err := s.validateUpdateParams(params); err != nil {
 		return nil, err
 	}
 
@@ -93,7 +98,7 @@ func (s *Service) DeleteNode(ctx context.Context, id uuid.UUID) error {
 }
 
 // validateCreateParams validates node creation parameters
-func validateCreateParams(params CreateNodeParams) error {
+func (s *Service) validateCreateParams(params CreateNodeParams) error {
 	if params.NodeDomain == "" {
 		return ErrInvalidNodeParams
 	}
@@ -103,6 +108,12 @@ func validateCreateParams(params CreateNodeParams) error {
 	if params.BaseURL == "" {
 		return ErrInvalidNodeParams
 	}
+
+	// Validate BaseURL format
+	if err := validation.ValidateBaseURL(params.BaseURL, "base_url", s.requireHTTPS); err != nil {
+		return err
+	}
+
 	if params.TrustLevel < 1 || params.TrustLevel > 10 {
 		return ErrInvalidNodeParams
 	}
@@ -133,9 +144,16 @@ func validateCreateParams(params CreateNodeParams) error {
 }
 
 // validateUpdateParams validates node update parameters
-func validateUpdateParams(params UpdateNodeParams) error {
+func (s *Service) validateUpdateParams(params UpdateNodeParams) error {
 	if params.TrustLevel != nil && (*params.TrustLevel < 1 || *params.TrustLevel > 10) {
 		return ErrInvalidNodeParams
+	}
+
+	// Validate BaseURL if being updated
+	if params.BaseURL != nil && *params.BaseURL != "" {
+		if err := validation.ValidateBaseURL(*params.BaseURL, "base_url", s.requireHTTPS); err != nil {
+			return err
+		}
 	}
 
 	if params.FederationStatus != nil {
