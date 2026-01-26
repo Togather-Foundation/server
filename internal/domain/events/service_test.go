@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"testing"
@@ -174,4 +175,82 @@ func assertFilterError(t *testing.T, err error, field string, message string) {
 	}
 
 	require.Failf(t, "unexpected error type", "err=%T %v", err, err)
+}
+
+// Tests for Service methods
+
+func TestNewService(t *testing.T) {
+	repo := NewMockRepository()
+	svc := NewService(repo)
+
+	require.NotNil(t, svc)
+	require.Equal(t, repo, svc.repo)
+}
+
+func TestService_List(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewService(repo)
+
+	filters := Filters{City: "Vancouver"}
+	pagination := Pagination{Limit: 10}
+
+	result, err := svc.List(ctx, filters, pagination)
+	require.NoError(t, err)
+	require.Empty(t, result.Events)
+	require.Empty(t, result.NextCursor)
+}
+
+func TestService_GetByULID(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewService(repo)
+
+	// Test non-existent event returns ErrNotFound
+	_, err := svc.GetByULID(ctx, "01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	require.ErrorIs(t, err, ErrNotFound)
+
+	// Add an event and retrieve it
+	testEvent := &Event{
+		ULID: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Name: "Test Event",
+	}
+	repo.AddExistingEvent("test-source", "test-event-1", testEvent)
+
+	event, err := svc.GetByULID(ctx, testEvent.ULID)
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.Equal(t, testEvent.ULID, event.ULID)
+	require.Equal(t, testEvent.Name, event.Name)
+}
+
+func TestFilterError_Error(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      FilterError
+		expected string
+	}{
+		{
+			name:     "with field",
+			err:      FilterError{Field: "startDate", Message: "must be ISO8601 date"},
+			expected: "invalid startDate: must be ISO8601 date",
+		},
+		{
+			name:     "without field",
+			err:      FilterError{Message: "something went wrong"},
+			expected: "something went wrong",
+		},
+		{
+			name:     "empty field",
+			err:      FilterError{Field: "", Message: "error message"},
+			expected: "error message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.err.Error()
+			require.Equal(t, tt.expected, result)
+		})
+	}
 }
