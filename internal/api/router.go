@@ -50,7 +50,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	queries := postgres.New(pool)
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, cfg.Environment, nil)
-	adminHandler := handlers.NewAdminHandler(eventsService, cfg.Environment, cfg.Server.BaseURL)
+
+	// Create AdminService
+	adminService := events.NewAdminService(repo.Events())
+	adminHandler := handlers.NewAdminHandler(eventsService, adminService, cfg.Environment, cfg.Server.BaseURL)
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", handlers.Healthz())
@@ -106,6 +109,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 
 	adminUnpublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UnpublishEvent)))
 	mux.Handle("/api/v1/admin/events/{id}/unpublish", adminUnpublishEvent)
+
+	adminMergeEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.MergeEvents)))
+	mux.Handle("/api/v1/admin/events/merge", adminMergeEvents)
 
 	// Wrap entire router with middleware stack
 	// Order: CorrelationID -> RequestLogging -> RateLimit

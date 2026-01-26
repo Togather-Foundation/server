@@ -13,13 +13,19 @@ import (
 )
 
 type AdminHandler struct {
-	Service *events.Service
-	Env     string
-	BaseURL string
+	Service      *events.Service
+	AdminService *events.AdminService
+	Env          string
+	BaseURL      string
 }
 
-func NewAdminHandler(service *events.Service, env string, baseURL string) *AdminHandler {
-	return &AdminHandler{Service: service, Env: env, BaseURL: baseURL}
+func NewAdminHandler(service *events.Service, adminService *events.AdminService, env string, baseURL string) *AdminHandler {
+	return &AdminHandler{
+		Service:      service,
+		AdminService: adminService,
+		Env:          env,
+		BaseURL:      baseURL,
+	}
 }
 
 // ListPendingEvents handles GET /api/v1/admin/events/pending
@@ -76,7 +82,7 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 // UpdateEvent handles PUT /api/v1/admin/events/{id}
 // Allows admin to update event fields
 func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.Service == nil {
+	if h == nil || h.AdminService == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
 		return
 	}
@@ -99,33 +105,42 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate update fields
-	if err := validateUpdateFields(updates); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
-		return
-	}
+	// Convert map to UpdateEventParams
+	params := mapToUpdateParams(updates)
 
-	// Check if event exists
-	existing, err := h.Service.GetByULID(r.Context(), ulidValue)
+	// Call admin service to update event
+	updated, err := h.AdminService.UpdateEvent(r.Context(), ulidValue, params)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrInvalidUpdateParams) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid update parameters", err, h.Env)
+			return
+		}
+		// Check for FilterError
+		var filterErr events.FilterError
+		if errors.As(err, &filterErr) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
 
-	// TODO: T077 will implement the actual update logic via AdminService
-	// For now, we return success to pass the handler tests
-	// The actual persistence will be handled by the admin service layer
-
 	contextValue := loadDefaultContext()
 	payload := map[string]any{
 		"@context": contextValue,
 		"@type":    "Event",
-		"@id":      buildEventURI(h.BaseURL, existing.ULID),
-		"name":     existing.Name,
+		"@id":      buildEventURI(h.BaseURL, updated.ULID),
+		"name":     updated.Name,
+	}
+	if updated.Description != "" {
+		payload["description"] = updated.Description
+	}
+	if updated.LifecycleState != "" {
+		payload["lifecycle_state"] = updated.LifecycleState
 	}
 
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
@@ -134,7 +149,7 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 // PublishEvent handles POST /api/v1/admin/events/{id}/publish
 // Changes lifecycle_state from draft to published
 func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.Service == nil {
+	if h == nil || h.AdminService == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
 		return
 	}
@@ -150,8 +165,8 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if event exists
-	existing, err := h.Service.GetByULID(r.Context(), ulidValue)
+	// Call admin service to publish event
+	published, err := h.AdminService.PublishEvent(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
@@ -161,16 +176,13 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: T077 will implement the actual publish logic via AdminService
-	// For now, we return success to pass the handler tests
-
 	contextValue := loadDefaultContext()
 	payload := map[string]any{
 		"@context":        contextValue,
 		"@type":           "Event",
-		"@id":             buildEventURI(h.BaseURL, existing.ULID),
-		"name":            existing.Name,
-		"lifecycle_state": "published",
+		"@id":             buildEventURI(h.BaseURL, published.ULID),
+		"name":            published.Name,
+		"lifecycle_state": published.LifecycleState,
 	}
 
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
@@ -179,7 +191,7 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 // UnpublishEvent handles POST /api/v1/admin/events/{id}/unpublish
 // Changes lifecycle_state from published back to draft
 func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.Service == nil {
+	if h == nil || h.AdminService == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
 		return
 	}
@@ -195,8 +207,8 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if event exists
-	existing, err := h.Service.GetByULID(r.Context(), ulidValue)
+	// Call admin service to unpublish event
+	unpublished, err := h.AdminService.UnpublishEvent(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
@@ -206,19 +218,67 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: T077 will implement the actual unpublish logic via AdminService
-	// For now, we return success to pass the handler tests
-
 	contextValue := loadDefaultContext()
 	payload := map[string]any{
 		"@context":        contextValue,
 		"@type":           "Event",
-		"@id":             buildEventURI(h.BaseURL, existing.ULID),
-		"name":            existing.Name,
-		"lifecycle_state": "draft",
+		"@id":             buildEventURI(h.BaseURL, unpublished.ULID),
+		"name":            unpublished.Name,
+		"lifecycle_state": unpublished.LifecycleState,
 	}
 
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+}
+
+// MergeEvents handles POST /api/v1/admin/events/merge
+// Merges a duplicate event into a primary event
+func (h *AdminHandler) MergeEvents(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Parse merge request
+	var req struct {
+		PrimaryID   string `json:"primary_id"`
+		DuplicateID string `json:"duplicate_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	// Validate ULIDs
+	if req.PrimaryID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing primary_id", nil, h.Env)
+		return
+	}
+	if req.DuplicateID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing duplicate_id", nil, h.Env)
+		return
+	}
+
+	params := events.MergeEventsParams{
+		PrimaryULID:   req.PrimaryID,
+		DuplicateULID: req.DuplicateID,
+	}
+
+	// Call admin service to merge events
+	err := h.AdminService.MergeEvents(r.Context(), params)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrCannotMergeSameEvent) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event with itself", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "merged"}, contentTypeFromRequest(r))
 }
 
 // validateUpdateFields validates the fields that can be updated
@@ -266,6 +326,43 @@ func validateUpdateFields(updates map[string]any) error {
 	}
 
 	return nil
+}
+
+// mapToUpdateParams converts a map[string]any to UpdateEventParams
+func mapToUpdateParams(updates map[string]any) events.UpdateEventParams {
+	params := events.UpdateEventParams{}
+
+	if name, ok := updates["name"].(string); ok {
+		params.Name = &name
+	}
+	if description, ok := updates["description"].(string); ok {
+		params.Description = &description
+	}
+	if lifecycleState, ok := updates["lifecycle_state"].(string); ok {
+		params.LifecycleState = &lifecycleState
+	}
+	if imageURL, ok := updates["image_url"].(string); ok {
+		params.ImageURL = &imageURL
+	}
+	if publicURL, ok := updates["public_url"].(string); ok {
+		params.PublicURL = &publicURL
+	}
+	if eventDomain, ok := updates["event_domain"].(string); ok {
+		params.EventDomain = &eventDomain
+	}
+	if keywords, ok := updates["keywords"].([]any); ok {
+		strKeywords := make([]string, 0, len(keywords))
+		for _, k := range keywords {
+			if s, ok := k.(string); ok {
+				strKeywords = append(strKeywords, s)
+			}
+		}
+		if len(strKeywords) > 0 {
+			params.Keywords = strKeywords
+		}
+	}
+
+	return params
 }
 
 // buildEventURI constructs the canonical URI for an event
