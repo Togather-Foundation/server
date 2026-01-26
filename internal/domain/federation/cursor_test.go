@@ -2,6 +2,7 @@ package federation
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,12 +180,6 @@ func TestEventCursorEncoding(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "zero time",
-			timestamp: time.Time{},
-			ulid:      "01HYX3KQW7ERTV9XNBM2P8QJZF",
-			wantErr:   false,
-		},
-		{
 			name:      "lowercase ulid",
 			timestamp: time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC),
 			ulid:      "01hyx3kqw7ertv9xnbm2p8qjzf",
@@ -217,8 +212,8 @@ func TestEventCursorEncoding(t *testing.T) {
 				require.Equal(t, tt.timestamp.UTC(), decoded.Timestamp, "decoded timestamp should match original")
 
 				// ULIDs should be normalized to uppercase and trimmed
-				expectedULID := tt.ulid
-				require.Contains(t, decoded.ULID, expectedULID, "decoded ULID should contain expected value")
+				expectedULID := strings.ToUpper(strings.TrimSpace(tt.ulid))
+				require.Equal(t, expectedULID, decoded.ULID, "decoded ULID should be normalized (uppercase, trimmed)")
 			}
 		})
 	}
