@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/google/uuid"
@@ -165,9 +166,13 @@ func (h *FederationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get idempotency key from middleware (if present)
+	idempotencyKey := middleware.IdempotencyKey(r)
+
 	// Call sync service
 	result, err := h.SyncService.SyncEvent(r.Context(), federation.SyncEventParams{
-		Payload: payload,
+		Payload:        payload,
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		switch {
@@ -196,6 +201,7 @@ func (h *FederationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return appropriate status code
+	// 200 for duplicate/unchanged, 201 for new, 200 for update
 	statusCode := http.StatusOK
 	if result.IsNew {
 		statusCode = http.StatusCreated

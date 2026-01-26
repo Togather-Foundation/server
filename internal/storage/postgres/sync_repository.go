@@ -181,3 +181,51 @@ func textFromStringPtr(s *string) pgtype.Text {
 	}
 	return pgtype.Text{String: *s, Valid: true}
 }
+
+// GetIdempotencyKey retrieves an idempotency key entry.
+func (r *SyncRepository) GetIdempotencyKey(ctx context.Context, key string) (*federation.IdempotencyKey, error) {
+	const query = `
+		SELECT key, request_hash, event_ulid, created_at
+		FROM idempotency_keys
+		WHERE key = $1
+	`
+
+	var entry federation.IdempotencyKey
+	var eventULID pgtype.Text
+
+	err := r.queryer().QueryRow(ctx, query, key).Scan(
+		&entry.Key,
+		&entry.RequestHash,
+		&eventULID,
+		&entry.CreatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil // Not found
+		}
+		return nil, fmt.Errorf("get idempotency key: %w", err)
+	}
+
+	if eventULID.Valid {
+		entry.EventULID = &eventULID.String
+	}
+
+	return &entry, nil
+}
+
+// InsertIdempotencyKey inserts a new idempotency key entry.
+func (r *SyncRepository) InsertIdempotencyKey(ctx context.Context, params federation.IdempotencyKeyParams) error {
+	const query = `
+		INSERT INTO idempotency_keys (key, request_hash, event_ulid)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (key) DO NOTHING
+	`
+
+	_, err := r.queryer().Exec(ctx, query, params.Key, params.RequestHash, params.EventULID)
+	if err != nil {
+		return fmt.Errorf("insert idempotency key: %w", err)
+	}
+
+	return nil
+}

@@ -244,6 +244,14 @@ func (m *mockSyncRepoWithErrors) WithTransaction(ctx context.Context, fn func(tx
 	return fn(m)
 }
 
+func (m *mockSyncRepoWithErrors) GetIdempotencyKey(ctx context.Context, key string) (*IdempotencyKey, error) {
+	return nil, nil
+}
+
+func (m *mockSyncRepoWithErrors) InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyParams) error {
+	return nil
+}
+
 // Mock repository with artificial delay for timeout testing
 type slowMockSyncRepo struct {
 	delay time.Duration
@@ -278,4 +286,12 @@ func (m *slowMockSyncRepo) CreateOccurrence(ctx context.Context, params Occurren
 
 func (m *slowMockSyncRepo) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {
 	return fn(m)
+}
+
+func (m *slowMockSyncRepo) GetIdempotencyKey(ctx context.Context, key string) (*IdempotencyKey, error) {
+	return nil, nil
+}
+
+func (m *slowMockSyncRepo) InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyParams) error {
+	return nil
 }

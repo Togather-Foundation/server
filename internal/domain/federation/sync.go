@@ -2,6 +2,9 @@ package federation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -27,6 +30,23 @@ type SyncRepository interface {
 	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
 	CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error
 	WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error
+	GetIdempotencyKey(ctx context.Context, key string) (*IdempotencyKey, error)
+	InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyParams) error
+}
+
+// IdempotencyKey represents a stored idempotency key entry.
+type IdempotencyKey struct {
+	Key         string
+	RequestHash string
+	EventULID   *string
+	CreatedAt   time.Time
+}
+
+// IdempotencyKeyParams holds parameters for creating an idempotency key.
+type IdempotencyKeyParams struct {
+	Key         string
+	RequestHash string
+	EventULID   string
 }
 
 // OccurrenceCreateParams holds parameters for creating an event occurrence.
@@ -99,7 +119,8 @@ func NewSyncService(repo SyncRepository) *SyncService {
 
 // SyncEventParams holds the input for syncing an event.
 type SyncEventParams struct {
-	Payload map[string]any // JSON-LD payload
+	Payload        map[string]any // JSON-LD payload
+	IdempotencyKey string         // Optional idempotency key from header
 }
 
 // SyncEventResult holds the result of syncing an event.
@@ -107,6 +128,7 @@ type SyncEventResult struct {
 	EventULID     string
 	FederationURI string
 	IsNew         bool
+	IsDuplicate   bool // True if request was deduplicated via idempotency key
 }
 
 // SyncEvent processes an incoming federated event and upserts it.
@@ -134,6 +156,34 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 	}
 	if eventType != "Event" {
 		return nil, fmt.Errorf("%w: expected Event, got %s", ErrUnsupportedType, eventType)
+	}
+
+	// Compute payload hash for idempotency checks
+	payloadHash, err := computePayloadHash(params.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute payload hash: %w", err)
+	}
+
+	// Check idempotency key if provided
+	if params.IdempotencyKey != "" {
+		keyEntry, err := s.repo.GetIdempotencyKey(ctx, params.IdempotencyKey)
+		if err == nil && keyEntry != nil {
+			// Idempotency key exists
+			if keyEntry.RequestHash == payloadHash && keyEntry.EventULID != nil {
+				// Same payload, return existing event
+				existing, err := s.repo.GetEventByFederationURI(ctx, federationURI)
+				if err == nil {
+					return &SyncEventResult{
+						EventULID:     existing.ULID,
+						FederationURI: federationURI,
+						IsNew:         false,
+						IsDuplicate:   true,
+					}, nil
+				}
+			}
+			// Different payload with same key - conflict
+			return nil, fmt.Errorf("idempotency key conflict: different payload for same key")
+		}
 	}
 
 	// Execute all database operations in a transaction
@@ -191,10 +241,23 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 			}
 		}
 
+		// Store idempotency key if provided
+		if params.IdempotencyKey != "" {
+			if err := txRepo.InsertIdempotencyKey(ctx, IdempotencyKeyParams{
+				Key:         params.IdempotencyKey,
+				RequestHash: payloadHash,
+				EventULID:   localULID,
+			}); err != nil {
+				// Log but don't fail - idempotency is best-effort
+				// This could fail if key already exists, which is fine
+			}
+		}
+
 		result = &SyncEventResult{
 			EventULID:     localULID,
 			FederationURI: federationURI,
 			IsNew:         isNew,
+			IsDuplicate:   false,
 		}
 		return nil
 	})
@@ -402,4 +465,17 @@ func extractOccurrenceData(payload map[string]any, federationURI string) (*Occur
 	}
 
 	return occurrence, nil
+}
+
+// computePayloadHash generates a SHA-256 hash of the JSON-LD payload for idempotency checks.
+func computePayloadHash(payload map[string]any) (string, error) {
+	// Marshal to JSON (Go's json.Marshal produces deterministic output for maps)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Compute SHA-256 hash
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:]), nil
 }
