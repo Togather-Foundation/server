@@ -9,6 +9,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/handlers"
 	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -45,6 +46,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment)
 
+	// Admin handlers
+	queries := postgres.New(pool)
+	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
+	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, cfg.Environment, nil)
+	adminHandler := handlers.NewAdminHandler(eventsService, cfg.Environment, cfg.Server.BaseURL)
+
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", handlers.Healthz())
 	mux.Handle("/readyz", handlers.Readyz())
@@ -76,6 +83,29 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	mux.Handle("/api/v1/places/{id}", publicPlaceGet)
 	mux.Handle("/api/v1/organizations", publicOrgs)
 	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
+
+	// Admin routes (T075, T076)
+	// Admin auth endpoints
+	mux.Handle("/api/v1/admin/login", http.HandlerFunc(adminAuthHandler.Login))
+	mux.Handle("/api/v1/admin/logout", http.HandlerFunc(adminAuthHandler.Logout))
+
+	// Admin event management endpoints (requires JWT auth)
+	jwtAuth := middleware.JWTAuth(jwtManager, cfg.Environment)
+	adminRateLimit := middleware.WithRateLimitTierHandler(middleware.TierAdmin)
+
+	adminPendingEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.ListPendingEvents)))
+	mux.Handle("/api/v1/admin/events/pending", adminPendingEvents)
+
+	adminUpdateEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UpdateEvent)))
+	mux.Handle("/api/v1/admin/events/{id}", methodMux(map[string]http.Handler{
+		http.MethodPut: adminUpdateEvent,
+	}))
+
+	adminPublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.PublishEvent)))
+	mux.Handle("/api/v1/admin/events/{id}/publish", adminPublishEvent)
+
+	adminUnpublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UnpublishEvent)))
+	mux.Handle("/api/v1/admin/events/{id}/unpublish", adminUnpublishEvent)
 
 	// Wrap entire router with middleware stack
 	// Order: CorrelationID -> RequestLogging -> RateLimit

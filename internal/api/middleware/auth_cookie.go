@@ -56,6 +56,55 @@ func AdminClaims(r *http.Request) *auth.Claims {
 	return nil
 }
 
+// JWTAuth validates JWT tokens from Authorization header (Bearer tokens)
+// Used for admin API routes (/api/v1/admin/*)
+func JWTAuth(manager *auth.JWTManager, env string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if manager == nil {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", problem.ErrUnauthorized, env)
+				return
+			}
+
+			// Extract Bearer token from Authorization header
+			authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+			if authHeader == "" {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Missing authorization header", problem.ErrUnauthorized, env)
+				return
+			}
+
+			// Check for Bearer prefix
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Invalid authorization format", problem.ErrUnauthorized, env)
+				return
+			}
+
+			token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+			if token == "" {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Missing token", problem.ErrUnauthorized, env)
+				return
+			}
+
+			// Validate JWT token
+			claims, err := manager.Validate(token)
+			if err != nil {
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Invalid token", err, env)
+				return
+			}
+
+			// Check role-based access (admin routes require admin role)
+			if claims.Role != "admin" {
+				problem.Write(w, r, http.StatusForbidden, "https://sel.events/problems/forbidden", "Insufficient permissions", nil, env)
+				return
+			}
+
+			// Add claims to context
+			ctx := contextWithAdminClaims(r.Context(), claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 type contextKeyAgent string
 
 const agentKey contextKeyAgent = "agentKey"

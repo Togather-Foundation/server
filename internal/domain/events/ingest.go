@@ -125,11 +125,15 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 
 	needsReview := needsReview(normalized, nil)
+	lifecycleState := "published"
+	if needsReview {
+		lifecycleState = "draft"
+	}
 	params := EventCreateParams{
 		ULID:           ulidValue,
 		Name:           normalized.Name,
 		Description:    normalized.Description,
-		LifecycleState: "published",
+		LifecycleState: lifecycleState,
 		EventDomain:    "arts",
 		OrganizerID:    nil,
 		PrimaryVenueID: nil,
