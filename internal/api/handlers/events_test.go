@@ -86,6 +86,10 @@ func (s stubEventsRepo) CreateTombstone(_ context.Context, _ events.TombstoneCre
 	return errors.New("not implemented")
 }
 
+func (s stubEventsRepo) BeginTx(_ context.Context) (events.Repository, events.TxCommitter, error) {
+	return nil, nil, errors.New("not implemented")
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

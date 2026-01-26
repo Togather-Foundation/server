@@ -351,6 +351,21 @@ func (m *MockRepository) CreateTombstone(ctx context.Context, params TombstoneCr
 	return nil
 }
 
+func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
+	// For testing, return self and a no-op committer
+	return m, &noOpTxCommitter{}, nil
+}
+
+type noOpTxCommitter struct{}
+
+func (n *noOpTxCommitter) Commit(ctx context.Context) error {
+	return nil
+}
+
+func (n *noOpTxCommitter) Rollback(ctx context.Context) error {
+	return nil
+}
+
 // Helper methods for testing
 func (m *MockRepository) AddExistingEvent(sourceID, sourceEventID string, event *Event) {
 	m.mu.Lock()

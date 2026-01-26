@@ -815,6 +815,38 @@ func (r *EventRepository) queryer() queryer {
 	return r.pool
 }
 
+// BeginTx starts a new transaction and returns a transaction-scoped repository
+func (r *EventRepository) BeginTx(ctx context.Context) (events.Repository, events.TxCommitter, error) {
+	if r.tx != nil {
+		return nil, nil, fmt.Errorf("repository already in transaction")
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	txRepo := &EventRepository{
+		pool: r.pool,
+		tx:   tx,
+	}
+
+	return txRepo, &txCommitter{tx: tx}, nil
+}
+
+// txCommitter implements events.TxCommitter
+type txCommitter struct {
+	tx pgx.Tx
+}
+
+func (tc *txCommitter) Commit(ctx context.Context) error {
+	return tc.tx.Commit(ctx)
+}
+
+func (tc *txCommitter) Rollback(ctx context.Context) error {
+	return tc.tx.Rollback(ctx)
+}
+
 func derefString(value *string) string {
 	if value == nil {
 		return ""

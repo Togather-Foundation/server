@@ -149,6 +149,15 @@ type Repository interface {
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
 	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
+
+	// Transaction support
+	BeginTx(ctx context.Context) (Repository, TxCommitter, error)
+}
+
+// TxCommitter provides transaction commit/rollback functionality
+type TxCommitter interface {
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
 }
 
 // TombstoneCreateParams contains data for creating a tombstone

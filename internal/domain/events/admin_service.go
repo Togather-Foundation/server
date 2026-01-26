@@ -134,6 +134,7 @@ func (s *AdminService) UnpublishEvent(ctx context.Context, ulid string) (*Event,
 
 // MergeEvents merges a duplicate event into a primary event
 // The duplicate event is soft-deleted with a sameAs link to the primary
+// This operation is atomic and wrapped in a database transaction
 func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams) error {
 	if params.PrimaryULID == "" || params.DuplicateULID == "" {
 		return ErrInvalidUpdateParams
@@ -143,19 +144,32 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		return ErrCannotMergeSameEvent
 	}
 
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error
+	defer func() {
+		if err != nil {
+			_ = txCommitter.Rollback(ctx)
+		}
+	}()
+
 	// Verify both events exist
-	primary, err := s.repo.GetByULID(ctx, params.PrimaryULID)
+	primary, err := txRepo.GetByULID(ctx, params.PrimaryULID)
 	if err != nil {
 		return fmt.Errorf("primary event not found: %w", err)
 	}
 
-	duplicate, err := s.repo.GetByULID(ctx, params.DuplicateULID)
+	duplicate, err := txRepo.GetByULID(ctx, params.DuplicateULID)
 	if err != nil {
 		return fmt.Errorf("duplicate event not found: %w", err)
 	}
 
 	// Merge duplicate into primary (soft delete + set merged_into_id)
-	err = s.repo.MergeEvents(ctx, params.DuplicateULID, params.PrimaryULID)
+	err = txRepo.MergeEvents(ctx, params.DuplicateULID, params.PrimaryULID)
 	if err != nil {
 		return fmt.Errorf("merge events: %w", err)
 	}
@@ -178,9 +192,15 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		Payload:      tombstonePayload,
 	}
 
-	err = s.repo.CreateTombstone(ctx, tombstoneParams)
+	err = txRepo.CreateTombstone(ctx, tombstoneParams)
 	if err != nil {
 		return fmt.Errorf("create tombstone: %w", err)
+	}
+
+	// Commit transaction
+	err = txCommitter.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 
 	// Note: The actual event record remains in DB with deleted_at set and merged_into_id pointing to primary
