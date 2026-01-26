@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -271,6 +272,8 @@ func (h *PublicPagesHandler) serveTurtle(w http.ResponseWriter, r *http.Request,
 func (h *PublicPagesHandler) serveTurtleWithStatus(w http.ResponseWriter, r *http.Request, payload map[string]any, statusCode int) {
 	turtle, err := jsonld.SerializeToTurtle(payload)
 	if err != nil {
+		typeVal := extractType(payload)
+		err = fmt.Errorf("failed to serialize %s to Turtle: %w", typeVal, err)
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
