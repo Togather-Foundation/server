@@ -11,21 +11,24 @@ import (
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/sanitize"
 )
 
 type AdminHandler struct {
 	Service      *events.Service
 	AdminService *events.AdminService
+	Places       *places.Service
 	AuditLogger  *audit.Logger
 	Env          string
 	BaseURL      string
 }
 
-func NewAdminHandler(service *events.Service, adminService *events.AdminService, auditLogger *audit.Logger, env string, baseURL string) *AdminHandler {
+func NewAdminHandler(service *events.Service, adminService *events.AdminService, placeService *places.Service, auditLogger *audit.Logger, env string, baseURL string) *AdminHandler {
 	return &AdminHandler{
 		Service:      service,
 		AdminService: adminService,
+		Places:       placeService,
 		AuditLogger:  auditLogger,
 		Env:          env,
 		BaseURL:      baseURL,
@@ -393,6 +396,100 @@ func (h *AdminHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeletePlace handles DELETE /api/v1/admin/places/{id}
+// Soft-deletes a place and generates a tombstone
+func (h *AdminHandler) DeletePlace(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Places == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	ulidValue := strings.TrimSpace(pathParam(r, "id"))
+	if ulidValue == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", places.FilterError{Field: "id", Message: "missing"}, h.Env)
+		return
+	}
+	if err := places.ValidateULID(ulidValue); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", places.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason,omitempty"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	place, err := h.Places.GetByULID(r.Context(), ulidValue)
+	if err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if err := h.Places.SoftDelete(r.Context(), ulidValue, req.Reason); err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	payload, err := buildPlaceTombstonePayload(ulidValue, place.Name, req.Reason, h.BaseURL)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	params := places.TombstoneCreateParams{
+		PlaceID:   place.ID,
+		PlaceURI:  buildPlaceURI(h.BaseURL, ulidValue),
+		DeletedAt: time.Now(),
+		Reason:    req.Reason,
+		Payload:   payload,
+	}
+
+	if err := h.Places.CreateTombstone(r.Context(), params); err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func buildPlaceTombstonePayload(ulid, name, reason, baseURL string) ([]byte, error) {
+	placeURI := buildPlaceURI(baseURL, ulid)
+	if placeURI == "" {
+		placeURI = "https://togather.foundation/places/" + strings.ToUpper(ulid)
+	}
+
+	payload := map[string]any{
+		"@context":           "https://schema.org",
+		"@type":              "Place",
+		"@id":                placeURI,
+		"name":               name,
+		"sel:tombstone":      true,
+		"sel:deletedAt":      time.Now().Format(time.RFC3339),
+		"sel:deletionReason": reason,
+	}
+
+	return json.Marshal(payload)
+}
+
+func buildPlaceURI(baseURL, ulid string) string {
+	if baseURL == "" || ulid == "" {
+		return ""
+	}
+	uri, err := ids.BuildCanonicalURI(baseURL, "places", ulid)
+	if err != nil {
+		return ""
+	}
+	return uri
 }
 
 // validateUpdateFields validates the fields that can be updated

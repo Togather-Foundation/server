@@ -29,7 +29,35 @@ SELECT p.id,
        p.address_locality,
        p.address_region,
        p.address_country,
+       p.deleted_at,
+       p.deletion_reason,
        p.created_at,
        p.updated_at
   FROM places p
  WHERE p.ulid = $1;
+
+-- name: SoftDeletePlace :exec
+UPDATE places
+   SET deleted_at = now(),
+       deletion_reason = $2,
+       updated_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL;
+
+-- name: CreatePlaceTombstone :exec
+INSERT INTO place_tombstones (place_id, place_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
+VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: GetPlaceTombstoneByULID :one
+SELECT t.id,
+       t.place_id,
+       t.place_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM place_tombstones t
+  JOIN places p ON p.id = t.place_id
+ WHERE p.ulid = $1
+ ORDER BY t.deleted_at DESC
+ LIMIT 1;

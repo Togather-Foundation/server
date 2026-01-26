@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createPlaceTombstone = `-- name: CreatePlaceTombstone :exec
+INSERT INTO place_tombstones (place_id, place_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreatePlaceTombstoneParams struct {
+	PlaceID         pgtype.UUID        `json:"place_id"`
+	PlaceUri        string             `json:"place_uri"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason  pgtype.Text        `json:"deletion_reason"`
+	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
+	Payload         []byte             `json:"payload"`
+}
+
+func (q *Queries) CreatePlaceTombstone(ctx context.Context, arg CreatePlaceTombstoneParams) error {
+	_, err := q.db.Exec(ctx, createPlaceTombstone,
+		arg.PlaceID,
+		arg.PlaceUri,
+		arg.DeletedAt,
+		arg.DeletionReason,
+		arg.SupersededByUri,
+		arg.Payload,
+	)
+	return err
+}
+
 const getPlaceByULID = `-- name: GetPlaceByULID :one
 SELECT p.id,
        p.ulid,
@@ -19,6 +45,8 @@ SELECT p.id,
        p.address_locality,
        p.address_region,
        p.address_country,
+       p.deleted_at,
+       p.deletion_reason,
        p.created_at,
        p.updated_at
   FROM places p
@@ -33,6 +61,8 @@ type GetPlaceByULIDRow struct {
 	AddressLocality pgtype.Text        `json:"address_locality"`
 	AddressRegion   pgtype.Text        `json:"address_region"`
 	AddressCountry  pgtype.Text        `json:"address_country"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason  pgtype.Text        `json:"deletion_reason"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
@@ -48,8 +78,40 @@ func (q *Queries) GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByUL
 		&i.AddressLocality,
 		&i.AddressRegion,
 		&i.AddressCountry,
+		&i.DeletedAt,
+		&i.DeletionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPlaceTombstoneByULID = `-- name: GetPlaceTombstoneByULID :one
+SELECT t.id,
+       t.place_id,
+       t.place_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM place_tombstones t
+  JOIN places p ON p.id = t.place_id
+ WHERE p.ulid = $1
+ ORDER BY t.deleted_at DESC
+ LIMIT 1
+`
+
+func (q *Queries) GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error) {
+	row := q.db.QueryRow(ctx, getPlaceTombstoneByULID, ulid)
+	var i PlaceTombstone
+	err := row.Scan(
+		&i.ID,
+		&i.PlaceID,
+		&i.PlaceUri,
+		&i.DeletedAt,
+		&i.DeletionReason,
+		&i.SupersededByUri,
+		&i.Payload,
 	)
 	return i, err
 }
@@ -132,4 +194,23 @@ func (q *Queries) ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListP
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeletePlace = `-- name: SoftDeletePlace :exec
+UPDATE places
+   SET deleted_at = now(),
+       deletion_reason = $2,
+       updated_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL
+`
+
+type SoftDeletePlaceParams struct {
+	Ulid           string      `json:"ulid"`
+	DeletionReason pgtype.Text `json:"deletion_reason"`
+}
+
+func (q *Queries) SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error {
+	_, err := q.db.Exec(ctx, softDeletePlace, arg.Ulid, arg.DeletionReason)
+	return err
 }

@@ -1,21 +1,25 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 )
 
 type PlacesHandler struct {
 	Service *places.Service
 	Env     string
+	BaseURL string
 }
 
-func NewPlacesHandler(service *places.Service, env string) *PlacesHandler {
-	return &PlacesHandler{Service: service, Env: env}
+func NewPlacesHandler(service *places.Service, env string, baseURL string) *PlacesHandler {
+	return &PlacesHandler{Service: service, Env: env, BaseURL: baseURL}
 }
 
 type placeListResponse struct {
@@ -73,10 +77,54 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	item, err := h.Service.GetByULID(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, places.ErrNotFound) {
+			// Check if there's a tombstone for this place
+			tombstone, tombErr := h.Service.GetTombstoneByULID(r.Context(), ulidValue)
+			if tombErr == nil && tombstone != nil {
+				var payload map[string]any
+				if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
+					payload = map[string]any{
+						"@context":      loadDefaultContext(),
+						"@type":         "Place",
+						"sel:tombstone": true,
+						"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
+					}
+				}
+				writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+				return
+			}
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Not found", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if strings.EqualFold(item.Lifecycle, "deleted") {
+		tombstone, tombErr := h.Service.GetTombstoneByULID(r.Context(), ulidValue)
+		if tombErr == nil && tombstone != nil {
+			var payload map[string]any
+			if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
+				payload = map[string]any{
+					"@context":      loadDefaultContext(),
+					"@type":         "Place",
+					"sel:tombstone": true,
+					"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
+				}
+			}
+			writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+			return
+		}
+
+		payload := map[string]any{
+			"@context":      loadDefaultContext(),
+			"@type":         "Place",
+			"sel:tombstone": true,
+			"sel:deletedAt": time.Now().Format(time.RFC3339),
+		}
+		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "places", ulidValue); err == nil {
+			payload["@id"] = uri
+		}
+		writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
 		return
 	}
 

@@ -45,7 +45,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	orgService := organizations.NewService(repo.Organizations())
 
 	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, cfg.Environment, cfg.Server.BaseURL)
-	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment)
+	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment)
 
 	// Create audit logger for admin operations
@@ -59,7 +59,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
 	adminService := events.NewAdminService(repo.Events(), requireHTTPS)
-	adminHandler := handlers.NewAdminHandler(eventsService, adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
+	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
@@ -133,6 +133,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	adminMergeEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.MergeEvents)))
 	mux.Handle("/api/v1/admin/events/merge", methodMux(map[string]http.Handler{
 		http.MethodPost: adminMergeEvents,
+	}))
+
+	adminDeletePlace := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeletePlace)))
+	mux.Handle("/api/v1/admin/places/{id}", methodMux(map[string]http.Handler{
+		http.MethodDelete: adminDeletePlace,
 	}))
 
 	// Admin API key management (T078)

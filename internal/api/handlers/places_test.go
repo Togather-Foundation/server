@@ -13,8 +13,9 @@ import (
 )
 
 type stubPlacesRepo struct {
-	listFn func(filters places.Filters, pagination places.Pagination) (places.ListResult, error)
-	getFn  func(ulid string) (*places.Place, error)
+	listFn      func(filters places.Filters, pagination places.Pagination) (places.ListResult, error)
+	getFn       func(ulid string) (*places.Place, error)
+	tombstoneFn func(ulid string) (*places.Tombstone, error)
 }
 
 func (s stubPlacesRepo) List(_ context.Context, filters places.Filters, pagination places.Pagination) (places.ListResult, error) {
@@ -25,6 +26,21 @@ func (s stubPlacesRepo) GetByULID(_ context.Context, ulid string) (*places.Place
 	return s.getFn(ulid)
 }
 
+func (s stubPlacesRepo) SoftDelete(_ context.Context, _ string, _ string) error {
+	return errors.New("not implemented")
+}
+
+func (s stubPlacesRepo) CreateTombstone(_ context.Context, _ places.TombstoneCreateParams) error {
+	return errors.New("not implemented")
+}
+
+func (s stubPlacesRepo) GetTombstoneByULID(_ context.Context, ulid string) (*places.Tombstone, error) {
+	if s.tombstoneFn == nil {
+		return nil, places.ErrNotFound
+	}
+	return s.tombstoneFn(ulid)
+}
+
 func TestPlacesHandlerListSuccess(t *testing.T) {
 	repo := stubPlacesRepo{
 		listFn: func(filters places.Filters, pagination places.Pagination) (places.ListResult, error) {
@@ -33,9 +49,12 @@ func TestPlacesHandlerListSuccess(t *testing.T) {
 		getFn: func(_ string) (*places.Place, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
 	}
 
-	h := NewPlacesHandler(places.NewService(repo), "test")
+	h := NewPlacesHandler(places.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/places", nil)
 	res := httptest.NewRecorder()
 
@@ -59,9 +78,12 @@ func TestPlacesHandlerListValidationError(t *testing.T) {
 		getFn: func(_ string) (*places.Place, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
 	}
 
-	h := NewPlacesHandler(places.NewService(repo), "test")
+	h := NewPlacesHandler(places.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/places?limit=abc", nil)
 	res := httptest.NewRecorder()
 
@@ -78,9 +100,12 @@ func TestPlacesHandlerGetNotFound(t *testing.T) {
 		getFn: func(_ string) (*places.Place, error) {
 			return nil, places.ErrNotFound
 		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
 	}
 
-	h := NewPlacesHandler(places.NewService(repo), "test")
+	h := NewPlacesHandler(places.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/places/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -98,9 +123,12 @@ func TestPlacesHandlerGetInvalidID(t *testing.T) {
 		getFn: func(_ string) (*places.Place, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
 	}
 
-	h := NewPlacesHandler(places.NewService(repo), "test")
+	h := NewPlacesHandler(places.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/places/bad", nil)
 	req.SetPathValue("id", "bad")
 	res := httptest.NewRecorder()
@@ -118,9 +146,12 @@ func TestPlacesHandlerListServiceError(t *testing.T) {
 		getFn: func(_ string) (*places.Place, error) {
 			return nil, nil
 		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
 	}
 
-	h := NewPlacesHandler(places.NewService(repo), "test")
+	h := NewPlacesHandler(places.NewService(repo), "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/places", nil)
 	res := httptest.NewRecorder()
 

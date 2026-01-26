@@ -26,6 +26,18 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Place, error) {
 	return s.repo.GetByULID(ctx, ulid)
 }
 
+func (s *Service) SoftDelete(ctx context.Context, ulid string, reason string) error {
+	return s.repo.SoftDelete(ctx, ulid, reason)
+}
+
+func (s *Service) CreateTombstone(ctx context.Context, params TombstoneCreateParams) error {
+	return s.repo.CreateTombstone(ctx, params)
+}
+
+func (s *Service) GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error) {
+	return s.repo.GetTombstoneByULID(ctx, ulid)
+}
+
 type FilterError struct {
 	Field   string
 	Message string

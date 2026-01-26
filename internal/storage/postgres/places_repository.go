@@ -9,6 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,6 +29,8 @@ type placeRow struct {
 	City        *string
 	Region      *string
 	Country     *string
+	DeletedAt   pgtype.Timestamptz
+	Reason      pgtype.Text
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 }
@@ -135,7 +138,7 @@ func (r *PlaceRepository) GetByULID(ctx context.Context, ulid string) (*places.P
 
 	row := queryer.QueryRow(ctx, `
 SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region, p.address_country,
-       p.created_at, p.updated_at
+       p.deleted_at, p.deletion_reason, p.created_at, p.updated_at
   FROM places p
  WHERE p.ulid = $1
 `, ulid)
@@ -149,6 +152,8 @@ SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region
 		&data.City,
 		&data.Region,
 		&data.Country,
+		&data.DeletedAt,
+		&data.Reason,
 		&data.CreatedAt,
 		&data.UpdatedAt,
 	); err != nil {
@@ -166,6 +171,7 @@ SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region
 		City:        derefString(data.City),
 		Region:      derefString(data.Region),
 		Country:     derefString(data.Country),
+		Lifecycle:   "",
 		CreatedAt:   time.Time{},
 		UpdatedAt:   time.Time{},
 	}
@@ -175,12 +181,93 @@ SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region
 	if data.UpdatedAt.Valid {
 		place.UpdatedAt = data.UpdatedAt.Time
 	}
+	if data.DeletedAt.Valid {
+		place.Lifecycle = "deleted"
+	}
 	return place, nil
+}
+
+// SoftDelete marks a place as deleted
+func (r *PlaceRepository) SoftDelete(ctx context.Context, ulid string, reason string) error {
+	queries := Queries{db: r.queryer()}
+
+	err := queries.SoftDeletePlace(ctx, SoftDeletePlaceParams{
+		Ulid:           ulid,
+		DeletionReason: pgtype.Text{String: reason, Valid: reason != ""},
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return places.ErrNotFound
+		}
+		return fmt.Errorf("soft delete place: %w", err)
+	}
+
+	return nil
+}
+
+// CreateTombstone creates a tombstone record for a deleted place
+func (r *PlaceRepository) CreateTombstone(ctx context.Context, params places.TombstoneCreateParams) error {
+	queries := Queries{db: r.queryer()}
+
+	var placeIDUUID pgtype.UUID
+	if err := placeIDUUID.Scan(params.PlaceID); err != nil {
+		return fmt.Errorf("invalid place ID: %w", err)
+	}
+
+	var supersededBy pgtype.Text
+	if params.SupersededBy != nil {
+		supersededBy = pgtype.Text{String: *params.SupersededBy, Valid: true}
+	}
+
+	err := queries.CreatePlaceTombstone(ctx, CreatePlaceTombstoneParams{
+		PlaceID:         placeIDUUID,
+		PlaceUri:        params.PlaceURI,
+		DeletedAt:       pgtype.Timestamptz{Time: params.DeletedAt, Valid: true},
+		DeletionReason:  pgtype.Text{String: params.Reason, Valid: params.Reason != ""},
+		SupersededByUri: supersededBy,
+		Payload:         params.Payload,
+	})
+	if err != nil {
+		return fmt.Errorf("create tombstone: %w", err)
+	}
+
+	return nil
+}
+
+// GetTombstoneByULID retrieves the tombstone for a deleted place by ULID
+func (r *PlaceRepository) GetTombstoneByULID(ctx context.Context, ulid string) (*places.Tombstone, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetPlaceTombstoneByULID(ctx, ulid)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, places.ErrNotFound
+		}
+		return nil, fmt.Errorf("get tombstone by ulid: %w", err)
+	}
+
+	var supersededBy *string
+	if row.SupersededByUri.Valid {
+		supersededBy = &row.SupersededByUri.String
+	}
+
+	tombstone := &places.Tombstone{
+		ID:           row.ID.String(),
+		PlaceID:      row.PlaceID.String(),
+		PlaceURI:     row.PlaceUri,
+		DeletedAt:    row.DeletedAt.Time,
+		Reason:       row.DeletionReason.String,
+		SupersededBy: supersededBy,
+		Payload:      row.Payload,
+	}
+
+	return tombstone, nil
 }
 
 type placeQueryer interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
 func (r *PlaceRepository) queryer() placeQueryer {
