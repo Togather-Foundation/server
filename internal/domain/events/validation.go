@@ -169,7 +169,7 @@ func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error)
 	if len(input.SameAs) > 0 {
 		normalized, err := normalizeSameAs(nodeDomain, "events", input.SameAs)
 		if err != nil {
-			return input, err
+			return input, fmt.Errorf("normalize sameAs: %w", err)
 		}
 		input.SameAs = normalized
 	}
@@ -203,17 +203,17 @@ func validateOccurrences(input EventInput, nodeDomain string) error {
 		fieldPrefix := fmt.Sprintf("occurrences[%d]", i)
 		startTime, err := parseRFC3339(fieldPrefix+".startDate", occ.StartDate)
 		if err != nil {
-			return err
+			return fmt.Errorf("parse occurrence start date: %w", err)
 		}
 		endTime, err := parseRFC3339Optional(fieldPrefix+".endDate", occ.EndDate)
 		if err != nil {
-			return err
+			return fmt.Errorf("parse occurrence end date: %w", err)
 		}
 		if endTime != nil && endTime.Before(*startTime) {
 			return ValidationError{Field: fieldPrefix + ".endDate", Message: "must be on or after startDate"}
 		}
 		if _, err := parseRFC3339Optional(fieldPrefix+".doorTime", occ.DoorTime); err != nil {
-			return err
+			return fmt.Errorf("parse occurrence door time: %w", err)
 		}
 		if occ.Timezone != "" {
 			if _, err := time.LoadLocation(strings.TrimSpace(occ.Timezone)); err != nil {

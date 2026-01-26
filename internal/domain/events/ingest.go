@@ -225,7 +225,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 		}
 		end, err := parseRFC3339Optional("endDate", input.EndDate)
 		if err != nil {
-			return err
+			return fmt.Errorf("parse end date: %w", err)
 		}
 		venueID := event.PrimaryVenueID
 		virtual := nullableString(virtualURL(input))
@@ -250,7 +250,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 		}
 		end, err := parseRFC3339Optional("endDate", occ.EndDate)
 		if err != nil {
-			return err
+			return fmt.Errorf("parse occurrence end date: %w", err)
 		}
 		var door *time.Time
 		if occ.DoorTime != "" {
@@ -274,7 +274,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 			VirtualURL: nullableString(occ.VirtualURL),
 		}
 		if err := s.repo.CreateOccurrence(ctx, occurrence); err != nil {
-			return err
+			return fmt.Errorf("create occurrence: %w", err)
 		}
 	}
 

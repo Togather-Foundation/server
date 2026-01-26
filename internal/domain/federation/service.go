@@ -3,6 +3,7 @@ package federation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/validation"
@@ -80,7 +81,7 @@ func (s *Service) UpdateNode(ctx context.Context, id uuid.UUID, params UpdateNod
 	// Check if node exists
 	_, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get node by ID: %w", err)
 	}
 
 	return s.repo.Update(ctx, id, params)
@@ -91,7 +92,7 @@ func (s *Service) DeleteNode(ctx context.Context, id uuid.UUID) error {
 	// Check if node exists
 	_, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("get node by ID: %w", err)
 	}
 
 	return s.repo.Delete(ctx, id)
@@ -156,7 +157,7 @@ func (s *Service) validateUpdateParams(params UpdateNodeParams) error {
 	// Validate BaseURL if being updated
 	if params.BaseURL != nil && *params.BaseURL != "" {
 		if err := validation.ValidateBaseURL(*params.BaseURL, "base_url", s.requireHTTPS); err != nil {
-			return err
+			return fmt.Errorf("validate base URL: %w", err)
 		}
 	}
 

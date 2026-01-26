@@ -202,7 +202,7 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 	err = s.repo.WithTransaction(ctx, func(txRepo SyncRepository) error {
 		// Check for context cancellation before database operations
 		if err := ctx.Err(); err != nil {
-			return err
+			return fmt.Errorf("context cancelled: %w", err)
 		}
 
 		// Check if event already exists
@@ -217,7 +217,7 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 
 		// Check for context cancellation before upsert
 		if err := ctx.Err(); err != nil {
-			return err
+			return fmt.Errorf("context cancelled: %w", err)
 		}
 
 		// Generate local ULID (or reuse existing one)
@@ -235,7 +235,7 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 		// Map JSON-LD to database params
 		dbParams, occurrenceData, err := s.mapJSONLDToEvent(params.Payload, localULID, federationURI, originNodeID)
 		if err != nil {
-			return err
+			return fmt.Errorf("map JSON-LD to event: %w", err)
 		}
 
 		// Upsert event

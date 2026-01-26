@@ -220,7 +220,7 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 	// Get existing event before deletion
 	event, err := s.repo.GetByULID(ctx, ulid)
 	if err != nil {
-		return err
+		return fmt.Errorf("get event by ULID: %w", err)
 	}
 
 	// Soft delete the event
@@ -300,14 +300,14 @@ func (s *AdminService) validateUpdateParams(params UpdateEventParams) error {
 	// Validate image_url
 	if params.ImageURL != nil && *params.ImageURL != "" {
 		if err := validation.ValidateURL(*params.ImageURL, "image_url", s.requireHTTPS); err != nil {
-			return err
+			return fmt.Errorf("validate image_url: %w", err)
 		}
 	}
 
 	// Validate public_url
 	if params.PublicURL != nil && *params.PublicURL != "" {
 		if err := validation.ValidateURL(*params.PublicURL, "public_url", s.requireHTTPS); err != nil {
-			return err
+			return fmt.Errorf("validate public_url: %w", err)
 		}
 	}
 
