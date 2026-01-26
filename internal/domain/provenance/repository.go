@@ -33,4 +33,10 @@ type CreateSourceParams struct {
 type Repository interface {
 	GetByBaseURL(ctx context.Context, baseURL string) (*Source, error)
 	Create(ctx context.Context, params CreateSourceParams) (*Source, error)
+
+	// Provenance queries
+	GetEventSources(ctx context.Context, eventID string) ([]EventSourceAttribution, error)
+	GetFieldProvenance(ctx context.Context, eventID string) ([]FieldProvenanceInfo, error)
+	GetFieldProvenanceForPaths(ctx context.Context, eventID string, fieldPaths []string) ([]FieldProvenanceInfo, error)
+	GetCanonicalFieldValue(ctx context.Context, eventID string, fieldPath string) (*FieldProvenanceInfo, error)
 }

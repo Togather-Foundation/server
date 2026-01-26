@@ -21,20 +21,41 @@ type Querier interface {
 	DeactivateAPIKey(ctx context.Context, id pgtype.UUID) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
+	// Gets complete provenance history for a field, including superseded records
+	GetAllFieldProvenanceHistory(ctx context.Context, arg GetAllFieldProvenanceHistoryParams) ([]GetAllFieldProvenanceHistoryRow, error)
+	// Gets the canonical (winning) field value based on conflict resolution rules
+	// Priority: trust_level DESC, confidence DESC, observed_at DESC
+	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
+	// SQLc queries for provenance tracking.
+	// Retrieves all sources for a given event with source metadata and timestamps (FR-029)
+	GetEventSources(ctx context.Context, eventID pgtype.UUID) ([]GetEventSourcesRow, error)
 	GetEventTombstoneByEventID(ctx context.Context, eventID pgtype.UUID) (EventTombstone, error)
 	GetEventTombstoneByEventULID(ctx context.Context, ulid string) (EventTombstone, error)
 	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
 	GetFederationNodeByID(ctx context.Context, id pgtype.UUID) (FederationNode, error)
+	// Retrieves field-level provenance for an event, optionally filtered by field paths
+	// Includes source metadata and timestamps per FR-024 and FR-029
+	GetFieldProvenance(ctx context.Context, eventID pgtype.UUID) ([]GetFieldProvenanceRow, error)
+	// Retrieves field-level provenance for specific field paths on an event
+	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
+	// Retrieves source metadata by ID
+	GetSourceByID(ctx context.Context, id pgtype.UUID) (GetSourceByIDRow, error)
+	// Gets all sources that contributed to an event (deduplicated)
+	GetSourcesByEventID(ctx context.Context, eventID pgtype.UUID) ([]GetSourcesByEventIDRow, error)
 	// SQLc queries for authentication.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	// Records a source's contribution to an event with source and received timestamps (FR-029)
+	InsertEventSource(ctx context.Context, arg InsertEventSourceParams) (EventSource, error)
+	// Records field-level provenance with source timestamp
+	InsertFieldProvenance(ctx context.Context, arg InsertFieldProvenanceParams) (FieldProvenance, error)
 	InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) (InsertIdempotencyKeyRow, error)
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
 	// SQLc queries for events domain.
@@ -49,6 +70,8 @@ type Querier interface {
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
+	// Marks a field provenance record as superseded by a new record
+	SupersedeFieldProvenance(ctx context.Context, arg SupersedeFieldProvenanceParams) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (UpdateEventRow, error)
 	UpdateFederationNode(ctx context.Context, arg UpdateFederationNodeParams) (FederationNode, error)

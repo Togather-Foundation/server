@@ -16,6 +16,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/domain/provenance"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -43,8 +44,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
+	provenanceService := provenance.NewService(repo.Provenance())
 
-	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, cfg.Environment, cfg.Server.BaseURL)
+	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, cfg.Environment, cfg.Server.BaseURL)
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
 

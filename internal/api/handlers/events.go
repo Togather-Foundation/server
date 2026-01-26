@@ -10,17 +10,25 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/domain/provenance"
 )
 
 type EventsHandler struct {
-	Service *events.Service
-	Ingest  *events.IngestService
-	Env     string
-	BaseURL string
+	Service           *events.Service
+	Ingest            *events.IngestService
+	ProvenanceService *provenance.Service
+	Env               string
+	BaseURL           string
 }
 
-func NewEventsHandler(service *events.Service, ingest *events.IngestService, env string, baseURL string) *EventsHandler {
-	return &EventsHandler{Service: service, Ingest: ingest, Env: env, BaseURL: baseURL}
+func NewEventsHandler(service *events.Service, ingest *events.IngestService, provenanceService *provenance.Service, env string, baseURL string) *EventsHandler {
+	return &EventsHandler{
+		Service:           service,
+		Ingest:            ingest,
+		ProvenanceService: provenanceService,
+		Env:               env,
+		BaseURL:           baseURL,
+	}
 }
 
 type listResponse struct {
@@ -188,6 +196,39 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		"@id":      buildEventURI(h.BaseURL, item.ULID),
 		"name":     item.Name,
 	}
+
+	// Add license information per FR-024
+	if item.LicenseURL != "" {
+		payload["license"] = item.LicenseURL
+	} else {
+		// Default to CC0 if not specified
+		payload["license"] = "https://creativecommons.org/publicdomain/zero/1.0/"
+	}
+
+	// Check if provenance is requested (FR-029, US5)
+	includeProvenance := strings.EqualFold(r.URL.Query().Get("include_provenance"), "true")
+	provenanceFields := parseProvenanceFields(r.URL.Query().Get("provenance_fields"))
+
+	if includeProvenance && h.ProvenanceService != nil {
+		// Get source attribution
+		sources, err := h.ProvenanceService.GetEventSourceAttribution(r.Context(), item.ID)
+		if err == nil && len(sources) > 0 {
+			payload["sources"] = buildSourcesPayload(sources)
+		}
+
+		// Get field-level provenance if requested
+		var fieldProvenance []provenance.FieldProvenanceInfo
+		if len(provenanceFields) > 0 {
+			fieldProvenance, err = h.ProvenanceService.GetFieldProvenance(r.Context(), item.ID, provenanceFields)
+		} else {
+			fieldProvenance, err = h.ProvenanceService.GetFieldProvenance(r.Context(), item.ID, nil)
+		}
+
+		if err == nil && len(fieldProvenance) > 0 {
+			payload["_provenance"] = buildFieldProvenancePayload(fieldProvenance)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
 }
 
@@ -258,4 +299,96 @@ func idempotencyKey(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+}
+
+// parseProvenanceFields parses comma-separated field paths from query parameter
+func parseProvenanceFields(fieldsParam string) []string {
+	if fieldsParam == "" {
+		return nil
+	}
+	fields := strings.Split(fieldsParam, ",")
+	result := make([]string, 0, len(fields))
+	for _, f := range fields {
+		field := strings.TrimSpace(f)
+		if field != "" {
+			// Ensure field path starts with "/"
+			if !strings.HasPrefix(field, "/") {
+				field = "/" + field
+			}
+			result = append(result, field)
+		}
+	}
+	return result
+}
+
+// buildSourcesPayload constructs sources attribution array for JSON-LD response (FR-024)
+func buildSourcesPayload(sources []provenance.EventSourceAttribution) []map[string]any {
+	result := make([]map[string]any, 0, len(sources))
+	for _, src := range sources {
+		source := map[string]any{
+			"@type":   "DataFeed",
+			"name":    src.SourceName,
+			"url":     src.SourceURL,
+			"license": src.LicenseURL,
+			"provider": map[string]any{
+				"@type": "Organization",
+				"name":  src.SourceName,
+			},
+		}
+
+		// Add optional fields
+		if src.Confidence != nil {
+			source["sel:confidence"] = *src.Confidence
+		}
+		if src.SourceEventID != nil {
+			source["sel:sourceEventId"] = *src.SourceEventID
+		}
+
+		// Add timestamps (FR-029 - dual timestamp tracking)
+		source["sel:retrievedAt"] = src.RetrievedAt.Format(time.RFC3339)
+
+		result = append(result, source)
+	}
+	return result
+}
+
+// buildFieldProvenancePayload constructs field-level provenance map for JSON-LD response
+func buildFieldProvenancePayload(provenanceInfo []provenance.FieldProvenanceInfo) map[string]any {
+	// Group provenance by field path
+	grouped := provenance.GroupProvenanceByField(provenanceInfo)
+
+	result := make(map[string]any)
+	for fieldPath, entries := range grouped {
+		// Remove leading "/" for JSON key (e.g., "/name" becomes "name")
+		key := strings.TrimPrefix(fieldPath, "/")
+
+		fieldInfo := make([]map[string]any, 0, len(entries))
+		for _, entry := range entries {
+			info := map[string]any{
+				"source": map[string]any{
+					"name":       entry.SourceName,
+					"type":       entry.SourceType,
+					"trustLevel": entry.TrustLevel,
+					"license":    entry.LicenseURL,
+				},
+				"confidence": entry.Confidence,
+				"observedAt": entry.ObservedAt.Format(time.RFC3339),
+			}
+
+			if entry.ValuePreview != nil {
+				info["valuePreview"] = *entry.ValuePreview
+			}
+
+			fieldInfo = append(fieldInfo, info)
+		}
+
+		// If only one entry, unwrap the array
+		if len(fieldInfo) == 1 {
+			result[key] = fieldInfo[0]
+		} else {
+			result[key] = fieldInfo
+		}
+	}
+
+	return result
 }
