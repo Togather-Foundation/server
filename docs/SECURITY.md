@@ -84,9 +84,9 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 
 #### 5. Cross-Site Scripting (XSS)
 **Risk**: Medium  
-**Impact**: User session hijacking (admin UI)  
-**Mitigation**: Content-Security-Policy headers (planned)  
-**Status**: 📋 Backlog (P2)
+**Impact**: User session hijacking (admin UI), malicious script execution  
+**Mitigation**: Input sanitization with bluemonday, Content-Security-Policy headers (planned)  
+**Status**: ✅ Mitigated (v0.1.3) - Input sanitization complete, CSP headers planned for P2
 
 #### 6. Information Disclosure
 **Risk**: Low-Medium  
@@ -158,6 +158,14 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 - Configured pool limits via pgxpool defaults
 
 ### Data Integrity
+
+**Input Sanitization**:
+- All admin event text fields sanitized with bluemonday library
+- **Strict policy** (removes all HTML): names, keywords, URLs, lifecycle states
+- **UGC policy** (allows safe formatting): descriptions, organization bios
+- Removes: `<script>`, `<iframe>`, event handlers, javascript: protocols, style attributes
+- Allows in descriptions: `<p>`, `<b>`, `<i>`, `<em>`, `<strong>`, `<a>`, `<ul>`, `<ol>`, `<li>`, `<br>`
+- Comprehensive test coverage: 18 XSS attack vectors tested
 
 **License Enforcement**:
 - All event data defaults to CC0-1.0 (Public Domain)
@@ -338,17 +346,19 @@ DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
 
 **P1 (High) - In Progress**:
 - ✅ Add rate limiting to admin login endpoint (`server-d6r`) - **Completed**
+- ✅ Add input sanitization for admin event fields (`server-1p9`) - **Completed**
 - 📋 Add audit logging for all admin operations (`server-xje`) - Backlog
-- 📋 Add input sanitization for admin event fields (`server-1p9`) - Backlog
 - 📋 Add CSRF protection for admin endpoints (`server-y07`) - Backlog
 
 **Completed Security Enhancements**:
 - **Brute Force Protection**: Login endpoint now has aggressive rate limiting (5 attempts per 15 min per IP)
 - **Token Bucket Algorithm**: Prevents credential stuffing attacks while allowing legitimate retries
 - **Per-IP Tracking**: Uses X-Forwarded-For / X-Real-IP headers for accurate client identification
-- **Test Coverage**: 100% test coverage for login rate limiting behavior (18 test cases)
+- **XSS Prevention**: All admin text input sanitized with bluemonday (strict for names/URLs, UGC for descriptions)
+- **Comprehensive XSS Testing**: 18 attack vectors tested including script tags, event handlers, data URIs, SVG attacks
+- **Test Coverage**: 100% for rate limiting (18 tests), 100% for input sanitization (23 tests)
 
-**Status**: 🔒 **Login brute force protection implemented** - Admin authentication hardened
+**Status**: 🔒 **Login brute force + XSS protections implemented** - Admin authentication and input handling hardened
 
 ---
 

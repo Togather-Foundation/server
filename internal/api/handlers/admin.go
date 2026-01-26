@@ -10,6 +10,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/sanitize"
 )
 
 type AdminHandler struct {
@@ -368,26 +369,33 @@ func validateUpdateFields(updates map[string]any) error {
 }
 
 // mapToUpdateParams converts a map[string]any to UpdateEventParams
+// All text fields are sanitized to prevent XSS attacks
 func mapToUpdateParams(updates map[string]any) events.UpdateEventParams {
 	params := events.UpdateEventParams{}
 
 	if name, ok := updates["name"].(string); ok {
-		params.Name = &name
+		sanitized := sanitize.Text(name) // Remove all HTML from names
+		params.Name = &sanitized
 	}
 	if description, ok := updates["description"].(string); ok {
-		params.Description = &description
+		sanitized := sanitize.HTML(description) // Allow safe HTML formatting in descriptions
+		params.Description = &sanitized
 	}
 	if lifecycleState, ok := updates["lifecycle_state"].(string); ok {
-		params.LifecycleState = &lifecycleState
+		sanitized := sanitize.Text(lifecycleState) // Plain text only
+		params.LifecycleState = &sanitized
 	}
 	if imageURL, ok := updates["image_url"].(string); ok {
-		params.ImageURL = &imageURL
+		sanitized := sanitize.Text(imageURL) // Plain text URLs
+		params.ImageURL = &sanitized
 	}
 	if publicURL, ok := updates["public_url"].(string); ok {
-		params.PublicURL = &publicURL
+		sanitized := sanitize.Text(publicURL) // Plain text URLs
+		params.PublicURL = &sanitized
 	}
 	if eventDomain, ok := updates["event_domain"].(string); ok {
-		params.EventDomain = &eventDomain
+		sanitized := sanitize.Text(eventDomain) // Plain text domain
+		params.EventDomain = &sanitized
 	}
 	if keywords, ok := updates["keywords"].([]any); ok {
 		strKeywords := make([]string, 0, len(keywords))
@@ -397,7 +405,7 @@ func mapToUpdateParams(updates map[string]any) events.UpdateEventParams {
 			}
 		}
 		if len(strKeywords) > 0 {
-			params.Keywords = strKeywords
+			params.Keywords = sanitize.TextSlice(strKeywords) // Sanitize all keywords
 		}
 	}
 
