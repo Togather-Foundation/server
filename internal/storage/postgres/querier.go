@@ -12,10 +12,15 @@ import (
 
 type Querier interface {
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
+	// SQLc queries for federation sync.
+	CreateFederationNode(ctx context.Context, arg CreateFederationNodeParams) (FederationNode, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeactivateAPIKey(ctx context.Context, id pgtype.UUID) error
+	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
+	GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error)
+	GetFederationNodeByID(ctx context.Context, id pgtype.UUID) (FederationNode, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
@@ -27,12 +32,16 @@ type Querier interface {
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
 	// SQLc queries for events domain.
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]ListEventsRow, error)
+	ListFederationNodes(ctx context.Context, arg ListFederationNodesParams) ([]FederationNode, error)
 	// SQLc queries for organizations domain.
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error)
 	// SQLc queries for places domain.
 	ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
+	UpdateFederationNode(ctx context.Context, arg UpdateFederationNodeParams) (FederationNode, error)
+	UpdateFederationNodeHealth(ctx context.Context, arg UpdateFederationNodeHealthParams) error
+	UpdateFederationNodeSyncStatus(ctx context.Context, arg UpdateFederationNodeSyncStatusParams) error
 	UpdateLastLogin(ctx context.Context, id pgtype.UUID) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error

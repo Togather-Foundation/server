@@ -5,6 +5,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
@@ -33,7 +34,7 @@ type SourceRepository interface{}
 
 type ProvenanceRepository = provenance.Repository
 
-type FederationRepository interface{}
+type FederationRepository = federation.Repository
 
 type AuthRepository interface {
 	APIKeys() APIKeyRepository

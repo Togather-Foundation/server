@@ -18,6 +18,7 @@ type Repository struct {
 	places        *PlaceRepository
 	organizations *OrganizationRepository
 	provenance    *ProvenanceRepository
+	federation    *FederationRepository
 	auth          *AuthRepository
 }
 
@@ -33,6 +34,7 @@ func NewRepository(pool *pgxpool.Pool) (*Repository, error) {
 		places:        &PlaceRepository{pool: pool},
 		organizations: &OrganizationRepository{pool: pool},
 		provenance:    &ProvenanceRepository{pool: pool},
+		federation:    NewFederationRepository(pool),
 		auth:          &AuthRepository{pool: pool},
 	}, nil
 }
@@ -74,9 +76,12 @@ func (r *Repository) Provenance() storage.ProvenanceRepository {
 	return r.provenance
 }
 
-// Federation returns the federation repository (placeholder)
+// Federation returns the federation repository
 func (r *Repository) Federation() storage.FederationRepository {
-	return nil // TODO: implement
+	if r.tx != nil {
+		return NewFederationRepository(r.pool)
+	}
+	return r.federation
 }
 
 // Auth returns the auth repository
@@ -101,6 +106,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(context.Context, storag
 		places:        &PlaceRepository{pool: r.pool, tx: tx},
 		organizations: &OrganizationRepository{pool: r.pool, tx: tx},
 		provenance:    &ProvenanceRepository{pool: r.pool, tx: tx},
+		federation:    NewFederationRepository(r.pool),
 		auth:          &AuthRepository{pool: r.pool, tx: tx},
 	}
 
