@@ -15,10 +15,11 @@ import (
 type RateLimitTier string
 
 const (
-	TierPublic RateLimitTier = "public"
-	TierAgent  RateLimitTier = "agent"
-	TierAdmin  RateLimitTier = "admin"
-	TierLogin  RateLimitTier = "login" // Aggressive rate limiting for login attempts
+	TierPublic     RateLimitTier = "public"
+	TierAgent      RateLimitTier = "agent"
+	TierAdmin      RateLimitTier = "admin"
+	TierLogin      RateLimitTier = "login"      // Aggressive rate limiting for login attempts
+	TierFederation RateLimitTier = "federation" // Federation sync endpoints
 )
 
 type rateLimitKey string
@@ -84,10 +85,11 @@ func newLimiterStore(cfg config.RateLimitConfig) *limiterStore {
 	return &limiterStore{
 		limiters: make(map[string]*rate.Limiter),
 		perMinute: map[RateLimitTier]int{
-			TierPublic: cfg.PublicPerMinute,
-			TierAgent:  cfg.AgentPerMinute,
-			TierAdmin:  cfg.AdminPerMinute,
-			TierLogin:  cfg.LoginPer15Minutes, // Special handling below
+			TierPublic:     cfg.PublicPerMinute,
+			TierAgent:      cfg.AgentPerMinute,
+			TierAdmin:      cfg.AdminPerMinute,
+			TierLogin:      cfg.LoginPer15Minutes, // Special handling below
+			TierFederation: cfg.FederationPerMinute,
 		},
 	}
 }

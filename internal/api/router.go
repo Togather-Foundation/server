@@ -201,8 +201,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	changeFeedList := rateLimitPublic(http.HandlerFunc(feedsHandler.ListChanges))
 	mux.Handle("/api/v1/feeds/changes", changeFeedList)
 
-	// Federation sync endpoint (T111 - requires API key auth, agent rate limit)
-	federationSync := apiKeyAuth(rateLimitAgent(http.HandlerFunc(federationHandler.Sync)))
+	// Federation sync endpoint (T111 - requires API key auth, federation rate limit)
+	rateLimitFederation := middleware.WithRateLimitTierHandler(middleware.TierFederation)
+	federationSync := apiKeyAuth(rateLimitFederation(http.HandlerFunc(federationHandler.Sync)))
 	mux.Handle("/api/v1/federation/sync", methodMux(map[string]http.Handler{
 		http.MethodPost: federationSync,
 	}))
