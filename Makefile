@@ -1,4 +1,4 @@
-.PHONY: help build test lint fmt clean run dev install-tools sqlc sqlc-generate migrate-up migrate-down
+.PHONY: help build test lint fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 
@@ -17,7 +17,10 @@ help:
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server"
 	@echo "  make dev           - Run in development mode (with air if available)"
-	@echo "  make install-tools - Install development tools"
+	@echo "  make install-tools - Install development tools (Go tools)"
+	@echo "  make install-pyshacl - Install pyshacl for SHACL validation"
+	@echo "  make test-contracts - Run contract tests (requires pyshacl)"
+	@echo "  make validate-shapes - Validate SHACL shapes against sample data"
 	@echo "  make sqlc          - Generate SQLc code (alias for sqlc-generate)"
 	@echo "  make sqlc-generate - Generate SQLc code from SQL queries"
 	@echo "  make migrate-up    - Run database migrations"
@@ -96,7 +99,58 @@ install-tools:
 	@go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	@echo "Installing migrate..."
 	@go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-	@echo "Tools installed successfully!"
+	@echo "Go tools installed successfully!"
+	@echo ""
+	@echo "Note: To enable SHACL validation, run 'make install-pyshacl'"
+
+# Install pyshacl for SHACL validation
+install-pyshacl:
+	@echo "Installing pyshacl for SHACL validation..."
+	@if command -v pyshacl > /dev/null 2>&1; then \
+		echo "pyshacl is already installed:"; \
+		pyshacl --version; \
+	elif command -v uvx > /dev/null 2>&1; then \
+		echo "Testing pyshacl with uvx (no installation needed)..."; \
+		uvx pyshacl --version; \
+		echo ""; \
+		echo "✓ pyshacl works with uvx!"; \
+		echo "Note: uvx will automatically run pyshacl when needed (no installation required)"; \
+	elif command -v pipx > /dev/null 2>&1; then \
+		echo "Using pipx to install pyshacl..."; \
+		pipx install pyshacl; \
+		echo "pyshacl installed successfully via pipx!"; \
+	elif command -v pip3 > /dev/null 2>&1; then \
+		echo "Attempting to install with pip3 --user..."; \
+		pip3 install --user pyshacl || pip3 install --user --break-system-packages pyshacl; \
+		echo "pyshacl installed successfully!"; \
+		echo "Note: You may need to add ~/.local/bin to your PATH"; \
+	else \
+		echo "ERROR: No Python package manager found. Please install one of:"; \
+		echo "  - uv (recommended): curl -LsSf https://astral.sh/uv/install.sh | sh"; \
+		echo "  - pipx: sudo apt install pipx"; \
+		echo "  - pip3: sudo apt install python3-pip"; \
+		exit 1; \
+	fi
+
+# Run contract tests (requires pyshacl)
+test-contracts:
+	@echo "Running contract tests..."
+	@if ! command -v pyshacl > /dev/null 2>&1; then \
+		echo "WARNING: pyshacl not found. SHACL validation will be skipped."; \
+		echo "Install with: make install-pyshacl"; \
+		echo ""; \
+	fi
+	@go test -v ./tests/contracts/...
+
+# Validate SHACL shapes against sample data
+validate-shapes:
+	@echo "Validating SHACL shapes..."
+	@if ! command -v pyshacl > /dev/null 2>&1; then \
+		echo "ERROR: pyshacl not found. Install with: make install-pyshacl"; \
+		exit 1; \
+	fi
+	@echo "Running SHACL validation test..."
+	@go test -v ./tests/contracts/... -run SHACL
 
 # SQLc generate
 .PHONY: sqlc-generate

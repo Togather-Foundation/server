@@ -12,10 +12,11 @@ import (
 )
 
 // Validator validates JSON-LD data against SHACL shapes.
-// It uses the pyshacl CLI tool for validation.
+// It uses the pyshacl CLI tool for validation (via uvx or direct execution).
 type Validator struct {
 	shapeFiles  []string
 	pyshaclPath string
+	useUvx      bool // If true, use uvx to run pyshacl
 	enabled     bool
 	mu          sync.RWMutex
 }
@@ -52,15 +53,22 @@ func NewValidator(shapesDir string, enabled bool) (*Validator, error) {
 	}
 	v.shapeFiles = shapeFiles
 
-	// Check if pyshacl is available
-	pyshaclPath, err := exec.LookPath("pyshacl")
-	if err != nil {
-		// Log warning but don't fail - validation will be no-op
-		fmt.Fprintf(os.Stderr, "WARNING: pyshacl not found in PATH, SHACL validation will be disabled\n")
+	// Check if pyshacl is available (try uvx first, then pyshacl directly)
+	if uvxPath, err := exec.LookPath("uvx"); err == nil {
+		// Use uvx to run pyshacl
+		v.pyshaclPath = uvxPath
+		v.useUvx = true
+	} else if pyshaclPath, err := exec.LookPath("pyshacl"); err == nil {
+		// Use pyshacl directly
+		v.pyshaclPath = pyshaclPath
+		v.useUvx = false
+	} else {
+		// Neither found - validation will be no-op
+		fmt.Fprintf(os.Stderr, "WARNING: pyshacl not found in PATH (tried uvx and pyshacl), SHACL validation will be disabled\n")
+		fmt.Fprintf(os.Stderr, "  Install with: make install-pyshacl\n")
 		v.enabled = false
 		return v, nil
 	}
-	v.pyshaclPath = pyshaclPath
 
 	return v, nil
 }
@@ -98,15 +106,26 @@ func (v *Validator) ValidateEvent(ctx context.Context, jsonldData map[string]any
 	}
 	tmpFile.Close()
 
-	// Build pyshacl command arguments
-	args := []string{}
-	for _, shapeFile := range v.shapeFiles {
-		args = append(args, "-s", shapeFile)
+	// Create merged shapes file (pyshacl doesn't handle multiple -s flags correctly)
+	mergedShapesFile, err := v.createMergedShapesFile()
+	if err != nil {
+		return fmt.Errorf("failed to create merged shapes file: %w", err)
 	}
-	args = append(args, tmpFile.Name())
+	defer os.Remove(mergedShapesFile)
+
+	// Build pyshacl command arguments
+	var cmd *exec.Cmd
+	args := []string{}
+
+	if v.useUvx {
+		// Use uvx to run pyshacl
+		args = append(args, "pyshacl")
+	}
+
+	args = append(args, "-s", mergedShapesFile, tmpFile.Name())
 
 	// Execute pyshacl with context timeout
-	cmd := exec.CommandContext(ctx, v.pyshaclPath, args...)
+	cmd = exec.CommandContext(ctx, v.pyshaclPath, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -152,6 +171,31 @@ func findShapeFiles(shapesDir string) ([]string, error) {
 	}
 
 	return absMatches, nil
+}
+
+// createMergedShapesFile creates a temporary file containing all shape files merged.
+// This is necessary because pyshacl doesn't correctly handle multiple -s flags.
+func (v *Validator) createMergedShapesFile() (string, error) {
+	tmpFile, err := os.CreateTemp("", "merged-shapes-*.ttl")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer tmpFile.Close()
+
+	for _, shapeFile := range v.shapeFiles {
+		content, err := os.ReadFile(shapeFile)
+		if err != nil {
+			os.Remove(tmpFile.Name())
+			return "", fmt.Errorf("failed to read shape file %s: %w", shapeFile, err)
+		}
+		if _, err := tmpFile.Write(content); err != nil {
+			os.Remove(tmpFile.Name())
+			return "", fmt.Errorf("failed to write to merged file: %w", err)
+		}
+		tmpFile.WriteString("\n") // Ensure separation between files
+	}
+
+	return tmpFile.Name(), nil
 }
 
 // extractValidationMessage extracts a human-readable message from pyshacl output.

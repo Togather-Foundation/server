@@ -104,6 +104,16 @@ func serializeProperty(prop string, value any) string {
 		if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
 			return fmt.Sprintf("%s <%s>", predicate, v)
 		}
+		// Check if it's a date/datetime field (needs xsd:dateTime coercion)
+		if isDateTimeProperty(prop, v) {
+			escaped := escapeLiteral(v)
+			return fmt.Sprintf("%s \"%s\"^^xsd:dateTime", predicate, escaped)
+		}
+		// Check if it's a date-only field (needs xsd:date coercion)
+		if isDateProperty(prop, v) {
+			escaped := escapeLiteral(v)
+			return fmt.Sprintf("%s \"%s\"^^xsd:date", predicate, escaped)
+		}
 		// Otherwise it's a literal string
 		escaped := escapeLiteral(v)
 		return fmt.Sprintf("%s \"%s\"", predicate, escaped)
@@ -151,4 +161,36 @@ func escapeLiteral(s string) string {
 	s = strings.ReplaceAll(s, "\r", "\\r")
 	s = strings.ReplaceAll(s, "\t", "\\t")
 	return s
+}
+
+// isDateTimeProperty checks if a property should be serialized with xsd:dateTime
+func isDateTimeProperty(prop string, value string) bool {
+	// Check property name (common Schema.org date/time properties)
+	dateTimeProps := []string{
+		"startDate", "endDate", "dateCreated", "dateModified",
+		"datePublished", "uploadDate", "datePosted",
+	}
+	for _, dtProp := range dateTimeProps {
+		if prop == dtProp {
+			// Verify value looks like ISO8601 datetime (has 'T' separator)
+			return strings.Contains(value, "T")
+		}
+	}
+	return false
+}
+
+// isDateProperty checks if a property should be serialized with xsd:date
+func isDateProperty(prop string, value string) bool {
+	// Check property name (common Schema.org date properties)
+	dateProps := []string{
+		"birthDate", "deathDate", "foundingDate", "dissolutionDate",
+	}
+	for _, dProp := range dateProps {
+		if prop == dProp {
+			// Verify value looks like ISO8601 date (YYYY-MM-DD format)
+			// Simple heuristic: date-only has no 'T' and matches pattern
+			return !strings.Contains(value, "T") && len(value) == 10
+		}
+	}
+	return false
 }

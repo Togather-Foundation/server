@@ -13,6 +13,7 @@ This guide helps you get the SEL backend server running locally for development.
 - **Docker & Docker Compose**: For PostgreSQL with extensions
 - **Make**: For running build commands
 - **golangci-lint** (optional): `make install-tools`
+- **Python 3 + pip** (optional): For SHACL validation with `pyshacl`
 
 ## Quick Start
 
@@ -123,6 +124,35 @@ make test-v
 
 # Coverage report
 make coverage
+
+# Contract tests only (includes SHACL validation)
+make test-contracts
+```
+
+### SHACL Validation (Optional)
+
+The server includes SHACL validation for federation sync endpoints. This requires `pyshacl`:
+
+```bash
+# Install pyshacl
+make install-pyshacl
+
+# Validate SHACL shapes
+make validate-shapes
+
+# Verify installation
+pyshacl --version
+```
+
+**Note:** SHACL validation is optional. If `pyshacl` is not installed:
+- The server will log a warning and disable validation (fail-open)
+- Contract tests will skip SHACL validation tests
+- Production deployments should have `pyshacl` installed for full validation
+
+**Environment Variable:**
+```bash
+# Enable/disable SHACL validation (default: enabled)
+SHACL_VALIDATION_ENABLED=true
 ```
 
 ### Code Quality
