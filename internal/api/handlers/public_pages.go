@@ -80,6 +80,18 @@ func (h *PublicPagesHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if event is soft-deleted
+	if item.LifecycleState == "deleted" {
+		tombstone, tombErr := h.EventsService.GetTombstoneByEventULID(r.Context(), ulidValue)
+		if tombErr == nil && tombstone != nil {
+			h.serveEventTombstone(w, r, tombstone)
+			return
+		}
+		// No tombstone found for deleted event, return 410 with minimal info
+		problem.Write(w, r, http.StatusGone, "https://sel.events/problems/gone", "Resource deleted", nil, h.Env)
+		return
+	}
+
 	// Build JSON-LD payload
 	payload := buildEventPayload(item, h.BaseURL)
 
@@ -119,6 +131,18 @@ func (h *PublicPagesHandler) GetPlace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Check if place is soft-deleted
+	if item.Lifecycle == "deleted" {
+		tombstone, tombErr := h.PlacesService.GetTombstoneByULID(r.Context(), ulidValue)
+		if tombErr == nil && tombstone != nil {
+			h.servePlaceTombstone(w, r, tombstone)
+			return
+		}
+		// No tombstone found for deleted place, return 410 with minimal info
+		problem.Write(w, r, http.StatusGone, "https://sel.events/problems/gone", "Resource deleted", nil, h.Env)
 		return
 	}
 
@@ -164,6 +188,18 @@ func (h *PublicPagesHandler) GetOrganization(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Check if organization is soft-deleted
+	if item.Lifecycle == "deleted" {
+		tombstone, tombErr := h.OrganizationsService.GetTombstoneByULID(r.Context(), ulidValue)
+		if tombErr == nil && tombstone != nil {
+			h.serveOrganizationTombstone(w, r, tombstone)
+			return
+		}
+		// No tombstone found for deleted organization, return 410 with minimal info
+		problem.Write(w, r, http.StatusGone, "https://sel.events/problems/gone", "Resource deleted", nil, h.Env)
+		return
+	}
+
 	// Build JSON-LD payload
 	payload := buildOrganizationPayload(item, h.BaseURL)
 
@@ -194,6 +230,11 @@ func (h *PublicPagesHandler) serveWithContentNegotiation(w http.ResponseWriter, 
 
 // serveHTML renders HTML with embedded JSON-LD.
 func (h *PublicPagesHandler) serveHTML(w http.ResponseWriter, r *http.Request, payload map[string]any) {
+	h.serveHTMLWithStatus(w, r, payload, http.StatusOK)
+}
+
+// serveHTMLWithStatus renders HTML with embedded JSON-LD and a specific status code.
+func (h *PublicPagesHandler) serveHTMLWithStatus(w http.ResponseWriter, r *http.Request, payload map[string]any, statusCode int) {
 	var html string
 	var err error
 
@@ -217,12 +258,17 @@ func (h *PublicPagesHandler) serveHTML(w http.ResponseWriter, r *http.Request, p
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusCode)
 	_, _ = w.Write([]byte(html))
 }
 
 // serveTurtle renders Turtle RDF.
 func (h *PublicPagesHandler) serveTurtle(w http.ResponseWriter, r *http.Request, payload map[string]any) {
+	h.serveTurtleWithStatus(w, r, payload, http.StatusOK)
+}
+
+// serveTurtleWithStatus renders Turtle RDF with a specific status code.
+func (h *PublicPagesHandler) serveTurtleWithStatus(w http.ResponseWriter, r *http.Request, payload map[string]any, statusCode int) {
 	turtle, err := jsonld.SerializeToTurtle(payload)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
@@ -230,7 +276,7 @@ func (h *PublicPagesHandler) serveTurtle(w http.ResponseWriter, r *http.Request,
 	}
 
 	w.Header().Set("Content-Type", "text/turtle; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusCode)
 	_, _ = w.Write([]byte(turtle))
 }
 
@@ -264,9 +310,9 @@ func (h *PublicPagesHandler) serveEventTombstone(w http.ResponseWriter, r *http.
 	// Perform content negotiation for tombstone
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "text/html") {
-		h.serveHTML(w, r, payload)
+		h.serveHTMLWithStatus(w, r, payload, http.StatusGone)
 	} else if strings.Contains(accept, "text/turtle") {
-		h.serveTurtle(w, r, payload)
+		h.serveTurtleWithStatus(w, r, payload, http.StatusGone)
 	} else {
 		w.Header().Set("Content-Type", "application/ld+json; charset=utf-8")
 		w.WriteHeader(http.StatusGone)
@@ -297,9 +343,9 @@ func (h *PublicPagesHandler) servePlaceTombstone(w http.ResponseWriter, r *http.
 	// Perform content negotiation for tombstone
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "text/html") {
-		h.serveHTML(w, r, payload)
+		h.serveHTMLWithStatus(w, r, payload, http.StatusGone)
 	} else if strings.Contains(accept, "text/turtle") {
-		h.serveTurtle(w, r, payload)
+		h.serveTurtleWithStatus(w, r, payload, http.StatusGone)
 	} else {
 		w.Header().Set("Content-Type", "application/ld+json; charset=utf-8")
 		w.WriteHeader(http.StatusGone)
@@ -330,9 +376,9 @@ func (h *PublicPagesHandler) serveOrganizationTombstone(w http.ResponseWriter, r
 	// Perform content negotiation for tombstone
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "text/html") {
-		h.serveHTML(w, r, payload)
+		h.serveHTMLWithStatus(w, r, payload, http.StatusGone)
 	} else if strings.Contains(accept, "text/turtle") {
-		h.serveTurtle(w, r, payload)
+		h.serveTurtleWithStatus(w, r, payload, http.StatusGone)
 	} else {
 		w.Header().Set("Content-Type", "application/ld+json; charset=utf-8")
 		w.WriteHeader(http.StatusGone)
