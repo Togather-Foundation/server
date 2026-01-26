@@ -51,7 +51,7 @@ func (h *FeedsHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		}
 		params.Limit = limit
 	} else {
-		params.Limit = 50 // default
+		params.Limit = federation.DefaultChangeFeedLimit
 	}
 
 	// Parse since timestamp
