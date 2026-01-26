@@ -338,13 +338,19 @@ func (h *PublicPagesHandler) serveOrganizationTombstone(w http.ResponseWriter, r
 
 // Helper functions to build payloads
 
-func buildEventPayload(event *events.Event, baseURL string) map[string]any {
-	payload := map[string]any{
+// buildBasePayload creates a JSON-LD payload with common @context, @type, and @id fields.
+// Additional entity-specific fields can be added to the returned map.
+func buildBasePayload(entityType string, uri string) map[string]any {
+	return map[string]any{
 		"@context": loadDefaultContext(),
-		"@type":    "Event",
-		"@id":      buildEventURI(baseURL, event.ULID),
-		"name":     event.Name,
+		"@type":    entityType,
+		"@id":      uri,
 	}
+}
+
+func buildEventPayload(event *events.Event, baseURL string) map[string]any {
+	payload := buildBasePayload("Event", buildEventURI(baseURL, event.ULID))
+	payload["name"] = event.Name
 
 	// Extract startDate from first occurrence if available
 	if len(event.Occurrences) > 0 && !event.Occurrences[0].StartTime.IsZero() {
@@ -375,12 +381,8 @@ func buildEventPayload(event *events.Event, baseURL string) map[string]any {
 }
 
 func buildPlacePayload(place *places.Place, baseURL string) map[string]any {
-	payload := map[string]any{
-		"@context": loadDefaultContext(),
-		"@type":    "Place",
-		"@id":      buildPlaceURI(baseURL, place.ULID),
-		"name":     place.Name,
-	}
+	payload := buildBasePayload("Place", buildPlaceURI(baseURL, place.ULID))
+	payload["name"] = place.Name
 
 	// Build address from City, Region, Country fields
 	if place.City != "" || place.Region != "" || place.Country != "" {
@@ -403,12 +405,8 @@ func buildPlacePayload(place *places.Place, baseURL string) map[string]any {
 }
 
 func buildOrganizationPayload(org *organizations.Organization, baseURL string) map[string]any {
-	payload := map[string]any{
-		"@context": loadDefaultContext(),
-		"@type":    "Organization",
-		"@id":      buildOrganizationURI(baseURL, org.ULID),
-		"name":     org.Name,
-	}
+	payload := buildBasePayload("Organization", buildOrganizationURI(baseURL, org.ULID))
+	payload["name"] = org.Name
 
 	if org.Description != "" {
 		payload["description"] = org.Description
