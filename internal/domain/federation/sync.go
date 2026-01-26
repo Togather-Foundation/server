@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -107,13 +108,16 @@ type UpsertFederatedEventParams struct {
 
 // SyncService handles federation sync operations.
 type SyncService struct {
-	repo SyncRepository
+	repo      SyncRepository
+	validator *jsonld.Validator
 }
 
 // NewSyncService creates a new sync service.
-func NewSyncService(repo SyncRepository) *SyncService {
+// validator can be nil to disable SHACL validation.
+func NewSyncService(repo SyncRepository, validator *jsonld.Validator) *SyncService {
 	return &SyncService{
-		repo: repo,
+		repo:      repo,
+		validator: validator,
 	}
 }
 
@@ -141,6 +145,13 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 	// Validate JSON-LD structure
 	if err := s.validateJSONLD(params.Payload); err != nil {
 		return nil, err
+	}
+
+	// Validate against SHACL shapes (if validator is configured)
+	if s.validator != nil {
+		if err := s.validator.ValidateEvent(ctx, params.Payload); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidJSONLD, err)
+		}
 	}
 
 	// Extract @id (federation URI)

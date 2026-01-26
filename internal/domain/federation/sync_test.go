@@ -86,7 +86,7 @@ func (m *mockSyncRepo) InsertIdempotencyKey(ctx context.Context, params Idempote
 
 func TestSyncEvent_CreatesOccurrence(t *testing.T) {
 	repo := &mockSyncRepo{}
-	service := NewSyncService(repo)
+	service := NewSyncService(repo, nil)
 
 	payload := map[string]any{
 		"@context":  "https://schema.org",
@@ -111,7 +111,7 @@ func TestSyncEvent_CreatesOccurrence(t *testing.T) {
 
 func TestSyncEvent_WithoutURL_UsesFederationURI(t *testing.T) {
 	repo := &mockSyncRepo{}
-	service := NewSyncService(repo)
+	service := NewSyncService(repo, nil)
 
 	payload := map[string]any{
 		"@context":  "https://schema.org",
@@ -137,7 +137,7 @@ func TestSyncEvent_WithoutURL_UsesFederationURI(t *testing.T) {
 func TestSyncEvent_IdempotencyKey(t *testing.T) {
 	t.Run("first request with idempotency key stores it", func(t *testing.T) {
 		repo := &mockSyncRepo{}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -162,7 +162,7 @@ func TestSyncEvent_IdempotencyKey(t *testing.T) {
 		repo := &mockSyncRepo{
 			idempotencyKeys: make(map[string]*IdempotencyKey),
 		}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -196,7 +196,7 @@ func TestSyncEvent_IdempotencyKey(t *testing.T) {
 		repo := &mockSyncRepo{
 			idempotencyKeys: make(map[string]*IdempotencyKey),
 		}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload1 := map[string]any{
 			"@context":  "https://schema.org",

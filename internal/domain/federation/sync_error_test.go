@@ -45,7 +45,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				repo := &mockSyncRepo{}
-				service := NewSyncService(repo)
+				service := NewSyncService(repo, nil)
 
 				_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: tt.payload})
 				require.Error(t, err)
@@ -56,7 +56,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 
 	t.Run("unsupported @type", func(t *testing.T) {
 		repo := &mockSyncRepo{}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context": "https://schema.org",
@@ -72,7 +72,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 
 	t.Run("empty @id", func(t *testing.T) {
 		repo := &mockSyncRepo{}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context": "https://schema.org",
@@ -88,7 +88,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 
 	t.Run("invalid date format", func(t *testing.T) {
 		repo := &mockSyncRepo{}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -107,7 +107,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 		repo := &mockSyncRepoWithErrors{
 			federationNodeErr: errors.New("federation node not found"),
 		}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -126,7 +126,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 		repo := &mockSyncRepoWithErrors{
 			upsertErr: errors.New("database error"),
 		}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -145,7 +145,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 		repo := &mockSyncRepoWithErrors{
 			occurrenceErr: errors.New("occurrence error"),
 		}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		payload := map[string]any{
 			"@context":  "https://schema.org",
@@ -162,7 +162,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 
 	t.Run("context cancelled before processing", func(t *testing.T) {
 		repo := &mockSyncRepo{}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -182,7 +182,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 
 	t.Run("context timeout during processing", func(t *testing.T) {
 		repo := &slowMockSyncRepo{delay: 100 * time.Millisecond}
-		service := NewSyncService(repo)
+		service := NewSyncService(repo, nil)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()

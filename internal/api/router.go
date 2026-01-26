@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -71,8 +74,19 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	changeFeedService := federation.NewChangeFeedService(changeFeedRepo)
 	feedsHandler := handlers.NewFeedsHandler(changeFeedService, cfg.Environment, cfg.Server.BaseURL)
 
+	// Initialize SHACL validator
+	shaclEnabled := os.Getenv("SHACL_VALIDATION_ENABLED") != "false" // Default: enabled
+	shapesDir := findShapesDirectory()
+	validator, err := jsonld.NewValidator(shapesDir, shaclEnabled)
+	if err != nil {
+		logger.Warn().Err(err).Msg("SHACL validator initialization failed, validation disabled")
+		validator = nil
+	} else if validator != nil && shaclEnabled {
+		logger.Info().Str("shapes_dir", shapesDir).Msg("SHACL validation enabled")
+	}
+
 	syncRepo := postgres.NewSyncRepository(pool, queries)
-	syncService := federation.NewSyncService(syncRepo)
+	syncService := federation.NewSyncService(syncRepo, validator)
 	federationService := federation.NewService(repo.Federation(), requireHTTPS)
 	federationHandler := handlers.NewFederationHandler(federationService, syncService, cfg.Environment)
 
@@ -242,4 +256,46 @@ func allowedMethods(handlers map[string]http.Handler) string {
 	}
 	sort.Strings(methods)
 	return strings.Join(methods, ", ")
+}
+
+// findShapesDirectory locates the shapes/ directory relative to the project root.
+func findShapesDirectory() string {
+	// Try common locations relative to the executable
+	candidates := []string{
+		"shapes",                      // Same directory as executable
+		"../shapes",                   // One level up (development)
+		"../../shapes",                // Two levels up
+		"/app/shapes",                 // Container deployment
+		"/usr/local/share/sel/shapes", // System-wide installation
+	}
+
+	for _, candidate := range candidates {
+		if absPath, err := filepath.Abs(candidate); err == nil {
+			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
+				return absPath
+			}
+		}
+	}
+
+	// Fallback: try to find via working directory
+	if wd, err := os.Getwd(); err == nil {
+		// Walk up from working directory looking for go.mod (repo root)
+		dir := wd
+		for i := 0; i < 10; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				shapesPath := filepath.Join(dir, "shapes")
+				if info, err := os.Stat(shapesPath); err == nil && info.IsDir() {
+					return shapesPath
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	// Last resort: return relative path and let validator handle error
+	return "shapes"
 }
