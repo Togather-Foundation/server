@@ -271,10 +271,28 @@ func softDeleteEvent(t *testing.T, env *testEnv, eventID string) {
 func recordDeleteChange(t *testing.T, env *testEnv, eventID string) {
 	t.Helper()
 
-	_, err := env.Pool.Exec(env.Context,
-		`INSERT INTO event_changes (event_id, action, changed_at)
-		 VALUES ($1, 'delete', now())`,
+	// Fetch event data for tombstone-like snapshot
+	var eventULID, eventName string
+	err := env.Pool.QueryRow(env.Context,
+		`SELECT ulid, name FROM events WHERE id = $1`,
 		eventID,
+	).Scan(&eventULID, &eventName)
+	require.NoError(t, err)
+
+	// Create tombstone-style snapshot
+	snapshot := map[string]any{
+		"@type":     "Event",
+		"@id":       "http://localhost/events/" + eventULID,
+		"name":      eventName,
+		"deletedAt": time.Now().UTC().Format(time.RFC3339),
+	}
+	snapshotJSON, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+
+	_, err = env.Pool.Exec(env.Context,
+		`INSERT INTO event_changes (event_id, action, snapshot, changed_at)
+		 VALUES ($1, 'delete', $2, now())`,
+		eventID, snapshotJSON,
 	)
 	require.NoError(t, err, "should successfully record delete change")
 }

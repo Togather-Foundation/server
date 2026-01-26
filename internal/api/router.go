@@ -78,7 +78,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 
 	// Create Federation handlers (T111)
 	changeFeedRepo := postgres.NewChangeFeedRepository(queries)
-	changeFeedService := federation.NewChangeFeedService(changeFeedRepo, logger)
+	changeFeedService := federation.NewChangeFeedService(changeFeedRepo, logger, cfg.Server.BaseURL)
 	feedsHandler := handlers.NewFeedsHandler(changeFeedService, cfg.Environment, cfg.Server.BaseURL)
 
 	// Initialize SHACL validator (DISABLED by default - use in dev/CI only)

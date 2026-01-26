@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
@@ -51,15 +52,17 @@ type ListEventChangesRow struct {
 
 // ChangeFeedService provides business logic for change feed operations.
 type ChangeFeedService struct {
-	repo   ChangeFeedRepository
-	logger zerolog.Logger
+	repo    ChangeFeedRepository
+	logger  zerolog.Logger
+	baseURL string
 }
 
 // NewChangeFeedService creates a new change feed service.
-func NewChangeFeedService(repo ChangeFeedRepository, logger zerolog.Logger) *ChangeFeedService {
+func NewChangeFeedService(repo ChangeFeedRepository, logger zerolog.Logger, baseURL string) *ChangeFeedService {
 	return &ChangeFeedService{
-		repo:   repo,
-		logger: logger,
+		repo:    repo,
+		logger:  logger,
+		baseURL: baseURL,
 	}
 }
 
@@ -228,7 +231,22 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 
 		// Include snapshot if requested and present
 		if params.IncludeSnapshot && len(row.Snapshot) > 0 {
-			entry.Snapshot = row.Snapshot
+			// For DELETE actions, snapshot is already in proper format (tombstone payload)
+			if row.Action == "delete" {
+				entry.Snapshot = row.Snapshot
+			} else {
+				// Transform database snapshot to JSON-LD format for create/update actions
+				transformedSnapshot, err := s.transformSnapshotToJSONLD(row.Snapshot, s.baseURL)
+				if err != nil {
+					s.logger.Warn().
+						Err(err).
+						Str("event_id", entry.EventID).
+						Msg("change feed: failed to transform snapshot, including raw snapshot")
+					entry.Snapshot = row.Snapshot
+				} else {
+					entry.Snapshot = transformedSnapshot
+				}
+			}
 		}
 
 		items = append(items, entry)
@@ -253,4 +271,51 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
+}
+
+// transformSnapshotToJSONLD converts a database snapshot (raw column names) to JSON-LD format.
+func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage, baseURL string) (json.RawMessage, error) {
+	// Parse database snapshot
+	var dbData map[string]any
+	if err := json.Unmarshal(dbSnapshot, &dbData); err != nil {
+		return nil, fmt.Errorf("unmarshal db snapshot: %w", err)
+	}
+
+	// Extract required fields
+	ulid, _ := dbData["ulid"].(string)
+	name, _ := dbData["name"].(string)
+
+	// Build JSON-LD object
+	jsonLD := map[string]any{
+		"@context": "https://togather.foundation/contexts/sel/v0.1.jsonld",
+		"@type":    "Event",
+		"name":     name,
+	}
+
+	// Add @id if we have ULID and baseURL
+	if ulid != "" && baseURL != "" {
+		jsonLD["@id"] = fmt.Sprintf("%s/api/v1/events/%s", baseURL, ulid)
+	}
+
+	// Add optional fields if present
+	if desc, ok := dbData["description"].(string); ok && desc != "" {
+		jsonLD["description"] = desc
+	}
+	if lifecycleState, ok := dbData["lifecycle_state"].(string); ok && lifecycleState != "" {
+		jsonLD["lifecycleState"] = lifecycleState
+	}
+	if eventDomain, ok := dbData["event_domain"].(string); ok && eventDomain != "" {
+		jsonLD["eventDomain"] = eventDomain
+	}
+	if licenseURL, ok := dbData["license_url"].(string); ok && licenseURL != "" {
+		jsonLD["license"] = licenseURL
+	}
+
+	// Marshal back to JSON
+	result, err := json.Marshal(jsonLD)
+	if err != nil {
+		return nil, fmt.Errorf("marshal json-ld: %w", err)
+	}
+
+	return result, nil
 }

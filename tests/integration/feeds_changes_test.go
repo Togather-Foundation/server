@@ -2,12 +2,12 @@ package integration
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -105,9 +105,9 @@ func TestChangeFeedPagination(t *testing.T) {
 
 		firstSeq := first.Items[0].SequenceNumber
 
-		// Fetch changes since first event
+		// Fetch changes after first event (using cursor pagination)
 		params = url.Values{}
-		params.Set("since", first.NextCursor)
+		params.Set("after", first.NextCursor)
 		resp := fetchChangeFeed(t, env, params)
 
 		// All returned items should have sequence > firstSeq
@@ -168,12 +168,15 @@ func TestChangeFeedPagination(t *testing.T) {
 
 	t.Run("empty result set when cursor beyond latest", func(t *testing.T) {
 		// Get latest change
-		latest := fetchChangeFeed(t, env, url.Values{"limit": {"1"}, "order": {"desc"}})
+		latest := fetchChangeFeed(t, env, url.Values{"limit": {"1"}})
 		require.Len(t, latest.Items, 1)
+
+		// Encode a cursor far beyond the latest sequence
+		farFutureCursor := pagination.EncodeChangeCursor(latest.Items[0].SequenceNumber + 1000)
 
 		// Use cursor beyond latest
 		params := url.Values{}
-		params.Set("since", fmt.Sprintf("%d", latest.Items[0].SequenceNumber+1000))
+		params.Set("after", farFutureCursor)
 
 		resp := fetchChangeFeed(t, env, params)
 		require.Empty(t, resp.Items, "should return empty list when cursor is beyond latest")
