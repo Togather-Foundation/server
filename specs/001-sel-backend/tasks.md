@@ -211,11 +211,11 @@ description: "Task list for SEL backend implementation"
 
 ### Tests for User Story 5 (TDD - write first)
 
-- [ ] T092 [P] [US5] Integration tests for source attribution in tests/integration/provenance_event_source_test.go
-- [ ] T093 [P] [US5] Integration tests for field provenance parameter in tests/integration/provenance_field_test.go
-- [ ] T094 [P] [US5] Unit tests for conflict resolution in internal/domain/provenance/conflict_test.go
-- [ ] T094a [P] [US5] Contract test for license information in JSON-LD responses (FR-024) in tests/contracts/license_response_test.go
-- [ ] T094b [P] [US5] Contract test for dual timestamp tracking: source-provided vs server-received (FR-029) in tests/contracts/timestamp_tracking_test.go
+- [X] T092 [P] [US5] Integration tests for source attribution in tests/integration/provenance_event_source_test.go
+- [X] T093 [P] [US5] Integration tests for field provenance parameter in tests/integration/provenance_field_test.go
+- [X] T094 [P] [US5] Unit tests for conflict resolution in internal/domain/provenance/conflict_test.go
+- [X] T094a [P] [US5] Contract test for license information in JSON-LD responses (FR-024) in tests/contracts/license_response_test.go
+- [X] T094b [P] [US5] Contract test for dual timestamp tracking: source-provided vs server-received (FR-029) in tests/contracts/timestamp_tracking_test.go
 
 ### Implementation for User Story 5
 
