@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -73,19 +74,19 @@ type ChangeFeedParams struct {
 
 // ChangeEntry represents a single change in the feed.
 type ChangeEntry struct {
-	ID                string    `json:"id"`
-	EventID           string    `json:"event_id"`
-	EventULID         string    `json:"event_ulid"`
-	Action            string    `json:"action"`
-	ChangedFields     []byte    `json:"changed_fields,omitempty"`
-	Snapshot          []byte    `json:"snapshot,omitempty"`
-	ChangedAt         time.Time `json:"changed_at"`
-	SequenceNumber    int64     `json:"sequence_number"`
-	FederationURI     string    `json:"federation_uri,omitempty"`
-	LicenseURL        string    `json:"license_url"`
-	LicenseStatus     string    `json:"license_status"`
-	SourceTimestamp   time.Time `json:"source_timestamp,omitempty"`
-	ReceivedTimestamp time.Time `json:"received_timestamp"`
+	ID                string          `json:"id"`
+	EventID           string          `json:"event_id"`
+	EventULID         string          `json:"event_ulid"`
+	Action            string          `json:"action"`
+	ChangedFields     json.RawMessage `json:"changed_fields,omitempty"`
+	Snapshot          json.RawMessage `json:"snapshot,omitempty"`
+	ChangedAt         time.Time       `json:"changed_at"`
+	SequenceNumber    int64           `json:"sequence_number"`
+	FederationURI     string          `json:"federation_uri,omitempty"`
+	LicenseURL        string          `json:"license_url"`
+	LicenseStatus     string          `json:"license_status"`
+	SourceTimestamp   time.Time       `json:"source_timestamp,omitempty"`
+	ReceivedTimestamp time.Time       `json:"received_timestamp"`
 }
 
 // ChangeFeedResult represents the result of fetching changes.

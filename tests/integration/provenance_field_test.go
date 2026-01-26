@@ -49,8 +49,8 @@ func TestFieldProvenanceParameter(t *testing.T) {
 
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO event_occurrences (event_id, start_time) VALUES ($1, $2)`,
-		eventID, time.Date(2026, 10, 15, 19, 0, 0, 0, time.UTC),
+		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
+		eventID, time.Date(2026, 10, 15, 19, 0, 0, 0, time.UTC), placeID,
 	)
 	require.NoError(t, err)
 
@@ -148,8 +148,8 @@ func TestFieldProvenanceFiltering(t *testing.T) {
 
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO event_occurrences (event_id, start_time) VALUES ($1, $2)`,
-		eventID, time.Date(2026, 11, 1, 18, 0, 0, 0, time.UTC),
+		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
+		eventID, time.Date(2026, 11, 1, 18, 0, 0, 0, time.UTC), placeID,
 	)
 	require.NoError(t, err)
 
@@ -213,8 +213,8 @@ func TestFieldProvenanceMultipleSources(t *testing.T) {
 
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO event_occurrences (event_id, start_time) VALUES ($1, $2)`,
-		eventID, time.Date(2026, 12, 1, 19, 0, 0, 0, time.UTC),
+		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
+		eventID, time.Date(2026, 12, 1, 19, 0, 0, 0, time.UTC), placeID,
 	)
 	require.NoError(t, err)
 
@@ -282,8 +282,8 @@ func TestFieldProvenanceTimestamps(t *testing.T) {
 
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO event_occurrences (event_id, start_time) VALUES ($1, $2)`,
-		eventID, time.Date(2027, 1, 1, 20, 0, 0, 0, time.UTC),
+		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
+		eventID, time.Date(2027, 1, 1, 20, 0, 0, 0, time.UTC), placeID,
 	)
 	require.NoError(t, err)
 
