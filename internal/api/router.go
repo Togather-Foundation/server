@@ -74,15 +74,16 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	changeFeedService := federation.NewChangeFeedService(changeFeedRepo)
 	feedsHandler := handlers.NewFeedsHandler(changeFeedService, cfg.Environment, cfg.Server.BaseURL)
 
-	// Initialize SHACL validator
-	shaclEnabled := os.Getenv("SHACL_VALIDATION_ENABLED") != "false" // Default: enabled
+	// Initialize SHACL validator (DISABLED by default - use in dev/CI only)
+	// SHACL validation spawns Python processes (~150-200ms overhead per event)
+	shaclEnabled := os.Getenv("SHACL_VALIDATION_ENABLED") == "true" // Default: DISABLED
 	shapesDir := findShapesDirectory()
 	validator, err := jsonld.NewValidator(shapesDir, shaclEnabled)
 	if err != nil {
 		logger.Warn().Err(err).Msg("SHACL validator initialization failed, validation disabled")
 		validator = nil
-	} else if validator != nil && shaclEnabled {
-		logger.Info().Str("shapes_dir", shapesDir).Msg("SHACL validation enabled")
+	} else if shaclEnabled {
+		logger.Warn().Str("shapes_dir", shapesDir).Msg("SHACL validation enabled (spawns Python processes - not recommended for production)")
 	}
 
 	syncRepo := postgres.NewSyncRepository(pool, queries)

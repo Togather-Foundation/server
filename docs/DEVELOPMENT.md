@@ -181,9 +181,19 @@ func TestMyFeature(t *testing.T) {
 
 The SEL backend validates JSON-LD data against SHACL shapes to ensure conformance with the [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md).
 
+**⚠️ WARNING: SHACL validation spawns Python processes (~150-200ms overhead per event). Use ONLY in development/CI, NOT in production.**
+
 ### Setup
 
-SHACL validation is **optional** and disabled by default. To enable it:
+SHACL validation is **disabled by default** for performance reasons.
+
+**Recommended Use Cases:**
+- ✅ Development: Catch schema violations early
+- ✅ CI/CD: Ensure conformance before deployment  
+- ✅ Manual testing: Debug validation issues
+- ❌ Production: Use application-level validation instead (see `internal/domain/events/validation.go`)
+
+To enable validation:
 
 1. **Install pyshacl** (choose one method):
    ```bash
@@ -322,17 +332,35 @@ Constraint Violation in MinCountConstraintComponent:
 
 ### Fail-Open Philosophy
 
-SHACL validation follows a **fail-open** approach:
+SHACL validation follows a **fail-open** approach for operational resilience:
 
 - If `SHACL_VALIDATION_ENABLED=false` (default), validation is skipped entirely
-- If pyshacl is not installed, validation is disabled with a warning
+- If `SHACL_VALIDATION_ENABLED=true` but pyshacl is not installed, validation is disabled with a warning
 - If validation encounters errors, the error is logged but the request succeeds
 - This ensures the server remains operational even without pyshacl installed
 
-**When to Enable:**
+**Production Recommendation:**
+- **DO NOT enable SHACL validation in production** - use application-level validation instead
+- Application-level validation is fast (<1ms) and doesn't spawn processes
+- See `internal/domain/events/validation.go` for production validation logic
+- Reserve SHACL validation for development, testing, and CI/CD
+
+**Where SHACL Validation Runs:**
+- Federation sync endpoint (`/api/v1/federation/sync`) when `SHACL_VALIDATION_ENABLED=true`
+- Validates incoming JSON-LD payloads from federated nodes
+- If validation fails, returns 400 Bad Request with error details
+
+**Why Not Production?**
 - Development: Catch schema violations early
 - CI/CD: Ensure conformance before deployment
 - Production: Optional, adds ~150-200ms per validated event
+
+**Why Not Production?**
+- Spawns Python process on every validation (~150-200ms overhead)
+- Process startup dominates execution time
+- Temporary file I/O adds latency
+- Not horizontally scalable (no connection pooling for processes)
+- Application-level validation is 100-200x faster
 
 ### Performance Considerations
 
@@ -342,9 +370,11 @@ SHACL validation follows a **fail-open** approach:
 - Shape file merging overhead (cached after first use)
 
 **Optimization Tips:**
-- Use validation in development/staging, disable in high-throughput production
-- Consider batch validation for bulk imports
-- Cache validation results by content hash if validating same data repeatedly
+- **Production**: Keep validation disabled (default)
+- **Development**: Enable for real-time feedback on schema violations
+- **CI/CD**: Enable in test pipelines to catch issues before deployment
+- **Bulk Imports**: Consider batch validation offline rather than per-event
+- **Federation**: Application-level validation runs first (fast), SHACL validation is optional second layer
 
 ### Adding New Shapes
 

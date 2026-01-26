@@ -129,25 +129,31 @@ make coverage
 make test-contracts
 ```
 
-### SHACL Validation (Optional)
+### SHACL Validation (Development/CI Only)
 
-The server includes SHACL validation for federation sync endpoints. This requires `pyshacl`:
+**⚠️ WARNING: SHACL validation spawns Python processes (~150-200ms overhead). Use ONLY in development/CI, NOT in production.**
+
+The server includes SHACL validation for development and testing. Production uses fast application-level validation instead.
 
 ```bash
-# Install pyshacl
+# Install pyshacl (development only)
 make install-pyshacl
 
-# Validate SHACL shapes
+# Enable validation (development/CI only)
+export SHACL_VALIDATION_ENABLED=true
+
+# Validate SHACL shapes against test data
 make validate-shapes
 
-# Verify installation
-pyshacl --version
+# Run contract tests (includes SHACL validation)
+make test-contracts
 ```
 
-**Note:** SHACL validation is optional. If `pyshacl` is not installed:
-- The server will log a warning and disable validation (fail-open)
-- Contract tests will skip SHACL validation tests
-- Production deployments should have `pyshacl` installed for full validation
+**Notes:**
+- SHACL validation is **disabled by default** for performance reasons
+- If `pyshacl` is not installed, the server disables validation with a warning (fail-open)
+- Contract tests skip SHACL tests if `pyshacl` is not available
+- **Production deployments should NOT enable SHACL validation** - use application-level validation (`internal/domain/events/validation.go`) which is 100-200x faster
 
 **Environment Variable:**
 ```bash
