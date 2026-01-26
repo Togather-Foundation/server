@@ -114,6 +114,8 @@ func (s *Service) validateCreateParams(params CreateNodeParams) error {
 		return err
 	}
 
+	// Validate trust level (1-10)
+	// See Node.TrustLevel for trust level guidelines
 	if params.TrustLevel < 1 || params.TrustLevel > 10 {
 		return ErrInvalidNodeParams
 	}
@@ -145,6 +147,8 @@ func (s *Service) validateCreateParams(params CreateNodeParams) error {
 
 // validateUpdateParams validates node update parameters
 func (s *Service) validateUpdateParams(params UpdateNodeParams) error {
+	// Validate trust level (1-10) if provided
+	// See Node.TrustLevel for trust level guidelines
 	if params.TrustLevel != nil && (*params.TrustLevel < 1 || *params.TrustLevel > 10) {
 		return ErrInvalidNodeParams
 	}
