@@ -206,16 +206,16 @@ func fetchChangeFeed(t *testing.T, env *testEnv, params url.Values) changeFeedRe
 	}
 
 	req, err := http.NewRequest(http.MethodGet, u, nil)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to create HTTP GET request for change feed")
 	req.Header.Set("Accept", "application/ld+json")
 
 	resp, err := env.Server.Client().Do(req)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to execute change feed HTTP request")
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	require.Equal(t, http.StatusOK, resp.StatusCode, "change feed request should succeed")
 
 	var payload changeFeedResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload), "failed to decode change feed response JSON")
 	return payload
 }
 
@@ -229,7 +229,7 @@ func updateEventName(t *testing.T, env *testEnv, eventULID, newName string) {
 		`UPDATE events SET name = $1, updated_at = now() WHERE id = $2`,
 		newName, eventID,
 	)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to update event name in database")
 
 	// Record change in event_changes table
 	_, err = env.Pool.Exec(env.Context,
@@ -237,7 +237,7 @@ func updateEventName(t *testing.T, env *testEnv, eventULID, newName string) {
 		 VALUES ($1, 'update', $2, now())`,
 		eventID, `["name"]`,
 	)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to insert event change record")
 }
 
 // lookupEventIDByULID retrieves the internal UUID for an event by its ULID

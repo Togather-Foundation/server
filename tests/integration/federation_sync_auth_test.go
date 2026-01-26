@@ -135,12 +135,12 @@ func TestFederationSyncValidation(t *testing.T) {
 		invalidJSON := []byte(`{"@type": "Event", "name": "Missing closing brace"`)
 
 		req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/federation/sync", bytes.NewReader(invalidJSON))
-		require.NoError(t, err)
+		require.NoError(t, err, "failed to create HTTP request for malformed JSON test")
 		req.Header.Set("Content-Type", "application/ld+json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 
 		resp, err := env.Server.Client().Do(req)
-		require.NoError(t, err)
+		require.NoError(t, err, "failed to execute HTTP request for malformed JSON test")
 		defer resp.Body.Close()
 
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode,
@@ -209,10 +209,10 @@ func postFederationSync(t *testing.T, env *testEnv, apiKey string, payload map[s
 	t.Helper()
 
 	body, err := json.Marshal(payload)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to marshal federation sync payload to JSON")
 
 	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/federation/sync", bytes.NewReader(body))
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to create HTTP POST request for federation sync")
 	req.Header.Set("Content-Type", "application/ld+json")
 	req.Header.Set("Accept", "application/ld+json")
 
@@ -221,7 +221,7 @@ func postFederationSync(t *testing.T, env *testEnv, apiKey string, payload map[s
 	}
 
 	resp, err := env.Server.Client().Do(req)
-	require.NoError(t, err)
+	require.NoError(t, err, "failed to execute federation sync HTTP request")
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	return resp
