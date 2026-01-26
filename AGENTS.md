@@ -85,6 +85,17 @@ go test -v ./path/to/package -run TestName
 gofmt -w path/to/file.go
 ```
 
+## Repo Layout (quick map)
+
+- `internal/api/` - HTTP routing, handlers, middleware, content negotiation helpers
+- `internal/domain/` - Core domain logic by feature (`events`, `places`, `organizations`, `federation`)
+- `internal/storage/postgres/` - SQLc queries, repositories, migrations
+- `tests/integration/` - End-to-end integration tests and helpers
+- `docs/` - SEL documentation and profiles
+- `plan/` and `specs/` - Spec Kit artifacts (source of intent)
+- `contexts/` and `shapes/` - JSON-LD contexts and SHACL shapes
+- `Makefile` - Common build/test/lint targets
+
 ## Code Style and Architecture Guidelines
 
 Use idiomatic Go, consistent with SEL docs in `docs/` and `plan/`.
