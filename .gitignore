@@ -80,8 +80,9 @@ reports/
 .opencode/
 .openpackage/
 
-# github
-.github/
+# github agents (spec kit related)
+.github/agents/
+.github/prompts/
 
 # Spec kit
 .specify/

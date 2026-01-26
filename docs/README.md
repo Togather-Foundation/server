@@ -9,6 +9,22 @@ This directory contains the comprehensive technical documentation for the Shared
 
 ## Core Architecture Documents
 
+### 📖 [Terminology Glossary](./glossary.md)
+**Status:** Living Document (NEW - v0.1.3)  
+Canonical definitions for all SEL-specific terminology used across documentation and codebase.
+
+**Key Topics:**
+- Core concepts (change feed, lifecycle state, field provenance, federation URI)
+- Authentication & authorization (API keys, roles, RBAC)
+- Data model (ULID, event occurrences, tombstones)
+- Provenance & sources (trust levels, confidence scores)
+- Federation (origin nodes, sequence numbers)
+- Schema.org alignment (event status, attendance mode)
+- API patterns (cursor pagination, idempotency keys)
+- Testing & validation (contract tests, SHACL validation)
+
+**Use this glossary** to ensure consistent terminology in code, docs, and discussions.
+
 ### 📋 [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md)
 **Status:** Proposed for Community Review  
 The authoritative specification for SEL federation, API contracts, and linked data output. This is the "source of truth" for implementation.
@@ -24,6 +40,14 @@ The authoritative specification for SEL federation, API contracts, and linked da
 ### 🏗️ [SEL Server Architecture Design v1](./togather_SEL_server_architecture_design_v1.md)
 **Status:** Updated 2026-01-25  
 Complete system architecture including component design, API endpoints, and implementation guidelines.
+
+**This document serves as the implementation plan** for the SEL backend, providing:
+- Technology stack decisions and rationale
+- Detailed component architecture and interfaces
+- API endpoint specifications with OpenAPI 3.1
+- Database schema strategy and migration approach
+- Security model and threat mitigation
+- Testing strategy and quality gates
 
 **Key Topics:**
 - Component overview (Go monolith design)
@@ -67,7 +91,7 @@ Detailed database schema with all tables, indexes, triggers, and SQL definitions
 
 ### 🛠️ [Development Guide](./DEVELOPMENT.md)
 **Status:** Living Document  
-Guidelines and best practices for developing the SEL backend.
+Guidelines and best practices for developing the SEL backend. Complements the Architecture Design's implementation plan with practical development workflows.
 
 **Key Topics:**
 - Logging standards (zerolog, structured logging)
@@ -125,14 +149,22 @@ See above in Core Architecture section.
 
 ## Quick Start Guide
 
+**Implementation Plan Reference:**  
+The SEL backend implementation follows a specification-driven approach documented in:
+1. **Feature Specification**: `specs/001-sel-backend/spec.md` — What to build (user needs)
+2. **Implementation Plan**: `specs/001-sel-backend/plan.md` — How to build it (tech stack, structure)
+3. **Architecture Design**: [Architecture Design v1](./togather_SEL_server_architecture_design_v1.md) — Detailed implementation guidance
+4. **Task Breakdown**: `specs/001-sel-backend/tasks.md` — Step-by-step TDD execution plan
+
 **For Developers:**
 
-1. **Start Here**: [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) — understand the contracts
-2. **System Design**: [Architecture Design](./togather_SEL_server_architecture_design_v1.md) — see how it all fits together
-3. **Development Guide**: [Development Guide](./DEVELOPMENT.md) — logging, SHACL validation, and best practices
-4. **Security**: [Security Model](./SECURITY.md) — threat model, protections, and operational practices
-5. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
-6. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
+1. **Start Here**: [Terminology Glossary](./glossary.md) — learn the vocabulary
+2. **Understand Contracts**: [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) — API contracts
+3. **System Design**: [Architecture Design](./togather_SEL_server_architecture_design_v1.md) — implementation plan
+4. **Development Guide**: [Development Guide](./DEVELOPMENT.md) — logging, SHACL validation, best practices
+5. **Security**: [Security Model](./SECURITY.md) — threat model, protections, operations
+6. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
+7. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
 
 **For API Consumers:**
 
@@ -161,6 +193,7 @@ See above in Core Architecture section.
 
 | Document | Status | Last Updated | Next Review |
 |----------|--------|--------------|-------------|
+| **Glossary** | **Living Document** | **2026-01-26** | **Ongoing** |
 | Interoperability Profile | Proposed for Review | 2026-01-20 | 2026-02-20 |
 | Architecture Design | Updated | 2026-01-25 | 2026-02-25 |
 | **Security Model** | **Living Document** | **2026-01-25** | **Ongoing** |
@@ -172,6 +205,32 @@ See above in Core Architecture section.
 ---
 
 ## Key Changes in v0.1.3 (2026-01-26)
+
+### 📖 New Terminology Glossary
+
+**Created comprehensive canonical terminology reference:**
+
+1. **New Document**: [Terminology Glossary](./glossary.md)
+   - 25+ defined terms across 8 categories
+   - Core concepts: change feed, lifecycle state, field provenance, federation URI
+   - Authentication: API keys, roles, RBAC
+   - Data model: ULID, event occurrences, tombstones, sequence numbers
+   - Federation: origin nodes, federation sync patterns
+   - Schema.org alignment: event status, attendance mode
+   - API patterns: cursor pagination, idempotency keys
+   - Testing: contract tests, SHACL validation
+
+2. **Documentation Updates**: [README](./README.md)
+   - Added glossary to core architecture documents
+   - Clarified implementation plan structure (spec → plan → architecture → tasks)
+   - Updated developer quick start to reference glossary first
+   - Added glossary to document status tracking
+
+**Why This Matters:**
+- Ensures consistent terminology across codebase and documentation
+- Reduces onboarding time for new developers
+- Provides canonical definitions for code reviews and discussions
+- Cross-references related concepts for deeper understanding
 
 ### 🔧 SHACL Validation Improvements
 

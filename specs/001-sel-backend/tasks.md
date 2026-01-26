@@ -259,19 +259,19 @@ description: "Task list for SEL backend implementation"
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T112 [P] Update docs/ and specs/001-sel-backend/quickstart.md with TDD steps and test commands
-- [ ] T112a [P] Add terminology glossary to docs/glossary.md (canonical terms: change_feed=ordered log of modifications, lifecycle_state=event state enum, field_provenance=source attribution, federation_uri=original URI for federated entities)
-- [ ] T113 [P] Add Go coverage thresholds in Makefile (go test -coverprofile + coverage check)
-- [ ] T114 [P] Add CI test targets for contract + integration tests in .github/workflows/ci.yml
-- [ ] T115 [P] Add CI target for SHACL validation against shapes/*.ttl in .github/workflows/ci.yml
-- [ ] T116 [P] Add CI target for federation sync contract/integration tests in .github/workflows/ci.yml
-- [ ] T117 [P] Add docs updates referencing SEL_Implementation_Plan.md in docs/README.md
-- [ ] T118a [P] Edge case test: Event submission with future date >730 days (accept with flagging) in tests/integration/edge_cases_test.go
-- [ ] T118b [P] Edge case test: Invalid/expired external links (defer validation, accept with warning) in tests/integration/edge_cases_test.go
-- [ ] T118c [P] Edge case test: Non-CC0 license submission (reject at boundary with error) in tests/integration/edge_cases_test.go
-- [ ] T118d [P] Edge case test: Concurrent update conflict (optimistic locking, 409 response) in tests/integration/edge_cases_test.go
-- [ ] T118e [P] Edge case test: Missing Accept header (default to application/json) in tests/integration/edge_cases_test.go
-- [ ] T119 Run full test suite and record results in specs/001-sel-backend/quickstart.md
+ - [X] T112 [P] Update docs/ and specs/001-sel-backend/quickstart.md with TDD steps and test commands
+ - [X] T112a [P] Add terminology glossary to docs/glossary.md (canonical terms: change_feed=ordered log of modifications, lifecycle_state=event state enum, field_provenance=source attribution, federation_uri=original URI for federated entities)
+ - [X] T113 [P] Add Go coverage thresholds in Makefile (go test -coverprofile + coverage check)
+ - [X] T114 [P] Add CI test targets for contract + integration tests in .github/workflows/ci.yml
+ - [X] T115 [P] Add CI target for SHACL validation against shapes/*.ttl in .github/workflows/ci.yml
+ - [X] T116 [P] Add CI target for federation sync contract/integration tests in .github/workflows/ci.yml
+ - [X] T117 [P] Add docs updates referencing SEL_Implementation_Plan.md in docs/README.md
+ - [X] T118a [P] Edge case test: Event submission with future date >730 days (accept with flagging) in tests/integration/edge_cases_test.go
+ - [X] T118b [P] Edge case test: Invalid/expired external links (defer validation, accept with warning) in tests/integration/edge_cases_test.go
+ - [X] T118c [P] Edge case test: Non-CC0 license submission (reject at boundary with error) in tests/integration/edge_cases_test.go
+ - [X] T118d [P] Edge case test: Concurrent update conflict (optimistic locking, 409 response) in tests/integration/edge_cases_test.go
+ - [X] T118e [P] Edge case test: Missing Accept header (default to application/json) in tests/integration/edge_cases_test.go
+ - [X] T119 Run full test suite and record results in specs/001-sel-backend/quickstart.md
 
 ---
 

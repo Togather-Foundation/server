@@ -1,4 +1,4 @@
-.PHONY: help build test lint fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down
+.PHONY: help build test lint fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 
@@ -11,7 +11,8 @@ help:
 	@echo "  make test          - Run all tests"
 	@echo "  make test-v        - Run tests with verbose output"
 	@echo "  make test-race     - Run tests with race detector"
-	@echo "  make coverage      - Run tests with coverage report"
+	@echo "  make coverage      - Run tests with coverage report (enforces 80% threshold)"
+	@echo "  make coverage-check - Check if coverage meets 80% threshold"
 	@echo "  make lint          - Run golangci-lint"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
@@ -52,6 +53,30 @@ coverage:
 	@go test -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+	@$(MAKE) coverage-check
+
+# Check coverage threshold (80% minimum)
+coverage-check:
+	@echo ""
+	@echo "Checking coverage threshold (80% minimum)..."
+	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	THRESHOLD=80; \
+	if [ -z "$$COVERAGE" ]; then \
+		echo "ERROR: Could not parse coverage percentage"; \
+		exit 1; \
+	fi; \
+	echo "Current coverage: $$COVERAGE%"; \
+	if [ $$(echo "$$COVERAGE >= $$THRESHOLD" | bc) -eq 1 ]; then \
+		echo "✓ Coverage meets threshold ($$COVERAGE% >= $$THRESHOLD%)"; \
+	else \
+		echo "✗ Coverage below threshold ($$COVERAGE% < $$THRESHOLD%)"; \
+		echo ""; \
+		echo "To improve coverage:"; \
+		echo "  1. Run 'make coverage' to generate HTML report"; \
+		echo "  2. Open coverage.html to see uncovered lines"; \
+		echo "  3. Add tests for uncovered code paths"; \
+		exit 1; \
+	fi
 
 # Run linter (requires golangci-lint)
 lint:
