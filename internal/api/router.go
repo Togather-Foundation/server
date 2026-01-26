@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,10 +57,16 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	// Create audit logger for admin operations
 	auditLogger := audit.NewLogger()
 
+	// Load admin templates
+	templates, err := loadAdminTemplates()
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to load admin templates, admin UI will be unavailable")
+	}
+
 	// Admin handlers
 	queries := postgres.New(pool)
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
-	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, nil)
+	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates)
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
@@ -299,4 +306,53 @@ func findShapesDirectory() string {
 
 	// Last resort: return relative path and let validator handle error
 	return "shapes"
+}
+
+// loadAdminTemplates loads HTML templates for the admin UI.
+// Returns nil if templates cannot be found (admin UI will gracefully degrade).
+func loadAdminTemplates() (*template.Template, error) {
+	// Try common locations for the templates directory
+	candidates := []string{
+		"web/admin/templates",                      // From project root
+		"../web/admin/templates",                   // One level up
+		"../../web/admin/templates",                // Two levels up
+		"/app/web/admin/templates",                 // Container deployment
+		"/usr/local/share/sel/web/admin/templates", // System-wide installation
+	}
+
+	for _, candidate := range candidates {
+		if absPath, err := filepath.Abs(candidate); err == nil {
+			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
+				// Found templates directory, parse all .html files
+				pattern := filepath.Join(absPath, "*.html")
+				if tmpl, err := template.ParseGlob(pattern); err == nil {
+					return tmpl, nil
+				}
+			}
+		}
+	}
+
+	// Try to find via working directory
+	if wd, err := os.Getwd(); err == nil {
+		// Walk up from working directory looking for go.mod (repo root)
+		dir := wd
+		for i := 0; i < 10; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				templatesPath := filepath.Join(dir, "web", "admin", "templates")
+				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
+					pattern := filepath.Join(templatesPath, "*.html")
+					if tmpl, err := template.ParseGlob(pattern); err == nil {
+						return tmpl, nil
+					}
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	return nil, os.ErrNotExist
 }
