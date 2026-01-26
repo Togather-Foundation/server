@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
 	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error
+	CreateFederatedEventOccurrence(ctx context.Context, arg CreateFederatedEventOccurrenceParams) error
 	// SQLc queries for federation sync.
 	CreateFederationNode(ctx context.Context, arg CreateFederationNodeParams) (FederationNode, error)
 	CreateOrganizationTombstone(ctx context.Context, arg CreateOrganizationTombstoneParams) error

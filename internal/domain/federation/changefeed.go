@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -89,6 +90,11 @@ type ChangeFeedResult struct {
 
 // GetChanges retrieves event changes with pagination and filtering.
 func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedParams) (*ChangeFeedResult, error) {
+	// Check for context cancellation
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Validate and set defaults
 	if params.Limit <= 0 {
 		params.Limit = 50
@@ -127,9 +133,19 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 		}
 	}
 
+	// Check for context cancellation before database query
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Execute query
 	rows, err := s.repo.ListEventChanges(ctx, queryParams)
 	if err != nil {
+		return nil, err
+	}
+
+	// Check for context cancellation before processing results
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -143,8 +159,8 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 	items := make([]ChangeEntry, 0, len(rows))
 	for _, row := range rows {
 		entry := ChangeEntry{
-			ID:             uuidToString(row.ID),
-			EventID:        uuidToString(row.EventID),
+			ID:             ids.UUIDToString(row.ID),
+			EventID:        ids.UUIDToString(row.EventID),
 			EventULID:      row.EventUlid,
 			Action:         row.Action,
 			ChangedAt:      row.ChangedAt.Time,
@@ -189,12 +205,4 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
-}
-
-// uuidToString converts a pgtype.UUID to a string.
-func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return string(u.Bytes[:])
 }

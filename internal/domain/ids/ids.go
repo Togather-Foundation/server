@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -211,4 +213,17 @@ func buildAbsoluteURI(nodeDomain, relativePath string) (string, error) {
 
 	cleanPath := path.Clean("/" + strings.TrimSpace(relativePath))
 	return fmt.Sprintf("%s://%s%s", scheme, host, cleanPath), nil
+}
+
+// UUIDToString converts a pgtype.UUID to a properly formatted UUID string.
+// Returns an empty string if the UUID is not valid.
+func UUIDToString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	parsedUUID, err := uuid.FromBytes(u.Bytes[:])
+	if err != nil {
+		return ""
+	}
+	return parsedUUID.String()
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -122,7 +123,7 @@ func (r *ProvenanceRepository) GetEventSources(ctx context.Context, eventID stri
 	result := make([]provenance.EventSourceAttribution, 0, len(rows))
 	for _, row := range rows {
 		attr := provenance.EventSourceAttribution{
-			SourceID:    uuidToString(row.SourceID),
+			SourceID:    ids.UUIDToString(row.SourceID),
 			SourceName:  row.SourceName,
 			SourceType:  row.SourceType,
 			SourceURL:   row.SourceUrl,
@@ -215,7 +216,7 @@ func (r *ProvenanceRepository) GetCanonicalFieldValue(ctx context.Context, event
 
 	info := provenance.FieldProvenanceInfo{
 		FieldPath:   row.FieldPath,
-		SourceID:    uuidToString(row.SourceID),
+		SourceID:    ids.UUIDToString(row.SourceID),
 		SourceName:  row.SourceName,
 		SourceType:  row.SourceType,
 		TrustLevel:  int(row.TrustLevel),
@@ -280,7 +281,7 @@ func mapFieldProvenanceRows(rows []GetFieldProvenanceRow) []provenance.FieldProv
 
 		info := provenance.FieldProvenanceInfo{
 			FieldPath:   row.FieldPath,
-			SourceID:    uuidToString(row.SourceID),
+			SourceID:    ids.UUIDToString(row.SourceID),
 			SourceName:  row.SourceName,
 			SourceType:  row.SourceType,
 			TrustLevel:  int(row.TrustLevel),
@@ -312,7 +313,7 @@ func mapFieldProvenanceRowsFromPaths(rows []GetFieldProvenanceForPathsRow) []pro
 
 		info := provenance.FieldProvenanceInfo{
 			FieldPath:   row.FieldPath,
-			SourceID:    uuidToString(row.SourceID),
+			SourceID:    ids.UUIDToString(row.SourceID),
 			SourceName:  row.SourceName,
 			SourceType:  row.SourceType,
 			TrustLevel:  int(row.TrustLevel),
@@ -337,16 +338,4 @@ func parseUUID(s string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, err
 	}
 	return uuid, nil
-}
-
-func uuidToString(uuid pgtype.UUID) string {
-	if !uuid.Valid {
-		return ""
-	}
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		uuid.Bytes[0:4],
-		uuid.Bytes[4:6],
-		uuid.Bytes[6:8],
-		uuid.Bytes[8:10],
-		uuid.Bytes[10:16])
 }

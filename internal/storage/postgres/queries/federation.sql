@@ -146,3 +146,14 @@ DO UPDATE SET
   version = events.version + 1,
   updated_at = now()
 RETURNING *;
+
+-- name: CreateFederatedEventOccurrence :exec
+INSERT INTO event_occurrences (
+  event_id,
+  start_time,
+  end_time,
+  timezone,
+  virtual_url
+) VALUES (
+  $1, $2, $3, $4, $5
+);

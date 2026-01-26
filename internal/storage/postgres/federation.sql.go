@@ -11,6 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createFederatedEventOccurrence = `-- name: CreateFederatedEventOccurrence :exec
+INSERT INTO event_occurrences (
+  event_id,
+  start_time,
+  end_time,
+  timezone,
+  virtual_url
+) VALUES (
+  $1, $2, $3, $4, $5
+)
+`
+
+type CreateFederatedEventOccurrenceParams struct {
+	EventID    pgtype.UUID        `json:"event_id"`
+	StartTime  pgtype.Timestamptz `json:"start_time"`
+	EndTime    pgtype.Timestamptz `json:"end_time"`
+	Timezone   string             `json:"timezone"`
+	VirtualUrl pgtype.Text        `json:"virtual_url"`
+}
+
+func (q *Queries) CreateFederatedEventOccurrence(ctx context.Context, arg CreateFederatedEventOccurrenceParams) error {
+	_, err := q.db.Exec(ctx, createFederatedEventOccurrence,
+		arg.EventID,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Timezone,
+		arg.VirtualUrl,
+	)
+	return err
+}
+
 const createFederationNode = `-- name: CreateFederationNode :one
 
 INSERT INTO federation_nodes (

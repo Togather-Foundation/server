@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/jackc/pgx/v5"
@@ -102,4 +103,34 @@ func (r *SyncRepository) GetFederationNodeByDomain(ctx context.Context, nodeDoma
 		ID:         row.ID,
 		NodeDomain: row.NodeDomain,
 	}, nil
+}
+
+// CreateOccurrence creates an event occurrence for a federated event.
+func (r *SyncRepository) CreateOccurrence(ctx context.Context, params federation.OccurrenceCreateParams) error {
+	err := r.queries.CreateFederatedEventOccurrence(ctx, CreateFederatedEventOccurrenceParams{
+		EventID:    params.EventID,
+		StartTime:  pgtype.Timestamptz{Time: params.StartTime, Valid: true},
+		EndTime:    timestamptzFromTimePtr(params.EndTime),
+		Timezone:   params.Timezone,
+		VirtualUrl: textFromStringPtr(params.VirtualURL),
+	})
+	if err != nil {
+		return fmt.Errorf("create occurrence: %w", err)
+	}
+	return nil
+}
+
+// Helper functions to convert between domain and pgtype
+func timestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{Valid: false}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+
+func textFromStringPtr(s *string) pgtype.Text {
+	if s == nil {
+		return pgtype.Text{Valid: false}
+	}
+	return pgtype.Text{String: *s, Valid: true}
 }
