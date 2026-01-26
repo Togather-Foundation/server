@@ -65,6 +65,22 @@ Detailed database schema with all tables, indexes, triggers, and SQL definitions
 - Federation infrastructure
 - Vector embeddings and search
 
+### 🛠️ [Development Guide](./DEVELOPMENT.md)
+**Status:** Living Document  
+Guidelines and best practices for developing the SEL backend.
+
+**Key Topics:**
+- Logging standards (zerolog, structured logging)
+- Request correlation IDs
+- PII and sensitive data handling
+- **SHACL validation and Turtle serialization** (NEW)
+  - Setup and configuration
+  - Turtle datatype coercion requirements
+  - pyshacl multi-shape file limitation
+  - uvx vs direct execution
+  - Testing and debugging
+- Background job logging (River + slog)
+
 ---
 
 ## Integration Guides
@@ -113,9 +129,10 @@ See above in Core Architecture section.
 
 1. **Start Here**: [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) — understand the contracts
 2. **System Design**: [Architecture Design](./togather_SEL_server_architecture_design_v1.md) — see how it all fits together
-3. **Security**: [Security Model](./SECURITY.md) — threat model, protections, and operational practices
-4. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
-5. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
+3. **Development Guide**: [Development Guide](./DEVELOPMENT.md) — logging, SHACL validation, and best practices
+4. **Security**: [Security Model](./SECURITY.md) — threat model, protections, and operational practices
+5. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
+6. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
 
 **For API Consumers:**
 
@@ -147,9 +164,42 @@ See above in Core Architecture section.
 | Interoperability Profile | Proposed for Review | 2026-01-20 | 2026-02-20 |
 | Architecture Design | Updated | 2026-01-25 | 2026-02-25 |
 | **Security Model** | **Living Document** | **2026-01-25** | **Ongoing** |
+| **Development Guide** | **Living Document** | **2026-01-26** | **Ongoing** |
 | Schema Design | Living Document | 2026-01-21 | Ongoing |
 | **Multi-Graph Strategy** | **Draft** | **2026-01-23** | **2026-02-23** |
 | Artsdata Integration | Updated | 2026-01-23 | 2026-03-23 |
+
+---
+
+## Key Changes in v0.1.3 (2026-01-26)
+
+### 🔧 SHACL Validation Improvements
+
+**Fixed SHACL validation to work correctly with uvx and proper RDF serialization:**
+
+1. **Development Guide Updates**: [Development Guide § SHACL](./DEVELOPMENT.md#shacl-validation-and-turtle-serialization)
+   - Comprehensive SHACL validation documentation
+   - Turtle serialization requirements and datatype coercion
+   - pyshacl multi-shape file limitation workaround
+   - uvx vs direct pyshacl execution
+   - Testing and debugging guide
+   - Performance considerations
+
+2. **Technical Fixes** (commit `bf95fb1`):
+   - **Fixed pyshacl multi-shape handling**: Merge all shape files into single temp file (pyshacl doesn't handle multiple `-s` flags correctly)
+   - **Fixed Turtle datetime serialization**: Add `^^xsd:dateTime` and `^^xsd:date` type coercion for Schema.org date properties
+   - **Added uvx support**: Automatically detect and use `uvx` (modern Python package runner) before falling back to direct `pyshacl`
+
+3. **Test Coverage**:
+   - ✅ All 31 jsonld tests pass (was 27/31)
+   - ✅ 4/4 validator tests pass (was 1/4 - tests were inverted)
+   - ✅ Coverage: 79.4% (increased from 70.6%)
+   - ✅ SHACL validation correctly detects missing required fields
+
+**Why This Matters:**
+- SHACL validation ensures SEL nodes produce conformant JSON-LD output
+- Proper RDF datatypes are critical for semantic interoperability
+- uvx support enables validation in modern Python environments (PEP 668)
 
 ---
 

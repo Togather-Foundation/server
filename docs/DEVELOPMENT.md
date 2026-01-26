@@ -177,6 +177,201 @@ func TestMyFeature(t *testing.T) {
 }
 ```
 
+## SHACL Validation and Turtle Serialization
+
+The SEL backend validates JSON-LD data against SHACL shapes to ensure conformance with the [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md).
+
+### Setup
+
+SHACL validation is **optional** and disabled by default. To enable it:
+
+1. **Install pyshacl** (choose one method):
+   ```bash
+   # Recommended: Use uvx (modern Python tool runner)
+   make install-pyshacl
+   
+   # Or manually with uvx:
+   uvx pyshacl --help
+   
+   # Or with pipx:
+   pipx install pyshacl
+   
+   # Or with pip (requires virtual environment):
+   pip3 install pyshacl
+   ```
+
+2. **Enable validation** via environment variable:
+   ```bash
+   export SHACL_VALIDATION_ENABLED=true
+   ```
+
+3. **Verify setup**:
+   ```bash
+   make test-contracts  # Run validation tests
+   make validate-shapes # Validate shapes against sample data
+   ```
+
+### How It Works
+
+**Validation Pipeline:**
+
+1. **JSON-LD → Turtle**: Event data is converted to RDF Turtle format
+2. **Shape Loading**: All `.ttl` files in `shapes/` are merged into a single shape graph
+3. **pyshacl Validation**: External `pyshacl` tool validates data against shapes
+4. **Error Reporting**: Violations are returned as structured errors
+
+**Code Locations:**
+- `internal/jsonld/validator.go` - SHACL validator (uvx/pyshacl detection and execution)
+- `internal/jsonld/turtle.go` - JSON-LD to Turtle serialization
+- `shapes/*.ttl` - SHACL shape definitions (event-v0.1.ttl, place-v0.1.ttl, organization-v0.1.ttl)
+
+### Important Implementation Details
+
+#### Turtle Serialization Requires Datatypes
+
+SHACL shapes require proper RDF datatypes for validation to work. The serializer automatically adds type coercion for common Schema.org properties:
+
+**DateTime properties** (have `T` separator):
+```turtle
+# Correct (with ^^xsd:dateTime)
+schema:startDate "2026-01-01T19:00:00Z"^^xsd:dateTime .
+```
+
+Properties: `startDate`, `endDate`, `dateCreated`, `dateModified`, `datePublished`, `uploadDate`, `datePosted`
+
+**Date-only properties** (YYYY-MM-DD format):
+```turtle
+# Correct (with ^^xsd:date)
+schema:birthDate "1990-01-01"^^xsd:date .
+```
+
+Properties: `birthDate`, `deathDate`, `foundingDate`, `dissolutionDate`
+
+**Why This Matters:**
+- SHACL shapes use `sh:datatype xsd:dateTime` constraints
+- Without type coercion, plain string literals won't match the constraint
+- Validation will fail silently (pass when it should fail)
+
+#### pyshacl Multi-Shape File Limitation
+
+pyshacl has a quirk with multiple `-s` flags - only the last shape file is properly applied. 
+
+**Solution:** The validator merges all shape files into a single temporary file before validation.
+
+```go
+// DON'T: Multiple -s flags (doesn't work correctly)
+pyshacl -s event.ttl -s place.ttl -s org.ttl data.ttl
+
+// DO: Merge shapes first (works correctly)
+mergedShapes := mergeShapeFiles(event.ttl, place.ttl, org.ttl)
+pyshacl -s mergedShapes data.ttl
+```
+
+**Implementation:** `validator.go` line 172 (`createMergedShapesFile()` helper)
+
+#### uvx vs Direct pyshacl Execution
+
+The validator supports both execution methods:
+
+1. **uvx** (preferred): Modern Python package runner, works with PEP 668 externally-managed environments
+   ```bash
+   uvx pyshacl -s shapes.ttl data.ttl
+   ```
+
+2. **Direct pyshacl** (fallback): Traditional installed command
+   ```bash
+   pyshacl -s shapes.ttl data.ttl
+   ```
+
+**Detection order:** uvx → pyshacl → disable validation (with warning)
+
+### Testing SHACL Validation
+
+**Unit Tests:**
+```bash
+go test ./internal/jsonld/... -run Validator
+```
+
+**Manual Testing:**
+```bash
+# Create test event
+cat > /tmp/test.json << 'EOF'
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "@id": "https://example.org/events/test-123",
+  "startDate": "2026-01-01T19:00:00Z"
+}
+EOF
+
+# Convert to Turtle
+go run debug_turtle.go < /tmp/test.json > /tmp/test.ttl
+
+# Validate manually
+uvx pyshacl -s shapes/event-v0.1.ttl /tmp/test.ttl
+```
+
+**Expected Result:**
+```
+Validation Report
+Conforms: False
+Results (1):
+Constraint Violation in MinCountConstraintComponent:
+  Message: Event must have exactly one name (1-500 characters)
+```
+
+### Fail-Open Philosophy
+
+SHACL validation follows a **fail-open** approach:
+
+- If `SHACL_VALIDATION_ENABLED=false` (default), validation is skipped entirely
+- If pyshacl is not installed, validation is disabled with a warning
+- If validation encounters errors, the error is logged but the request succeeds
+- This ensures the server remains operational even without pyshacl installed
+
+**When to Enable:**
+- Development: Catch schema violations early
+- CI/CD: Ensure conformance before deployment
+- Production: Optional, adds ~150-200ms per validated event
+
+### Performance Considerations
+
+**Validation Overhead:**
+- ~150-200ms per event (includes process spawn + Python startup)
+- Temporary file I/O on each validation
+- Shape file merging overhead (cached after first use)
+
+**Optimization Tips:**
+- Use validation in development/staging, disable in high-throughput production
+- Consider batch validation for bulk imports
+- Cache validation results by content hash if validating same data repeatedly
+
+### Adding New Shapes
+
+To add validation for new entity types:
+
+1. **Create shape file** in `shapes/`:
+   ```turtle
+   # shapes/person-v0.1.ttl
+   @prefix sh: <http://www.w3.org/ns/shacl#> .
+   @prefix schema: <https://schema.org/> .
+   
+   sel:PersonShape
+       a sh:NodeShape ;
+       sh:targetClass schema:Person ;
+       sh:property [
+           sh:path schema:name ;
+           sh:minCount 1 ;
+           sh:datatype xsd:string ;
+       ] .
+   ```
+
+2. **Shape is auto-loaded** - validator scans `shapes/*.ttl` at startup
+
+3. **Add tests** in `internal/jsonld/validator_test.go`
+
+4. **Update docs** - document required fields in Interoperability Profile
+
 ## Additional Topics
 
 (This document will be expanded with additional development topics as needed)
@@ -186,3 +381,6 @@ func TestMyFeature(t *testing.T) {
 - [zerolog documentation](https://github.com/rs/zerolog)
 - [SEL Architecture § 7 (Observability)](../plan/togather_SEL_server_architecture_design_v1.md)
 - [RFC 7807 Problem Details](https://www.rfc-editor.org/rfc/rfc7807.html)
+- [pyshacl documentation](https://github.com/RDFLib/pySHACL)
+- [SHACL specification (W3C)](https://www.w3.org/TR/shacl/)
+- [RDF Turtle specification](https://www.w3.org/TR/turtle/)
