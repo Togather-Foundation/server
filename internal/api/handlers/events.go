@@ -185,6 +185,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"@context": contextValue,
 		"@type":    "Event",
+		"@id":      buildEventURI(h.BaseURL, item.ULID),
 		"name":     item.Name,
 	}
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))

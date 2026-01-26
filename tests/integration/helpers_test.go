@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -36,45 +39,137 @@ type testEnv struct {
 	Config  config.Config
 }
 
+var (
+	sharedOnce      sync.Once
+	sharedInitErr   error
+	sharedContainer *tcpostgres.PostgresContainer
+	sharedPool      *pgxpool.Pool
+	sharedDBURL     string
+	sharedConfig    config.Config
+)
+
+const sharedContainerName = "togather-integration-db"
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	cleanupShared()
+	os.Exit(code)
+}
+
 func setupTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 
-	container, err := tcpostgres.Run(
-		ctx,
-		"postgis/postgis:16-3.4",
-		tcpostgres.WithDatabase("sel"),
-		tcpostgres.WithUsername("sel"),
-		tcpostgres.WithPassword("sel_dev"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = container.Terminate(context.Background())
-	})
+	initShared(t)
+	resetDatabase(t, sharedPool)
 
-	dbURL, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	migrationsPath := filepath.Join(projectRoot(t), "internal", "storage", "postgres", "migrations")
-	require.NoError(t, migrateWithRetry(dbURL, migrationsPath, 10*time.Second))
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-
-	cfg := testConfig(dbURL)
-	server := httptest.NewServer(api.NewRouter(cfg, testLogger()))
+	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger()))
 	t.Cleanup(server.Close)
 
 	return &testEnv{
 		Context: ctx,
-		DBURL:   dbURL,
-		Pool:    pool,
+		DBURL:   sharedDBURL,
+		Pool:    sharedPool,
 		Server:  server,
-		Config:  cfg,
+		Config:  sharedConfig,
 	}
+}
+
+func initShared(t *testing.T) {
+	t.Helper()
+	sharedOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		container, err := tcpostgres.Run(
+			ctx,
+			"postgis/postgis:16-3.4",
+			tcpostgres.WithDatabase("sel"),
+			tcpostgres.WithUsername("sel"),
+			tcpostgres.WithPassword("sel_dev"),
+			testcontainers.WithReuseByName(sharedContainerName),
+		)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedContainer = container
+
+		dbURL, err := container.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedDBURL = dbURL
+
+		migrationsPath := filepath.Join(projectRoot(t), "internal", "storage", "postgres", "migrations")
+		if err := migrateWithRetry(dbURL, migrationsPath, 10*time.Second); err != nil {
+			sharedInitErr = err
+			return
+		}
+
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedPool = pool
+		sharedConfig = testConfig(dbURL)
+	})
+
+	require.NoError(t, sharedInitErr)
+}
+
+func cleanupShared() {
+	if sharedPool != nil {
+		sharedPool.Close()
+	}
+	if sharedContainer != nil {
+		_ = sharedContainer.Terminate(context.Background())
+	}
+}
+
+func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if pool == nil {
+		require.Fail(t, "shared pool is nil")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := pool.Query(ctx, `
+SELECT tablename
+  FROM pg_tables
+ WHERE schemaname = 'public'
+   AND tablename <> 'schema_migrations'
+ ORDER BY tablename;
+`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		if name == "" {
+			continue
+		}
+		safe := strings.ReplaceAll(name, "\"", "\"\"")
+		tables = append(tables, "\"public\".\""+safe+"\"")
+	}
+	require.NoError(t, rows.Err())
+
+	if len(tables) == 0 {
+		return
+	}
+
+	truncateSQL := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE;"
+	_, err = pool.Exec(ctx, truncateSQL)
+	require.NoError(t, err)
 }
 
 func testLogger() zerolog.Logger {

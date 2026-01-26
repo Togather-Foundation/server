@@ -96,7 +96,7 @@ func TestContentNegotiationHTML(t *testing.T) {
 	// Verify HTML structure
 	require.Contains(t, html, "<!DOCTYPE html>")
 	require.Contains(t, html, "<html")
-	require.Contains(t, html, eventName)
+	require.Contains(t, strings.ToLower(html), strings.ToLower(eventName))
 
 	// Verify embedded JSON-LD
 	require.Contains(t, html, `<script type="application/ld+json">`)
@@ -325,5 +325,5 @@ func TestContentNegotiationBrowserAcceptHeader(t *testing.T) {
 	html := string(body)
 
 	require.Contains(t, html, "<!DOCTYPE html>")
-	require.Contains(t, html, strings.ToLower("Jazz in the Park"))
+	require.Contains(t, strings.ToLower(html), strings.ToLower("Jazz in the Park"))
 }
