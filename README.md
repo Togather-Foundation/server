@@ -81,6 +81,8 @@ In just **2 days** of collaborative development between human oversight and AI a
 - ✅ **92 integration tests** passing at 100% (federation, change feeds, provenance, tombstones)
 - ✅ **14 database migrations** for PostgreSQL + PostGIS schema
 - ✅ **35,064 total lines** of production Go code
+- $28.36 in metered Github Copilot charges
+- ChatGPT 5.2 Codex initially and when large context needed and then mostly Claude Sonnet 4.5
 
 **Key Features Implemented:**
 - Federation sync with URI preservation and nested entity extraction
