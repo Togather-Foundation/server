@@ -99,5 +99,7 @@ In just **2 days** of collaborative development between human oversight and AI a
 
 This rapid development demonstrates the power of AI-assisted development combined with specification-driven design, comprehensive testing, and issue tracking (using our custom `bd` beads system).
 
+For a concrete example of how human direction and coding agents collaborated in this repo, see `docs/agent_workflow_summary.md`.
+
 ---
 *This README provides a high-level overview. Technical documentation can be found in the `docs/` directory.*
