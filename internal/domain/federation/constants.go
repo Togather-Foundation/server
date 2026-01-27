@@ -10,4 +10,10 @@ const (
 
 	// DefaultChangeFeedLimit is the default number of items returned in change feed queries
 	DefaultChangeFeedLimit = 50
+
+	// MaxChangeFeedLimit is the maximum number of items allowed in change feed queries
+	MaxChangeFeedLimit = 200
+
+	// MinChangeFeedLimit is the minimum number of items allowed in change feed queries
+	MinChangeFeedLimit = 1
 )

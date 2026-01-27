@@ -26,8 +26,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	// dbConnectionTimeout is the timeout for establishing database connections
+	dbConnectionTimeout = 5 * time.Second
+
+	// maxRouterRetries is the maximum number of retries for router operations
+	maxRouterRetries = 10
+)
+
 func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dbConnectionTimeout)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, cfg.Database.URL)
 	if err != nil {
@@ -296,7 +304,7 @@ func findShapesDirectory() string {
 	if wd, err := os.Getwd(); err == nil {
 		// Walk up from working directory looking for go.mod (repo root)
 		dir := wd
-		for i := 0; i < 10; i++ {
+		for i := 0; i < maxRouterRetries; i++ {
 			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 				shapesPath := filepath.Join(dir, "shapes")
 				if info, err := os.Stat(shapesPath); err == nil && info.IsDir() {
@@ -343,7 +351,7 @@ func loadAdminTemplates() (*template.Template, error) {
 	if wd, err := os.Getwd(); err == nil {
 		// Walk up from working directory looking for go.mod (repo root)
 		dir := wd
-		for i := 0; i < 10; i++ {
+		for i := 0; i < maxRouterRetries; i++ {
 			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 				templatesPath := filepath.Join(dir, "web", "admin", "templates")
 				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {

@@ -51,7 +51,7 @@ func (h *FeedsHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 	// Parse limit
 	if limitStr := query.Get("limit"); limitStr != "" {
 		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit < 1 || limit > 200 {
+		if err != nil || limit < federation.MinChangeFeedLimit || limit > federation.MaxChangeFeedLimit {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid limit parameter", nil, h.Env)
 			return
 		}

@@ -75,7 +75,7 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 
 	limit := paginationArgs.Limit
 	if limit <= 0 {
-		limit = 50
+		limit = events.DefaultListLimit
 	}
 	limitPlusOne := limit + 1
 
