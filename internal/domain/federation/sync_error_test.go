@@ -241,6 +241,20 @@ func (m *mockSyncRepoWithErrors) CreateOccurrence(ctx context.Context, params Oc
 	return nil
 }
 
+func (m *mockSyncRepoWithErrors) UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error) {
+	return &PlaceRecord{
+		ID:   "place-id-123",
+		ULID: params.ULID,
+	}, nil
+}
+
+func (m *mockSyncRepoWithErrors) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
+	return &OrganizationRecord{
+		ID:   "org-id-123",
+		ULID: params.ULID,
+	}, nil
+}
+
 func (m *mockSyncRepoWithErrors) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {
 	return fn(m)
 }
@@ -283,6 +297,22 @@ func (m *slowMockSyncRepo) GetFederationNodeByDomain(ctx context.Context, nodeDo
 func (m *slowMockSyncRepo) CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error {
 	time.Sleep(m.delay)
 	return nil
+}
+
+func (m *slowMockSyncRepo) UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error) {
+	time.Sleep(m.delay)
+	return &PlaceRecord{
+		ID:   "place-id-123",
+		ULID: params.ULID,
+	}, nil
+}
+
+func (m *slowMockSyncRepo) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
+	time.Sleep(m.delay)
+	return &OrganizationRecord{
+		ID:   "org-id-123",
+		ULID: params.ULID,
+	}, nil
 }
 
 func (m *slowMockSyncRepo) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {

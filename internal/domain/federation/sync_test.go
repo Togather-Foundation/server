@@ -60,6 +60,20 @@ func (m *mockSyncRepo) CreateOccurrence(ctx context.Context, params OccurrenceCr
 	return nil
 }
 
+func (m *mockSyncRepo) UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error) {
+	return &PlaceRecord{
+		ID:   "place-id-123",
+		ULID: params.ULID,
+	}, nil
+}
+
+func (m *mockSyncRepo) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
+	return &OrganizationRecord{
+		ID:   "org-id-123",
+		ULID: params.ULID,
+	}, nil
+}
+
 func (m *mockSyncRepo) WithTransaction(ctx context.Context, fn func(txRepo SyncRepository) error) error {
 	// For mock, just execute the function with the same repo (no real transaction)
 	return fn(m)
