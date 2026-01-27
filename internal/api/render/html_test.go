@@ -366,40 +366,51 @@ func TestFormatDateTime(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected string
+		expected []string // allow multiple valid outputs (timezone abbreviation varies by system)
 	}{
 		{
 			name:     "valid RFC3339 datetime",
 			input:    "2026-07-15T19:00:00Z",
-			expected: "Wednesday, July 15, 2026 at 7:00 PM UTC",
+			expected: []string{"Wednesday, July 15, 2026 at 7:00 PM UTC"},
 		},
 		{
-			name:     "valid datetime with timezone",
-			input:    "2026-07-15T19:00:00-04:00",
-			expected: "Wednesday, July 15, 2026 at 7:00 PM EDT",
+			name:  "valid datetime with timezone",
+			input: "2026-07-15T19:00:00-04:00",
+			// CI environments may not have tzdata with abbreviations, so accept both
+			expected: []string{
+				"Wednesday, July 15, 2026 at 7:00 PM EDT",
+				"Wednesday, July 15, 2026 at 7:00 PM -0400",
+			},
 		},
 		{
 			name:     "malformed datetime",
 			input:    "not-a-date",
-			expected: "not-a-date",
+			expected: []string{"not-a-date"},
 		},
 		{
 			name:     "empty string",
 			input:    "",
-			expected: "",
+			expected: []string{""},
 		},
 		{
 			name:     "partial date",
 			input:    "2026-07-15",
-			expected: "2026-07-15",
+			expected: []string{"2026-07-15"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := formatDateTime(tt.input)
-			if result != tt.expected {
-				t.Errorf("formatDateTime() = %q, want %q", result, tt.expected)
+			found := false
+			for _, exp := range tt.expected {
+				if result == exp {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("formatDateTime() = %q, want one of %v", result, tt.expected)
 			}
 		})
 	}
