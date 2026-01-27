@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: sel_test
           POSTGRES_PASSWORD: sel_test_pass
@@ -161,7 +161,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: sel_test
           POSTGRES_PASSWORD: sel_test_pass
@@ -215,7 +215,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: sel_test
           POSTGRES_PASSWORD: sel_test_pass
