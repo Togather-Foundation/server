@@ -194,15 +194,3 @@ func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 
 	return key
 }
-
-func eventNameFromPayload(payload map[string]any) string {
-	if value, ok := payload["name"].(string); ok {
-		return value
-	}
-	if value, ok := payload["name"].(map[string]any); ok {
-		if text, ok := value["value"].(string); ok {
-			return text
-		}
-	}
-	return ""
-}

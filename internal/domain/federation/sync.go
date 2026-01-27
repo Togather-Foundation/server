@@ -423,7 +423,7 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 
 // validateJSONLD performs basic JSON-LD validation.
 func (s *SyncService) validateJSONLD(payload map[string]any) error {
-	if payload == nil || len(payload) == 0 {
+	if len(payload) == 0 {
 		return ErrInvalidJSONLD
 	}
 

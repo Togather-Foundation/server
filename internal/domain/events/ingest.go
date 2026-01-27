@@ -420,11 +420,9 @@ func needsReview(input EventInput, linkStatuses map[string]int) bool {
 	if isTooFarFuture(input.StartDate, 730) {
 		return true
 	}
-	if linkStatuses != nil {
-		for _, code := range linkStatuses {
-			if code >= 400 {
-				return true
-			}
+	for _, code := range linkStatuses {
+		if code >= 400 {
+			return true
 		}
 	}
 	return false

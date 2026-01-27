@@ -347,35 +347,6 @@ func buildUpdateMap(existing *Event, params UpdateEventParams) map[string]any {
 }
 
 // applyUpdatesInMemory applies updates to an event struct (for testing until persistence is implemented)
-func applyUpdatesInMemory(event *Event, params UpdateEventParams) *Event {
-	updated := *event
-	updated.UpdatedAt = time.Now()
-
-	if params.Name != nil {
-		updated.Name = *params.Name
-	}
-	if params.Description != nil {
-		updated.Description = *params.Description
-	}
-	if params.LifecycleState != nil {
-		updated.LifecycleState = *params.LifecycleState
-	}
-	if params.ImageURL != nil {
-		updated.ImageURL = *params.ImageURL
-	}
-	if params.PublicURL != nil {
-		updated.PublicURL = *params.PublicURL
-	}
-	if params.EventDomain != nil {
-		updated.EventDomain = *params.EventDomain
-	}
-	if len(params.Keywords) > 0 {
-		updated.Keywords = params.Keywords
-	}
-
-	return &updated
-}
-
 // equalKeywords compares two keyword slices
 func equalKeywords(a, b []string) bool {
 	if len(a) != len(b) {

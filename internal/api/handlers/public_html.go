@@ -58,9 +58,7 @@ func extractPathID(r *http.Request) string {
 		return ""
 	}
 	last := parts[len(parts)-1]
-	if strings.HasSuffix(last, ".ttl") {
-		last = strings.TrimSuffix(last, ".ttl")
-	}
+	last = strings.TrimSuffix(last, ".ttl")
 	if ids.IsULID(last) {
 		return strings.ToUpper(last)
 	}

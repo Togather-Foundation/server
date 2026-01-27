@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
@@ -191,10 +192,8 @@ func (h *AdminAuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	// Extract username from context for audit log
 	username := "unknown"
-	if claims, ok := r.Context().Value("claims").(map[string]interface{}); ok {
-		if un, ok := claims["username"].(string); ok {
-			username = un
-		}
+	if claims := middleware.AdminClaims(r); claims != nil {
+		username = claims.Subject
 	}
 
 	// Log logout

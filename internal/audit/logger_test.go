@@ -178,7 +178,7 @@ func TestLogFromRequest_ExtractsUsername(t *testing.T) {
 		"username": "charlie",
 		"role":     "admin",
 	}
-	ctx := context.WithValue(req.Context(), "claims", claims)
+	ctx := context.WithValue(req.Context(), ClaimsKey, claims)
 	req = req.WithContext(ctx)
 
 	logger.LogFromRequest(req, "admin.event.create", "event", "01HX12NEW123", "success", nil)
@@ -339,7 +339,7 @@ func BenchmarkLogger_LogFromRequest(b *testing.B) {
 	claims := map[string]interface{}{
 		"username": "benchuser",
 	}
-	ctx := context.WithValue(req.Context(), "claims", claims)
+	ctx := context.WithValue(req.Context(), ClaimsKey, claims)
 	req = req.WithContext(ctx)
 
 	b.ResetTimer()

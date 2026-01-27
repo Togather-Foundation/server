@@ -619,52 +619,6 @@ func buildOrganizationURI(baseURL, ulid string) string {
 }
 
 // validateUpdateFields validates the fields that can be updated
-func validateUpdateFields(updates map[string]any) error {
-	// Validate name if present
-	if name, ok := updates["name"].(string); ok {
-		if name == "" {
-			return events.FilterError{Field: "name", Message: "cannot be empty"}
-		}
-		if len(name) > 500 {
-			return events.FilterError{Field: "name", Message: "exceeds maximum length of 500 characters"}
-		}
-	}
-
-	// Validate lifecycle_state if present
-	if state, ok := updates["lifecycle_state"].(string); ok {
-		state = strings.ToLower(strings.TrimSpace(state))
-		validStates := map[string]bool{
-			"draft":       true,
-			"published":   true,
-			"postponed":   true,
-			"rescheduled": true,
-			"sold_out":    true,
-			"cancelled":   true,
-			"completed":   true,
-		}
-		if !validStates[state] {
-			return events.FilterError{Field: "lifecycle_state", Message: "invalid state"}
-		}
-	}
-
-	// Validate startDate if present
-	if startDate, ok := updates["startDate"].(string); ok {
-		if startDate != "" {
-			// Try parsing as RFC3339 to validate format
-			_, err := time.Parse(time.RFC3339, strings.TrimSpace(startDate))
-			if err != nil {
-				// Also try date-only format
-				_, err2 := time.Parse("2006-01-02", strings.TrimSpace(startDate))
-				if err2 != nil {
-					return events.FilterError{Field: "startDate", Message: "invalid date format"}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 // mapToUpdateParams converts a map[string]any to UpdateEventParams
 // All text fields are sanitized to prevent XSS attacks
 func mapToUpdateParams(updates map[string]any) events.UpdateEventParams {

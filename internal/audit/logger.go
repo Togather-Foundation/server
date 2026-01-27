@@ -96,7 +96,7 @@ func extractClientIP(r *http.Request) string {
 func (l *Logger) LogFromRequest(r *http.Request, action, resourceType, resourceID, status string, details map[string]string) {
 	// Extract admin username from context (set by JWT middleware)
 	adminUser := "unknown"
-	if claims, ok := r.Context().Value("claims").(map[string]interface{}); ok {
+	if claims, ok := r.Context().Value(ClaimsKey).(map[string]interface{}); ok {
 		if username, ok := claims["username"].(string); ok {
 			adminUser = username
 		}
@@ -118,7 +118,11 @@ func (l *Logger) LogFromRequest(r *http.Request, action, resourceType, resourceI
 // contextKey is a custom type for context keys to avoid collisions
 type contextKey string
 
-const auditLoggerKey contextKey = "auditLogger"
+const (
+	auditLoggerKey contextKey = "auditLogger"
+	// ClaimsKey is the context key for JWT claims
+	ClaimsKey contextKey = "claims"
+)
 
 // WithLogger adds an audit logger to the request context
 func WithLogger(ctx context.Context, logger *Logger) context.Context {
