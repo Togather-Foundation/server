@@ -160,7 +160,7 @@ All authority URIs MUST match the registered `base_uri_pattern` in the `knowledg
 
 ### 1.5 URI Dereferencing
 
-All SEL URIs MUST support content negotiation:
+**Dereferenceable URIs** (e.g., `https://toronto.togather.foundation/events/{id}`) MUST support content negotiation:
 
 | Accept Header | Response |
 |---------------|----------|
@@ -168,6 +168,8 @@ All SEL URIs MUST support content negotiation:
 | `application/ld+json` | JSON-LD document |
 | `application/json` | JSON-LD document (alias) |
 | `text/turtle` | RDF Turtle serialization |
+
+**API endpoints** (e.g., `/api/v1/events/{id}`) serve JSON-LD only (`application/json` and `application/ld+json`).
 
 **MVP requirement:** Provide **both HTML and JSON-LD** for dereferenceable URIs (HTML for human review, JSON-LD for agents).
 

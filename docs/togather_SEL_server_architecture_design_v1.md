@@ -72,12 +72,13 @@ This ensures URI stability across the federation and prevents identifier collisi
 | Wikidata | `http://www.wikidata.org/entity/Q{digits}` | `http://www.wikidata.org/entity/Q636342` |
 | ISNI | `https://isni.org/isni/{16-digits}` | `https://isni.org/isni/0000000121032683` |
 | MusicBrainz | `https://musicbrainz.org/{type}/{uuid}` | `https://musicbrainz.org/artist/...` |
+| OpenStreetMap | `https://www.openstreetmap.org/{type}/{id}` | `https://www.openstreetmap.org/node/123456` |
 
 **Validation:** All external identifiers MUST be validated using regex patterns during ingestion.
 
 ### 0.5 Content Negotiation
 
-All SEL URIs MUST support content negotiation:
+**Dereferenceable URIs** (e.g., `https://toronto.togather.foundation/events/{id}`) MUST support content negotiation:
 
 | Accept Header | Response Format |
 |---------------|----------------|
@@ -85,6 +86,8 @@ All SEL URIs MUST support content negotiation:
 | `application/ld+json` | Canonical JSON-LD document |
 | `application/json` | JSON-LD document (alias) |
 | `text/turtle` | RDF Turtle serialization |
+
+**API endpoints** (e.g., `/api/v1/events/{id}`) serve JSON-LD only (`application/json` and `application/ld+json`). They do not support HTML or Turtle negotiation.
 
 **MVP requirement:** Provide **both HTML and JSON-LD** for dereferenceable URIs (HTML for human review, JSON-LD for agents).
 

@@ -15,7 +15,7 @@ import (
 
 var (
 	ErrInvalidCursor     = errors.New("invalid cursor")
-	ErrInvalidLimit      = errors.New("limit must be between 1 and 1000")
+	ErrInvalidLimit      = errors.New("limit must be between 1 and 200")
 	ErrInvalidAction     = errors.New("action must be 'create', 'update', or 'delete'")
 	ErrInvalidSinceParam = errors.New("since parameter must be a valid timestamp")
 )
@@ -113,10 +113,10 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 	if params.Limit <= 0 {
 		params.Limit = 50
 	}
-	if params.Limit > 1000 {
+	if params.Limit > 200 {
 		s.logger.Warn().
 			Int("requested_limit", params.Limit).
-			Msg("change feed: limit exceeds maximum, using 1000")
+			Msg("change feed: limit exceeds maximum, using 200")
 		return nil, ErrInvalidLimit
 	}
 

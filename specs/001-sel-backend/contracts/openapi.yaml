@@ -321,61 +321,46 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/duplicates:
-    get:
-      operationId: listDuplicates
-      summary: List suspected duplicate events
-      tags: [Admin]
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/after'
-        - $ref: '#/components/parameters/limit'
-      responses:
-        '200':
-          description: List of duplicate candidates
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DuplicateListResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /admin/duplicates/{id}/merge:
+  /admin/events/merge:
     post:
-      operationId: mergeDuplicates
+      operationId: mergeEvents
       summary: Merge duplicate events
-      description: Merge source event into target. Source returns 410 Gone with sameAs link.
+      description: |
+        Merge source event into target event. Source event will return 410 Gone 
+        with sameAs link to canonical event.
+        
+        Note: Automatic duplicate detection (/admin/duplicates list endpoint) 
+        is not yet implemented. Use this endpoint for manual merges.
       tags: [Admin]
       security:
         - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Source event ID (will be merged into target)
-          schema:
-            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [targetId]
+              required: [sourceId, targetId]
               properties:
+                sourceId:
+                  type: string
+                  description: Source event ID (will be merged into target)
                 targetId:
                   type: string
                   description: Target event ID (canonical)
       responses:
         '200':
-          description: Events merged
+          description: Events merged successfully
           content:
             application/ld+json:
               schema:
                 $ref: '#/components/schemas/Event'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /admin/api-keys:
     get:
@@ -559,7 +544,7 @@ paths:
                     type: string
                     format: date-time
 
-  /openapi.json:
+  openapi.json:
     get:
       operationId: getOpenApiSpec
       summary: OpenAPI specification
@@ -688,9 +673,15 @@ components:
       required: ['@id', '@type', name, startDate, location]
       properties:
         '@context':
-          type: array
-          items:
-            type: string
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: object
+          description: |
+            JSON-LD context. May be a string URL, an array of URLs, or an embedded context object.
+            Per JSON-LD specification, all three forms are valid.
         '@id':
           type: string
           format: uri
