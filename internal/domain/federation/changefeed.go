@@ -94,9 +94,10 @@ type ChangeEntry struct {
 
 // ChangeFeedResult represents the result of fetching changes.
 type ChangeFeedResult struct {
-	Items      []ChangeEntry `json:"items"`
-	NextCursor string        `json:"next_cursor,omitempty"`
-	HasMore    bool          `json:"has_more"`
+	Cursor     string        `json:"cursor"`                // Current cursor position
+	Changes    []ChangeEntry `json:"changes"`               // List of changes (renamed from Items)
+	NextCursor string        `json:"next_cursor,omitempty"` // Next cursor for pagination
+	HasMore    bool          `json:"has_more"`              // Whether there are more results
 }
 
 // GetChanges retrieves event changes with pagination and filtering.
@@ -252,7 +253,8 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 		items = append(items, entry)
 	}
 
-	// Generate next cursor if there are more results
+	// Generate current and next cursors
+	currentCursor := pagination.EncodeChangeCursor(afterSeq) // Current cursor position
 	var nextCursor string
 	if hasMore && len(items) > 0 {
 		lastSeq := items[len(items)-1].SequenceNumber
@@ -262,12 +264,14 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 	s.logger.Info().
 		Int("item_count", len(items)).
 		Bool("has_more", hasMore).
+		Str("cursor", currentCursor).
 		Str("next_cursor", nextCursor).
 		Dur("duration_ms", time.Since(start)).
 		Msg("change feed: completed successfully")
 
 	return &ChangeFeedResult{
-		Items:      items,
+		Cursor:     currentCursor,
+		Changes:    items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
@@ -292,9 +296,18 @@ func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage
 		"name":     name,
 	}
 
-	// Add @id if we have ULID and baseURL
+	// Add @id if we have ULID and baseURL - use canonical URI format per Interop Profile §1.1
 	if ulid != "" && baseURL != "" {
-		jsonLD["@id"] = fmt.Sprintf("%s/api/v1/events/%s", baseURL, ulid)
+		if uri, err := ids.BuildCanonicalURI(baseURL, "events", ulid); err == nil {
+			jsonLD["@id"] = uri
+		} else {
+			// Fallback to API path if canonical URI building fails
+			s.logger.Warn().
+				Err(err).
+				Str("ulid", ulid).
+				Msg("change feed: failed to build canonical URI, using API path")
+			jsonLD["@id"] = fmt.Sprintf("%s/api/v1/events/%s", baseURL, ulid)
+		}
 	}
 
 	// Add optional fields if present

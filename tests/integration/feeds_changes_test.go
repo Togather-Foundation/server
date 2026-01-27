@@ -2,7 +2,6 @@ package integration
 
 import (
 	"encoding/json"
-	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -10,20 +9,6 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/stretchr/testify/require"
 )
-
-type changeFeedResponse struct {
-	Items      []changeFeedItem `json:"items"`
-	NextCursor string           `json:"next_cursor"`
-}
-
-type changeFeedItem struct {
-	SequenceNumber int64           `json:"sequence_number"`
-	EventID        string          `json:"event_id"`
-	Action         string          `json:"action"`
-	ChangedAt      string          `json:"changed_at"`
-	ChangedFields  json.RawMessage `json:"changed_fields,omitempty"`
-	Snapshot       json.RawMessage `json:"snapshot,omitempty"`
-}
 
 // TestChangeFeedPagination verifies cursor-based pagination for the change feed
 func TestChangeFeedPagination(t *testing.T) {
@@ -50,16 +35,16 @@ func TestChangeFeedPagination(t *testing.T) {
 		resp := fetchChangeFeed(t, env, params)
 
 		// Should have at least 3 create events
-		require.GreaterOrEqual(t, len(resp.Items), 3, "should have at least 3 change events")
+		require.GreaterOrEqual(t, len(resp.Changes), 3, "should have at least 3 change events")
 
 		// Verify sequence numbers are monotonically increasing
-		for i := 1; i < len(resp.Items); i++ {
-			require.Greater(t, resp.Items[i].SequenceNumber, resp.Items[i-1].SequenceNumber,
+		for i := 1; i < len(resp.Changes); i++ {
+			require.Greater(t, resp.Changes[i].SequenceNumber, resp.Changes[i-1].SequenceNumber,
 				"sequence numbers should be monotonically increasing")
 		}
 
 		// Verify all are 'create' actions
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			require.Equal(t, "create", item.Action)
 		}
 	})
@@ -69,18 +54,18 @@ func TestChangeFeedPagination(t *testing.T) {
 		params.Set("limit", "2")
 
 		first := fetchChangeFeed(t, env, params)
-		require.Len(t, first.Items, 2, "should return exactly 2 items")
+		require.Len(t, first.Changes, 2, "should return exactly 2 items")
 		require.NotEmpty(t, first.NextCursor, "should provide next cursor")
 
 		// Fetch next page
 		params.Set("after", first.NextCursor)
 		second := fetchChangeFeed(t, env, params)
 
-		require.GreaterOrEqual(t, len(second.Items), 1, "should have at least 1 more item")
+		require.GreaterOrEqual(t, len(second.Changes), 1, "should have at least 1 more item")
 
 		// Verify no overlap
-		firstLastSeq := first.Items[len(first.Items)-1].SequenceNumber
-		secondFirstSeq := second.Items[0].SequenceNumber
+		firstLastSeq := first.Changes[len(first.Changes)-1].SequenceNumber
+		secondFirstSeq := second.Changes[0].SequenceNumber
 		require.Greater(t, secondFirstSeq, firstLastSeq, "pages should not overlap")
 	})
 
@@ -91,7 +76,7 @@ func TestChangeFeedPagination(t *testing.T) {
 		resp := fetchChangeFeed(t, env, params)
 
 		// All items should be 'create' actions
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			require.Equal(t, "create", item.Action)
 		}
 	})
@@ -101,9 +86,9 @@ func TestChangeFeedPagination(t *testing.T) {
 		params := url.Values{}
 		params.Set("limit", "1")
 		first := fetchChangeFeed(t, env, params)
-		require.Len(t, first.Items, 1)
+		require.Len(t, first.Changes, 1)
 
-		firstSeq := first.Items[0].SequenceNumber
+		firstSeq := first.Changes[0].SequenceNumber
 
 		// Fetch changes after first event (using cursor pagination)
 		params = url.Values{}
@@ -111,7 +96,7 @@ func TestChangeFeedPagination(t *testing.T) {
 		resp := fetchChangeFeed(t, env, params)
 
 		// All returned items should have sequence > firstSeq
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			require.Greater(t, item.SequenceNumber, firstSeq)
 		}
 	})
@@ -119,7 +104,7 @@ func TestChangeFeedPagination(t *testing.T) {
 	t.Run("update event creates change record", func(t *testing.T) {
 		// Get current count
 		initialResp := fetchChangeFeed(t, env, url.Values{"limit": {"100"}})
-		initialCount := len(initialResp.Items)
+		initialCount := len(initialResp.Changes)
 
 		// Update event1
 		updateEventName(t, env, event1ULID, "Event One Updated")
@@ -128,11 +113,11 @@ func TestChangeFeedPagination(t *testing.T) {
 		updatedResp := fetchChangeFeed(t, env, url.Values{"limit": {"100"}})
 
 		// Should have one more change event
-		require.Greater(t, len(updatedResp.Items), initialCount, "should have new change event after update")
+		require.Greater(t, len(updatedResp.Changes), initialCount, "should have new change event after update")
 
 		// Find the update event
 		var foundUpdate bool
-		for _, item := range updatedResp.Items {
+		for _, item := range updatedResp.Changes {
 			if item.Action == "update" {
 				foundUpdate = true
 				require.NotNil(t, item.ChangedFields, "update should include changed_fields")
@@ -146,11 +131,11 @@ func TestChangeFeedPagination(t *testing.T) {
 		params.Set("include_snapshot", "true")
 
 		resp := fetchChangeFeed(t, env, params)
-		require.NotEmpty(t, resp.Items)
+		require.NotEmpty(t, resp.Changes)
 
 		// Verify at least one item has snapshot data
 		foundSnapshot := false
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			if len(item.Snapshot) > 0 {
 				foundSnapshot = true
 				// Unmarshal snapshot to check fields
@@ -169,17 +154,17 @@ func TestChangeFeedPagination(t *testing.T) {
 	t.Run("empty result set when cursor beyond latest", func(t *testing.T) {
 		// Get latest change
 		latest := fetchChangeFeed(t, env, url.Values{"limit": {"1"}})
-		require.Len(t, latest.Items, 1)
+		require.Len(t, latest.Changes, 1)
 
 		// Encode a cursor far beyond the latest sequence
-		farFutureCursor := pagination.EncodeChangeCursor(latest.Items[0].SequenceNumber + 1000)
+		farFutureCursor := pagination.EncodeChangeCursor(latest.Changes[0].SequenceNumber + 1000)
 
 		// Use cursor beyond latest
 		params := url.Values{}
 		params.Set("after", farFutureCursor)
 
 		resp := fetchChangeFeed(t, env, params)
-		require.Empty(t, resp.Items, "should return empty list when cursor is beyond latest")
+		require.Empty(t, resp.Changes, "should return empty list when cursor is beyond latest")
 		require.Empty(t, resp.NextCursor, "should not provide next cursor for empty result")
 	})
 
@@ -188,7 +173,7 @@ func TestChangeFeedPagination(t *testing.T) {
 		resp := fetchChangeFeed(t, env, url.Values{"limit": {"100"}})
 
 		eventIDs := make(map[string]bool)
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			eventIDs[item.EventID] = true
 		}
 
@@ -201,29 +186,6 @@ func TestChangeFeedPagination(t *testing.T) {
 		require.True(t, eventIDs[event2ID], "should contain event2")
 		require.True(t, eventIDs[event3ID], "should contain event3")
 	})
-}
-
-// fetchChangeFeed makes a GET request to /api/v1/feeds/changes
-func fetchChangeFeed(t *testing.T, env *testEnv, params url.Values) changeFeedResponse {
-	t.Helper()
-
-	u := env.Server.URL + "/api/v1/feeds/changes"
-	if len(params) > 0 {
-		u += "?" + params.Encode()
-	}
-
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	require.NoError(t, err, "failed to create HTTP GET request for change feed")
-	req.Header.Set("Accept", "application/ld+json")
-
-	resp, err := env.Server.Client().Do(req)
-	require.NoError(t, err, "failed to execute change feed HTTP request")
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	require.Equal(t, http.StatusOK, resp.StatusCode, "change feed request should succeed")
-
-	var payload changeFeedResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload), "failed to decode change feed response JSON")
-	return payload
 }
 
 // updateEventName updates an event's name to trigger a change event
@@ -273,12 +235,12 @@ func TestChangeFeedTimestamps(t *testing.T) {
 
 	// Fetch change feed
 	resp := fetchChangeFeed(t, env, url.Values{"include_snapshot": {"true"}})
-	require.NotEmpty(t, resp.Items)
+	require.NotEmpty(t, resp.Changes)
 
 	// Find our event's change
 	var found bool
 	eventID := lookupEventIDByULID(t, env, eventULID)
-	for _, item := range resp.Items {
+	for _, item := range resp.Changes {
 		if item.EventID == eventID {
 			found = true
 

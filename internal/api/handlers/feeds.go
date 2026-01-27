@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
@@ -35,9 +34,16 @@ func (h *FeedsHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 
+	// Support both 'since' (per Interop Profile) and 'after' (legacy) for cursor parameter
+	// 'since' parameter can be either a cursor or timestamp - cursor takes precedence
+	cursor := query.Get("since") // Prefer 'since' per Interop Profile §4.3
+	if cursor == "" {
+		cursor = query.Get("after") // Fallback to 'after' for backward compatibility
+	}
+
 	// Build service params
 	params := federation.ChangeFeedParams{
-		After:           query.Get("after"),
+		After:           cursor,
 		Action:          query.Get("action"),
 		IncludeSnapshot: query.Get("include_snapshot") == "true",
 	}
@@ -52,16 +58,6 @@ func (h *FeedsHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		params.Limit = limit
 	} else {
 		params.Limit = federation.DefaultChangeFeedLimit
-	}
-
-	// Parse since timestamp
-	if sinceStr := query.Get("since"); sinceStr != "" {
-		since, err := time.Parse(time.RFC3339, sinceStr)
-		if err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid since parameter (must be RFC3339 timestamp)", nil, h.Env)
-			return
-		}
-		params.Since = since
 	}
 
 	// Call service
@@ -83,9 +79,10 @@ func (h *FeedsHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Format response
+	// Format response per Interop Profile §4.3
 	response := map[string]any{
-		"items":       result.Items,
+		"cursor":      result.Cursor,
+		"changes":     result.Changes,
 		"next_cursor": result.NextCursor,
 	}
 

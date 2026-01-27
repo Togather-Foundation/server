@@ -338,3 +338,45 @@ func adminLogin(t *testing.T, env *testEnv, username, password string) string {
 
 	return token
 }
+
+// Change Feed Test Helpers
+
+// changeFeedResponse represents the response from /api/v1/feeds/changes
+type changeFeedResponse struct {
+	Cursor     string           `json:"cursor"`      // Current cursor position
+	Changes    []changeFeedItem `json:"changes"`     // List of changes (renamed from Items per Interop Profile)
+	NextCursor string           `json:"next_cursor"` // Next cursor for pagination
+}
+
+// changeFeedItem represents a single change entry in the feed
+type changeFeedItem struct {
+	SequenceNumber int64           `json:"sequence_number"`
+	EventID        string          `json:"event_id"`
+	Action         string          `json:"action"`
+	ChangedAt      string          `json:"changed_at"`
+	ChangedFields  json.RawMessage `json:"changed_fields,omitempty"`
+	Snapshot       json.RawMessage `json:"snapshot,omitempty"`
+}
+
+// fetchChangeFeed makes a GET request to /api/v1/feeds/changes
+func fetchChangeFeed(t *testing.T, env *testEnv, params url.Values) changeFeedResponse {
+	t.Helper()
+
+	u := env.Server.URL + "/api/v1/feeds/changes"
+	if len(params) > 0 {
+		u += "?" + params.Encode()
+	}
+
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	require.NoError(t, err, "failed to create HTTP GET request for change feed")
+	req.Header.Set("Accept", "application/ld+json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err, "failed to execute change feed HTTP request")
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode, "change feed request should succeed")
+
+	var payload changeFeedResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload), "failed to decode change feed response JSON")
+	return payload
+}

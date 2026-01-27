@@ -216,11 +216,13 @@ GET /api/v1/feeds/changes?after=<cursor>&limit=<n>&action=<create|update|delete>
 ```
 
 **Query Parameters:**
-- `after` (optional): Resume from cursor (e.g., `seq_1048576`)
+- `since` (optional): Resume from cursor (e.g., `seq_1048576`) - per Interop Profile §4.3
+- `after` (optional): Legacy alias for `since` cursor parameter (deprecated, use `since`)
 - `limit` (optional): Max changes to return (default: 50, max: 200)
 - `action` (optional): Filter by action type (`create`, `update`, `delete`)
-- `since` (optional): ISO8601 timestamp (alternative to cursor)
 - `include_snapshot` (optional): Include full event snapshot (default: true)
+
+**Note**: Timestamp-based filtering (e.g., `since=2025-01-20T00:00:00Z`) is not supported in MVP. Use cursor-based pagination only.
 
 **Response (200 OK):**
 

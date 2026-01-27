@@ -22,7 +22,7 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 
 	// Get initial change feed state
 	initialResp := fetchChangeFeed(t, env, url.Values{"limit": {"100"}})
-	initialCount := len(initialResp.Items)
+	initialCount := len(initialResp.Changes)
 
 	// Soft delete the event (mark as deleted)
 	softDeleteEvent(t, env, eventID)
@@ -34,11 +34,11 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 		resp := fetchChangeFeed(t, env, url.Values{"limit": {"100"}})
 
 		// Should have one more change event
-		require.Greater(t, len(resp.Items), initialCount, "should have new change event after delete")
+		require.Greater(t, len(resp.Changes), initialCount, "should have new change event after delete")
 
 		// Find the delete event
 		var foundDelete bool
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			if item.EventID == eventID && item.Action == "delete" {
 				foundDelete = true
 
@@ -60,13 +60,13 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 		resp := fetchChangeFeed(t, env, params)
 
 		// All returned items should be delete actions
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			require.Equal(t, "delete", item.Action)
 		}
 
 		// Should find our deleted event
 		var foundOurDelete bool
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			if item.EventID == eventID {
 				foundOurDelete = true
 				break
@@ -84,7 +84,7 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 
 		// Find our deleted event
 		var foundWithSnapshot bool
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			if item.EventID == eventID && len(item.Snapshot) > 0 {
 				foundWithSnapshot = true
 
@@ -217,11 +217,11 @@ func TestFeedsTombstoneOrdering(t *testing.T) {
 		params.Set("action", "delete")
 
 		resp := fetchChangeFeed(t, env, params)
-		require.GreaterOrEqual(t, len(resp.Items), 3, "should have at least 3 delete events")
+		require.GreaterOrEqual(t, len(resp.Changes), 3, "should have at least 3 delete events")
 
 		// Find our delete events and verify order
 		var foundSequence []string
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			if item.EventID == event1ID || item.EventID == event2ID || item.EventID == event3ID {
 				foundSequence = append(foundSequence, item.EventID)
 			}
@@ -240,7 +240,7 @@ func TestFeedsTombstoneOrdering(t *testing.T) {
 		resp := fetchChangeFeed(t, env, params)
 
 		var deleteSequences []int64
-		for _, item := range resp.Items {
+		for _, item := range resp.Changes {
 			if item.EventID == event1ID || item.EventID == event2ID || item.EventID == event3ID {
 				deleteSequences = append(deleteSequences, item.SequenceNumber)
 			}

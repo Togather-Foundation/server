@@ -222,7 +222,7 @@ SEL nodes MUST expose profile information at:
 
 SEL uses a static, versioned context to ensure stability:
 
-**Context URL:** `https://schema.togather.foundation/context/v1.jsonld`
+**Context URL:** `https://togather.foundation/contexts/sel/v0.1.jsonld`
 
 **Local Source (repo):** `contexts/sel/v0.1.jsonld`
 
@@ -259,7 +259,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.togather.foundation/context/v1.jsonld"
+    "https://togather.foundation/contexts/sel/v0.1.jsonld"
   ],
   "@id": "https://toronto.togather.foundation/events/01J8...",
   "@type": "Event",
@@ -279,7 +279,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.togather.foundation/context/v1.jsonld"
+    "https://togather.foundation/contexts/sel/v0.1.jsonld"
   ],
   "@id": "https://toronto.togather.foundation/events/01J8...",
   "@type": "Event",
@@ -363,7 +363,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.togather.foundation/context/v1.jsonld"
+    "https://togather.foundation/contexts/sel/v0.1.jsonld"
   ],
   "@type": "EventSeries",
   "@id": "https://toronto.togather.foundation/events/01HYX7SERIES...",
@@ -413,7 +413,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.togather.foundation/context/v1.jsonld"
+    "https://togather.foundation/contexts/sel/v0.1.jsonld"
   ],
   "@id": "https://toronto.togather.foundation/places/01HYX4...",
   "@type": "Place",
@@ -456,7 +456,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 {
   "@context": [
     "https://schema.org",
-    "https://schema.togather.foundation/context/v1.jsonld"
+    "https://togather.foundation/contexts/sel/v0.1.jsonld"
   ],
   "@id": "https://toronto.togather.foundation/organizations/01HYX5...",
   "@type": "Organization",

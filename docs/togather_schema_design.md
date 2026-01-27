@@ -1596,7 +1596,7 @@ CREATE INDEX idx_webhook_deliveries_event ON webhook_deliveries (event_change_id
 {
   "@context": [
     "https://schema.org",
-    "https://schema.togather.foundation/context/v1.jsonld"
+    "https://togather.foundation/contexts/sel/v0.1.jsonld"
   ],
   "@type": "Event",
   "@id": "https://toronto.togather.foundation/events/{ulid}",
