@@ -98,10 +98,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	federationService := federation.NewService(repo.Federation(), requireHTTPS)
 	federationHandler := handlers.NewFederationHandler(federationService, syncService, cfg.Environment)
 
+	// Well-known endpoints (Interoperability Profile §1.7)
+	wellKnownHandler := handlers.NewWellKnownHandler(cfg.Server.BaseURL, "0.1.0", time.Now())
+
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", handlers.Healthz())
 	mux.Handle("/readyz", handlers.Readyz())
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
+	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
 
 	// Middleware setup
 	apiKeyRepo := repo.Auth().APIKeys()
