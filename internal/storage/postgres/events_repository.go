@@ -98,7 +98,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
   JOIN event_occurrences o ON o.event_id = e.id
   LEFT JOIN places p ON p.id = COALESCE(o.venue_id, e.primary_venue_id)
   LEFT JOIN organizations org ON org.id = e.organizer_id
-  WHERE ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
+  WHERE e.deleted_at IS NULL
+    AND ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
     AND ($2::timestamptz IS NULL OR o.start_time <= $2::timestamptz)
     AND ($3 = '' OR p.address_locality ILIKE '%' || $3 || '%' ESCAPE '\')
     AND ($4 = '' OR p.address_region ILIKE '%' || $4 || '%' ESCAPE '\')

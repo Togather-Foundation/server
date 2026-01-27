@@ -48,11 +48,18 @@ func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
 	contextValue := loadDefaultContext()
 	items := make([]map[string]any, 0, len(result.Organizations))
 	for _, org := range result.Organizations {
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"@context": contextValue,
 			"@type":    "Organization",
 			"name":     org.Name,
-		})
+		}
+
+		// Add @id (required per Interop Profile §3.1)
+		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "organizations", org.ULID); err == nil {
+			item["@id"] = uri
+		}
+
+		items = append(items, item)
 	}
 
 	writeJSON(w, http.StatusOK, organizationListResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
@@ -163,5 +170,11 @@ func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		"@type":    "Organization",
 		"name":     item.Name,
 	}
+
+	// Add @id (required per Interop Profile §3.1)
+	if uri, err := ids.BuildCanonicalURI(h.BaseURL, "organizations", item.ULID); err == nil {
+		payload["@id"] = uri
+	}
+
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
 }

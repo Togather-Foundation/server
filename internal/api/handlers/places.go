@@ -48,11 +48,35 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 	contextValue := loadDefaultContext()
 	items := make([]map[string]any, 0, len(result.Places))
 	for _, place := range result.Places {
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"@context": contextValue,
 			"@type":    "Place",
 			"name":     place.Name,
-		})
+		}
+
+		// Add @id (required per Interop Profile §3.1)
+		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "places", place.ULID); err == nil {
+			item["@id"] = uri
+		}
+
+		// Add address (required per Interop Profile §3.1 - must have address OR geo)
+		if place.City != "" || place.Region != "" || place.Country != "" {
+			address := map[string]any{
+				"@type": "PostalAddress",
+			}
+			if place.City != "" {
+				address["addressLocality"] = place.City
+			}
+			if place.Region != "" {
+				address["addressRegion"] = place.Region
+			}
+			if place.Country != "" {
+				address["addressCountry"] = place.Country
+			}
+			item["address"] = address
+		}
+
+		items = append(items, item)
 	}
 
 	writeJSON(w, http.StatusOK, placeListResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
@@ -134,5 +158,28 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		"@type":    "Place",
 		"name":     item.Name,
 	}
+
+	// Add @id (required per Interop Profile §3.1)
+	if uri, err := ids.BuildCanonicalURI(h.BaseURL, "places", item.ULID); err == nil {
+		payload["@id"] = uri
+	}
+
+	// Add address (required per Interop Profile §3.1 - must have address OR geo)
+	if item.City != "" || item.Region != "" || item.Country != "" {
+		address := map[string]any{
+			"@type": "PostalAddress",
+		}
+		if item.City != "" {
+			address["addressLocality"] = item.City
+		}
+		if item.Region != "" {
+			address["addressRegion"] = item.Region
+		}
+		if item.Country != "" {
+			address["addressCountry"] = item.Country
+		}
+		payload["address"] = address
+	}
+
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
 }

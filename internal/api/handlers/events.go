@@ -57,11 +57,46 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 	contextValue := loadDefaultContext()
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"@context": contextValue,
 			"@type":    "Event",
 			"name":     event.Name,
-		})
+		}
+
+		// Add @id (required per Interop Profile §3.1)
+		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "events", event.ULID); err == nil {
+			item["@id"] = uri
+		}
+
+		// Add startDate (required per Interop Profile §3.1)
+		if len(event.Occurrences) > 0 {
+			item["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		}
+
+		// Add location (required per Interop Profile §3.1)
+		// Use URI reference for Place if venue is available
+		if len(event.Occurrences) > 0 && event.Occurrences[0].VenueID != nil {
+			if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *event.Occurrences[0].VenueID); err == nil {
+				item["location"] = placeURI
+			}
+		} else if event.PrimaryVenueID != nil {
+			if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *event.PrimaryVenueID); err == nil {
+				item["location"] = placeURI
+			}
+		} else if len(event.Occurrences) > 0 && event.Occurrences[0].VirtualURL != nil && *event.Occurrences[0].VirtualURL != "" {
+			// Virtual event
+			item["location"] = map[string]any{
+				"@type": "VirtualLocation",
+				"url":   *event.Occurrences[0].VirtualURL,
+			}
+		} else if event.VirtualURL != "" {
+			item["location"] = map[string]any{
+				"@type": "VirtualLocation",
+				"url":   event.VirtualURL,
+			}
+		}
+
+		items = append(items, item)
 	}
 
 	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
@@ -195,6 +230,32 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		"@type":    "Event",
 		"@id":      buildEventURI(h.BaseURL, item.ULID),
 		"name":     item.Name,
+	}
+
+	// Add startDate (required per Interop Profile §3.1)
+	if len(item.Occurrences) > 0 {
+		payload["startDate"] = item.Occurrences[0].StartTime.Format(time.RFC3339)
+	}
+
+	// Add location (required per Interop Profile §3.1)
+	if len(item.Occurrences) > 0 && item.Occurrences[0].VenueID != nil {
+		if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *item.Occurrences[0].VenueID); err == nil {
+			payload["location"] = placeURI
+		}
+	} else if item.PrimaryVenueID != nil {
+		if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *item.PrimaryVenueID); err == nil {
+			payload["location"] = placeURI
+		}
+	} else if len(item.Occurrences) > 0 && item.Occurrences[0].VirtualURL != nil && *item.Occurrences[0].VirtualURL != "" {
+		payload["location"] = map[string]any{
+			"@type": "VirtualLocation",
+			"url":   *item.Occurrences[0].VirtualURL,
+		}
+	} else if item.VirtualURL != "" {
+		payload["location"] = map[string]any{
+			"@type": "VirtualLocation",
+			"url":   item.VirtualURL,
+		}
 	}
 
 	// Add license information per FR-024
