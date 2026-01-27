@@ -123,9 +123,9 @@ X-API-Key: your-api-key-here
 
 The request body should be a JSON-LD object representing a Schema.org Event.
 
-#### Minimal Event
+#### Minimal Event (Simplest Scraper Submission)
 
-The absolute minimum required fields:
+The absolute minimum required fields for a scraper:
 
 ```json
 {
@@ -133,9 +133,14 @@ The absolute minimum required fields:
   "startDate": "2026-02-15T20:00:00-05:00",
   "location": {
     "name": "The Tranzac"
+  },
+  "source": {
+    "url": "https://thetranzac.com/events/comedy-night"
   }
 }
 ```
+
+**Note:** The `source.url` is the URL you scraped from. This enables duplicate detection - if you submit the same URL twice, the system will recognize it as a duplicate (returning `409 Conflict` with the existing event).
 
 #### Recommended Event
 
@@ -177,7 +182,6 @@ For better data quality, include these additional fields:
   
   "source": {
     "url": "https://thetranzac.com/events/comedy-night",
-    "eventId": "evt-123",
     "name": "Tranzac Events Scraper"
   }
 }
@@ -280,8 +284,33 @@ All supported fields:
 | `offers` | object | No | Ticket pricing information |
 | `sameAs` | array | No | URIs to equivalent entities (Artsdata, Wikidata, etc.) |
 | `license` | string | No | License URL (defaults to CC0) |
-| `source` | object | No | Provenance information (recommended for scrapers) |
+| `source` | object | No | Provenance information (**recommended for scrapers**) |
+| `source.url` | string | No | URL where event was found (used for duplicate detection) |
+| `source.eventId` | string | No | External event ID from source system (optional, for advanced duplicate tracking) |
+| `source.name` | string | No | Human-readable scraper/source name |
+| `source.license` | string | No | License for scraped content (if different from event license) |
 | `occurrences` | array | No | Multiple date/time instances for recurring events |
+
+#### Understanding the `source` Field
+
+The `source` object provides **provenance tracking** - it records where the event data came from:
+
+- **`source.url`** (recommended): The URL you scraped. This is the most important field for scrapers:
+  - Used for duplicate detection: submitting the same URL twice returns `409 Conflict`
+  - Stored for provenance: users can see where data originated
+  - Example: `"https://thetranzac.com/events/comedy-night"`
+
+- **`source.eventId`** (optional): Use this if the source system has its own event ID:
+  - Enables duplicate detection even if the URL changes
+  - Example: If EventBrite's event ID is `evt-123`, you can submit it
+  - Most scrapers don't need this - the URL is sufficient
+
+- **`source.name`** (optional): Human-readable identifier for your scraper
+  - Example: `"Tranzac Events Scraper"` or `"Toronto Arts Crawler"`
+
+- **`source.license`** (optional): License of the scraped content if different from the event license
+
+**For most scrapers:** Just provide `source.url` with the URL you scraped from. This is enough for duplicate detection and provenance tracking.
 
 ### Response
 
@@ -482,29 +511,52 @@ Content-Type: application/problem+json
 
 SEL automatically detects duplicate events using multiple strategies:
 
-### 1. Source-Based Detection
+### 1. Source URL Detection (Simplest for Scrapers)
 
-If you provide `source.url` + `source.eventId`, duplicate submissions from the same source are detected:
+If you provide `source.url`, duplicate submissions of the same URL are detected automatically:
 
 ```json
 {
+  "name": "Comedy Night",
+  "startDate": "2026-02-15T20:00:00-05:00",
+  "location": { "name": "The Tranzac" },
   "source": {
-    "url": "https://thetranzac.com/events",
-    "eventId": "evt-123"
+    "url": "https://thetranzac.com/events/comedy-night"
   }
 }
 ```
 
 **Behavior:**
-- First submission: Creates event
-- Subsequent submissions: Returns existing event with `409 Conflict`
-- Updates are NOT automatic (use admin API to update events)
+- First submission: Creates event, returns `201 Created`
+- Second submission of same URL: Returns existing event with `409 Conflict`
+- **Important:** `409` is not an error - it means the event already exists
 
-### 2. Content Hash Detection
+**Why this matters for scrapers:**
+- Run your scraper daily without worrying about duplicates
+- The system tracks which events came from which URLs
+- You can safely re-submit the same URL on subsequent scrapes
+
+### 2. Source-Based Detection with External IDs (Advanced)
+
+If the source system has its own event IDs, you can use both `source.url` and `source.eventId`:
+
+```json
+{
+  "source": {
+    "url": "https://eventbrite.com/event/123",
+    "eventId": "evt-123",
+    "name": "EventBrite Scraper"
+  }
+}
+```
+
+This enables duplicate detection even if the URL structure changes (e.g., EventBrite adds tracking parameters).
+
+### 3. Content Hash Detection (Cross-Source)
 
 Even if sources differ, events with the same:
 - Event name (normalized, case-insensitive)
-- Venue name
+- Venue name  
 - Start date/time
 
 ...are detected as duplicates.
@@ -516,34 +568,53 @@ Even if sources differ, events with the same:
 {
   "name": "Jazz Night",
   "startDate": "2026-02-15T20:00:00-05:00",
-  "location": { "name": "Massey Hall" }
+  "location": { "name": "Massey Hall" },
+  "source": { "url": "https://source-a.com/events/123" }
 }
 
 // Scraper B submits (different source):
 {
-  "name": "Jazz Night",  // Same
-  "startDate": "2026-02-15T20:00:00-05:00",  // Same
-  "location": { "name": "Massey Hall" },  // Same
-  "source": {
-    "url": "https://different-source.com"  // Different source!
-  }
+  "name": "Jazz Night",  // Same name
+  "startDate": "2026-02-15T20:00:00-05:00",  // Same time
+  "location": { "name": "Massey Hall" },  // Same venue
+  "source": { "url": "https://source-b.com/event/jazz-night" }  // Different URL!
 }
 ```
 
-**Result:** Second submission returns `409 Conflict` with existing event.
+**Result:** Second submission returns `409 Conflict` with existing event. Both sources are recorded as contributing to the same event.
 
-### 3. Disambiguation
+### 4. Handling 409 Responses
 
-To force separate events (e.g., two "Open Mic" events on the same day at the same venue), vary the name slightly:
+When you get a `409 Conflict`, the response includes the existing event:
+
+```http
+HTTP/1.1 409 Conflict
+Content-Type: application/ld+json
+
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "@id": "https://toronto.togather.foundation/events/01KG123ABC...",
+  "name": "Jazz Night",
+  "startDate": "2026-02-15T20:00:00-05:00"
+}
+```
+
+**For scrapers:**
+- Extract the `@id` field - this is the canonical event ID
+- Store this mapping: `source_url -> sel_event_id`
+- Use this for tracking which events you've already submitted
+
+### 5. Disambiguation (When You Need Separate Events)
+
+To force separate events (e.g., two "Open Mic" shows on the same day at the same venue), make the names distinct:
 
 ```json
-{
-  "name": "Open Mic Night - Early Show"
-}
+// First show
+{ "name": "Open Mic Night - Early Show (6pm)" }
 
-{
-  "name": "Open Mic Night - Late Show"
-}
+// Second show  
+{ "name": "Open Mic Night - Late Show (10pm)" }
 ```
 
 ---
