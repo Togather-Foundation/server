@@ -32,6 +32,7 @@ For full workflow details: `bd prime`
    - `bd update <id> --status in_progress` at start.
 4) Implement:
    - Small commits, tests where appropriate, keep diffs reviewable.
+   - **IMPORTANT: Run `make ci` before pushing to catch CI failures locally**
 5) Update bead:
    - `bd update <id> --status closed --close-reason "<what changed + why>"` when done.
 6) Sync Beads state:
@@ -42,7 +43,18 @@ For full workflow details: `bd prime`
 
 The project uses a `Makefile` for common build tasks. Use `make help` to see all available targets.
 
+**CRITICAL: Before pushing changes, run `make ci` to verify all checks pass locally.**
+
 ```bash
+# Run full CI pipeline locally (RECOMMENDED before pushing)
+make ci
+
+# Run tests exactly as CI does (race detector, verbose)
+make test-ci
+
+# Run linter exactly as CI does (with timeout)
+make lint-ci
+
 # Build the server
 make build
 
