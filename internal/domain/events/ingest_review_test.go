@@ -368,7 +368,7 @@ func TestNewIngestService(t *testing.T) {
 	service := NewIngestService(nil, "https://example.com")
 
 	if service == nil {
-		t.Error("NewIngestService() returned nil")
+		t.Fatal("NewIngestService() returned nil")
 	}
 
 	if service.nodeDomain != "https://example.com" {
