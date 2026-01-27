@@ -807,6 +807,16 @@ Returns ordered list of change envelopes:
 - `snapshot` is REQUIRED for `create` and `update`.
 - `tombstone` is REQUIRED for `delete`.
 
+**Optional Enrichment Fields:**
+
+Implementations MAY include additional metadata fields in change entries:
+- `license_url`, `license_status` - License information for provenance
+- `source_timestamp`, `received_timestamp` - Temporal provenance
+- `federation_uri` - Originating node for multi-hop federation
+- `sequence_number` - Explicit sequence number (if not encoded in cursor)
+
+Consumers MUST gracefully ignore unknown fields per JSON-LD extensibility.
+
 ### 4.4 Federation Sync Protocol (MVP)
 
 **Discovery:**

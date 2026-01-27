@@ -249,6 +249,38 @@ GET /api/v1/feeds/changes?after=<cursor>&limit=<n>&action=<create|update|delete>
 
 **Authentication:** Public (rate limited to 60 req/min)
 
+**Change Entry Fields:**
+
+Each change entry includes:
+- `action` (string): Type of change - `create`, `update`, or `delete`
+- `uri` (string): Canonical URI of the changed event
+- `changed_at` (timestamp): When the change occurred
+- `sequence_number` (integer): Monotonically increasing sequence for ordering
+- `changed_fields` (array, optional): JSON Pointer paths to changed fields (updates only)
+- `snapshot` (object, optional): Full JSON-LD snapshot of the event (if requested)
+- `license_url` (string): License URL (typically CC0)
+- `license_status` (string): License acceptance status
+- `source_timestamp` (timestamp, optional): Original event timestamp from source system
+- `received_timestamp` (timestamp): When this node received/created the event
+- `federation_uri` (string, optional): URI of the originating federation node
+
+**Example with all fields:**
+```json
+{
+  "action": "update",
+  "uri": "https://toronto.togather.foundation/events/01J...",
+  "changed_at": "2025-07-10T12:05:00Z",
+  "sequence_number": 1048577,
+  "changed_fields": ["/name", "/description"],
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "license_status": "accepted",
+  "source_timestamp": "2025-07-10T12:00:00Z",
+  "received_timestamp": "2025-07-10T12:04:30Z",
+  "federation_uri": "https://nodeA.example.org",
+  "snapshot": { ... }
+}
+```
+
 ### Federation Sync
 
 ```http

@@ -180,7 +180,7 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 - Token validation on all state-changing operations (POST/PUT/DELETE/PATCH)
 - 32-byte encryption key required for token generation (configurable via `CSRF_KEY`)
 - Cookie properties: HttpOnly, SameSite=Lax, Secure in production
-- Custom error handler returns RFC 7807 JSON error responses
+- Custom error handler returns JSON error responses with HTTP 403
 - **When to use**: Only for HTML forms rendered by admin UI
 - **When NOT to use**: API endpoints with Bearer tokens, JSON APIs, stateless services
 
