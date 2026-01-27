@@ -133,6 +133,10 @@ jobs:
             sleep 2
           done
 
+      - name: Install migrate tool
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
       - name: Run database migrations
         run: make migrate-up
         env:
@@ -187,6 +191,10 @@ jobs:
             sleep 2
           done
 
+      - name: Install migrate tool
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
       - name: Run database migrations
         run: make migrate-up
         env:
@@ -236,6 +244,10 @@ jobs:
             echo "Waiting for postgres..."
             sleep 2
           done
+
+      - name: Install migrate tool
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
       - name: Run database migrations
         run: make migrate-up
