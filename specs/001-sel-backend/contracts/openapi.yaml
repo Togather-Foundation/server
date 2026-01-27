@@ -450,7 +450,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ChangeFeedResponse'
 
-  /auth/login:
+  /admin/login:
     post:
       operationId: login
       summary: Admin login
@@ -526,6 +526,38 @@ paths:
                         type: string
         '503':
           description: Service not ready
+
+  /.well-known/sel-profile:
+    get:
+      operationId: getSELProfile
+      summary: SEL node profile discovery
+      description: |
+        Returns this node's SEL profile information for federation discovery.
+        Required by SEL Interoperability Profile §1.7.
+      tags: [Health]
+      responses:
+        '200':
+          description: SEL profile information
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile, version, node, updated]
+                properties:
+                  profile:
+                    type: string
+                    format: uri
+                    example: https://togather.foundation/sel/profiles/v0.1
+                  version:
+                    type: string
+                    example: "0.1.0"
+                  node:
+                    type: string
+                    format: uri
+                    example: https://toronto.togather.foundation
+                  updated:
+                    type: string
+                    format: date-time
 
   /openapi.json:
     get:
