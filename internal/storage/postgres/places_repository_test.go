@@ -55,7 +55,11 @@ func TestPlaceRepositoryListFiltersAndPagination(t *testing.T) {
 func TestPlaceRepositoryGetByULID(t *testing.T) {
 	ctx := context.Background()
 	container, dbURL := setupPostgres(t, ctx)
-	defer container.Terminate(ctx)
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
