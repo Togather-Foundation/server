@@ -346,7 +346,6 @@ func buildUpdateMap(existing *Event, params UpdateEventParams) map[string]any {
 	return updates
 }
 
-// applyUpdatesInMemory applies updates to an event struct (for testing until persistence is implemented)
 // equalKeywords compares two keyword slices
 func equalKeywords(a, b []string) bool {
 	if len(a) != len(b) {

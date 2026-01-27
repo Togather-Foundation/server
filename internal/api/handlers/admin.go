@@ -618,7 +618,6 @@ func buildOrganizationURI(baseURL, ulid string) string {
 	return uri
 }
 
-// validateUpdateFields validates the fields that can be updated
 // mapToUpdateParams converts a map[string]any to UpdateEventParams
 // All text fields are sanitized to prevent XSS attacks
 func mapToUpdateParams(updates map[string]any) events.UpdateEventParams {
