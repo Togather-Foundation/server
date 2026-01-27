@@ -168,18 +168,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			// Check if there's a tombstone for this event
 			tombstone, tombErr := h.Service.GetTombstoneByEventULID(r.Context(), ulidValue)
 			if tombErr == nil && tombstone != nil {
-				// Return 410 Gone with tombstone payload
-				var payload map[string]any
-				if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-					// Fallback to minimal tombstone if payload parsing fails
-					payload = map[string]any{
-						"@context":      loadDefaultContext(),
-						"@type":         "Event",
-						"sel:tombstone": true,
-						"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-					}
-				}
-				writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+				WriteTombstoneResponse(w, r, tombstone.Payload, tombstone.DeletedAt, "Event")
 				return
 			}
 			// No tombstone found, return 404
@@ -193,16 +182,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(item.LifecycleState, "deleted") {
 		tombstone, tombErr := h.Service.GetTombstoneByEventULID(r.Context(), ulidValue)
 		if tombErr == nil && tombstone != nil {
-			var payload map[string]any
-			if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-				payload = map[string]any{
-					"@context":      loadDefaultContext(),
-					"@type":         "Event",
-					"sel:tombstone": true,
-					"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-				}
-			}
-			writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+			WriteTombstoneResponse(w, r, tombstone.Payload, tombstone.DeletedAt, "Event")
 			return
 		}
 

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -99,16 +98,7 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 			// Check if there's a tombstone for this place
 			tombstone, tombErr := h.Service.GetTombstoneByULID(r.Context(), ulidValue)
 			if tombErr == nil && tombstone != nil {
-				var payload map[string]any
-				if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-					payload = map[string]any{
-						"@context":      loadDefaultContext(),
-						"@type":         "Place",
-						"sel:tombstone": true,
-						"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-					}
-				}
-				writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+				WriteTombstoneResponse(w, r, tombstone.Payload, tombstone.DeletedAt, "Place")
 				return
 			}
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Not found", err, h.Env)
@@ -121,16 +111,7 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(item.Lifecycle, "deleted") {
 		tombstone, tombErr := h.Service.GetTombstoneByULID(r.Context(), ulidValue)
 		if tombErr == nil && tombstone != nil {
-			var payload map[string]any
-			if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-				payload = map[string]any{
-					"@context":      loadDefaultContext(),
-					"@type":         "Place",
-					"sel:tombstone": true,
-					"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-				}
-			}
-			writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
+			WriteTombstoneResponse(w, r, tombstone.Payload, tombstone.DeletedAt, "Place")
 			return
 		}
 
