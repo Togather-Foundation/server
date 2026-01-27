@@ -4,6 +4,12 @@ This summary is based on the full filtered instruction log (204 entries, Jan 25�
 
 ## What the human did
 
+- Iterative design:
+  - Initial design with ChatGPT 5.2
+  - Iterated using lmcouncil.ai, with Gemini Pro 3, Claude Opus 4.5, GPT 5.2
+  - Targeted design updates and building out docs with GPT 5.2 Codex and Claude Opus 4.5
+  - Based off design docs build constitution, plan, spec and tasks using spec kit
+  - Multiple rounds of design reviews with different focuses using GPT 5.2 Codex and Sonnet 4.5
 - Directed work sequencing and priorities across epics, phases, and user stories (e.g., “start US2 implementation,” “tackle P0s then P1s”).
 - Set quality gates and policy (tests first, “land the plane,” doc updates required, use beads for anything non-trivial).
 - Scoped and refined refactors (DRY opportunities, constants vs package-local best practice).
