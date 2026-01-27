@@ -461,9 +461,9 @@ We take security seriously and appreciate responsible disclosure of vulnerabilit
 
 ## Additional Resources
 
-- **Architecture Documentation**: `docs/togather_SEL_server_architecture_design_v1.md` § 7.1 (Security Hardening)
-- **Code Review Report**: `CODE_REVIEW.md`
-- **Setup Guide**: `SETUP.md` (Security Configuration section)
+- **Architecture Documentation**: `ARCHITECTURE.md` § 7.1 (Security Hardening) - TODO: not yet created
+- **Code Review Report**: `../../CODE_REVIEW.md`
+- **Setup Guide**: `../../SETUP.md` (Security Configuration section)
 - **Issue Tracker**: Run `bd list --type bug --priority 0,1` for active security issues
 
 ---

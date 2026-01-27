@@ -17,9 +17,9 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 
 **Quick links:**
 - [Development Guide](contributors/DEVELOPMENT.md) - Coding standards, logging, validation
-- [Architecture Overview](contributors/ARCHITECTURE.md) - System design *(coming soon)*
-- [Database Guide](contributors/DATABASE.md) - Schema & migrations *(coming soon)*
-- [Testing Guide](contributors/TESTING.md) - TDD workflow *(coming soon)*
+- [Architecture Overview](contributors/ARCHITECTURE.md) - System design (TODO: not yet created)
+- [Database Guide](contributors/DATABASE.md) - Schema & migrations (TODO: not yet created)
+- [Testing Guide](contributors/TESTING.md) - TDD workflow (TODO: not yet created)
 - [Security Guide](contributors/SECURITY.md) - Security implementation
 
 ---
@@ -32,9 +32,9 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 
 **Quick links:**
 - [API Guide](integration/API_GUIDE.md) - Practical API reference with examples
-- [Authentication](integration/AUTHENTICATION.md) - API keys & rate limits *(coming soon)*
-- [Scraper Best Practices](integration/SCRAPERS.md) - Idempotency, deduplication *(coming soon)*
-- [Code Examples](integration/examples/) - Working code samples *(coming soon)*
+- [Authentication](integration/AUTHENTICATION.md) - API keys & rate limits (TODO: not yet created)
+- [Scraper Best Practices](integration/SCRAPERS.md) - Idempotency, deduplication (TODO: not yet created)
+- [Code Examples](integration/examples/) - Working code samples (TODO: not yet created)
 
 **Minimal example:**
 ```javascript
@@ -62,8 +62,8 @@ fetch('https://sel.togather.events/api/v1/events', {
 **Start here:** [interop/README.md](interop/README.md)
 
 **Quick links:**
-- [Core Profile v0.1](interop/CORE_PROFILE_v0.1.md) - URI scheme, JSON-LD, validation *(coming soon)*
-- [API Contract v1](interop/API_CONTRACT_v1.md) - HTTP API specification *(coming soon)*
+- [Core Profile v0.1](interop/CORE_PROFILE_v0.1.md) - URI scheme, JSON-LD, validation
+- [API Contract v1](interop/API_CONTRACT_v1.md) - HTTP API specification
 - [Federation Protocol v1](interop/FEDERATION_v1.md) - Change feeds, sync protocol
 - [Knowledge Graphs](interop/KNOWLEDGE_GRAPHS.md) - Multi-graph reconciliation
 - [Artsdata Integration](interop/ARTSDATA.md) - Artsdata-specific guide
@@ -85,8 +85,8 @@ These resources are useful for everyone:
 
 ### Event Scraper
 1. Read [API Guide](integration/API_GUIDE.md)
-2. Get API key (see [Authentication](integration/AUTHENTICATION.md))
-3. Copy [minimal scraper example](integration/examples/minimal_scraper.js)
+2. Get API key (see [Authentication](integration/AUTHENTICATION.md) - TODO: not yet created)
+3. Copy [minimal scraper example](integration/examples/minimal_scraper.js) (TODO: not yet created)
 4. Submit events with `source.url` for duplicate detection
 
 ### SEL Node Implementer
@@ -99,7 +99,7 @@ These resources are useful for everyone:
 1. Read [Development Guide](contributors/DEVELOPMENT.md)
 2. Pick a task: `bd ready`
 3. Run tests: `make ci`
-4. Follow TDD workflow in [Testing Guide](contributors/TESTING.md)
+4. Follow TDD workflow in [Testing Guide](contributors/TESTING.md) (TODO: not yet created)
 
 ---
 

@@ -179,7 +179,7 @@ func TestMyFeature(t *testing.T) {
 
 ## SHACL Validation and Turtle Serialization
 
-The SEL backend validates JSON-LD data against SHACL shapes to ensure conformance with the [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md).
+The SEL backend validates JSON-LD data against SHACL shapes to ensure conformance with the [SEL Core Profile](../interop/CORE_PROFILE_v0.1.md).
 
 **⚠️ WARNING: SHACL validation spawns Python processes (~150-200ms overhead per event). Use ONLY in development/CI, NOT in production.**
 
@@ -409,7 +409,7 @@ To add validation for new entity types:
 ## References
 
 - [zerolog documentation](https://github.com/rs/zerolog)
-- [SEL Architecture § 7 (Observability)](../plan/togather_SEL_server_architecture_design_v1.md)
+- [SEL Architecture § 7 (Observability)](./ARCHITECTURE.md) - TODO: not yet created
 - [RFC 7807 Problem Details](https://www.rfc-editor.org/rfc/rfc7807.html)
 - [pyshacl documentation](https://github.com/RDFLib/pySHACL)
 - [SHACL specification (W3C)](https://www.w3.org/TR/shacl/)

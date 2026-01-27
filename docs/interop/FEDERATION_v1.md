@@ -480,10 +480,10 @@ Advertise capabilities via `/.well-known/sel-profile`.
 
 ## Related Documentation
 
-- [SEL Server Architecture](./togather_SEL_server_architecture_design_v1.md) - Overall system design
-- [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) - Federation standards
-- [Schema Design](./togather_schema_design.md) - Database schema and migrations
-- [Security Architecture](./SECURITY.md) - Authentication and authorization
+- [SEL Server Architecture](../contributors/ARCHITECTURE.md) - Overall system design (TODO: not yet created)
+- [SEL Core Profile](./CORE_PROFILE_v0.1.md) - Federation standards
+- [Schema Design](../contributors/DATABASE.md) - Database schema and migrations (TODO: not yet created)
+- [Security Architecture](../contributors/SECURITY.md) - Authentication and authorization
 
 ## Implementation Status
 

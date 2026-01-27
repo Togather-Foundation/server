@@ -899,10 +899,10 @@ def scrape_and_submit(events):
 
 ## See Also
 
-- [SEL Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) - Detailed JSON-LD specifications
-- [Security Model](./SECURITY.md) - Authentication and security practices
-- [Development Guide](./DEVELOPMENT.md) - For contributors
-- [Schema Design](./togather_schema_design.md) - Database schema and provenance model
+- [SEL Core Profile](../interop/CORE_PROFILE_v0.1.md) - Detailed JSON-LD specifications
+- [Security Model](../contributors/SECURITY.md) - Authentication and security practices
+- [Development Guide](../contributors/DEVELOPMENT.md) - For contributors
+- [Schema Design](../contributors/DATABASE.md) - Database schema and provenance model (TODO: not yet created)
 
 ---
 

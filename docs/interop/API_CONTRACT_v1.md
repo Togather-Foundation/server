@@ -460,4 +460,4 @@ curl -X POST https://toronto.togather.foundation/api/v1/reconcile/places \
 
 - **Core Profile:** [CORE_PROFILE_v0.1.md](./CORE_PROFILE_v0.1.md) - URI schemes, data models, validation
 - **Federation Protocol:** [FEDERATION_v1.md](./FEDERATION_v1.md) - Sync protocols (§ 4.3-4.4)
-- **Knowledge Graph Integration:** [knowledge_graph_integration_strategy.md](./knowledge_graph_integration_strategy.md)
+- **Knowledge Graph Integration:** [KNOWLEDGE_GRAPHS.md](./KNOWLEDGE_GRAPHS.md)

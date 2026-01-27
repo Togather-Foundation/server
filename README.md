@@ -67,7 +67,8 @@ This server implements defense-in-depth security measures including:
 
 For complete security documentation, see:
 - `CODE_REVIEW.md` - Security audit and findings
-- `docs/togather_SEL_server_architecture_design_v1.md` § 7.1 - Security hardening details
+- `docs/contributors/SECURITY.md` - Security model and practices
+- `docs/contributors/ARCHITECTURE.md` § 7.1 - Security hardening details (TODO: not yet created)
 - `SETUP.md` - Security configuration guide
 
 ## Development Velocity 🚀

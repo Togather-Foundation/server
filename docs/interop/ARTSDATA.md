@@ -2,7 +2,7 @@
 
 ## 0) Target outcome
 
-**Note**: This guide focuses on Artsdata integration specifically. SEL also integrates with other knowledge graphs (Wikidata, MusicBrainz, ISNI, OpenStreetMap). For the complete multi-graph integration strategy, see [Knowledge Graph Integration Strategy](./knowledge_graph_integration_strategy.md).
+**Note**: This guide focuses on Artsdata integration specifically. SEL also integrates with other knowledge graphs (Wikidata, MusicBrainz, ISNI, OpenStreetMap). For the complete multi-graph integration strategy, see [Knowledge Graph Integration Strategy](./KNOWLEDGE_GRAPHS.md).
 
 - **Read** Artsdata knowledge graph data (events/places/people/orgs/concepts) reliably.
 - **Reconcile** local entities → **Artsdata IDs** + external IDs (Wikidata/ISNI/VIAF/etc.).
