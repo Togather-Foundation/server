@@ -1,7 +1,7 @@
 # SEL Documentation Index
 
-**Version:** 0.1.2  
-**Last Updated:** 2026-01-25
+**Version:** 0.1.3  
+**Last Updated:** 2026-01-27
 
 This directory contains the comprehensive technical documentation for the Shared Events Library (SEL) backend.
 
@@ -10,7 +10,7 @@ This directory contains the comprehensive technical documentation for the Shared
 ## Core Architecture Documents
 
 ### 📖 [Terminology Glossary](./glossary.md)
-**Status:** Living Document (NEW - v0.1.3)  
+**Status:** Living Document  
 Canonical definitions for all SEL-specific terminology used across documentation and codebase.
 
 **Key Topics:**
@@ -24,6 +24,22 @@ Canonical definitions for all SEL-specific terminology used across documentation
 - Testing & validation (contract tests, SHACL validation)
 
 **Use this glossary** to ensure consistent terminology in code, docs, and discussions.
+
+### 🌐 [API Documentation](./API.md)
+**Status:** Living Document (NEW - v0.1.3)  
+Practical guide for consuming the SEL API, including event submission, retrieval, authentication, and error handling.
+
+**Key Topics:**
+- Event submission (POST /api/v1/events)
+- Event retrieval and filtering (GET /api/v1/events)
+- Authentication with API keys
+- Rate limiting by tier
+- Idempotency for safe retries
+- Duplicate detection strategies
+- Error handling (RFC 7807)
+- Code examples (JavaScript, Python)
+
+**Target Audience:** Event scrapers, data submitters, API consumers
 
 ### 📋 [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md)
 **Status:** Proposed for Community Review  
@@ -166,14 +182,12 @@ The SEL backend implementation follows a specification-driven approach documente
 6. **Database Schema**: [Schema Design](./togather_schema_design.md) — implementation details
 7. **Knowledge Graphs**: [Multi-Graph Integration Strategy](./knowledge_graph_integration_strategy.md) — reconciliation logic
 
-**For API Consumers:**
+**For API Consumers & Scrapers:**
 
-1. Read the [Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) sections:
-   - § 2: Canonical JSON-LD Output
-   - § 3: Minimal Required Fields
-   - § 4: Export Formats
-2. Check the OpenAPI spec at `/api/v1/openapi.json` (once deployed)
-3. Review [Security Model](./SECURITY.md) for rate limits and authentication requirements
+1. **Start Here**: [API Documentation](./API.md) — practical guide with examples
+2. [Interoperability Profile](./togather_SEL_Interoperability_Profile_v0.1.md) — detailed JSON-LD specs
+3. [Security Model](./SECURITY.md) — rate limits and authentication
+4. Check the OpenAPI spec at `/api/v1/openapi.json` (once deployed)
 
 **For Operators:**
 
@@ -194,6 +208,7 @@ The SEL backend implementation follows a specification-driven approach documente
 | Document | Status | Last Updated | Next Review |
 |----------|--------|--------------|-------------|
 | **Glossary** | **Living Document** | **2026-01-26** | **Ongoing** |
+| **API Documentation** | **Living Document** | **2026-01-27** | **Ongoing** |
 | Interoperability Profile | Proposed for Review | 2026-01-20 | 2026-02-20 |
 | Architecture Design | Updated | 2026-01-25 | 2026-02-25 |
 | **Security Model** | **Living Document** | **2026-01-25** | **Ongoing** |
@@ -204,9 +219,35 @@ The SEL backend implementation follows a specification-driven approach documente
 
 ---
 
-## Key Changes in v0.1.3 (2026-01-26)
+## Key Changes in v0.1.3 (2026-01-27)
 
-### 📖 New Terminology Glossary
+### 🌐 New API Documentation
+
+**Created comprehensive practical API guide for event scrapers and data submitters:**
+
+1. **New Document**: [API Documentation](./API.md)
+   - Authentication and API key management
+   - Rate limiting by tier (public, agent, admin)
+   - Event submission with full field reference
+   - Event retrieval and filtering
+   - Idempotency for safe retries
+   - Duplicate detection (source-based and content hash)
+   - Error handling (RFC 7807)
+   - Practical code examples (JavaScript, Python)
+   - Batch submission patterns with rate limiting
+
+2. **Documentation Updates**: [README](./README.md)
+   - Added API docs to core architecture section
+   - Updated "For API Consumers & Scrapers" quick start
+   - Added API docs to document status tracking
+
+**Why This Matters:**
+- Lowers barrier to entry for event scrapers and data submitters
+- Provides working code examples for common integration patterns
+- Documents duplicate detection and idempotency semantics
+- Clear rate limiting guidance prevents service disruption
+
+### 📖 Terminology Glossary
 
 **Created comprehensive canonical terminology reference:**
 
