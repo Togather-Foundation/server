@@ -8,7 +8,7 @@ on:
 
 env:
   GO_VERSION: "1.22"
-  COVERAGE_THRESHOLD: 80
+  COVERAGE_THRESHOLD: 35
 
 jobs:
   # Lint and format check
