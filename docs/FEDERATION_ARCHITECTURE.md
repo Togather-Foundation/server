@@ -16,7 +16,13 @@ The change feed provides an ordered, cursor-based stream of all modifications to
 
 ### Sequence-Based Cursors
 
-Change feed uses monotonically increasing sequence numbers (BIGSERIAL) stored in the `event_changes` table. Cursors are encoded as `seq_<number>` (base64) to provide opaque, stable pagination tokens that survive database restarts and don't reveal internal state.
+Change feed uses monotonically increasing sequence numbers (BIGSERIAL) stored in the `event_changes` table. Cursors are base64url-encoded (RFC 4648 §5, no padding) to provide opaque, stable pagination tokens that survive database restarts and don't reveal internal state.
+
+**Cursor Format:** `base64url("seq_<sequence_number>")`
+
+**Example:** Sequence 1048576 → Internal format `seq_1048576` → Encoded cursor `c2VxXzEwNDg1NzY`
+
+**Important:** Cursors MUST be treated as opaque strings. Clients should never parse or construct cursors manually—always use values returned by `next_cursor`.
 
 ### Cursor Format Separation
 
@@ -144,13 +150,15 @@ Example validation error:
 
 ```json
 {
-  "type": "https://sel.events/problems/invalid-jsonld",
+  "type": "https://sel.events/problems/validation-error",
   "title": "Invalid JSON-LD",
   "status": 400,
   "detail": "Missing required field: startDate",
   "instance": "/api/v1/federation/sync"
 }
 ```
+
+**Note:** All validation failures (including JSON-LD parsing, schema validation, and field validation) return the generic `validation-error` problem type with specific details in the `detail` field.
 
 ### Trust-Based Conflict Resolution
 
@@ -216,24 +224,25 @@ GET /api/v1/feeds/changes?after=<cursor>&limit=<n>&action=<create|update|delete>
 ```
 
 **Query Parameters:**
-- `since` (optional): Resume from cursor (e.g., `seq_1048576`) - per Interop Profile §4.3
+- `since` (optional): Resume from cursor (base64url-encoded, e.g., `c2VxXzEwNDg1NzY`) - per Interop Profile §4.3
 - `after` (optional): Legacy alias for `since` cursor parameter (deprecated, use `since`)
 - `limit` (optional): Max changes to return (default: 50, max: 200)
 - `action` (optional): Filter by action type (`create`, `update`, `delete`)
 - `include_snapshot` (optional): Include full event snapshot (default: true)
 
-**Note**: Timestamp-based filtering (e.g., `since=2025-01-20T00:00:00Z`) is not supported in MVP. Use cursor-based pagination only.
+**Note**: Timestamp-based filtering (e.g., `since=2025-01-20T00:00:00Z`) is not supported in MVP. Use cursor-based pagination only. Cursors are opaque base64url-encoded strings.
 
 **Response (200 OK):**
 
 ```json
 {
-  "cursor": "seq_1048576",
+  "cursor": "c2VxXzEwNDg1NzY",
   "changes": [
     {
       "action": "update",
       "uri": "https://toronto.togather.foundation/events/01J...",
       "changed_at": "2025-07-10T12:05:00Z",
+      "sequence_number": 1048577,
       "changed_fields": ["/name", "/description"],
       "snapshot": {
         "@id": "https://toronto.togather.foundation/events/01J...",
@@ -243,7 +252,7 @@ GET /api/v1/feeds/changes?after=<cursor>&limit=<n>&action=<create|update|delete>
       }
     }
   ],
-  "next_cursor": "seq_1048602"
+  "next_cursor": "c2VxXzEwNDg2MDI"
 }
 ```
 

@@ -771,7 +771,7 @@ Returns ordered list of change envelopes:
 
 ```json
 {
-  "cursor": "seq_1048576",
+  "cursor": "c2VxXzEwNDg1NzY",
   "changes": [
     {
       "action": "create",
@@ -793,14 +793,16 @@ Returns ordered list of change envelopes:
       "tombstone": { "@id": "...", "sel:deletedAt": "..." }
     }
   ],
-  "next_cursor": "seq_1048602"
+  "next_cursor": "c2VxXzEwNDg2MDI"
 }
 ```
 
 **Cursor Rules:**
-- Cursor MUST be opaque but stable
+- Cursor MUST be opaque (implementations SHOULD use base64url encoding per RFC 4648 §5)
+- Cursor MUST be stable (same logical position = same cursor value)
 - Ordering MUST be deterministic using a **per-node monotonic sequence** (append-only bigint)
 - Delete MUST be represented even if tombstone-only
+- Clients MUST treat cursors as opaque strings (never parse or construct manually)
 
 **Change Feed Contract (MVP):**
 - `cursor` and `next_cursor` MUST be sequence-based.
