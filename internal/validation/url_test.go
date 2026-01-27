@@ -172,10 +172,10 @@ func TestValidateURL_EdgeCases(t *testing.T) {
 
 // Benchmark URL validation
 func BenchmarkValidateURL(b *testing.B) {
-	url := "https://example.com/path/to/resource?foo=bar#section"
+	url := "https://example.com/path/to/resource"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ValidateURL(url, "test_field", false)
+		_ = ValidateURL(url, "test_field", false)
 	}
 }
 
@@ -183,6 +183,6 @@ func BenchmarkValidateBaseURL(b *testing.B) {
 	url := "https://example.com"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ValidateBaseURL(url, "base_url", false)
+		_ = ValidateBaseURL(url, "base_url", false)
 	}
 }

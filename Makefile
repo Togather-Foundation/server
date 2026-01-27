@@ -1,4 +1,4 @@
-.PHONY: help build test lint fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check
+.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 
@@ -9,11 +9,16 @@ help:
 	@echo "Available targets:"
 	@echo "  make build         - Build the server binary"
 	@echo "  make test          - Run all tests"
+	@echo "  make test-ci       - Run tests exactly as CI does (race detector, verbose)"
+	@echo "  make lint          - Run golangci-lint"
+	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
+	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
 	@echo "  make test-v        - Run tests with verbose output"
 	@echo "  make test-race     - Run tests with race detector"
 	@echo "  make coverage      - Run tests with coverage report (enforces 80% threshold)"
 	@echo "  make coverage-check - Check if coverage meets 80% threshold"
 	@echo "  make lint          - Run golangci-lint"
+	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server"
@@ -36,6 +41,29 @@ build:
 test:
 	@echo "Running tests..."
 	@go test ./...
+
+# Run tests exactly as CI does
+test-ci:
+	@echo "Running tests as CI does (with race detector and verbose output)..."
+	@echo ""
+	@echo "==> Running unit tests..."
+	@go test -v -race -coverprofile=coverage.out ./internal/...
+	@echo ""
+	@echo "==> Running contract tests..."
+	@if ! command -v pyshacl > /dev/null 2>&1; then \
+		echo "WARNING: pyshacl not found. SHACL validation will be skipped."; \
+		echo "Install with: make install-pyshacl"; \
+		echo ""; \
+	fi
+	@go test -v -race ./tests/contracts/...
+	@echo ""
+	@echo "==> Running integration tests..."
+	@go test -v -race ./tests/integration/...
+	@echo ""
+	@echo "==> Running E2E tests..."
+	@go test -v -race ./tests/e2e/...
+	@echo ""
+	@echo "✓ All tests passed!"
 
 # Run tests with verbose output
 test-v:
@@ -83,6 +111,49 @@ lint:
 	@echo "Running linter..."
 	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Install with 'make install-tools'" && exit 1)
 	@golangci-lint run ./...
+
+# Run linter exactly as CI does
+lint-ci:
+	@echo "Running linter as CI does (with 5m timeout)..."
+	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Install with 'make install-tools'" && exit 1)
+	@golangci-lint run --timeout=5m ./...
+
+# Run full CI pipeline locally
+ci: lint-ci
+	@echo ""
+	@echo "==> Checking code formatting..."
+	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
+		echo "✗ Code is not formatted. Run 'make fmt'"; \
+		gofmt -l .; \
+		exit 1; \
+	else \
+		echo "✓ Code is properly formatted"; \
+	fi
+	@echo ""
+	@echo "==> Building server..."
+	@$(MAKE) build
+	@if [ ! -f bin/togather-server ]; then \
+		echo "✗ Build failed: binary not found"; \
+		exit 1; \
+	fi
+	@echo "✓ Build successful"
+	@echo ""
+	@echo "==> Checking SQLc generation..."
+	@$(MAKE) sqlc-generate
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "✗ Generated SQLc code differs from committed version"; \
+		echo "Run 'make sqlc-generate' and commit changes"; \
+		git diff; \
+		exit 1; \
+	else \
+		echo "✓ SQLc code is up to date"; \
+	fi
+	@echo ""
+	@$(MAKE) test-ci
+	@echo ""
+	@echo "=========================================="
+	@echo "✓ All CI checks passed!"
+	@echo "=========================================="
 
 # Format all Go files
 fmt:

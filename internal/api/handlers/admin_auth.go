@@ -141,7 +141,7 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Return JSON response with token for API clients
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(loginResponse{
+	if err := json.NewEncoder(w).Encode(loginResponse{
 		Token:     token,
 		ExpiresAt: expiresAt.Format(time.RFC3339),
 		User: userInfo{
@@ -150,7 +150,11 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			Email:    user.Email,
 			Role:     user.Role,
 		},
-	})
+	}); err != nil {
+		// Log error but don't return since headers already written
+		// In production, use structured logging
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // LoginPage handles GET /admin/login
@@ -212,7 +216,10 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "logged out"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "logged out"}); err != nil {
+		// Log error but don't return since headers already written
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // extractClientIP gets the client IP from request headers or RemoteAddr

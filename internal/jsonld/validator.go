@@ -192,7 +192,10 @@ func (v *Validator) createMergedShapesFile() (string, error) {
 			os.Remove(tmpFile.Name())
 			return "", fmt.Errorf("failed to write to merged file: %w", err)
 		}
-		tmpFile.WriteString("\n") // Ensure separation between files
+		if _, err := tmpFile.WriteString("\n"); err != nil {
+			os.Remove(tmpFile.Name())
+			return "", fmt.Errorf("failed to write separator to merged file: %w", err)
+		} // Ensure separation between files
 	}
 
 	return tmpFile.Name(), nil

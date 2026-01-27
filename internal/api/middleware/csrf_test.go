@@ -13,7 +13,9 @@ func TestCSRFProtection_BlocksMissingToken(t *testing.T) {
 
 	handler := CSRFProtection(authKey, false)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		if _, err := w.Write([]byte("success")); err != nil {
+			t.Errorf("Failed to write response: %v", err)
+		}
 	}))
 
 	// POST without CSRF token should be blocked
@@ -39,7 +41,9 @@ func TestCSRFProtection_AllowsGETRequests(t *testing.T) {
 
 	handler := CSRFProtection(authKey, false)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		if _, err := w.Write([]byte("success")); err != nil {
+			t.Errorf("Failed to write response: %v", err)
+		}
 	}))
 
 	// GET requests don't require CSRF tokens

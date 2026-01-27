@@ -35,7 +35,10 @@ func csrfErrorHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusForbidden)
 	w.Header().Set("Content-Type", "application/json")
 	// Simple JSON error response
-	w.Write([]byte(`{"error":"CSRF token validation failed","type":"https://sel.events/problems/csrf-failure","status":403}`))
+	if _, err := w.Write([]byte(`{"error":"CSRF token validation failed","type":"https://sel.events/problems/csrf-failure","status":403}`)); err != nil {
+		// Headers already written, can't do much here
+		// In production, use structured logging
+	}
 }
 
 // CSRFToken extracts the CSRF token from the request context for embedding in forms
