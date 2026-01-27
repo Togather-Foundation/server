@@ -54,19 +54,9 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := map[string]any{
-			"@context": contextValue,
-			"@type":    "Event",
-			"name":     event.Name,
-		}
-
-		// Add @id (required per Interop Profile §3.1)
-		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "events", event.ULID); err == nil {
-			item["@id"] = uri
-		}
+		item := BuildBaseListItem("Event", event.Name, event.ULID, "events", h.BaseURL)
 
 		// Add startDate (required per Interop Profile §3.1)
 		if len(event.Occurrences) > 0 {

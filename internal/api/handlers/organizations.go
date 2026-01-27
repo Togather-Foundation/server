@@ -44,20 +44,9 @@ func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
 	items := make([]map[string]any, 0, len(result.Organizations))
 	for _, org := range result.Organizations {
-		item := map[string]any{
-			"@context": contextValue,
-			"@type":    "Organization",
-			"name":     org.Name,
-		}
-
-		// Add @id (required per Interop Profile §3.1)
-		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "organizations", org.ULID); err == nil {
-			item["@id"] = uri
-		}
-
+		item := BuildBaseListItem("Organization", org.Name, org.ULID, "organizations", h.BaseURL)
 		items = append(items, item)
 	}
 

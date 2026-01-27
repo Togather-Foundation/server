@@ -44,19 +44,9 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
 	items := make([]map[string]any, 0, len(result.Places))
 	for _, place := range result.Places {
-		item := map[string]any{
-			"@context": contextValue,
-			"@type":    "Place",
-			"name":     place.Name,
-		}
-
-		// Add @id (required per Interop Profile §3.1)
-		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "places", place.ULID); err == nil {
-			item["@id"] = uri
-		}
+		item := BuildBaseListItem("Place", place.Name, place.ULID, "places", h.BaseURL)
 
 		// Add address (required per Interop Profile §3.1 - must have address OR geo)
 		if place.City != "" || place.Region != "" || place.Country != "" {
