@@ -195,6 +195,9 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		params.OrganizerID = &org.ID
 	}
 
+	// Store the dedup hash so future ingestions can find this event
+	params.DedupHash = dedupHash
+
 	event, err := s.repo.Create(ctx, params)
 	if err != nil {
 		return nil, err
