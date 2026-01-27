@@ -370,14 +370,13 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 
 		// Store idempotency key if provided
 		if params.IdempotencyKey != "" {
-			if err := txRepo.InsertIdempotencyKey(ctx, IdempotencyKeyParams{
+			_ = txRepo.InsertIdempotencyKey(ctx, IdempotencyKeyParams{
 				Key:         params.IdempotencyKey,
 				RequestHash: payloadHash,
 				EventULID:   localULID,
-			}); err != nil {
-				// Log but don't fail - idempotency is best-effort
-				// This could fail if key already exists, which is fine
-			}
+			})
+			// Explicitly ignore error: idempotency is best-effort
+			// This could fail if key already exists, which is fine
 		}
 
 		result = &SyncEventResult{
