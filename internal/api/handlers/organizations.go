@@ -135,35 +135,6 @@ func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.EqualFold(item.Lifecycle, "deleted") {
-		tombstone, tombErr := h.Service.GetTombstoneByULID(r.Context(), ulidValue)
-		if tombErr == nil && tombstone != nil {
-			var payload map[string]any
-			if err := json.Unmarshal(tombstone.Payload, &payload); err != nil {
-				payload = map[string]any{
-					"@context":      loadDefaultContext(),
-					"@type":         "Organization",
-					"sel:tombstone": true,
-					"sel:deletedAt": tombstone.DeletedAt.Format(time.RFC3339),
-				}
-			}
-			writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
-			return
-		}
-
-		payload := map[string]any{
-			"@context":      loadDefaultContext(),
-			"@type":         "Organization",
-			"sel:tombstone": true,
-			"sel:deletedAt": time.Now().Format(time.RFC3339),
-		}
-		if uri, err := ids.BuildCanonicalURI(h.BaseURL, "organizations", ulidValue); err == nil {
-			payload["@id"] = uri
-		}
-		writeJSON(w, http.StatusGone, payload, contentTypeFromRequest(r))
-		return
-	}
-
 	contextValue := loadDefaultContext()
 	payload := map[string]any{
 		"@context": contextValue,
