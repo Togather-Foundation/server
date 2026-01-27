@@ -11,7 +11,6 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/api/render"
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/jsonld"
@@ -53,13 +52,8 @@ func (h *PublicPagesHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and validate ULID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -108,13 +102,8 @@ func (h *PublicPagesHandler) GetPlace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and validate ULID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", places.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", places.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -162,13 +151,8 @@ func (h *PublicPagesHandler) GetOrganization(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Extract and validate ULID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 

@@ -71,13 +71,8 @@ func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := organizations.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 

@@ -143,13 +143,8 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and validate event ID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -228,13 +223,8 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and validate event ID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -282,13 +272,8 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and validate event ID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -410,13 +395,8 @@ func (h *AdminHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and validate event ID
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := ids.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", events.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -468,13 +448,8 @@ func (h *AdminHandler) DeletePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", places.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := places.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", places.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
@@ -562,13 +537,8 @@ func (h *AdminHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ulidValue := strings.TrimSpace(pathParam(r, "id"))
-	if ulidValue == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "missing"}, h.Env)
-		return
-	}
-	if err := organizations.ValidateULID(ulidValue); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", organizations.FilterError{Field: "id", Message: "invalid ULID"}, h.Env)
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
 		return
 	}
 
