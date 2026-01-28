@@ -35,12 +35,7 @@ The SEL API provides endpoints for submitting, retrieving, and managing cultural
 
 ### Content Types
 
-The API supports multiple content types via the `Accept` header:
-
-- `application/json` (default) - Standard JSON
-- `application/ld+json` - JSON-LD with full `@context`
-- `text/html` - Human-readable HTML (for browser access)
-- `text/turtle` - RDF Turtle format
+The API returns JSON or JSON-LD via the `Accept` header. Dereferenceable entity pages (under `/events/{id}`, `/places/{id}`, `/organizations/{id}`) also support HTML and Turtle.
 
 ---
 
@@ -52,7 +47,7 @@ Most write operations require authentication via API key.
 
 **Header:**
 ```http
-X-API-Key: your-api-key-here
+Authorization: Bearer your-api-key-here
 ```
 
 **Obtaining an API Key:**
@@ -79,9 +74,9 @@ Rate limits are applied per IP address and vary by endpoint tier:
 |------|-----------|-------|-------------|
 | **Public** | `GET /api/v1/events`, `GET /api/v1/places`, etc. | 60 req/min | Read-only public access |
 | **Agent** | `POST /api/v1/events` (with API key) | 300 req/min | Authenticated scrapers/agents |
-| **Federation** | `POST /api/v1/federation/sync` | 0 (unlimited) | Federated node sync |
-| **Admin** | `/api/v1/admin/*` | 300 req/min | Administrative operations |
-| **Login** | `POST /api/v1/admin/login` | 5 req/min | Login attempts (strict) |
+| **Federation** | `POST /api/v1/federation/sync` | 500 req/min | Federated node sync |
+| **Admin** | `/api/v1/admin/*` | Unlimited (0) | Administrative operations |
+| **Login** | `POST /api/v1/admin/login` | 5 per 15 min | Login attempts (strict) |
 
 **Rate Limit Headers:**
 
@@ -116,7 +111,7 @@ Submit events to the SEL via `POST /api/v1/events`.
 ```http
 POST /api/v1/events
 Content-Type: application/json
-X-API-Key: your-api-key-here
+Authorization: Bearer your-api-key-here
 ```
 
 ### Request Body
@@ -452,58 +447,7 @@ Content-Type: application/ld+json
 
 ## Idempotency
 
-To safely retry requests without creating duplicates, use the `Idempotency-Key` header.
-
-### How It Works
-
-1. Generate a unique key (UUID or ULID recommended)
-2. Include it in the request header
-3. Server stores the key and response for 24 hours
-4. Duplicate requests with same key return the cached response
-
-### Example
-
-```http
-POST /api/v1/events
-Content-Type: application/json
-X-API-Key: your-api-key-here
-Idempotency-Key: 01KG123ABC-scraper-run-42
-
-{
-  "name": "Comedy Night",
-  ...
-}
-```
-
-**First Request:**
-- Returns `201 Created`
-- Event is created
-- Response cached
-
-**Duplicate Request (same key, same body):**
-- Returns `201 Created` (or `409` if duplicate)
-- Returns cached response
-- No new event created
-
-**Conflict (same key, different body):**
-```http
-HTTP/1.1 409 Conflict
-Content-Type: application/problem+json
-
-{
-  "type": "https://sel.events/problems/conflict",
-  "title": "Idempotency key conflict",
-  "status": 409,
-  "detail": "Request with this idempotency key has different payload"
-}
-```
-
-### Best Practices
-
-- Use format: `{scraper-id}-{run-id}-{event-id}`
-- Example: `tranzac-scraper-20260127-evt123`
-- Keys expire after 24 hours
-- Don't reuse keys across different events
+To safely retry requests without creating duplicates, use the optional `Idempotency-Key` header.
 
 ---
 
@@ -666,7 +610,7 @@ All errors follow RFC 7807 (Problem Details for HTTP APIs).
 }
 ```
 
-**Cause:** Missing or invalid `X-API-Key` header
+**Cause:** Missing or invalid `Authorization: Bearer <api_key>` header
 
 #### 409 Conflict
 
@@ -715,7 +659,7 @@ async function submitEvent(event) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': API_KEY
+      'Authorization': `Bearer ${API_KEY}`
     },
     body: JSON.stringify(event)
   });
@@ -768,7 +712,7 @@ def submit_event(event_data, source_url, event_id):
         f'{BASE_URL}/api/v1/events',
         headers={
             'Content-Type': 'application/json',
-            'X-API-Key': API_KEY,
+            'Authorization': `Bearer ${API_KEY}`,
             'Idempotency-Key': idempotency_key
         },
         json={
@@ -909,7 +853,7 @@ def scrape_and_submit(events):
 **Questions or Issues?**
 
 - GitHub Issues: https://github.com/Togather-Foundation/server/issues
-- Email: [email protected]
+- Email: [info@togather.foundation](mailto:info@togather.foundation)
 
 ---
 

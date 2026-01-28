@@ -730,13 +730,13 @@ Migrations live in `internal/storage/postgres/migrations/` with numbered pairs:
 
 **Command**:
 ```bash
-make migration-create NAME=add_event_series
+migrate create -ext sql -dir internal/storage/postgres/migrations -seq add_event_series
 ```
 
 This creates:
 ```
-migrations/003_add_event_series.up.sql
-migrations/003_add_event_series.down.sql
+internal/storage/postgres/migrations/003_add_event_series.up.sql
+internal/storage/postgres/migrations/003_add_event_series.down.sql
 ```
 
 **Write SQL**:

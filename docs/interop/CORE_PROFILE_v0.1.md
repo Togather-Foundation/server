@@ -6,8 +6,6 @@
 **Conformance Level:** MUST for Federation, SHOULD for Ingestion  
 **Authors:** SEL Architecture Working Group (Ryan Kelln, Gemini 3 Pro, Claude Opus 4.5, OpenAI ChatGPT 5.2)
 
-**Note:** Split from togather_SEL_Interoperability_Profile_v0.1.md for clarity
-
 ---
 
 ## Executive Summary
@@ -850,7 +848,7 @@ Reference the shapes in `docs/interop/schemas/` for validation requirements.
 
 ### 9.3 Version History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 0.1.0-DRAFT | 2026-01-27 | Split from monolithic profile document |
+| Version | Date | Notes |
+|---------|------|-------|
+| 0.1.0-DRAFT | 2026-01-27 | Drafted core profile |
 | 0.1.0-DRAFT | 2025-01-20 | Initial draft |

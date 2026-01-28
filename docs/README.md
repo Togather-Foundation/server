@@ -1,6 +1,6 @@
 # SEL Documentation
 
-**Version:** 0.2.0  
+**Version:** 0.2.1  
 **Last Updated:** 2026-01-27
 
 Welcome to the Shared Events Library (SEL) documentation. This guide will help you find the right documentation for your needs.
@@ -34,14 +34,14 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 - [API Guide](integration/API_GUIDE.md) - Practical API reference with examples
 - [Authentication](integration/AUTHENTICATION.md) - API keys & rate limits
 - [Scraper Best Practices](integration/SCRAPERS.md) - Idempotency, deduplication
-- [Code Examples](integration/examples/) - Working code samples (TODO: not yet created)
+- [Code Examples](integration/examples/) - Working code samples
 
 **Minimal example:**
 ```javascript
 fetch('https://sel.togather.events/api/v1/events', {
   method: 'POST',
   headers: {
-    'X-API-Key': process.env.SEL_API_KEY,
+    'Authorization': `Bearer ${process.env.SEL_API_KEY}`,
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({
@@ -86,7 +86,7 @@ These resources are useful for everyone:
 ### Event Scraper
 1. Read [API Guide](integration/API_GUIDE.md)
 2. Get API key (see [Authentication](integration/AUTHENTICATION.md))
-3. Copy [minimal scraper example](integration/examples/minimal_scraper.js) (TODO: not yet created)
+3. Copy [minimal scraper example](integration/examples/minimal_scraper.js)
 4. Submit events with `source.url` for duplicate detection
 
 ### SEL Node Implementer
@@ -116,38 +116,11 @@ These resources are useful for everyone:
 | **Contributors** | Architecture | Living | 2026-01-27 |
 | **Contributors** | Database | Living | 2026-01-27 |
 | **Contributors** | Testing | Living | 2026-01-27 |
-| **Interop** | Core Profile v0.1 | Planned | - |
-| **Interop** | API Contract v1 | Planned | - |
+| **Interop** | Core Profile v0.1 | Draft | 2026-01-27 |
+| **Interop** | API Contract v1 | Draft | 2026-01-27 |
 | **Interop** | Federation v1 | Implemented | 2026-01-26 |
 | **Interop** | Knowledge Graphs | Draft | 2026-01-23 |
 | **Interop** | Artsdata | Updated | 2026-01-23 |
-
----
-
-## Key Changes in v0.2.0 (2026-01-27)
-
-### 📁 Documentation Reorganization
-
-**Major restructuring for improved user experience:**
-
-1. **Audience-Based Organization**
-   - `contributors/` - Internal developers
-   - `integration/` - Event scrapers and API consumers
-   - `interop/` - SEL node implementers
-
-2. **Clearer Entry Points**
-   - Each audience has a dedicated README with navigation
-   - Root README routes users to appropriate section
-
-3. **Planned Improvements**
-   - Split large documents (Interoperability Profile → 3 focused contracts)
-   - Extract focused guides (Authentication, Scrapers, Testing)
-   - Add working code examples
-
-**Why This Matters:**
-- Reduces cognitive load - you only read docs relevant to your role
-- Clearer contracts for interoperability
-- Easier to maintain and version independently
 
 ---
 
@@ -158,7 +131,7 @@ All documentation follows these conventions:
 - **Code blocks** use triple backticks with language hints
 - **Links** use relative paths within docs/
 - **Dates** in ISO 8601 format (YYYY-MM-DD)
-- **Status tags**: Planned, Draft, Proposed, Living, Implemented, Deprecated
+- **Status tags**: Planned, Draft, Living, Implemented, Deprecated
 
 When updating docs:
 1. Update the document's date and version fields
@@ -171,7 +144,7 @@ When updating docs:
 
 - **GitHub Issues**: [togather/server/issues](https://github.com/Togather-Foundation/server/issues)
 - **Discussions**: [togather/discussions](https://github.com/Togather-Foundation/discussions)
-- **Email**: [email protected]
+- **Email**: [info@togather.foundation](mailto:info@togather.foundation)
 
 ---
 

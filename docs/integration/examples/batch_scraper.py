@@ -46,7 +46,10 @@ def submit_event(
 
     response = requests.post(
         f"{BASE_URL}/api/v1/events",
-        headers={"Content-Type": "application/json", "X-API-Key": API_KEY},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {API_KEY}",
+        },
         json=event_data,
         timeout=30,
     )

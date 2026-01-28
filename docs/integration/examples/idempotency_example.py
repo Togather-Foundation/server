@@ -50,7 +50,7 @@ def submit_event_idempotent(
         f"{BASE_URL}/api/v1/events",
         headers={
             "Content-Type": "application/json",
-            "X-API-Key": API_KEY,
+            "Authorization": f"Bearer {API_KEY}",
             "Idempotency-Key": idempotency_key,
         },
         json=event_data,

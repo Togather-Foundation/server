@@ -62,7 +62,7 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 **Risk**: High  
 **Impact**: Data breach, data corruption, privilege escalation  
 **Mitigation**: Pattern escaping for ILIKE queries, SQLc parameterization  
-**Status**: ✅ Mitigated (v0.1.2)
+**Status**: ✅ Mitigated
 
 #### 2. Denial of Service (DoS)
 **Risk**: High  
@@ -85,14 +85,14 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 #### 5. Cross-Site Scripting (XSS)
 **Risk**: Medium  
 **Impact**: User session hijacking (admin UI), malicious script execution  
-**Mitigation**: Input sanitization with bluemonday, Content-Security-Policy headers (planned)  
-**Status**: ✅ Mitigated (v0.1.3) - Input sanitization complete, CSP headers planned for P2
+**Mitigation**: Input sanitization with bluemonday, Content-Security-Policy headers (planned)
+**Status**: ✅ Mitigated
 
 #### 6. Cross-Site Request Forgery (CSRF)
 **Risk**: Medium  
 **Impact**: Unauthorized state-changing operations via malicious websites  
 **Mitigation**: CSRF tokens for cookie-based admin endpoints (double-submit cookie pattern)  
-**Status**: ✅ Mitigated (v0.1.3)
+**Status**: ✅ Mitigated
 
 #### 7. Information Disclosure
 **Risk**: Low-Medium  

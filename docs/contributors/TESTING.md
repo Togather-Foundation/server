@@ -768,6 +768,8 @@ internal/
 
 **Overall Target**: 80%+ code coverage
 
+**Current CI Threshold**: 35% minimum (see `.github/workflows/ci.yml`)
+
 **Component Targets**:
 - Core domain logic: 90%+
 - API handlers: 85%+
@@ -793,16 +795,18 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out -o coverage.html
 ```
 
+`make coverage` also runs `make coverage-check`, which enforces the current CI threshold.
+
 **View in Browser**: Open `coverage.html`
 
 **Check Coverage Threshold** (CI):
 
 ```bash
 go test -coverprofile=coverage.out ./...
-go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//' | awk '{if ($1 < 80) exit 1}'
+go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//' | awk '{if ($1 < 35) exit 1}'
 ```
 
-Fails if coverage < 80%.
+Fails if coverage < 35%.
 
 ### Coverage Best Practices
 
@@ -840,37 +844,10 @@ make coverage
 go test -short ./...
 ```
 
-### Makefile Targets
-
-```makefile
-# From Makefile
-.PHONY: test
-test:
-	go test -race -count=1 ./...
-
-.PHONY: test-v
-test-v:
-	go test -v -race -count=1 ./...
-
-.PHONY: test-race
-test-race:
-	go test -race -count=1 ./...
-
-.PHONY: coverage
-coverage:
-	go test -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report: coverage.html"
-
-.PHONY: test-ci
-test-ci:
-	go test -v -race -count=1 -timeout=5m ./...
-```
-
 ### Test Flags
 
 - `-race`: Enable race detector (detects data races)
-- `-count=1`: Disable test caching (always run fresh)
+- `-count=1`: Disable test caching (use when you need a clean rerun)
 - `-v`: Verbose output (show test names)
 - `-short`: Skip slow tests (annotated with `if testing.Short() { t.Skip() }`)
 - `-timeout=5m`: Set global timeout for all tests
@@ -952,44 +929,7 @@ func dumpDatabase(t *testing.T, pool *pgxpool.Pool) {
 
 ### GitHub Actions Workflow
 
-```yaml
-name: Test
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v3
-      
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-      
-      - name: Run tests
-        run: make test-ci
-      
-      - name: Generate coverage
-        run: make coverage
-      
-      - name: Check coverage threshold
-        run: |
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-            echo "Coverage $COVERAGE% is below 80% threshold"
-            exit 1
-          fi
-      
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage.out
-```
+See [GitHub workflows](../../.github/workflows/) for details. *Always* keep the external CI consistent with local Makefil based `make ci`.
 
 ### CI Checklist
 
@@ -997,7 +937,7 @@ SEL CI pipeline validates:
 
 1. **Unit Tests**: All unit tests pass
 2. **Integration Tests**: All integration tests pass with race detector
-3. **Coverage**: ≥80% code coverage
+3. **Coverage**: ≥35% code coverage (current CI threshold)
 4. **Linting**: Code passes golangci-lint
 5. **SHACL Validation**: JSON-LD exports conform to Artsdata shapes
 6. **Build**: `make build` succeeds

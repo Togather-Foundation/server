@@ -4,7 +4,7 @@
 **Date:** 2026-01-27  
 **Status:** Living Document
 
-This document provides best practices for building event scrapers that integrate with the Togather SEL API. It covers idempotency patterns, duplicate handling, batch submission, error handling, and operational considerations.
+This document provides best practices for building event scrapers that integrate with the Togather SEL API. It covers idempotency patterns, duplicate handling, error handling, and operational considerations.
 
 For authentication details, see [AUTHENTICATION.md](AUTHENTICATION.md). For API reference, see [API_GUIDE.md](API_GUIDE.md).
 
@@ -31,7 +31,7 @@ A well-designed event scraper should be:
 
 1. **Idempotent**: Running multiple times produces the same result (no duplicates)
 2. **Resilient**: Handles failures gracefully with retries and backoff
-3. **Efficient**: Minimizes API calls via batching and caching
+3. **Efficient**: Minimizes API calls via caching and smart retry logic
 4. **Observable**: Logs progress, errors, and metrics for monitoring
 5. **Respectful**: Respects rate limits and source website robots.txt
 
@@ -69,7 +69,7 @@ A well-designed event scraper should be:
                       ▼
          ┌────────────────────────────────┐
          │  5. Submit to SEL API          │
-         │  (Batch, with retries)         │
+         │  (With retries)                │
          └────────────┬───────────────────┘
                       │
                       ▼
@@ -220,98 +220,11 @@ def scrape_and_submit(source_url):
 
 ## Batch Submission
 
-### Why Batch?
-
-**Problem**: Submitting 1000 events individually = 1000 API calls
-
-**Solution**: Batch submission = 10 API calls (100 events per batch)
-
-**Benefits**:
-- Faster submission (fewer HTTP round trips)
-- Lower rate limit pressure
-- Easier error handling (retry entire batch)
-
-### Batch Endpoint
-
-**Endpoint**: `POST /api/v1/events:batch`
-
-**Request**:
-```json
-{
-  "events": [
-    {
-      "name": "Event 1",
-      "startDate": "2025-08-15T19:00:00-04:00",
-      "location": { "name": "Venue 1" }
-    },
-    {
-      "name": "Event 2",
-      "startDate": "2025-08-16T20:00:00-04:00",
-      "location": { "name": "Venue 2" }
-    }
-  ]
-}
-```
-
-**Response** (202 Accepted):
-```json
-{
-  "job_id": "01HYX...",
-  "status_url": "/api/v1/jobs/01HYX...",
-  "total_events": 2
-}
-```
-
-### Polling for Results
-
-**Check job status**:
-
-```python
-import time
-
-def submit_batch_and_wait(events):
-    # Submit batch
-    response = requests.post(
-        f'{SEL_API_URL}/events:batch',
-        json={'events': events},
-        headers={'Authorization': f'Bearer {API_KEY}'}
-    )
-    
-    job = response.json()
-    job_id = job['job_id']
-    status_url = f"{SEL_API_URL}/jobs/{job_id}"
-    
-    # Poll for completion
-    while True:
-        status_response = requests.get(
-            status_url,
-            headers={'Authorization': f'Bearer {API_KEY}'}
-        )
-        status = status_response.json()
-        
-        if status['state'] == 'completed':
-            print(f"Success: {status['results']['created']} created, {status['results']['updated']} updated")
-            return status['results']
-        elif status['state'] == 'failed':
-            print(f"Failed: {status['error']}")
-            raise Exception(status['error'])
-        else:
-            # Still processing
-            print(f"Status: {status['state']} ({status['progress']}%)")
-            time.sleep(5)
-```
+Batch submission is not available. Submit events individually and rely on idempotency keys plus duplicate detection.
 
 ### Batch Size Recommendations
 
-| Scraper Type | Batch Size | Reasoning |
-|--------------|-----------|-----------|
-| **Small** (<100 events/run) | 50 events | Single batch, quick processing |
-| **Medium** (100-1000 events) | 100 events | Multiple batches, good balance |
-| **Large** (1000+ events) | 200 events | Maximize throughput, manage memory |
-
-**Trade-offs**:
-- **Larger batches**: Fewer API calls, higher memory usage, longer processing time per batch
-- **Smaller batches**: More API calls, lower memory usage, faster feedback on errors
+Batch sizing guidance is omitted until batch submission is available.
 
 ---
 
@@ -398,58 +311,7 @@ def submit_with_rate_limit_handling(event):
 
 ### Partial Batch Failures
 
-When submitting batches, handle partial failures gracefully:
-
-```python
-def submit_batch_with_error_handling(events):
-    results = {
-        'success': [],
-        'failed': [],
-        'skipped': []
-    }
-    
-    # Submit batch
-    response = requests.post(
-        f'{SEL_API_URL}/events:batch',
-        json={'events': events},
-        headers={'Authorization': f'Bearer {API_KEY}'}
-    )
-    
-    # Wait for job completion
-    job_results = wait_for_job(response.json()['job_id'])
-    
-    # Process results
-    for i, event in enumerate(events):
-        event_result = job_results['events'][i]
-        
-        if event_result['status'] == 'created':
-            results['success'].append({
-                'event': event,
-                'id': event_result['id']
-            })
-        elif event_result['status'] == 'error':
-            results['failed'].append({
-                'event': event,
-                'error': event_result['error']
-            })
-        elif event_result['status'] == 'skipped':
-            results['skipped'].append({
-                'event': event,
-                'reason': event_result['reason']
-            })
-    
-    # Log summary
-    print(f"Batch results: {len(results['success'])} success, "
-          f"{len(results['failed'])} failed, {len(results['skipped'])} skipped")
-    
-    # Retry failed events individually (optional)
-    if results['failed']:
-        print(f"Retrying {len(results['failed'])} failed events...")
-        for item in results['failed']:
-            retry_event(item['event'])
-    
-    return results
-```
+When batch submission is available, handle partial failures gracefully. Treat each event as an independent submission with idempotency keys.
 
 ---
 
@@ -800,171 +662,11 @@ log_structured('info', 'Scraper completed', **metrics.summary())
 
 ## Example Implementation
 
-**Complete Scraper Example** (Python):
+Example scrapers live in `docs/integration/examples/`:
 
-```python
-#!/usr/bin/env python3
-"""
-Example event scraper for SEL API
-"""
-import os
-import sys
-import time
-import json
-import hashlib
-import requests
-from datetime import datetime
-from typing import List, Dict, Any
-
-# Configuration
-SEL_API_URL = os.environ.get('SEL_API_URL', 'https://toronto.togather.foundation/api/v1')
-API_KEY = os.environ['SEL_API_KEY']
-SOURCE_URL = 'https://example.com/events'
-BATCH_SIZE = 100
-
-class SELScraper:
-    def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            'Authorization': f'Bearer {API_KEY}',
-            'Content-Type': 'application/ld+json'
-        })
-        self.metrics = {
-            'processed': 0,
-            'created': 0,
-            'updated': 0,
-            'skipped': 0,
-            'failed': 0
-        }
-    
-    def fetch_events(self) -> List[Dict[str, Any]]:
-        """Fetch events from source website"""
-        print(f"Fetching events from {SOURCE_URL}...")
-        # TODO: Implement actual scraping logic
-        return []
-    
-    def normalize_event(self, raw_event: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize raw event data to SEL schema"""
-        return {
-            'name': raw_event['title'],
-            'description': raw_event.get('description'),
-            'startDate': raw_event['start_datetime'],
-            'endDate': raw_event.get('end_datetime'),
-            'location': {
-                'name': raw_event['venue_name'],
-                'addressLocality': raw_event.get('city', 'Toronto'),
-                'addressRegion': raw_event.get('region', 'ON')
-            },
-            'source': {
-                'url': raw_event['url'],
-                'eventId': raw_event['id']
-            }
-        }
-    
-    def validate_event(self, event: Dict[str, Any]) -> List[str]:
-        """Validate event data"""
-        errors = []
-        
-        if not event.get('name'):
-            errors.append("Missing name")
-        if not event.get('startDate'):
-            errors.append("Missing startDate")
-        if not event.get('location') or not event['location'].get('name'):
-            errors.append("Missing location.name")
-        
-        return errors
-    
-    def submit_batch(self, events: List[Dict[str, Any]]):
-        """Submit batch of events to SEL API"""
-        print(f"Submitting batch of {len(events)} events...")
-        
-        response = self.session.post(
-            f'{SEL_API_URL}/events:batch',
-            json={'events': events}
-        )
-        
-        if response.status_code == 202:
-            job = response.json()
-            return self.wait_for_job(job['job_id'])
-        else:
-            print(f"Batch submission failed: {response.status_code}")
-            return None
-    
-    def wait_for_job(self, job_id: str):
-        """Poll job status until completion"""
-        status_url = f"{SEL_API_URL}/jobs/{job_id}"
-        
-        while True:
-            response = self.session.get(status_url)
-            status = response.json()
-            
-            if status['state'] == 'completed':
-                return status['results']
-            elif status['state'] == 'failed':
-                raise Exception(f"Job failed: {status['error']}")
-            
-            time.sleep(2)
-    
-    def run(self):
-        """Main scraper logic"""
-        start_time = time.time()
-        print("=== SEL Scraper Started ===")
-        
-        # Fetch events from source
-        raw_events = self.fetch_events()
-        print(f"Fetched {len(raw_events)} events from source")
-        
-        # Normalize and validate
-        normalized_events = []
-        for raw in raw_events:
-            self.metrics['processed'] += 1
-            
-            event = self.normalize_event(raw)
-            errors = self.validate_event(event)
-            
-            if errors:
-                print(f"Skipping invalid event '{event.get('name')}': {errors}")
-                self.metrics['skipped'] += 1
-                continue
-            
-            normalized_events.append(event)
-        
-        print(f"Validated {len(normalized_events)} events")
-        
-        # Submit in batches
-        for i in range(0, len(normalized_events), BATCH_SIZE):
-            batch = normalized_events[i:i+BATCH_SIZE]
-            
-            try:
-                results = self.submit_batch(batch)
-                self.metrics['created'] += results['created']
-                self.metrics['updated'] += results['updated']
-                self.metrics['failed'] += results['failed']
-            except Exception as e:
-                print(f"Batch submission failed: {e}")
-                self.metrics['failed'] += len(batch)
-        
-        # Summary
-        duration = time.time() - start_time
-        print("\n=== Scraper Summary ===")
-        print(f"Duration: {duration:.1f}s")
-        print(f"Processed: {self.metrics['processed']}")
-        print(f"Created: {self.metrics['created']}")
-        print(f"Updated: {self.metrics['updated']}")
-        print(f"Skipped: {self.metrics['skipped']}")
-        print(f"Failed: {self.metrics['failed']}")
-
-if __name__ == '__main__':
-    scraper = SELScraper()
-    scraper.run()
-```
-
-**Run Scraper**:
-
-```bash
-export SEL_API_KEY="sel_live_abcdef1234567890..."
-python scraper.py
-```
+- `docs/integration/examples/minimal_scraper.js`
+- `docs/integration/examples/idempotency_example.py`
+- `docs/integration/examples/batch_scraper.py`
 
 ---
 
@@ -974,7 +676,7 @@ python scraper.py
 
 - ✅ Use idempotency keys to prevent duplicates
 - ✅ Include `source.eventId` and `source.url` in all events
-- ✅ Batch submissions (50-200 events per batch)
+- ✅ Use idempotency keys for safe retries
 - ✅ Implement exponential backoff with jitter for retries
 - ✅ Validate data before submission
 - ✅ Monitor rate limit headers and throttle accordingly
@@ -984,9 +686,8 @@ python scraper.py
 
 ### Don'ts
 
-- ❌ Don't submit individual events if you have >10 events
-- ❌ Don't retry on 4xx errors (400, 401, 403, 422)
 - ❌ Don't ignore rate limit headers
+- ❌ Don't retry on 4xx errors (400, 401, 403, 422)
 - ❌ Don't submit unvalidated data
 - ❌ Don't hardcode API keys in source code
 - ❌ Don't log sensitive data (API keys, user info)
@@ -998,8 +699,8 @@ python scraper.py
 
 - [AUTHENTICATION.md](AUTHENTICATION.md) - API key management and authentication
 - [API_GUIDE.md](API_GUIDE.md) - Complete API endpoint reference
-- [examples/scrapers/](examples/scrapers/) - Full scraper examples in multiple languages
+- [examples/](examples/) - Scraper examples in multiple languages
 
-**Document Version**: 0.1.0  
-**Last Updated**: 2026-01-27  
+**Document Version**: 0.1.0
+**Last Updated**: 2026-01-27
 **Maintenance**: Update when API changes affect scraper patterns

@@ -29,7 +29,7 @@ const response = await fetch('https://sel.togather.events/api/v1/events', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'X-API-Key': process.env.SEL_API_KEY
+    'Authorization': `Bearer ${process.env.SEL_API_KEY}`
   },
   body: JSON.stringify({
     name: 'Event Name',
@@ -64,7 +64,7 @@ headers: {
 ### Submit Event
 ```http
 POST /api/v1/events
-X-API-Key: your-api-key
+Authorization: Bearer your-api-key
 Content-Type: application/json
 ```
 
@@ -122,7 +122,7 @@ Common status codes:
 
 - **API Guide**: [API_GUIDE.md](API_GUIDE.md) - comprehensive reference
 - **GitHub Issues**: [togather/server/issues](https://github.com/Togather-Foundation/server/issues)
-- **Email**: [email protected]
+- **Email**: [info@togather.foundation](mailto:info@togather.foundation)
 
 ## Related Documentation
 

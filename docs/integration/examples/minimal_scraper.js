@@ -9,7 +9,7 @@ async function submitEvent(event) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': API_KEY
+      'Authorization': `Bearer ${API_KEY}`
     },
     body: JSON.stringify(event)
   });

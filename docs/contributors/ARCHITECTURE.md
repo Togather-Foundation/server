@@ -2,7 +2,7 @@
 
 **Version:** 0.2  
 **Date:** 2026-01-27  
-**Status:** Living Document - Updated from Architecture Design v1
+**Status:** Living Document
 
 This document provides an architectural overview of the Togather Shared Events Library (SEL) backend. It focuses on system design, component architecture, technology choices, and key design patterns. For implementation details, see [DATABASE.md](DATABASE.md) and [TESTING.md](TESTING.md).
 
@@ -48,14 +48,14 @@ SEL is not "a database with JSON output" but **a node in the linked open data we
 
 ## System Overview
 
-The SEL backend is designed as a **single Go service** (with optional auxiliary components) to maximize simplicity and ease of deployment. The monolithic-but-modular approach means developers and AI agents can run the entire system easily and iterate on parts in isolation.
+The SEL MVP backend is designed as a **single Go service** (with optional auxiliary components) to maximize simplicity and ease of deployment. The monolithic-but-modular approach means developers and AI agents can run the entire system easily and iterate on parts in isolation.
 
 ### Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     External Clients                         │
-│  (Scrapers, Mobile Apps, Web UIs, LLM Agents, Federation)  │
+│                     External Clients                        │
+│  (Scrapers, Mobile Apps, Web UIs, LLM Agents, Federation)   │
 └────────────┬──────────────────────────────────┬─────────────┘
              │                                   │
     ┌────────▼────────┐                 ┌───────▼──────────┐
@@ -80,7 +80,7 @@ The SEL backend is designed as a **single Go service** (with optional auxiliary 
                              │
         ┌────────────────────┼────────────────────┐
         │                    │                    │
-   ┌────▼────┐        ┌──────▼──────┐     ┌──────▼──────┐
+   ┌────▼──────┐       ┌─────▼───────┐     ┌──────▼──────┐
    │ Repository│       │ Background  │     │ Integration │
    │  Layer    │       │   Jobs      │     │   Modules   │
    │           │       │  (River)    │     │             │
@@ -93,13 +93,13 @@ The SEL backend is designed as a **single Go service** (with optional auxiliary 
    ┌────▼─────────────────────────────────────────┐
    │         PostgreSQL 16+ Database              │
    │                                              │
-   │ - Events & Occurrences (temporal split)     │
-   │ - Places, Organizations, Persons            │
-   │ - Provenance & Field Attribution            │
-   │ - Federation Infrastructure                 │
-   │ - pgvector (embeddings)                     │
-   │ - PostGIS (geospatial)                      │
-   │ - pg_trgm (fuzzy search)                    │
+   │ - Events & Occurrences (temporal split)      │
+   │ - Places, Organizations, Persons             │
+   │ - Provenance & Field Attribution             │
+   │ - Federation Infrastructure                  │
+   │ - pgvector (embeddings)                      │
+   │ - PostGIS (geospatial)                       │
+   │ - pg_trgm (fuzzy search)                     │
    └──────────────────────────────────────────────┘
 ```
 
@@ -108,7 +108,7 @@ The SEL backend is designed as a **single Go service** (with optional auxiliary 
 - **Single Binary Deployment**: Entire system runs as one Go process (or with optional workers)
 - **Postgres-Centric**: Database handles search, vectors, jobs, geospatial - minimal external deps
 - **Transactional Job Queue**: River ensures background work is never lost via ACID guarantees
-- **Content Negotiation**: All resources support HTML (humans) and JSON-LD (machines)
+- **Content Negotiation**: Public pages support HTML and JSON-LD; API defaults to JSON-LD
 - **Federation-Ready**: Built-in change feeds, bulk export, and peer synchronization
 - **Agent-Friendly**: MCP server provides natural language interface for LLM agents
 
@@ -177,6 +177,7 @@ Dereferenceable URIs (e.g., `https://toronto.togather.foundation/events/{id}`) M
 | `text/html` | Human-readable HTML page | Web browsers, human review |
 | `application/ld+json` | Canonical JSON-LD document | Semantic web agents, harvesters |
 | `application/json` | JSON-LD document (alias) | Generic API clients |
+| `text/turtle` | RDF Turtle document | Semantic web tooling |
 
 **MVP Requirement**: Provide **both HTML and JSON-LD** for dereferenceable URIs. HTML enables human review of data, JSON-LD enables machine consumption. Embed canonical JSON-LD in HTML pages using `<script type="application/ld+json">`.
 
@@ -213,7 +214,7 @@ An HTTP RESTful API that accepts incoming event submissions and serves event que
 
 - **Request Validation**: Schema validation via go-playground/validator
 - **Authentication**: API key and JWT verification
-- **Content Negotiation**: `application/ld+json` for semantic web, `text/html` for humans
+- **Content Negotiation**: `application/ld+json` for APIs, HTML on public pages
 - **Routing**: Clean REST-style URLs with versioned endpoints
 - **Error Handling**: RFC 7807 Problem Details for consistent error responses
 
@@ -306,12 +307,11 @@ Manages user accounts, API keys, and role-based access control.
 **Roles:**
 - **Public**: Read-only access to published events
 - **Agent**: Write access for scrapers and integrations
-- **Editor**: Can review and correct event data
 - **Admin**: Full access including user management
 
 **Authentication Methods:**
 - **API Keys**: For agents and long-lived integrations (multiple keys per user, scoped permissions)
-- **JWT**: For admin/editor interactive sessions (short-lived tokens)
+- **JWT**: For admin interactive sessions (tokens, configurable expiry)
 
 **Rate Limiting**: Applied per-role to prevent abuse while allowing legitimate high-volume users. See [SECURITY.md](SECURITY.md) for details.
 
@@ -378,7 +378,7 @@ The SEL exposes a **RESTful HTTP API** with clear, versioned endpoints for both 
 - **Resource-Oriented URLs**: `/api/v1/events/{id}`, not `/api/v1/getEvent`
 - **Standard HTTP Verbs**: GET (retrieval), POST (creation), PUT (update), DELETE (removal)
 - **Appropriate Status Codes**: 201 Created, 400 Bad Request, 401 Unauthorized, 410 Gone
-- **Content Negotiation**: Support `application/ld+json` and `text/html` where appropriate
+- **Content Negotiation**: Support `application/ld+json` for APIs, HTML on public pages
 - **Cursor-Based Pagination**: Avoid offset pagination pitfalls on large datasets
 
 ### Response Envelopes
@@ -438,17 +438,7 @@ Allows authenticated agents to submit new events. Payloads follow schema.org/Eve
 - `409 Conflict` if duplicate detected (returns existing event URI)
 
 **Bulk Submission:**
-**`POST /api/v1/events:batch`**
-
-Returns `202 Accepted` with:
-```json
-{
-  "job_id": "01HYX...",
-  "status_url": "/api/v1/jobs/01HYX..."
-}
-```
-
-Poll status at `GET /api/v1/jobs/{id}` to track progress, failures, and errors.
+**`POST /api/v1/events:batch`** (planned)
 
 #### Event Query
 **`GET /api/v1/events`**
@@ -469,25 +459,14 @@ Filtered queries over events. Publicly accessible.
 
 Returns full event details. Supports content negotiation.
 
-**Accept Headers:**
+**Accept Headers (API):**
 - `application/ld+json`: Canonical JSON-LD
-- `text/html`: Human-readable HTML page
 - `application/json`: JSON-LD (alias)
 
 **Response**: Single event object with full schema.org fields and enrichment
 
 #### Semantic Search
-**`GET /api/v1/events/search`**
-
-Vector-based semantic querying.
-
-**Query Parameters:**
-- `query={text}`: Natural language query (e.g., "free outdoor jazz concert")
-- `limit={n}`: Max results (default 10, max 50)
-
-**Response**: Events with similarity scores, sorted by relevance
-
-**Note**: Rate-limited due to embedding costs. Requires API key for heavy usage.
+**`GET /api/v1/events/search`** (planned)
 
 #### Change Feed
 **`GET /api/v1/feeds/changes`**
@@ -510,11 +489,9 @@ Both support `start_after` and `start_before` query params for time-based filter
 
 Protected by admin role authentication (`/api/v1/admin/*`):
 
-- **`GET /admin/events/pending`**: List events awaiting approval
-- **`PUT /admin/events/{id}`**: Update or correct event data
-- **`DELETE /admin/events/{id}`**: Remove or cancel event
-- **`GET /admin/duplicates`**: Report of suspected duplicates
-- **`POST /admin/reconcile`**: Trigger reconciliation for unlinked entities
+- **`GET /api/v1/admin/events/pending`**: List events awaiting approval
+- **`PUT /api/v1/admin/events/{id}`**: Update or correct event data
+- **`DELETE /api/v1/admin/events/{id}`**: Remove or cancel event
 
 #### Health Checks
 - **`GET /healthz`**: Liveness probe (always returns 200 if process alive)
@@ -710,7 +687,7 @@ View `field_conflicts` identifies fields with multiple conflicting values for ad
 ### Access Control
 
 **Users Table** (`users`):
-- Role-based access: admin, editor, agent, viewer
+- Role-based access: admin, agent
 - Multiple API keys per user
 - Rate limiting tiers
 
@@ -1013,18 +990,17 @@ When events are merged, create alias entries:
 5. Load associated user and permissions
 6. Apply rate limit for key's tier
 
-#### JWT (For Admin/Editor Sessions)
+#### JWT (For Admin Sessions)
 
 **Issuer**: SEL backend  
 **Signing**: HMAC-SHA256 or RS256 (configurable)  
-**Lifetime**: 1 hour (short-lived for security)  
-**Refresh**: Refresh tokens stored in database with 30-day expiration
+**Lifetime**: 24 hours (configurable via `JWT_EXPIRY_HOURS`)
 
 **Claims**:
 ```json
 {
-  "sub": "01HYX...",        // User ULID
-  "email": "admin@example.com",
+  "sub": "admin",           // Username
+  "email": "info@togather.foundation",
   "role": "admin",
   "iat": 1640000000,
   "exp": 1640003600,
@@ -1045,20 +1021,14 @@ When events are merged, create alias entries:
 |------|-------------|----------|
 | **Public** | Read published events | Anonymous web users |
 | **Agent** | Read + Write events | Scrapers, integrations |
-| **Editor** | Agent + Review + Edit any event | Content moderation |
-| **Admin** | Editor + User management + Config | System administration |
+| **Admin** | Agent + User management + Config | System administration |
 
-**Implementation**: Middleware checks role before handler execution:
-
-```go
-middleware.RequireRole("editor")
-```
+**Implementation**: Middleware checks role before handler execution (JWT admin role required).
 
 **Endpoint Protection Examples**:
 - `GET /api/v1/events`: Public
-- `POST /api/v1/events`: Agent or higher
-- `PUT /admin/events/{id}`: Editor or higher
-- `POST /admin/users`: Admin only
+- `POST /api/v1/events`: Agent
+- `PUT /api/v1/admin/events/{id}`: Admin
 
 ### Rate Limiting
 
@@ -1068,10 +1038,8 @@ middleware.RequireRole("editor")
 | Tier | Requests/Minute | Burst | Use Case |
 |------|----------------|-------|----------|
 | **Public** | 60 | 10 | Anonymous reads |
-| **Agent (Free)** | 300 | 50 | Community scrapers |
-| **Agent (Standard)** | 1000 | 100 | Production integrations |
-| **Agent (Premium)** | 5000 | 500 | High-volume partners |
-| **Admin** | 10000 | 1000 | Internal tools |
+| **Agent** | 300 | 50 | Community scrapers |
+| **Admin** | Unlimited | N/A | Internal tools |
 
 **Implementation**: Redis or Postgres-based token bucket. Middleware rejects requests exceeding limit with:
 - **429 Too Many Requests** status
@@ -1243,7 +1211,7 @@ USEARCH_ENABLED=false
 | **Validation** | go-playground/validator | Struct tag validation, extensive rules |
 | **UUID/ULID** | oklog/ulid/v2 | Sortable UUIDs with timestamp prefix |
 | **JSON-LD** | piprate/json-gold | JSON-LD processing, framing, compaction |
-| **JWT** | golang-jwt/jwt/v5 | Standard JWT implementation |
+| **JWT** | golang-jwt/jwt/v5 | Standard JWT implementation (HS256) |
 
 ### Database Extensions
 
@@ -1369,7 +1337,8 @@ tx.Commit()
 **Supported Formats**:
 - `application/ld+json`: Canonical JSON-LD
 - `application/json`: JSON-LD (alias)
-- `text/html`: Human-readable HTML
+- `text/html`: Human-readable HTML (public pages)
+- `text/turtle`: RDF Turtle (public pages)
 
 **Example**:
 ```go

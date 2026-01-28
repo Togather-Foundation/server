@@ -449,9 +449,9 @@ curl -X POST https://toronto.togather.foundation/api/v1/reconcile/places \
 
 ## 7. Version History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0-DRAFT | 2026-01-27 | Split from monolithic profile document |
+| Version | Date | Notes |
+|---------|------|-------|
+| 1.0-DRAFT | 2026-01-27 | Drafted API contract |
 | 1.0-DRAFT | 2025-01-20 | Initial draft |
 
 ---

@@ -31,13 +31,12 @@ The SEL API uses **two authentication methods** depending on your use case:
 | Method | Use Case | Lifetime | Example Users |
 |--------|----------|----------|---------------|
 | **API Keys** | Long-lived integrations (scrapers, batch jobs) | No expiration (rotatable) | Event scrapers, data feeds |
-| **JWT Tokens** | Interactive sessions (admin dashboards) | 1 hour (refreshable) | Admin users, editors |
+| **JWT Tokens** | Interactive sessions (admin dashboard, admin API) | 24 hours (configurable) | Admin users |
 
 ### Public Access
 
 **No authentication required** for:
 - Reading published events (`GET /api/v1/events`)
-- Searching events (`GET /api/v1/events/search`)
 - Viewing event details (`GET /api/v1/events/{id}`)
 - Reading places and organizations
 
@@ -55,7 +54,7 @@ Public endpoints are **rate-limited** to 60 requests/minute per IP address.
 
 ## Roles and Permissions
 
-SEL uses **Role-Based Access Control (RBAC)** with four roles:
+SEL uses **Role-Based Access Control (RBAC)** with three roles:
 
 ### Public (Unauthenticated)
 
@@ -75,8 +74,7 @@ SEL uses **Role-Based Access Control (RBAC)** with four roles:
 - ✅ All public permissions
 - ✅ Create events (`POST /api/v1/events`)
 - ✅ Create places and organizations (via event creation)
-- ✅ Batch event submission (`POST /api/v1/events:batch`)
-- ✅ View job status (`GET /api/v1/jobs/{id}`)
+- ✅ Submit events (`POST /api/v1/events`)
 - ❌ Update or delete events created by others
 - ❌ Access admin endpoints
 
@@ -84,27 +82,11 @@ SEL uses **Role-Based Access Control (RBAC)** with four roles:
 
 **Use Case**: Event scrapers, partner integrations, data feeds
 
-### Editor (Authenticated)
-
-**Permissions:**
-- ✅ All agent permissions
-- ✅ Update any event (`PUT /api/v1/events/{id}`)
-- ✅ Review pending events (`GET /api/v1/admin/events/pending`)
-- ✅ Merge duplicate events (`POST /api/v1/admin/events/{id}/merge`)
-- ✅ Trigger reconciliation (`POST /api/v1/admin/reconcile`)
-- ❌ Delete events
-- ❌ Manage users or API keys
-
-**Rate Limit**: 1000 requests/minute
-
-**Use Case**: Content moderators, data curators
-
 ### Admin (Authenticated)
 
 **Permissions:**
-- ✅ All editor permissions
+- ✅ All agent permissions
 - ✅ Delete events (`DELETE /api/v1/admin/events/{id}`)
-- ✅ Manage users (`POST /api/v1/admin/users`)
 - ✅ Create API keys (`POST /api/v1/admin/api-keys`)
 - ✅ Configure federation nodes
 - ✅ View system metrics and logs
@@ -129,7 +111,7 @@ API keys are the recommended authentication method for **long-lived integrations
 
 **Response**: You'll receive:
 - **API Key**: `sel_live_abcdef1234567890...` (64-character string)
-- **Role**: `agent` (or `editor`/`admin` if appropriate)
+- **Role**: `agent` (or `admin` if appropriate)
 - **Rate Limit**: Assigned tier (usually 300 req/min for agents)
 
 **⚠️ IMPORTANT**: API keys are shown **only once**. Store them securely (environment variables, secret manager).
@@ -218,14 +200,14 @@ JWT (JSON Web Tokens) are used for **interactive sessions** like admin dashboard
 
 ### Obtaining a JWT
 
-**Login Endpoint**: `POST /api/v1/auth/login`
+**Login Endpoint**: `POST /api/v1/admin/login`
 
 **Request**:
 ```bash
 curl -X POST https://toronto.togather.foundation/api/v1/auth/login \
      -H "Content-Type: application/json" \
      -d '{
-       "email": "admin@example.com",
+       "username": "admin",
        "password": "secure_password"
      }'
 ```
@@ -234,8 +216,13 @@ curl -X POST https://toronto.togather.foundation/api/v1/auth/login \
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refresh_token": "abcdef1234567890...",
-  "expires_at": "2025-08-15T20:00:00Z"
+  "expires_at": "2025-08-15T20:00:00Z",
+  "user": {
+    "id": "2e9c2fd1-6b1b-4a5e-9d54-5a9f6e6c1f1a",
+    "username": "admin",
+    "email": "info@togather.foundation",
+    "role": "admin"
+  }
 }
 ```
 
@@ -245,11 +232,11 @@ The JWT contains these claims:
 
 ```json
 {
-  "sub": "01HYX...",              // User ULID
-  "email": "admin@example.com",   // User email
-  "role": "admin",                // Role (admin, editor, agent)
+  "sub": "admin",                 // Username
+  "email": "info@togather.foundation",   // User email
+  "role": "admin",                // Role (admin)
   "iat": 1640000000,              // Issued at (Unix timestamp)
-  "exp": 1640003600,              // Expires at (Unix timestamp, 1 hour)
+  "exp": 1640003600,              // Expires at (Unix timestamp)
   "iss": "https://toronto.togather.foundation"  // Issuer
 }
 ```
@@ -264,75 +251,11 @@ curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
      https://toronto.togather.foundation/api/v1/admin/events/pending
 ```
 
-### Token Expiration and Refresh
+### Token Expiration
 
-**Token Lifetime**: 1 hour
+**Token Lifetime**: 24 hours (configurable via `JWT_EXPIRY_HOURS`)
 
-**Refresh Token Lifetime**: 30 days
-
-**Refreshing a Token**:
-
-```bash
-curl -X POST https://toronto.togather.foundation/api/v1/auth/refresh \
-     -H "Content-Type: application/json" \
-     -d '{
-       "refresh_token": "abcdef1234567890..."
-     }'
-```
-
-**Response**:
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  // New access token
-  "expires_at": "2025-08-15T21:00:00Z"
-}
-```
-
-**Implementation Pattern** (JavaScript):
-
-```javascript
-let accessToken = localStorage.getItem('access_token');
-let refreshToken = localStorage.getItem('refresh_token');
-
-async function apiCall(endpoint, options = {}) {
-  let response = await fetch(endpoint, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      ...options.headers
-    }
-  });
-  
-  if (response.status === 401) {
-    // Token expired, try refresh
-    const refreshResponse = await fetch('/api/v1/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken })
-    });
-    
-    if (refreshResponse.ok) {
-      const data = await refreshResponse.json();
-      accessToken = data.token;
-      localStorage.setItem('access_token', accessToken);
-      
-      // Retry original request with new token
-      response = await fetch(endpoint, {
-        ...options,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          ...options.headers
-        }
-      });
-    } else {
-      // Refresh failed, redirect to login
-      window.location.href = '/login';
-    }
-  }
-  
-  return response;
-}
-```
+When a token expires, re-authenticate with `POST /api/v1/admin/login`.
 
 ---
 
@@ -345,9 +268,7 @@ All API endpoints are rate-limited to prevent abuse and ensure fair usage.
 | Role | Requests/Minute | Burst Allowance | Use Case |
 |------|----------------|----------------|-----------|
 | **Public** | 60 | 10 | Anonymous browsing |
-| **Agent (Free)** | 300 | 50 | Community scrapers |
-| **Agent (Standard)** | 1000 | 100 | Production integrations |
-| **Editor** | 1000 | 100 | Content curation |
+| **Agent** | 300 | 50 | Community scrapers |
 | **Admin** | Unlimited | N/A | System administration |
 
 **Burst Allowance**: Allows short bursts above the per-minute rate (e.g., 70 requests in a single second is OK if average is <60/min).
@@ -421,15 +342,14 @@ Retry-After: 45  # Seconds until rate limit resets
        raise Exception("Max retries exceeded")
    ```
 
-3. **Batch operations** to reduce request count
+3. **Batch operations** to reduce request count (not available)
    ```bash
    # Instead of 100 individual POSTs
    curl -X POST /api/v1/events -d @event1.json
    curl -X POST /api/v1/events -d @event2.json
    # ... (98 more)
    
-   # Use batch endpoint (1 request)
-   curl -X POST /api/v1/events:batch -d @events_batch.json
+    # Use throttling and idempotency keys for safe retries
    ```
 
 4. **Cache responses** when appropriate
@@ -822,7 +742,7 @@ for i in range(0, len(events), batch_size):
 
 **Symptoms**: 401 error with "Token expired" detail
 
-**Solution**: Implement token refresh flow (see [JWT Authentication](#jwt-authentication))
+**Solution**: Re-authenticate via `POST /api/v1/admin/login` and replace the token
 
 ---
 
@@ -856,7 +776,6 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 |------|-------|----------|
 | Public | 60/min | Anonymous |
 | Agent | 300/min | Integrations |
-| Editor | 1000/min | Curation |
 | Admin | Unlimited | Administration |
 
 ---

@@ -413,5 +413,5 @@ https://{origin_node_domain}/events/{ulid}
 
 ---
 
-**Questions or Corrections?**  
+**Questions?**  
 File an issue at [togather/server/issues](https://github.com/Togather-Foundation/server/issues) with the "documentation" label.

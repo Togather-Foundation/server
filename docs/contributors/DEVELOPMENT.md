@@ -402,9 +402,6 @@ To add validation for new entity types:
 
 4. **Update docs** - document required fields in Interoperability Profile
 
-## Additional Topics
-
-(This document will be expanded with additional development topics as needed)
 
 ## References
 
