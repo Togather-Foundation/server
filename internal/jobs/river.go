@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	JobKindDeduplication      = "deduplication"
-	JobKindReconciliation     = "reconciliation"
-	JobKindEnrichment         = "enrichment"
-	JobKindIdempotencyCleanup = "idempotency_cleanup"
-	JobKindBatchIngestion     = "batch_ingestion"
+	JobKindDeduplication       = "deduplication"
+	JobKindReconciliation      = "reconciliation"
+	JobKindEnrichment          = "enrichment"
+	JobKindIdempotencyCleanup  = "idempotency_cleanup"
+	JobKindBatchIngestion      = "batch_ingestion"
+	JobKindBatchResultsCleanup = "batch_results_cleanup"
 )
 
 const (

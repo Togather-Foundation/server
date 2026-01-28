@@ -65,7 +65,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	workers := jobs.NewWorkersWithPool(pool, ingestService)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, slogLogger)
 	riverClient, err := jobs.NewClient(pool, workers, slogLogger)
 	if err != nil {
 		logger.Error().Err(err).Msg("river client init failed")

@@ -25,7 +25,7 @@ type ApiKey struct {
 
 // Stores results of batch event ingestion jobs
 type BatchIngestionResult struct {
-	// Unique identifier for the batch job
+	// Unique identifier for the batch job (PRIMARY KEY provides implicit index for lookups)
 	BatchID string `json:"batch_id"`
 	// JSON array of ingestion results per event
 	Results []byte `json:"results"`
