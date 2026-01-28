@@ -42,7 +42,7 @@ func TestEventFarFutureDateAcceptedWithFlagging(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should accept (201) but flag for review
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "far future events should be accepted")
@@ -94,7 +94,7 @@ func TestEventInvalidExternalLinkAcceptedWithWarning(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should accept (201) - we defer link validation, don't fail synchronously
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "events with unreachable URLs should be accepted")
@@ -189,7 +189,7 @@ func TestEventNonCC0LicenseRejected(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if tc.shouldFail {
 				require.Equal(t, http.StatusBadRequest, resp.StatusCode, "non-CC0 license should be rejected")
@@ -250,7 +250,7 @@ func TestConcurrentUpdateConflict(t *testing.T) {
 
 	resp1, err := env.Server.Client().Do(req1)
 	require.NoError(t, err)
-	defer resp1.Body.Close()
+	defer func() { _ = resp1.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp1.StatusCode, "first update should succeed")
 
@@ -268,7 +268,7 @@ func TestConcurrentUpdateConflict(t *testing.T) {
 
 	resp2, err := env.Server.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	// In a proper optimistic locking scenario with version tracking, this would be 409
 	// For now, we verify the system handles sequential updates correctly
@@ -335,7 +335,7 @@ func TestMissingAcceptHeaderDefaultsToJSON(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -369,7 +369,7 @@ func TestMissingAcceptHeaderOnListEndpoint(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 

@@ -67,7 +67,7 @@ func TestAdminMergeDuplicatesSuccess(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var created map[string]any
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -98,7 +98,7 @@ func TestAdminMergeDuplicatesSuccess(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -108,7 +108,7 @@ func TestAdminMergeDuplicatesSuccess(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 
 	// Should either redirect or return 410 Gone with sameAs pointer
 	assert.True(t,
@@ -142,7 +142,7 @@ func TestAdminMergeDuplicatesUnauthorized(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
@@ -197,7 +197,7 @@ func TestAdminMergeDuplicatesValidation(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "validation should fail for: %s", tt.name)
 		})
@@ -229,7 +229,7 @@ func TestAdminMergeDuplicatesNotFound(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
@@ -287,7 +287,7 @@ func TestAdminMergeDuplicatesPreservesProvenance(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var created map[string]any
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -315,7 +315,7 @@ func TestAdminMergeDuplicatesPreservesProvenance(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -325,7 +325,7 @@ func TestAdminMergeDuplicatesPreservesProvenance(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 
 	var merged map[string]any
 	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&merged))

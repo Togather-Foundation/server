@@ -29,7 +29,7 @@ func TestAdminPendingListEmpty(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -118,7 +118,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Fetch pending events as admin
@@ -129,7 +129,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -184,7 +184,7 @@ func TestAdminPendingListPagination(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Fetch first page with limit
@@ -195,7 +195,7 @@ func TestAdminPendingListPagination(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -269,7 +269,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Filter by city
@@ -280,7 +280,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -321,7 +321,7 @@ func TestAdminPendingListUnauthorized(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should be forbidden for non-admin roles
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -369,7 +369,7 @@ func TestAdminPendingListSortOrder(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Small delay to ensure different created_at timestamps
 		time.Sleep(10 * time.Millisecond)
@@ -383,7 +383,7 @@ func TestAdminPendingListSortOrder(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 

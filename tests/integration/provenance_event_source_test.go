@@ -51,7 +51,7 @@ func TestEventSourceAttribution(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "event creation should succeed")
 
 	var created map[string]any
@@ -79,7 +79,7 @@ func TestEventSourceAttribution(t *testing.T) {
 
 	resp2, err := env.Server.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
 
 	var retrieved map[string]any
@@ -185,7 +185,7 @@ func TestMultipleSourcesAttribution(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var retrieved map[string]any

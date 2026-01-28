@@ -18,7 +18,7 @@ func TestWellKnownSELProfile(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Verify status code
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

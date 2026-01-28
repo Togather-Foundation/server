@@ -29,7 +29,7 @@ func TestPlaceTombstoneAfterDelete(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, deleteResp.StatusCode)
 
 	getReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/places/"+place.ULID, nil)
@@ -38,7 +38,7 @@ func TestPlaceTombstoneAfterDelete(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 	require.Equal(t, http.StatusGone, getResp.StatusCode)
 
 	var tombstone map[string]any
@@ -69,7 +69,7 @@ func TestPlaceTombstoneHTMLFormat(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, deleteResp.StatusCode)
 
 	// Request HTML format via public pages endpoint
@@ -79,7 +79,7 @@ func TestPlaceTombstoneHTMLFormat(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 
 	// Verify 410 Gone status
 	require.Equal(t, http.StatusGone, getResp.StatusCode, "HTML tombstone should return 410 Gone")
@@ -112,7 +112,7 @@ func TestPlaceTombstoneTurtleFormat(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, deleteResp.StatusCode)
 
 	// Request Turtle format via public pages endpoint
@@ -122,7 +122,7 @@ func TestPlaceTombstoneTurtleFormat(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 
 	// Verify 410 Gone status
 	require.Equal(t, http.StatusGone, getResp.StatusCode, "Turtle tombstone should return 410 Gone")

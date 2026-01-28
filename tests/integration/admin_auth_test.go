@@ -37,7 +37,7 @@ func TestAdminLoginSuccess(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode, "expected successful login")
 
@@ -94,7 +94,7 @@ func TestAdminLoginInvalidCredentials(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "expected unauthorized")
 	require.True(t, strings.HasPrefix(resp.Header.Get("Content-Type"), "application/problem+json"))
@@ -117,7 +117,7 @@ func TestAdminLoginNonexistentUser(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "expected unauthorized")
 }
@@ -159,7 +159,7 @@ func TestAdminLoginMissingFields(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			require.Equal(t, http.StatusBadRequest, resp.StatusCode, "expected bad request")
 		})
@@ -186,7 +186,7 @@ func TestAdminJWTAuthorizationHeader(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should succeed (or return 200 with empty list if endpoint exists)
 	// If endpoint not implemented yet, might get 404, but shouldn't get 401
@@ -218,7 +218,7 @@ func TestAdminJWTCookie(t *testing.T) {
 
 	loginResp, err := env.Server.Client().Do(loginReq)
 	require.NoError(t, err)
-	defer loginResp.Body.Close()
+	defer func() { _ = loginResp.Body.Close() }()
 	require.Equal(t, http.StatusOK, loginResp.StatusCode)
 
 	// Extract cookie
@@ -239,7 +239,7 @@ func TestAdminJWTCookie(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should not be unauthorized (might be 404 if route not implemented, but not 401)
 	assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "should not be unauthorized with valid cookie")
@@ -262,7 +262,7 @@ func TestAdminJWTExpired(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "expected unauthorized for expired token")
 }
@@ -288,7 +288,7 @@ func TestAdminJWTMalformed(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "expected unauthorized for malformed token: %s", token)
 	}
@@ -314,7 +314,7 @@ func TestAdminInsufficientRole(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should be forbidden (403) not unauthorized (401)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode, "expected forbidden for non-admin role")

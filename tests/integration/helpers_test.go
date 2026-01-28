@@ -326,7 +326,7 @@ func adminLogin(t *testing.T, env *testEnv, username, password string) string {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode, "login failed")
 

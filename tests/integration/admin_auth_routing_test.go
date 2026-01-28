@@ -45,7 +45,7 @@ func TestAdminAPIRoutesRequireBearerToken(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should NOT be unauthorized or forbidden (might be 404 if endpoint not implemented yet)
 			assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "should accept Bearer token")
@@ -59,7 +59,7 @@ func TestAdminAPIRoutesRequireBearerToken(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should be unauthorized without token
 			require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "should be unauthorized without token")
@@ -91,7 +91,7 @@ func TestAdminHTMLRoutesRequireCookie(t *testing.T) {
 
 	loginResp, err := env.Server.Client().Do(loginReq)
 	require.NoError(t, err)
-	defer loginResp.Body.Close()
+	defer func() { _ = loginResp.Body.Close() }()
 	require.Equal(t, http.StatusOK, loginResp.StatusCode)
 
 	// Extract cookie
@@ -123,7 +123,7 @@ func TestAdminHTMLRoutesRequireCookie(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should NOT be unauthorized (might be 404 if route not implemented yet)
 			assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "should accept cookie")
@@ -137,7 +137,7 @@ func TestAdminHTMLRoutesRequireCookie(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should redirect to login or return unauthorized
 			assert.True(t,
@@ -176,7 +176,7 @@ func TestAdminHTMLRoutesRejectBearerToken(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// HTML routes should NOT accept Bearer tokens (require cookies instead)
 			// Should be unauthorized or redirect to login
@@ -213,7 +213,7 @@ func TestAdminAPIRoutesRejectCookie(t *testing.T) {
 
 	loginResp, err := env.Server.Client().Do(loginReq)
 	require.NoError(t, err)
-	defer loginResp.Body.Close()
+	defer func() { _ = loginResp.Body.Close() }()
 	require.Equal(t, http.StatusOK, loginResp.StatusCode)
 
 	// Extract cookie
@@ -241,7 +241,7 @@ func TestAdminAPIRoutesRejectCookie(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// API routes should NOT accept cookies (require Bearer token instead)
 			require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "API routes should not accept cookie without Bearer token")
@@ -273,7 +273,7 @@ func TestPublicRoutesNoAuth(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should NOT be unauthorized or forbidden
 			assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "public route should not require auth")
@@ -292,7 +292,7 @@ func TestAdminLoginPageNoAuth(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Login page should be accessible without auth (might be 404 if not implemented yet)
 	assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "login page should be accessible without auth")

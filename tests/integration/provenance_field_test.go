@@ -77,7 +77,7 @@ func TestFieldProvenanceParameter(t *testing.T) {
 
 	resp1, err := env.Server.Client().Do(req1)
 	require.NoError(t, err)
-	defer resp1.Body.Close()
+	defer func() { _ = resp1.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp1.StatusCode)
 
 	var payload1 map[string]any
@@ -94,7 +94,7 @@ func TestFieldProvenanceParameter(t *testing.T) {
 
 	resp2, err := env.Server.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
 
 	var payload2 map[string]any
@@ -171,7 +171,7 @@ func TestFieldProvenanceFiltering(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload map[string]any
@@ -242,7 +242,7 @@ func TestFieldProvenanceMultipleSources(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload map[string]any

@@ -141,7 +141,7 @@ func TestFederationSyncValidation(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err, "failed to execute HTTP request for malformed JSON test")
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode,
 			"should reject malformed JSON")

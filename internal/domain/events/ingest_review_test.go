@@ -328,7 +328,7 @@ func TestHashInput(t *testing.T) {
 				}
 				// Verify hex encoding
 				for _, c := range hash {
-					if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+					if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 						t.Errorf("hashInput() contains non-hex character: %c", c)
 					}
 				}

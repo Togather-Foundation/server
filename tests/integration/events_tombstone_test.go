@@ -47,7 +47,7 @@ func TestEventTombstoneAfterDelete(t *testing.T) {
 
 	createResp, err := env.Server.Client().Do(createReq)
 	require.NoError(t, err)
-	defer createResp.Body.Close()
+	defer func() { _ = createResp.Body.Close() }()
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(createResp.Body).Decode(&created))
@@ -60,7 +60,7 @@ func TestEventTombstoneAfterDelete(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, deleteResp.StatusCode)
 
 	getReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+eventID, nil)
@@ -69,7 +69,7 @@ func TestEventTombstoneAfterDelete(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 	require.Equal(t, http.StatusGone, getResp.StatusCode)
 
 	var tombstone map[string]any

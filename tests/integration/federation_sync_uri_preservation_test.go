@@ -74,7 +74,7 @@ func TestFederationSyncURIPreservation(t *testing.T) {
 		var eventData map[string]any
 		require.NoError(t, resp.Body.Close())
 		resp = getEventByULID(t, env, localULID)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&eventData))
 
 		// Local @id should be present

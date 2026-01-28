@@ -43,7 +43,7 @@ func TestLicenseInformationInJSONLD(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var created map[string]any
@@ -58,7 +58,7 @@ func TestLicenseInformationInJSONLD(t *testing.T) {
 
 	resp2, err := env.Server.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp2.StatusCode)
 
 	var event map[string]any
@@ -107,7 +107,7 @@ func TestLicenseInEventList(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var response map[string]any
@@ -173,7 +173,7 @@ func TestLicenseStatusField(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var event map[string]any
@@ -221,7 +221,7 @@ func TestProprietaryLicenseRejection(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should be rejected per FR-015
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode, "proprietary license should be rejected")
@@ -276,7 +276,7 @@ func TestLicenseURLValidation(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var event map[string]any

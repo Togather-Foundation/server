@@ -53,7 +53,7 @@ func TestDualTimestampTracking(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	afterSubmission := time.Now()

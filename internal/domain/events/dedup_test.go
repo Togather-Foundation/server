@@ -117,7 +117,7 @@ func TestBuildDedupHash(t *testing.T) {
 
 			// Check hex encoding (lowercase)
 			for _, c := range result {
-				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 					t.Errorf("BuildDedupHash() contains non-hex character: %c", c)
 				}
 			}

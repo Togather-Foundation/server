@@ -130,11 +130,11 @@ func TestLoadConfigFallback(t *testing.T) {
 	// This is a basic smoke test - actual config loading would require database setup
 
 	// Set minimal required env vars
-	os.Setenv("DATABASE_URL", "postgres://test")
-	os.Setenv("JWT_SECRET", "test-secret-at-least-32-characters-long")
+	_ = os.Setenv("DATABASE_URL", "postgres://test")
+	_ = os.Setenv("JWT_SECRET", "test-secret-at-least-32-characters-long")
 	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("JWT_SECRET")
+		_ = os.Unsetenv("DATABASE_URL")
+		_ = os.Unsetenv("JWT_SECRET")
 	}()
 
 	cfg, err := loadConfig()
@@ -153,11 +153,11 @@ func TestLoadConfigFallback(t *testing.T) {
 
 func TestLoadConfigFlagOverrides(t *testing.T) {
 	// Set minimal required env vars
-	os.Setenv("DATABASE_URL", "postgres://test")
-	os.Setenv("JWT_SECRET", "test-secret-at-least-32-characters-long")
+	_ = os.Setenv("DATABASE_URL", "postgres://test")
+	_ = os.Setenv("JWT_SECRET", "test-secret-at-least-32-characters-long")
 	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("JWT_SECRET")
+		_ = os.Unsetenv("DATABASE_URL")
+		_ = os.Unsetenv("JWT_SECRET")
 	}()
 
 	// Set global flag variables (simulating flags being set)
@@ -188,10 +188,10 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 	origJWTSecret := os.Getenv("JWT_SECRET")
 	defer func() {
 		if origDatabaseURL != "" {
-			os.Setenv("DATABASE_URL", origDatabaseURL)
+			_ = os.Setenv("DATABASE_URL", origDatabaseURL)
 		}
 		if origJWTSecret != "" {
-			os.Setenv("JWT_SECRET", origJWTSecret)
+			_ = os.Setenv("JWT_SECRET", origJWTSecret)
 		}
 	}()
 
@@ -229,13 +229,13 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Unsetenv("DATABASE_URL")
-			os.Unsetenv("JWT_SECRET")
+			_ = os.Unsetenv("DATABASE_URL")
+			_ = os.Unsetenv("JWT_SECRET")
 			if tt.databaseURL != "" {
-				os.Setenv("DATABASE_URL", tt.databaseURL)
+				_ = os.Setenv("DATABASE_URL", tt.databaseURL)
 			}
 			if tt.jwtSecret != "" {
-				os.Setenv("JWT_SECRET", tt.jwtSecret)
+				_ = os.Setenv("JWT_SECRET", tt.jwtSecret)
 			}
 
 			_, err := loadConfig()

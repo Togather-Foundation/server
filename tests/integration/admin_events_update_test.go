@@ -51,7 +51,7 @@ func TestAdminUpdateEventSuccess(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var created map[string]any
@@ -75,7 +75,7 @@ func TestAdminUpdateEventSuccess(t *testing.T) {
 
 	updateResp, err := env.Server.Client().Do(updateReq)
 	require.NoError(t, err)
-	defer updateResp.Body.Close()
+	defer func() { _ = updateResp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, updateResp.StatusCode)
 }
@@ -117,7 +117,7 @@ func TestAdminUpdateEventPublishDraft(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -138,7 +138,7 @@ func TestAdminUpdateEventPublishDraft(t *testing.T) {
 
 	updateResp, err := env.Server.Client().Do(updateReq)
 	require.NoError(t, err)
-	defer updateResp.Body.Close()
+	defer func() { _ = updateResp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, updateResp.StatusCode)
 }
@@ -167,7 +167,7 @@ func TestAdminUpdateEventUnauthorized(t *testing.T) {
 
 	updateResp, err := env.Server.Client().Do(updateReq)
 	require.NoError(t, err)
-	defer updateResp.Body.Close()
+	defer func() { _ = updateResp.Body.Close() }()
 
 	require.Equal(t, http.StatusForbidden, updateResp.StatusCode)
 }
@@ -196,7 +196,7 @@ func TestAdminUpdateEventNotFound(t *testing.T) {
 
 	updateResp, err := env.Server.Client().Do(updateReq)
 	require.NoError(t, err)
-	defer updateResp.Body.Close()
+	defer func() { _ = updateResp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNotFound, updateResp.StatusCode)
 }
@@ -245,7 +245,7 @@ func TestAdminUpdateEventValidation(t *testing.T) {
 
 			updateResp, err := env.Server.Client().Do(updateReq)
 			require.NoError(t, err)
-			updateResp.Body.Close()
+			_ = updateResp.Body.Close()
 
 			assert.Equal(t, http.StatusBadRequest, updateResp.StatusCode, "validation should fail for: %s", tt.name)
 		})

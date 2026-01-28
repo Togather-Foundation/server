@@ -49,7 +49,7 @@ func TestAdminDeleteEventSuccess(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -63,7 +63,7 @@ func TestAdminDeleteEventSuccess(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNoContent, deleteResp.StatusCode)
 
@@ -74,7 +74,7 @@ func TestAdminDeleteEventSuccess(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 
 	require.Equal(t, http.StatusGone, getResp.StatusCode, "deleted event should return 410 Gone")
 
@@ -102,7 +102,7 @@ func TestAdminDeleteEventUnauthorized(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 
 	require.Equal(t, http.StatusForbidden, deleteResp.StatusCode)
 }
@@ -123,7 +123,7 @@ func TestAdminDeleteEventNotFound(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNotFound, deleteResp.StatusCode)
 }
@@ -165,7 +165,7 @@ func TestAdminDeleteEventIdempotent(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -178,7 +178,7 @@ func TestAdminDeleteEventIdempotent(t *testing.T) {
 
 	deleteResp1, err := env.Server.Client().Do(deleteReq1)
 	require.NoError(t, err)
-	defer deleteResp1.Body.Close()
+	defer func() { _ = deleteResp1.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, deleteResp1.StatusCode)
 
 	// Delete event second time (should be idempotent)
@@ -188,7 +188,7 @@ func TestAdminDeleteEventIdempotent(t *testing.T) {
 
 	deleteResp2, err := env.Server.Client().Do(deleteReq2)
 	require.NoError(t, err)
-	defer deleteResp2.Body.Close()
+	defer func() { _ = deleteResp2.Body.Close() }()
 
 	// Should still return 204 or 410 (both acceptable for idempotent delete)
 	assert.True(t,
@@ -234,7 +234,7 @@ func TestAdminDeleteEventWithReason(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -254,7 +254,7 @@ func TestAdminDeleteEventWithReason(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 
 	assert.Equal(t, http.StatusNoContent, deleteResp.StatusCode)
 
@@ -264,7 +264,7 @@ func TestAdminDeleteEventWithReason(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 
 	require.Equal(t, http.StatusGone, getResp.StatusCode)
 }
@@ -307,7 +307,7 @@ func TestAdminDeleteEventExcludedFromListing(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -320,7 +320,7 @@ func TestAdminDeleteEventExcludedFromListing(t *testing.T) {
 
 	deleteResp, err := env.Server.Client().Do(deleteReq)
 	require.NoError(t, err)
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 
 	// List events - deleted event should NOT appear
 	listReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events", nil)
@@ -328,7 +328,7 @@ func TestAdminDeleteEventExcludedFromListing(t *testing.T) {
 
 	listResp, err := env.Server.Client().Do(listReq)
 	require.NoError(t, err)
-	defer listResp.Body.Close()
+	defer func() { _ = listResp.Body.Close() }()
 
 	var listResult map[string]any
 	require.NoError(t, json.NewDecoder(listResp.Body).Decode(&listResult))

@@ -97,21 +97,29 @@ func (v *Validator) ValidateEvent(ctx context.Context, jsonldData map[string]any
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		_ = os.Remove(tmpFile.Name()) // Cleanup is best-effort
+	}()
+	defer func() {
+		_ = tmpFile.Close() // Close is best-effort in defer
+	}()
 
 	// Write Turtle data to temp file
 	if _, err := tmpFile.WriteString(turtle); err != nil {
 		return fmt.Errorf("failed to write Turtle data: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
 
 	// Create merged shapes file (pyshacl doesn't handle multiple -s flags correctly)
 	mergedShapesFile, err := v.createMergedShapesFile()
 	if err != nil {
 		return fmt.Errorf("failed to create merged shapes file: %w", err)
 	}
-	defer os.Remove(mergedShapesFile)
+	defer func() {
+		_ = os.Remove(mergedShapesFile) // Cleanup is best-effort
+	}()
 
 	// Build pyshacl command arguments
 	var cmd *exec.Cmd
@@ -180,20 +188,22 @@ func (v *Validator) createMergedShapesFile() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer tmpFile.Close()
+	defer func() {
+		_ = tmpFile.Close() // Close is best-effort in defer
+	}()
 
 	for _, shapeFile := range v.shapeFiles {
 		content, err := os.ReadFile(shapeFile)
 		if err != nil {
-			os.Remove(tmpFile.Name())
+			_ = os.Remove(tmpFile.Name())
 			return "", fmt.Errorf("failed to read shape file %s: %w", shapeFile, err)
 		}
 		if _, err := tmpFile.Write(content); err != nil {
-			os.Remove(tmpFile.Name())
+			_ = os.Remove(tmpFile.Name())
 			return "", fmt.Errorf("failed to write to merged file: %w", err)
 		}
 		if _, err := tmpFile.WriteString("\n"); err != nil {
-			os.Remove(tmpFile.Name())
+			_ = os.Remove(tmpFile.Name())
 			return "", fmt.Errorf("failed to write separator to merged file: %w", err)
 		} // Ensure separation between files
 	}

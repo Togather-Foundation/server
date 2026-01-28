@@ -38,7 +38,7 @@ func TestAdminLoginPageRendersHTML(t *testing.T) {
 
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should return HTML (or 404 if not implemented yet, but not 500)
 	assert.NotEqual(t, http.StatusInternalServerError, resp.StatusCode, "should not error")
@@ -60,7 +60,7 @@ func TestAdminDashboardRedirectsWhenUnauthenticated(t *testing.T) {
 
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should redirect to login or return 401
 	assert.True(t,
@@ -84,7 +84,7 @@ func TestAdminEventsPageAccessible(t *testing.T) {
 
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should require authentication (401 or redirect)
 	assert.True(t,
@@ -105,7 +105,7 @@ func TestAdminAPIKeysPageAccessible(t *testing.T) {
 
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should require authentication
 	assert.True(t,
@@ -132,7 +132,7 @@ func TestAdminStaticAssetsAccessible(t *testing.T) {
 
 			resp, err := server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should either serve the asset (200) or not found (404), but not error (500)
 			assert.NotEqual(t, http.StatusInternalServerError, resp.StatusCode, "should not error serving static assets")
@@ -158,7 +158,7 @@ func TestAdminLoginPostAcceptsCredentials(t *testing.T) {
 
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should not error (might be 401 for invalid credentials, but not 500)
 	assert.NotEqual(t, http.StatusInternalServerError, resp.StatusCode, "login endpoint should not error")
@@ -188,7 +188,7 @@ func TestAdminRoutesRejectPublicAccess(t *testing.T) {
 
 			resp, err := server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should require authentication (not 200)
 			assert.NotEqual(t, http.StatusOK, resp.StatusCode, "admin route should require authentication")
