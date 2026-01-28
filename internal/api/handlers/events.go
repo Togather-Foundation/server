@@ -11,21 +11,29 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	"github.com/Togather-Foundation/server/internal/jobs"
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 )
 
 type EventsHandler struct {
 	Service           *events.Service
 	Ingest            *events.IngestService
 	ProvenanceService *provenance.Service
+	RiverClient       *river.Client[pgx.Tx]
+	Queries           *postgres.Queries
 	Env               string
 	BaseURL           string
 }
 
-func NewEventsHandler(service *events.Service, ingest *events.IngestService, provenanceService *provenance.Service, env string, baseURL string) *EventsHandler {
+func NewEventsHandler(service *events.Service, ingest *events.IngestService, provenanceService *provenance.Service, riverClient *river.Client[pgx.Tx], queries *postgres.Queries, env string, baseURL string) *EventsHandler {
 	return &EventsHandler{
 		Service:           service,
 		Ingest:            ingest,
 		ProvenanceService: provenanceService,
+		RiverClient:       riverClient,
+		Queries:           queries,
 		Env:               env,
 		BaseURL:           baseURL,
 	}
@@ -479,4 +487,133 @@ func buildFieldProvenancePayload(provenanceInfo []provenance.FieldProvenanceInfo
 	}
 
 	return result
+}
+
+// CreateBatch handles batch event submission via POST /api/v1/events:batch
+func (h *EventsHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.RiverClient == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Parse batch request
+	var input struct {
+		Events []events.EventInput `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	// Validate batch size
+	if len(input.Events) == 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Events array cannot be empty", nil, h.Env)
+		return
+	}
+	if len(input.Events) > 100 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Batch size exceeds maximum of 100 events", nil, h.Env)
+		return
+	}
+
+	// Generate batch ID
+	batchID, err := ids.NewULID()
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to generate batch ID", err, h.Env)
+		return
+	}
+
+	// Enqueue batch ingestion job
+	jobArgs := jobs.BatchIngestionArgs{
+		BatchID: batchID,
+		Events:  input.Events,
+	}
+
+	insertOpts := jobs.InsertOptsForKind(jobs.JobKindBatchIngestion)
+	jobResult, err := h.RiverClient.Insert(r.Context(), jobArgs, &insertOpts)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to enqueue batch job", err, h.Env)
+		return
+	}
+
+	// Return batch status URI and job information
+	statusURI, err := ids.BuildCanonicalURI(h.BaseURL, "batch-status", batchID)
+	if err != nil {
+		statusURI = h.BaseURL + "/api/v1/batch-status/" + batchID
+	}
+
+	response := map[string]any{
+		"@context":   loadDefaultContext(),
+		"@type":      "BatchSubmission",
+		"batch_id":   batchID,
+		"job_id":     jobResult.Job.ID,
+		"status":     "processing",
+		"status_url": statusURI,
+		"submitted":  len(input.Events),
+	}
+
+	writeJSON(w, http.StatusAccepted, response, contentTypeFromRequest(r))
+}
+
+// GetBatchStatus retrieves the status of a batch ingestion job
+func (h *EventsHandler) GetBatchStatus(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.RiverClient == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	batchID := pathParam(r, "id")
+	if batchID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Batch ID is required", nil, h.Env)
+		return
+	}
+
+	// Query batch results from database using SQLc
+	batchResult, err := h.Queries.GetBatchIngestionResult(r.Context(), batchID)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			// Batch not yet completed or doesn't exist
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Batch not found or still processing", nil, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve batch status", err, h.Env)
+		return
+	}
+
+	var results []map[string]any
+	if err := json.Unmarshal(batchResult.Results, &results); err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to parse batch results", err, h.Env)
+		return
+	}
+
+	// Compute summary statistics
+	created := 0
+	failed := 0
+	duplicates := 0
+	for _, result := range results {
+		if status, ok := result["status"].(string); ok {
+			switch status {
+			case "created":
+				created++
+			case "failed":
+				failed++
+			case "duplicate":
+				duplicates++
+			}
+		}
+	}
+
+	response := map[string]any{
+		"@context":     loadDefaultContext(),
+		"@type":        "BatchSubmissionResult",
+		"batch_id":     batchID,
+		"status":       "completed",
+		"completed_at": batchResult.CompletedAt.Time.Format(time.RFC3339),
+		"total":        len(results),
+		"created":      created,
+		"failed":       failed,
+		"duplicates":   duplicates,
+		"results":      results,
+	}
+
+	writeJSON(w, http.StatusOK, response, contentTypeFromRequest(r))
 }

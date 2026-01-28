@@ -24,6 +24,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -115,6 +117,21 @@ func initShared(t *testing.T) {
 			sharedInitErr = err
 			return
 		}
+
+		// Run River migrations programmatically
+		migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+		if err != nil {
+			sharedInitErr = err
+			pool.Close()
+			return
+		}
+		_, err = migrator.Migrate(ctx, rivermigrate.DirectionUp, &rivermigrate.MigrateOpts{})
+		if err != nil {
+			sharedInitErr = err
+			pool.Close()
+			return
+		}
+
 		sharedPool = pool
 		sharedConfig = testConfig(dbURL)
 	})

@@ -163,6 +163,142 @@ paths:
                 type: string
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /events:batch:
+    post:
+      operationId: createEventBatch
+      summary: Submit multiple events in a batch
+      description: |
+        Submit multiple events for background processing. Returns immediately with a batch ID
+        and job status URL. Use the batch status endpoint to check processing results.
+        
+        Maximum batch size: 100 events. Each event in the batch is processed independently,
+        with individual success/failure tracking.
+      tags: [Events]
+      security:
+        - apiKey: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - events
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    $ref: '#/components/schemas/EventInput'
+      responses:
+        '202':
+          description: Batch accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  '@context':
+                    type: string
+                  '@type':
+                    type: string
+                    enum: [BatchSubmission]
+                  batch_id:
+                    type: string
+                    description: Unique identifier for this batch submission
+                  job_id:
+                    type: integer
+                    description: River job queue ID
+                  status:
+                    type: string
+                    enum: [processing]
+                  status_url:
+                    type: string
+                    format: uri
+                    description: URL to check batch processing status
+                  submitted:
+                    type: integer
+                    description: Number of events in the batch
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /batch-status/{id}:
+    get:
+      operationId: getBatchStatus
+      summary: Get batch processing status
+      description: |
+        Retrieve the status and results of a batch event submission. Returns 404 if
+        the batch is still processing or doesn't exist.
+      tags: [Events]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Batch ID returned from batch submission
+      responses:
+        '200':
+          description: Batch processing completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  '@context':
+                    type: string
+                  '@type':
+                    type: string
+                    enum: [BatchSubmissionResult]
+                  batch_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [completed]
+                  completed_at:
+                    type: string
+                    format: date-time
+                  total:
+                    type: integer
+                    description: Total number of events processed
+                  created:
+                    type: integer
+                    description: Number of events successfully created
+                  failed:
+                    type: integer
+                    description: Number of events that failed validation/processing
+                  duplicates:
+                    type: integer
+                    description: Number of duplicate events detected
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index:
+                          type: integer
+                          description: Index of event in original batch array
+                        status:
+                          type: string
+                          enum: [created, failed, duplicate]
+                        event_id:
+                          type: string
+                          description: ULID of created/duplicate event (if successful)
+                        error:
+                          type: string
+                          description: Error message (if failed)
+        '404':
+          description: Batch not found or still processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
         '410':
           $ref: '#/components/responses/Gone'
 

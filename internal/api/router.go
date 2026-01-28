@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -58,7 +60,24 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	orgService := organizations.NewService(repo.Organizations())
 	provenanceService := provenance.NewService(repo.Provenance())
 
-	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, cfg.Environment, cfg.Server.BaseURL)
+	// Create SQLc queries instance for direct database access
+	queries := postgres.New(pool)
+
+	// Initialize River job queue for batch processing
+	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	workers := jobs.NewWorkersWithPool(pool, ingestService)
+	riverClient, err := jobs.NewClient(pool, workers, slogLogger)
+	if err != nil {
+		logger.Error().Err(err).Msg("river client init failed")
+		pool.Close()
+		return http.NewServeMux()
+	}
+	// Start River workers for background job processing (use background context for long-running workers)
+	if err := riverClient.Start(context.Background()); err != nil {
+		logger.Error().Err(err).Msg("failed to start river workers")
+	}
+
+	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL)
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
 
@@ -72,7 +91,6 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	}
 
 	// Admin handlers
-	queries := postgres.New(pool)
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates)
 
@@ -135,11 +153,17 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 
 	// Authenticated write endpoints with agent rate limiting
 	createEvents := apiKeyAuth(rateLimitAgent(http.HandlerFunc(eventsHandler.Create)))
+	createBatch := apiKeyAuth(rateLimitAgent(http.HandlerFunc(eventsHandler.CreateBatch)))
+	batchStatus := rateLimitPublic(http.HandlerFunc(eventsHandler.GetBatchStatus))
 
 	mux.Handle("/api/v1/events", methodMux(map[string]http.Handler{
 		http.MethodGet:  publicEvents,
 		http.MethodPost: createEvents,
 	}))
+	mux.Handle("/api/v1/events:batch", methodMux(map[string]http.Handler{
+		http.MethodPost: createBatch,
+	}))
+	mux.Handle("/api/v1/batch-status/{id}", batchStatus)
 	mux.Handle("/api/v1/events/{id}", publicEventGet)
 	mux.Handle("/api/v1/places", publicPlaces)
 	mux.Handle("/api/v1/places/{id}", publicPlaceGet)

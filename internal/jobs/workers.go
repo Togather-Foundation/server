@@ -2,8 +2,13 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 )
@@ -99,6 +104,85 @@ func (w IdempotencyCleanupWorker) Work(ctx context.Context, job *river.Job[Idemp
 	return nil
 }
 
+// BatchIngestionArgs defines the job for processing batch event submissions.
+type BatchIngestionArgs struct {
+	BatchID string              `json:"batch_id"`
+	Events  []events.EventInput `json:"events"`
+}
+
+func (BatchIngestionArgs) Kind() string { return JobKindBatchIngestion }
+
+// BatchIngestionWorker processes batch event ingestion requests.
+type BatchIngestionWorker struct {
+	river.WorkerDefaults[BatchIngestionArgs]
+	IngestService *events.IngestService
+	Pool          *pgxpool.Pool
+}
+
+func (BatchIngestionWorker) Kind() string { return JobKindBatchIngestion }
+
+func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchIngestionArgs]) error {
+	if w.IngestService == nil {
+		return fmt.Errorf("ingest service not configured")
+	}
+	if w.Pool == nil {
+		return fmt.Errorf("database pool not configured")
+	}
+	if job == nil {
+		return fmt.Errorf("batch ingestion job missing")
+	}
+
+	batchID := job.Args.BatchID
+	if batchID == "" {
+		return fmt.Errorf("batch ID is required")
+	}
+
+	// Process each event in the batch
+	results := make([]map[string]any, 0, len(job.Args.Events))
+	for i, eventInput := range job.Args.Events {
+		result, err := w.IngestService.Ingest(ctx, eventInput)
+		itemResult := map[string]any{
+			"index": i,
+		}
+
+		if err != nil {
+			itemResult["status"] = "failed"
+			itemResult["error"] = err.Error()
+		} else if result.IsDuplicate {
+			itemResult["status"] = "duplicate"
+			if result.Event != nil {
+				itemResult["event_id"] = result.Event.ULID
+			}
+		} else {
+			itemResult["status"] = "created"
+			if result.Event != nil {
+				itemResult["event_id"] = result.Event.ULID
+			}
+		}
+
+		results = append(results, itemResult)
+	}
+
+	// Store batch results in a table for status queries using SQLc
+	resultsJSON, err := json.Marshal(results)
+	if err != nil {
+		return fmt.Errorf("marshal batch results: %w", err)
+	}
+
+	// Use SQLc to store batch results
+	queries := postgres.New(w.Pool)
+	err = queries.CreateBatchIngestionResult(ctx, postgres.CreateBatchIngestionResultParams{
+		BatchID:     batchID,
+		Results:     resultsJSON,
+		CompletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("store batch results: %w", err)
+	}
+
+	return nil
+}
+
 func NewWorkers() *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker[DeduplicationArgs](workers, DeduplicationWorker{})
@@ -108,8 +192,12 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{Pool: pool})
+	river.AddWorker[BatchIngestionArgs](workers, BatchIngestionWorker{
+		IngestService: ingestService,
+		Pool:          pool,
+	})
 	return workers
 }

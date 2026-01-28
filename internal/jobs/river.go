@@ -17,12 +17,14 @@ const (
 	JobKindReconciliation     = "reconciliation"
 	JobKindEnrichment         = "enrichment"
 	JobKindIdempotencyCleanup = "idempotency_cleanup"
+	JobKindBatchIngestion     = "batch_ingestion"
 )
 
 const (
 	DeduplicationMaxAttempts  = 1
 	ReconciliationMaxAttempts = 5
 	EnrichmentMaxAttempts     = 10
+	BatchIngestionMaxAttempts = 3
 )
 
 // RetryConfig controls per-kind retry behavior.
@@ -61,6 +63,11 @@ func NewRetryPolicy() *RetryPolicy {
 				MaxAttempts: EnrichmentMaxAttempts,
 				BaseDelay:   2 * time.Minute,
 				MaxDelay:    2 * time.Hour,
+			},
+			JobKindBatchIngestion: {
+				MaxAttempts: BatchIngestionMaxAttempts,
+				BaseDelay:   30 * time.Second,
+				MaxDelay:    5 * time.Minute,
 			},
 		},
 	}

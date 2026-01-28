@@ -119,7 +119,7 @@ func TestEventsHandlerListSuccess(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?limit=2", nil)
 	req.Header.Set("Accept", "application/ld+json")
 	res := httptest.NewRecorder()
@@ -147,7 +147,7 @@ func TestEventsHandlerListValidationError(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?limit=abc", nil)
 	res := httptest.NewRecorder()
 
@@ -167,7 +167,7 @@ func TestEventsHandlerGetNotFound(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -187,7 +187,7 @@ func TestEventsHandlerGetSuccess(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -211,7 +211,7 @@ func TestEventsHandlerGetInvalidID(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/bad", nil)
 	req.SetPathValue("id", "bad")
 	res := httptest.NewRecorder()
@@ -231,7 +231,7 @@ func TestEventsHandlerListServiceError(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
 	params := url.Values{}
 	params.Set("limit", "1")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?"+params.Encode(), nil)

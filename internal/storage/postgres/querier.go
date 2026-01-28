@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
+	CreateBatchIngestionResult(ctx context.Context, arg CreateBatchIngestionResultParams) error
 	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error
 	CreateFederatedEventOccurrence(ctx context.Context, arg CreateFederatedEventOccurrenceParams) error
 	// SQLc queries for federation sync.
@@ -24,6 +25,8 @@ type Querier interface {
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
 	// Gets complete provenance history for a field, including superseded records
 	GetAllFieldProvenanceHistory(ctx context.Context, arg GetAllFieldProvenanceHistoryParams) ([]GetAllFieldProvenanceHistoryRow, error)
+	// SQLc queries for batch ingestion operations.
+	GetBatchIngestionResult(ctx context.Context, batchID string) (BatchIngestionResult, error)
 	// Gets the canonical (winning) field value based on conflict resolution rules
 	// Priority: trust_level DESC, confidence DESC, observed_at DESC
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)

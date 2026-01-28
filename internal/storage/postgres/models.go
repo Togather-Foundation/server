@@ -23,6 +23,17 @@ type ApiKey struct {
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
 }
 
+// Stores results of batch event ingestion jobs
+type BatchIngestionResult struct {
+	// Unique identifier for the batch job
+	BatchID string `json:"batch_id"`
+	// JSON array of ingestion results per event
+	Results []byte `json:"results"`
+	// When the batch job completed
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Event struct {
 	ID                    pgtype.UUID        `json:"id"`
 	Ulid                  string             `json:"ulid"`
