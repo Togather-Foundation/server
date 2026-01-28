@@ -50,58 +50,25 @@ Events are the heartbeat of local culture. By building this shared infrastructur
 
 The [**Togather Foundation**](https://togather.foundation) is a coordination point, not a platform owner. We provide reference implementations (like this library), documentation, and standards guidance. We do not own the data or monetize the community.
 
-## Security
+## Documentation & Contributor Resources
 
-This server implements defense-in-depth security measures including:
+- [SEL Documentation](docs/README.md) - Landing page for contributors, integrators, and node builders
+- [Architecture Guide](docs/contributors/ARCHITECTURE.md) - System design and core patterns
+- [Development Guide](docs/contributors/DEVELOPMENT.md) - Standards, tools, and workflows
+- [Database Guide](docs/contributors/DATABASE.md) - Schema and migrations
+- [Testing Guide](docs/contributors/TESTING.md) - TDD workflow and test commands
+- [Security Guide](docs/contributors/SECURITY.md) - Security model and practices
+- [Integration Guides](docs/integration/README.md) - API usage and scraper guidance
+- [Development Velocity](docs/contributors/meta/agent_workflows.md) - Collaboration highlights and delivery pace
 
-- **SQL Injection Protection**: Pattern escaping for all user inputs in database queries
-- **Rate Limiting**: Role-based request throttling (60/min public, 300/min agent)
-- **HTTP Hardening**: Timeout configuration to prevent DoS attacks
-- **JWT Secret Validation**: Enforced minimum 32-character secrets at startup
-- **API Key Hashing**: SHA-256 hashing (bcrypt migration planned)
+## Thanks
 
-**Required Configuration:**
-- `JWT_SECRET` must be at least 32 characters (generate with `openssl rand -base64 48`)
-- Database connections should use `sslmode=require` in production
-- Server must run behind HTTPS termination (nginx, Traefik, cloud LB)
+This project is built with help from [OpenCode](https://opencode.ai/), [Spec Kit](https://github.com/github/spec-kit), and [Beads](https://github.com/steveyegge/beads), along with the teams behind:
 
-For complete security documentation, see:
-- `CODE_REVIEW.md` - Security audit and findings
-- `docs/contributors/SECURITY.md` - Security model and practices
-- `docs/contributors/ARCHITECTURE.md` § 7.1 - Security hardening details
-- `SETUP.md` - Security configuration guide
-
-## Development Velocity 🚀
-
-**Recent Accomplishments (January 2026):**
-
-In just **2 days** of collaborative development between human oversight and AI agents, we achieved:
-
-- ✅ **135 commits** implementing core SEL functionality
-- ✅ **35,415 total lines** of production Go code, **18,824 lines of tests** added
-- ✅ **92 integration tests** passing at 100% (federation, change feeds, provenance, tombstones)
-- ✅ **14 database migrations** for PostgreSQL + PostGIS schema
-- $28.36 in metered Github Copilot charges
-- ChatGPT 5.2 Codex initially and when large context needed and then mostly Claude Sonnet 4.5
-
-**Key Features Implemented:**
-- Federation sync with URI preservation and nested entity extraction
-- Change feed system with JSON-LD transformation and cursor pagination
-- Event tombstone tracking for deletions
-- Provenance tracking with field-level attribution
-- Security hardening (CORS, rate limiting, request size limits)
-- Full CRUD operations for events, places, and organizations
-
-**Tech Stack:**
-- Go 1.23+ with Huma (HTTP/OpenAPI 3.1)
-- PostgreSQL 16+ with PostGIS, pgvector, full-text search
-- SQLc for type-safe SQL queries
-- River for transactional job queues
-- JSON-LD for semantic web interoperability
-
-This rapid development demonstrates the power of AI-assisted development combined with specification-driven design, comprehensive testing, and issue tracking (using our custom `bd` beads system).
-
-For a concrete example of how human direction and coding agents collaborated in this repo, see `docs/agent_workflow_summary.md`.
+- ChatGPT 5.2 Codex
+- Claude Sonnet 4.5
+- Claude Opus 4.5
+- Gemini Pro 3
 
 ---
 *This README provides a high-level overview. Technical documentation can be found in the `docs/` directory.*
