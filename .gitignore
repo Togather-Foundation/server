@@ -101,3 +101,4 @@ deployment-state.json
 *.lock
 # Deployment logs in deploy/ directory
 deploy/*.log
+deploy/docker/.env

@@ -68,7 +68,112 @@ These values are embedded into the binary and accessible via the `version` comma
 
 ## Docker Compose
 
-For local development with PostgreSQL, see `docker-compose.yml` in this directory.
+For local development and single-node deployments with PostgreSQL, use the included `docker-compose.yml`.
+
+### Quick Start with Docker Compose
+
+1. **Copy the environment template**:
+   ```bash
+   cp deploy/docker/.env.example deploy/docker/.env
+   ```
+
+2. **Edit `.env` and set secure passwords** (search for `CHANGE_ME`):
+   ```bash
+   # Edit these critical values:
+   POSTGRES_PASSWORD=your_secure_db_password
+   JWT_SECRET=your_secure_jwt_secret_min_64_chars
+   ADMIN_API_KEY=your_secure_api_key
+   ADMIN_PASSWORD=your_secure_admin_password
+   ```
+
+3. **Start all services** (app + database):
+   ```bash
+   cd deploy/docker
+   docker-compose up -d
+   ```
+
+4. **Check service status**:
+   ```bash
+   docker-compose ps
+   docker-compose logs -f app
+   ```
+
+5. **Verify health**:
+   ```bash
+   curl http://localhost:8080/health
+   ```
+
+6. **Stop services**:
+   ```bash
+   docker-compose down
+   ```
+
+### Docker Compose Services
+
+**postgres** (PostgreSQL 16 with PostGIS):
+- Container: `togather-db`
+- Port: `5432` (exposed on localhost)
+- Extensions: PostGIS, pgvector, pg_trgm, pg_stat_statements
+- Volume: `togather-db-data` (persistent storage)
+- Health check: `pg_isready` every 10s
+- Initialization: `init-db.sh` enables required extensions
+
+**app** (Togather Server):
+- Container: `togather-server`
+- Port: `8080` (exposed on localhost)
+- Depends on: `postgres` (waits for healthy status)
+- Environment: Configured via `.env` file
+- Health check: `/app/server healthcheck` every 30s
+- Build context: Repository root (multi-stage Dockerfile)
+
+### Persistent Data
+
+Database data is stored in a named Docker volume:
+- **togather-db-data**: PostgreSQL data directory
+- **togather-db-snapshots**: Database backups (for migrations)
+
+To backup data:
+```bash
+docker-compose exec postgres pg_dump -U togather togather > backup.sql
+```
+
+To reset data (⚠️ destroys all data):
+```bash
+docker-compose down -v  # -v flag removes volumes
+```
+
+### Environment Variables
+
+All configuration is managed through the `.env` file. Key variables:
+
+- **POSTGRES_PASSWORD**: Database password (required)
+- **JWT_SECRET**: JWT signing secret (required, min 64 chars)
+- **ADMIN_API_KEY**: Admin API authentication key (required)
+- **ADMIN_PASSWORD**: Bootstrap admin user password (required)
+- **DATABASE_URL**: Connection string (auto-configured for Docker)
+- **LOG_LEVEL**: Logging verbosity (debug/info/warn/error)
+- **ENVIRONMENT**: deployment environment (development/staging/production)
+
+See `.env.example` for full list and descriptions.
+
+### Networking
+
+Services communicate via the `togather-network` bridge network:
+- App connects to database using hostname `postgres:5432`
+- Both services exposed on localhost for development access
+- In production, consider removing port exposures or binding to `127.0.0.1` only
+
+### Production Considerations
+
+For production deployments:
+1. Use environment-specific configs from `deploy/config/environments/`
+2. Remove port exposures or bind to `127.0.0.1` (not `0.0.0.0`)
+3. Enable SSL/TLS for database connections (`sslmode=require`)
+4. Set `POSTGRES_LOG_STATEMENT=none` to reduce log volume
+5. Configure resource limits in docker-compose (CPU/memory)
+6. Use strong passwords (min 32 chars, high entropy)
+7. Enable monitoring stack (Phase 2: Prometheus + Grafana)
+8. For zero-downtime updates, use `docker-compose.blue-green.yml` (T009)
 
 ## Makefile Integration
 
