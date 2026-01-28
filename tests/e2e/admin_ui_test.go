@@ -226,7 +226,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	// Insert an admin user for authentication tests
 	insertAdminUser(t, ctx, sharedPool, "admin", "test123", "admin@example.com", "admin")
 
-	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger()))
+	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger(), "test", "test-commit", "test-date"))
 	t.Cleanup(server.Close)
 
 	return server

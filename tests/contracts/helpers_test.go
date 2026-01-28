@@ -55,7 +55,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
-	server := httptest.NewServer(api.NewRouter(testConfig(dbURL), testLogger()))
+	server := httptest.NewServer(api.NewRouter(testConfig(dbURL), testLogger(), "test", "test-commit", "test-date"))
 	t.Cleanup(server.Close)
 
 	return &testEnv{

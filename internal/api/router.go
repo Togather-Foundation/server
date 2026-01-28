@@ -36,7 +36,7 @@ const (
 	maxRouterRetries = 10
 )
 
-func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
+func NewRouter(cfg config.Config, logger zerolog.Logger, version, gitCommit, buildDate string) http.Handler {
 	ctx, cancel := context.WithTimeout(context.Background(), dbConnectionTimeout)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, cfg.Database.URL)
@@ -127,9 +127,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger) http.Handler {
 	// Well-known endpoints (Interoperability Profile §1.7)
 	wellKnownHandler := handlers.NewWellKnownHandler(cfg.Server.BaseURL, "0.1.0", time.Now())
 
+	// Health check endpoints (T011)
+	healthChecker := handlers.NewHealthChecker(pool, riverClient, version, gitCommit)
+
 	mux := http.NewServeMux()
-	mux.Handle("/healthz", handlers.Healthz())
-	mux.Handle("/readyz", handlers.Readyz())
+	mux.Handle("/health", healthChecker.Health()) // Comprehensive health check (T011)
+	mux.Handle("/healthz", handlers.Healthz())    // Legacy liveness check
+	mux.Handle("/readyz", handlers.Readyz())      // Legacy readiness check
+	mux.Handle("/version", VersionHandler(version, gitCommit, buildDate))
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
 	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
 
