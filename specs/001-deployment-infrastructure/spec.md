@@ -13,6 +13,7 @@
 - Q: Secrets management implementation priority (environment files vs cloud secret managers)? → A: Start with environment files for all environments; cloud secret manager integration as future enhancement
 - Q: Alert channel implementation priority for deployment notifications? → A: Simple logging output with optional generic webhook support plus ntfy.sh integration
 - Q: Database backup strategy and retention for migration safety? → A: Automatic snapshot before migrations with 7-day retention and automatic cleanup
+- Q: Monitoring and observability stack given zero-budget, open-source-only constraint? → A: Prometheus + Grafana stack (industry standard, self-hosted, no external dependencies or costs)
 
 ## MVP vs Future Enhancements
 
@@ -60,6 +61,12 @@ This section defines what must be built for MVP (Minimum Viable Product) versus 
 - ⏭️ Email SMTP support
 - ⏭️ Slack/Discord webhooks
 
+**Monitoring & Observability:**
+- ⏭️ Prometheus metrics collection (application + system metrics)
+- ⏭️ Grafana dashboards (deployment status, application health, resource usage)
+- ⏭️ Pre-built dashboard templates for common metrics
+- ⏭️ Alert rules for critical conditions (high error rate, database connection failures, disk space)
+
 **CI/CD Integration:**
 - ⏭️ GitHub Actions workflow templates
 - ⏭️ Automated deployment on merge to main
@@ -71,8 +78,9 @@ This section defines what must be built for MVP (Minimum Viable Product) versus 
 **Advanced Features:**
 - ⏭️ Cloud secret manager integration (AWS Secrets Manager, GCP Secret Manager)
 - ⏭️ SSL/TLS certificate automation (Let's Encrypt via ACME protocol)
-- ⏭️ Centralized logging aggregation (ship logs to external service)
-- ⏭️ Performance monitoring integration (response time tracking, alerting)
+- ⏭️ Centralized logging with Loki (Grafana's log aggregation, pairs with Prometheus)
+- ⏭️ Distributed tracing with Tempo (Grafana's tracing backend)
+- ⏭️ Long-term metrics storage (Prometheus remote write to VictoriaMetrics)
 - ⏭️ Multi-version rollback (specify exact version to restore)
 - ⏭️ Deployment approval workflows (require manual confirmation for production)
 - ⏭️ Infrastructure drift detection (compare deployed vs configured state)
@@ -83,6 +91,7 @@ This section defines what must be built for MVP (Minimum Viable Product) versus 
 3. **Secrets Backend**: Interface for `getSecret(key)` - swap implementation without changing deployment code
 4. **Health Check Plugins**: Registry-based system for custom health checks (database, API endpoints, external dependencies)
 5. **Configuration Schema**: YAML/TOML with `provider` section for provider-specific overrides - adding providers doesn't break existing configs
+6. **Metrics Exposition**: Application exposes Prometheus-compatible `/metrics` endpoint (industry standard, works with any monitoring system)
 
 ### MVP Success Metrics
 
@@ -230,11 +239,17 @@ After deployment completes, the system automatically monitors application health
 **Post-MVP Requirements (Phase 2):**
 - **FR-018** [Phase 2]: System MUST integrate with CI/CD pipelines (GitHub Actions) for automated deployment on merge to main branch
 - **FR-019** [Phase 2]: System MUST provide deployment status visibility showing current version, deployment time, and deployer identity
-- **FR-022** [Phase 2]: System MUST configure monitoring and alerting for critical application metrics (uptime, response time, error rate) with support for stdout/stderr logging, generic webhooks, and ntfy.sh notifications
+- **FR-022** [Phase 2]: System MUST expose Prometheus-compatible metrics endpoint for monitoring critical application metrics (uptime, response time, error rate, database connection pool, request counts)
+- **FR-026** [Phase 2]: System MUST deploy Prometheus for metrics collection and Grafana for visualization dashboards with zero external dependencies
+- **FR-027** [Phase 2]: System MUST provide pre-built Grafana dashboards showing deployment history, application health, resource utilization, and error rates
+- **FR-028** [Phase 2]: System MUST configure Prometheus alert rules for critical conditions (high error rate >5%, database unavailable, disk usage >90%, memory usage >85%)
+- **FR-029** [Phase 2]: System MUST integrate Prometheus Alertmanager with ntfy.sh and generic webhooks for alert notifications
 
 **Future Enhancements (Phase 3):**
 - **FR-020** [Phase 3]: System MUST configure SSL/TLS certificates automatically for HTTPS endpoints
-- **FR-021** [Phase 3]: System MUST set up logging infrastructure to collect application logs centrally
+- **FR-021** [Phase 3]: System MUST deploy Grafana Loki for centralized log aggregation with long-term retention
+- **FR-030** [Phase 3]: System MUST deploy Grafana Tempo for distributed tracing across service boundaries
+- **FR-031** [Phase 3]: System MUST configure Prometheus remote write to VictoriaMetrics for long-term metrics storage (>30 days retention)
 
 **Provider Expansion (Phase 2+):**
 - **FR-005a** [Phase 2]: System MUST support AWS deployment (ECS/Fargate with RDS)
@@ -315,7 +330,7 @@ After deployment completes, the system automatically monitors application health
   - Multi-region active-active deployment with geographic failover
   - Automated performance testing or load testing during deployment
   - Canary deployments or A/B testing infrastructure
-  - Custom monitoring dashboards or observability platform integration beyond basic metrics
+  - Commercial monitoring services (Datadog, New Relic, cloud-specific monitoring beyond open-source alternatives)
   - Disaster recovery automation or multi-region backup replication
   - Cost optimization recommendations or infrastructure rightsizing automation
   - Deployment scheduling or deployment windows (deployments can run anytime)
@@ -491,3 +506,192 @@ curl -d "Deployment v1.2.3 failed: health check timeout" \
 - PagerDuty: Incident creation with severity levels
 
 All alerting goes through event bus (future-proof for adding channels without changing deployment code).
+
+### Open-Source Monitoring Stack (Zero Budget)
+
+**Philosophy:** Use battle-tested, open-source, self-hosted monitoring tools with no external dependencies or costs. All components run in Docker containers alongside the application.
+
+**Phase 2: Core Observability (Prometheus + Grafana)**
+
+**Prometheus Setup:**
+- Single Prometheus instance per deployment (lightweight, <100MB memory)
+- Scrapes metrics from application `/metrics` endpoint every 15s
+- 15-day retention on local disk (sufficient for most troubleshooting)
+- No clustering needed for single-node-per-maintainer architecture
+
+**Application Metrics to Expose** (via `/metrics` endpoint):
+```
+# HTTP metrics (via middleware)
+http_requests_total{method, path, status}
+http_request_duration_seconds{method, path}
+http_requests_in_flight
+
+# Database metrics (via connection pool)
+db_connections_open
+db_connections_in_use
+db_query_duration_seconds{query_type}
+db_errors_total{error_type}
+
+# Application metrics
+app_version_info{version, commit, build_date}
+app_uptime_seconds
+app_events_processed_total
+app_events_failed_total
+
+# System metrics (via Prometheus Node Exporter sidecar)
+node_cpu_seconds_total
+node_memory_bytes
+node_disk_bytes_free
+node_network_receive_bytes_total
+```
+
+**Grafana Dashboards** (pre-built JSON configs in repo):
+1. **Deployment Dashboard**
+   - Current version and deployment timestamp
+   - Deployment history timeline
+   - Rollback count and success rate
+   - Health check status
+
+2. **Application Health Dashboard**
+   - Request rate (requests/sec)
+   - Error rate (errors/sec, %)
+   - Response time (p50, p95, p99)
+   - Database query performance
+   - Top slow endpoints
+
+3. **Infrastructure Dashboard**
+   - CPU usage per container
+   - Memory usage (RSS, cache, swap)
+   - Disk usage and I/O
+   - Network throughput
+
+4. **Database Dashboard**
+   - Connection pool utilization
+   - Query rate and latency
+   - Cache hit ratio
+   - Table/index sizes
+   - Long-running queries
+
+**Alert Rules** (Prometheus alerting.rules.yml):
+```yaml
+groups:
+  - name: critical
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          
+      - alert: DiskSpaceLow
+        expr: node_disk_bytes_free / node_disk_bytes_total < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          
+      - alert: HighMemoryUsage
+        expr: node_memory_Active_bytes / node_memory_MemTotal_bytes > 0.85
+        for: 10m
+        labels:
+          severity: warning
+```
+
+**Alertmanager Configuration** (routes to ntfy.sh):
+```yaml
+route:
+  receiver: 'ntfy'
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: 'ntfy'
+    webhook_configs:
+      - url: 'https://ntfy.sh/togather-alerts-${DEPLOYMENT_ID}'
+        send_resolved: true
+```
+
+**Docker Compose Services** (added to deployment):
+```yaml
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./alerts.yml:/etc/prometheus/alerts.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - "9090:9090"
+    
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    ports:
+      - "3000:3000"
+    
+  node-exporter:
+    image: prom/node-exporter:latest
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro,rslave'
+    
+  alertmanager:
+    image: prom/alertmanager:latest
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+```
+
+**Phase 3: Enhanced Observability (Logs + Traces)**
+
+**Grafana Loki** (log aggregation):
+- Indexes only metadata (labels), stores logs as compressed chunks
+- 10x cheaper storage than Elasticsearch
+- Native Grafana integration (correlate logs with metrics)
+- Query logs by deployment_id, container, severity
+- 30-day retention
+
+**Grafana Tempo** (distributed tracing):
+- Trace requests across services (future federation support)
+- Correlate traces with logs and metrics
+- Identify slow database queries, external API calls
+- Cost: ~1GB storage per 1M spans
+
+**VictoriaMetrics** (long-term metrics storage):
+- Drop-in Prometheus replacement with 10x better compression
+- 90+ day retention without storage explosion
+- Useful for capacity planning and historical analysis
+- Only needed when short-term retention insufficient
+
+**Total Resource Overhead** (Phase 2 monitoring stack):
+- CPU: ~200-300m (0.2-0.3 cores)
+- Memory: ~500-800MB
+- Disk: ~2-5GB for 15 days metrics + dashboards
+- Network: Minimal (all localhost communication)
+
+**Future-Proof Design:**
+- All metrics use Prometheus exposition format (industry standard)
+- Grafana can switch between multiple backends (Prometheus, VictoriaMetrics, cloud providers)
+- Alert rules are portable across Prometheus-compatible systems
+- Can migrate to managed Grafana Cloud if budget allows (keeps same dashboards/alerts)
