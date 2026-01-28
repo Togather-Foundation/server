@@ -1,0 +1,185 @@
+# Deployment Configuration
+# Provider-agnostic settings for Togather server deployment
+# Reference: specs/001-deployment-infrastructure/spec.md
+
+# Application Configuration
+app:
+  name: togather-server
+  # Version will be substituted from Git commit at deployment time
+  version: ${GIT_COMMIT}
+  # Port the application listens on
+  port: 8080
+  # Health check endpoint path
+  health_endpoint: /health
+
+# Database Configuration
+database:
+  # PostgreSQL extensions required by the application
+  extensions:
+    - postgis      # Geospatial data support for place coordinates
+    - pgvector     # Vector embeddings for semantic search
+    - pg_trgm      # Trigram text search for fuzzy matching
+  
+  # Migration settings
+  migrations:
+    # Path to migration files relative to repository root
+    path: internal/storage/postgres/migrations
+    # Migration timeout in seconds
+    timeout: 300
+    # Whether to create snapshot before migrations
+    snapshot_enabled: true
+    # Snapshot retention period in days
+    snapshot_retention_days: 7
+
+# Deployment Strategy
+deployment:
+  # Strategy: blue-green (zero-downtime deployments)
+  strategy: blue-green
+  
+  # Health check configuration
+  health_check:
+    # Number of health check attempts
+    retries: 5
+    # Interval between health check attempts (seconds)
+    interval: 10
+    # Health check timeout per attempt (seconds)
+    timeout: 5
+    # Grace period after container start before first check (seconds)
+    startup_grace_period: 30
+  
+  # Rollback configuration
+  rollback:
+    # Automatically rollback on health check failure
+    auto_rollback: true
+    # Maximum time to wait for rollback completion (seconds)
+    timeout: 120
+  
+  # Deployment lock to prevent concurrent deployments
+  lock:
+    # Lock mechanism: filesystem or redis (MVP: filesystem)
+    type: filesystem
+    # Lock timeout in seconds (automatic cleanup of stale locks)
+    timeout: 3600
+
+# Monitoring Configuration (Phase 2)
+monitoring:
+  # Enable monitoring stack (Prometheus + Grafana)
+  enabled: false
+  
+  # Prometheus settings
+  prometheus:
+    # Metrics scrape interval
+    scrape_interval: 15s
+    # Metrics retention period
+    retention_days: 15
+  
+  # Grafana settings
+  grafana:
+    # Admin user (password from environment)
+    admin_user: admin
+    # Allow anonymous access (read-only)
+    anonymous_enabled: false
+  
+  # Alerting configuration
+  alerting:
+    # Enable alertmanager
+    enabled: false
+    # Alert channels (ntfy.sh, webhook)
+    channels:
+      - type: webhook
+        # Webhook URL from environment variable
+        url: ${ALERT_WEBHOOK_URL}
+
+# Notifications Configuration
+notifications:
+  # Deployment event notifications
+  enabled: false
+  
+  # Generic webhook configuration
+  webhook:
+    # Webhook URL from environment variable
+    url: ${NOTIFICATION_WEBHOOK_URL}
+    # Events to notify on: started, completed, failed, rolled_back
+    events:
+      - failed
+      - rolled_back
+    # Retry configuration
+    retries: 3
+    timeout: 10
+
+# Provider-Specific Configuration
+# Each provider can override settings above or add provider-specific options
+providers:
+  # Docker Compose provider (MVP)
+  docker:
+    # Docker Compose file to use
+    compose_file: docker-compose.yml
+    # Blue-green compose file
+    blue_green_file: docker-compose.blue-green.yml
+    # Project name prefix
+    project_name: togather
+    # Network configuration
+    network:
+      name: togather-network
+      driver: bridge
+    # Volume configuration
+    volumes:
+      database_data: togather-db-data
+      snapshots: togather-db-snapshots
+  
+  # AWS provider (Phase 2 - placeholder)
+  aws:
+    # AWS region
+    region: us-east-1
+    # Deployment service: ecs or fargate
+    service: fargate
+    # ECS cluster name
+    cluster_name: togather-cluster
+    # Task definition family
+    task_family: togather-server
+    # Database service: rds
+    database_service: rds
+    # Database instance class
+    db_instance_class: db.t4g.micro
+    # VPC configuration
+    vpc:
+      cidr: 10.0.0.0/16
+      public_subnets: 2
+      private_subnets: 2
+  
+  # GCP provider (Phase 2 - placeholder)
+  gcp:
+    # GCP region
+    region: us-central1
+    # Deployment service: cloud-run
+    service: cloud-run
+    # Service name
+    service_name: togather-server
+    # Database service: cloud-sql
+    database_service: cloud-sql
+    # Database tier
+    db_tier: db-f1-micro
+    # VPC configuration
+    vpc:
+      name: togather-vpc
+      subnet_cidr: 10.0.0.0/24
+
+# Environment-Specific Overrides
+# These are merged with the configuration above based on the target environment
+# Environment-specific values are loaded from .env files in deploy/config/environments/
+# 
+# Example:
+#   deploy/config/environments/.env.production
+#   deploy/config/environments/.env.staging
+#   deploy/config/environments/.env.development
+#
+# Common environment variables:
+#   - DATABASE_URL: PostgreSQL connection string
+#   - JWT_SECRET: Secret key for JWT token signing
+#   - LOG_LEVEL: Logging level (debug, info, warn, error)
+#   - ADMIN_API_KEY: API key for administrative endpoints
+#   - GIT_COMMIT: Git commit SHA (injected by deployment script)
+#   - DEPLOYMENT_ID: Unique deployment identifier (injected by deployment script)
+#   - GRAFANA_PASSWORD: Grafana admin password (if monitoring enabled)
+#   - ALERT_WEBHOOK_URL: Webhook URL for alerts (if alerting enabled)
+#   - NOTIFICATION_WEBHOOK_URL: Webhook URL for deployment notifications
