@@ -71,4 +71,4 @@ This project is built with help from [OpenCode](https://opencode.ai/), [Spec Kit
 - Gemini Pro 3
 
 ---
-*This README provides a high-level overview. Technical documentation can be found in the `docs/` directory.*
+*This README provides a high-level overview. [Technical documentation](docs/README.md) can be found in the `docs/` directory.*
