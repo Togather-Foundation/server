@@ -461,7 +461,7 @@ We take security seriously and appreciate responsible disclosure of vulnerabilit
 
 ## Additional Resources
 
-- **Architecture Documentation**: `ARCHITECTURE.md` § 7.1 (Security Hardening) - TODO: not yet created
+- **Architecture Documentation**: [ARCHITECTURE.md](./ARCHITECTURE.md) § 7.1 (Security Hardening)
 - **Code Review Report**: `../../CODE_REVIEW.md`
 - **Setup Guide**: `../../SETUP.md` (Security Configuration section)
 - **Issue Tracker**: Run `bd list --type bug --priority 0,1` for active security issues

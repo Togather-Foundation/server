@@ -68,7 +68,7 @@ This server implements defense-in-depth security measures including:
 For complete security documentation, see:
 - `CODE_REVIEW.md` - Security audit and findings
 - `docs/contributors/SECURITY.md` - Security model and practices
-- `docs/contributors/ARCHITECTURE.md` § 7.1 - Security hardening details (TODO: not yet created)
+- `docs/contributors/ARCHITECTURE.md` § 7.1 - Security hardening details
 - `SETUP.md` - Security configuration guide
 
 ## Development Velocity 🚀

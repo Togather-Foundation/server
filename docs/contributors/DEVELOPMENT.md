@@ -409,7 +409,7 @@ To add validation for new entity types:
 ## References
 
 - [zerolog documentation](https://github.com/rs/zerolog)
-- [SEL Architecture § 7 (Observability)](./ARCHITECTURE.md) - TODO: not yet created
+- [SEL Architecture § 7 (Observability)](./ARCHITECTURE.md)
 - [RFC 7807 Problem Details](https://www.rfc-editor.org/rfc/rfc7807.html)
 - [pyshacl documentation](https://github.com/RDFLib/pySHACL)
 - [SHACL specification (W3C)](https://www.w3.org/TR/shacl/)

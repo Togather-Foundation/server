@@ -17,9 +17,9 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 
 **Quick links:**
 - [Development Guide](contributors/DEVELOPMENT.md) - Coding standards, logging, validation
-- [Architecture Overview](contributors/ARCHITECTURE.md) - System design (TODO: not yet created)
-- [Database Guide](contributors/DATABASE.md) - Schema & migrations (TODO: not yet created)
-- [Testing Guide](contributors/TESTING.md) - TDD workflow (TODO: not yet created)
+- [Architecture Overview](contributors/ARCHITECTURE.md) - System design
+- [Database Guide](contributors/DATABASE.md) - Schema & migrations
+- [Testing Guide](contributors/TESTING.md) - TDD workflow
 - [Security Guide](contributors/SECURITY.md) - Security implementation
 
 ---
@@ -32,8 +32,8 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 
 **Quick links:**
 - [API Guide](integration/API_GUIDE.md) - Practical API reference with examples
-- [Authentication](integration/AUTHENTICATION.md) - API keys & rate limits (TODO: not yet created)
-- [Scraper Best Practices](integration/SCRAPERS.md) - Idempotency, deduplication (TODO: not yet created)
+- [Authentication](integration/AUTHENTICATION.md) - API keys & rate limits
+- [Scraper Best Practices](integration/SCRAPERS.md) - Idempotency, deduplication
 - [Code Examples](integration/examples/) - Working code samples (TODO: not yet created)
 
 **Minimal example:**
@@ -85,7 +85,7 @@ These resources are useful for everyone:
 
 ### Event Scraper
 1. Read [API Guide](integration/API_GUIDE.md)
-2. Get API key (see [Authentication](integration/AUTHENTICATION.md) - TODO: not yet created)
+2. Get API key (see [Authentication](integration/AUTHENTICATION.md))
 3. Copy [minimal scraper example](integration/examples/minimal_scraper.js) (TODO: not yet created)
 4. Submit events with `source.url` for duplicate detection
 
@@ -99,7 +99,7 @@ These resources are useful for everyone:
 1. Read [Development Guide](contributors/DEVELOPMENT.md)
 2. Pick a task: `bd ready`
 3. Run tests: `make ci`
-4. Follow TDD workflow in [Testing Guide](contributors/TESTING.md) (TODO: not yet created)
+4. Follow TDD workflow in [Testing Guide](contributors/TESTING.md)
 
 ---
 
@@ -109,13 +109,13 @@ These resources are useful for everyone:
 |----------|----------|--------|--------------|
 | **Universal** | Glossary | Living | 2026-01-26 |
 | **Integration** | API Guide | Living | 2026-01-27 |
-| **Integration** | Authentication | Planned | - |
-| **Integration** | Scrapers Guide | Planned | - |
+| **Integration** | Authentication | Living | 2026-01-27 |
+| **Integration** | Scrapers Guide | Living | 2026-01-27 |
 | **Contributors** | Development | Living | 2026-01-26 |
 | **Contributors** | Security | Living | 2026-01-25 |
-| **Contributors** | Architecture | Planned | - |
-| **Contributors** | Database | Planned | - |
-| **Contributors** | Testing | Planned | - |
+| **Contributors** | Architecture | Living | 2026-01-27 |
+| **Contributors** | Database | Living | 2026-01-27 |
+| **Contributors** | Testing | Living | 2026-01-27 |
 | **Interop** | Core Profile v0.1 | Planned | - |
 | **Interop** | API Contract v1 | Planned | - |
 | **Interop** | Federation v1 | Implemented | 2026-01-26 |

@@ -902,7 +902,7 @@ def scrape_and_submit(events):
 - [SEL Core Profile](../interop/CORE_PROFILE_v0.1.md) - Detailed JSON-LD specifications
 - [Security Model](../contributors/SECURITY.md) - Authentication and security practices
 - [Development Guide](../contributors/DEVELOPMENT.md) - For contributors
-- [Schema Design](../contributors/DATABASE.md) - Database schema and provenance model (TODO: not yet created)
+- [Schema Design](../contributors/DATABASE.md) - Database schema and provenance model
 
 ---
 

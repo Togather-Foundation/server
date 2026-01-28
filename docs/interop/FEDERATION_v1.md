@@ -480,9 +480,9 @@ Advertise capabilities via `/.well-known/sel-profile`.
 
 ## Related Documentation
 
-- [SEL Server Architecture](../contributors/ARCHITECTURE.md) - Overall system design (TODO: not yet created)
+- [SEL Server Architecture](../contributors/ARCHITECTURE.md) - Overall system design
 - [SEL Core Profile](./CORE_PROFILE_v0.1.md) - Federation standards
-- [Schema Design](../contributors/DATABASE.md) - Database schema and migrations (TODO: not yet created)
+- [Schema Design](../contributors/DATABASE.md) - Database schema and migrations
 - [Security Architecture](../contributors/SECURITY.md) - Authentication and authorization
 
 ## Implementation Status
