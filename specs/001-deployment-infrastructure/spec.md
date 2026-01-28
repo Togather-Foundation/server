@@ -5,9 +5,98 @@
 **Status**: Draft  
 **Input**: User description: "Create a the devops infrastructure and workflow that can easily deploy this project to a server. It should be easy to deploy to different providers."
 
+## Clarifications
+
+### Session 2026-01-28
+
+- Q: Zero-downtime deployment strategy given single-node-per-maintainer architecture? → A: Full blue-green deployment for all deployments (provides zero-downtime, works for operators managing multiple nodes)
+- Q: Secrets management implementation priority (environment files vs cloud secret managers)? → A: Start with environment files for all environments; cloud secret manager integration as future enhancement
+- Q: Alert channel implementation priority for deployment notifications? → A: Simple logging output with optional generic webhook support plus ntfy.sh integration
+- Q: Database backup strategy and retention for migration safety? → A: Automatic snapshot before migrations with 7-day retention and automatic cleanup
+
+## MVP vs Future Enhancements
+
+This section defines what must be built for MVP (Minimum Viable Product) versus what can be added later. All components are designed to be future-proof, with clear extension points for enhancements.
+
+### MVP Scope (Must Have)
+
+**Core Deployment Workflow:**
+- ✅ Single-command deployment (`deploy` command)
+- ✅ Docker Compose-based deployment (works on any host with Docker)
+- ✅ One provider support initially (Docker-based hosts as universal baseline)
+- ✅ Blue-green deployment strategy (build into architecture from day 1)
+- ✅ Automatic database migrations before deployment
+- ✅ Database snapshot before migrations (7-day retention)
+- ✅ Health checks with automatic rollback on failure
+- ✅ Environment configuration via .env files
+- ✅ Basic rollback command (restore previous version)
+- ✅ Deployment logging (stdout/stderr)
+- ✅ Version tagging (Git commit SHA + timestamp)
+- ✅ Concurrent deployment prevention (lock file mechanism)
+
+**Architecture Requirements:**
+- ✅ Pluggable provider system (abstraction layer for future providers)
+- ✅ Configuration schema with provider-specific overrides (supports adding AWS/GCP later)
+- ✅ Webhook interface for notifications (generic, not service-specific)
+- ✅ Secrets management via environment files (with interface for future secret backends)
+
+**Future-Proofing Design:**
+- Deployment commands use provider-agnostic CLI interface
+- Configuration files separate provider-agnostic settings from provider-specific
+- Health check system supports custom check plugins
+- Notification system uses event-driven architecture (easy to add channels)
+
+### Phase 2 (Post-MVP)
+
+**Multi-Provider Support:**
+- ⏭️ AWS deployment (Terraform module: ECS/Fargate + RDS)
+- ⏭️ GCP deployment (Terraform module: Cloud Run + Cloud SQL)
+- ⏭️ DigitalOcean App Platform integration
+- ⏭️ Bare metal / VPS with pre-installed Docker
+
+**Enhanced Notifications:**
+- ⏭️ ntfy.sh integration (simple push notifications)
+- ⏭️ Generic webhook with retry logic and payload templates
+- ⏭️ Email SMTP support
+- ⏭️ Slack/Discord webhooks
+
+**CI/CD Integration:**
+- ⏭️ GitHub Actions workflow templates
+- ⏭️ Automated deployment on merge to main
+- ⏭️ Branch deployments for testing (ephemeral environments)
+- ⏭️ Deployment status badges
+
+### Phase 3 (Future Enhancements)
+
+**Advanced Features:**
+- ⏭️ Cloud secret manager integration (AWS Secrets Manager, GCP Secret Manager)
+- ⏭️ SSL/TLS certificate automation (Let's Encrypt via ACME protocol)
+- ⏭️ Centralized logging aggregation (ship logs to external service)
+- ⏭️ Performance monitoring integration (response time tracking, alerting)
+- ⏭️ Multi-version rollback (specify exact version to restore)
+- ⏭️ Deployment approval workflows (require manual confirmation for production)
+- ⏭️ Infrastructure drift detection (compare deployed vs configured state)
+
+**Future-Proof Extension Points Built into MVP:**
+1. **Provider Abstraction**: Interface defines `provision()`, `deploy()`, `healthCheck()`, `rollback()` - new providers implement this interface
+2. **Notification Pipeline**: Event bus for deployment lifecycle events (started, completed, failed) - subscribers can process events independently
+3. **Secrets Backend**: Interface for `getSecret(key)` - swap implementation without changing deployment code
+4. **Health Check Plugins**: Registry-based system for custom health checks (database, API endpoints, external dependencies)
+5. **Configuration Schema**: YAML/TOML with `provider` section for provider-specific overrides - adding providers doesn't break existing configs
+
+### MVP Success Metrics
+
+These must work before moving to Phase 2:
+- Deploy to Docker host with single command ✓
+- Zero-downtime updates via blue-green ✓
+- Automatic migration + snapshot ✓
+- Rollback on health check failure ✓
+- Deploy to dev/staging/prod with different configs ✓
+- Complete deployment in <5 minutes ✓
+
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - One-Command Production Deploy (Priority: P1)
+### User Story 1 - One-Command Production Deploy (Priority: P1) **[MVP]**
 
 DevOps engineers and developers can deploy the Togather server to a production environment with a single command, regardless of the cloud provider or hosting platform being used.
 
@@ -19,11 +108,11 @@ DevOps engineers and developers can deploy the Togather server to a production e
 
 1. **Given** a configured deployment environment, **When** operator runs the deploy command, **Then** the server binary is built, deployed to the target environment, and passes health checks within 5 minutes
 2. **Given** no prior deployment exists, **When** operator runs the deploy command for the first time, **Then** all required infrastructure (database, networking, storage) is automatically provisioned and configured
-3. **Given** an existing deployment, **When** operator runs the deploy command with a new version, **Then** the new version is deployed with zero downtime using rolling updates
+3. **Given** an existing deployment, **When** operator runs the deploy command with a new version, **Then** the new version is deployed with zero downtime using blue-green deployment strategy
 
 ---
 
-### User Story 2 - Multi-Provider Support (Priority: P2)
+### User Story 2 - Multi-Provider Support (Priority: P2) **[Phase 2]**
 
 Operations teams can switch between different hosting providers (AWS, GCP, Azure, DigitalOcean, bare metal servers) using the same deployment workflow and configuration format.
 
@@ -39,7 +128,7 @@ Operations teams can switch between different hosting providers (AWS, GCP, Azure
 
 ---
 
-### User Story 3 - Database Migration Management (Priority: P1)
+### User Story 3 - Database Migration Management (Priority: P1) **[MVP]**
 
 Database schema migrations run automatically during deployment, ensuring the database schema matches the application code version without manual intervention.
 
@@ -55,7 +144,7 @@ Database schema migrations run automatically during deployment, ensuring the dat
 
 ---
 
-### User Story 4 - Environment Configuration (Priority: P2)
+### User Story 4 - Environment Configuration (Priority: P2) **[MVP]**
 
 Operators can manage environment-specific configuration (development, staging, production) through standardized configuration files without modifying code or deployment scripts.
 
@@ -71,7 +160,7 @@ Operators can manage environment-specific configuration (development, staging, p
 
 ---
 
-### User Story 5 - Deployment Rollback (Priority: P2)
+### User Story 5 - Deployment Rollback (Priority: P2) **[MVP]**
 
 When a deployment causes issues in production, operators can quickly roll back to the previous working version with a single command, restoring service without data loss.
 
@@ -87,7 +176,7 @@ When a deployment causes issues in production, operators can quickly roll back t
 
 ---
 
-### User Story 6 - Health Monitoring and Alerting (Priority: P3)
+### User Story 6 - Health Monitoring and Alerting (Priority: P3) **[Phase 2]**
 
 After deployment completes, the system automatically monitors application health and notifies operators if the deployment degraded performance or introduced errors.
 
@@ -98,7 +187,7 @@ After deployment completes, the system automatically monitors application health
 **Acceptance Scenarios**:
 
 1. **Given** a newly deployed version, **When** deployment completes, **Then** system monitors health checks for 10 minutes and reports success/failure statistics
-2. **Given** health checks failing after deployment, **When** failure threshold is exceeded, **Then** system sends alerts via configured channels (email, Slack, PagerDuty) with deployment details
+2. **Given** health checks failing after deployment, **When** failure threshold is exceeded, **Then** system sends alerts via configured channels (stdout/stderr logs, generic webhook, ntfy.sh) with deployment details
 3. **Given** performance degradation detected, **When** response times increase by more than 50%, **Then** system alerts operators with performance comparison metrics
 
 ---
@@ -116,37 +205,47 @@ After deployment completes, the system automatically monitors application health
 
 ### Functional Requirements
 
-- **FR-001**: System MUST support deploying the Go server application with a single command from developer workstation or CI/CD pipeline
-- **FR-002**: System MUST build the server binary with correct version metadata (Git commit, build date, semantic version) embedded in the binary
-- **FR-003**: System MUST provision and configure PostgreSQL database with required extensions (PostGIS, pgvector, pg_trgm) on target infrastructure
-- **FR-004**: System MUST run database migrations automatically before starting application servers during deployment
-- **FR-005**: System MUST support at least three deployment targets: AWS, GCP, and Docker-based hosts (DigitalOcean, bare metal)
-- **FR-006**: System MUST manage environment-specific configuration through environment files (.env format) without requiring code changes
-- **FR-007**: System MUST support deploying to development, staging, and production environments with environment-specific settings
-- **FR-008**: System MUST validate configuration files before beginning deployment to catch errors early
-- **FR-009**: System MUST implement zero-downtime deployments using rolling updates or blue-green deployment strategy
-- **FR-010**: System MUST tag deployed versions with Git commit SHA and deployment timestamp for traceability
-- **FR-011**: System MUST provide rollback capability to restore previous application version
-- **FR-012**: System MUST perform health checks after deployment completes to verify application is responding correctly
-- **FR-013**: System MUST collect and display deployment logs for troubleshooting failures
-- **FR-014**: System MUST prevent concurrent deployments to the same environment by detecting and blocking simultaneous deploy operations
-- **FR-015**: System MUST support deploying specific Git branches or tags for testing feature branches or hotfixes
-- **FR-016**: System MUST expose deployment configuration through version-controlled files in the repository
-- **FR-017**: System MUST handle secrets securely without storing them in version control or deployment logs
-- **FR-018**: System MUST integrate with CI/CD pipelines (GitHub Actions) for automated deployment on merge to main branch
-- **FR-019**: System MUST provide deployment status visibility showing current version, deployment time, and deployer identity
-- **FR-020**: System MUST configure SSL/TLS certificates automatically for HTTPS endpoints
-- **FR-021**: System MUST set up logging infrastructure to collect application logs centrally
-- **FR-022**: System MUST configure monitoring and alerting for critical application metrics (uptime, response time, error rate)
-- **FR-023**: System MUST support horizontal scaling by deploying multiple application instances behind a load balancer
-- **FR-024**: System MUST backup database before running migrations to enable recovery from migration failures
-- **FR-025**: System MUST validate that deployed version matches CI test results (same Git commit that passed tests)
+**MVP Requirements (Phase 1):**
+- **FR-001** [MVP]: System MUST support deploying the Go server application with a single command from developer workstation or CI/CD pipeline
+- **FR-002** [MVP]: System MUST build the server binary with correct version metadata (Git commit, build date, semantic version) embedded in the binary
+- **FR-003** [MVP]: System MUST provision and configure PostgreSQL database with required extensions (PostGIS, pgvector, pg_trgm) on target infrastructure
+- **FR-004** [MVP]: System MUST run database migrations automatically before starting application servers during deployment
+- **FR-005** [MVP]: System MUST support Docker-based deployment as universal baseline (works on any host with Docker installed)
+- **FR-006** [MVP]: System MUST manage environment-specific configuration through environment files (.env format) without requiring code changes
+- **FR-007** [MVP]: System MUST support deploying to development, staging, and production environments with environment-specific settings
+- **FR-008** [MVP]: System MUST validate configuration files before beginning deployment to catch errors early
+- **FR-009** [MVP]: System MUST implement zero-downtime deployments using blue-green deployment strategy (new version deployed alongside old, traffic switches after health checks pass)
+- **FR-010** [MVP]: System MUST tag deployed versions with Git commit SHA and deployment timestamp for traceability
+- **FR-011** [MVP]: System MUST provide rollback capability to restore previous application version
+- **FR-012** [MVP]: System MUST perform health checks after deployment completes to verify application is responding correctly
+- **FR-013** [MVP]: System MUST collect and display deployment logs for troubleshooting failures
+- **FR-014** [MVP]: System MUST prevent concurrent deployments to the same environment by detecting and blocking simultaneous deploy operations
+- **FR-015** [MVP]: System MUST support deploying specific Git branches or tags for testing feature branches or hotfixes
+- **FR-016** [MVP]: System MUST expose deployment configuration through version-controlled files in the repository
+- **FR-017** [MVP]: System MUST handle secrets securely through environment files without storing them in version control or deployment logs (cloud secret manager integration deferred to Phase 3)
+- **FR-023** [MVP]: System MUST support single-node-per-maintainer architecture while allowing operators to manage multiple independent nodes (each node is a separate deployment target)
+- **FR-024** [MVP]: System MUST create automatic database snapshot before running migrations with 7-day retention and automatic cleanup to enable recovery from migration failures
+- **FR-025** [MVP]: System MUST validate that deployed version matches CI test results (same Git commit that passed tests)
+
+**Post-MVP Requirements (Phase 2):**
+- **FR-018** [Phase 2]: System MUST integrate with CI/CD pipelines (GitHub Actions) for automated deployment on merge to main branch
+- **FR-019** [Phase 2]: System MUST provide deployment status visibility showing current version, deployment time, and deployer identity
+- **FR-022** [Phase 2]: System MUST configure monitoring and alerting for critical application metrics (uptime, response time, error rate) with support for stdout/stderr logging, generic webhooks, and ntfy.sh notifications
+
+**Future Enhancements (Phase 3):**
+- **FR-020** [Phase 3]: System MUST configure SSL/TLS certificates automatically for HTTPS endpoints
+- **FR-021** [Phase 3]: System MUST set up logging infrastructure to collect application logs centrally
+
+**Provider Expansion (Phase 2+):**
+- **FR-005a** [Phase 2]: System MUST support AWS deployment (ECS/Fargate with RDS)
+- **FR-005b** [Phase 2]: System MUST support GCP deployment (Cloud Run with Cloud SQL)
+- **FR-005c** [Phase 2]: System MUST support DigitalOcean and bare metal servers with Docker
 
 ### Key Entities
 
 - **Deployment Configuration**: Represents target environment settings including provider type (AWS/GCP/Docker), region, instance sizing, database configuration, domain names, and environment variables. Stored as version-controlled files in repository.
 
-- **Deployment Target**: Represents a specific environment (development, staging, production) with its unique infrastructure resources (servers, databases, load balancers), current deployed version, and deployment history.
+- **Deployment Target**: Represents a specific environment (development, staging, production) or independent node with its unique infrastructure resources (server, database), current deployed version, and deployment history. Architecture supports one node per maintainer, with operators potentially managing multiple independent nodes.
 
 - **Migration**: Represents database schema change with version number, up/down SQL scripts, and execution status. Tracked in database migrations table and filesystem.
 
@@ -158,16 +257,19 @@ After deployment completes, the system automatically monitors application health
 
 ### Measurable Outcomes
 
-- **SC-001**: Developers can deploy the server to a new cloud account in under 10 minutes with zero manual infrastructure configuration
-- **SC-002**: Deployments complete successfully 95% of the time without manual intervention
-- **SC-003**: Failed deployments roll back automatically within 2 minutes without operator intervention
-- **SC-004**: Zero downtime deployments achieve 99.9% availability during update operations
-- **SC-005**: Operators can switch between three different cloud providers using the same deployment command with only credential changes
-- **SC-006**: Database migrations complete successfully on databases with up to 1 million events without timeout failures
-- **SC-007**: Deployment configuration changes are applied successfully without modifying deployment scripts or application code
-- **SC-008**: Health checks detect deployment issues within 30 seconds of completion, triggering automatic rollback
-- **SC-009**: 90% of production deployments complete within 5 minutes from command execution to health check pass
-- **SC-010**: Deployment system handles provider rate limiting and quota errors gracefully with clear error messages
+**MVP Success Criteria:**
+- **SC-001** [MVP]: Developers can deploy the server to a Docker host in under 10 minutes with zero manual infrastructure configuration
+- **SC-002** [MVP]: Deployments complete successfully 95% of the time without manual intervention
+- **SC-003** [MVP]: Failed deployments roll back automatically within 2 minutes without operator intervention
+- **SC-004** [MVP]: Zero downtime deployments achieve 99.9% availability during update operations
+- **SC-006** [MVP]: Database migrations complete successfully on databases with up to 1 million events without timeout failures
+- **SC-007** [MVP]: Deployment configuration changes are applied successfully without modifying deployment scripts or application code
+- **SC-009** [MVP]: 90% of production deployments complete within 5 minutes from command execution to health check pass
+
+**Post-MVP Success Criteria:**
+- **SC-005** [Phase 2]: Operators can switch between three different cloud providers using the same deployment command with only credential changes
+- **SC-008** [Phase 2]: Health checks detect deployment issues within 30 seconds of completion, triggering automatic rollback
+- **SC-010** [Phase 2]: Deployment system handles provider rate limiting and quota errors gracefully with clear error messages
 
 ## Assumptions *(include when relevant)*
 
@@ -183,6 +285,7 @@ After deployment completes, the system automatically monitors application health
 - Deployment targets have sufficient resources (CPU, memory, disk) to run the server application with expected load
 - Operators can specify deployment targets through command-line arguments or environment variables
 - Database backup storage is available either through provider-managed backups or object storage (S3, GCS)
+- Database snapshots before migrations are retained for 7 days with automatic cleanup
 
 ## Dependencies *(include when relevant)*
 
@@ -218,6 +321,8 @@ After deployment completes, the system automatically monitors application health
   - Deployment scheduling or deployment windows (deployments can run anytime)
 
 - **Future Considerations**:
+  - Additional alert channel integrations (email SMTP, Slack, PagerDuty, custom webhooks)
+  - Integration with cloud provider secret managers (AWS Secrets Manager, GCP Secret Manager) for production environments
   - Integration with infrastructure cost tracking and budget alerts
   - Automated security scanning of deployment artifacts and infrastructure
   - Deployment approval workflows for production environments
@@ -226,14 +331,163 @@ After deployment completes, the system automatically monitors application health
 
 ## Technical Considerations *(optional)*
 
-The deployment infrastructure should prioritize simplicity and maintainability over feature completeness. A Docker Compose-based deployment provides a lowest-common-denominator that works everywhere (cloud VMs, bare metal, developer laptops) while cloud-specific optimizations can be added for managed services.
+### MVP Architecture (Phase 1)
 
-Consider using a two-tier approach:
-1. **Base deployment**: Docker Compose + shell scripts for maximum portability
-2. **Cloud-optimized deployment**: Terraform modules for each provider, leveraging managed services (RDS, Cloud SQL, load balancers)
+The deployment infrastructure prioritizes simplicity and maintainability over feature completeness. Docker Compose provides the universal baseline that works everywhere (cloud VMs, bare metal, developer laptops) with a clear upgrade path to cloud-native services.
 
-This allows teams to start simple (deploy to single VM with Docker Compose) and graduate to cloud-native architecture (managed database, auto-scaling, load balancing) without changing deployment commands or configuration format.
+**MVP Technical Stack:**
+- **Deployment Engine**: Docker Compose v2 (standardized, works everywhere)
+- **Configuration**: YAML-based with .env file support
+- **Blue-Green Orchestration**: Docker networks + health checks + traffic switching via nginx/traefik
+- **Database**: PostgreSQL 16+ in Docker container with volume persistence
+- **Migrations**: golang-migrate CLI (already in project dependencies)
+- **Snapshots**: pg_dump to local filesystem or S3-compatible storage
+- **Secrets**: Environment files (.env) excluded from git
+- **Logging**: Docker logs (stdout/stderr) with structured JSON format
+- **Deployment Lock**: Filesystem lock or Redis key with TTL
 
-Database migrations should support both forward (up) and backward (down) migrations, but rollback strategy should acknowledge that data migrations may not be safely reversible. Deployment system should backup database before migrations and provide manual recovery instructions when automatic rollback isn't safe.
+**Future-Proof Design Patterns:**
+1. **Provider Abstraction Interface**:
+   ```
+   type DeploymentProvider interface {
+       Provision(config Config) error
+       Deploy(artifact Artifact) error
+       HealthCheck() (bool, error)
+       Rollback(version string) error
+       Cleanup() error
+   }
+   ```
+   MVP implements `DockerComposeProvider`, Phase 2 adds `AWSProvider`, `GCPProvider`
 
-Secrets management should support multiple backends: environment files for development, cloud provider secret managers for production (AWS Secrets Manager, GCP Secret Manager). Deployment scripts should never log secret values or expose them in error messages.
+2. **Configuration Schema** (provider-agnostic + provider-specific):
+   ```yaml
+   # Shared across all providers
+   app:
+     name: togather-server
+     version: ${GIT_COMMIT}
+   database:
+     extensions: [postgis, pgvector, pg_trgm]
+   
+   # Provider-specific overrides
+   providers:
+     docker:
+       compose_file: docker-compose.yml
+     aws:
+       region: us-east-1
+       service: ecs
+     gcp:
+       region: us-central1
+       service: cloud-run
+   ```
+
+3. **Event-Driven Notifications** (webhook interface):
+   ```
+   POST /webhook
+   {
+     "event": "deployment.started|completed|failed",
+     "deployment_id": "abc123",
+     "version": "v1.2.3",
+     "timestamp": "2026-01-28T10:00:00Z",
+     "metadata": {...}
+   }
+   ```
+   MVP: Generic webhook endpoint, Phase 2: ntfy.sh, Phase 3: Email/Slack adapters
+
+4. **Pluggable Health Checks**:
+   ```
+   type HealthCheck interface {
+       Check(ctx context.Context) error
+   }
+   ```
+   MVP: HTTP endpoint + database connectivity, Phase 2+: Custom checks per deployment
+
+### Phase 2: Cloud-Native Optimization
+
+When operators need cloud-specific features (managed databases, auto-scaling, geographic distribution):
+
+**AWS Stack:**
+- ECS/Fargate for container orchestration
+- RDS PostgreSQL with automated backups
+- Application Load Balancer for blue-green traffic switching
+- Secrets Manager for credentials
+- CloudWatch for logging/metrics
+
+**GCP Stack:**
+- Cloud Run for serverless containers
+- Cloud SQL with automatic backups
+- Cloud Load Balancing for traffic management
+- Secret Manager for credentials
+- Cloud Logging for centralized logs
+
+**Terraform Modules** (one per provider, sharing same interface):
+- Variables match configuration schema (provider-agnostic where possible)
+- Outputs expose connection strings, URLs, status endpoints
+- State management via Terraform Cloud or S3 backend
+
+### Database Migration Strategy
+
+**MVP Implementation:**
+- Use existing `golang-migrate` tool from project dependencies
+- Run migrations in init container before app starts (blue-green ensures zero downtime)
+- Snapshot via `pg_dump` before migration runs
+- Store snapshots with naming: `{database}_{timestamp}_{git_commit}.sql.gz`
+- Retention: Keep 7 days (cron job or lifecycle policy deletes old snapshots)
+- Rollback: Manual restore from snapshot if migration fails (provide clear instructions)
+
+**Forward Compatibility:**
+- Migration scripts must be backward-compatible during blue-green window
+- Old code runs against new schema until traffic switches
+- Use additive migrations (add columns as nullable, add indexes concurrently)
+- Breaking changes require two-phase deployments
+
+**Future Enhancement (Phase 3):**
+- Automated schema compatibility validation before migration
+- Transaction-wrapped migrations with automatic rollback
+- Migration dry-run mode for testing
+
+### Secrets Management
+
+**MVP (Environment Files):**
+```bash
+# .env.production (NOT in git, managed by operator)
+DATABASE_URL=postgresql://user:pass@host:5432/db
+JWT_SECRET=xxx
+ADMIN_API_KEY=yyy
+```
+
+**Future-Proof Interface:**
+```go
+type SecretsBackend interface {
+    GetSecret(key string) (string, error)
+    ListSecrets(prefix string) (map[string]string, error)
+}
+```
+
+MVP: `EnvFileBackend`, Phase 3: `AWSSecretsManagerBackend`, `GCPSecretManagerBackend`
+
+### Alerting Architecture
+
+**MVP (Structured Logging):**
+```json
+{
+  "level": "error",
+  "event": "deployment_failed",
+  "deployment_id": "abc123",
+  "version": "v1.2.3",
+  "error": "health check failed after 5 attempts",
+  "timestamp": "2026-01-28T10:00:00Z"
+}
+```
+
+**Phase 2 (ntfy.sh Integration):**
+```bash
+curl -d "Deployment v1.2.3 failed: health check timeout" \
+  https://ntfy.sh/togather-deployments
+```
+
+**Phase 3 (Service-Specific Adapters):**
+- Email: SMTP with templated messages
+- Slack: Webhook with rich formatting (buttons, status colors)
+- PagerDuty: Incident creation with severity levels
+
+All alerting goes through event bus (future-proof for adding channels without changing deployment code).
