@@ -1,0 +1,335 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://togather.dev/schemas/deployment-state.json",
+  "title": "Deployment State",
+  "description": "Tracks the current deployment state, history, and locking information for a specific environment",
+  "type": "object",
+  "required": ["environment", "current_deployment", "lock"],
+  "properties": {
+    "environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production"],
+      "description": "The environment this state file represents"
+    },
+    "current_deployment": {
+      "description": "Information about the currently active deployment",
+      "oneOf": [
+        {
+          "type": "null",
+          "description": "No deployment is currently active"
+        },
+        {
+          "$ref": "#/$defs/deployment_info"
+        }
+      ]
+    },
+    "previous_deployment": {
+      "description": "Information about the last deployment (used for rollback)",
+      "oneOf": [
+        {
+          "type": "null",
+          "description": "No previous deployment exists"
+        },
+        {
+          "$ref": "#/$defs/deployment_info"
+        }
+      ]
+    },
+    "deployment_history": {
+      "type": "array",
+      "description": "Recent deployment history (configurable retention, typically last N deployments)",
+      "items": {
+        "$ref": "#/$defs/deployment_history_entry"
+      },
+      "default": []
+    },
+    "lock": {
+      "description": "Deployment lock information to prevent concurrent deployments",
+      "$ref": "#/$defs/deployment_lock"
+    }
+  },
+  "$defs": {
+    "deployment_info": {
+      "type": "object",
+      "required": ["id", "version", "git_commit", "deployed_at", "deployed_by", "active_slot", "health_status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier for this deployment",
+          "examples": ["dep_01JBQR2KXYZ9876543210"]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{7}$",
+          "description": "Git commit SHA (short form, 7 characters)",
+          "examples": ["abc1234"]
+        },
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$",
+          "description": "Full Git commit SHA (40 characters)",
+          "examples": ["abc1234567890def1234567890abcdef12345678"]
+        },
+        "deployed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when deployment completed",
+          "examples": ["2026-01-28T10:30:00Z"]
+        },
+        "deployed_by": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the operator who deployed this version",
+          "examples": ["operator@example.com"]
+        },
+        "active_slot": {
+          "type": "string",
+          "enum": ["blue", "green"],
+          "description": "Which blue-green deployment slot this version is running in"
+        },
+        "health_status": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy", "unknown"],
+          "description": "Current health status of this deployment"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "deploying", "failed", "rolled_back", "superseded"],
+          "description": "Deployment lifecycle status",
+          "default": "active"
+        },
+        "migrations_run": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of database migrations executed in this deployment",
+          "default": 0
+        },
+        "rollback_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of times this deployment was rolled back to",
+          "default": 0
+        }
+      }
+    },
+    "deployment_history_entry": {
+      "type": "object",
+      "required": ["id", "version", "git_commit", "deployed_at", "deployed_by", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier for this deployment",
+          "examples": ["dep_01JBQR0KXYZ9876543210"]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{7}$",
+          "description": "Git commit SHA (short form, 7 characters)",
+          "examples": ["def9876"]
+        },
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$",
+          "description": "Full Git commit SHA (40 characters)",
+          "examples": ["def9876543210abc9876543210defabc98765432"]
+        },
+        "deployed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when deployment completed",
+          "examples": ["2026-01-26T08:45:00Z"]
+        },
+        "deployed_by": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the operator who deployed this version",
+          "examples": ["operator@example.com"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "deploying", "failed", "rolled_back", "superseded"],
+          "description": "Final status of this deployment"
+        },
+        "health_status": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy", "unknown"],
+          "description": "Final health status of this deployment"
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total duration of the deployment in seconds"
+        },
+        "migrations_run": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of database migrations executed in this deployment",
+          "default": 0
+        },
+        "active_slot": {
+          "type": "string",
+          "enum": ["blue", "green"],
+          "description": "Which blue-green deployment slot this version ran in"
+        }
+      }
+    },
+    "deployment_lock": {
+      "type": "object",
+      "required": ["locked"],
+      "properties": {
+        "locked": {
+          "type": "boolean",
+          "description": "Whether a deployment is currently in progress"
+        },
+        "lock_id": {
+          "type": "string",
+          "pattern": "^lock_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID identifier for this lock",
+          "examples": ["lock_01JBQR6KXYZ9876543210"]
+        },
+        "locked_by": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the operator holding the lock",
+          "examples": ["operator@example.com"]
+        },
+        "locked_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when lock was acquired",
+          "examples": ["2026-01-28T10:30:00Z"]
+        },
+        "lock_expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when lock expires (30 minutes from locked_at per spec)",
+          "examples": ["2026-01-28T11:00:00Z"]
+        },
+        "deployment_id": {
+          "type": "string",
+          "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID of the deployment that acquired this lock",
+          "examples": ["dep_01JBQR2KXYZ9876543210"]
+        },
+        "pid": {
+          "type": "integer",
+          "description": "Process ID of the deployment script holding the lock"
+        },
+        "hostname": {
+          "type": "string",
+          "description": "Hostname of the server where deployment is running",
+          "examples": ["deploy-server.example.com"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "locked": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": ["lock_id", "locked_by", "locked_at", "lock_expires_at", "deployment_id"]
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "environment": "production",
+      "current_deployment": {
+        "id": "dep_01JBQR2KXYZ9876543210",
+        "version": "abc1234",
+        "git_commit": "abc1234567890def1234567890abcdef12345678",
+        "deployed_at": "2026-01-28T10:30:00Z",
+        "deployed_by": "operator@example.com",
+        "active_slot": "blue",
+        "health_status": "healthy",
+        "status": "active",
+        "migrations_run": 3,
+        "rollback_count": 0
+      },
+      "previous_deployment": {
+        "id": "dep_01JBQR1KXYZ9876543210",
+        "version": "xyz5678",
+        "git_commit": "xyz5678901234abc5678901234defabc56789012",
+        "deployed_at": "2026-01-27T14:15:00Z",
+        "deployed_by": "operator@example.com",
+        "active_slot": "green",
+        "health_status": "healthy",
+        "status": "superseded",
+        "migrations_run": 1,
+        "rollback_count": 0
+      },
+      "deployment_history": [
+        {
+          "id": "dep_01JBQR0KXYZ9876543210",
+          "version": "def9876",
+          "git_commit": "def9876543210abc9876543210defabc98765432",
+          "deployed_at": "2026-01-26T08:45:00Z",
+          "deployed_by": "operator@example.com",
+          "status": "superseded",
+          "health_status": "healthy",
+          "duration_seconds": 245,
+          "migrations_run": 1,
+          "active_slot": "blue"
+        }
+      ],
+      "lock": {
+        "locked": false
+      }
+    },
+    {
+      "environment": "staging",
+      "current_deployment": null,
+      "previous_deployment": null,
+      "deployment_history": [],
+      "lock": {
+        "locked": false
+      }
+    },
+    {
+      "environment": "production",
+      "current_deployment": {
+        "id": "dep_01JBQR7KXYZ9876543210",
+        "version": "new1234",
+        "git_commit": "new1234567890def1234567890abcdef12345678",
+        "deployed_at": "2026-01-28T15:00:00Z",
+        "deployed_by": "ops@example.com",
+        "active_slot": "green",
+        "health_status": "unknown",
+        "status": "deploying",
+        "migrations_run": 0,
+        "rollback_count": 0
+      },
+      "previous_deployment": {
+        "id": "dep_01JBQR2KXYZ9876543210",
+        "version": "abc1234",
+        "git_commit": "abc1234567890def1234567890abcdef12345678",
+        "deployed_at": "2026-01-28T10:30:00Z",
+        "deployed_by": "operator@example.com",
+        "active_slot": "blue",
+        "health_status": "healthy",
+        "status": "active",
+        "migrations_run": 3,
+        "rollback_count": 0
+      },
+      "deployment_history": [],
+      "lock": {
+        "locked": true,
+        "lock_id": "lock_01JBQR6KXYZ9876543210",
+        "locked_by": "ops@example.com",
+        "locked_at": "2026-01-28T15:00:00Z",
+        "lock_expires_at": "2026-01-28T15:30:00Z",
+        "deployment_id": "dep_01JBQR7KXYZ9876543210",
+        "pid": 12345,
+        "hostname": "deploy-server.example.com"
+      }
+    }
+  ]
+}
