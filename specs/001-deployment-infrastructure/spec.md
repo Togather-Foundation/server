@@ -101,7 +101,7 @@ These must work before moving to Phase 2:
 - Automatic migration + snapshot ✓
 - Rollback on health check failure ✓
 - Deploy to dev/staging/prod with different configs ✓
-- Complete deployment in <5 minutes ✓
+- Complete deployment in <5 minutes (90% of deployments) ✓
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -273,7 +273,7 @@ After deployment completes, the system automatically monitors application health
 ### Measurable Outcomes
 
 **MVP Success Criteria:**
-- **SC-001** [MVP]: Developers can deploy the server to a Docker host in under 10 minutes with zero manual infrastructure configuration
+- **SC-001** [MVP]: Developers can deploy the server to a Docker host in under 5 minutes (90th percentile) with zero manual infrastructure configuration
 - **SC-002** [MVP]: Deployments complete successfully 95% of the time without manual intervention
 - **SC-003** [MVP]: Failed deployments roll back automatically within 2 minutes without operator intervention
 - **SC-004** [MVP]: Zero downtime deployments achieve 99.9% availability during update operations

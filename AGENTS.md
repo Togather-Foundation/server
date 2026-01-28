@@ -205,7 +205,7 @@ This project uses Specification Driven Development:
 **MANDATORY WORKFLOW:**
 
 1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
+2. **Run quality gates** (if code changed) - Tests, linters, builds: `make ci`
 3. **Update issue status** - Close finished work, update in-progress items
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
@@ -276,8 +276,6 @@ Usage notes:
 </skills_system>
 
 ## Active Technologies
-- Go 1.22+ + Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI) (001-sel-backend)
-- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions (001-sel-backend)
-
-## Recent Changes
-- 001-sel-backend: Added Go 1.22+ + Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10
+- Go 1.25+ + Docker Compose v2 (orchestration)
+- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI) (001-sel-backend)
+- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions (001-sel-backend), golang-migrate (migrations) with volume persistence, pg_dump snapshots to filesystem or S3-compatible storage

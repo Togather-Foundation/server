@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://togather.foundation/schemas/health-check-response.json",
+  "title": "Health Check Response",
+  "description": "Response schema for the /health endpoint used by deployment health checks",
+  "type": "object",
+  "required": ["status", "version", "checks", "timestamp"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["healthy", "degraded", "unhealthy"],
+      "description": "Overall health status of the application"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{7,40}$",
+      "description": "Git commit SHA of deployed version"
+    },
+    "checks": {
+      "type": "object",
+      "description": "Individual health check results by component name",
+      "additionalProperties": {
+        "$ref": "#/$defs/check"
+      },
+      "minProperties": 3,
+      "required": ["database", "migrations", "http_endpoint"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when health check was performed"
+    }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": ["status", "message"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail"],
+          "description": "Status of this individual check"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable description of check result"
+        },
+        "latency": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s)$",
+          "description": "Time taken to perform check (e.g., '15ms', '2s')"
+        },
+        "details": {
+          "type": "object",
+          "description": "Additional check-specific diagnostic information"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "status": "healthy",
+      "version": "abc1234",
+      "checks": {
+        "database": {
+          "status": "pass",
+          "message": "PostgreSQL connection successful",
+          "latency": "8ms",
+          "details": {
+            "pool_size": 10,
+            "active_connections": 2
+          }
+        },
+        "migrations": {
+          "status": "pass",
+          "message": "Schema version matches expected: 20260128_001",
+          "latency": "5ms",
+          "details": {
+            "expected_version": 20260128001,
+            "actual_version": 20260128001
+          }
+        },
+        "http_endpoint": {
+          "status": "pass",
+          "message": "HTTP server responding",
+          "latency": "2ms"
+        }
+      },
+      "timestamp": "2026-01-28T10:32:00Z"
+    }
+  ]
+}
