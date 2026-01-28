@@ -117,14 +117,30 @@ coverage-check:
 # Run linter (requires golangci-lint)
 lint:
 	@echo "Running linter..."
-	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Install with 'make install-tools'" && exit 1)
-	@golangci-lint run ./...
+	@if command -v golangci-lint > /dev/null 2>&1; then \
+		golangci-lint run ./...; \
+	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
+		$(HOME)/go/bin/golangci-lint run ./...; \
+	elif [ -f $(GOPATH)/bin/golangci-lint ]; then \
+		$(GOPATH)/bin/golangci-lint run ./...; \
+	else \
+		echo "golangci-lint not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
 
 # Run linter exactly as CI does
 lint-ci:
 	@echo "Running linter as CI does (with 5m timeout)..."
-	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Install with 'make install-tools'" && exit 1)
-	@golangci-lint run --timeout=5m ./...
+	@if command -v golangci-lint > /dev/null 2>&1; then \
+		golangci-lint run --timeout=5m ./...; \
+	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
+		$(HOME)/go/bin/golangci-lint run --timeout=5m ./...; \
+	elif [ -f $(GOPATH)/bin/golangci-lint ]; then \
+		$(GOPATH)/bin/golangci-lint run --timeout=5m ./...; \
+	else \
+		echo "golangci-lint not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
 
 # Run full CI pipeline locally
 ci: lint-ci
@@ -205,6 +221,9 @@ install-tools:
 	@go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "Go tools installed successfully!"
 	@echo ""
+	@echo "Make sure $(HOME)/go/bin is in your PATH:"
+	@echo "  export PATH=\$$PATH:\$$(go env GOPATH)/bin"
+	@echo ""
 	@echo "Note: To enable SHACL validation, run 'make install-pyshacl'"
 
 # Install pyshacl for SHACL validation
@@ -213,6 +232,12 @@ install-pyshacl:
 	@if command -v pyshacl > /dev/null 2>&1; then \
 		echo "pyshacl is already installed:"; \
 		pyshacl --version; \
+	elif command -v uv > /dev/null 2>&1; then \
+		echo "Using uv to install pyshacl..."; \
+		uv tool install pyshacl; \
+		echo ""; \
+		echo "✓ pyshacl installed successfully!"; \
+		echo "Note: Make sure ~/.local/bin is in your PATH"; \
 	elif command -v uvx > /dev/null 2>&1; then \
 		echo "Testing pyshacl with uvx (no installation needed)..."; \
 		uvx pyshacl --version; \
