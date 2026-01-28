@@ -90,3 +90,14 @@ reports/
 # beads
 # beads state (kept on beads-sync)
 .beads/issues.jsonl
+
+# Deployment files
+# Environment files (allow .env.example for documentation)
+*.env
+!*.env.example
+# Deployment state and lock files
+deployment-state.json
+*.state
+*.lock
+# Deployment logs in deploy/ directory
+deploy/*.log
