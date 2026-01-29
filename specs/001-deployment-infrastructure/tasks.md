@@ -142,9 +142,11 @@ This is a deployment infrastructure feature for the existing Go project at repos
 - [x] T047 [US5] Add --force flag for non-interactive rollback in deploy/scripts/rollback.sh ✅
 - [x] T048 [US5] Add --version flag to rollback to specific version in deploy/scripts/rollback.sh ✅
 - [x] T049 [US5] Implement database snapshot restore instructions (manual confirmation required) in deploy/scripts/rollback.sh ✅
-- [ ] T050 [US5] Create rollback troubleshooting guide in deploy/docs/rollback.md
+- [x] T050 [US5] Create rollback troubleshooting guide in deploy/docs/rollback.md ✅
 
 **Checkpoint**: Rollback should restore previous version within 2 minutes and pass health checks ✅
+
+**User Story 5 Status**: ✅ COMPLETE
 
 
 ---
