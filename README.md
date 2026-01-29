@@ -94,7 +94,35 @@ nano deploy/config/environments/.env.production  # Edit with your credentials
 
 For developers working on the SEL codebase:
 
-### Option 1: Docker (Easiest)
+### Recommended: Interactive Setup
+The fastest way to get started is with the interactive setup command:
+
+```bash
+# Clone and build
+git clone https://github.com/Togather-Foundation/server.git
+cd server
+make build
+
+# Interactive guided setup (recommended)
+./server setup
+
+# Or non-interactive Docker setup
+./server setup --docker --non-interactive
+# Or: make setup-docker
+```
+
+The setup command will:
+- ✅ Detect your environment (Docker or local PostgreSQL)
+- ✅ Check prerequisites
+- ✅ Generate secure secrets
+- ✅ Configure database connection
+- ✅ Create .env file
+- ✅ Start Docker services (if using Docker)
+- ✅ Create your first API key
+
+After setup completes, your SEL server will be ready at `http://localhost:8080`!
+
+### Option 1: Docker (Manual Setup)
 ```bash
 # Install development tools
 make install-tools
@@ -107,7 +135,7 @@ make docker-up
 # Migrations run automatically ✅
 ```
 
-### Option 2: Local PostgreSQL
+### Option 2: Local PostgreSQL (Manual Setup)
 ```bash
 # Install tools
 make install-tools

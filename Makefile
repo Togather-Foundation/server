@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean db-setup db-init db-check
+.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean db-setup db-init db-check setup
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -10,6 +10,9 @@ DB_PORT ?= 5432
 # Default target
 help:
 	@echo "Togather Server - Build Commands"
+	@echo ""
+	@echo "Getting Started:"
+	@echo "  make setup         - 🚀 Interactive first-time setup (RECOMMENDED)"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  make build         - Build the server binary"
@@ -611,3 +614,25 @@ db-init:
 	@echo "Next steps:"
 	@echo "  1. Run migrations: make migrate-up"
 	@echo "  2. Start server:   make run"
+
+# Interactive Setup
+# =================
+
+setup:
+	@echo "🚀 Starting interactive setup..."
+	@echo ""
+	@go build -o server ./cmd/server
+	@./server setup
+	@echo ""
+	@echo "Setup complete! Server binary available at: ./server"
+
+setup-docker:
+	@echo "🚀 Starting Docker setup (non-interactive)..."
+	@go build -o server ./cmd/server
+	@./server setup --docker --non-interactive
+	@echo ""
+	@echo "Setup complete!"
+
+setup-help:
+	@go build -o server ./cmd/server
+	@./server setup --help
