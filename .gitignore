@@ -109,3 +109,7 @@ deploy/docker/.env
 .env.backup
 .env.original
 /server
+
+
+# Testing files
+events.json
