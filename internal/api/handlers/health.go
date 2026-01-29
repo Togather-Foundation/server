@@ -107,8 +107,11 @@ func (h *HealthChecker) checkDatabase(ctx context.Context) CheckResult {
 	if err != nil {
 		return CheckResult{
 			Status:    "fail",
-			Message:   fmt.Sprintf("Database query failed: %v", err),
+			Message:   "Database query failed",
 			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"error": err.Error(),
+			},
 		}
 	}
 
@@ -150,8 +153,11 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 	if err != nil {
 		return CheckResult{
 			Status:    "fail",
-			Message:   fmt.Sprintf("Failed to query migration version: %v", err),
+			Message:   "Failed to query migration version",
 			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"error": err.Error(),
+			},
 		}
 	}
 
@@ -203,16 +209,19 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 
 	// Query River's jobs table to verify it's accessible
 	// We'll check if we can query the river_job table
-	query := `SELECT COUNT(*) FROM river_job WHERE state = 'available' OR state = 'running'`
+	query := `SELECT COUNT(*) FROM river_job WHERE state = ANY($1)`
 	var activeJobs int64
-	err := h.pool.QueryRow(ctx, query).Scan(&activeJobs)
+	err := h.pool.QueryRow(ctx, query, []string{"available", "running"}).Scan(&activeJobs)
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
 		return CheckResult{
 			Status:    "fail",
-			Message:   fmt.Sprintf("Failed to query job queue: %v", err),
+			Message:   "Failed to query job queue",
 			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"error": err.Error(),
+			},
 		}
 	}
 
