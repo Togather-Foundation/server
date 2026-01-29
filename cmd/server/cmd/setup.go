@@ -163,12 +163,14 @@ func runSetup() error {
 	fmt.Println()
 
 	// Step 4: Database configuration
-	fmt.Println("Step 4: Database Configuration")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("Step 4: Database Connection")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
 
 	var dbURL string
 	var dbPort string
 	if useDocker {
+		fmt.Println("Docker PostgreSQL will be created automatically.")
 		dbPort = "5433"
 		if !setupNonInteractive {
 			dbPort = prompt("PostgreSQL port (Docker)", "5433")
@@ -176,18 +178,29 @@ func runSetup() error {
 		dbURL = fmt.Sprintf("postgresql://togather:dev_password_change_me@localhost:%s/togather?sslmode=disable", dbPort)
 		fmt.Printf("✓ Database URL: postgresql://togather:***@localhost:%s/togather\n", dbPort)
 	} else {
+		fmt.Println("Enter your PostgreSQL connection details.")
+		fmt.Println("These are your PostgreSQL server credentials (not the app admin user).")
+		fmt.Println()
+
 		dbHost := "localhost"
 		dbPort = "5432"
-		dbName := "togather_dev"
-		dbUser := "togather"
+		dbName := "togather"
+		dbUser := os.Getenv("USER") // Default to system username
+		if dbUser == "" {
+			dbUser = "togather"
+		}
 		dbPassword := ""
 
 		if !setupNonInteractive {
+			fmt.Println("💡 Tip: If you followed the PostgreSQL setup guide with peer authentication,")
+			fmt.Printf("    use your system username (%s) and leave password empty.\n", os.Getenv("USER"))
+			fmt.Println()
+
 			dbHost = prompt("PostgreSQL host", dbHost)
 			dbPort = prompt("PostgreSQL port", dbPort)
-			dbName = prompt("Database name", dbName)
-			dbUser = prompt("PostgreSQL user", dbUser)
-			dbPassword = promptPassword("PostgreSQL password")
+			dbName = prompt("Database name (will be created)", dbName)
+			dbUser = prompt("PostgreSQL username", dbUser)
+			dbPassword = promptPassword("PostgreSQL password (or press Enter for peer auth)")
 		} else {
 			dbPassword = "dev_password_change_me"
 		}
@@ -202,8 +215,12 @@ func runSetup() error {
 	fmt.Println()
 
 	// Step 5: Admin user configuration
-	fmt.Println("Step 5: Admin User Configuration")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("Step 5: SEL Application Admin User")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Println("This is the admin user for the SEL server web application.")
+	fmt.Println("(This is different from your PostgreSQL database user)")
+	fmt.Println()
 
 	adminUsername := "admin"
 	adminEmail := "admin@localhost"
@@ -211,7 +228,9 @@ func runSetup() error {
 	if !setupNonInteractive {
 		adminUsername = prompt("Admin username", adminUsername)
 		adminEmail = prompt("Admin email", adminEmail)
-		if confirm("Set custom admin password?", false) {
+		fmt.Println()
+		fmt.Printf("💡 A secure random password was generated: %s\n", adminPassword[:16]+"...")
+		if confirm("Set a custom admin password instead?", false) {
 			adminPassword = promptPassword("Admin password")
 		}
 	}
