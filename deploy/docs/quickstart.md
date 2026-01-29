@@ -1,21 +1,136 @@
 # Quickstart: Deploying Togather Server
 
-**Target Audience**: Operators deploying Togather server for the first time  
-**Time**: 30-45 minutes for initial setup, 5-10 minutes for subsequent deployments  
-**Prerequisites**: Linux server with Docker installed, Git, PostgreSQL access
+**Target Audience**: Operators deploying Togather server for production, and developers setting up local development  
+**Time**: 30-45 minutes for production setup, 5-10 minutes for local development  
+**Prerequisites**: Linux server with Docker installed, Git, PostgreSQL access (for production)
 
 ---
 
 ## Table of Contents
 
-1. [Prerequisites Check](#prerequisites-check)
-2. [Initial Setup](#initial-setup)
-3. [First Deployment](#first-deployment)
-4. [Verify Deployment](#verify-deployment)
-5. [Common Operations](#common-operations)
-6. [Troubleshooting](#troubleshooting)
+1. [Local Development Setup](#local-development-setup) ⭐ **Start here for development**
+2. [Production Deployment](#production-deployment)
+3. [Prerequisites Check](#prerequisites-check)
+4. [Initial Setup](#initial-setup)
+5. [First Deployment](#first-deployment)
+6. [Verify Deployment](#verify-deployment)
+7. [Common Operations](#common-operations)
+8. [Troubleshooting](#troubleshooting)
 
 ---
+
+## Local Development Setup
+
+### Quick Start (5 minutes)
+
+**Option 1: Docker (Recommended for Development)**
+
+```bash
+# Clone repository
+git clone https://github.com/Togather-Foundation/server.git
+cd server
+
+# Install development tools (golang-migrate, River CLI, golangci-lint, sqlc)
+make install-tools
+
+# Start everything (database + server in Docker)
+make docker-up
+
+# ✓ Containers started!
+# ✓ Migrations run automatically
+# ✓ Server: http://localhost:8080
+# ✓ Database: localhost:5433
+```
+
+**Verify it's working:**
+```bash
+curl http://localhost:8080/health | jq '.status'
+# Should return: "healthy"
+```
+
+**Option 2: Local PostgreSQL**
+
+If you prefer using your local PostgreSQL (port 5432):
+
+```bash
+# Install tools
+make install-tools
+
+# Check PostgreSQL has required extensions
+make db-check
+
+# Create database and install extensions
+make db-setup
+
+# Generate .env with auto-generated secrets
+make db-init
+
+# Run migrations
+make migrate-up
+make migrate-river
+
+# Start server
+make run           # Or: make dev (with hot reload)
+```
+
+### Development Commands
+
+```bash
+# Docker commands
+make docker-up        # Start database + server (port 5433)
+make docker-db        # Start only database
+make docker-down      # Stop containers
+make docker-logs      # View logs
+make docker-rebuild   # Rebuild after code changes
+make docker-clean     # Remove everything including volumes
+
+# Database commands
+make db-setup         # Create local database
+make db-init          # Generate .env for local PostgreSQL
+make db-check         # Check required extensions
+make migrate-up       # Run app migrations
+make migrate-river    # Run River job queue migrations
+
+# Development commands
+make test             # Run tests
+make test-ci          # Run tests as CI does
+make lint             # Run linter
+make ci               # Full CI pipeline locally
+make run              # Build and run server
+make dev              # Run with hot reload (requires air)
+```
+
+### Troubleshooting Local Setup
+
+**Port 5432 already in use:**
+- Docker PostgreSQL uses port 5433 by default (no conflict!)
+- Your system PostgreSQL stays on 5432
+- Both can run simultaneously
+
+**Migrations fail:**
+```bash
+# Ensure tools are installed
+make install-tools
+
+# Run migrations manually
+DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" make migrate-up
+DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" make migrate-river
+```
+
+**Health check shows unhealthy:**
+```bash
+# Check which components are failing
+curl http://localhost:8080/health | jq '.checks'
+
+# Common fixes:
+# - Database not ready: wait 5 seconds and retry
+# - Migrations not run: see migrations section above
+# - River migrations missing: run make migrate-river
+```
+
+---
+
+## Production Deployment
 
 ## Prerequisites Check
 

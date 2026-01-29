@@ -52,7 +52,7 @@ The [**Togather Foundation**](https://togather.foundation) is a coordination poi
 
 ## Quick Start: Deploying SEL
 
-For operators deploying a Togather node:
+For operators deploying a Togather node to production:
 
 ### Prerequisites
 - Linux server with Docker
@@ -89,6 +89,55 @@ nano deploy/config/environments/.env.production  # Edit with your credentials
 - ✅ One-command rollback with health validation
 - ✅ Multi-environment support (dev/staging/prod)
 - ✅ Comprehensive testing and validation
+
+## Quick Start: Local Development
+
+For developers working on the SEL codebase:
+
+### Option 1: Docker (Easiest)
+```bash
+# Install development tools
+make install-tools
+
+# Start everything (database + server on Docker)
+make docker-up
+
+# Server: http://localhost:8080
+# Database: localhost:5433
+# Migrations run automatically ✅
+```
+
+### Option 2: Local PostgreSQL
+```bash
+# Install tools
+make install-tools
+
+# Set up local database
+make db-check      # Verify PostgreSQL has required extensions
+make db-setup      # Create database with postgis, pgvector
+make db-init       # Generate .env with auto-generated secrets
+
+# Run migrations
+make migrate-up
+make migrate-river
+
+# Start server
+make run           # Or: make dev (with hot reload)
+```
+
+### Common Commands
+```bash
+make docker-down      # Stop Docker containers
+make docker-logs      # View logs
+make test             # Run tests
+make lint             # Run linter
+make ci               # Full CI pipeline locally
+```
+
+### Development Documentation
+- [Development Guide](docs/contributors/DEVELOPMENT.md) - Full development workflow
+- [Architecture Guide](docs/contributors/ARCHITECTURE.md) - System design
+- [Testing Guide](docs/contributors/TESTING.md) - TDD workflow
 
 ## Documentation & Contributor Resources
 
