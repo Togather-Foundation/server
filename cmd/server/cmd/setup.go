@@ -444,7 +444,10 @@ func runSetup() error {
 		fmt.Println("  4. Ingest test events:")
 		fmt.Println("     server ingest test-events.json --watch")
 		fmt.Println()
-		fmt.Println("  5. View contributor documentation:")
+		fmt.Println("  5. Query ingested events:")
+		fmt.Println("     server events --limit 5")
+		fmt.Println()
+		fmt.Println("  6. View contributor documentation:")
 		fmt.Println("     cat docs/contributors/DEVELOPMENT.md")
 		fmt.Println()
 	} else {
@@ -461,7 +464,10 @@ func runSetup() error {
 		fmt.Println("  4. Ingest test events:")
 		fmt.Println("     server ingest test-events.json --watch")
 		fmt.Println()
-		fmt.Println("  5. View contributor documentation:")
+		fmt.Println("  5. Query ingested events:")
+		fmt.Println("     server events --limit 5")
+		fmt.Println()
+		fmt.Println("  6. View contributor documentation:")
 		fmt.Println("     cat docs/contributors/DEVELOPMENT.md")
 		fmt.Println()
 	}
