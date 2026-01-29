@@ -126,6 +126,26 @@ sanitize_secrets() {
     echo "$input"
 }
 
+# Portable file permissions check (Linux/macOS compatible)
+# Returns octal permissions like "600" or "000" on error
+get_file_perms() {
+    local file="$1"
+    
+    # Try Linux (GNU) stat first
+    if stat -c '%a' "$file" 2>/dev/null; then
+        return 0
+    fi
+    
+    # Try macOS (BSD) stat
+    if stat -f '%Lp' "$file" 2>/dev/null; then
+        return 0
+    fi
+    
+    # Fallback: couldn't determine permissions
+    echo "000"
+    return 1
+}
+
 # Atomic state file update (T022: Atomic writes with fsync)
 update_state_file_atomic() {
     local jq_expression="$1"
@@ -181,7 +201,7 @@ validate_config() {
     fi
     
     # T038: Check environment file permissions (MUST be 600 for security)
-    local perms=$(stat -c '%a' "${env_file}" 2>/dev/null || echo "000")
+    local perms=$(get_file_perms "${env_file}")
     if [[ "${perms}" != "600" ]]; then
         log "ERROR" "Environment file has insecure permissions: ${perms}"
         log "ERROR" "Secrets could be readable by other users!"
@@ -189,7 +209,9 @@ validate_config() {
         log "ERROR" "REMEDIATION:"
         log "ERROR" "  chmod 600 ${env_file}"
         log "ERROR" ""
-        log "ERROR" "Current owner: $(stat -c '%U' "${env_file}" 2>/dev/null || echo "unknown")"
+        # Get owner portably (works on Linux and macOS)
+        local owner=$(ls -ld "${env_file}" 2>/dev/null | awk '{print $3}')
+        log "ERROR" "Current owner: ${owner:-unknown}"
         log "ERROR" "Current permissions: ${perms} (expected: 600)"
         return 1
     fi

@@ -227,9 +227,16 @@ ls -la internal/storage/postgres/migrations/
 # Find latest snapshot
 ls -lh /var/backups/togather/
 
-# Restore (use snapshot-db.sh restore command)
-cd deploy/scripts
-./snapshot-db.sh restore production /var/backups/togather/togather_production_20260128_143022.sql.gz
+# Restore manually (snapshot-db.sh doesn't have restore command yet)
+# Stop the application first to prevent conflicts
+docker compose down
+
+# Restore from gzipped snapshot
+gunzip -c /var/backups/togather/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
+
+# Or extract first, then restore
+gunzip /var/backups/togather/togather_production_20260128_143022.sql.gz
+psql "$DATABASE_URL" < /var/backups/togather/togather_production_20260128_143022.sql
 
 # Fix migration issue in code
 # Redeploy

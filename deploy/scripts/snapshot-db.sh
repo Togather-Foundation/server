@@ -329,7 +329,15 @@ create_snapshot() {
   "git_commit": "$git_commit",
   "deployment_id": "$deployment_id",
   "retention_days": $RETENTION_DAYS,
-  "expires_at": "$(date -u -d "+${RETENTION_DAYS} days" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v +${RETENTION_DAYS}d +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")"
+  "expires_at": "$(
+    # Calculate expiry using epoch time (portable across Linux/macOS)
+    now_epoch=$(date +%s)
+    expires_epoch=$((now_epoch + RETENTION_DAYS * 86400))
+    # Try GNU date first, then BSD date
+    date -u -d "@$expires_epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \
+    date -u -r $expires_epoch +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \
+    echo "unknown"
+  )"
 }
 EOF
     

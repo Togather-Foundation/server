@@ -126,7 +126,7 @@ cd deploy/scripts
 
 # Restore most recent snapshot (before failed migration)
 # WARNING: This will restore database to state before migration
-psql "$DATABASE_URL" < /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz
+gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
 
 # Verify restoration
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
@@ -199,7 +199,7 @@ cd deploy/scripts
 ./snapshot-db.sh list
 
 # Restore (replaces current database state)
-psql "$DATABASE_URL" < /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz
+gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
 ```
 
 **Step 2: Fix the migration**
@@ -453,7 +453,7 @@ cd deploy/scripts
 ./snapshot-db.sh list
 
 # Restore specific snapshot (DESTRUCTIVE - replaces current database)
-psql "$DATABASE_URL" < /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz
+gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
 
 # Verify restoration success
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM events;"
@@ -549,7 +549,7 @@ cd deploy/scripts
 ./snapshot-db.sh list
 
 # 3. Restore snapshot (DESTRUCTIVE)
-psql "$DATABASE_URL" < /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz
+gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
 
 # 4. Verify migration state
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
