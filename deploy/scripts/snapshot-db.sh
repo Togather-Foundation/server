@@ -413,6 +413,17 @@ EOF
     log INFO "Size: ${size_mb}MB (compressed)"
     log INFO "Duration: ${duration}s"
     log INFO "Location: $snapshot_path"
+    
+    # Validate snapshot integrity (optional, controlled by VALIDATE_SNAPSHOT env var)
+    if [[ "${VALIDATE_SNAPSHOT:-false}" == "true" ]]; then
+        log INFO "Validating snapshot integrity..."
+        if ! gunzip -t "$snapshot_path" 2>/dev/null; then
+            log ERROR "Snapshot file is corrupt (gzip integrity check failed)"
+            rm -f "$snapshot_path" "$metadata_path"
+            return 3
+        fi
+        log SUCCESS "Snapshot integrity verified (gzip test passed)"
+    fi
     log INFO "Metadata: $metadata_path"
     
     # Update metadata with actual size and duration

@@ -192,6 +192,25 @@ health_check() {
         log "WARN" "Could not determine migration version"
     fi
     
+    # 5. Schema integrity check (verify critical tables exist)
+    log "INFO" "Verifying schema integrity..."
+    local critical_tables=("events" "places" "organizations" "river_job")
+    local missing_tables=()
+    
+    for table in "${critical_tables[@]}"; do
+        if ! echo "SELECT to_regclass('public.${table}');" | \
+             psql "${DATABASE_URL}" -t -q 2>/dev/null | grep -q "$table"; then
+            missing_tables+=("$table")
+        fi
+    done
+    
+    if [[ ${#missing_tables[@]} -gt 0 ]]; then
+        log "WARN" "Missing expected tables: ${missing_tables[*]}"
+        log "WARN" "This may indicate incomplete migrations or manual schema changes"
+    else
+        log "INFO" "All critical tables present"
+    fi
+    
     # All checks passed
     log "SUCCESS" "All health checks passed for ${env} (${slot} slot)"
     return 0
