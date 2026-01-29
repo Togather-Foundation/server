@@ -995,6 +995,18 @@ deploy() {
     # T016: Build Docker image
     build_docker_image "$env" || return 1
     
+    # Pre-flight check: Validate migrations directory exists before snapshot
+    # Fail fast to avoid wasting time/storage on unnecessary snapshot
+    if [[ "$skip_migrations" != "true" ]]; then
+        local migrations_dir="${PROJECT_ROOT}/internal/storage/postgres/migrations"
+        if [[ ! -d "${migrations_dir}" ]]; then
+            log "ERROR" "Migrations directory not found: ${migrations_dir}"
+            log "ERROR" "Cannot proceed with deployment - migrations required"
+            return 1
+        fi
+        log "INFO" "Migrations directory validated: ${migrations_dir}"
+    fi
+    
     # T017: Create database snapshot (skip if --skip-migrations)
     if [[ "$skip_migrations" != "true" ]]; then
         create_db_snapshot "$env" || return 1
