@@ -167,6 +167,22 @@ make lint             # Run linter
 make ci               # Full CI pipeline locally
 ```
 
+### Build Output
+
+Both `make build` and `go build ./cmd/server` produce the same output:
+- **Binary location**: `./server` (in the project root)
+- **Version info**: `make build` includes git version metadata, `go build` shows "dev"
+
+```bash
+# Either method works:
+make build              # Builds to ./server with version info
+go build ./cmd/server   # Builds to ./server (dev version)
+
+# Run the binary:
+./server --help
+./server version
+```
+
 ### Development Documentation
 - [Development Guide](docs/contributors/DEVELOPMENT.md) - Full development workflow
 - [Architecture Guide](docs/contributors/ARCHITECTURE.md) - System design
@@ -181,24 +197,23 @@ Once your local environment is running, verify event ingestion works:
 The SEL server includes built-in CLI commands for easy testing:
 
 ```bash
-# 1. Create an API key
-server api-key create my-test-key
+# 1. Create an API key (adds to .env automatically)
+./server api-key create my-test-key
 
-# 2. Save the key
-export API_KEY="<key-from-output>"
+# 2. Ingest a test event (reads API_KEY from .env automatically)
+./server ingest test-event.json
 
-# 3. Ingest a test event
-server ingest test-event.json
+# 3. Watch processing in real-time
+./server ingest test-event.json --watch
 
-# 4. Watch processing in real-time
-server ingest test-event.json --watch
+# 4. List your API keys
+./server api-key list
 
-# 5. List your API keys
-server api-key list
-
-# 6. Revoke a key
-server api-key revoke <id>
+# 5. Revoke a key
+./server api-key revoke <id>
 ```
+
+**Note:** After running `make build` or `go build ./cmd/server`, the binary is located at `./server`. The CLI automatically loads API keys and configuration from `.env` file.
 
 **Example test-event.json:**
 ```json
@@ -220,13 +235,14 @@ server api-key revoke <id>
 
 ### Using curl (Alternative)
 
-If you prefer direct HTTP API testing:
+If you prefer direct HTTP API testing without using the CLI:
 
 ```bash
 # 1. Create an API key
 go run scripts/create-api-key.go my-test-key
+# (Or use: ./server api-key create my-test-key)
 
-# 2. Export the key
+# 2. Export the key (if not using CLI which reads from .env)
 export API_KEY="<key-from-output>"
 
 # 3. Ingest event

@@ -2,6 +2,63 @@
 
 This document provides guidelines and best practices for developing the Togather SEL backend server.
 
+## Building the Server
+
+The SEL server can be built using either Make or Go directly. Both methods produce the same output location.
+
+### Build Commands
+
+```bash
+# Recommended: Use Make (includes version metadata from git)
+make build
+
+# Alternative: Direct Go build (version shows as "dev")
+go build ./cmd/server
+
+# Both create: ./server (in project root)
+```
+
+### Binary Location
+
+- **Output**: `./server` (consistent for both build methods)
+- **Clean**: `make clean` removes `./server` and other build artifacts
+- **Run**: `make run` builds and runs the server
+- **Dev mode**: `make dev` runs with live reload (if `air` is installed)
+
+### Version Information
+
+The build includes metadata from git:
+
+```bash
+./server version
+# Output:
+# Togather SEL Server
+# Version:    v0.1.0-5-g04a7d28-dirty
+# Git commit: 04a7d28
+# Build date: 2026-01-29T21:00:00Z
+# Go version: go1.25.6
+# Platform:   linux/amd64
+```
+
+### Configuration Loading
+
+The server automatically loads configuration from `.env` files in the project root:
+
+- **serve command**: Loads `.env` via `config.Load()`
+- **All CLI commands**: Now load `.env` automatically (e.g., `ingest`, `api-key`, etc.)
+- **Priority**: Environment variables > `.env` file > defaults
+
+Example:
+```bash
+# .env file contains:
+API_KEY=01KG5PE0V9TGJQADQ0QT1KJ2E9secret
+
+# Commands read from .env automatically:
+./server ingest events.json          # Uses API_KEY from .env
+./server api-key list                # Uses DATABASE_URL from .env
+./server serve                       # Uses all config from .env
+```
+
 ## Logging Standards
 
 The server uses [zerolog](https://github.com/rs/zerolog) for structured logging with the following standards:
