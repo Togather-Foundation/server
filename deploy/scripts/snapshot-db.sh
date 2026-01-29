@@ -336,6 +336,17 @@ create_snapshot() {
     local git_commit="${GIT_COMMIT:-unknown}"
     local deployment_id="${DEPLOYMENT_ID:-manual}"
     
+    # Calculate expiry date before heredoc for better readability and error handling
+    local expires_at
+    local now_epoch
+    local expires_epoch
+    now_epoch=$(date +%s)
+    expires_epoch=$((now_epoch + RETENTION_DAYS * 86400))
+    # Try GNU date first, then BSD date
+    expires_at=$(date -u -d "@$expires_epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \
+               date -u -r $expires_epoch +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \
+               echo "unknown")
+    
     cat > "$metadata_path" << EOF
 {
   "snapshot_name": "$snapshot_name",
@@ -347,15 +358,7 @@ create_snapshot() {
   "git_commit": "$git_commit",
   "deployment_id": "$deployment_id",
   "retention_days": $RETENTION_DAYS,
-  "expires_at": "$(
-    # Calculate expiry using epoch time (portable across Linux/macOS)
-    now_epoch=$(date +%s)
-    expires_epoch=$((now_epoch + RETENTION_DAYS * 86400))
-    # Try GNU date first, then BSD date
-    date -u -d "@$expires_epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \
-    date -u -r $expires_epoch +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || \
-    echo "unknown"
-  )"
+  "expires_at": "$expires_at"
 }
 EOF
     
