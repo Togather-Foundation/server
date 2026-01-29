@@ -1,8 +1,11 @@
-.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean
+.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean db-setup db-init db-check
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
 DOCKER_COMPOSE_FILE := $(DOCKER_COMPOSE_DIR)/docker-compose.yml
+DB_NAME ?= togather
+DB_USER ?= $(USER)
+DB_PORT ?= 5432
 
 # Default target
 help:
@@ -35,12 +38,17 @@ help:
 	@echo "  make migrate-down  - Roll back one migration"
 	@echo ""
 	@echo "Docker Development:"
-	@echo "  make docker-up     - Start database and server in Docker"
-	@echo "  make docker-db     - Start only database in Docker"
+	@echo "  make docker-up     - Start database and server in Docker (port 5433)"
+	@echo "  make docker-db     - Start only database in Docker (port 5433)"
 	@echo "  make docker-down   - Stop all Docker containers"
 	@echo "  make docker-logs   - View Docker container logs"
 	@echo "  make docker-rebuild - Rebuild and restart containers"
 	@echo "  make docker-clean  - Stop containers and remove volumes"
+	@echo ""
+	@echo "Local PostgreSQL Setup:"
+	@echo "  make db-check      - Check if local PostgreSQL has required extensions"
+	@echo "  make db-setup      - Create local database with extensions"
+	@echo "  make db-init       - Create .env for local PostgreSQL development"
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -356,6 +364,8 @@ docker-up:
 		echo "POSTGRES_DB=togather" > $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "POSTGRES_USER=togather" >> $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "POSTGRES_PASSWORD=dev_password_change_me" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "POSTGRES_PORT=5433" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "DATABASE_URL=postgresql://togather:dev_password_change_me@togather-db:5432/togather?sslmode=disable" >> $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "ENVIRONMENT=development" >> $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "LOG_LEVEL=debug" >> $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "SERVER_PORT=8080" >> $(DOCKER_COMPOSE_DIR)/.env; \
@@ -372,7 +382,7 @@ docker-up:
 	@echo "✓ Containers started!"
 	@echo ""
 	@echo "Server:   http://localhost:8080"
-	@echo "Database: localhost:5432"
+	@echo "Database: localhost:5433"
 	@echo ""
 	@echo "View logs:    make docker-logs"
 	@echo "Stop:         make docker-down"
@@ -389,6 +399,8 @@ docker-db:
 		echo "POSTGRES_DB=togather" > $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "POSTGRES_USER=togather" >> $(DOCKER_COMPOSE_DIR)/.env; \
 		echo "POSTGRES_PASSWORD=dev_password_change_me" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "POSTGRES_PORT=5433" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "DATABASE_URL=postgresql://togather:dev_password_change_me@togather-db:5432/togather?sslmode=disable" >> $(DOCKER_COMPOSE_DIR)/.env; \
 		echo ""; \
 		echo "✓ Created $(DOCKER_COMPOSE_DIR)/.env"; \
 		echo ""; \
@@ -397,7 +409,7 @@ docker-db:
 	@echo ""
 	@echo "✓ Database started!"
 	@echo ""
-	@echo "Connection: postgresql://togather:dev_password_change_me@localhost:5432/togather"
+	@echo "Connection: postgresql://togather:dev_password_change_me@localhost:5433/togather"
 	@echo ""
 	@echo "To run the server natively:"
 	@echo "  1. Create .env in project root with DATABASE_URL"
@@ -428,7 +440,7 @@ docker-rebuild:
 	@echo "✓ Containers rebuilt and restarted!"
 	@echo ""
 	@echo "Server:   http://localhost:8080"
-	@echo "Database: localhost:5432"
+	@echo "Database: localhost:5433"
 
 # Stop containers and remove volumes (clean slate)
 .PHONY: docker-clean
@@ -443,3 +455,107 @@ docker-clean:
 	else \
 		echo "Cancelled"; \
 	fi
+
+# =============================================================================
+# Local PostgreSQL Setup Targets
+# =============================================================================
+
+# Check if local PostgreSQL has required extensions
+.PHONY: db-check
+db-check:
+	@echo "Checking local PostgreSQL extensions..."
+	@echo ""
+	@echo "Available extensions:"
+	@psql -d postgres -c "SELECT name, default_version, installed_version, comment FROM pg_available_extensions WHERE name IN ('postgis', 'pgvector', 'pg_trgm', 'pg_stat_statements') ORDER BY name;" 2>/dev/null || \
+		(echo "❌ Could not connect to local PostgreSQL"; \
+		echo ""; \
+		echo "Make sure PostgreSQL is running:"; \
+		echo "  sudo systemctl status postgresql"; \
+		echo ""; \
+		echo "Or use Docker PostgreSQL:"; \
+		echo "  make docker-db"; \
+		exit 1)
+	@echo ""
+	@echo "If extensions are missing, install them:"
+	@echo "  sudo apt install postgresql-16-postgis-3 postgresql-16-pgvector"
+
+# Create local database with required extensions
+.PHONY: db-setup
+db-setup:
+	@echo "Setting up local PostgreSQL database..."
+	@echo ""
+	@if psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw $(DB_NAME); then \
+		echo "⚠️  Database '$(DB_NAME)' already exists"; \
+		read -p "Drop and recreate? [y/N] " -n 1 -r; \
+		echo; \
+		if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+			echo "Dropping database..."; \
+			dropdb $(DB_NAME) 2>/dev/null || true; \
+			echo "Creating database..."; \
+			createdb $(DB_NAME); \
+		else \
+			echo "Using existing database"; \
+		fi; \
+	else \
+		echo "Creating database '$(DB_NAME)'..."; \
+		createdb $(DB_NAME); \
+	fi
+	@echo ""
+	@echo "Installing extensions..."
+	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS postgis;" || echo "⚠️  Could not install postgis"
+	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pgvector;" || echo "⚠️  Could not install pgvector"
+	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" || true
+	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" || true
+	@echo ""
+	@echo "✓ Database setup complete!"
+	@echo ""
+	@echo "Database: $(DB_NAME)"
+	@echo "User:     $(DB_USER)"
+	@echo "Port:     $(DB_PORT)"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Create .env file:    make db-init"
+	@echo "  2. Run migrations:      make migrate-up"
+	@echo "  3. Start server:        make run"
+
+# Initialize .env file for local PostgreSQL
+.PHONY: db-init
+db-init:
+	@echo "Creating .env for local PostgreSQL development..."
+	@if [ -f .env ]; then \
+		echo "⚠️  .env file already exists"; \
+		read -p "Overwrite? [y/N] " -n 1 -r; \
+		echo; \
+		if [[ ! $$REPLY =~ ^[Yy]$$ ]]; then \
+			echo "Cancelled"; \
+			exit 0; \
+		fi; \
+	fi
+	@JWT_SECRET=$$(openssl rand -base64 32 2>/dev/null || echo "dev_jwt_secret_change_me"); \
+	ADMIN_KEY=$$(openssl rand -hex 32 2>/dev/null || echo "dev_admin_key_change_me"); \
+	echo "# Development Environment Configuration" > .env; \
+	echo "# Generated by: make db-init" >> .env; \
+	echo "" >> .env; \
+	echo "# Database (local PostgreSQL)" >> .env; \
+	echo "DATABASE_URL=postgresql://$(DB_USER)@localhost:$(DB_PORT)/$(DB_NAME)?sslmode=disable" >> .env; \
+	echo "" >> .env; \
+	echo "# Server" >> .env; \
+	echo "SERVER_HOST=0.0.0.0" >> .env; \
+	echo "SERVER_PORT=8080" >> .env; \
+	echo "ENVIRONMENT=development" >> .env; \
+	echo "LOG_LEVEL=debug" >> .env; \
+	echo "" >> .env; \
+	echo "# Security (auto-generated)" >> .env; \
+	echo "JWT_SECRET=$$JWT_SECRET" >> .env; \
+	echo "ADMIN_API_KEY=$$ADMIN_KEY" >> .env; \
+	echo "ADMIN_PASSWORD=admin123" >> .env; \
+	echo "ADMIN_USERNAME=admin" >> .env; \
+	echo "ADMIN_EMAIL=admin@togather.local" >> .env; \
+	echo "" >> .env
+	@echo "✓ Created .env file"
+	@echo ""
+	@echo "Database URL: postgresql://$(DB_USER)@localhost:$(DB_PORT)/$(DB_NAME)"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Run migrations: make migrate-up"
+	@echo "  2. Start server:   make run"

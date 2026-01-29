@@ -33,7 +33,8 @@ services:
     ports:
       # Expose on localhost for development/debugging
       # Production: Remove or bind to 127.0.0.1 only
-      - "5432:5432"
+      # Default: 5433 to avoid conflicts with local PostgreSQL on 5432
+      - "${POSTGRES_PORT:-5433}:5432"
     environment:
       # Database configuration from .env file
       POSTGRES_DB: ${POSTGRES_DB:-togather}
