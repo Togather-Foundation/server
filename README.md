@@ -139,6 +139,52 @@ make ci               # Full CI pipeline locally
 - [Architecture Guide](docs/contributors/ARCHITECTURE.md) - System design
 - [Testing Guide](docs/contributors/TESTING.md) - TDD workflow
 
+## Quick API Test
+
+Once your local environment is running, verify event ingestion works:
+
+### 1. Create an API Key
+```bash
+# From the server directory
+DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" \
+  go run scripts/create-api-key.go my-test-key agent
+
+# Save the generated key
+export API_KEY="<key-from-output>"
+```
+
+### 2. Ingest a Test Event
+```bash
+curl -X POST http://localhost:8080/api/v1/events:batch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{
+    "events": [{
+      "@type": "Event",
+      "name": "Test Concert",
+      "startDate": "2026-02-15T20:00:00Z",
+      "location": {
+        "@type": "Place",
+        "name": "Community Hall",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "addressCountry": "CA"
+      }
+    }]
+  }'
+
+# Should return: 202 Accepted with batch_id
+```
+
+### 3. Verify Event Created
+```bash
+# List events
+curl http://localhost:8080/api/v1/events | jq .
+
+# Check health (should show job_queue: pass)
+curl http://localhost:8080/health | jq .
+```
+
 ## Documentation & Contributor Resources
 
 - [SEL Documentation](docs/README.md) - Landing page for contributors, integrators, and node builders
