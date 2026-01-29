@@ -133,18 +133,19 @@ This is a deployment infrastructure feature for the existing Go project at repos
 
 ### Implementation for User Story 5
 
-- [ ] T041 [US5] Implement deployment history tracking in /var/lib/togather/deployments/ in deploy/scripts/deploy.sh
-- [ ] T042 [US5] Implement previous version detection logic in deploy/scripts/rollback.sh
-- [ ] T043 [US5] Implement Docker image tag switching for rollback in deploy/scripts/rollback.sh
-- [ ] T044 [US5] Implement traffic switching to previous version in deploy/scripts/rollback.sh
-- [ ] T045 [US5] Implement health check validation after rollback in deploy/scripts/rollback.sh
-- [ ] T046 [US5] Add interactive confirmation prompt for rollback operations in deploy/scripts/rollback.sh
-- [ ] T047 [US5] Add --force flag for non-interactive rollback in deploy/scripts/rollback.sh
-- [ ] T048 [US5] Add --version flag to rollback to specific version in deploy/scripts/rollback.sh
-- [ ] T049 [US5] Implement database snapshot restore instructions (manual confirmation required) in deploy/scripts/rollback.sh
+- [x] T041 [US5] Implement deployment history tracking in /var/lib/togather/deployments/ in deploy/scripts/deploy.sh ✅
+- [x] T042 [US5] Implement previous version detection logic in deploy/scripts/rollback.sh ✅
+- [x] T043 [US5] Implement Docker image tag switching for rollback in deploy/scripts/rollback.sh ✅
+- [x] T044 [US5] Implement traffic switching to previous version in deploy/scripts/rollback.sh ✅
+- [x] T045 [US5] Implement health check validation after rollback in deploy/scripts/rollback.sh ✅
+- [x] T046 [US5] Add interactive confirmation prompt for rollback operations in deploy/scripts/rollback.sh ✅
+- [x] T047 [US5] Add --force flag for non-interactive rollback in deploy/scripts/rollback.sh ✅
+- [x] T048 [US5] Add --version flag to rollback to specific version in deploy/scripts/rollback.sh ✅
+- [x] T049 [US5] Implement database snapshot restore instructions (manual confirmation required) in deploy/scripts/rollback.sh ✅
 - [ ] T050 [US5] Create rollback troubleshooting guide in deploy/docs/rollback.md
 
-**Checkpoint**: Rollback should restore previous version within 2 minutes and pass health checks
+**Checkpoint**: Rollback should restore previous version within 2 minutes and pass health checks ✅
+
 
 ---
 
