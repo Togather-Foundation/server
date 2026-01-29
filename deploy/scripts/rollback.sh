@@ -114,13 +114,13 @@ check_prerequisites() {
 # ROLLBACK FUNCTIONS
 # ============================================================================
 
-# T042: Get previous deployment from history
+# T042, T048: Get previous deployment from history or specific version
 get_previous_deployment() {
     local env="$1"
+    local target_version="${2:-}"  # Optional: specific version to rollback to
     local env_dir="${DEPLOYMENT_HISTORY_DIR}/${env}"
-    local previous_link="${env_dir}/previous.json"
     
-    log "INFO" "Looking for previous deployment in ${env} environment"
+    log "INFO" "Looking for deployment in ${env} environment"
     
     # Check if environment history exists
     if [[ ! -d "${env_dir}" ]]; then
@@ -128,35 +128,70 @@ get_previous_deployment() {
         return 1
     fi
     
-    # Check if previous deployment link exists
-    if [[ ! -L "${previous_link}" ]]; then
-        log "ERROR" "No previous deployment found for environment: ${env}"
-        log "ERROR" "Previous deployment link does not exist: ${previous_link}"
-        return 1
+    local target_file=""
+    
+    # T048: If specific version requested, find it
+    if [[ -n "${target_version}" ]]; then
+        log "INFO" "Searching for specific version: ${target_version}"
+        
+        # Search for deployment with matching version
+        for deployment_file in "${env_dir}"/*.json; do
+            if [[ -f "${deployment_file}" && ! -L "${deployment_file}" ]]; then
+                local file_version=$(jq -r '.version' "${deployment_file}" 2>/dev/null)
+                if [[ "${file_version}" == "${target_version}" ]]; then
+                    target_file="${deployment_file}"
+                    log "INFO" "Found deployment for version ${target_version}"
+                    break
+                fi
+            fi
+        done
+        
+        if [[ -z "${target_file}" ]]; then
+            log "ERROR" "No deployment found for version: ${target_version}"
+            log "ERROR" "Available versions:"
+            for deployment_file in "${env_dir}"/*.json; do
+                if [[ -f "${deployment_file}" && ! -L "${deployment_file}" ]]; then
+                    local ver=$(jq -r '.version' "${deployment_file}" 2>/dev/null)
+                    local date=$(jq -r '.deployed_at' "${deployment_file}" 2>/dev/null)
+                    log "ERROR" "  - ${ver} (deployed at ${date})"
+                fi
+            done
+            return 1
+        fi
+    else
+        # Use previous deployment link
+        local previous_link="${env_dir}/previous.json"
+        
+        # Check if previous deployment link exists
+        if [[ ! -L "${previous_link}" ]]; then
+            log "ERROR" "No previous deployment found for environment: ${env}"
+            log "ERROR" "Previous deployment link does not exist: ${previous_link}"
+            return 1
+        fi
+        
+        # Resolve symlink and check if file exists
+        target_file=$(readlink -f "${previous_link}")
+        if [[ ! -f "${target_file}" ]]; then
+            log "ERROR" "Previous deployment file not found: ${target_file}"
+            return 1
+        fi
+        
+        log "INFO" "Previous deployment found: $(basename "${target_file}")"
     fi
     
-    # Resolve symlink and check if file exists
-    local previous_file=$(readlink -f "${previous_link}")
-    if [[ ! -f "${previous_file}" ]]; then
-        log "ERROR" "Previous deployment file not found: ${previous_file}"
-        return 1
-    fi
-    
-    # Parse and display previous deployment info
-    log "INFO" "Previous deployment found: $(basename "${previous_file}")"
-    
-    local prev_version=$(jq -r '.version' "${previous_file}")
-    local prev_deployed_at=$(jq -r '.deployed_at' "${previous_file}")
-    local prev_deployed_by=$(jq -r '.deployed_by' "${previous_file}")
-    local prev_status=$(jq -r '.status' "${previous_file}")
+    # Parse and display deployment info
+    local prev_version=$(jq -r '.version' "${target_file}")
+    local prev_deployed_at=$(jq -r '.deployed_at' "${target_file}")
+    local prev_deployed_by=$(jq -r '.deployed_by' "${target_file}")
+    local prev_status=$(jq -r '.status' "${target_file}")
     
     log "INFO" "  Version: ${prev_version}"
     log "INFO" "  Deployed at: ${prev_deployed_at}"
     log "INFO" "  Deployed by: ${prev_deployed_by}"
     log "INFO" "  Status: ${prev_status}"
     
-    # Return the path to previous deployment file
-    echo "${previous_file}"
+    # Return the path to target deployment file
+    echo "${target_file}"
     return 0
 }
 
@@ -399,17 +434,28 @@ EOF
 # MAIN ROLLBACK FUNCTION
 # ============================================================================
 
+# T047, T048, T049: Rollback with optional flags
 rollback() {
     local env="$1"
+    local force_rollback="${2:-false}"
+    local target_version="${3:-}"
     
     log "INFO" "Starting rollback for environment: ${env}"
+    
+    if [[ "${force_rollback}" == "true" ]]; then
+        log "WARN" "Force mode enabled - skipping interactive confirmation"
+    fi
+    
+    if [[ -n "${target_version}" ]]; then
+        log "INFO" "Target version: ${target_version}"
+    fi
     
     # Check prerequisites
     check_prerequisites || return 1
     
-    # T042: Get previous deployment
+    # T042, T048: Get previous deployment or specific version
     local previous_deployment_file
-    previous_deployment_file=$(get_previous_deployment "${env}") || return 1
+    previous_deployment_file=$(get_previous_deployment "${env}" "${target_version}") || return 1
     
     # Show current deployment for comparison
     log "INFO" "Current deployment:"
@@ -423,16 +469,33 @@ rollback() {
         log "INFO" "  Deployed at: ${curr_deployed_at}"
     fi
     
-    # Confirm rollback
-    echo ""
-    echo -e "${YELLOW}WARNING: This will rollback the deployment to the previous version.${NC}"
-    echo -e "${YELLOW}Current version will be stopped and replaced.${NC}"
-    echo ""
-    read -p "Do you want to continue? (yes/no): " confirm
+    # T049: Check for database snapshot and provide restore instructions
+    local snapshot_path=$(jq -r '.snapshot_path' "${previous_deployment_file}")
+    if [[ -n "${snapshot_path}" && "${snapshot_path}" != "null" && "${snapshot_path}" != "none" ]]; then
+        echo ""
+        log "INFO" "Database snapshot available: ${snapshot_path}"
+        log "WARN" "If database migrations were applied after this deployment, you may need to restore the database"
+        log "INFO" "To restore database snapshot, run:"
+        log "INFO" "  pg_restore -d \$DATABASE_URL --clean --if-exists ${snapshot_path}"
+        log "WARN" "Database restore requires manual confirmation and should be done carefully"
+        echo ""
+    else
+        log "WARN" "No database snapshot associated with this deployment"
+        log "WARN" "If schema changes occurred, manual database migration may be required"
+    fi
     
-    if [[ "${confirm}" != "yes" ]]; then
-        log "INFO" "Rollback cancelled by user"
-        return 1
+    # T046, T047: Confirm rollback (skip if --force)
+    if [[ "${force_rollback}" != "true" ]]; then
+        echo ""
+        echo -e "${YELLOW}WARNING: This will rollback the deployment to the target version.${NC}"
+        echo -e "${YELLOW}Current version will be stopped and replaced.${NC}"
+        echo ""
+        read -p "Do you want to continue? (yes/no): " confirm
+        
+        if [[ "${confirm}" != "yes" ]]; then
+            log "INFO" "Rollback cancelled by user"
+            return 1
+        fi
     fi
     
     # T043: Switch Docker image
@@ -457,6 +520,13 @@ rollback() {
     log "INFO" "Rollback ID: ${ROLLBACK_ID}"
     log "INFO" "Rollback log: ${ROLLBACK_LOG}"
     
+    # Remind about database snapshot if available
+    if [[ -n "${snapshot_path}" && "${snapshot_path}" != "null" && "${snapshot_path}" != "none" ]]; then
+        echo ""
+        log "WARN" "Don't forget to restore database snapshot if needed:"
+        log "INFO" "  pg_restore -d \$DATABASE_URL --clean --if-exists ${snapshot_path}"
+    fi
+    
     return 0
 }
 
@@ -474,17 +544,29 @@ Arguments:
   ENVIRONMENT         Target environment (development, staging, production)
 
 Options:
+  --force             Skip interactive confirmation prompt (T047)
+  --version VERSION   Rollback to specific version instead of previous (T048)
   --help              Show this help message and exit
 
 Examples:
-  $0 development      Rollback development environment
-  $0 production       Rollback production environment
+  $0 development              Rollback to previous version (interactive)
+  $0 production --force       Rollback without confirmation
+  $0 staging --version abc123 Rollback to specific Git commit version
 
 Notes:
   - Requires previous deployment history in ${DEPLOYMENT_HISTORY_DIR}
   - Uses blue-green deployment strategy for zero-downtime rollback
   - Validates health checks before completing rollback
   - Logs are saved to ${LOG_DIR}
+  - Database snapshots are shown but must be restored manually (T049)
+
+Database Restore (T049):
+  If the target deployment has an associated database snapshot, you will be
+  shown instructions to restore it. Database restore requires manual confirmation
+  and should be done carefully to avoid data loss.
+  
+  Example restore command:
+    pg_restore -d \$DATABASE_URL --clean --if-exists /path/to/snapshot.pgdump
 
 EOF
 }
@@ -497,12 +579,27 @@ main() {
     fi
     
     local env=""
+    local force_rollback="false"
+    local target_version=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help)
                 usage
                 exit 0
+                ;;
+            --force)
+                force_rollback="true"
+                shift
+                ;;
+            --version)
+                if [[ -z "${2:-}" || "${2}" == --* ]]; then
+                    echo "Error: --version requires a version argument"
+                    usage
+                    exit 1
+                fi
+                target_version="$2"
+                shift 2
                 ;;
             -*)
                 echo "Unknown option: $1"
@@ -526,8 +623,8 @@ main() {
     # Initialize logging
     init_logging
     
-    # Execute rollback
-    if rollback "${env}"; then
+    # Execute rollback with flags
+    if rollback "${env}" "${force_rollback}" "${target_version}"; then
         exit 0
     else
         log "ERROR" "Rollback failed"
