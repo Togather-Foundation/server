@@ -39,7 +39,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-togather}
       POSTGRES_USER: ${POSTGRES_USER:-togather}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env file}
-      # PostgreSQL performance tuning
+      # PostgreSQL performance tuning (used by command flags below, not standard PG env vars)
       POSTGRES_SHARED_BUFFERS: ${POSTGRES_SHARED_BUFFERS:-256MB}
       POSTGRES_EFFECTIVE_CACHE_SIZE: ${POSTGRES_EFFECTIVE_CACHE_SIZE:-1GB}
       POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-100}
