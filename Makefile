@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean db-setup db-init db-check
+.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean db-setup db-init db-check
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -36,6 +36,7 @@ help:
 	@echo "  make sqlc-generate - Generate SQLc code from SQL queries"
 	@echo "  make migrate-up    - Run database migrations"
 	@echo "  make migrate-down  - Roll back one migration"
+	@echo "  make migrate-river - Run River job queue migrations"
 	@echo ""
 	@echo "Docker Development:"
 	@echo "  make docker-up     - Start database and server in Docker (port 5433)"
@@ -229,15 +230,39 @@ dev:
 # Install development tools
 install-tools:
 	@echo "Installing development tools..."
+	@echo ""
+	@echo "==> Installing Go tools..."
 	@echo "Installing golangci-lint..."
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@echo "Installing air (live reload)..."
 	@go install github.com/air-verse/air@latest
 	@echo "Installing sqlc..."
 	@go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-	@echo "Installing migrate..."
-	@go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-	@echo "Go tools installed successfully!"
+	@echo "Installing River CLI..."
+	@go install github.com/riverqueue/river/cmd/river@latest
+	@echo ""
+	@echo "==> Installing golang-migrate (pre-built binary with database drivers)..."
+	@if [ "$$(uname -m)" = "x86_64" ]; then \
+		ARCH="amd64"; \
+	elif [ "$$(uname -m)" = "aarch64" ] || [ "$$(uname -m)" = "arm64" ]; then \
+		ARCH="arm64"; \
+	else \
+		echo "❌ Unsupported architecture: $$(uname -m)"; \
+		exit 1; \
+	fi; \
+	MIGRATE_VERSION="v4.18.1"; \
+	MIGRATE_URL="https://github.com/golang-migrate/migrate/releases/download/$$MIGRATE_VERSION/migrate.linux-$$ARCH.tar.gz"; \
+	echo "Downloading golang-migrate $$MIGRATE_VERSION for linux-$$ARCH..."; \
+	curl -L "$$MIGRATE_URL" 2>/dev/null | tar xzv -C /tmp migrate; \
+	chmod +x /tmp/migrate; \
+	mv /tmp/migrate $(HOME)/go/bin/migrate; \
+	echo "✓ golang-migrate installed to $(HOME)/go/bin/migrate"
+	@echo ""
+	@echo "==> Verifying installations..."
+	@$(HOME)/go/bin/migrate -version || echo "⚠️  migrate verification failed"
+	@$(HOME)/go/bin/river version || echo "⚠️  river verification failed"
+	@echo ""
+	@echo "✓ Go tools installed successfully!"
 	@echo ""
 	@echo "Make sure $(HOME)/go/bin is in your PATH:"
 	@echo "  export PATH=\$$PATH:\$$(go env GOPATH)/bin"
@@ -348,6 +373,22 @@ migrate-down:
 		exit 1; \
 	fi
 
+# Run River job queue migrations
+.PHONY: migrate-river
+migrate-river:
+	@echo "Running River job queue migrations..."
+	@if command -v river > /dev/null 2>&1; then \
+		river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
+	elif [ -f $(HOME)/go/bin/river ]; then \
+		$(HOME)/go/bin/river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
+	elif [ -f $(GOPATH)/bin/river ]; then \
+		$(GOPATH)/bin/river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
+	else \
+		echo "river CLI not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
+	@echo "✓ River migrations complete"
+
 # =============================================================================
 # Docker Development Targets
 # =============================================================================
@@ -380,6 +421,16 @@ docker-up:
 	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d
 	@echo ""
 	@echo "✓ Containers started!"
+	@echo ""
+	@echo "Running database migrations..."
+	@sleep 3
+	@if command -v migrate > /dev/null 2>&1 || [ -f $(HOME)/go/bin/migrate ]; then \
+		DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" $(MAKE) migrate-up 2>/dev/null || echo "⚠️  Migrations failed (run 'make migrate-up' manually)"; \
+		DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" $(MAKE) migrate-river 2>/dev/null || echo "⚠️  River migrations failed (run 'make migrate-river' manually)"; \
+	else \
+		echo "⚠️  migrate/river tools not found. Run 'make install-tools' first"; \
+		echo "Then run: DATABASE_URL='postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable' make migrate-up migrate-river"; \
+	fi
 	@echo ""
 	@echo "Server:   http://localhost:8080"
 	@echo "Database: localhost:5433"
@@ -516,7 +567,8 @@ db-setup:
 	@echo "Next steps:"
 	@echo "  1. Create .env file:    make db-init"
 	@echo "  2. Run migrations:      make migrate-up"
-	@echo "  3. Start server:        make run"
+	@echo "  3. Run River migrations: make migrate-river"
+	@echo "  4. Start server:        make run"
 
 # Initialize .env file for local PostgreSQL
 .PHONY: db-init
