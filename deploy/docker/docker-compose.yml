@@ -19,7 +19,7 @@ services:
   # ============================================================================
   # PostgreSQL Database Service
   # ============================================================================
-  postgres:
+  togather-db:
     # Custom build to include both PostGIS and pgvector extensions
     # Base: PostGIS 16-3.4 (includes PostgreSQL 16 + PostGIS)
     # Added: pgvector extension for semantic search
@@ -96,7 +96,7 @@ services:
       - "${SERVER_PORT:-8080}:8080"
     # Application depends on database being healthy
     depends_on:
-      postgres:
+      togather-db:
         condition: service_healthy
     environment:
       # Server configuration
@@ -106,7 +106,7 @@ services:
       
       # Database connection
       # Default to internal Docker network hostname
-      DATABASE_URL: ${DATABASE_URL:-postgresql://togather:togather@postgres:5432/togather?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://togather:togather@togather-db:5432/togather?sslmode=disable}
       DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-50}
       DATABASE_MAX_IDLE_CONNECTIONS: ${DATABASE_MAX_IDLE_CONNECTIONS:-10}
       DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-disable}

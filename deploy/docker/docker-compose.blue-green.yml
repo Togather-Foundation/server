@@ -59,7 +59,7 @@ services:
     # Blue and green share the same database
     # Database is NOT duplicated - schema is forward-compatible during deployment
     depends_on:
-      postgres:
+      togather-db:
         condition: service_healthy
     
     # Add label for identifying slot in docker ps and logs
@@ -98,7 +98,7 @@ services:
     
     # Blue and green share the same database
     depends_on:
-      postgres:
+      togather-db:
         condition: service_healthy
     
     # Add label for identifying slot
@@ -170,7 +170,7 @@ services:
           memory: 32M
 
 # Networks configuration inherited from base docker-compose.yml
-# All services (postgres, blue, green, nginx) share the togather-net network
+# All services (togather-db, blue, green, nginx) share the togather-net network
 
 # Volumes configuration inherited from base docker-compose.yml
 # Database volumes (postgres-data, postgres-snapshots) are shared

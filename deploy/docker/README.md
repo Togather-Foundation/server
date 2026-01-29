@@ -110,7 +110,7 @@ For local development and single-node deployments with PostgreSQL, use the inclu
 
 ### Docker Compose Services
 
-**postgres** (PostgreSQL 16 with PostGIS):
+**togather-db** (PostgreSQL 16 with PostGIS):
 - Container: `togather-db`
 - Port: `5432` (exposed on localhost)
 - Extensions: PostGIS, pgvector, pg_trgm, pg_stat_statements
@@ -121,7 +121,7 @@ For local development and single-node deployments with PostgreSQL, use the inclu
 **app** (Togather Server):
 - Container: `togather-server`
 - Port: `8080` (exposed on localhost)
-- Depends on: `postgres` (waits for healthy status)
+- Depends on: `togather-db` (waits for healthy status)
 - Environment: Configured via `.env` file
 - Health check: `/app/server healthcheck` every 30s
 - Build context: Repository root (multi-stage Dockerfile)
@@ -134,7 +134,7 @@ Database data is stored in a named Docker volume:
 
 To backup data:
 ```bash
-docker-compose exec postgres pg_dump -U togather togather > backup.sql
+docker-compose exec togather-db pg_dump -U togather togather > backup.sql
 ```
 
 To reset data (⚠️ destroys all data):
@@ -159,7 +159,7 @@ See `.env.example` for full list and descriptions.
 ### Networking
 
 Services communicate via the `togather-network` bridge network:
-- App connects to database using hostname `postgres:5432`
+- App connects to database using hostname `togather-db:5432`
 - Both services exposed on localhost for development access
 - In production, consider removing port exposures or binding to `127.0.0.1` only
 
@@ -246,7 +246,7 @@ Only ONE slot receives traffic at a time. During deployment:
 2. **Check service status**:
    ```bash
    docker compose -f docker-compose.blue-green.yml ps
-   # Should show: postgres, togather-blue, togather-green, nginx
+   # Should show: togather-db, togather-blue, togather-green, nginx
    ```
 
 3. **Access the application** (via nginx proxy):
