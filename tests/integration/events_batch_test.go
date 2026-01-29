@@ -435,3 +435,61 @@ func TestBatchEventSubmission_Unauthorized(t *testing.T) {
 	// Should return 401 Unauthorized
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
+
+func TestBatchEventSubmission_WithValidAPIKey(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Create API key using the same mechanism as the CLI command
+	apiKey := insertAPIKey(t, env, "test-batch-key")
+	require.NotEmpty(t, apiKey, "API key should be created")
+
+	// Verify the key was inserted correctly
+	var count int
+	err := env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM api_keys WHERE prefix = $1`,
+		apiKey[:8],
+	).Scan(&count)
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "API key should exist in database")
+
+	batchPayload := map[string]any{
+		"events": []map[string]any{
+			{
+				"@type":     "Event",
+				"name":      "Test Event with Valid Key",
+				"startDate": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+				"location": map[string]any{
+					"@type":           "Place",
+					"name":            "Test Venue",
+					"addressLocality": "Toronto",
+					"addressRegion":   "ON",
+					"addressCountry":  "CA",
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(batchPayload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequestWithContext(env.Context, http.MethodPost, env.Server.URL+"/api/v1/events:batch", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	// Should succeed with valid API key
+	if resp.StatusCode != http.StatusAccepted {
+		// Read error response for debugging
+		var errorResp map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&errorResp)
+		t.Logf("Error response: %+v", errorResp)
+		t.Logf("API key used: %s (prefix: %s)", apiKey, apiKey[:8])
+	}
+
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode,
+		"Valid API key should be accepted for batch ingestion")
+}
