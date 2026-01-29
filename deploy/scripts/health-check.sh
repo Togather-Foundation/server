@@ -85,10 +85,13 @@ get_health_endpoint() {
     source "${env_file}"
     
     # Determine port based on slot
-    # Blue slot: 8080, Green slot: 8081 (default convention)
-    local port=8080
-    if [[ "$slot" == "green" ]]; then
-        port=8081
+    # Read from environment or use defaults from docker-compose.blue-green.yml
+    # Blue slot: 8081 (line 48), Green slot: 8082 (line 88)
+    local port
+    if [[ "$slot" == "blue" ]]; then
+        port="${BLUE_PORT:-8081}"
+    else
+        port="${GREEN_PORT:-8082}"
     fi
     
     # Override from environment if set

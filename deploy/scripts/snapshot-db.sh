@@ -228,6 +228,12 @@ extract_db_params() {
     # Extract host and port from DATABASE_URL if not explicitly set
     # Format: postgresql://user:pass@host:port/database?params
     
+    # Validate DATABASE_URL format
+    if [[ -n "${DATABASE_URL:-}" ]] && [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
+        log ERROR "Invalid DATABASE_URL format (must start with postgresql:// or postgres://)"
+        return 1
+    fi
+    
     if [[ -z "${POSTGRES_HOST:-}" ]] || [[ -z "${POSTGRES_PORT:-}" ]]; then
         # Extract from DATABASE_URL
         local url="${DATABASE_URL}"
@@ -254,6 +260,18 @@ extract_db_params() {
     
     export POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
     export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+    
+    # Validate extracted values
+    if [[ -z "$POSTGRES_HOST" ]] || [[ -z "$POSTGRES_PORT" ]]; then
+        log ERROR "Could not extract host/port from DATABASE_URL"
+        return 1
+    fi
+    
+    # Validate port is numeric
+    if [[ ! "$POSTGRES_PORT" =~ ^[0-9]+$ ]]; then
+        log ERROR "Invalid port number: $POSTGRES_PORT"
+        return 1
+    fi
 }
 
 test_db_connection() {

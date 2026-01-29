@@ -19,7 +19,7 @@ CONFIG_DIR="${DEPLOY_DIR}/config"
 DOCKER_DIR="${DEPLOY_DIR}/docker"
 STATE_FILE="${CONFIG_DIR}/deployment-state.json"
 DEPLOYMENT_CONFIG="${CONFIG_DIR}/deployment.yml"
-LOG_DIR="/var/log/togather/deployments"
+LOG_DIR="${HOME}/.togather/logs/deployments"
 DEPLOYMENT_HISTORY_DIR="/var/lib/togather/deployments"
 LOCK_TIMEOUT=1800  # 30 minutes in seconds
 
@@ -49,8 +49,7 @@ init_logging() {
     DEPLOYMENT_LOG="${LOG_DIR}/${env}_${DEPLOYMENT_TIMESTAMP}.log"
     
     # Create log directory if it doesn't exist
-    sudo mkdir -p "${LOG_DIR}"
-    sudo chown "${USER}:${USER}" "${LOG_DIR}" 2>/dev/null || true
+    mkdir -p "${LOG_DIR}"
     
     # Create log file
     touch "${DEPLOYMENT_LOG}"
