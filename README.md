@@ -143,53 +143,69 @@ make ci               # Full CI pipeline locally
 
 Once your local environment is running, verify event ingestion works:
 
-### 1. Create an API Key
+### Using the CLI (Recommended)
+
+The SEL server includes built-in CLI commands for easy testing:
+
 ```bash
-# Option A: Auto-load from .env (Docker users: see note below)
-go run scripts/create-api-key.go my-test-key agent
+# 1. Create an API key
+server api-key create my-test-key
 
-# Option B: Explicit DATABASE_URL
-DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" \
-  go run scripts/create-api-key.go my-test-key agent
-
-# Save the generated key
+# 2. Save the key
 export API_KEY="<key-from-output>"
+
+# 3. Ingest a test event
+server ingest test-event.json
+
+# 4. Watch processing in real-time
+server ingest test-event.json --watch
+
+# 5. List your API keys
+server api-key list
+
+# 6. Revoke a key
+server api-key revoke <id>
 ```
 
-**Note for Docker users:** The script auto-loads `DATABASE_URL` from `.env` or `deploy/docker/.env`. If using Docker, add this to your shell config or a local `.env.local`:
-```bash
-export DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable"
+**Example test-event.json:**
+```json
+{
+  "events": [{
+    "@type": "Event",
+    "name": "Test Concert",
+    "startDate": "2026-02-15T20:00:00Z",
+    "location": {
+      "@type": "Place",
+      "name": "Community Hall",
+      "addressLocality": "Toronto",
+      "addressRegion": "ON",
+      "addressCountry": "CA"
+    }
+  }]
+}
 ```
 
-### 2. Ingest a Test Event
+### Using curl (Alternative)
+
+If you prefer direct HTTP API testing:
+
 ```bash
+# 1. Create an API key
+go run scripts/create-api-key.go my-test-key
+
+# 2. Export the key
+export API_KEY="<key-from-output>"
+
+# 3. Ingest event
 curl -X POST http://localhost:8080/api/v1/events:batch \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "events": [{
-      "@type": "Event",
-      "name": "Test Concert",
-      "startDate": "2026-02-15T20:00:00Z",
-      "location": {
-        "@type": "Place",
-        "name": "Community Hall",
-        "addressLocality": "Toronto",
-        "addressRegion": "ON",
-        "addressCountry": "CA"
-      }
-    }]
-  }'
+  -d @test-event.json
 
-# Should return: 202 Accepted with batch_id
-```
-
-### 3. Verify Event Created
-```bash
-# List events
+# 4. List events
 curl http://localhost:8080/api/v1/events | jq .
 
-# Check health (should show job_queue: pass)
+# 5. Check health
 curl http://localhost:8080/health | jq .
 ```
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -69,6 +70,12 @@ type CORSConfig struct {
 }
 
 func Load() (Config, error) {
+	// Try to load .env files if DATABASE_URL not already set
+	if os.Getenv("DATABASE_URL") == "" {
+		loadEnvFile(".env")
+		loadEnvFile("deploy/docker/.env")
+	}
+
 	cfg := Config{
 		Server: ServerConfig{
 			Host:    getEnv("SERVER_HOST", "0.0.0.0"),
@@ -168,4 +175,38 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+// loadEnvFile loads environment variables from a .env file
+// Silently ignores if file doesn't exist (not all setups use .env)
+func loadEnvFile(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		return // File doesn't exist, that's ok
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse KEY=VALUE
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Only set if not already in environment
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
 }
