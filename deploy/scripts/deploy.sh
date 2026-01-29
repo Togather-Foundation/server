@@ -226,21 +226,28 @@ validate_config() {
     source "${env_file}"
     
     # Restore CLI/shell overrides (they take precedence over .env file)
+    # Count overrides for generic logging (avoid revealing specific secret names)
+    local override_count=0
     if [[ -n "${saved_DATABASE_URL}" ]]; then
-        log "INFO" "Using DATABASE_URL from environment (overriding .env file)"
         DATABASE_URL="${saved_DATABASE_URL}"
+        ((override_count++))
     fi
     if [[ -n "${saved_JWT_SECRET}" ]]; then
-        log "INFO" "Using JWT_SECRET from environment (overriding .env file)"
         JWT_SECRET="${saved_JWT_SECRET}"
+        ((override_count++))
     fi
     if [[ -n "${saved_ADMIN_API_KEY}" ]]; then
-        log "INFO" "Using ADMIN_API_KEY from environment (overriding .env file)"
         ADMIN_API_KEY="${saved_ADMIN_API_KEY}"
+        ((override_count++))
     fi
     if [[ -n "${saved_ENVIRONMENT}" ]]; then
-        log "INFO" "Using ENVIRONMENT from environment (overriding .env file)"
         ENVIRONMENT="${saved_ENVIRONMENT}"
+        ((override_count++))
+    fi
+    
+    # Generic logging to avoid revealing specific variable names
+    if [[ $override_count -gt 0 ]]; then
+        log "INFO" "Using ${override_count} environment variable(s) from shell/CLI (precedence: CLI > .env > defaults)"
     fi
     
     # T039: Validate required environment variables with clear remediation
@@ -624,6 +631,10 @@ create_db_snapshot() {
     
     log "INFO" "Creating database snapshot before migrations"
     
+    # Enable snapshot validation by default for production safety
+    # This adds ~2-5s but catches corrupt snapshots early
+    export VALIDATE_SNAPSHOT="${VALIDATE_SNAPSHOT:-true}"
+    
     # Check if snapshot-db.sh exists (from T027)
     local snapshot_script="${SCRIPT_DIR}/snapshot-db.sh"
     
@@ -665,7 +676,8 @@ run_migrations() {
     # T032: Acquire migration lock atomically to prevent concurrent migrations
     if mkdir "$migration_lock_dir" 2>/dev/null; then
         # Lock acquired - set trap to cleanup on ALL exit paths
-        trap 'rmdir "$migration_lock_dir" 2>/dev/null || true' RETURN EXIT INT TERM
+        # Note: RETURN is function-scoped only, removed to ensure cleanup on script exit
+        trap 'rmdir "$migration_lock_dir" 2>/dev/null || true' EXIT INT TERM
         log "INFO" "Migration lock acquired"
     else
         log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
