@@ -332,12 +332,23 @@ validate_git_commit() {
 # DEPLOYMENT LOCK FUNCTIONS (T015)
 # ============================================================================
 
-# Generate ULID-like ID (simplified version)
+# Generate ULID-like ID with high entropy to prevent collisions
+# Format: prefix_timestamp(hex16)_random(hex24)
+# Collision probability: ~1 in 2^96 even in same nanosecond
 generate_id() {
     local prefix="$1"
-    local timestamp=$(date +%s)
-    local random=$(openssl rand -hex 8)
-    echo "${prefix}_$(printf '%010d' $timestamp)${random}"
+    
+    # Use nanosecond resolution timestamp (not all systems support %N)
+    local timestamp_ns=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+    
+    # Convert to hex (16 hex chars = 64 bits)
+    local timestamp_hex=$(printf '%016x' "$timestamp_ns")
+    
+    # Generate 96 bits (24 hex chars) of cryptographic randomness
+    # This provides ~2^96 possible values, making collisions astronomically unlikely
+    local random=$(openssl rand -hex 12)
+    
+    echo "${prefix}_${timestamp_hex}_${random}"
 }
 
 # Acquire deployment lock
