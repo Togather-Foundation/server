@@ -530,8 +530,22 @@ db-check:
 		echo "  make docker-db"; \
 		exit 1)
 	@echo ""
-	@echo "If extensions are missing, install them:"
-	@echo "  sudo apt install postgresql-16-postgis-3 postgresql-16-pgvector"
+	@echo "Checking required extensions..."
+	@MISSING=""; \
+	for ext in postgis pgvector pg_trgm; do \
+		if ! psql -d postgres -tAc "SELECT 1 FROM pg_available_extensions WHERE name='$$ext'" 2>/dev/null | grep -q 1; then \
+			MISSING="$$MISSING $$ext"; \
+		fi; \
+	done; \
+	if [ -n "$$MISSING" ]; then \
+		echo "❌ Missing required extensions:$$MISSING"; \
+		echo ""; \
+		echo "Install them:"; \
+		echo "  sudo apt install postgresql-16-postgis-3 postgresql-16-pgvector"; \
+		exit 1; \
+	else \
+		echo "✓ All required extensions available (postgis, pgvector, pg_trgm)"; \
+	fi
 
 # Create local database with required extensions
 .PHONY: db-setup

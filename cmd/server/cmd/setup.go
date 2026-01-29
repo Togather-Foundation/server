@@ -305,26 +305,39 @@ func runSetup() error {
 			fmt.Println("Creating database with extensions...")
 			if err := runCommand("make", "db-setup"); err != nil {
 				fmt.Printf("⚠️  Database creation failed: %v\n", err)
-				fmt.Println("Continue setup manually with:")
+				fmt.Println()
+				fmt.Println("This might be due to missing pgvector extension.")
+				fmt.Println("Check the output above for 'extension \"pgvector\" is not available'")
+				fmt.Println()
+				fmt.Println("📖 Install pgvector:")
+				fmt.Println("   docs/contributors/POSTGRESQL_SETUP.md")
+				fmt.Println()
+				fmt.Println("Quick fix (Ubuntu/Debian):")
+				fmt.Println("  sudo apt install postgresql-16-pgvector")
+				fmt.Println()
+				fmt.Println("Continue setup manually after installing:")
 				fmt.Println("  make db-setup")
 				fmt.Println("  make migrate-up && make migrate-river")
-				return nil
+				return fmt.Errorf("database setup failed")
 			}
 			fmt.Println("✓ Database created")
+
+			// Set DATABASE_URL for migration commands
+			os.Setenv("DATABASE_URL", dbURL)
 
 			// Run migrations
 			fmt.Println("Running migrations...")
 			if err := runCommand("make", "migrate-up"); err != nil {
 				fmt.Printf("⚠️  App migrations failed: %v\n", err)
 				fmt.Println("Continue manually with: make migrate-up && make migrate-river")
-				return nil
+				return fmt.Errorf("migrations failed")
 			}
 			fmt.Println("✓ App migrations complete")
 
 			if err := runCommand("make", "migrate-river"); err != nil {
 				fmt.Printf("⚠️  River migrations failed: %v\n", err)
 				fmt.Println("Continue manually with: make migrate-river")
-				return nil
+				return fmt.Errorf("river migrations failed")
 			}
 			fmt.Println("✓ River migrations complete")
 			fmt.Println("✓ Database ready")
@@ -569,6 +582,7 @@ func runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ() // Inherit all environment variables
 	return cmd.Run()
 }
 
