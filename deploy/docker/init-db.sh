@@ -18,7 +18,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     
     -- Enable pgvector extension for vector embeddings
     -- Used for semantic search and similarity matching
-    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE EXTENSION IF NOT EXISTS pgvector;
     
     -- Enable pg_trgm extension for trigram text search
     -- Used for fuzzy text matching and search optimization
@@ -31,13 +31,13 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- Verify extensions are enabled
     SELECT extname, extversion 
     FROM pg_extension 
-    WHERE extname IN ('postgis', 'vector', 'pg_trgm', 'pg_stat_statements');
+    WHERE extname IN ('postgis', 'pgvector', 'pg_trgm', 'pg_stat_statements');
     
     -- Log success
-    DO \$\$
+    DO $$
     BEGIN
-        RAISE NOTICE 'Database initialization complete. Extensions enabled: postgis, vector, pg_trgm, pg_stat_statements';
-    END \$\$;
+        RAISE NOTICE 'Database initialization complete. Extensions enabled: postgis, pgvector, pg_trgm, pg_stat_statements';
+    END $$;
 EOSQL
 
 echo "Database initialization complete!"

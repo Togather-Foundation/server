@@ -167,26 +167,15 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 		}
 	}
 
-	// Expected version is 15 (latest migration: 000015_batch_ingestion_results)
-	expectedVersion := int64(15)
-	if version != expectedVersion {
-		return CheckResult{
-			Status:    "warn",
-			Message:   fmt.Sprintf("Migration version mismatch: expected %d, got %d", expectedVersion, version),
-			LatencyMs: latency,
-			Details: map[string]interface{}{
-				"expected_version": expectedVersion,
-				"actual_version":   version,
-			},
-		}
-	}
-
+	// Migration is healthy if not dirty
+	// We don't check the exact version number since it changes with new migrations
 	return CheckResult{
 		Status:    "pass",
-		Message:   fmt.Sprintf("Schema version matches expected: %d", version),
+		Message:   fmt.Sprintf("Migrations applied successfully (version %d)", version),
 		LatencyMs: latency,
 		Details: map[string]interface{}{
 			"version": version,
+			"dirty":   false,
 		},
 	}
 }

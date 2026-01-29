@@ -52,4 +52,5 @@ func init() {
 	// Add subcommands
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(healthcheckCmd)
 }

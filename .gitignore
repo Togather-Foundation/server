@@ -95,6 +95,10 @@ reports/
 # Environment files (allow .env.example for documentation)
 *.env
 !*.env.example
+# Explicit exclusions for deployment environment files
+deploy/config/environments/.env.development
+deploy/config/environments/.env.staging
+deploy/config/environments/.env.production
 # Deployment state and lock files
 deployment-state.json
 *.state

@@ -1,0 +1,19 @@
+# Custom PostgreSQL image with PostGIS + pgvector extensions
+# Reference: specs/001-deployment-infrastructure/spec.md FR-003
+# Reference: specs/001-sel-backend/spec.md (pgvector for semantic search)
+
+FROM postgis/postgis:16-3.4
+
+# Install pgvector extension
+# pgvector provides vector similarity search capabilities
+# Required for semantic search features in the SEL backend
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        postgresql-16-pgvector \
+    && rm -rf /var/lib/apt/lists/*
+
+# Extensions will be enabled by init-db.sh on first run:
+# - postgis (included in base image)
+# - pgvector (installed above)
+# - pg_trgm (included in PostgreSQL)
+# - pg_stat_statements (included in PostgreSQL)

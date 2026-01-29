@@ -20,9 +20,12 @@ services:
   # PostgreSQL Database Service
   # ============================================================================
   postgres:
-    # Using PostGIS image to include PostGIS extension
-    # PostGIS includes full PostgreSQL plus geospatial extensions
-    image: postgis/postgis:16-3.4
+    # Custom build to include both PostGIS and pgvector extensions
+    # Base: PostGIS 16-3.4 (includes PostgreSQL 16 + PostGIS)
+    # Added: pgvector extension for semantic search
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     container_name: togather-db
     restart: unless-stopped
     networks:
