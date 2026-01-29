@@ -27,12 +27,12 @@ This is a deployment infrastructure feature for the existing Go project at repos
 
 **Purpose**: Create deployment infrastructure directory structure and baseline configuration
 
-- [ ] T001 Create deployment directory structure (deploy/docker/, deploy/config/, deploy/scripts/, deploy/monitoring/)
-- [ ] T002 [P] Create .gitignore entries for .env files and deployment state files
-- [ ] T003 [P] Create deploy/config/deployment.yml base configuration file
-- [ ] T004 [P] Create deploy/config/environments/.env.development.example template
-- [ ] T005 [P] Create deploy/config/environments/.env.staging.example template
-- [ ] T006 [P] Create deploy/config/environments/.env.production.example template
+- [x] T001 Create deployment directory structure (deploy/docker/, deploy/config/, deploy/scripts/, deploy/monitoring/)
+- [x] T002 [P] Create .gitignore entries for .env files and deployment state files
+- [x] T003 [P] Create deploy/config/deployment.yml base configuration file
+- [x] T004 [P] Create deploy/config/environments/.env.development.example template
+- [x] T005 [P] Create deploy/config/environments/.env.staging.example template
+- [x] T006 [P] Create deploy/config/environments/.env.production.example template
 
 ---
 
@@ -42,15 +42,15 @@ This is a deployment infrastructure feature for the existing Go project at repos
 
 **⚠️ CRITICAL**: No deployment operations can begin until this phase is complete
 
-- [ ] T007 Create multi-stage Dockerfile (build stage: Go 1.25+ builder, runtime stage: Alpine) with version metadata in deploy/docker/Dockerfile (per research.md:L735)
-- [ ] T008 Create base docker-compose.yml for app + database in deploy/docker/docker-compose.yml
-- [ ] T009 Create blue-green docker-compose.blue-green.yml orchestration in deploy/docker/docker-compose.blue-green.yml
-- [ ] T010 [P] Create nginx reverse proxy configuration for blue-green traffic switching in deploy/docker/nginx.conf
-- [ ] T011 [P] Implement health check endpoint handler with database, migrations, http_endpoint, and job_queue checks in internal/api/health.go (per data-model.md:L275-L323)
-- [ ] T012 [P] Implement version endpoint handler in internal/api/version.go
-- [ ] T013 Create deployment state JSON schema and initialization in deploy/config/deployment-state.schema.json
+- [x] T007 Create multi-stage Dockerfile (build stage: Go 1.25+ builder, runtime stage: Alpine) with version metadata in deploy/docker/Dockerfile (per research.md:L735)
+- [x] T008 Create base docker-compose.yml for app + database in deploy/docker/docker-compose.yml
+- [x] T009 Create blue-green docker-compose.blue-green.yml orchestration in deploy/docker/docker-compose.blue-green.yml
+- [x] T010 [P] Create nginx reverse proxy configuration for blue-green traffic switching in deploy/docker/nginx.conf
+- [x] T011 [P] Implement health check endpoint handler with database, migrations, http_endpoint, and job_queue checks in internal/api/health.go (per data-model.md:L275-L323)
+- [x] T012 [P] Implement version endpoint handler in internal/api/version.go
+- [x] T013 Create deployment state JSON schema and initialization in deploy/config/deployment-state.schema.json
 
-**Checkpoint**: Foundation ready - deployment scripts can now be implemented
+**Checkpoint**: Foundation ready - deployment scripts can now be implemented ✅
 
 ---
 
@@ -62,19 +62,19 @@ This is a deployment infrastructure feature for the existing Go project at repos
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Implement config validation function in deploy/scripts/deploy.sh
-- [ ] T014a [US1] Validate deployment tool versions (docker >=20.10, docker-compose >=2.0, golang-migrate, jq, psql) in deploy/scripts/deploy.sh
-- [ ] T014b [US1] Validate deployed Git commit matches CI test results in deploy/scripts/deploy.sh
-- [ ] T015 [US1] Implement deployment lock acquisition/release with 30-minute timeout and stale lock detection in deploy/scripts/deploy.sh
-- [ ] T016 [US1] Implement Docker image build with version metadata in deploy/scripts/deploy.sh
-- [ ] T017 [US1] Integrate database snapshot creation (calls snapshot-db.sh from T027) into deploy/scripts/deploy.sh
-- [ ] T018 [US1] Implement database migration execution with golang-migrate in deploy/scripts/deploy.sh
-- [ ] T019 [US1] Implement blue-green deployment orchestration in deploy/scripts/deploy.sh
-- [ ] T020 [US1] Implement health check validation script in deploy/scripts/health-check.sh
-- [ ] T021 [US1] Implement traffic switching logic (nginx config reload) in deploy/scripts/deploy.sh
-- [ ] T022 [US1] Implement deployment state tracking (JSON updates) in deploy/scripts/deploy.sh
-- [ ] T023 [US1] Implement structured deployment logging to /var/log/togather/deployments/ in deploy/scripts/deploy.sh
-- [ ] T023a [US1] Implement secret sanitization in deployment logs (redact DATABASE_URL passwords, JWT_SECRET, API keys) in deploy/scripts/deploy.sh
+- [x] T014 [US1] Implement config validation function in deploy/scripts/deploy.sh
+- [x] T014a [US1] Validate deployment tool versions (docker >=20.10, docker-compose >=2.0, golang-migrate, jq, psql) in deploy/scripts/deploy.sh
+- [x] T014b [US1] Validate deployed Git commit matches CI test results in deploy/scripts/deploy.sh
+- [x] T015 [US1] Implement deployment lock acquisition/release with 30-minute timeout and stale lock detection in deploy/scripts/deploy.sh
+- [x] T016 [US1] Implement Docker image build with version metadata in deploy/scripts/deploy.sh
+- [x] T017 [US1] Integrate database snapshot creation (calls snapshot-db.sh from T027) into deploy/scripts/deploy.sh
+- [x] T018 [US1] Implement database migration execution with golang-migrate in deploy/scripts/deploy.sh
+- [x] T019 [US1] Implement blue-green deployment orchestration in deploy/scripts/deploy.sh
+- [x] T020 [US1] Implement health check validation script in deploy/scripts/health-check.sh
+- [x] T021 [US1] Implement traffic switching logic (nginx config reload) in deploy/scripts/deploy.sh
+- [x] T022 [US1] Implement deployment state tracking (JSON updates) in deploy/scripts/deploy.sh
+- [x] T023 [US1] Implement structured deployment logging to /var/log/togather/deployments/ in deploy/scripts/deploy.sh
+- [x] T023a [US1] Implement secret sanitization in deployment logs (redact DATABASE_URL passwords, JWT_SECRET, API keys) in deploy/scripts/deploy.sh
 - [ ] T024 [US1] Add --dry-run validation mode to deploy/scripts/deploy.sh
 - [ ] T025 [US1] Add --version, --skip-migrations, --force flags to deploy/scripts/deploy.sh
 - [ ] T026 [US1] Create deploy/README.md with quick start deployment instructions
@@ -93,9 +93,9 @@ This is a deployment infrastructure feature for the existing Go project at repos
 
 ### Implementation for User Story 3
 
-- [ ] T027 [P] [US3] Implement automatic snapshot before migrations in deploy/scripts/snapshot-db.sh
-- [ ] T028 [P] [US3] Implement 7-day snapshot retention policy in deploy/scripts/snapshot-db.sh
-- [ ] T029 [P] [US3] Implement automatic snapshot cleanup (delete expired) in deploy/scripts/cleanup.sh
+- [x] T027 [P] [US3] Implement automatic snapshot before migrations in deploy/scripts/snapshot-db.sh (606 lines with comprehensive features)
+- [x] T028 [P] [US3] Implement 7-day snapshot retention policy in deploy/scripts/snapshot-db.sh (integrated into snapshot-db.sh)
+- [ ] T029 [P] [US3] Implement automatic snapshot cleanup (delete expired) in deploy/scripts/cleanup.sh (cleanup integrated into snapshot-db.sh, standalone script optional)
 - [ ] T030 [US3] Add migration version validation in health check in internal/api/health.go
 - [ ] T031 [US3] Implement migration failure detection and automatic rollback trigger in deploy/scripts/deploy.sh
 - [ ] T032 [US3] Add migration execution locking to prevent concurrent migrations in deploy/scripts/deploy.sh
