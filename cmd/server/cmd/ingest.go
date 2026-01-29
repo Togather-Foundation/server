@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -72,6 +73,10 @@ func init() {
 }
 
 func ingestEvents(filePath string) error {
+	// Load .env file if it exists (so API_KEY can be read from it)
+	config.LoadEnvFile(".env")
+	config.LoadEnvFile("deploy/docker/.env")
+
 	// Read API key from flag or environment
 	apiKey := ingestAPIKey
 	if apiKey == "" {

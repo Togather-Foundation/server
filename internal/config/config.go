@@ -72,8 +72,8 @@ type CORSConfig struct {
 func Load() (Config, error) {
 	// Try to load .env files if DATABASE_URL not already set
 	if os.Getenv("DATABASE_URL") == "" {
-		loadEnvFile(".env")
-		loadEnvFile("deploy/docker/.env")
+		LoadEnvFile(".env")
+		LoadEnvFile("deploy/docker/.env")
 	}
 
 	cfg := Config{
@@ -177,9 +177,9 @@ func getEnvInt(key string, fallback int) int {
 	return parsed
 }
 
-// loadEnvFile loads environment variables from a .env file
+// LoadEnvFile loads environment variables from a .env file
 // Silently ignores if file doesn't exist (not all setups use .env)
-func loadEnvFile(path string) {
+func LoadEnvFile(path string) {
 	file, err := os.Open(path)
 	if err != nil {
 		return // File doesn't exist, that's ok

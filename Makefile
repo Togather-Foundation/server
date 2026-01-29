@@ -65,7 +65,7 @@ LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VE
 # Build the server
 build:
 	@echo "Building server..."
-	@go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
+	@go build -ldflags "$(LDFLAGS)" -o server ./cmd/server
 
 # Run all tests
 test:
@@ -178,7 +178,7 @@ ci: lint-ci
 	@echo ""
 	@echo "==> Building server..."
 	@$(MAKE) build
-	@if [ ! -f bin/togather-server ]; then \
+	@if [ ! -f server ]; then \
 		echo "✗ Build failed: binary not found"; \
 		exit 1; \
 	fi
@@ -208,16 +208,17 @@ fmt:
 	@go mod tidy
 
 # Clean build artifacts
+# Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -rf bin/
+	@rm -f server
 	@rm -f coverage.out coverage.html
 	@go clean
 
 # Build and run the server
 run: build
 	@echo "Running server..."
-	@./bin/togather-server
+	@./server
 
 # Development mode (with live reload if air is installed)
 dev:
