@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Script version
+SCRIPT_VERSION="1.0.0"
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -717,26 +720,49 @@ EOF
 
 deploy() {
     local env="$1"
+    local skip_migrations="${2:-false}"
+    local force_deploy="${3:-false}"
     
     log "INFO" "Starting deployment to ${env}"
     log "INFO" "Operator: ${DEPLOYED_BY}"
+    
+    if [[ "$skip_migrations" == "true" ]]; then
+        log "WARN" "Skipping database migrations (--skip-migrations flag)"
+    fi
+    
+    if [[ "$force_deploy" == "true" ]]; then
+        log "WARN" "Force deployment mode enabled (--force flag)"
+    fi
     
     # T014, T014a, T014b: Validation phase
     validate_config "$env" || return 1
     validate_tool_versions || return 1
     validate_git_commit || return 1
     
-    # T015: Acquire deployment lock
-    acquire_lock "$env" || return 1
+    # T015: Acquire deployment lock (skip if --force)
+    if [[ "$force_deploy" != "true" ]]; then
+        acquire_lock "$env" || return 1
+    else
+        log "WARN" "Skipping deployment lock (--force flag)"
+        DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
+    fi
     
     # T016: Build Docker image
     build_docker_image "$env" || return 1
     
-    # T017: Create database snapshot
-    create_db_snapshot "$env" || return 1
+    # T017: Create database snapshot (skip if --skip-migrations)
+    if [[ "$skip_migrations" != "true" ]]; then
+        create_db_snapshot "$env" || return 1
+    else
+        log "WARN" "Skipping database snapshot (no migrations to run)"
+    fi
     
-    # T018: Run database migrations
-    run_migrations "$env" || return 1
+    # T018: Run database migrations (skip if --skip-migrations)
+    if [[ "$skip_migrations" != "true" ]]; then
+        run_migrations "$env" || return 1
+    else
+        log "WARN" "Skipping database migrations (--skip-migrations flag)"
+    fi
     
     # T019: Deploy to inactive slot (blue-green)
     deploy_to_slot "$env" || return 1
@@ -770,16 +796,21 @@ Usage: $0 [OPTIONS] ENVIRONMENT
 Deploy Togather server using blue-green zero-downtime strategy.
 
 Arguments:
-  ENVIRONMENT    Target environment (development, staging, production)
+  ENVIRONMENT         Target environment (development, staging, production)
 
 Options:
-  --dry-run      Validate configuration without deploying
-  --help         Show this help message
+  --dry-run           Validate configuration without deploying
+  --skip-migrations   Skip database migration execution (use with caution)
+  --force             Force deployment even if lock exists or validations fail
+  --version           Show script version and exit
+  --help              Show this help message
 
 Examples:
   $0 production
   $0 --dry-run staging
   $0 development
+  $0 production --skip-migrations
+  $0 staging --force
 
 See: specs/001-deployment-infrastructure/spec.md
 EOF
@@ -788,6 +819,8 @@ EOF
 main() {
     # Parse arguments
     local dry_run=false
+    local skip_migrations=false
+    local force_deploy=false
     local environment=""
     
     while [[ $# -gt 0 ]]; do
@@ -795,6 +828,18 @@ main() {
             --dry-run)
                 dry_run=true
                 shift
+                ;;
+            --skip-migrations)
+                skip_migrations=true
+                shift
+                ;;
+            --force)
+                force_deploy=true
+                shift
+                ;;
+            --version)
+                echo "Togather Deployment Script v${SCRIPT_VERSION}"
+                exit 0
                 ;;
             --help)
                 usage
@@ -844,7 +889,7 @@ main() {
     fi
     
     # Run deployment
-    deploy "$environment"
+    deploy "$environment" "$skip_migrations" "$force_deploy"
 }
 
 # Run main if script is executed directly
