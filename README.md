@@ -50,6 +50,46 @@ Events are the heartbeat of local culture. By building this shared infrastructur
 
 The [**Togather Foundation**](https://togather.foundation) is a coordination point, not a platform owner. We provide reference implementations (like this library), documentation, and standards guidance. We do not own the data or monetize the community.
 
+## Quick Start: Deploying SEL
+
+For operators deploying a Togather node:
+
+### Prerequisites
+- Linux server with Docker
+- PostgreSQL 16+ with PostGIS
+- 2GB+ RAM, 20GB+ disk
+
+### Deploy to Production
+```bash
+git clone https://github.com/Togather-Foundation/server.git
+cd server
+
+# Configure environment
+cp deploy/config/environments/.env.production.example deploy/config/environments/.env.production
+nano deploy/config/environments/.env.production  # Edit with your credentials
+
+# Deploy
+./deploy/scripts/deploy.sh production
+```
+
+### Rollback if Needed
+```bash
+./deploy/scripts/rollback.sh production
+```
+
+### Deployment Documentation
+- [Deployment Guide](deploy/docs/quickstart.md) - Complete setup instructions
+- [CI/CD Integration](deploy/docs/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
+- [Rollback Guide](deploy/docs/rollback.md) - Troubleshooting and recovery
+- [Migration Guide](deploy/docs/migrations.md) - Database schema management
+
+**Deployment Features:**
+- ✅ Zero-downtime blue-green deployment
+- ✅ Automatic database migrations with snapshots
+- ✅ One-command rollback with health validation
+- ✅ Multi-environment support (dev/staging/prod)
+- ✅ Comprehensive testing and validation
+
 ## Documentation & Contributor Resources
 
 - [SEL Documentation](docs/README.md) - Landing page for contributors, integrators, and node builders
