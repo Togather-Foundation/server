@@ -520,7 +520,7 @@ db-check:
 	@echo "Checking local PostgreSQL extensions..."
 	@echo ""
 	@echo "Available extensions:"
-	@psql -d postgres -c "SELECT name, default_version, installed_version, comment FROM pg_available_extensions WHERE name IN ('postgis', 'pgvector', 'pg_trgm', 'pg_stat_statements') ORDER BY name;" 2>/dev/null || \
+	@psql -d postgres -c "SELECT name, default_version, installed_version, comment FROM pg_available_extensions WHERE name IN ('postgis', 'vector', 'pg_trgm', 'pg_stat_statements') ORDER BY name;" 2>/dev/null || \
 		(echo "❌ Could not connect to local PostgreSQL"; \
 		echo ""; \
 		echo "Make sure PostgreSQL is running:"; \
@@ -532,7 +532,7 @@ db-check:
 	@echo ""
 	@echo "Checking required extensions..."
 	@MISSING=""; \
-	for ext in postgis pgvector pg_trgm; do \
+	for ext in postgis vector pg_trgm; do \
 		if ! psql -d postgres -tAc "SELECT 1 FROM pg_available_extensions WHERE name='$$ext'" 2>/dev/null | grep -q 1; then \
 			MISSING="$$MISSING $$ext"; \
 		fi; \
@@ -542,9 +542,11 @@ db-check:
 		echo ""; \
 		echo "Install them:"; \
 		echo "  sudo apt install postgresql-16-postgis-3 postgresql-16-pgvector"; \
+		echo ""; \
+		echo "Note: Package is 'postgresql-16-pgvector' but extension name is 'vector'"; \
 		exit 1; \
 	else \
-		echo "✓ All required extensions available (postgis, pgvector, pg_trgm)"; \
+		echo "✓ All required extensions available (postgis, vector, pg_trgm)"; \
 	fi
 
 # Create local database with required extensions
@@ -571,7 +573,7 @@ db-setup:
 	@echo ""
 	@echo "Installing extensions..."
 	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS postgis;" || echo "⚠️  Could not install postgis"
-	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pgvector;" || echo "⚠️  Could not install pgvector"
+	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS vector;" || echo "⚠️  Could not install vector (pgvector package)"
 	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" || true
 	@psql -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" || true
 	@echo ""
