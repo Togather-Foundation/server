@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,12 +26,30 @@ func main() {
 		role = os.Args[2]
 	}
 
-	// Get DATABASE_URL from environment
+	// Try to load .env file if DATABASE_URL not set
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		fmt.Println("Error: DATABASE_URL environment variable not set")
-		fmt.Println("For Docker: export DATABASE_URL=postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable")
-		fmt.Println("For local:  export DATABASE_URL=postgres://togather:dev_password_change_me@localhost:5432/togather?sslmode=disable")
+		loadEnvFile()
+		dbURL = os.Getenv("DATABASE_URL")
+	}
+
+	// Also try deploy/docker/.env for Docker users
+	if dbURL == "" {
+		loadEnvFile("deploy/docker/.env")
+		dbURL = os.Getenv("DATABASE_URL")
+	}
+
+	if dbURL == "" {
+		fmt.Println("Error: DATABASE_URL not found")
+		fmt.Println("")
+		fmt.Println("Tried loading from:")
+		fmt.Println("  - Environment variable DATABASE_URL")
+		fmt.Println("  - .env file in project root")
+		fmt.Println("  - deploy/docker/.env")
+		fmt.Println("")
+		fmt.Println("Please set DATABASE_URL or create a .env file:")
+		fmt.Println("  For Docker: DATABASE_URL=postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable")
+		fmt.Println("  For local:  DATABASE_URL=postgres://togather:dev_password_change_me@localhost:5432/togather?sslmode=disable")
 		os.Exit(1)
 	}
 
@@ -72,4 +92,43 @@ func main() {
 	fmt.Printf("Usage:\n")
 	fmt.Printf("  export API_KEY=%s\n", key)
 	fmt.Printf("  curl -H \"Authorization: Bearer $API_KEY\" http://localhost:8080/api/v1/events\n")
+}
+
+// loadEnvFile loads environment variables from a .env file
+// Silently ignores if file doesn't exist (not all setups use .env)
+func loadEnvFile(paths ...string) {
+	envPath := ".env"
+	if len(paths) > 0 {
+		envPath = paths[0]
+	}
+
+	file, err := os.Open(envPath)
+	if err != nil {
+		return // File doesn't exist, that's ok
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse KEY=VALUE
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Only set if not already in environment
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
 }

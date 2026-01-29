@@ -145,12 +145,20 @@ Once your local environment is running, verify event ingestion works:
 
 ### 1. Create an API Key
 ```bash
-# From the server directory
+# Option A: Auto-load from .env (Docker users: see note below)
+go run scripts/create-api-key.go my-test-key agent
+
+# Option B: Explicit DATABASE_URL
 DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" \
   go run scripts/create-api-key.go my-test-key agent
 
 # Save the generated key
 export API_KEY="<key-from-output>"
+```
+
+**Note for Docker users:** The script auto-loads `DATABASE_URL` from `.env` or `deploy/docker/.env`. If using Docker, add this to your shell config or a local `.env.local`:
+```bash
+export DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable"
 ```
 
 ### 2. Ingest a Test Event
