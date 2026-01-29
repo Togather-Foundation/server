@@ -471,7 +471,7 @@ create_db_snapshot() {
     return 0
 }
 
-# Execute database migrations (T018)
+# Execute database migrations (T018, T031: Failure detection, T032: Locking)
 run_migrations() {
     local env="$1"
     
@@ -482,21 +482,80 @@ run_migrations() {
     source "${env_file}"
     
     local migrations_dir="${PROJECT_ROOT}/internal/storage/postgres/migrations"
+    local migration_lock="/tmp/togather-migration-${env}.lock"
     
     if [[ ! -d "${migrations_dir}" ]]; then
         log "ERROR" "Migrations directory not found: ${migrations_dir}"
         return 1
     fi
     
+    # T032: Acquire migration lock to prevent concurrent migrations
+    if [[ -f "$migration_lock" ]]; then
+        local lock_pid=$(cat "$migration_lock" 2>/dev/null || echo "unknown")
+        log "ERROR" "Migration lock exists (PID: ${lock_pid})"
+        log "ERROR" "Another migration may be in progress"
+        log "ERROR" "If stale, remove: rm ${migration_lock}"
+        return 1
+    fi
+    
+    # Create migration lock
+    echo "$$" > "$migration_lock"
+    trap "rm -f $migration_lock" EXIT
+    log "INFO" "Migration lock acquired"
+    
     # Check current migration version
     local current_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
     log "INFO" "Current migration version: ${current_version}"
     
+    # Check for dirty migration state
+    if echo "$current_version" | grep -q "dirty"; then
+        log "ERROR" "Database is in dirty migration state"
+        log "ERROR" "A previous migration failed and left the database in an inconsistent state"
+        log "ERROR" "Manual intervention required:"
+        log "ERROR" "  1. Review the failed migration in: ${migrations_dir}"
+        log "ERROR" "  2. Fix the database manually or restore from snapshot"
+        log "ERROR" "  3. Force migration version: migrate -path ${migrations_dir} -database \$DATABASE_URL force <version>"
+        return 1
+    fi
+    
     # Run migrations
+    log "INFO" "Running forward migrations..."
     if ! migrate -path "${migrations_dir}" -database "${DATABASE_URL}" up; then
-        log "ERROR" "Database migrations failed"
-        log "ERROR" "Database may be in inconsistent state"
-        log "ERROR" "Restore from snapshot if necessary"
+        # T031: Migration failure detected - provide rollback instructions
+        log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log "ERROR" "MIGRATION FAILED"
+        log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log "ERROR" ""
+        log "ERROR" "Database migrations encountered an error."
+        log "ERROR" "The database may be in an inconsistent state."
+        log "ERROR" ""
+        log "ERROR" "ROLLBACK OPTIONS:"
+        log "ERROR" ""
+        log "ERROR" "Option 1: Restore from automatic snapshot (RECOMMENDED)"
+        log "ERROR" "  The most recent snapshot was created before this migration."
+        log "ERROR" "  To restore:"
+        log "ERROR" "    cd ${SCRIPT_DIR}"
+        log "ERROR" "    ./snapshot-db.sh list  # Find the latest snapshot"
+        log "ERROR" "    # Restore snapshot (requires manual confirmation):"
+        log "ERROR" "    psql \$DATABASE_URL < /var/lib/togather/db-snapshots/<snapshot-file>"
+        log "ERROR" ""
+        log "ERROR" "Option 2: Manual migration rollback"
+        log "ERROR" "  1. Check migration status:"
+        log "ERROR" "     migrate -path ${migrations_dir} -database \$DATABASE_URL version"
+        log "ERROR" "  2. Rollback one migration:"
+        log "ERROR" "     migrate -path ${migrations_dir} -database \$DATABASE_URL down 1"
+        log "ERROR" ""
+        log "ERROR" "Option 3: Fix dirty migration state"
+        log "ERROR" "  If the migration left the database in 'dirty' state:"
+        log "ERROR" "     migrate -path ${migrations_dir} -database \$DATABASE_URL force <version>"
+        log "ERROR" ""
+        log "ERROR" "After restoring/fixing, review the failed migration in:"
+        log "ERROR" "  ${migrations_dir}"
+        log "ERROR" ""
+        log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Release migration lock
+        rm -f "$migration_lock"
         return 1
     fi
     
@@ -504,7 +563,17 @@ run_migrations() {
     local new_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
     log "INFO" "New migration version: ${new_version}"
     
-    log "SUCCESS" "Database migrations completed successfully"
+    if [[ "$current_version" != "$new_version" ]]; then
+        log "SUCCESS" "Database migrations completed successfully"
+        log "INFO" "Migrated from version ${current_version} to ${new_version}"
+    else
+        log "INFO" "No new migrations to apply (already at version ${new_version})"
+    fi
+    
+    # Release migration lock (also released by trap on EXIT)
+    rm -f "$migration_lock"
+    log "INFO" "Migration lock released"
+    
     return 0
 }
 
