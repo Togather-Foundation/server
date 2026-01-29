@@ -99,9 +99,14 @@ func (h *HealthChecker) checkDatabase(ctx context.Context) CheckResult {
 		}
 	}
 
+	// Create child context with per-operation timeout (2s)
+	// This prevents one slow check from starving others
+	dbCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	// Test database connectivity with a simple query
 	var result int
-	err := h.pool.QueryRow(ctx, "SELECT 1").Scan(&result)
+	err := h.pool.QueryRow(dbCtx, "SELECT 1").Scan(&result)
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -143,11 +148,15 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 		}
 	}
 
+	// Create child context with per-operation timeout (2s)
+	migCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	// Query the schema_migrations table to get the latest migration version
 	var version int64
 	var dirty bool
 	query := `SELECT version, dirty FROM schema_migrations ORDER BY version DESC LIMIT 1`
-	err := h.pool.QueryRow(ctx, query).Scan(&version, &dirty)
+	err := h.pool.QueryRow(migCtx, query).Scan(&version, &dirty)
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -164,11 +173,12 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 	if dirty {
 		return CheckResult{
 			Status:    "fail",
-			Message:   fmt.Sprintf("Migration version %d is in dirty state", version),
+			Message:   "Database in dirty migration state",
 			LatencyMs: latency,
 			Details: map[string]interface{}{
-				"version": version,
-				"dirty":   dirty,
+				"version":     version,
+				"dirty":       dirty,
+				"remediation": "See deploy/docs/migrations.md for recovery steps",
 			},
 		}
 	}
@@ -207,11 +217,15 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 		}
 	}
 
+	// Create child context with per-operation timeout (2s)
+	jobCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	// Query River's jobs table to verify it's accessible
 	// We'll check if we can query the river_job table
 	query := `SELECT COUNT(*) FROM river_job WHERE state = ANY($1)`
 	var activeJobs int64
-	err := h.pool.QueryRow(ctx, query, []string{"available", "running"}).Scan(&activeJobs)
+	err := h.pool.QueryRow(jobCtx, query, []string{"available", "running"}).Scan(&activeJobs)
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
