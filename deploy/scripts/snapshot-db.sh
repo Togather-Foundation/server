@@ -210,6 +210,20 @@ validate_config() {
 # Database Connection
 # ============================================================================
 
+# Create temporary .pgpass file for secure password handling
+create_pgpass() {
+    local pgpass_file=$(mktemp)
+    chmod 600 "$pgpass_file"
+    echo "$POSTGRES_HOST:$POSTGRES_PORT:$POSTGRES_DB:$POSTGRES_USER:$POSTGRES_PASSWORD" > "$pgpass_file"
+    echo "$pgpass_file"
+}
+
+# Clean up .pgpass file
+cleanup_pgpass() {
+    local pgpass_file="$1"
+    [[ -f "$pgpass_file" ]] && rm -f "$pgpass_file"
+}
+
 extract_db_params() {
     # Extract host and port from DATABASE_URL if not explicitly set
     # Format: postgresql://user:pass@host:port/database?params
@@ -247,9 +261,13 @@ test_db_connection() {
     
     extract_db_params
     
+    # Create temporary .pgpass file for secure password handling
+    local pgpass_file=$(create_pgpass)
+    trap "cleanup_pgpass '$pgpass_file'" RETURN
+    
     # Use pg_isready for lightweight connection test
     if command -v pg_isready &> /dev/null; then
-        if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_isready \
+        if ! PGPASSFILE="$pgpass_file" pg_isready \
             -h "$POSTGRES_HOST" \
             -p "$POSTGRES_PORT" \
             -U "$POSTGRES_USER" \
@@ -263,7 +281,7 @@ test_db_connection() {
         fi
     else
         # Fallback to psql if pg_isready not available
-        if ! PGPASSWORD="$POSTGRES_PASSWORD" psql \
+        if ! PGPASSFILE="$pgpass_file" psql \
             -h "$POSTGRES_HOST" \
             -p "$POSTGRES_PORT" \
             -U "$POSTGRES_USER" \
@@ -321,7 +339,12 @@ EOF
     local start_time
     start_time=$(date +%s)
     
-    if ! PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
+    # Create temporary .pgpass for secure password handling
+    local pgpass_file=$(create_pgpass)
+    trap "cleanup_pgpass '$pgpass_file'" RETURN
+    
+    # Run pg_dump with gzip, capturing exit codes
+    PGPASSFILE="$pgpass_file" pg_dump \
         -h "$POSTGRES_HOST" \
         -p "$POSTGRES_PORT" \
         -U "$POSTGRES_USER" \
@@ -332,8 +355,21 @@ EOF
         --clean \
         --if-exists \
         --verbose \
-        2>&1 | gzip > "$snapshot_path"; then
-        log ERROR "pg_dump failed"
+        2>&1 | gzip > "$snapshot_path"
+    
+    # Check both pg_dump and gzip exit codes
+    local pipe_status=("${PIPESTATUS[@]}")
+    local pg_dump_exit="${pipe_status[0]}"
+    local gzip_exit="${pipe_status[1]}"
+    
+    if [[ "$pg_dump_exit" -ne 0 ]]; then
+        log ERROR "pg_dump failed with exit code $pg_dump_exit"
+        rm -f "$snapshot_path" "$metadata_path"
+        return 3
+    fi
+    
+    if [[ "$gzip_exit" -ne 0 ]]; then
+        log ERROR "gzip compression failed with exit code $gzip_exit"
         rm -f "$snapshot_path" "$metadata_path"
         return 3
     fi
@@ -462,10 +498,10 @@ cleanup_expired_snapshots() {
         file_time=$(stat -f%m "$snapshot_path" 2>/dev/null || stat -c%Y "$snapshot_path" 2>/dev/null || echo "$now")
         local age_days=$(( (now - file_time) / 86400 ))
         
-        # Get retention period from metadata
+        # Get retention period from metadata, default to RETENTION_DAYS variable
         local retention=$RETENTION_DAYS
         if [[ -f "$meta_path" ]]; then
-            retention=$(jq -r '.retention_days // 7' "$meta_path" 2>/dev/null || echo "$RETENTION_DAYS")
+            retention=$(jq -r ".retention_days // $RETENTION_DAYS" "$meta_path" 2>/dev/null || echo "$RETENTION_DAYS")
         fi
         
         if [[ $age_days -gt $retention ]]; then

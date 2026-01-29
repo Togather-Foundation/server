@@ -113,6 +113,30 @@ sanitize_secrets() {
     echo "$input"
 }
 
+# Atomic state file update (T022: Atomic writes with fsync)
+update_state_file_atomic() {
+    local jq_expression="$1"
+    local temp_file=$(mktemp)
+    
+    # Write to temp file
+    if ! jq "$jq_expression" "${STATE_FILE}" > "$temp_file"; then
+        log "ERROR" "Failed to update state file with jq"
+        rm -f "$temp_file"
+        return 1
+    fi
+    
+    # Sync temp file to disk
+    sync "$temp_file" 2>/dev/null || fsync "$temp_file" 2>/dev/null || true
+    
+    # Atomic rename
+    mv "$temp_file" "${STATE_FILE}"
+    
+    # Sync parent directory to ensure rename is durable
+    sync "${CONFIG_DIR}" 2>/dev/null || true
+    
+    return 0
+}
+
 # ============================================================================
 # VALIDATION FUNCTIONS
 # ============================================================================
@@ -348,9 +372,8 @@ acquire_lock() {
     local lock_expires_at=$(date -u -d "+30 minutes" +"%Y-%m-%dT%H:%M:%SZ")
     local locked_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
-    # Update state file with lock
-    local temp_file=$(mktemp)
-    jq --arg lock_id "$lock_id" \
+    # Update state file with lock (atomic update with fsync)
+    update_state_file_atomic --arg lock_id "$lock_id" \
        --arg deployment_id "$DEPLOYMENT_ID" \
        --arg locked_by "$DEPLOYED_BY" \
        --arg locked_at "$locked_at" \
@@ -366,9 +389,7 @@ acquire_lock() {
           lock_expires_at: $lock_expires_at,
           pid: ($pid | tonumber),
           hostname: $hostname
-        }' "${STATE_FILE}" > "$temp_file"
-    
-    mv "$temp_file" "${STATE_FILE}"
+        }' || return 1
     
     log "SUCCESS" "Deployment lock acquired: ${DEPLOYMENT_ID}"
     return 0
@@ -383,9 +404,11 @@ release_lock() {
         return 0
     fi
     
-    local temp_file=$(mktemp)
-    jq '.lock = {locked: false}' "${STATE_FILE}" > "$temp_file"
-    mv "$temp_file" "${STATE_FILE}"
+    # Atomic state file update
+    update_state_file_atomic '.lock = {locked: false}' || {
+        log "WARN" "Failed to update state file when releasing lock"
+        return 1
+    }
     
     log "SUCCESS" "Deployment lock released"
     return 0
@@ -474,6 +497,10 @@ create_db_snapshot() {
 # Execute database migrations (T018, T031: Failure detection, T032: Locking)
 run_migrations() {
     local env="$1"
+    local migration_lock="/tmp/togather-migration-${env}.lock"
+    
+    # Set trap early to ensure cleanup on ALL exit paths
+    trap 'rm -f "$migration_lock"' EXIT INT TERM
     
     log "INFO" "Executing database migrations"
     
@@ -482,7 +509,6 @@ run_migrations() {
     source "${env_file}"
     
     local migrations_dir="${PROJECT_ROOT}/internal/storage/postgres/migrations"
-    local migration_lock="/tmp/togather-migration-${env}.lock"
     
     if [[ ! -d "${migrations_dir}" ]]; then
         log "ERROR" "Migrations directory not found: ${migrations_dir}"
@@ -498,9 +524,8 @@ run_migrations() {
         return 1
     fi
     
-    # Create migration lock
+    # Create migration lock (trap will cleanup on any exit)
     echo "$$" > "$migration_lock"
-    trap "rm -f $migration_lock" EXIT
     log "INFO" "Migration lock acquired"
     
     # Check current migration version
@@ -554,8 +579,7 @@ run_migrations() {
         log "ERROR" ""
         log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         
-        # Release migration lock
-        rm -f "$migration_lock"
+        # Trap will cleanup lock on exit
         return 1
     fi
     
@@ -570,10 +594,7 @@ run_migrations() {
         log "INFO" "No new migrations to apply (already at version ${new_version})"
     fi
     
-    # Release migration lock (also released by trap on EXIT)
-    rm -f "$migration_lock"
-    log "INFO" "Migration lock released"
-    
+    log "INFO" "Migration lock will be released on function exit"
     return 0
 }
 
@@ -605,7 +626,7 @@ get_inactive_slot() {
 # Deploy to inactive slot (T019: Blue-green orchestration)
 deploy_to_slot() {
     local env="$1"
-    local slot=$(get_inactive_slot)
+    local slot="${2:-$(get_inactive_slot)}"  # Accept slot as parameter or determine it
     
     log "INFO" "Deploying to ${slot} slot"
     
@@ -634,7 +655,7 @@ deploy_to_slot() {
 # Switch traffic to new slot (T021: Traffic switching)
 switch_traffic() {
     local env="$1"
-    local new_slot=$(get_inactive_slot)
+    local new_slot="${2:-$(get_inactive_slot)}"  # Accept slot as parameter or determine it
     
     log "INFO" "Switching traffic to ${new_slot} slot"
     
@@ -722,9 +743,8 @@ update_deployment_state() {
     
     local deployed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
-    # Move current deployment to previous
-    local temp_file=$(mktemp)
-    jq --arg deployment_id "$DEPLOYMENT_ID" \
+    # Move current deployment to previous (atomic update with fsync)
+    update_state_file_atomic --arg deployment_id "$DEPLOYMENT_ID" \
        --arg version "$GIT_SHORT_COMMIT" \
        --arg git_commit "$GIT_COMMIT" \
        --arg deployed_at "$deployed_at" \
@@ -743,9 +763,7 @@ update_deployment_state() {
           health_status: "unknown",
           status: $status,
           environment: $env
-        }' "${STATE_FILE}" > "$temp_file"
-    
-    mv "$temp_file" "${STATE_FILE}"
+        }' || return 1
     
     log "SUCCESS" "Deployment state updated"
     
@@ -833,15 +851,18 @@ deploy() {
         log "WARN" "Skipping database migrations (--skip-migrations flag)"
     fi
     
+    # Determine target slot once to avoid race conditions
+    local target_slot=$(get_inactive_slot)
+    log "INFO" "Target deployment slot: ${target_slot}"
+    
     # T019: Deploy to inactive slot (blue-green)
-    deploy_to_slot "$env" || return 1
+    deploy_to_slot "$env" "$target_slot" || return 1
     
     # T020: Validate health checks
-    local new_slot=$(get_inactive_slot)
-    validate_health "$env" "$new_slot" || return 1
+    validate_health "$env" "$target_slot" || return 1
     
     # T021: Switch traffic to new slot
-    switch_traffic "$env" || return 1
+    switch_traffic "$env" "$target_slot" || return 1
     
     # T022: Update deployment state
     update_deployment_state "$env" "active" || return 1
@@ -849,7 +870,7 @@ deploy() {
     log "SUCCESS" "Deployment completed successfully"
     log "INFO" "Deployment ID: ${DEPLOYMENT_ID}"
     log "INFO" "Version: ${GIT_SHORT_COMMIT}"
-    log "INFO" "Active slot: ${new_slot}"
+    log "INFO" "Active slot: ${target_slot}"
     
     return 0
 }
