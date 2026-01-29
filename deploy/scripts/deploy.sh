@@ -37,6 +37,7 @@ GIT_COMMIT=""
 GIT_SHORT_COMMIT=""
 DEPLOYMENT_TIMESTAMP=""
 DEPLOYED_BY="${USER}@$(hostname)"
+SNAPSHOT_PATH=""  # Captured during create_db_snapshot for rollback history
 
 # ============================================================================
 # LOGGING FUNCTIONS
@@ -625,7 +626,7 @@ build_docker_image() {
 # DATABASE FUNCTIONS (T017, T018)
 # ============================================================================
 
-# Create database snapshot before migrations (T017)
+# Create database snapshot before migrations (T017, T041)
 create_db_snapshot() {
     local env="$1"
     
@@ -641,17 +642,21 @@ create_db_snapshot() {
     if [[ ! -f "${snapshot_script}" ]]; then
         log "WARN" "snapshot-db.sh not found, skipping snapshot"
         log "WARN" "Database backup recommended before migrations"
+        SNAPSHOT_PATH=""
         return 0
     fi
     
-    # Call snapshot script
-    if ! bash "${snapshot_script}" "${env}"; then
+    # Call snapshot script and capture snapshot path for rollback history
+    SNAPSHOT_PATH=$(bash "${snapshot_script}" "${env}")
+    local snapshot_status=$?
+    
+    if [[ $snapshot_status -ne 0 ]]; then
         log "ERROR" "Database snapshot creation failed"
         log "ERROR" "Aborting deployment to prevent data loss"
         return 1
     fi
     
-    log "SUCCESS" "Database snapshot created successfully"
+    log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
     return 0
 }
 
@@ -931,18 +936,21 @@ update_deployment_state() {
     return 0
 }
 
-# Save deployment to history directory (T041)
+# Save deployment to history directory (T041: deployment history tracking)
 save_deployment_history() {
     local env="$1"
     local status="$2"
     
     # Create history directory
-    sudo mkdir -p "${DEPLOYMENT_HISTORY_DIR}"
-    sudo chown "${USER}:${USER}" "${DEPLOYMENT_HISTORY_DIR}" 2>/dev/null || true
+    sudo mkdir -p "${DEPLOYMENT_HISTORY_DIR}/${env}"
+    sudo chown -R "${USER}:${USER}" "${DEPLOYMENT_HISTORY_DIR}" 2>/dev/null || true
     
-    local history_file="${DEPLOYMENT_HISTORY_DIR}/${DEPLOYMENT_ID}.json"
+    local history_file="${DEPLOYMENT_HISTORY_DIR}/${env}/${DEPLOYMENT_ID}.json"
+    local image_name="togather-server"
+    local image_tag="${GIT_SHORT_COMMIT}"
+    local active_slot=$(get_active_slot)
     
-    # Create deployment record
+    # Create deployment record with all rollback-relevant information
     cat > "${history_file}" <<EOF
 {
   "deployment_id": "${DEPLOYMENT_ID}",
@@ -952,11 +960,38 @@ save_deployment_history() {
   "deployed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "deployed_by": "${DEPLOYED_BY}",
   "status": "${status}",
-  "log_file": "${DEPLOYMENT_LOG}"
+  "log_file": "${DEPLOYMENT_LOG}",
+  "docker_image": "${image_name}:${image_tag}",
+  "compose_project": "togather-${env}",
+  "active_slot": "${active_slot}",
+  "snapshot_path": "${SNAPSHOT_PATH:-none}"
 }
 EOF
     
     log "INFO" "Deployment history saved: ${history_file}"
+    
+    # Update symlinks for rollback (T041: previous/current tracking)
+    # Move current -> previous, then set new current
+    local env_dir="${DEPLOYMENT_HISTORY_DIR}/${env}"
+    local current_link="${env_dir}/current.json"
+    local previous_link="${env_dir}/previous.json"
+    
+    # If current exists, copy it to previous (not symlink, actual copy for safety)
+    if [[ -L "${current_link}" ]]; then
+        local current_target=$(readlink "${current_link}")
+        if [[ -f "${current_target}" ]]; then
+            rm -f "${previous_link}"
+            ln -s "$(basename "${current_target}")" "${previous_link}"
+            log "INFO" "Previous deployment link updated"
+        fi
+    fi
+    
+    # Update current to point to new deployment
+    rm -f "${current_link}"
+    ln -s "$(basename "${history_file}")" "${current_link}"
+    log "INFO" "Current deployment link updated"
+    
+    return 0
 }
 
 # ============================================================================
