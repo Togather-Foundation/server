@@ -169,22 +169,60 @@ validate_config() {
     local env_file="${CONFIG_DIR}/environments/.env.${env}"
     if [[ ! -f "${env_file}" ]]; then
         log "ERROR" "Environment file not found: ${env_file}"
-        log "ERROR" "Copy from .env.${env}.example and configure secrets"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  1. Copy the example file:"
+        log "ERROR" "     cp ${CONFIG_DIR}/environments/.env.${env}.example ${env_file}"
+        log "ERROR" "  2. Edit the file and replace all CHANGE_ME values:"
+        log "ERROR" "     ${EDITOR:-nano} ${env_file}"
+        log "ERROR" "  3. Secure the file permissions:"
+        log "ERROR" "     chmod 600 ${env_file}"
         return 1
     fi
     
-    # Check environment file permissions (T038: chmod 600 requirement)
-    local perms=$(stat -c '%a' "${env_file}")
+    # T038: Check environment file permissions (MUST be 600 for security)
+    local perms=$(stat -c '%a' "${env_file}" 2>/dev/null || echo "000")
     if [[ "${perms}" != "600" ]]; then
-        log "WARN" "Environment file permissions are ${perms}, should be 600"
-        log "WARN" "Run: chmod 600 ${env_file}"
-        # Don't fail, just warn for MVP
+        log "ERROR" "Environment file has insecure permissions: ${perms}"
+        log "ERROR" "Secrets could be readable by other users!"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  chmod 600 ${env_file}"
+        log "ERROR" ""
+        log "ERROR" "Current owner: $(stat -c '%U' "${env_file}" 2>/dev/null || echo "unknown")"
+        log "ERROR" "Current permissions: ${perms} (expected: 600)"
+        return 1
     fi
     
-    # Source environment file and validate required variables
+    # T037: Source environment file with override precedence
+    # Precedence: CLI env vars > shell env > .env file > deployment.yml defaults
+    # Save current env vars to detect overrides
+    local saved_DATABASE_URL="${DATABASE_URL:-}"
+    local saved_JWT_SECRET="${JWT_SECRET:-}"
+    local saved_ADMIN_API_KEY="${ADMIN_API_KEY:-}"
+    local saved_ENVIRONMENT="${ENVIRONMENT:-}"
+    
     source "${env_file}"
     
-    # Validate required environment variables
+    # Restore CLI/shell overrides (they take precedence over .env file)
+    if [[ -n "${saved_DATABASE_URL}" ]]; then
+        log "INFO" "Using DATABASE_URL from environment (overriding .env file)"
+        DATABASE_URL="${saved_DATABASE_URL}"
+    fi
+    if [[ -n "${saved_JWT_SECRET}" ]]; then
+        log "INFO" "Using JWT_SECRET from environment (overriding .env file)"
+        JWT_SECRET="${saved_JWT_SECRET}"
+    fi
+    if [[ -n "${saved_ADMIN_API_KEY}" ]]; then
+        log "INFO" "Using ADMIN_API_KEY from environment (overriding .env file)"
+        ADMIN_API_KEY="${saved_ADMIN_API_KEY}"
+    fi
+    if [[ -n "${saved_ENVIRONMENT}" ]]; then
+        log "INFO" "Using ENVIRONMENT from environment (overriding .env file)"
+        ENVIRONMENT="${saved_ENVIRONMENT}"
+    fi
+    
+    # T039: Validate required environment variables with clear remediation
     local required_vars=("ENVIRONMENT" "DATABASE_URL" "JWT_SECRET" "ADMIN_API_KEY")
     local missing_vars=()
     
@@ -195,14 +233,37 @@ validate_config() {
     done
     
     if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        log "ERROR" "Missing required environment variables: ${missing_vars[*]}"
+        log "ERROR" "Missing required environment variables:"
+        for var in "${missing_vars[@]}"; do
+            log "ERROR" "  - ${var}"
+        done
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  1. Edit the environment file:"
+        log "ERROR" "     ${EDITOR:-nano} ${env_file}"
+        log "ERROR" "  2. Set values for: ${missing_vars[*]}"
+        log "ERROR" "  3. Example formats:"
+        log "ERROR" "     DATABASE_URL=postgresql://user:pass@host:5432/dbname"
+        log "ERROR" "     JWT_SECRET=\$(openssl rand -hex 32)"
+        log "ERROR" "     ADMIN_API_KEY=\$(openssl rand -hex 32)"
+        log "ERROR" "     ENVIRONMENT=${env}"
         return 1
     fi
     
-    # T035: Validate no CHANGE_ME placeholders
+    # T035 & T039: Validate no CHANGE_ME placeholders with specific guidance
     if grep -q "CHANGE_ME" "${env_file}"; then
         log "ERROR" "Environment file contains CHANGE_ME placeholders"
-        log "ERROR" "Replace all CHANGE_ME values with actual secrets"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  1. Find all CHANGE_ME values:"
+        log "ERROR" "     grep CHANGE_ME ${env_file}"
+        log "ERROR" "  2. Generate secure secrets:"
+        log "ERROR" "     JWT_SECRET: openssl rand -hex 32"
+        log "ERROR" "     ADMIN_API_KEY: openssl rand -hex 32"
+        log "ERROR" "  3. Edit the file and replace placeholders:"
+        log "ERROR" "     ${EDITOR:-nano} ${env_file}"
+        log "ERROR" "  4. Verify no placeholders remain:"
+        log "ERROR" "     grep -v '^#' ${env_file} | grep CHANGE_ME"
         return 1
     fi
     
