@@ -401,9 +401,20 @@ func runSetup() error {
 		}
 
 		if createKey {
-			if err := createAPIKey(keyName, "agent"); err != nil {
+			apiKey, err := createAPIKey(keyName, "agent")
+			if err != nil {
 				fmt.Printf("⚠️  Failed to create API key: %v\n", err)
 				fmt.Printf("You can create it later with: server api-key create %s\n", keyName)
+			} else {
+				// Save API key to .env file
+				envPath := filepath.Join(getWorkingDir(), ".env")
+				if err := appendToEnvFile(envPath, "API_KEY", apiKey); err != nil {
+					fmt.Printf("⚠️  Failed to save API key to .env: %v\n", err)
+					fmt.Printf("You can manually add it: export API_KEY=%s\n", apiKey)
+				} else {
+					fmt.Println()
+					fmt.Printf("✓ API key saved to .env\n")
+				}
 			}
 		}
 	} else {
@@ -629,5 +640,23 @@ func currentTimestamp() string {
 func checkDatabaseConnection(dbURL string) error {
 	// Simplified check - just try to parse and return nil
 	// In production, would use pgx to actually test connection
+	return nil
+}
+
+func appendToEnvFile(path, key, value string) error {
+	// Read existing file
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read env file: %w", err)
+	}
+
+	// Append new key-value pair
+	newLine := fmt.Sprintf("\n# API Key\nAPI_KEY=%s\n", value)
+
+	// Write back
+	if err := os.WriteFile(path, append(content, []byte(newLine)...), 0600); err != nil {
+		return fmt.Errorf("write env file: %w", err)
+	}
+
 	return nil
 }

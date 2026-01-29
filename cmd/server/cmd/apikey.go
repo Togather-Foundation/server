@@ -61,7 +61,8 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		return createAPIKey(name, apiKeyRole)
+		_, err := createAPIKey(name, apiKeyRole)
+		return err
 	},
 }
 
@@ -114,11 +115,11 @@ func init() {
 	apiKeyCreateCmd.Flags().StringVar(&apiKeyRole, "role", "agent", "role for the API key (agent or admin)")
 }
 
-func createAPIKey(name, role string) error {
+func createAPIKey(name, role string) (string, error) {
 	// Load DATABASE_URL from environment or .env files
 	dbURL := getDatabaseURL()
 	if dbURL == "" {
-		return fmt.Errorf("DATABASE_URL not set\n\nTried loading from:\n  - Environment variable DATABASE_URL\n  - .env file in project root\n  - deploy/docker/.env\n\nPlease set DATABASE_URL or create a .env file")
+		return "", fmt.Errorf("DATABASE_URL not set\n\nTried loading from:\n  - Environment variable DATABASE_URL\n  - .env file in project root\n  - deploy/docker/.env\n\nPlease set DATABASE_URL or create a .env file")
 	}
 
 	// Connect to database
@@ -127,7 +128,7 @@ func createAPIKey(name, role string) error {
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		return fmt.Errorf("connect to database: %w", err)
+		return "", fmt.Errorf("connect to database: %w", err)
 	}
 	defer pool.Close()
 
@@ -138,7 +139,7 @@ func createAPIKey(name, role string) error {
 	// Hash the key
 	hash, err := auth.HashAPIKey(key)
 	if err != nil {
-		return fmt.Errorf("hash API key: %w", err)
+		return "", fmt.Errorf("hash API key: %w", err)
 	}
 
 	// Insert into database
@@ -148,7 +149,7 @@ func createAPIKey(name, role string) error {
 		prefix, hash, auth.HashVersionBcrypt, name, role,
 	)
 	if err != nil {
-		return fmt.Errorf("insert API key: %w", err)
+		return "", fmt.Errorf("insert API key: %w", err)
 	}
 
 	// Success output
@@ -162,7 +163,7 @@ func createAPIKey(name, role string) error {
 	fmt.Printf("  server ingest events.json\n")
 	fmt.Printf("  curl -H \"Authorization: Bearer $API_KEY\" http://localhost:8080/api/v1/events\n")
 
-	return nil
+	return key, nil
 }
 
 func listAPIKeys() error {
