@@ -106,3 +106,6 @@ deployment-state.json
 # Deployment logs in deploy/ directory
 deploy/*.log
 deploy/docker/.env
+.env.backup
+.env.original
+/server
