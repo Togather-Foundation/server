@@ -1,6 +1,8 @@
-.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check
+.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
+DOCKER_COMPOSE_DIR := deploy/docker
+DOCKER_COMPOSE_FILE := $(DOCKER_COMPOSE_DIR)/docker-compose.yml
 
 # Default target
 help:
@@ -31,6 +33,14 @@ help:
 	@echo "  make sqlc-generate - Generate SQLc code from SQL queries"
 	@echo "  make migrate-up    - Run database migrations"
 	@echo "  make migrate-down  - Roll back one migration"
+	@echo ""
+	@echo "Docker Development:"
+	@echo "  make docker-up     - Start database and server in Docker"
+	@echo "  make docker-db     - Start only database in Docker"
+	@echo "  make docker-down   - Stop all Docker containers"
+	@echo "  make docker-logs   - View Docker container logs"
+	@echo "  make docker-rebuild - Rebuild and restart containers"
+	@echo "  make docker-clean  - Stop containers and remove volumes"
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -328,4 +338,108 @@ migrate-down:
 	else \
 		echo "migrate not found. Install with 'make install-tools'"; \
 		exit 1; \
+	fi
+
+# =============================================================================
+# Docker Development Targets
+# =============================================================================
+
+# Start both database and server in Docker
+.PHONY: docker-up
+docker-up:
+	@echo "Starting Docker containers (database + server)..."
+	@if [ ! -f $(DOCKER_COMPOSE_DIR)/.env ]; then \
+		echo ""; \
+		echo "⚠️  No .env file found in $(DOCKER_COMPOSE_DIR)/"; \
+		echo ""; \
+		echo "Creating .env with development defaults..."; \
+		echo "POSTGRES_DB=togather" > $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "POSTGRES_USER=togather" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "POSTGRES_PASSWORD=dev_password_change_me" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "ENVIRONMENT=development" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "LOG_LEVEL=debug" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "SERVER_PORT=8080" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "JWT_SECRET=dev_jwt_secret_change_me_in_production" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "ADMIN_API_KEY=dev_admin_key_change_me_in_production" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "ADMIN_PASSWORD=admin123" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo ""; \
+		echo "✓ Created $(DOCKER_COMPOSE_DIR)/.env with development defaults"; \
+		echo "⚠️  WARNING: These are INSECURE defaults for local development only!"; \
+		echo ""; \
+	fi
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d
+	@echo ""
+	@echo "✓ Containers started!"
+	@echo ""
+	@echo "Server:   http://localhost:8080"
+	@echo "Database: localhost:5432"
+	@echo ""
+	@echo "View logs:    make docker-logs"
+	@echo "Stop:         make docker-down"
+	@echo "Rebuild:      make docker-rebuild"
+
+# Start only database in Docker (for running server natively)
+.PHONY: docker-db
+docker-db:
+	@echo "Starting PostgreSQL database in Docker..."
+	@if [ ! -f $(DOCKER_COMPOSE_DIR)/.env ]; then \
+		echo ""; \
+		echo "⚠️  No .env file found in $(DOCKER_COMPOSE_DIR)/"; \
+		echo "Creating minimal .env for database..."; \
+		echo "POSTGRES_DB=togather" > $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "POSTGRES_USER=togather" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "POSTGRES_PASSWORD=dev_password_change_me" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo ""; \
+		echo "✓ Created $(DOCKER_COMPOSE_DIR)/.env"; \
+		echo ""; \
+	fi
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d togather-db
+	@echo ""
+	@echo "✓ Database started!"
+	@echo ""
+	@echo "Connection: postgresql://togather:dev_password_change_me@localhost:5432/togather"
+	@echo ""
+	@echo "To run the server natively:"
+	@echo "  1. Create .env in project root with DATABASE_URL"
+	@echo "  2. Run: make run"
+	@echo ""
+	@echo "View logs: make docker-logs"
+	@echo "Stop:      make docker-down"
+
+# Stop all Docker containers
+.PHONY: docker-down
+docker-down:
+	@echo "Stopping Docker containers..."
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose down
+	@echo "✓ Containers stopped"
+
+# View Docker container logs
+.PHONY: docker-logs
+docker-logs:
+	@echo "Viewing Docker logs (Ctrl+C to exit)..."
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose logs -f
+
+# Rebuild and restart containers
+.PHONY: docker-rebuild
+docker-rebuild:
+	@echo "Rebuilding and restarting containers..."
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d --build
+	@echo ""
+	@echo "✓ Containers rebuilt and restarted!"
+	@echo ""
+	@echo "Server:   http://localhost:8080"
+	@echo "Database: localhost:5432"
+
+# Stop containers and remove volumes (clean slate)
+.PHONY: docker-clean
+docker-clean:
+	@echo "⚠️  This will remove all containers AND volumes (database data will be lost)"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "Stopping containers and removing volumes..."; \
+		cd $(DOCKER_COMPOSE_DIR) && docker compose down -v; \
+		echo "✓ Containers and volumes removed"; \
+	else \
+		echo "Cancelled"; \
 	fi
