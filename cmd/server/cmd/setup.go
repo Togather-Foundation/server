@@ -230,7 +230,7 @@ func runSetup() error {
 	fmt.Println("✓ Created .env file")
 	fmt.Println()
 
-	// Step 7: Start services (if Docker)
+	// Step 7: Setup database and services
 	if useDocker {
 		fmt.Println("Step 7: Start Docker Services")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -245,6 +245,55 @@ func runSetup() error {
 			}
 		} else {
 			fmt.Println("ℹ️  Run 'make docker-up' to start services")
+		}
+		fmt.Println()
+	} else {
+		fmt.Println("Step 7: Setup Local Database")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		if setupNonInteractive || confirm("Set up local PostgreSQL database now?", true) {
+			// Check prerequisites
+			fmt.Println("Checking PostgreSQL extensions...")
+			if err := runCommand("make", "db-check"); err != nil {
+				fmt.Printf("⚠️  Extension check failed: %v\n", err)
+				fmt.Println("You may need to install PostGIS, pgvector, and pg_trgm extensions")
+				fmt.Println("Continue setup manually with:")
+				fmt.Println("  make db-setup")
+				fmt.Println("  make migrate-up && make migrate-river")
+				return nil
+			}
+
+			// Create database with extensions
+			fmt.Println("Creating database with extensions...")
+			if err := runCommand("make", "db-setup"); err != nil {
+				fmt.Printf("⚠️  Database creation failed: %v\n", err)
+				fmt.Println("Continue setup manually with:")
+				fmt.Println("  make db-setup")
+				fmt.Println("  make migrate-up && make migrate-river")
+				return nil
+			}
+			fmt.Println("✓ Database created")
+
+			// Run migrations
+			fmt.Println("Running migrations...")
+			if err := runCommand("make", "migrate-up"); err != nil {
+				fmt.Printf("⚠️  App migrations failed: %v\n", err)
+				fmt.Println("Continue manually with: make migrate-up && make migrate-river")
+				return nil
+			}
+			fmt.Println("✓ App migrations complete")
+
+			if err := runCommand("make", "migrate-river"); err != nil {
+				fmt.Printf("⚠️  River migrations failed: %v\n", err)
+				fmt.Println("Continue manually with: make migrate-river")
+				return nil
+			}
+			fmt.Println("✓ River migrations complete")
+			fmt.Println("✓ Database ready")
+		} else {
+			fmt.Println("ℹ️  Run these commands to set up manually:")
+			fmt.Println("     make db-setup")
+			fmt.Println("     make migrate-up && make migrate-river")
 		}
 		fmt.Println()
 	}
@@ -310,14 +359,12 @@ func runSetup() error {
 		fmt.Println("     curl http://localhost:8080/health | jq .")
 		fmt.Println()
 	} else {
-		fmt.Println("  1. Set up your database:")
-		fmt.Println("     make db-setup")
+		fmt.Println("  1. Start the server:")
+		fmt.Println("     server serve")
+		fmt.Println("     # Or: make run")
 		fmt.Println()
-		fmt.Println("  2. Run migrations:")
-		fmt.Println("     make migrate-up && make migrate-river")
-		fmt.Println()
-		fmt.Println("  3. Start the server:")
-		fmt.Println("     make run")
+		fmt.Println("  2. Check health:")
+		fmt.Println("     curl http://localhost:8080/health | jq .")
 		fmt.Println()
 	}
 
