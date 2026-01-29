@@ -1,6 +1,7 @@
 package testdata
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -216,5 +217,105 @@ func TestSampleSources_MatchesCSVTypes(t *testing.T) {
 		assert.NotEmpty(t, source.Name, "Source %d should have a name", i)
 		assert.NotEmpty(t, source.BaseURL, "Source %d should have a base URL", i)
 		assert.True(t, validTypes[source.Type], "Source %d type %q should be valid", i, source.Type)
+	}
+}
+
+func TestGenerator_TitleFormatting_NoExtraErrors(t *testing.T) {
+	g := NewDeterministicGenerator()
+
+	// Generate many events to test all template variations
+	for i := 0; i < 100; i++ {
+		input := g.RandomEventInput()
+
+		// Event titles should never contain fmt.Sprintf EXTRA errors
+		assert.NotContains(t, input.Name, "%!(EXTRA",
+			"Event title should not contain fmt.Sprintf formatting errors: %s", input.Name)
+
+		// Should also not contain raw format specifiers
+		assert.NotContains(t, input.Name, "%s",
+			"Event title should not contain unprocessed format specifiers: %s", input.Name)
+
+		// Should be non-empty
+		assert.NotEmpty(t, input.Name, "Event title should not be empty")
+
+		// Should be reasonable length (not truncated)
+		assert.Greater(t, len(input.Name), 3, "Event title should be meaningful length")
+	}
+}
+
+func TestGenerator_TitleFormatting_AllCategories(t *testing.T) {
+	categories := []EventCategory{
+		CategoryMusic,
+		CategoryArts,
+		CategoryTech,
+		CategorySocial,
+		CategoryEducation,
+		CategoryGames,
+	}
+
+	for _, category := range categories {
+		t.Run(string(category), func(t *testing.T) {
+			g := NewGenerator(time.Now().UnixNano())
+
+			// Test each category multiple times to hit different templates
+			for i := 0; i < 20; i++ {
+				title := g.generateTitle(category)
+
+				assert.NotContains(t, title, "%!(EXTRA",
+					"Category %s should not produce EXTRA errors: %s", category, title)
+				assert.NotContains(t, title, "%s",
+					"Category %s should not have unprocessed format specifiers: %s", category, title)
+				assert.NotEmpty(t, title, "Category %s should produce non-empty titles", category)
+			}
+		})
+	}
+}
+
+func TestGenerator_TitleFormatting_SpecificTemplates(t *testing.T) {
+	tests := []struct {
+		name     string
+		category EventCategory
+		contains string // expected substring in generated titles
+	}{
+		{
+			name:     "single_placeholder_templates",
+			category: CategoryMusic,
+			contains: "",
+		},
+		{
+			name:     "zero_placeholder_templates",
+			category: CategoryMusic,
+			contains: "Open Mic Night",
+		},
+		{
+			name:     "two_placeholder_templates",
+			category: CategoryMusic,
+			contains: "Live at",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGenerator(42)
+
+			foundExpected := false
+			for i := 0; i < 50; i++ {
+				title := g.generateTitle(tt.category)
+
+				// No formatting errors
+				assert.NotContains(t, title, "%!(EXTRA")
+				assert.NotContains(t, title, "%s")
+
+				// Check if we found the expected template
+				if tt.contains == "" || strings.Contains(title, tt.contains) {
+					foundExpected = true
+				}
+			}
+
+			if tt.contains != "" {
+				assert.True(t, foundExpected,
+					"Should have found at least one title containing '%s'", tt.contains)
+			}
+		})
 	}
 }

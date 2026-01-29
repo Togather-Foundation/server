@@ -5,6 +5,7 @@ package testdata
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -470,7 +471,20 @@ func (g *Generator) generateTitle(category EventCategory) string {
 
 	venue := g.randomVenue()
 
-	return fmt.Sprintf(template, subject, venue.Name)
+	// Count %s placeholders to avoid fmt.Sprintf EXTRA errors
+	placeholderCount := strings.Count(template, "%s")
+
+	switch placeholderCount {
+	case 0:
+		return template
+	case 1:
+		return fmt.Sprintf(template, subject)
+	case 2:
+		return fmt.Sprintf(template, subject, venue.Name)
+	default:
+		// Fallback: use subject only for safety
+		return fmt.Sprintf(template, subject)
+	}
 }
 
 func (g *Generator) generateDescription(category EventCategory) string {
