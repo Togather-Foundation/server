@@ -117,10 +117,12 @@ The setup command will:
 - ✅ Generate secure secrets
 - ✅ Configure database connection
 - ✅ Create .env file
-- ✅ Start Docker services (if using Docker)
+- ✅ Set up database and run migrations
 - ✅ Create your first API key
 
 After setup completes, your SEL server will be ready at `http://localhost:8080`!
+
+**Note:** For local PostgreSQL, you'll need PostgreSQL 16+ with PostGIS, pgvector, and pg_trgm extensions installed. See [PostgreSQL Setup Guide](docs/contributors/POSTGRESQL_SETUP.md) for installation instructions.
 
 ### Option 1: Docker (Manual Setup)
 ```bash
@@ -136,6 +138,9 @@ make docker-up
 ```
 
 ### Option 2: Local PostgreSQL (Manual Setup)
+
+**Prerequisites:** PostgreSQL 16+ with PostGIS, pgvector, and pg_trgm extensions. See [PostgreSQL Setup Guide](docs/contributors/POSTGRESQL_SETUP.md) for installation instructions.
+
 ```bash
 # Install tools
 make install-tools

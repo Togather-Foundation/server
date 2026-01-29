@@ -117,7 +117,16 @@ func runSetup() error {
 		fmt.Println("✓ Docker found")
 	} else {
 		if !checkCommand("psql") {
-			fmt.Println("⚠️  psql not found. You'll need PostgreSQL installed.")
+			fmt.Println("❌ psql not found - PostgreSQL is not installed")
+			fmt.Println()
+			fmt.Println("You need PostgreSQL 16+ with extensions (PostGIS, pgvector, pg_trgm).")
+			fmt.Println()
+			fmt.Println("Installation guide:")
+			fmt.Println("  docs/contributors/POSTGRESQL_SETUP.md")
+			fmt.Println("  https://github.com/Togather-Foundation/server/blob/main/docs/contributors/POSTGRESQL_SETUP.md")
+			fmt.Println()
+			fmt.Println("Or use Docker instead: ./server setup --docker")
+			return fmt.Errorf("PostgreSQL not installed")
 		} else {
 			fmt.Println("✓ PostgreSQL client found")
 		}
@@ -255,12 +264,22 @@ func runSetup() error {
 			// Check prerequisites
 			fmt.Println("Checking PostgreSQL extensions...")
 			if err := runCommand("make", "db-check"); err != nil {
-				fmt.Printf("⚠️  Extension check failed: %v\n", err)
-				fmt.Println("You may need to install PostGIS, pgvector, and pg_trgm extensions")
-				fmt.Println("Continue setup manually with:")
+				fmt.Println()
+				fmt.Println("❌ Extension check failed!")
+				fmt.Println()
+				fmt.Println("PostgreSQL extensions (PostGIS, pgvector, pg_trgm) are missing or")
+				fmt.Println("PostgreSQL is not properly configured.")
+				fmt.Println()
+				fmt.Println("📖 See installation guide:")
+				fmt.Println("   docs/contributors/POSTGRESQL_SETUP.md")
+				fmt.Println()
+				fmt.Println("Quick fix (Ubuntu/Debian):")
+				fmt.Println("  sudo apt install postgresql-16-postgis-3 postgresql-16-pgvector")
+				fmt.Println()
+				fmt.Println("After installing extensions, run setup again or continue manually:")
 				fmt.Println("  make db-setup")
 				fmt.Println("  make migrate-up && make migrate-river")
-				return nil
+				return fmt.Errorf("PostgreSQL extensions not available")
 			}
 
 			// Create database with extensions
