@@ -202,7 +202,19 @@ func runSetup() error {
 			dbPort = prompt("PostgreSQL port", dbPort)
 			dbName = prompt("Database name (will be created)", dbName)
 			dbUser = prompt("PostgreSQL username", dbUser)
-			dbPassword = promptPassword("PostgreSQL password (or press Enter for peer auth)")
+
+			fmt.Println()
+			fmt.Println("PostgreSQL Authentication:")
+			fmt.Println("  1. Peer authentication (no password, uses system user)")
+			fmt.Println("  2. Password authentication")
+			authChoice := promptChoice("Select authentication method", []string{"Peer (no password)", "Password"}, 0)
+
+			if authChoice == 1 {
+				dbPassword = prompt("PostgreSQL password", "")
+				if dbPassword == "" {
+					fmt.Println("⚠️  Empty password entered. Switching to peer authentication.")
+				}
+			}
 		} else {
 			dbPassword = "dev_password_change_me"
 		}

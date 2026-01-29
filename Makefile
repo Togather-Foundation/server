@@ -556,15 +556,22 @@ db-setup:
 	@echo ""
 	@if psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw $(DB_NAME); then \
 		echo "⚠️  Database '$(DB_NAME)' already exists"; \
-		read -p "Drop and recreate? [y/N] " -n 1 -r; \
-		echo; \
-		if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-			echo "Dropping database..."; \
-			dropdb $(DB_NAME) 2>/dev/null || true; \
-			echo "Creating database..."; \
-			createdb $(DB_NAME); \
+		if [ -t 0 ]; then \
+			printf "Drop and recreate? [y/N] "; \
+			read REPLY; \
+			case "$$REPLY" in \
+				[Yy]*) \
+					echo "Dropping database..."; \
+					dropdb $(DB_NAME) 2>/dev/null || true; \
+					echo "Creating database..."; \
+					createdb $(DB_NAME); \
+					;; \
+				*) \
+					echo "Using existing database"; \
+					;; \
+			esac; \
 		else \
-			echo "Using existing database"; \
+			echo "Using existing database (non-interactive mode)"; \
 		fi; \
 	else \
 		echo "Creating database '$(DB_NAME)'..."; \
