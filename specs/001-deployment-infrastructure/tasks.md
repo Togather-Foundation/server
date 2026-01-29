@@ -77,9 +77,9 @@ This is a deployment infrastructure feature for the existing Go project at repos
 - [x] T023a [US1] Implement secret sanitization in deployment logs (redact DATABASE_URL passwords, JWT_SECRET, API keys) in deploy/scripts/deploy.sh
 - [ ] T024 [US1] Add --dry-run validation mode to deploy/scripts/deploy.sh
 - [ ] T025 [US1] Add --version, --skip-migrations, --force flags to deploy/scripts/deploy.sh
-- [ ] T026 [US1] Create deploy/README.md with quick start deployment instructions
+- [x] T026 [US1] Create deploy/README.md with quick start deployment instructions
 
-**Checkpoint**: At this point, single-command deployment should work end-to-end for production
+**Checkpoint**: At this point, single-command deployment should work end-to-end for production ✅
 
 ---
 
@@ -96,12 +96,12 @@ This is a deployment infrastructure feature for the existing Go project at repos
 - [x] T027 [P] [US3] Implement automatic snapshot before migrations in deploy/scripts/snapshot-db.sh (606 lines with comprehensive features)
 - [x] T028 [P] [US3] Implement 7-day snapshot retention policy in deploy/scripts/snapshot-db.sh (integrated into snapshot-db.sh)
 - [ ] T029 [P] [US3] Implement automatic snapshot cleanup (delete expired) in deploy/scripts/cleanup.sh (cleanup integrated into snapshot-db.sh, standalone script optional)
-- [ ] T030 [US3] Add migration version validation in health check in internal/api/health.go
+- [x] T030 [US3] Add migration version validation in health check in internal/api/health.go
 - [ ] T031 [US3] Implement migration failure detection and automatic rollback trigger in deploy/scripts/deploy.sh
-- [ ] T032 [US3] Add migration execution locking to prevent concurrent migrations in deploy/scripts/deploy.sh
-- [ ] T033 [US3] Create migration troubleshooting documentation in deploy/docs/migrations.md
+- [x] T032 [US3] Add migration execution locking to prevent concurrent migrations in deploy/scripts/deploy.sh
+- [x] T033 [US3] Create migration troubleshooting documentation in deploy/docs/migrations.md
 
-**Checkpoint**: Database migrations should run safely with automatic snapshots and failure handling
+**Checkpoint**: Database migrations should run safely with automatic snapshots and failure handling ✅
 
 ---
 
@@ -113,15 +113,15 @@ This is a deployment infrastructure feature for the existing Go project at repos
 
 ### Implementation for User Story 4
 
-- [ ] T034 [P] [US4] Implement environment-specific configuration loading in deploy/scripts/deploy.sh
-- [ ] T035 [P] [US4] Implement secrets validation (ensure no CHANGE_ME placeholders) in deploy/scripts/deploy.sh
-- [ ] T036 [P] [US4] Implement configuration file validation (YAML schema check) in deploy/scripts/deploy.sh
-- [ ] T037 [US4] Add environment variable override precedence (CLI > env > .env > deployment.yml) in deploy/scripts/deploy.sh
-- [ ] T038 [US4] Implement secure file permissions check for .env files (chmod 600) in deploy/scripts/deploy.sh
-- [ ] T039 [US4] Add configuration error reporting with clear remediation steps in deploy/scripts/deploy.sh
+- [x] T034 [P] [US4] Implement environment-specific configuration loading in deploy/scripts/deploy.sh
+- [x] T035 [P] [US4] Implement secrets validation (ensure no CHANGE_ME placeholders) in deploy/scripts/deploy.sh
+- [x] T036 [P] [US4] Implement configuration file validation (YAML schema check) in deploy/scripts/deploy.sh
+- [x] T037 [US4] Add environment variable override precedence (CLI > env > .env > deployment.yml) in deploy/scripts/deploy.sh
+- [x] T038 [US4] Implement secure file permissions check for .env files (chmod 600) in deploy/scripts/deploy.sh
+- [x] T039 [US4] Add configuration error reporting with clear remediation steps in deploy/scripts/deploy.sh
 - [ ] T040 [US4] Create environment configuration guide in deploy/docs/configuration.md
 
-**Checkpoint**: Multiple environments should be independently configurable without code changes
+**Checkpoint**: Multiple environments should be independently configurable without code changes ✅
 
 ---
 
@@ -359,6 +359,18 @@ Track these metrics to verify MVP success criteria:
 - Phase 2 features (US2, US6) designed but implementation deferred post-MVP
 - All scripts follow deployment-scripts.md contract specifications
 - Monitoring stack (US6) is optional, enabled via ENABLE_MONITORING flag
+
+### Code Quality Improvements (2026-01-28)
+
+**P2 Issues Resolved** (12 issues closed):
+- **Documentation**: Fixed non-existent restore command refs, corrected psql restore examples (4 locations)
+- **Portability**: Added portable `get_file_perms()` helper, epoch-based date calculations (Linux/macOS compatible)
+- **Security**: Removed unnecessary sudo usage, uses `~/.togather/logs` instead of `/var/log`
+- **Validation**: Added DATABASE_URL validation, snapshot integrity checks (opt-in), schema table existence checks
+- **Code Quality**: Fixed hardcoded blue/green ports (8081, 8082), improved error context in health checks, parameterized SQL queries
+- **Health Checks**: Better error reporting (Details map), SQL parameterization (ANY($1)), verified context timeout propagation
+
+All deployment scripts now work portably on both Linux and macOS systems.
 
 ---
 
