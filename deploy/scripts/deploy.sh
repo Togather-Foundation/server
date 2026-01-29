@@ -92,23 +92,36 @@ EOF
 }
 
 # Sanitize secrets from strings (T023a - Secret sanitization)
+# NOTE: This function provides best-effort redaction but is NOT foolproof.
+# Avoid logging user-controlled input or environment variables directly.
 sanitize_secrets() {
     local input="$1"
     
-    # Redact DATABASE_URL passwords
+    # Redact DATABASE_URL passwords (handles special chars, stops at @ or end)
+    # Pattern: postgresql://user:password@host -> postgresql://user:***REDACTED***@host
     input=$(echo "$input" | sed -E 's|(postgresql://[^:]+:)[^@]+(@)|\1***REDACTED***\2|g')
     
-    # Redact JWT_SECRET
-    input=$(echo "$input" | sed -E 's|(JWT_SECRET[=:])[^ ]+|\1***REDACTED***|g')
+    # Redact key=value or key:value patterns (handles quoted values and special chars)
+    # Match until whitespace, quote, or end of line
+    input=$(echo "$input" | sed -E 's|(JWT_SECRET[=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|(ADMIN_API_KEY[=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
     
-    # Redact ADMIN_API_KEY
-    input=$(echo "$input" | sed -E 's|(ADMIN_API_KEY[=:])[^ ]+|\1***REDACTED***|g')
+    # Redact quoted values: KEY="value with spaces" or KEY='value'
+    input=$(echo "$input" | sed -E 's|(JWT_SECRET[=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|(ADMIN_API_KEY[=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
     
-    # Redact any password= or token= patterns
-    input=$(echo "$input" | sed -E 's|(password[=:])[^ ]+|\1***REDACTED***|gi')
-    input=$(echo "$input" | sed -E 's|(token[=:])[^ ]+|\1***REDACTED***|gi')
-    input=$(echo "$input" | sed -E 's|(secret[=:])[^ ]+|\1***REDACTED***|gi')
-    input=$(echo "$input" | sed -E 's|(key[=:])[^ ]+|\1***REDACTED***|gi')
+    # Redact generic secret patterns (case-insensitive, handles unquoted and quoted)
+    # Unquoted: password=value or password:value (stop at whitespace)
+    input=$(echo "$input" | sed -E 's|([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|([Tt][Oo][Kk][Ee][Nn][=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|([Ss][Ee][Cc][Rr][Ee][Tt][=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|([Kk][Ee][Yy][=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
+    
+    # Quoted: password="value with spaces" or password='value'
+    input=$(echo "$input" | sed -E 's|([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|([Tt][Oo][Kk][Ee][Nn][=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|([Ss][Ee][Cc][Rr][Ee][Tt][=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
+    input=$(echo "$input" | sed -E 's|([Kk][Ee][Yy][=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
     
     echo "$input"
 }
@@ -330,6 +343,7 @@ generate_id() {
 # Acquire deployment lock
 acquire_lock() {
     local env="$1"
+    local lock_dir="/tmp/togather-deploy-${env}.lock"
     
     log "INFO" "Acquiring deployment lock for ${env}"
     
@@ -339,30 +353,69 @@ acquire_lock() {
         return 1
     fi
     
-    # Read current lock status
-    local locked=$(jq -r '.lock.locked // false' "${STATE_FILE}")
-    
-    if [[ "$locked" == "true" ]]; then
-        # Check if lock is stale (> 30 minutes old)
+    # Try to create lock directory atomically (mkdir is atomic in POSIX)
+    if mkdir "$lock_dir" 2>/dev/null; then
+        # Lock acquired - set trap to cleanup on exit
+        trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
+        log "INFO" "Lock directory created: ${lock_dir}"
+    else
+        # Lock directory exists - check if stale
+        log "INFO" "Lock directory exists, checking if stale"
+        
+        # Read lock info from state file
+        local locked=$(jq -r '.lock.locked // false' "${STATE_FILE}")
         local locked_at=$(jq -r '.lock.locked_at // ""' "${STATE_FILE}")
         
-        if [[ -n "$locked_at" ]]; then
-            local locked_timestamp=$(date -d "$locked_at" +%s 2>/dev/null || echo "0")
-            local now_timestamp=$(date +%s)
-            local lock_age=$((now_timestamp - locked_timestamp))
+        if [[ "$locked" != "true" ]] || [[ -z "$locked_at" ]]; then
+            # Inconsistent state - lock dir exists but state file says unlocked
+            log "WARN" "Inconsistent lock state detected"
+            log "WARN" "Lock directory exists but state file shows unlocked"
+            log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
+            return 1
+        fi
+        
+        # Parse lock timestamp with explicit error handling
+        local locked_timestamp=$(date -d "$locked_at" +%s 2>/dev/null || echo "0")
+        
+        if [[ $locked_timestamp -eq 0 ]]; then
+            log "WARN" "Could not parse lock timestamp: ${locked_at}"
+            log "ERROR" "Lock may be corrupted, manual intervention required"
+            log "ERROR" "To override: rm -rf ${lock_dir} && edit ${STATE_FILE}"
+            return 1
+        fi
+        
+        local now_timestamp=$(date +%s)
+        local lock_age=$((now_timestamp - locked_timestamp))
+        
+        if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
+            log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
+            log "WARN" "Attempting to remove stale lock"
             
-            if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
-                log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
-                log "WARN" "Overriding stale lock"
+            if rmdir "$lock_dir" 2>/dev/null; then
+                log "WARN" "Stale lock removed, retrying acquisition"
+                # Retry lock acquisition
+                if mkdir "$lock_dir" 2>/dev/null; then
+                    trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
+                    log "INFO" "Lock acquired after removing stale lock"
+                else
+                    log "ERROR" "Failed to acquire lock after removing stale lock"
+                    log "ERROR" "Another process may have acquired it first"
+                    return 1
+                fi
             else
-                local locked_by=$(jq -r '.lock.locked_by // "unknown"' "${STATE_FILE}")
-                local deployment_id=$(jq -r '.lock.deployment_id // "unknown"' "${STATE_FILE}")
-                log "ERROR" "Deployment already in progress"
-                log "ERROR" "Locked by: ${locked_by}"
-                log "ERROR" "Deployment ID: ${deployment_id}"
-                log "ERROR" "Lock age: ${lock_age}s (timeout: ${LOCK_TIMEOUT}s)"
+                log "ERROR" "Failed to remove stale lock directory"
+                log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
                 return 1
             fi
+        else
+            local locked_by=$(jq -r '.lock.locked_by // "unknown"' "${STATE_FILE}")
+            local deployment_id=$(jq -r '.lock.deployment_id // "unknown"' "${STATE_FILE}")
+            log "ERROR" "Deployment already in progress"
+            log "ERROR" "Locked by: ${locked_by}"
+            log "ERROR" "Deployment ID: ${deployment_id}"
+            log "ERROR" "Lock age: ${lock_age}s (timeout: ${LOCK_TIMEOUT}s)"
+            log "ERROR" "Lock directory: ${lock_dir}"
+            return 1
         fi
     fi
     
@@ -389,7 +442,11 @@ acquire_lock() {
           lock_expires_at: $lock_expires_at,
           pid: ($pid | tonumber),
           hostname: $hostname
-        }' || return 1
+        }' || {
+        log "ERROR" "Failed to update state file with lock"
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
+    }
     
     log "SUCCESS" "Deployment lock acquired: ${DEPLOYMENT_ID}"
     return 0
@@ -497,10 +554,7 @@ create_db_snapshot() {
 # Execute database migrations (T018, T031: Failure detection, T032: Locking)
 run_migrations() {
     local env="$1"
-    local migration_lock="/tmp/togather-migration-${env}.lock"
-    
-    # Set trap early to ensure cleanup on ALL exit paths
-    trap 'rm -f "$migration_lock"' EXIT INT TERM
+    local migration_lock_dir="/tmp/togather-migration-${env}.lock"
     
     log "INFO" "Executing database migrations"
     
@@ -515,18 +569,17 @@ run_migrations() {
         return 1
     fi
     
-    # T032: Acquire migration lock to prevent concurrent migrations
-    if [[ -f "$migration_lock" ]]; then
-        local lock_pid=$(cat "$migration_lock" 2>/dev/null || echo "unknown")
-        log "ERROR" "Migration lock exists (PID: ${lock_pid})"
+    # T032: Acquire migration lock atomically to prevent concurrent migrations
+    if mkdir "$migration_lock_dir" 2>/dev/null; then
+        # Lock acquired - set trap to cleanup on ALL exit paths
+        trap 'rmdir "$migration_lock_dir" 2>/dev/null || true' RETURN EXIT INT TERM
+        log "INFO" "Migration lock acquired"
+    else
+        log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
         log "ERROR" "Another migration may be in progress"
-        log "ERROR" "If stale, remove: rm ${migration_lock}"
+        log "ERROR" "If stale, remove: rm -rf ${migration_lock_dir}"
         return 1
     fi
-    
-    # Create migration lock (trap will cleanup on any exit)
-    echo "$$" > "$migration_lock"
-    log "INFO" "Migration lock acquired"
     
     # Check current migration version
     local current_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
