@@ -1,10 +1,11 @@
 module github.com/Togather-Foundation/server
 
-go 1.25.0
+go 1.24.0
 
-toolchain go1.25.6
+toolchain go1.24.3
 
 require (
+	github.com/docker/go-connections v0.6.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
@@ -40,7 +41,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker v28.5.1+incompatible // indirect
-	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
