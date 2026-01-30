@@ -69,8 +69,9 @@ cd deploy/scripts
 # Check if process is running
 ps -p 12345
 
-# Check lock file
-cat /tmp/togather-migration-production.lock
+# Check lock directory (uses atomic mkdir for locking)
+ls -ld /tmp/togather-migration-production.lock
+test -d /tmp/togather-migration-production.lock && echo "Lock exists"
 ```
 
 **Resolution:**
@@ -87,8 +88,10 @@ tail -f /var/log/togather/deployments/<deployment-id>.log
 # Verify no migration running
 ps aux | grep migrate
 
-# Remove stale lock
-rm /tmp/togather-migration-production.lock
+# Remove stale lock directory (uses POSIX-atomic mkdir for locking)
+rmdir /tmp/togather-migration-production.lock
+# Or use rm -rf if directory has unexpected contents
+# rm -rf /tmp/togather-migration-production.lock
 
 # Retry deployment
 cd deploy/scripts
@@ -294,11 +297,11 @@ cd deploy/scripts
 # Check if multiple deploy.sh processes running
 ps aux | grep deploy.sh
 
-# Check deployment lock
-cat /tmp/togather-deploy-production.lock
+# Check deployment lock directory
+test -d /tmp/togather-deploy-production.lock && echo "Deployment lock exists"
 
-# Check migration lock
-cat /tmp/togather-migration-production.lock
+# Check migration lock directory
+test -d /tmp/togather-migration-production.lock && echo "Migration lock exists"
 ```
 
 **Resolution:**
@@ -319,9 +322,9 @@ cd deploy/scripts
 # Verify no processes running
 ps aux | grep -E "(deploy\.sh|migrate)"
 
-# Remove stale locks
-rm /tmp/togather-deploy-production.lock
-rm /tmp/togather-migration-production.lock
+# Remove stale lock directories (atomic directory-based locking)
+rmdir /tmp/togather-deploy-production.lock 2>/dev/null || rm -rf /tmp/togather-deploy-production.lock
+rmdir /tmp/togather-migration-production.lock 2>/dev/null || rm -rf /tmp/togather-migration-production.lock
 
 # Retry
 ./deploy.sh production
@@ -406,16 +409,15 @@ psql "$DATABASE_URL" --echo-errors < internal/storage/postgres/migrations/202601
 ### Check Migration Lock Internals
 
 ```bash
-# View lock details
-cat /tmp/togather-migration-production.lock
+# View lock directory (uses POSIX-atomic mkdir for locking)
+ls -ld /tmp/togather-migration-production.lock
 
-# Output: PID of process holding lock
-# 12345
+# Check if lock directory exists
+test -d /tmp/togather-migration-production.lock && echo "Lock exists" || echo "No lock"
 
-# Check if process is alive
-ps -p 12345 -o pid,comm,start,etime
-
-# If process doesn't exist, lock is stale
+# Check process that created lock (PID from state file, not lock itself)
+# Lock directory provides atomicity via mkdir operation
+# Process info stored in deployment state file instead
 ```
 
 ### Query Schema Migrations Table

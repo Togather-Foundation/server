@@ -318,6 +318,21 @@ test_db_connection() {
 # Snapshot Creation
 # ============================================================================
 
+# create_snapshot - Creates compressed database snapshot with metadata
+# Executes pg_dump with gzip compression and generates JSON metadata file
+# Includes automatic retention tracking and deployment context
+# Args:
+#   $1 - reason (string, used in filename and metadata)
+# Returns:
+#   0 on success, 3 on pg_dump failure, 4 on gzip failure
+# Outputs:
+#   - Snapshot file: $SNAPSHOT_DIR/togather_${db}_${timestamp}_${reason}.sql.gz
+#   - Metadata file: $SNAPSHOT_DIR/togather_${db}_${timestamp}_${reason}.meta.json
+# Side effects:
+#   - Creates .pgpass file temporarily for secure auth
+#   - Prints snapshot path to stdout (for capture by calling script)
+# Example:
+#   snapshot_path=$(create_snapshot "pre_migration")
 create_snapshot() {
     local reason="$1"
     local timestamp
@@ -373,6 +388,7 @@ EOF
     trap "cleanup_pgpass '$pgpass_file'" RETURN
     
     # Run pg_dump with gzip, capturing exit codes
+    # Note: Removed --verbose flag to reduce log clutter (only errors printed)
     PGPASSFILE="$pgpass_file" pg_dump \
         -h "$POSTGRES_HOST" \
         -p "$POSTGRES_PORT" \
@@ -383,7 +399,6 @@ EOF
         --no-acl \
         --clean \
         --if-exists \
-        --verbose \
         2>&1 | gzip > "$snapshot_path"
     
     # Check both pg_dump and gzip exit codes

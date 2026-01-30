@@ -167,7 +167,15 @@ get_file_perms() {
     return 1
 }
 
-# Atomic state file update (T022: Atomic writes with fsync)
+# update_state_file_atomic - Atomically updates deployment state file with fsync
+# Implements atomic write pattern: write to temp -> fsync -> rename
+# This prevents partial writes and ensures durability (T022 requirement)
+# Args:
+#   $@ - jq arguments (e.g., --arg key value '.field = $key')
+# Returns:
+#   0 on success, 1 on error
+# Example:
+#   update_state_file_atomic --arg status "deployed" '.deployments[-1].status = $status'
 update_state_file_atomic() {
     local jq_expression="$1"
     local temp_file=$(mktemp)
@@ -439,6 +447,12 @@ validate_tool_versions() {
     # Check docker version (>= 20.10)
     if ! command -v docker &> /dev/null; then
         log "ERROR" "docker not found in PATH"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  Install Docker Engine >= 20.10"
+        log "ERROR" "  Ubuntu/Debian: https://docs.docker.com/engine/install/ubuntu/"
+        log "ERROR" "  RHEL/CentOS: https://docs.docker.com/engine/install/centos/"
+        log "ERROR" "  macOS: https://docs.docker.com/desktop/install/mac-install/"
         ((errors++))
     else
         local docker_version=$(docker --version | grep -oP '\d+\.\d+' | head -1)
@@ -456,6 +470,11 @@ validate_tool_versions() {
     # Check docker-compose version (>= 2.0)
     if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
         log "ERROR" "docker-compose not found (neither standalone nor docker compose plugin)"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  Install Docker Compose >= 2.0"
+        log "ERROR" "  Plugin (recommended): docker compose comes with Docker Desktop"
+        log "ERROR" "  Standalone: https://docs.docker.com/compose/install/standalone/"
         ((errors++))
     else
         local compose_cmd="docker-compose"
@@ -571,7 +590,20 @@ generate_id() {
     echo "${prefix}_${timestamp_hex}_${random}"
 }
 
-# Acquire deployment lock
+# acquire_lock - Acquires deployment lock using atomic directory creation
+# Implements distributed locking using POSIX-atomic mkdir operation
+# Handles stale lock detection with configurable timeout (LOCK_TIMEOUT)
+# Coordinates with state file to track lock ownership and metadata
+# Args:
+#   $1 - environment (e.g., "production", "staging")
+# Returns:
+#   0 on success (sets DEPLOYMENT_ID global), 1 if lock held by another process
+# Side effects:
+#   - Creates lock directory: /tmp/togather-deploy-${env}.lock
+#   - Sets trap to cleanup lock on exit
+#   - Updates state file with lock metadata
+# Example:
+#   acquire_lock "production" || { echo "Deploy in progress"; exit 1; }
 acquire_lock() {
     local env="$1"
     local lock_dir="/tmp/togather-deploy-${env}.lock"
@@ -581,6 +613,10 @@ acquire_lock() {
     # Check if state file exists
     if [[ ! -f "${STATE_FILE}" ]]; then
         log "ERROR" "Deployment state file not found: ${STATE_FILE}"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  Initialize deployment infrastructure:"
+        log "ERROR" "  cd deploy/scripts && ./deploy.sh init"
         return 1
     fi
     
@@ -790,7 +826,22 @@ create_db_snapshot() {
     return 0
 }
 
-# Execute database migrations (T018, T031: Failure detection, T032: Locking)
+# run_migrations - Executes database migrations with locking and rollback support
+# Implements safe migration execution with atomic locking to prevent concurrent runs
+# Detects dirty migration state and provides detailed recovery instructions
+# Validates migration success and updates deployment metadata
+# Args:
+#   $1 - environment (e.g., "production", "staging")
+# Returns:
+#   0 on success, 1 on failure (dirty state, lock conflict, or migration error)
+# Side effects:
+#   - Creates migration lock: /tmp/togather-migration-${env}.lock
+#   - Sources .env.${env} to get DATABASE_URL
+#   - Runs golang-migrate CLI against database
+# Error recovery:
+#   On failure, provides rollback instructions referencing snapshot created by create_db_snapshot
+# Example:
+#   create_db_snapshot production && run_migrations production
 run_migrations() {
     local env="$1"
     local migration_lock_dir="/tmp/togather-migration-${env}.lock"
@@ -916,7 +967,20 @@ get_inactive_slot() {
     fi
 }
 
-# Deploy to inactive slot (T019: Blue-green orchestration)
+# deploy_to_slot - Deploys application to specified blue/green slot
+# Orchestrates container deployment using docker-compose for zero-downtime releases
+# Deploys to inactive slot by default, allowing health checks before traffic switch
+# Args:
+#   $1 - environment (e.g., "production", "staging")
+#   $2 - slot (optional: "blue" or "green", defaults to inactive slot)
+# Returns:
+#   0 on success, 1 on docker-compose failure
+# Side effects:
+#   - Exports COMPOSE_PROJECT_NAME, DEPLOYMENT_SLOT, IMAGE_TAG, ENV_FILE
+#   - Starts docker container for specified slot
+# Example:
+#   deploy_to_slot production blue  # Deploy to blue slot explicitly
+#   deploy_to_slot production        # Deploy to inactive slot (auto-detected)
 deploy_to_slot() {
     local env="$1"
     local slot="${2:-$(get_inactive_slot)}"  # Accept slot as parameter or determine it
@@ -945,7 +1009,23 @@ deploy_to_slot() {
     return 0
 }
 
-# Switch traffic to new slot (T021: Traffic switching)
+# switch_traffic - Switches load balancer traffic to new deployment slot
+# Implements zero-downtime traffic cutover for blue-green deployments
+# Updates nginx configuration to route traffic to newly deployed slot
+# Should only be called after successful health checks on new slot
+# Args:
+#   $1 - environment (e.g., "production", "staging")
+#   $2 - new_slot (optional: "blue" or "green", defaults to inactive slot)
+# Returns:
+#   0 on success, 1 on nginx reload failure
+# Side effects:
+#   - Updates nginx configuration
+#   - Reloads nginx container to apply config changes
+# Notes:
+#   - This is simplified version; production uses nginx config templates
+#   - Traffic switch is atomic (nginx reload is zero-downtime)
+# Example:
+#   validate_health production blue && switch_traffic production blue
 switch_traffic() {
     local env="$1"
     local new_slot="${2:-$(get_inactive_slot)}"  # Accept slot as parameter or determine it
