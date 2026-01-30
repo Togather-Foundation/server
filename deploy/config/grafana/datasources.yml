@@ -1,30 +1,12 @@
-# Grafana Datasource Provisioning Configuration
-# This file is automatically loaded by Grafana on startup
-# See: https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources
-
 apiVersion: 1
 
-# List of datasources to provision
 datasources:
-  # Prometheus datasource for Togather metrics
   - name: Prometheus
     type: prometheus
     access: proxy
-    # URL where Prometheus is accessible from Grafana container
+    uid: prometheus
     url: http://prometheus:9090
-    # Make this the default datasource
     isDefault: true
-    # Enable basic auth if needed (currently disabled)
-    basicAuth: false
-    # JSON data for datasource-specific settings
     jsonData:
-      # Enable Prometheus query editor features
       httpMethod: POST
-      # Timeout for queries (30 seconds)
-      timeout: 30
-      # Enable exemplars for trace integration (future)
-      exemplarTraceIdDestinations: []
-    # Read-only mode (prevents users from modifying in UI)
     editable: false
-    # Version of the datasource config (for future migrations)
-    version: 1

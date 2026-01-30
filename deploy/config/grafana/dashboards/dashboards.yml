@@ -26,6 +26,6 @@ providers:
     options:
       # Path to dashboard JSON files
       # This path is inside the Grafana container
-      path: /etc/grafana/provisioning/dashboards
+      path: /etc/grafana/provisioning/dashboards/json
       # Follow symbolic links
       foldersFromFilesStructure: false
