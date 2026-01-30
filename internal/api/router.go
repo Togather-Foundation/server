@@ -23,34 +23,22 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
+	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 )
 
 const (
-	// dbConnectionTimeout is the timeout for establishing database connections
-	dbConnectionTimeout = 5 * time.Second
-
 	// maxRouterRetries is the maximum number of retries for router operations
 	maxRouterRetries = 10
 )
 
-func NewRouter(cfg config.Config, logger zerolog.Logger, version, gitCommit, buildDate string) http.Handler {
-	ctx, cancel := context.WithTimeout(context.Background(), dbConnectionTimeout)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, cfg.Database.URL)
-	if err != nil {
-		logger.Error().Err(err).Msg("database connection failed")
-		return http.NewServeMux()
-	}
-	// Note: Connection pool is intentionally not closed here as it's used by the router
-	// throughout the application lifecycle. It will be cleaned up on process exit.
-
+func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string) http.Handler {
 	repo, err := postgres.NewRepository(pool)
 	if err != nil {
 		logger.Error().Err(err).Msg("repository init failed")
-		pool.Close() // Clean up pool if repository init fails
 		return http.NewServeMux()
 	}
 
@@ -69,7 +57,6 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, version, gitCommit, bui
 	riverClient, err := jobs.NewClient(pool, workers, slogLogger)
 	if err != nil {
 		logger.Error().Err(err).Msg("river client init failed")
-		pool.Close()
 		return http.NewServeMux()
 	}
 	// Start River workers for background job processing (use background context for long-running workers)
@@ -137,6 +124,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, version, gitCommit, bui
 	mux.Handle("/version", VersionHandler(version, gitCommit, buildDate))
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
 	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
+
+	// Prometheus metrics endpoint (FR-022)
+	mux.Handle("/metrics", promhttp.HandlerFor(
+		metrics.Registry,
+		promhttp.HandlerOpts{
+			EnableOpenMetrics: true, // Support OpenMetrics format
+		},
+	))
 
 	// Middleware setup
 	apiKeyRepo := repo.Auth().APIKeys()
@@ -279,13 +274,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, version, gitCommit, bui
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
 
 	// Wrap entire router with middleware stack
-	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit
+	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit -> HTTPMetrics
 	// Note: Security headers and CORS must be applied first to ensure they're set on all responses
+	// HTTPMetrics is last (innermost) so it captures actual handler latency, not middleware overhead
 	handler := middleware.SecurityHeaders(requireHTTPS)(mux)
 	handler = middleware.CORS(cfg.CORS)(handler)
 	handler = middleware.CorrelationID(logger)(handler)
 	handler = middleware.RequestLogging(logger)(handler)
 	handler = middleware.RateLimit(cfg.RateLimit)(handler)
+	handler = metrics.HTTPMiddleware(handler)
 
 	return handler
 }

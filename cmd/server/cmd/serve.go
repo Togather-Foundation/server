@@ -12,6 +12,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -78,6 +79,10 @@ func runServer() error {
 	logger := config.NewLogger(cfg.Logging)
 	logger.Info().Msg("starting SEL server")
 
+	// Initialize Prometheus metrics with version information
+	metrics.Init(Version, GitCommit, BuildDate)
+	logger.Info().Str("version", Version).Msg("metrics initialized")
+
 	// Bootstrap admin user if configured
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := bootstrapAdminUser(ctx, cfg, logger); err != nil {
@@ -85,10 +90,27 @@ func runServer() error {
 	}
 	cancel()
 
+	// Create database connection pool
+	poolCtx, poolCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	pool, err := pgxpool.New(poolCtx, cfg.Database.URL)
+	poolCancel()
+	if err != nil {
+		return fmt.Errorf("database connection failed: %w", err)
+	}
+	defer pool.Close()
+
+	// Start database metrics collector (collect every 15 seconds)
+	dbCollector := metrics.NewDBCollector(pool)
+	collectorCtx, collectorCancel := context.WithCancel(context.Background())
+	go dbCollector.Start(collectorCtx, 15*time.Second)
+	defer collectorCancel()
+	defer dbCollector.Stop()
+	logger.Info().Msg("database metrics collector started")
+
 	// Create HTTP server
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:           api.NewRouter(cfg, logger, Version, GitCommit, BuildDate),
+		Handler:           api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate),
 		ReadTimeout:       10 * time.Second, // Total time to read request
 		WriteTimeout:      30 * time.Second, // Total time to write response
 		ReadHeaderTimeout: 5 * time.Second,  // Time to read headers
