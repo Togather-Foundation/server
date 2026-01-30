@@ -313,6 +313,23 @@ validate_config() {
         return 1
     fi
     
+    # Basic validation: Check if deployment.yml is valid YAML
+    # Use Python to validate YAML syntax (available on all platforms)
+    log "INFO" "Validating deployment.yml structure..."
+    if ! python3 -c "import yaml; yaml.safe_load(open('${DEPLOYMENT_CONFIG}'))" 2>/dev/null; then
+        log "ERROR" "deployment.yml is not valid YAML syntax"
+        log "ERROR" "File: ${DEPLOYMENT_CONFIG}"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  1. Check YAML syntax with: python3 -c \"import yaml; yaml.safe_load(open('${DEPLOYMENT_CONFIG}'))\""
+        log "ERROR" "  2. Verify indentation is consistent (use spaces, not tabs)"
+        log "ERROR" "  3. See schema documentation: ${CONFIG_DIR}/deployment.schema.json"
+        return 1
+    fi
+    
+    log "INFO" "deployment.yml is valid YAML"
+    log "INFO" "Note: See ${CONFIG_DIR}/deployment.schema.json for full schema documentation"
+    
     # Check environment file exists
     local env_file="${CONFIG_DIR}/environments/.env.${env}"
     if [[ ! -f "${env_file}" ]]; then
@@ -772,6 +789,49 @@ trap trap_exit EXIT INT TERM
 # DOCKER BUILD FUNCTIONS (T016)
 # ============================================================================
 
+# Validate Docker build arguments format
+validate_build_args() {
+    local git_commit="$1"
+    local build_timestamp="$2"
+    local version="$3"
+    
+    local errors=()
+    
+    # Validate GIT_COMMIT format (40-character hex string for full commit)
+    if [[ -n "${git_commit}" ]] && [[ "${git_commit}" != "unknown" ]]; then
+        if ! echo "${git_commit}" | grep -qE '^[0-9a-f]{40}$'; then
+            errors+=("GIT_COMMIT must be 40-character hex string (got: ${git_commit})")
+        fi
+    fi
+    
+    # Validate BUILD_TIMESTAMP format (ISO8601: YYYY-MM-DDTHH:MM:SSZ)
+    if [[ -n "${build_timestamp}" ]] && [[ "${build_timestamp}" != "unknown" ]]; then
+        if ! echo "${build_timestamp}" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; then
+            errors+=("BUILD_TIMESTAMP must be ISO8601 format YYYY-MM-DDTHH:MM:SSZ (got: ${build_timestamp})")
+        fi
+    fi
+    
+    # Validate VERSION format (semantic version or short commit)
+    if [[ -n "${version}" ]] && [[ "${version}" != "dev" ]] && [[ "${version}" != "unknown" ]]; then
+        # Accept semver (X.Y.Z) or short commit (7-char hex) or full commit (40-char hex)
+        if ! echo "${version}" | grep -qE '^(v?[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{7,40})$'; then
+            errors+=("VERSION must be semver (X.Y.Z) or git commit hash (got: ${version})")
+        fi
+    fi
+    
+    # Report errors if any
+    if [[ ${#errors[@]} -gt 0 ]]; then
+        log "ERROR" "Docker build argument validation failed:"
+        for error in "${errors[@]}"; do
+            log "ERROR" "  - ${error}"
+        done
+        return 1
+    fi
+    
+    log "INFO" "Build arguments validated successfully"
+    return 0
+}
+
 # Build Docker image with version metadata
 build_docker_image() {
     local env="$1"
@@ -781,6 +841,12 @@ build_docker_image() {
     local image_name="togather-server"
     local image_tag="${GIT_SHORT_COMMIT}"
     local build_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    # Validate build arguments before building
+    if ! validate_build_args "${GIT_COMMIT}" "${build_timestamp}" "${GIT_SHORT_COMMIT}"; then
+        log "ERROR" "Build argument validation failed"
+        return 1
+    fi
     
     # Build image with version metadata
     cd "${PROJECT_ROOT}"

@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Togather Deployment Configuration",
+  "description": "Schema for deployment.yml configuration file",
+  "type": "object",
+  "required": ["app", "database", "deployment"],
+  "properties": {
+    "app": {
+      "type": "object",
+      "required": ["name", "port", "health_endpoint"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Application name (lowercase, alphanumeric with hyphens)"
+        },
+        "version": {
+          "type": "string",
+          "description": "Application version (can be template variable)"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Application port number"
+        },
+        "health_endpoint": {
+          "type": "string",
+          "pattern": "^/[a-z0-9/-]*$",
+          "description": "Health check endpoint path"
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["extensions", "migrations"],
+      "properties": {
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["postgis", "pgvector", "pg_trgm"]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "PostgreSQL extensions required"
+        },
+        "migrations": {
+          "type": "object",
+          "required": ["path", "timeout"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path to migration files"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Migration timeout in seconds"
+            },
+            "snapshot_enabled": {
+              "type": "boolean",
+              "description": "Enable snapshot before migrations"
+            },
+            "snapshot_retention_days": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Snapshot retention period in days"
+            }
+          }
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "required": ["strategy", "health_check"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["blue-green", "rolling", "recreate"],
+          "description": "Deployment strategy"
+        },
+        "health_check": {
+          "type": "object",
+          "required": ["retries", "interval", "timeout"],
+          "properties": {
+            "retries": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of health check retries"
+            },
+            "interval": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Interval between retries in seconds"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Timeout per attempt in seconds"
+            },
+            "startup_grace_period": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Grace period before first check in seconds"
+            }
+          }
+        },
+        "rollback": {
+          "type": "object",
+          "properties": {
+            "auto_rollback": {
+              "type": "boolean",
+              "description": "Automatically rollback on failure"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Rollback timeout in seconds"
+            }
+          }
+        },
+        "lock": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["filesystem", "redis", "dynamodb"],
+              "description": "Lock mechanism type"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Lock timeout in seconds"
+            }
+          }
+        }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "prometheus": {
+          "type": "object",
+          "properties": {
+            "scrape_interval": {
+              "type": "string",
+              "pattern": "^[0-9]+(s|m|h)$",
+              "description": "Scrape interval (e.g., 15s, 1m)"
+            },
+            "retention_days": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "grafana": {
+          "type": "object",
+          "properties": {
+            "admin_user": {
+              "type": "string"
+            },
+            "anonymous_enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "alerting": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "channels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["type"],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["webhook", "email", "slack"]
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "webhook": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["started", "completed", "failed", "rolled_back"]
+              }
+            },
+            "retries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "properties": {
+        "docker": {
+          "type": "object",
+          "properties": {
+            "compose_file": {
+              "type": "string"
+            },
+            "blue_green_file": {
+              "type": "string"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "network": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "driver": {
+                  "type": "string",
+                  "enum": ["bridge", "host", "overlay"]
+                }
+              }
+            },
+            "volumes": {
+              "type": "object"
+            }
+          }
+        },
+        "aws": {
+          "type": "object"
+        },
+        "gcp": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}
