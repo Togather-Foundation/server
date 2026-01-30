@@ -341,8 +341,12 @@ docker build -f deploy/docker/Dockerfile -t togather-server:test .
 
 3. **Restore database if needed:**
    ```bash
+   # List available snapshots
    cd deploy/scripts
-   ./snapshot-db.sh restore production /var/backups/togather/togather_production_<timestamp>.sql.gz
+   ./snapshot-db.sh --list
+   
+   # Restore from gzipped snapshot
+   gunzip -c /var/backups/togather/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
    ```
 
 4. **Redeploy working version:**

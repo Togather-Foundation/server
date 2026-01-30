@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean db-setup db-init db-check setup
+.PHONY: help build test test-ci lint lint-ci ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -40,6 +40,7 @@ help:
 	@echo "  make migrate-up    - Run database migrations"
 	@echo "  make migrate-down  - Roll back one migration"
 	@echo "  make migrate-river - Run River job queue migrations"
+	@echo "  make docker-compose-lint - Validate docker-compose YAML files"
 	@echo ""
 	@echo "Docker Development:"
 	@echo "  make docker-up     - Start database and server in Docker (port 5433)"
@@ -164,6 +165,18 @@ lint-ci:
 		exit 1; \
 	fi
 
+# Validate docker-compose files
+docker-compose-lint:
+	@echo "Validating docker-compose files..."
+	@if ! command -v docker > /dev/null 2>&1; then \
+		echo "✗ docker not found. Install Docker to validate compose files"; \
+		exit 1; \
+	fi
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose -f docker-compose.yml config --quiet
+	@echo "✓ docker-compose.yml is valid"
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose -f docker-compose.blue-green.yml config --quiet
+	@echo "✓ docker-compose.blue-green.yml is valid"
+
 # Run full CI pipeline locally
 ci: lint-ci
 	@echo ""
@@ -175,6 +188,9 @@ ci: lint-ci
 	else \
 		echo "✓ Code is properly formatted"; \
 	fi
+	@echo ""
+	@echo "==> Validating docker-compose files..."
+	@$(MAKE) docker-compose-lint
 	@echo ""
 	@echo "==> Building server..."
 	@$(MAKE) build
