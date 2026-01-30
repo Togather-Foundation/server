@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -118,6 +119,9 @@ func (h *HealthChecker) checkDatabase(ctx context.Context) CheckResult {
 		return CheckResult{
 			Status:  "fail",
 			Message: "Database pool not initialized",
+			Details: map[string]interface{}{
+				"remediation": "Check that DATABASE_URL is set correctly and PostgreSQL is running",
+			},
 		}
 	}
 
@@ -132,13 +136,38 @@ func (h *HealthChecker) checkDatabase(ctx context.Context) CheckResult {
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
+		// Provide operator-friendly error messages based on error type
+		message := "Database query failed"
+		details := map[string]interface{}{
+			"error": err.Error(),
+		}
+
+		// Add specific remediation based on error type
+		if ctx.Err() == context.DeadlineExceeded || dbCtx.Err() == context.DeadlineExceeded {
+			message = "Database query timed out after 2 seconds"
+			details["remediation"] = "Check PostgreSQL performance, network latency, or increase timeout"
+		} else if strings.Contains(err.Error(), "connection refused") {
+			message = "Database connection refused"
+			details["remediation"] = "Verify PostgreSQL is running and DATABASE_URL host/port are correct"
+			details["check"] = "Run: docker-compose ps postgres (or systemctl status postgresql)"
+		} else if strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "dial tcp") {
+			message = "Cannot reach database host"
+			details["remediation"] = "Check DATABASE_URL hostname and network connectivity"
+		} else if strings.Contains(err.Error(), "authentication failed") || strings.Contains(err.Error(), "password") {
+			message = "Database authentication failed"
+			details["remediation"] = "Verify DATABASE_URL username and password are correct"
+		} else if strings.Contains(err.Error(), "database") && strings.Contains(err.Error(), "does not exist") {
+			message = "Database does not exist"
+			details["remediation"] = "Create database or check DATABASE_URL database name"
+		} else {
+			details["remediation"] = "Check DATABASE_URL environment variable and PostgreSQL service status"
+		}
+
 		return CheckResult{
 			Status:    "fail",
-			Message:   "Database query failed",
+			Message:   message,
 			LatencyMs: latency,
-			Details: map[string]interface{}{
-				"error": err.Error(),
-			},
+			Details:   details,
 		}
 	}
 
@@ -167,6 +196,9 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 		return CheckResult{
 			Status:  "fail",
 			Message: "Database pool not initialized",
+			Details: map[string]interface{}{
+				"remediation": "Check that DATABASE_URL is set correctly and PostgreSQL is running",
+			},
 		}
 	}
 
@@ -182,25 +214,39 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
+		message := "Failed to query migration version"
+		details := map[string]interface{}{
+			"error": err.Error(),
+		}
+
+		// Provide specific guidance based on error type
+		if strings.Contains(err.Error(), "does not exist") {
+			message = "Migrations table not found"
+			details["remediation"] = "Run database migrations first: make migrate-up (or docker-compose exec server migrate up)"
+		} else if strings.Contains(err.Error(), "connection") {
+			details["remediation"] = "Database connection issue - check DATABASE_URL and PostgreSQL status"
+		} else {
+			details["remediation"] = "Verify migrations have been applied and schema_migrations table exists"
+		}
+
 		return CheckResult{
 			Status:    "fail",
-			Message:   "Failed to query migration version",
+			Message:   message,
 			LatencyMs: latency,
-			Details: map[string]interface{}{
-				"error": err.Error(),
-			},
+			Details:   details,
 		}
 	}
 
 	if dirty {
 		return CheckResult{
 			Status:    "fail",
-			Message:   "Database in dirty migration state",
+			Message:   "Database in dirty migration state - manual intervention required",
 			LatencyMs: latency,
 			Details: map[string]interface{}{
 				"version":     version,
 				"dirty":       dirty,
-				"remediation": "See deploy/docs/migrations.md for recovery steps",
+				"remediation": "Migration failed mid-transaction. See deploy/docs/migrations.md for recovery steps",
+				"action":      "Do NOT run new migrations until this is resolved",
 			},
 		}
 	}
@@ -252,7 +298,8 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 			Message:   "Failed to check job queue table existence",
 			LatencyMs: latency,
 			Details: map[string]interface{}{
-				"error": err.Error(),
+				"error":       err.Error(),
+				"remediation": "Database connection issue - check DATABASE_URL and PostgreSQL status",
 			},
 		}
 	}
@@ -261,8 +308,12 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 		latency := time.Since(start).Milliseconds()
 		return CheckResult{
 			Status:    "warn",
-			Message:   "River job queue table not found (migrations not yet applied)",
+			Message:   "River job queue table not found",
 			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"remediation": "Run River migrations to create river_job table",
+				"note":        "Job queue is optional during early development",
+			},
 		}
 	}
 
@@ -273,13 +324,23 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
+		message := "Failed to query job queue"
+		details := map[string]interface{}{
+			"error": err.Error(),
+		}
+
+		// Add specific guidance
+		if strings.Contains(err.Error(), "syntax error") {
+			details["remediation"] = "River table schema mismatch - check migration version"
+		} else {
+			details["remediation"] = "Check database connectivity and river_job table permissions"
+		}
+
 		return CheckResult{
 			Status:    "fail",
-			Message:   "Failed to query job queue",
+			Message:   message,
 			LatencyMs: latency,
-			Details: map[string]interface{}{
-				"error": err.Error(),
-			},
+			Details:   details,
 		}
 	}
 

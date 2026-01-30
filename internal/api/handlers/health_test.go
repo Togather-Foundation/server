@@ -523,7 +523,7 @@ func TestHealthCheck_MigrationVersionValidation(t *testing.T) {
 				require.NoError(t, err)
 			},
 			expectedStatus: "fail",
-			expectedMsg:    "Failed to query migration version",
+			expectedMsg:    "Migrations table not found",
 		},
 	}
 
