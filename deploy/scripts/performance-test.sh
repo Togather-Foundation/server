@@ -13,6 +13,7 @@ PROFILE="${PROFILE:-light}"
 DURATION="1m"
 RPS=5
 READ_RATIO=0.8
+NO_RAMP=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -34,6 +35,7 @@ OPTIONS:
     -d, --duration TIME    Custom test duration (e.g., 30s, 2m, 1h)
     -R, --read-ratio NUM   Read/write ratio 0.0-1.0 (default: 0.8)
     -s, --slot SLOT        Target specific slot: blue, green, or lb (load balanced)
+    --no-ramp              Disable ramp-up/ramp-down (instant start/stop)
     -h, --help             Show this help message
 
 LOAD PROFILES:
@@ -115,6 +117,10 @@ while [[ $# -gt 0 ]]; do
             esac
             shift 2
             ;;
+        --no-ramp)
+            NO_RAMP=true
+            shift
+            ;;
         *)
             echo -e "${RED}Error: Unknown option $1${NC}"
             usage
@@ -177,6 +183,10 @@ fi
 
 if [[ -n "${READ_RATIO:-}" ]] && [[ "$READ_RATIO" != "0.8" ]]; then
     ARGS+=(--read-ratio "$READ_RATIO")
+fi
+
+if [[ "$NO_RAMP" == "true" ]]; then
+    ARGS+=(--no-ramp)
 fi
 
 # Execute load test

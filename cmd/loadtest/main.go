@@ -19,6 +19,7 @@ func main() {
 		rps       = flag.Int("rps", 0, "Custom requests per second (overrides profile)")
 		duration  = flag.Duration("duration", 0, "Custom test duration (overrides profile)")
 		readRatio = flag.Float64("read-ratio", 0, "Read/write ratio 0.0-1.0 (overrides profile)")
+		noRamp    = flag.Bool("no-ramp", false, "Disable ramp-up/ramp-down (instant start/stop)")
 	)
 	flag.Parse()
 
@@ -27,7 +28,7 @@ func main() {
 
 	// Determine configuration
 	var config loadtest.ProfileConfig
-	if *rps > 0 || *duration > 0 || *readRatio > 0 {
+	if *rps > 0 || *duration > 0 || *readRatio > 0 || *noRamp {
 		// Custom configuration
 		baseConfig := loadtest.LoadProfiles[loadtest.ProfileLight]
 		if *rps > 0 {
@@ -38,6 +39,10 @@ func main() {
 		}
 		if *readRatio > 0 {
 			baseConfig.ReadWriteRatio = *readRatio
+		}
+		if *noRamp {
+			baseConfig.RampUpTime = 0
+			baseConfig.RampDownTime = 0
 		}
 		config = baseConfig
 

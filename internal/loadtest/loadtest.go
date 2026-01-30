@@ -203,18 +203,25 @@ type workItem struct {
 
 // generateWork produces work items according to the load profile.
 func (lt *LoadTester) generateWork(ctx context.Context, config ProfileConfig, workChan chan<- workItem) {
-	ticker := time.NewTicker(time.Second / time.Duration(config.RequestsPerSecond))
+	startTime := time.Now()
+
+	// Calculate initial RPS
+	currentRPS := 1
+	if config.RampUpTime == 0 {
+		currentRPS = config.RequestsPerSecond
+	}
+
+	ticker := time.NewTicker(time.Second / time.Duration(currentRPS))
 	defer ticker.Stop()
 
-	startTime := time.Now()
-	elapsed := time.Duration(0)
+	lastRPS := currentRPS
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			elapsed = time.Since(startTime)
+			elapsed := time.Since(startTime)
 
 			// Check if test duration is complete
 			totalDuration := config.RampUpTime + config.Duration + config.RampDownTime
@@ -223,10 +230,13 @@ func (lt *LoadTester) generateWork(ctx context.Context, config ProfileConfig, wo
 			}
 
 			// Calculate current RPS based on ramp-up/down
-			currentRPS := lt.calculateCurrentRPS(elapsed, config)
+			currentRPS = lt.calculateCurrentRPS(elapsed, config)
 
-			// Adjust ticker rate dynamically
-			ticker.Reset(time.Second / time.Duration(currentRPS))
+			// Only reset ticker if RPS changed significantly (avoid constant resets)
+			if currentRPS != lastRPS {
+				ticker.Reset(time.Second / time.Duration(currentRPS))
+				lastRPS = currentRPS
+			}
 
 			// Generate work item (read or write based on ratio)
 			if rand.Float64() < config.ReadWriteRatio {
