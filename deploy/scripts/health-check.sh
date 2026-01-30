@@ -1,7 +1,22 @@
 #!/usr/bin/env bash
-# Togather Server Health Check Script
-# Validates deployment health for blue-green deployments
-# See: specs/001-deployment-infrastructure/spec.md
+#
+# health-check.sh - Togather Server Health Check Script
+#
+# Validates deployment health for blue-green deployments.
+# Checks HTTP endpoints and database connectivity with retries.
+#
+# Usage:
+#   ./health-check.sh ENVIRONMENT [SLOT]
+#
+# Arguments:
+#   ENVIRONMENT    Target environment: development, staging, or production
+#   SLOT           Blue-green slot (default: blue). Values: blue, green
+#
+# Exit Codes:
+#   0   Success - all health checks passed
+#   1   Configuration error - invalid arguments or health check failed
+#
+# Reference: specs/001-deployment-infrastructure/spec.md
 
 set -euo pipefail
 
@@ -249,9 +264,10 @@ main() {
     
     # Parse arguments
     if [[ $# -lt 1 ]]; then
-        echo "Error: ENVIRONMENT argument required"
+        echo "ERROR: ENVIRONMENT argument required" >&2
+        echo "" >&2
         usage
-        exit 1
+        exit 1  # Configuration error
     fi
     
     environment="$1"
@@ -265,9 +281,11 @@ main() {
         development|staging|production)
             ;;
         *)
-            echo "Error: Invalid environment: $environment"
-            echo "Must be one of: development, staging, production"
-            exit 1
+            echo "ERROR: Invalid environment '$environment'" >&2
+            echo "Must be one of: development, staging, production" >&2
+            echo "" >&2
+            usage
+            exit 1  # Configuration error
             ;;
     esac
     
@@ -276,9 +294,11 @@ main() {
         blue|green)
             ;;
         *)
-            echo "Error: Invalid slot: $slot"
-            echo "Must be either: blue, green"
-            exit 1
+            echo "ERROR: Invalid slot '$slot'" >&2
+            echo "Must be either: blue, green" >&2
+            echo "" >&2
+            usage
+            exit 1  # Configuration error
             ;;
     esac
     

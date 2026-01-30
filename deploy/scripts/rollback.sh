@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
-
-# Togather Server Rollback Script
-# Implements US5: Deployment Rollback
-# T042: Previous version detection
-# T043: Docker image tag switching
-# T044: Traffic switching
-# T045: Health check validation
+#
+# rollback.sh - Togather Server Rollback Script
+#
+# Implements deployment rollback by switching traffic to previous version.
+# Supports forced rollback and targeting specific versions.
+#
+# Usage:
+#   ./rollback.sh ENVIRONMENT [options]
+#
+# Arguments:
+#   ENVIRONMENT       Target environment: development, staging, or production
+#
+# Options:
+#   --help           Show usage information
+#   --force          Skip confirmations and force rollback
+#   --version VER    Rollback to specific version (default: previous deployment)
+#
+# Exit Codes:
+#   0   Success - rollback completed successfully
+#   1   Configuration error - invalid arguments or rollback failed
+#
+# Reference: specs/001-deployment-infrastructure/spec.md
+#            User Story 5 (US5) - Deployment Rollback
 
 set -euo pipefail
 
@@ -575,7 +591,7 @@ main() {
     # Parse arguments
     if [[ $# -eq 0 ]]; then
         usage
-        exit 1
+        exit 1  # Configuration error
     fi
     
     local env=""
@@ -586,7 +602,7 @@ main() {
         case "$1" in
             --help)
                 usage
-                exit 0
+                exit 0  # Success
                 ;;
             --force)
                 force_rollback="true"
@@ -594,17 +610,19 @@ main() {
                 ;;
             --version)
                 if [[ -z "${2:-}" || "${2}" == --* ]]; then
-                    echo "Error: --version requires a version argument"
+                    echo "ERROR: --version requires a version argument" >&2
+                    echo "" >&2
                     usage
-                    exit 1
+                    exit 1  # Configuration error
                 fi
                 target_version="$2"
                 shift 2
                 ;;
             -*)
-                echo "Unknown option: $1"
+                echo "ERROR: Unknown option: $1" >&2
+                echo "" >&2
                 usage
-                exit 1
+                exit 1  # Configuration error
                 ;;
             *)
                 env="$1"
@@ -615,9 +633,10 @@ main() {
     
     # Validate environment
     if [[ -z "${env}" ]]; then
-        echo "Error: ENVIRONMENT argument required"
+        echo "ERROR: ENVIRONMENT argument required" >&2
+        echo "" >&2
         usage
-        exit 1
+        exit 1  # Configuration error
     fi
     
     # Initialize logging
@@ -625,10 +644,10 @@ main() {
     
     # Execute rollback with flags
     if rollback "${env}" "${force_rollback}" "${target_version}"; then
-        exit 0
+        exit 0  # Success
     else
         log "ERROR" "Rollback failed"
-        exit 1
+        exit 1  # Rollback operation failed
     fi
 }
 

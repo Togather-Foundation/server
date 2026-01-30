@@ -1,7 +1,28 @@
 #!/usr/bin/env bash
-# Togather Server Deployment Script
-# Implements blue-green zero-downtime deployment with automatic rollback
-# See: specs/001-deployment-infrastructure/spec.md
+#
+# deploy.sh - Togather Server Deployment Script
+#
+# Implements blue-green zero-downtime deployment with automatic rollback.
+# Orchestrates Docker builds, database migrations, health checks, and traffic switching.
+#
+# Usage:
+#   ./deploy.sh ENVIRONMENT [options]
+#
+# Arguments:
+#   ENVIRONMENT         Target environment: development, staging, or production
+#
+# Options:
+#   --dry-run          Validate configuration without deploying
+#   --skip-migrations  Skip database migration step
+#   --force            Force deployment even if validations fail
+#   --version          Show script version
+#   --help             Show usage information
+#
+# Exit Codes:
+#   0   Success - deployment completed successfully
+#   1   Configuration error - invalid arguments, missing environment, or validation failure
+#
+# Reference: specs/001-deployment-infrastructure/spec.md
 
 set -euo pipefail
 
@@ -1134,16 +1155,17 @@ main() {
                 ;;
             --version)
                 echo "Togather Deployment Script v${SCRIPT_VERSION}"
-                exit 0
+                exit 0  # Success
                 ;;
             --help)
                 usage
-                exit 0
+                exit 0  # Success
                 ;;
             -*)
-                echo "Unknown option: $1"
+                echo "ERROR: Unknown option: $1" >&2
+                echo "" >&2
                 usage
-                exit 1
+                exit 1  # Configuration error
                 ;;
             *)
                 environment="$1"
@@ -1154,9 +1176,10 @@ main() {
     
     # Validate environment argument
     if [[ -z "$environment" ]]; then
-        echo "Error: ENVIRONMENT argument required"
+        echo "ERROR: ENVIRONMENT argument required" >&2
+        echo "" >&2
         usage
-        exit 1
+        exit 1  # Configuration error
     fi
     
     # Validate environment value
@@ -1164,9 +1187,11 @@ main() {
         development|staging|production)
             ;;
         *)
-            echo "Error: Invalid environment: $environment"
-            echo "Must be one of: development, staging, production"
-            exit 1
+            echo "ERROR: Invalid environment '$environment'" >&2
+            echo "Must be one of: development, staging, production" >&2
+            echo "" >&2
+            usage
+            exit 1  # Configuration error
             ;;
     esac
     
@@ -1176,11 +1201,11 @@ main() {
     # Dry run mode
     if [[ "$dry_run" == "true" ]]; then
         log "INFO" "DRY RUN MODE - No changes will be made"
-        validate_config "$environment" || exit 1
-        validate_tool_versions || exit 1
-        validate_git_commit || exit 1
+        validate_config "$environment" || exit 1  # Configuration error
+        validate_tool_versions || exit 1  # Configuration error
+        validate_git_commit || exit 1  # Configuration error
         log "SUCCESS" "Dry run validation passed"
-        exit 0
+        exit 0  # Success
     fi
     
     # Run deployment
