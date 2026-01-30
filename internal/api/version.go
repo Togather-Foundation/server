@@ -35,7 +35,23 @@ func VersionHandler(version, gitCommit, buildDate string) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle OPTIONS for better HTTP compliance
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Allow", "GET, HEAD, OPTIONS")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Handle HEAD (same as GET but no body)
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Only GET is allowed beyond this point
 		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET, HEAD, OPTIONS")
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}

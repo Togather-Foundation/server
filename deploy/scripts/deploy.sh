@@ -148,7 +148,7 @@ sanitize_secrets() {
 }
 
 # Portable file permissions check (Linux/macOS compatible)
-# Returns octal permissions like "600" or "000" on error
+# Returns octal permissions like "600" or "UNKNOWN" on error
 get_file_perms() {
     local file="$1"
     
@@ -163,7 +163,8 @@ get_file_perms() {
     fi
     
     # Fallback: couldn't determine permissions
-    echo "000"
+    # Use sentinel value that can't be real permissions
+    echo "UNKNOWN"
     return 1
 }
 
@@ -329,6 +330,19 @@ validate_config() {
     
     # T038: Check environment file permissions (MUST be 600 for security)
     local perms=$(get_file_perms "${env_file}")
+    
+    # Check if we couldn't determine permissions
+    if [[ "${perms}" == "UNKNOWN" ]]; then
+        log "ERROR" "Could not determine file permissions for ${env_file}"
+        log "ERROR" "The 'stat' command may not be available or file is inaccessible."
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  1. Ensure the file exists and is readable"
+        log "ERROR" "  2. Verify 'stat' command is available"
+        log "ERROR" "  3. Check file permissions manually: ls -l ${env_file}"
+        return 1
+    fi
+    
     if [[ "${perms}" != "600" ]]; then
         log "ERROR" "Environment file has insecure permissions: ${perms}"
         log "ERROR" "Secrets could be readable by other users!"

@@ -79,11 +79,6 @@ func TestHealthCheck_AllHealthy(t *testing.T) {
 	require.True(t, ok, "migrations check should be present")
 	assert.Contains(t, []string{"pass", "warn", "fail"}, migCheck.Status)
 
-	// HTTP endpoint check should pass
-	httpCheck, ok := response.Checks["http_endpoint"]
-	require.True(t, ok, "http_endpoint check should be present")
-	assert.Equal(t, "pass", httpCheck.Status)
-
 	// Job queue check should be present (may be warn if not initialized)
 	jobCheck, ok := response.Checks["job_queue"]
 	require.True(t, ok, "job_queue check should be present")
@@ -240,13 +235,10 @@ func TestHealthCheck_OverallTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	// All checks should have completed
-	assert.Len(t, response.Checks, 4, "all 4 checks should be present")
+	assert.Len(t, response.Checks, 3, "all 3 checks should be present")
 
 	// Verify each check has reasonable latency
 	for name, check := range response.Checks {
-		if name == "http_endpoint" {
-			continue // HTTP endpoint check has no latency
-		}
 		assert.GreaterOrEqual(t, check.LatencyMs, int64(0), "%s should have non-negative latency", name)
 		assert.Less(t, check.LatencyMs, int64(2500), "%s should complete quickly", name)
 	}
@@ -311,7 +303,7 @@ func TestHealthCheck_ResponseFormat(t *testing.T) {
 	assert.NoError(t, err, "timestamp should be valid RFC3339")
 
 	// Verify all expected checks are present
-	expectedChecks := []string{"database", "migrations", "http_endpoint", "job_queue"}
+	expectedChecks := []string{"database", "migrations", "job_queue"}
 	for _, checkName := range expectedChecks {
 		check, ok := response.Checks[checkName]
 		assert.True(t, ok, "check %s should be present", checkName)

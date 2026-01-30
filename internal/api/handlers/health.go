@@ -74,7 +74,6 @@ func (h *HealthChecker) Health() http.HandlerFunc {
 		// Run all checks
 		checks["database"] = h.checkDatabase(ctx)
 		checks["migrations"] = h.checkMigrations(ctx)
-		checks["http_endpoint"] = h.checkHTTPEndpoint()
 		checks["job_queue"] = h.checkJobQueue(ctx)
 
 		// Determine overall status
@@ -216,15 +215,6 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 			"version": version,
 			"dirty":   false,
 		},
-	}
-}
-
-// checkHTTPEndpoint performs a self-check that HTTP server is responding
-func (h *HealthChecker) checkHTTPEndpoint() CheckResult {
-	// This check always passes since if we reached this handler, the HTTP server is responding
-	return CheckResult{
-		Status:  "pass",
-		Message: "HTTP endpoint responding",
 	}
 }
 

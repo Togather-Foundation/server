@@ -110,6 +110,62 @@ func TestVersionHandler_MethodNotAllowed(t *testing.T) {
 			if w.Code != http.StatusMethodNotAllowed {
 				t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
 			}
+
+			// Verify Allow header is set
+			allow := w.Header().Get("Allow")
+			if allow != "GET, HEAD, OPTIONS" {
+				t.Errorf("Allow header = %q, want %q", allow, "GET, HEAD, OPTIONS")
+			}
 		})
+	}
+}
+
+func TestVersionHandler_OPTIONS(t *testing.T) {
+	handler := VersionHandler("0.1.0", "abc123", "2026-01-28T12:00:00Z")
+
+	req := httptest.NewRequest(http.MethodOptions, "/version", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	// Verify status code
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+
+	// Verify Allow header
+	allow := w.Header().Get("Allow")
+	if allow != "GET, HEAD, OPTIONS" {
+		t.Errorf("Allow header = %q, want %q", allow, "GET, HEAD, OPTIONS")
+	}
+
+	// Verify no body
+	if w.Body.Len() != 0 {
+		t.Errorf("body length = %d, want 0", w.Body.Len())
+	}
+}
+
+func TestVersionHandler_HEAD(t *testing.T) {
+	handler := VersionHandler("0.1.0", "abc123", "2026-01-28T12:00:00Z")
+
+	req := httptest.NewRequest(http.MethodHead, "/version", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	// Verify status code
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	// Verify Content-Type header
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
+	}
+
+	// Verify no body
+	if w.Body.Len() != 0 {
+		t.Errorf("body length = %d, want 0", w.Body.Len())
 	}
 }
