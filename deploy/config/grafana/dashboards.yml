@@ -1,0 +1,31 @@
+# Grafana Dashboard Provisioning Configuration
+# This file tells Grafana where to find dashboard JSON files
+# See: https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
+
+apiVersion: 1
+
+providers:
+  # Provider for Togather server dashboards
+  - name: 'Togather Dashboards'
+    # Organization ID (1 is the default org)
+    orgId: 1
+    # Folder name in Grafana UI
+    folder: 'Togather'
+    # Folder UID for stable references
+    folderUid: 'togather'
+    # Type of dashboard provider
+    type: file
+    # Disable dashboard deletion from the UI
+    disableDeletion: false
+    # Enable dashboard editing in the UI
+    editable: true
+    # Update interval (how often to check for changes)
+    updateIntervalSeconds: 30
+    # Allow updating provisioned dashboards from JSON files
+    allowUiUpdates: true
+    options:
+      # Path to dashboard JSON files
+      # This path is inside the Grafana container
+      path: /etc/grafana/provisioning/dashboards
+      # Follow symbolic links
+      foldersFromFilesStructure: false

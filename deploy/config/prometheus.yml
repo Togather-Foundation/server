@@ -1,0 +1,74 @@
+# Prometheus Configuration for Togather SEL Server
+# Scrapes metrics from blue-green deployment slots
+
+global:
+  # How frequently to scrape targets
+  scrape_interval: 15s
+  # How frequently to evaluate rules
+  evaluation_interval: 15s
+  # Attach these labels to any time series or alerts when communicating with external systems
+  external_labels:
+    cluster: 'togather-sel'
+    environment: 'production'
+
+# Scrape configuration for Togather server instances
+scrape_configs:
+  # Blue deployment slot
+  - job_name: 'togather-blue'
+    static_configs:
+      - targets: ['togather-blue:8080']
+        labels:
+          slot: 'blue'
+          service: 'togather-server'
+    
+    # Scrape /metrics endpoint
+    metrics_path: '/metrics'
+    
+    # Scrape interval for this job (overrides global)
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    
+    # Health check before scraping
+    # If /health returns non-200, mark target as down
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: togather-blue:8080
+
+  # Green deployment slot
+  - job_name: 'togather-green'
+    static_configs:
+      - targets: ['togather-green:8080']
+        labels:
+          slot: 'green'
+          service: 'togather-server'
+    
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: togather-green:8080
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+# Storage configuration
+storage:
+  tsdb:
+    # How long to retain metrics (15 days as per deployment.yml)
+    retention.time: 15d
+    # Maximum size of TSDB blocks
+    retention.size: 10GB
