@@ -1120,10 +1120,7 @@
         "multi": false,
         "name": "slot",
         "options": [],
-        "query": {
-          "query": "label_values(togather_app_info, slot)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
+        "query": "label_values(togather_app_info, slot)",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
