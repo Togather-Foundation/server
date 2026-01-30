@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,7 @@ type HealthCheck struct {
 	Status    string                 `json:"status"`
 	Version   string                 `json:"version"`
 	GitCommit string                 `json:"git_commit"`
+	Slot      string                 `json:"slot,omitempty"`
 	Checks    map[string]CheckResult `json:"checks"`
 	Timestamp string                 `json:"timestamp"`
 }
@@ -50,6 +52,20 @@ func NewHealthChecker(pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx], ver
 // Health returns a comprehensive health check handler
 func (h *HealthChecker) Health() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Check if server is shutting down (graceful shutdown in progress)
+		select {
+		case <-r.Context().Done():
+			// Context cancelled - server is shutting down
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "shutting_down",
+			})
+			return
+		default:
+			// Continue with normal health check
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
@@ -74,10 +90,17 @@ func (h *HealthChecker) Health() http.HandlerFunc {
 			}
 		}
 
+		// Get deployment slot identifier (for blue-green deployments)
+		slot := os.Getenv("DEPLOYMENT_SLOT")
+		if slot == "" {
+			slot = os.Getenv("SLOT")
+		}
+
 		response := HealthCheck{
 			Status:    overallStatus,
 			Version:   h.version,
 			GitCommit: h.gitCommit,
+			Slot:      slot,
 			Checks:    checks,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		}
@@ -221,11 +244,42 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 	jobCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
+	// First check if the river_job table exists
+	// This distinguishes between "River not initialized" (warn) vs "query failed" (fail)
+	var tableExists bool
+	tableCheckQuery := `
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' 
+			AND table_name = 'river_job'
+		)
+	`
+	err := h.pool.QueryRow(jobCtx, tableCheckQuery).Scan(&tableExists)
+	if err != nil {
+		latency := time.Since(start).Milliseconds()
+		return CheckResult{
+			Status:    "fail",
+			Message:   "Failed to check job queue table existence",
+			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"error": err.Error(),
+			},
+		}
+	}
+
+	if !tableExists {
+		latency := time.Since(start).Milliseconds()
+		return CheckResult{
+			Status:    "warn",
+			Message:   "River job queue table not found (migrations not yet applied)",
+			LatencyMs: latency,
+		}
+	}
+
 	// Query River's jobs table to verify it's accessible
-	// We'll check if we can query the river_job table
 	query := `SELECT COUNT(*) FROM river_job WHERE state = ANY($1)`
 	var activeJobs int64
-	err := h.pool.QueryRow(jobCtx, query, []string{"available", "running"}).Scan(&activeJobs)
+	err = h.pool.QueryRow(jobCtx, query, []string{"available", "running"}).Scan(&activeJobs)
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
