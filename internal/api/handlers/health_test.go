@@ -235,7 +235,7 @@ func TestHealthCheck_OverallTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	// All checks should have completed
-	assert.Len(t, response.Checks, 3, "all 3 checks should be present")
+	assert.Len(t, response.Checks, 4, "all 4 checks should be present")
 
 	// Verify each check has reasonable latency
 	for name, check := range response.Checks {
@@ -303,7 +303,7 @@ func TestHealthCheck_ResponseFormat(t *testing.T) {
 	assert.NoError(t, err, "timestamp should be valid RFC3339")
 
 	// Verify all expected checks are present
-	expectedChecks := []string{"database", "migrations", "job_queue"}
+	expectedChecks := []string{"database", "migrations", "job_queue", "jsonld_contexts"}
 	for _, checkName := range expectedChecks {
 		check, ok := response.Checks[checkName]
 		assert.True(t, ok, "check %s should be present", checkName)

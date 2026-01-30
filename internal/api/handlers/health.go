@@ -76,6 +76,7 @@ func (h *HealthChecker) Health() http.HandlerFunc {
 		checks["database"] = h.checkDatabase(ctx)
 		checks["migrations"] = h.checkMigrations(ctx)
 		checks["job_queue"] = h.checkJobQueue(ctx)
+		checks["jsonld_contexts"] = h.checkJSONLDContexts()
 
 		// Determine overall status
 		overallStatus := "healthy"
@@ -350,6 +351,83 @@ func (h *HealthChecker) checkJobQueue(ctx context.Context) CheckResult {
 		LatencyMs: latency,
 		Details: map[string]interface{}{
 			"active_jobs": activeJobs,
+		},
+	}
+}
+
+// checkJSONLDContexts verifies JSON-LD context files are accessible and valid
+func (h *HealthChecker) checkJSONLDContexts() CheckResult {
+	start := time.Now()
+
+	// List of critical JSON-LD context files for SEL compliance
+	contextFiles := []string{
+		"contexts/sel/v0.1.jsonld",
+	}
+
+	var missingFiles []string
+	var invalidFiles []string
+
+	for _, contextFile := range contextFiles {
+		// Check if file exists and is readable
+		data, err := os.ReadFile(contextFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				missingFiles = append(missingFiles, contextFile)
+			} else {
+				invalidFiles = append(invalidFiles, fmt.Sprintf("%s (read error: %v)", contextFile, err))
+			}
+			continue
+		}
+
+		// Validate it's valid JSON
+		var jsonData map[string]interface{}
+		if err := json.Unmarshal(data, &jsonData); err != nil {
+			invalidFiles = append(invalidFiles, fmt.Sprintf("%s (invalid JSON: %v)", contextFile, err))
+			continue
+		}
+
+		// Verify it has @context field (basic JSON-LD structure check)
+		if _, hasContext := jsonData["@context"]; !hasContext {
+			invalidFiles = append(invalidFiles, fmt.Sprintf("%s (missing @context field)", contextFile))
+		}
+	}
+
+	latency := time.Since(start).Milliseconds()
+
+	// If files are missing, warn but don't fail (might not be deployed yet)
+	if len(missingFiles) > 0 {
+		return CheckResult{
+			Status:    "warn",
+			Message:   fmt.Sprintf("JSON-LD context files not found: %v", missingFiles),
+			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"missing_files": missingFiles,
+				"note":          "Context files may not be deployed yet - this is acceptable during development",
+				"remediation":   "Ensure contexts/ directory is included in deployment",
+			},
+		}
+	}
+
+	// If files exist but are invalid, that's a failure
+	if len(invalidFiles) > 0 {
+		return CheckResult{
+			Status:    "fail",
+			Message:   fmt.Sprintf("Invalid JSON-LD context files: %v", invalidFiles),
+			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"invalid_files": invalidFiles,
+				"remediation":   "Fix JSON-LD context file syntax or structure",
+			},
+		}
+	}
+
+	// All context files are valid
+	return CheckResult{
+		Status:    "pass",
+		Message:   fmt.Sprintf("JSON-LD contexts validated (%d files)", len(contextFiles)),
+		LatencyMs: latency,
+		Details: map[string]interface{}{
+			"validated_files": contextFiles,
 		},
 	}
 }
