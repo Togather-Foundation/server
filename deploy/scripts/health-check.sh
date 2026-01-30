@@ -33,6 +33,10 @@ MAX_ATTEMPTS=30
 RETRY_DELAY=2
 TIMEOUT=5
 
+# Schema integrity strictness (can be overridden by environment variable)
+# Set HEALTH_CHECK_STRICT_SCHEMA=true to fail on missing tables (recommended for production)
+STRICT_SCHEMA="${HEALTH_CHECK_STRICT_SCHEMA:-false}"
+
 # Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -222,6 +226,21 @@ health_check() {
     if [[ ${#missing_tables[@]} -gt 0 ]]; then
         log "WARN" "Missing expected tables: ${missing_tables[*]}"
         log "WARN" "This may indicate incomplete migrations or manual schema changes"
+        
+        # Check if strict mode is enabled
+        if [[ "${STRICT_SCHEMA}" == "true" ]]; then
+            log "ERROR" "HEALTH_CHECK_STRICT_SCHEMA=true: Failing health check due to missing tables"
+            log "ERROR" "Expected tables: ${critical_tables[*]}"
+            log "ERROR" "Missing tables: ${missing_tables[*]}"
+            log "ERROR" ""
+            log "ERROR" "REMEDIATION:"
+            log "ERROR" "  1. Run migrations: make migrate-up"
+            log "ERROR" "  2. Verify migrations completed successfully"
+            log "ERROR" "  3. Check for manual schema changes"
+            return 1
+        else
+            log "WARN" "Set HEALTH_CHECK_STRICT_SCHEMA=true to fail health check on missing tables (recommended for production)"
+        fi
     else
         log "INFO" "All critical tables present"
     fi
@@ -245,10 +264,15 @@ Arguments:
   ENVIRONMENT    Target environment (development, staging, production)
   SLOT          Deployment slot (blue, green) [optional, defaults to current active]
 
+Environment Variables:
+  HEALTH_CHECK_STRICT_SCHEMA    If set to 'true', fail health check if critical
+                                tables are missing. Recommended for production.
+                                Default: false
+
 Examples:
   $0 production
   $0 production blue
-  $0 staging green
+  HEALTH_CHECK_STRICT_SCHEMA=true $0 production
 
 Exit codes:
   0  All health checks passed
