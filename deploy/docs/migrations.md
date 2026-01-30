@@ -595,6 +595,540 @@ SQL
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
 ```
 
+## Migration Rollback Procedures
+
+This section covers how to manually rollback database migrations when needed.
+
+### When to Rollback Migrations
+
+**Rollback migrations when:**
+- A migration caused data corruption or loss
+- Schema changes broke critical application functionality
+- Need to deploy an older application version that requires older schema
+- Migration ran successfully but application logic is incompatible
+
+**DO NOT rollback migrations when:**
+- Application deployment failed (migration may be fine)
+- Can fix the issue with a new forward migration
+- Data has been written that depends on new schema
+
+### Understanding Migration Rollback
+
+Each migration consists of two files:
+- `YYYYMMDDHHMMSS_description.up.sql` - Applies changes
+- `YYYYMMDDHHMMSS_description.down.sql` - Reverts changes
+
+**Example:**
+```
+20260128001_create_users_table.up.sql    → Creates users table
+20260128001_create_users_table.down.sql  → Drops users table
+```
+
+### Rollback Methods
+
+#### Method 1: Automatic Rollback (Recommended)
+
+Use `migrate` CLI to rollback migrations safely:
+
+```bash
+# Rollback last migration
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+
+# Rollback multiple migrations (e.g., last 3)
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 3
+
+# Rollback to specific version (e.g., version 5)
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" goto 5
+```
+
+**Verification:**
+```bash
+# Check current version
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+
+# Expected output:
+# 5 (clean)  ← Successfully rolled back to version 5
+```
+
+---
+
+#### Method 2: Manual Rollback with Snapshot Restore
+
+When `.down.sql` files don't exist or are insufficient:
+
+```bash
+# 1. List available snapshots
+cd deploy/scripts
+./snapshot-db.sh list
+
+# Output example:
+# Snapshot: togather_production_20260128_143022.sql.gz
+#   Created: 2026-01-28 14:30:22 (before migration 20260128003)
+#   Size: 42.5 MB
+
+# 2. Stop application to prevent new writes
+docker stop togather-production-<slot>
+
+# 3. Restore snapshot
+gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
+
+# 4. Verify migration version matches snapshot
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+
+# Should show version from before the problematic migration
+
+# 5. Restart application
+docker start togather-production-<slot>
+
+# 6. Verify health
+curl http://localhost:8080/health | jq '.checks.migrations'
+```
+
+**Data Loss Warning:** This method restores the database to an earlier state. Any data written after the snapshot was created will be lost.
+
+---
+
+#### Method 3: Manual SQL Rollback
+
+When you need fine-grained control:
+
+```bash
+# 1. Review the .down.sql file
+cat internal/storage/postgres/migrations/20260128003_add_users.down.sql
+
+# Example content:
+# DROP TABLE IF EXISTS users CASCADE;
+
+# 2. Create a backup first
+pg_dump -Fc -Z9 "$DATABASE_URL" > /tmp/before_manual_rollback_$(date +%s).sql.gz
+
+# 3. Execute the .down.sql in a transaction (safe)
+psql "$DATABASE_URL" << 'SQL'
+BEGIN;
+\i internal/storage/postgres/migrations/20260128003_add_users.down.sql
+-- Review changes
+\dt
+-- If everything looks good, commit
+COMMIT;
+-- If something is wrong, use ROLLBACK instead
+SQL
+
+# 4. Update schema_migrations table
+psql "$DATABASE_URL" << 'SQL'
+UPDATE schema_migrations SET version = <previous_version>, dirty = false;
+SQL
+
+# Replace <previous_version> with the version number before the rolled-back migration
+```
+
+---
+
+### Rollback Scenarios
+
+#### Scenario 1: Rollback Last Migration (Recent Deployment)
+
+**Situation:** Just deployed, migration applied, but application is broken.
+
+**Steps:**
+```bash
+# 1. Verify current version
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+# Output: 8 (clean)
+
+# 2. Rollback one migration
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+
+# 3. Verify rollback
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+# Output: 7 (clean)
+
+# 4. Redeploy old application version
+cd deploy/scripts
+./rollback.sh production  # This rolls back the application deployment
+```
+
+---
+
+#### Scenario 2: Rollback Multiple Migrations
+
+**Situation:** Need to rollback to a known-good state from several deployments ago.
+
+**Steps:**
+```bash
+# 1. Identify target version
+# Check deployment history to find last known-good version
+cat deploy/config/deployment-state.json | jq '.deployments[-5]'
+
+# 2. Check current migration version
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+# Output: 12 (clean)
+
+# 3. Determine how many migrations to rollback
+# If target version is 8, need to rollback 4 migrations (12 → 8)
+
+# 4. Restore snapshot from that time (SAFER)
+cd deploy/scripts
+./snapshot-db.sh list | grep "20260128"  # Find snapshot near target date
+
+gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_120000.sql.gz | psql "$DATABASE_URL"
+
+# OR use migrate down (if .down.sql files exist and are safe)
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" goto 8
+
+# 5. Deploy old application version
+git checkout <target-commit>
+cd deploy/scripts
+./deploy.sh production
+```
+
+---
+
+#### Scenario 3: Rollback with Data Preservation
+
+**Situation:** Need to rollback schema but preserve data written after migration.
+
+**Steps:**
+```bash
+# 1. Export new data to temporary location
+psql "$DATABASE_URL" << 'SQL'
+-- Create temp table with new data
+CREATE TEMP TABLE backup_new_data AS
+SELECT * FROM users WHERE created_at > '2026-01-28 14:00:00';
+
+-- Export to file
+\copy backup_new_data TO '/tmp/new_data.csv' CSV HEADER;
+SQL
+
+# 2. Rollback migration
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+
+# 3. Re-import data (if compatible with old schema)
+psql "$DATABASE_URL" << 'SQL'
+\copy users FROM '/tmp/new_data.csv' CSV HEADER;
+SQL
+
+# Note: This only works if the old schema can accept the new data
+# Often not possible if column names or types changed
+```
+
+---
+
+#### Scenario 4: Dirty Migration State + Rollback
+
+**Situation:** Migration failed mid-execution (dirty state), need to rollback.
+
+**Steps:**
+```bash
+# 1. Check migration status
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+# Output: 8 (dirty)  ← Failed during migration 8
+
+# 2. OPTION A: Force clean, then rollback
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" force 8
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+
+# 3. OPTION B: Restore snapshot (safer)
+cd deploy/scripts
+./snapshot-db.sh list
+
+gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
+
+# 4. Verify clean state
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+# Output: 7 (clean)
+```
+
+---
+
+### Rollback Best Practices
+
+#### 1. Always Test Rollback Before Production
+
+```bash
+# Test on staging first
+DATABASE_URL="postgresql://staging-db/togather" \
+  migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+
+# Verify application works with rolled-back schema
+./deploy.sh staging
+
+# Test critical functionality
+curl https://staging.example.com/api/v1/events
+```
+
+#### 2. Create Snapshot Before Rollback
+
+```bash
+# Always create a "just before rollback" snapshot
+cd deploy/scripts
+./snapshot-db.sh create production --reason "before_rollback_migration_8"
+
+# Now safe to rollback
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+```
+
+#### 3. Coordinate Application and Database Rollback
+
+**Wrong Order (causes errors):**
+```bash
+# ❌ Rolling back migrations while new app version is running
+# App expects new schema, but migration was rolled back → 500 errors
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+```
+
+**Correct Order:**
+```bash
+# ✅ Rollback application first, then migrations
+cd deploy/scripts
+./rollback.sh production  # Rollback app deployment
+
+# Wait for health checks to pass with old app + new schema
+sleep 30
+
+# Then rollback migrations if needed
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+```
+
+#### 4. Document Rollback Reasons
+
+```bash
+# Record why rollback was needed
+echo "$(date): Rolled back migration 8 due to data corruption in users table" >> \
+  /var/log/togather/migration-rollbacks.log
+
+# Include in deployment state
+jq '.last_rollback = {
+  "timestamp": "'$(date -Iseconds)'",
+  "migration_version": 8,
+  "reason": "data corruption in users table"
+}' deploy/config/deployment-state.json > tmp.json && mv tmp.json deploy/config/deployment-state.json
+```
+
+#### 5. Verify Data Integrity After Rollback
+
+```bash
+# Run data validation queries
+psql "$DATABASE_URL" << 'SQL'
+-- Check for orphaned foreign keys
+SELECT 'events' AS table, COUNT(*) AS orphaned
+FROM events e
+WHERE NOT EXISTS (SELECT 1 FROM organizations o WHERE o.id = e.organization_id)
+
+UNION ALL
+
+SELECT 'places' AS table, COUNT(*) AS orphaned
+FROM places p
+WHERE NOT EXISTS (SELECT 1 FROM organizations o WHERE o.id = p.organization_id);
+SQL
+
+# Expected output: All counts should be 0
+```
+
+---
+
+### Writing Rollback-Safe Migrations
+
+**Good Practices:**
+
+```sql
+-- ✅ Add column with default (can rollback safely)
+-- up.sql
+ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';
+
+-- down.sql
+ALTER TABLE users DROP COLUMN IF EXISTS status;
+
+-- ✅ Create new table (can rollback safely)
+-- up.sql
+CREATE TABLE IF NOT EXISTS user_preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id),
+  theme TEXT DEFAULT 'light'
+);
+
+-- down.sql
+DROP TABLE IF EXISTS user_preferences CASCADE;
+
+-- ✅ Add index (can rollback safely)
+-- up.sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_start_time ON events(start_time);
+
+-- down.sql
+DROP INDEX IF EXISTS idx_events_start_time;
+```
+
+**Dangerous Patterns:**
+
+```sql
+-- ❌ Dropping columns (data loss on rollback)
+-- up.sql
+ALTER TABLE users DROP COLUMN deprecated_field;
+
+-- down.sql
+-- Can't restore data!
+ALTER TABLE users ADD COLUMN deprecated_field TEXT;
+
+-- ✅ Better: Deprecate instead of drop
+-- up.sql
+-- Just stop using the column, drop in future migration after data archived
+-- down.sql
+-- No changes needed
+
+-- ❌ Renaming tables (breaks rollback)
+-- up.sql
+ALTER TABLE users RENAME TO accounts;
+
+-- down.sql
+ALTER TABLE accounts RENAME TO users;  -- Breaks if "accounts" has new data
+
+-- ✅ Better: Create new table, migrate data, keep old table for rollback window
+-- up.sql
+CREATE TABLE accounts AS SELECT * FROM users;
+-- down.sql
+DROP TABLE accounts;
+
+-- ❌ Changing column types (data loss risk)
+-- up.sql
+ALTER TABLE users ALTER COLUMN age TYPE INTEGER USING age::INTEGER;
+
+-- down.sql
+ALTER TABLE users ALTER COLUMN age TYPE TEXT;  -- Data already converted, can't undo
+
+-- ✅ Better: Add new column, migrate data, keep old column
+-- up.sql
+ALTER TABLE users ADD COLUMN age_int INTEGER;
+UPDATE users SET age_int = age::INTEGER WHERE age ~ '^\d+$';
+-- down.sql
+ALTER TABLE users DROP COLUMN age_int;
+```
+
+---
+
+### Rollback Checklist
+
+Before rolling back migrations:
+
+```bash
+[ ] Snapshot created before rollback
+[ ] Rollback tested on staging environment
+[ ] Application deployment rolled back first (if applicable)
+[ ] Team notified of rollback in progress
+[ ] Rollback reason documented
+[ ] Expected data loss understood and accepted
+[ ] Rollback procedure reviewed and approved
+[ ] On-call engineer available for incident response
+
+# After rollback:
+[ ] Migration version verified with: migrate version
+[ ] Health checks passing: curl /health
+[ ] Critical functionality tested manually
+[ ] No error spikes in application logs
+[ ] Database size appropriate (no unexpected data loss)
+[ ] Deployment state updated
+[ ] Post-mortem scheduled
+```
+
+---
+
+### Troubleshooting Rollback Issues
+
+#### Rollback Command Fails
+
+**Error:**
+```
+error: Dirty database version 8. Fix and force version.
+```
+
+**Solution:**
+```bash
+# Force clean state, then retry rollback
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" force 8
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
+```
+
+---
+
+#### Foreign Key Constraint Violations
+
+**Error:**
+```
+ERROR: update or delete on table "users" violates foreign key constraint
+```
+
+**Solution:**
+```bash
+# Rollback must be done in reverse dependency order
+# Example: If events references users, rollback events first
+
+# 1. Identify dependencies
+psql "$DATABASE_URL" << 'SQL'
+SELECT
+  conname AS constraint_name,
+  conrelid::regclass AS table_name,
+  confrelid::regclass AS foreign_table
+FROM pg_constraint
+WHERE contype = 'f';
+SQL
+
+# 2. Rollback in correct order (children before parents)
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 2  # Rollback events migration
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1  # Now safe to rollback users
+```
+
+---
+
+#### .down.sql File Missing
+
+**Error:**
+```
+error: file does not exist: migrations/20260128003_add_users.down.sql
+```
+
+**Solution:**
+```bash
+# Use snapshot restore instead
+cd deploy/scripts
+./snapshot-db.sh list
+
+gunzip -c /var/lib/togather/db-snapshots/togather_production_<before_migration>.sql.gz | psql "$DATABASE_URL"
+
+# Manually update schema_migrations table
+psql "$DATABASE_URL" << 'SQL'
+UPDATE schema_migrations SET version = <previous_version>, dirty = false;
+SQL
+```
+
+---
+
+### Recovery After Failed Rollback
+
+If rollback fails and leaves database in bad state:
+
+```bash
+# 1. Restore from snapshot immediately
+cd deploy/scripts
+./snapshot-db.sh list
+
+# Find snapshot from before the original migration
+gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
+
+# 2. Verify database state
+psql "$DATABASE_URL" -c "\dt"  # List tables
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+
+# 3. If schema_migrations table is corrupted, reset it
+# See "Emergency Procedures > Reset Migration State" section above
+
+# 4. Deploy known-good application version
+git checkout <last-known-good-commit>
+cd deploy/scripts
+./deploy.sh production
+
+# 5. Create incident report and plan fix
+```
+
+---
+
 ## Reference Commands
 
 ### Migration Management
