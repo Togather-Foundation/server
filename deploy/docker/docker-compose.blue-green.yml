@@ -169,11 +169,174 @@ services:
           cpus: '0.1'
           memory: 32M
 
-# Networks configuration inherited from base docker-compose.yml
-# All services (togather-db, blue, green, nginx) share the togather-net network
+  # ============================================================================
+  # Monitoring Services (Optional - controlled by ENABLE_MONITORING env var)
+  # ============================================================================
+  
+  # Prometheus - Metrics Collection and Storage
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: togather-prometheus
+    
+    # Only start if monitoring is enabled
+    profiles:
+      - monitoring
+    
+    # Command-line arguments
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    
+    # Ports (9090 internal only, can be exposed for debugging)
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    
+    # Networks
+    networks:
+      - togather-net
+    
+    # Mount configuration and data volumes
+    volumes:
+      # Prometheus configuration
+      - ../config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Persistent metrics storage
+      - prometheus-data:/prometheus
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Labels
+    labels:
+      com.togather.service: monitoring
+      com.togather.component: prometheus
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+  
+  # Grafana - Metrics Visualization and Dashboards
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: togather-grafana
+    
+    # Only start if monitoring is enabled
+    profiles:
+      - monitoring
+    
+    # Ports (3000 exposed for web UI access)
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    
+    # Networks
+    networks:
+      - togather-net
+    
+    # Environment variables
+    environment:
+      # Admin credentials
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      
+      # Server settings
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+      
+      # Anonymous access (disabled by default)
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
+      
+      # Datasource provisioning
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      
+      # Disable telemetry
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    
+    # Mount configuration and data volumes
+    volumes:
+      # Datasource provisioning
+      - ../config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      # Dashboard provisioning configuration
+      - ../config/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      # Dashboard JSON files (to be created in server-no4d)
+      - grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      # Persistent Grafana data (users, settings, etc.)
+      - grafana-data:/var/lib/grafana
+    
+    # Depends on Prometheus being available
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Labels
+    labels:
+      com.togather.service: monitoring
+      com.togather.component: grafana
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
-# Volumes configuration inherited from base docker-compose.yml
-# Database volumes (postgres-data, postgres-snapshots) are shared
+# Networks configuration inherited from base docker-compose.yml
+# All services (togather-db, blue, green, nginx, prometheus, grafana) share the togather-net network
+
+# Volumes configuration
+volumes:
+  # Prometheus persistent storage for metrics
+  prometheus-data:
+    driver: local
+    labels:
+      com.togather.service: monitoring
+      com.togather.component: prometheus
+  
+  # Grafana persistent storage for dashboards and settings
+  grafana-data:
+    driver: local
+    labels:
+      com.togather.service: monitoring
+      com.togather.component: grafana
+  
+  # Grafana dashboards directory (populated by dashboard provisioning)
+  grafana-dashboards:
+    driver: local
+    labels:
+      com.togather.service: monitoring
+      com.togather.component: grafana
 
 # Usage Instructions:
 # ===================
@@ -219,3 +382,42 @@ services:
 # - Deploy script (T021) will automate steps 3-6 above
 # - Manual testing can be done by accessing slots directly on ports 8081/8082
 # - Production deployments should use the deploy script for safety checks
+
+# Usage Instructions for Monitoring Stack:
+# ========================================
+#
+# The monitoring stack uses Docker Compose profiles to enable optional services.
+# By default, Prometheus and Grafana are NOT started.
+#
+# To start with monitoring enabled:
+#   docker compose -f docker-compose.yml -f docker-compose.blue-green.yml --profile monitoring up -d
+#
+# To start without monitoring (default):
+#   docker compose -f docker-compose.yml -f docker-compose.blue-green.yml up -d
+#
+# Access URLs (when monitoring enabled):
+#   - Prometheus UI: http://localhost:9090
+#   - Grafana UI:    http://localhost:3000 (default credentials: admin/admin)
+#
+# Environment Variables:
+#   - PROMETHEUS_PORT:          Port for Prometheus UI (default: 9090)
+#   - GRAFANA_PORT:             Port for Grafana UI (default: 3000)
+#   - GRAFANA_ADMIN_USER:       Grafana admin username (default: admin)
+#   - GRAFANA_ADMIN_PASSWORD:   Grafana admin password (default: admin)
+#   - GRAFANA_ROOT_URL:         Grafana root URL (default: http://localhost:3000)
+#   - GRAFANA_ANONYMOUS_ENABLED: Enable anonymous access (default: false)
+#
+# Prometheus Configuration:
+#   - Scrape interval: 15 seconds
+#   - Retention: 15 days or 10GB (whichever comes first)
+#   - Scrape targets: togather-blue:8080/metrics, togather-green:8080/metrics
+#
+# Grafana Configuration:
+#   - Datasource: Prometheus at http://prometheus:9090 (auto-provisioned)
+#   - Dashboards: Auto-loaded from /etc/grafana/provisioning/dashboards
+#   - Persistent data: Stored in grafana-data volume
+#
+# Notes:
+#   - Prometheus and Grafana data persists across container restarts
+#   - Change the default Grafana admin password in production!
+#   - Prometheus can reach both blue and green slots via Docker network
