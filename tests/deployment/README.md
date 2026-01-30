@@ -4,7 +4,7 @@ Automated tests for validating the complete deployment workflow using testcontai
 
 ## Overview
 
-This directory contains two types of deployment tests:
+This directory contains three types of deployment tests:
 
 ### Smoke Tests (Quick Validation)
 Fast, lightweight tests that verify basic functionality of a deployed server:
@@ -16,6 +16,18 @@ Fast, lightweight tests that verify basic functionality of a deployed server:
 
 **Run with:** `./smoke_test.sh [BASE_URL]` (default: http://localhost:8080)  
 **Duration:** <30 seconds
+
+### Migration Lock Tests (Race Condition Prevention)
+Tests the atomic locking mechanism that prevents concurrent migrations from corrupting the database:
+- Single process lock acquisition
+- Concurrent process blocking
+- Lock cleanup on process exit
+- Lock cleanup on signals (SIGTERM, SIGINT)
+- Stale lock detection and cleanup
+- Race condition prevention
+
+**Run with:** `./test_migration_lock.sh`  
+**Duration:** ~3-5 seconds
 
 ### Integration Tests (Full Validation)
 Comprehensive tests using testcontainers that validate the complete deployment pipeline:
@@ -57,6 +69,28 @@ Quick validation of a running deployment:
 - Production health monitoring
 - Quick sanity checks
 
+### Migration Lock Tests
+Tests the atomic locking mechanism (server-ytc5 fix):
+
+```bash
+# Run all migration lock tests
+./test_migration_lock.sh
+```
+
+**Test Scenarios:**
+1. **Single acquisition** - Verify lock can be acquired
+2. **Concurrent blocking** - Second process blocked when lock exists
+3. **Exit cleanup** - Lock removed on normal process exit
+4. **SIGTERM cleanup** - Lock removed when process receives SIGTERM
+5. **SIGINT cleanup** - Lock removed when process receives SIGINT (Ctrl+C)
+6. **Stale detection** - Stale locks (>30min) can be detected
+7. **Race prevention** - Only one process acquires lock when competing
+
+**Use Cases:**
+- Verify race condition fix (server-ytc5)
+- Regression testing for lock mechanism
+- CI/CD validation of deployment safety
+
 ### Integration Tests (Full Pipeline)
 
 #### Run all deployment tests
@@ -94,6 +128,27 @@ Tests:
 - Response time acceptable (<1000ms)
 
 **Dependencies:** `curl`, `jq`
+
+### Migration Lock Tests
+**Duration:** ~3-5 seconds  
+**Purpose:** Verify atomic locking prevents concurrent migration corruption
+
+Tests:
+- **test_single_acquisition** - Single process can acquire lock
+- **test_concurrent_blocking** - Second process blocked by existing lock
+- **test_lock_cleanup_on_exit** - Lock cleaned up on process exit
+- **test_lock_cleanup_on_sigterm** - Lock cleaned up after SIGTERM
+- **test_lock_cleanup_on_sigint** - Lock cleaned up after SIGINT
+- **test_stale_lock_detection** - Stale locks can be detected (>30min)
+- **test_race_condition** - Race prevention with concurrent acquisition
+
+**Implementation:**
+- Uses atomic `mkdir` for lock acquisition (POSIX guarantee)
+- Tests actual `/tmp/togather-deploy-{env}.lock` directory creation
+- Validates trap handlers cleanup on EXIT/INT/TERM signals
+- Simulates stale lock scenarios with old timestamps
+
+**Dependencies:** `bash`, `mkdir`, `rmdir`, `date`
 
 ### TestDeploymentFullFlow
 **Duration:** ~2-4 minutes  
@@ -149,7 +204,12 @@ jobs:
         run: |
           go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
       
-      - name: Run deployment tests
+      - name: Run migration lock tests
+        run: |
+          cd tests/deployment
+          ./test_migration_lock.sh
+      
+      - name: Run integration tests
         run: |
           cd tests/deployment
           go test -v -timeout 10m
@@ -162,6 +222,9 @@ test-deployment:
 
 test-deployment-quick:
 	cd tests/deployment && go test -v -short
+
+test-migration-locks:
+	cd tests/deployment && ./test_migration_lock.sh
 ```
 
 ## Troubleshooting
@@ -238,4 +301,6 @@ These tests ensure that each step works correctly in isolation and as a complete
 **Related Tasks:** 
 - T079 - Automated Deployment Validation Tests
 - T080 - Deployment Smoke Tests
+- server-ndu4 - Migration Lock Race Condition Tests
+- server-ytc5 - Atomic Migration Locking Implementation
 
