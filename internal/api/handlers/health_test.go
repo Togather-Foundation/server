@@ -12,6 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func TestHealthCheck_AllHealthy(t *testing.T) {
@@ -19,6 +22,22 @@ func TestHealthCheck_AllHealthy(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupTestDB(t, ctx)
 	defer cleanup()
+
+	// Setup schema_migrations table for a healthy migration state
+	_, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version BIGINT PRIMARY KEY,
+			dirty BOOLEAN NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO schema_migrations (version, dirty)
+		VALUES (1, false)
+		ON CONFLICT (version) DO UPDATE SET dirty = false
+	`)
+	require.NoError(t, err)
 
 	// Create health checker (without riverClient for this test)
 	checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
@@ -36,7 +55,7 @@ func TestHealthCheck_AllHealthy(t *testing.T) {
 
 	// Parse response
 	var response HealthCheck
-	err := json.NewDecoder(w.Body).Decode(&response)
+	err = json.NewDecoder(w.Body).Decode(&response)
 	require.NoError(t, err)
 
 	// Verify overall status
@@ -52,7 +71,7 @@ func TestHealthCheck_AllHealthy(t *testing.T) {
 	dbCheck, ok := response.Checks["database"]
 	require.True(t, ok, "database check should be present")
 	assert.Equal(t, "pass", dbCheck.Status)
-	assert.Greater(t, dbCheck.LatencyMs, int64(0))
+	assert.GreaterOrEqual(t, dbCheck.LatencyMs, int64(0))
 	assert.NotNil(t, dbCheck.Details)
 
 	// Migrations check should pass
@@ -257,11 +276,36 @@ func TestLegacyReadyz(t *testing.T) {
 }
 
 // setupTestDB creates a test database connection for health check tests
+// It first tries to use DATABASE_URL if set, otherwise creates a testcontainer
 func setupTestDB(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 	t.Helper()
 
-	// Use DATABASE_URL environment variable or skip test
-	dbURL := getTestDatabaseURL(t)
+	// Try DATABASE_URL first (faster for CI/local with existing DB)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err == nil && pool.Ping(ctx) == nil {
+			return pool, func() { pool.Close() }
+		}
+		// If DATABASE_URL is set but fails, fall through to testcontainers
+		t.Logf("DATABASE_URL set but connection failed, using testcontainer")
+	}
+
+	// Use testcontainers as fallback
+	postgresContainer, err := tcpostgres.Run(ctx,
+		"postgis/postgis:16-3.4",
+		tcpostgres.WithDatabase("togather_test"),
+		tcpostgres.WithUsername("togather"),
+		tcpostgres.WithPassword("togather-test-password"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60*time.Second),
+		),
+	)
+	require.NoError(t, err, "failed to start PostgreSQL container")
+
+	dbURL, err := postgresContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err, "failed to get connection string")
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err, "failed to connect to test database")
@@ -272,18 +316,193 @@ func setupTestDB(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 
 	cleanup := func() {
 		pool.Close()
+		if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
+			t.Logf("Failed to terminate PostgreSQL container: %v", err)
+		}
 	}
 
 	return pool, cleanup
 }
 
-// getTestDatabaseURL returns the test database URL or skips the test if not available
-func getTestDatabaseURL(t *testing.T) string {
-	t.Helper()
+// TestHealthCheck_MigrationVersionValidation tests the migration check behavior
+// with different migration states: clean, dirty, and missing table
+func TestHealthCheck_MigrationVersionValidation(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupTestDB(t, ctx)
+	defer cleanup()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping database-dependent test")
+	tests := []struct {
+		name           string
+		setupMigration func(t *testing.T, pool *pgxpool.Pool)
+		expectedStatus string
+		expectedMsg    string
+	}{
+		{
+			name: "clean migrations pass",
+			setupMigration: func(t *testing.T, pool *pgxpool.Pool) {
+				// Ensure schema_migrations exists and is clean
+				_, err := pool.Exec(ctx, `
+					CREATE TABLE IF NOT EXISTS schema_migrations (
+						version BIGINT PRIMARY KEY,
+						dirty BOOLEAN NOT NULL
+					)
+				`)
+				require.NoError(t, err)
+
+				// Insert a clean migration version
+				_, err = pool.Exec(ctx, `
+					INSERT INTO schema_migrations (version, dirty)
+					VALUES (1, false)
+					ON CONFLICT (version) DO UPDATE SET dirty = false
+				`)
+				require.NoError(t, err)
+			},
+			expectedStatus: "pass",
+			expectedMsg:    "Migrations applied successfully",
+		},
+		{
+			name: "dirty migration fails",
+			setupMigration: func(t *testing.T, pool *pgxpool.Pool) {
+				// Ensure schema_migrations exists
+				_, err := pool.Exec(ctx, `
+					CREATE TABLE IF NOT EXISTS schema_migrations (
+						version BIGINT PRIMARY KEY,
+						dirty BOOLEAN NOT NULL
+					)
+				`)
+				require.NoError(t, err)
+
+				// Insert a dirty migration state
+				_, err = pool.Exec(ctx, `
+					INSERT INTO schema_migrations (version, dirty)
+					VALUES (1, true)
+					ON CONFLICT (version) DO UPDATE SET dirty = true
+				`)
+				require.NoError(t, err)
+			},
+			expectedStatus: "fail",
+			expectedMsg:    "Database in dirty migration state",
+		},
+		{
+			name: "missing schema_migrations table fails",
+			setupMigration: func(t *testing.T, pool *pgxpool.Pool) {
+				// Drop schema_migrations table if it exists
+				_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS schema_migrations`)
+				require.NoError(t, err)
+			},
+			expectedStatus: "fail",
+			expectedMsg:    "Failed to query migration version",
+		},
 	}
-	return dbURL
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup migration state
+			tt.setupMigration(t, pool)
+
+			// Create health checker
+			checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
+
+			// Create test request
+			req := httptest.NewRequest(http.MethodGet, "/health", nil)
+			w := httptest.NewRecorder()
+
+			// Execute health check
+			checker.Health().ServeHTTP(w, req)
+
+			// Parse response
+			var response HealthCheck
+			err := json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+
+			// Verify migrations check
+			migCheck, ok := response.Checks["migrations"]
+			require.True(t, ok, "migrations check should be present")
+			assert.Equal(t, tt.expectedStatus, migCheck.Status, "migration status mismatch")
+			assert.Contains(t, migCheck.Message, tt.expectedMsg, "migration message mismatch")
+
+			// Verify details for specific cases
+			if tt.expectedStatus == "fail" && tt.name == "dirty migration fails" {
+				assert.NotNil(t, migCheck.Details, "dirty migration should have details")
+				assert.Equal(t, true, migCheck.Details["dirty"], "dirty flag should be true")
+				assert.Contains(t, migCheck.Details["remediation"], "migrations.md", "should include remediation")
+			}
+
+			if tt.expectedStatus == "pass" {
+				assert.NotNil(t, migCheck.Details, "clean migration should have details")
+				assert.Equal(t, false, migCheck.Details["dirty"], "dirty flag should be false")
+				assert.NotNil(t, migCheck.Details["version"], "version should be present")
+			}
+		})
+	}
+}
+
+// TestHealthCheck_MigrationCheckLatency verifies migration checks complete within timeout
+func TestHealthCheck_MigrationCheckLatency(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupTestDB(t, ctx)
+	defer cleanup()
+
+	// Setup clean migration state
+	_, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version BIGINT PRIMARY KEY,
+			dirty BOOLEAN NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO schema_migrations (version, dirty)
+		VALUES (1, false)
+		ON CONFLICT (version) DO UPDATE SET dirty = false
+	`)
+	require.NoError(t, err)
+
+	checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+
+	start := time.Now()
+	checker.Health().ServeHTTP(w, req)
+	duration := time.Since(start)
+
+	// Parse response
+	var response HealthCheck
+	err = json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+
+	// Verify migrations check completed
+	migCheck, ok := response.Checks["migrations"]
+	require.True(t, ok)
+	assert.Equal(t, "pass", migCheck.Status)
+
+	// Verify latency is reasonable (migration check has 2s timeout per operation)
+	assert.Less(t, duration, 5*time.Second, "health check should complete within 5 seconds")
+	// Latency should be set (may be 0 for very fast checks on fresh DB)
+	assert.GreaterOrEqual(t, migCheck.LatencyMs, int64(0), "latency should be non-negative")
+	assert.Less(t, migCheck.LatencyMs, int64(2000), "migration check should complete within 2 seconds")
+}
+
+// TestHealthCheck_MigrationWithNilPool verifies behavior when database pool is not initialized
+func TestHealthCheck_MigrationWithNilPool(t *testing.T) {
+	// Create health checker with nil pool
+	checker := NewHealthChecker(nil, nil, "0.1.0", "test-commit")
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+
+	checker.Health().ServeHTTP(w, req)
+
+	// Parse response
+	var response HealthCheck
+	err := json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+
+	// Verify migrations check fails when pool is nil
+	migCheck, ok := response.Checks["migrations"]
+	require.True(t, ok)
+	assert.Equal(t, "fail", migCheck.Status)
+	assert.Contains(t, migCheck.Message, "Database pool not initialized")
 }
