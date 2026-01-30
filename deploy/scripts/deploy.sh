@@ -179,6 +179,14 @@ update_state_file_atomic() {
         return 1
     fi
     
+    # Validate temp file before committing the update
+    if ! validate_state_file "$temp_file"; then
+        log "ERROR" "State file validation failed after update"
+        log "ERROR" "This update would violate the schema, rolling back"
+        rm -f "$temp_file"
+        return 1
+    fi
+    
     # Sync temp file to disk
     sync "$temp_file" 2>/dev/null || fsync "$temp_file" 2>/dev/null || true
     
@@ -188,6 +196,96 @@ update_state_file_atomic() {
     # Sync parent directory to ensure rename is durable
     sync "${CONFIG_DIR}" 2>/dev/null || true
     
+    return 0
+}
+
+# Validate deployment state file structure
+# Checks required fields and basic schema compliance
+validate_state_file() {
+    local state_file="$1"
+    
+    if [[ ! -f "$state_file" ]]; then
+        log "ERROR" "State file does not exist: ${state_file}"
+        return 1
+    fi
+    
+    # Check if file is valid JSON
+    if ! jq empty "$state_file" 2>/dev/null; then
+        log "ERROR" "State file is not valid JSON: ${state_file}"
+        return 1
+    fi
+    
+    # Validate required top-level fields
+    local required_fields=("environment" "lock")
+    for field in "${required_fields[@]}"; do
+        if ! jq -e "has(\"$field\")" "$state_file" >/dev/null 2>&1; then
+            log "ERROR" "State file missing required field: ${field}"
+            return 1
+        fi
+    done
+    
+    # Validate environment field is valid enum value
+    local env=$(jq -r '.environment // ""' "$state_file")
+    if [[ ! "$env" =~ ^(development|staging|production)$ ]]; then
+        log "ERROR" "Invalid environment value: ${env} (must be development, staging, or production)"
+        return 1
+    fi
+    
+    # Validate lock structure
+    if ! jq -e '.lock | has("locked")' "$state_file" >/dev/null 2>&1; then
+        log "ERROR" "State file lock object missing 'locked' field"
+        return 1
+    fi
+    
+    local locked=$(jq -r '.lock.locked' "$state_file")
+    if [[ "$locked" != "true" && "$locked" != "false" ]]; then
+        log "ERROR" "State file lock.locked must be boolean (true/false), got: ${locked}"
+        return 1
+    fi
+    
+    # If lock is active, validate required lock fields
+    if [[ "$locked" == "true" ]]; then
+        local lock_fields=("lock_id" "locked_by" "locked_at" "lock_expires_at" "deployment_id")
+        for field in "${lock_fields[@]}"; do
+            if ! jq -e ".lock | has(\"$field\")" "$state_file" >/dev/null 2>&1; then
+                log "ERROR" "Locked state missing required field: lock.${field}"
+                return 1
+            fi
+            
+            local value=$(jq -r ".lock.${field}" "$state_file")
+            if [[ -z "$value" || "$value" == "null" ]]; then
+                log "ERROR" "Locked state field cannot be empty: lock.${field}"
+                return 1
+            fi
+        done
+    fi
+    
+    # Validate current_deployment structure if present
+    if jq -e '.current_deployment | type == "object"' "$state_file" >/dev/null 2>&1; then
+        local deployment_fields=("id" "version" "git_commit" "deployed_at" "deployed_by" "active_slot" "health_status")
+        for field in "${deployment_fields[@]}"; do
+            if ! jq -e ".current_deployment | has(\"$field\")" "$state_file" >/dev/null 2>&1; then
+                log "ERROR" "current_deployment missing required field: ${field}"
+                return 1
+            fi
+        done
+        
+        # Validate active_slot is blue or green
+        local slot=$(jq -r '.current_deployment.active_slot // ""' "$state_file")
+        if [[ ! "$slot" =~ ^(blue|green)$ ]]; then
+            log "ERROR" "Invalid active_slot value: ${slot} (must be blue or green)"
+            return 1
+        fi
+        
+        # Validate health_status is valid enum
+        local health=$(jq -r '.current_deployment.health_status // ""' "$state_file")
+        if [[ ! "$health" =~ ^(healthy|degraded|unhealthy|unknown)$ ]]; then
+            log "ERROR" "Invalid health_status value: ${health}"
+            return 1
+        fi
+    fi
+    
+    log "INFO" "State file validation passed: ${state_file}"
     return 0
 }
 
@@ -315,6 +413,17 @@ validate_config() {
         log "ERROR" "  4. Verify no placeholders remain:"
         log "ERROR" "     grep -v '^#' ${env_file} | grep CHANGE_ME"
         return 1
+    fi
+    
+    # Validate deployment state file structure
+    if [[ -f "${STATE_FILE}" ]]; then
+        if ! validate_state_file "${STATE_FILE}"; then
+            log "ERROR" "Deployment state file validation failed: ${STATE_FILE}"
+            return 1
+        fi
+    else
+        log "WARN" "Deployment state file does not exist yet: ${STATE_FILE}"
+        log "INFO" "It will be created during the first deployment"
     fi
     
     log "SUCCESS" "Configuration validation passed"
