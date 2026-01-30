@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://togather.dev/schemas/deployment-state.json",
   "title": "Deployment State",
-  "description": "Tracks the current deployment state, history, and locking information for a specific environment",
+  "description": "Tracks the current deployment state, history, and locking information for a specific environment. NOTE: Deployment IDs (ULIDs) must be monotonically increasing to ensure temporal ordering. JSON Schema cannot validate this constraint; external validation scripts should verify that current_deployment.id > previous_deployment.id and that deployment_history entries are sorted in descending order by ID.",
   "type": "object",
   "required": ["environment", "current_deployment", "lock"],
   "properties": {
@@ -37,7 +37,7 @@
     },
     "deployment_history": {
       "type": "array",
-      "description": "Recent deployment history (configurable retention, typically last N deployments)",
+      "description": "Recent deployment history (configurable retention, typically last N deployments). Entries should be sorted in descending order by deployment ID (most recent first).",
       "items": {
         "$ref": "#/$defs/deployment_history_entry"
       },
@@ -56,8 +56,8 @@
         "id": {
           "type": "string",
           "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
-          "description": "ULID identifier for this deployment",
-          "examples": ["dep_01JBQR2KXYZ9876543210"]
+          "description": "ULID identifier for this deployment. ULIDs are lexicographically sortable with embedded timestamps. Deployment IDs should be monotonically increasing (current > previous) to catch clock skew issues.",
+          "examples": ["dep_01JBQR2KXYZABCDEFGHJKMNPQR"]
         },
         "version": {
           "type": "string",
@@ -120,8 +120,8 @@
         "id": {
           "type": "string",
           "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
-          "description": "ULID identifier for this deployment",
-          "examples": ["dep_01JBQR0KXYZ9876543210"]
+          "description": "ULID identifier for this deployment. ULIDs are lexicographically sortable with embedded timestamps.",
+          "examples": ["dep_01JBQR0KXYZABCDEFGHJKMNPQR"]
         },
         "version": {
           "type": "string",
@@ -186,8 +186,8 @@
         "lock_id": {
           "type": "string",
           "pattern": "^lock_[0-9A-HJKMNP-TV-Z]{26}$",
-          "description": "ULID identifier for this lock",
-          "examples": ["lock_01JBQR6KXYZ9876543210"]
+          "description": "ULID identifier for this lock. ULIDs are lexicographically sortable with embedded timestamps.",
+          "examples": ["lock_01JBQR6KXYZABCDEFGHJKMNPQR"]
         },
         "locked_by": {
           "type": "string",
@@ -211,7 +211,7 @@
           "type": "string",
           "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
           "description": "ULID of the deployment that acquired this lock",
-          "examples": ["dep_01JBQR2KXYZ9876543210"]
+          "examples": ["dep_01JBQR2KXYZABCDEFGHJKMNPQR"]
         },
         "pid": {
           "type": "integer",
@@ -243,7 +243,7 @@
     {
       "environment": "production",
       "current_deployment": {
-        "id": "dep_01JBQR2KXYZ9876543210",
+        "id": "dep_01JBQR2KXYZABCDEFGHJKMNPQR",
         "version": "abc1234",
         "git_commit": "abc1234567890def1234567890abcdef12345678",
         "deployed_at": "2026-01-28T10:30:00Z",
@@ -255,9 +255,9 @@
         "rollback_count": 0
       },
       "previous_deployment": {
-        "id": "dep_01JBQR1KXYZ9876543210",
-        "version": "xyz5678",
-        "git_commit": "xyz5678901234abc5678901234defabc56789012",
+        "id": "dep_01JBQR1KXYZABCDEFGHJKMNPQR",
+        "version": "abc5678",
+        "git_commit": "abc5678901234def5678901234defabc56789012",
         "deployed_at": "2026-01-27T14:15:00Z",
         "deployed_by": "operator@example.com",
         "active_slot": "green",
@@ -268,7 +268,7 @@
       },
       "deployment_history": [
         {
-          "id": "dep_01JBQR0KXYZ9876543210",
+          "id": "dep_01JBQR0KXYZABCDEFGHJKMNPQR",
           "version": "def9876",
           "git_commit": "def9876543210abc9876543210defabc98765432",
           "deployed_at": "2026-01-26T08:45:00Z",
@@ -296,9 +296,9 @@
     {
       "environment": "production",
       "current_deployment": {
-        "id": "dep_01JBQR7KXYZ9876543210",
-        "version": "new1234",
-        "git_commit": "new1234567890def1234567890abcdef12345678",
+        "id": "dep_01JBQR7KXYZABCDEFGHJKMNPQR",
+        "version": "def1234",
+        "git_commit": "def1234567890abc1234567890abcdef12345678",
         "deployed_at": "2026-01-28T15:00:00Z",
         "deployed_by": "ops@example.com",
         "active_slot": "green",
@@ -308,7 +308,7 @@
         "rollback_count": 0
       },
       "previous_deployment": {
-        "id": "dep_01JBQR2KXYZ9876543210",
+        "id": "dep_01JBQR2KXYZABCDEFGHJKMNPQR",
         "version": "abc1234",
         "git_commit": "abc1234567890def1234567890abcdef12345678",
         "deployed_at": "2026-01-28T10:30:00Z",
@@ -322,11 +322,11 @@
       "deployment_history": [],
       "lock": {
         "locked": true,
-        "lock_id": "lock_01JBQR6KXYZ9876543210",
+        "lock_id": "lock_01JBQR6KXYZABCDEFGHJKMNPQR",
         "locked_by": "ops@example.com",
         "locked_at": "2026-01-28T15:00:00Z",
         "lock_expires_at": "2026-01-28T15:30:00Z",
-        "deployment_id": "dep_01JBQR7KXYZ9876543210",
+        "deployment_id": "dep_01JBQR7KXYZABCDEFGHJKMNPQR",
         "pid": 12345,
         "hostname": "deploy-server.example.com"
       }
