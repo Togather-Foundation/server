@@ -176,13 +176,36 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    # Resource limits (adjust based on your environment)
-    # Uncomment in production to prevent resource exhaustion
+    # =========================================================================
+    # Resource Limits
+    # =========================================================================
+    # IMPORTANT: These limits are commented out by default for development
+    # flexibility and compatibility across different Docker environments.
+    #
+    # PRODUCTION RECOMMENDATION: Enable resource limits to:
+    # - Prevent memory leaks from exhausting host resources
+    # - Ensure predictable performance under load
+    # - Enable proper capacity planning and autoscaling
+    # - Protect against runaway processes
+    #
+    # Suggested production values (adjust based on your needs):
+    # - CPUs: 1.0 (limit) / 0.25 (reservation) - Allows burst to 1 full core
+    # - Memory: 512M (limit) / 128M (reservation) - Sufficient for typical load
+    #
+    # To enable in production:
+    # 1. Uncomment the deploy section below
+    # 2. Adjust limits based on your load testing results
+    # 3. Monitor metrics to tune values over time
+    #
+    # Note: Resource limits require Docker Swarm mode or docker-compose v3.
+    # For development Docker Desktop environments, these may be ignored.
+    # =========================================================================
     # deploy:
     #   resources:
     #     limits:
-    #       cpus: '1.0'
-    #       memory: 512M
+    #       cpus: '1.0'          # Maximum CPU cores
+    #       memory: 512M         # Maximum memory
     #     reservations:
-    #       cpus: '0.25'
-    #       memory: 128M
+    #       cpus: '0.25'         # Guaranteed CPU
+    #       memory: 128M         # Guaranteed memory
+
