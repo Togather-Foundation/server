@@ -247,7 +247,9 @@ func TestDeploymentPerformance(t *testing.T) {
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			testcontainers.TerminateContainer(postgresContainer)
+			if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
+				t.Logf("Failed to terminate PostgreSQL container: %v", err)
+			}
 		})
 
 		dbURL, err := postgresContainer.ConnectionString(ctx)
@@ -304,7 +306,9 @@ func TestDeploymentPerformance(t *testing.T) {
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			appContainer.Terminate(ctx)
+			if err := appContainer.Terminate(ctx); err != nil {
+				t.Logf("Failed to terminate app container: %v", err)
+			}
 		})
 
 		timings["app_startup"] = time.Since(start)
@@ -353,7 +357,11 @@ func TestMigrationRollback(t *testing.T) {
 		tcpostgres.WithPassword("togather-rollback-password"),
 	)
 	require.NoError(t, err)
-	defer testcontainers.TerminateContainer(postgresContainer)
+	defer func() {
+		if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
+			t.Logf("Failed to terminate PostgreSQL container: %v", err)
+		}
+	}()
 
 	dbURL, err := postgresContainer.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -386,7 +394,9 @@ func TestMigrationRollback(t *testing.T) {
 		require.NoError(t, err, "Failed to get migration version: %s", string(output))
 
 		versionStr := strings.TrimSpace(string(output))
-		fmt.Sscanf(versionStr, "%d", &initialVersion)
+		if _, err := fmt.Sscanf(versionStr, "%d", &initialVersion); err != nil {
+			t.Logf("Warning: could not parse version from: %s", versionStr)
+		}
 		t.Logf("Current migration version: %d", initialVersion)
 	})
 

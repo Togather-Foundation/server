@@ -15,7 +15,6 @@ var (
 	eventsLimit     int
 	eventsServerURL string
 	eventsFormat    string
-	eventsAfter     string
 	eventsVerbose   bool
 )
 

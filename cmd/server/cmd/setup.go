@@ -395,7 +395,10 @@ func runSetup() error {
 					break
 				}
 				fmt.Print(".")
-				exec.Command("sleep", "2").Run()
+				if err := exec.Command("sleep", "2").Run(); err != nil {
+					// Sleep failed, continue anyway
+					break
+				}
 			}
 			fmt.Println()
 		}
@@ -600,7 +603,10 @@ func promptChoice(question string, options []string, defaultIdx int) int {
 
 	response := prompt(question, fmt.Sprintf("%d", defaultIdx+1))
 	idx := 0
-	fmt.Sscanf(response, "%d", &idx)
+	if _, err := fmt.Sscanf(response, "%d", &idx); err != nil {
+		// Failed to parse, use default
+		return defaultIdx
+	}
 
 	if idx < 1 || idx > len(options) {
 		return defaultIdx
@@ -640,7 +646,7 @@ func getWorkingDir() string {
 }
 
 func currentTimestamp() string {
-	return fmt.Sprintf("%s", os.Getenv("USER")) // Simplified for now
+	return os.Getenv("USER") // Simplified for now
 }
 
 func checkDatabaseConnection(dbURL string) error {
