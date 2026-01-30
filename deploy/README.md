@@ -369,6 +369,118 @@ Zero-downtime deployment using two identical production environments:
 - **Nginx proxy:** Routes traffic to active slot
 - **Atomic switch:** Nginx config reload switches traffic instantly
 
+### Nginx Configuration Management
+
+The nginx reverse proxy is configured in `deploy/docker/nginx.conf` and handles traffic routing, rate limiting, TLS/SSL termination, and security headers.
+
+#### Testing Configuration Changes
+
+Always test configuration syntax before reloading:
+
+```bash
+# Test configuration syntax
+docker compose -f docker-compose.blue-green.yml exec nginx nginx -t
+
+# Expected output:
+# nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+# nginx: configuration file /etc/nginx/nginx.conf test is successful
+```
+
+#### Reloading Configuration (Graceful)
+
+After making changes to `nginx.conf`, reload without dropping connections:
+
+```bash
+# Graceful reload (zero downtime)
+docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+
+# Verify reload succeeded (check logs)
+docker compose -f docker-compose.blue-green.yml logs nginx --tail=20
+```
+
+**How Graceful Reload Works:**
+1. Nginx master process receives SIGHUP signal
+2. New worker processes start with updated configuration
+3. Old worker processes finish serving existing requests
+4. Old workers shut down gracefully after completing connections
+5. **No dropped connections or 502 errors**
+
+#### Manual Traffic Switching
+
+To manually switch traffic between blue and green slots:
+
+```bash
+# 1. Edit nginx.conf upstream configuration
+nano deploy/docker/nginx.conf
+
+# Find the line (around line 77):
+#   server togather-server-blue:8080;
+# Change to:
+#   server togather-server-green:8080;
+
+# 2. Test configuration
+docker compose -f docker-compose.blue-green.yml exec nginx nginx -t
+
+# 3. Reload if test passes
+docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+
+# 4. Verify active slot
+curl -I http://localhost/health | grep X-Togather-Slot
+# Should show: X-Togather-Slot: togather-server-green:8080
+```
+
+#### Nginx Configuration Features
+
+The nginx configuration includes production-ready features (see `nginx.conf` for details):
+
+**Rate Limiting:**
+- General API: 30 requests/minute per IP
+- Batch ingestion: 10 requests/minute per IP  
+- Auth endpoints: 5 requests/minute per IP
+- Health/metrics: No limits (for monitoring)
+
+**TLS/SSL Support:**
+- TLS 1.2/1.3 with modern cipher suites
+- Let's Encrypt integration ready (commented out, enable for production)
+- OCSP stapling and SSL session caching
+- HTTP-to-HTTPS redirect (enable in production)
+
+**Security Headers:**
+- Content-Security-Policy (CSP)
+- X-Frame-Options, X-Content-Type-Options
+- Strict-Transport-Security (HSTS when TLS enabled)
+- Permissions-Policy
+
+**To enable TLS/SSL in production:**
+1. Obtain certificates (recommended: Let's Encrypt)
+2. Uncomment HTTPS server block in `nginx.conf` (lines ~200-350)
+3. Update `ssl_certificate` and `ssl_certificate_key` paths
+4. Enable HTTP-to-HTTPS redirect
+5. Test and reload: `nginx -t && nginx -s reload`
+
+#### Common Nginx Operations
+
+```bash
+# View nginx logs
+docker compose logs nginx -f
+
+# Check nginx status
+docker compose exec nginx nginx -V  # Version and build info
+
+# Check running nginx processes
+docker compose exec nginx ps aux | grep nginx
+
+# Test if nginx is responding
+curl -I http://localhost/health
+
+# Restart nginx (hard restart, brief downtime)
+docker compose restart nginx
+```
+
+**When to use reload vs restart:**
+- **Reload (`nginx -s reload`)**: Configuration changes only. **Use this!**
+- **Restart (`docker compose restart`)**: nginx binary upgrade, debugging crashes. Causes brief downtime.
+
 ### Database Snapshots
 
 Automatic backup before every deployment:
