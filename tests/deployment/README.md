@@ -4,12 +4,29 @@ Automated tests for validating the complete deployment workflow using testcontai
 
 ## Overview
 
-These tests validate the full deployment pipeline:
+This directory contains two types of deployment tests:
+
+### Smoke Tests (Quick Validation)
+Fast, lightweight tests that verify basic functionality of a deployed server:
+- Health endpoint availability
+- Version endpoint response
+- Database connectivity
+- Migration status
+- Security headers
+
+**Run with:** `./smoke_test.sh [BASE_URL]` (default: http://localhost:8080)  
+**Duration:** <30 seconds
+
+### Integration Tests (Full Validation)
+Comprehensive tests using testcontainers that validate the complete deployment pipeline:
 1. Docker image build
 2. Database provisioning (PostgreSQL + PostGIS)
 3. Migration execution
 4. Health check validation
 5. Performance benchmarking
+
+**Run with:** `go test -v`  
+**Duration:** 2-5 minutes
 
 ## Prerequisites
 
@@ -20,7 +37,29 @@ These tests validate the full deployment pipeline:
 
 ## Running Tests
 
-### Run all deployment tests
+### Smoke Tests (Deployed Server)
+Quick validation of a running deployment:
+
+```bash
+# Test local deployment
+./smoke_test.sh http://localhost:8080
+
+# Test staging environment
+./smoke_test.sh https://staging.togather.dev
+
+# Test production environment
+./smoke_test.sh https://api.togather.dev
+```
+
+**Use Cases:**
+- Post-deployment validation
+- CI/CD pipeline verification
+- Production health monitoring
+- Quick sanity checks
+
+### Integration Tests (Full Pipeline)
+
+#### Run all deployment tests
 ```bash
 cd tests/deployment
 go test -v
@@ -39,6 +78,22 @@ go test -v -short
 ```
 
 ## Test Coverage
+
+### Smoke Tests
+**Duration:** <30 seconds  
+**Purpose:** Quick post-deployment validation
+
+Tests:
+- Health endpoint returns 200 OK with valid JSON
+- Version endpoint returns version metadata
+- Database connectivity verified via health check
+- Migration status validated
+- HTTP endpoint health check passes
+- CORS headers present (if applicable)
+- Security headers (CSP, X-Frame-Options) present
+- Response time acceptable (<1000ms)
+
+**Dependencies:** `curl`, `jq`
 
 ### TestDeploymentFullFlow
 **Duration:** ~2-4 minutes  
@@ -179,5 +234,8 @@ These tests ensure that each step works correctly in isolation and as a complete
 
 ---
 
-**Last Updated:** 2026-01-28  
-**Related Task:** T079 - Automated Deployment Validation Tests
+**Last Updated:** 2026-01-30  
+**Related Tasks:** 
+- T079 - Automated Deployment Validation Tests
+- T080 - Deployment Smoke Tests
+
