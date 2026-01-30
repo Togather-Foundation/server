@@ -29,6 +29,11 @@ include:
   - docker-compose.yml
 
 services:
+  # Disable the base standalone app service - we only want blue and green slots
+  app:
+    deploy:
+      replicas: 0
+  
   # ============================================================================
   # Blue Slot - First Application Instance
   # ============================================================================
@@ -44,6 +49,7 @@ services:
     
     # Override port mapping to avoid conflicts
     # Blue slot exposed on host port 8081
+    # NOTE: This completely replaces the ports from base service
     ports:
       - "8081:8080"
     
@@ -84,6 +90,7 @@ services:
     
     # Override port mapping to avoid conflicts
     # Green slot exposed on host port 8082
+    # NOTE: This completely replaces the ports from base service
     ports:
       - "8082:8080"
     
@@ -274,10 +281,8 @@ services:
     volumes:
       # Datasource provisioning
       - ../config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
-      # Dashboard provisioning configuration
-      - ../config/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
-      # Dashboard JSON files (to be created in server-no4d)
-      - grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      # Dashboard provisioning (includes dashboards.yml config and JSON files)
+      - ../config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       # Persistent Grafana data (users, settings, etc.)
       - grafana-data:/var/lib/grafana
     
@@ -326,13 +331,6 @@ volumes:
   
   # Grafana persistent storage for dashboards and settings
   grafana-data:
-    driver: local
-    labels:
-      com.togather.service: monitoring
-      com.togather.component: grafana
-  
-  # Grafana dashboards directory (populated by dashboard provisioning)
-  grafana-dashboards:
     driver: local
     labels:
       com.togather.service: monitoring

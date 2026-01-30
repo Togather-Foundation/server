@@ -92,9 +92,10 @@ services:
     restart: unless-stopped
     networks:
       - togather-net
-    ports:
-      # Application HTTP port
-      - "${SERVER_PORT:-8080}:8080"
+    # NOTE: Port mapping removed from base service to prevent conflicts in blue-green deployment
+    # When using this compose file standalone, override with: -p "8080:8080"
+    # In blue-green mode, the slots define their own ports (8081 for blue, 8082 for green)
+    ports: []
     # Application depends on database being healthy
     depends_on:
       togather-db:
