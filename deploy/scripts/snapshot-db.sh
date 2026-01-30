@@ -482,10 +482,10 @@ list_snapshots() {
         
         # Get metadata if available
         local reason="unknown"
-        local retention=7
+        local retention=$RETENTION_DAYS
         if [[ -f "$meta_path" ]]; then
             reason=$(jq -r '.reason // "unknown"' "$meta_path" 2>/dev/null || echo "unknown")
-            retention=$(jq -r '.retention_days // 7' "$meta_path" 2>/dev/null || echo "7")
+            retention=$(jq -r ".retention_days // $RETENTION_DAYS" "$meta_path" 2>/dev/null || echo "$RETENTION_DAYS")
         fi
         
         local expires_in=$((retention - age_days))
