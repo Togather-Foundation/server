@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -106,9 +107,57 @@ func (h *HealthChecker) Health() http.HandlerFunc {
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		}
 
+		// Update Prometheus metrics with health check results
+		h.updateHealthMetrics(overallStatus, checks, slot)
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
 		_ = json.NewEncoder(w).Encode(response)
+	}
+}
+
+// updateHealthMetrics updates Prometheus metrics based on health check results
+func (h *HealthChecker) updateHealthMetrics(overallStatus string, checks map[string]CheckResult, slot string) {
+	// If slot is empty, use "unknown"
+	if slot == "" {
+		slot = "unknown"
+	}
+
+	// Update overall health status metric
+	// Map string status to numeric value: unhealthy=0, degraded=1, healthy=2
+	var overallValue float64
+	switch overallStatus {
+	case "unhealthy":
+		overallValue = 0
+	case "degraded":
+		overallValue = 1
+	case "healthy":
+		overallValue = 2
+	default:
+		overallValue = 0 // Unknown status treated as unhealthy
+	}
+	metrics.HealthStatus.WithLabelValues(slot).Set(overallValue)
+
+	// Update individual health check metrics
+	for checkName, result := range checks {
+		// Map check status to numeric value: fail=0, warn=1, pass=2
+		var statusValue float64
+		switch result.Status {
+		case "fail":
+			statusValue = 0
+		case "warn":
+			statusValue = 1
+		case "pass":
+			statusValue = 2
+		default:
+			statusValue = 0 // Unknown status treated as fail
+		}
+		metrics.HealthCheckStatus.WithLabelValues(checkName, slot).Set(statusValue)
+
+		// Update latency metric if available
+		if result.LatencyMs > 0 {
+			metrics.HealthCheckLatency.WithLabelValues(checkName, slot).Set(float64(result.LatencyMs))
+		}
 	}
 }
 
