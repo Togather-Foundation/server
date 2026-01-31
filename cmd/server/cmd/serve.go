@@ -80,8 +80,12 @@ func runServer() error {
 	logger.Info().Msg("starting SEL server")
 
 	// Initialize Prometheus metrics with version information
-	metrics.Init(Version, GitCommit, BuildDate)
-	logger.Info().Str("version", Version).Msg("metrics initialized")
+	activeSlot := os.Getenv("ACTIVE_SLOT")
+	if activeSlot == "" {
+		activeSlot = "unknown"
+	}
+	metrics.Init(Version, GitCommit, BuildDate, activeSlot)
+	logger.Info().Str("version", Version).Str("active_slot", activeSlot).Msg("metrics initialized")
 
 	// Bootstrap admin user if configured
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

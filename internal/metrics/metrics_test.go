@@ -16,7 +16,7 @@ func TestInit(t *testing.T) {
 	testRegistry := prometheus.NewRegistry()
 
 	// Test that Init doesn't panic
-	Init("v1.0.0", "abc123", "2026-01-30")
+	Init("v1.0.0", "abc123", "2026-01-30", "true")
 
 	// Verify app_info metric exists
 	if testutil.CollectAndCount(AppInfo) == 0 {

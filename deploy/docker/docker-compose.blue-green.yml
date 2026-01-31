@@ -61,6 +61,10 @@ services:
       
       # Override container name in logs
       CONTAINER_NAME: togather-server-blue
+      
+      # Mark this slot as active (set to "true" for active, "false" for inactive)
+      # Change this when switching active slots during deployment
+      ACTIVE_SLOT: "${BLUE_ACTIVE_SLOT:-true}"
     
     # Blue and green share the same database
     # Database is NOT duplicated - schema is forward-compatible during deployment
@@ -102,6 +106,10 @@ services:
       
       # Override container name in logs
       CONTAINER_NAME: togather-server-green
+      
+      # Mark this slot as active (set to "true" for active, "false" for inactive)
+      # Change this when switching active slots during deployment
+      ACTIVE_SLOT: "${GREEN_ACTIVE_SLOT:-false}"
     
     # Blue and green share the same database
     depends_on:

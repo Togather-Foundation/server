@@ -19,11 +19,11 @@ var AppInfo = promauto.With(Registry).NewGaugeVec(
 		Name:      "app_info",
 		Help:      "Application version information (always set to 1, version info in labels)",
 	},
-	[]string{"version", "commit", "build_date"},
+	[]string{"version", "commit", "build_date", "active_slot"},
 )
 
 // Init initializes the metrics registry and sets version information
-func Init(version, commit, buildDate string) {
+func Init(version, commit, buildDate, activeSlot string) {
 	// Register default Go metrics (memory, goroutines, GC, etc.)
 	Registry.MustRegister(collectors.NewGoCollector())
 
@@ -31,5 +31,6 @@ func Init(version, commit, buildDate string) {
 	Registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	// Set application version info (value is always 1, info is in labels)
-	AppInfo.WithLabelValues(version, commit, buildDate).Set(1)
+	// activeSlot will be "true" for the active slot, "false" for inactive, or "unknown" if not set
+	AppInfo.WithLabelValues(version, commit, buildDate, activeSlot).Set(1)
 }

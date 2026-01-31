@@ -59,7 +59,9 @@ def get_color_by_priority(slot, priority):
 
 def create_override(slot, pattern, priority):
     """Create a field override for a specific slot and metric pattern."""
-    regex = f"{slot}.*{pattern}" if pattern else f".*{slot}.*"
+    # Use more lenient regex to match legend text with spaces and extra words
+    # e.g., "blue - Heap Alloc" matches "blue.*Heap.*"
+    regex = f"{slot}.*{pattern}.*" if pattern else f".*{slot}.*"
     color = get_color_by_priority(slot, priority)
 
     # Base properties: color and line width

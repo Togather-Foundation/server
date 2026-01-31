@@ -44,7 +44,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*blue.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1f77b4",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*green.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2ca02c",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -129,7 +160,38 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*blue.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1f77b4",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*green.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2ca02c",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -509,7 +571,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*Total"
+              "options": "blue.*Total.*"
             },
             "properties": [
               {
@@ -534,7 +596,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*In Use"
+              "options": "blue.*In Use.*"
             },
             "properties": [
               {
@@ -563,7 +625,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*Idle"
+              "options": "blue.*Idle.*"
             },
             "properties": [
               {
@@ -592,7 +654,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*Total"
+              "options": "green.*Total.*"
             },
             "properties": [
               {
@@ -617,7 +679,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*In Use"
+              "options": "green.*In Use.*"
             },
             "properties": [
               {
@@ -646,7 +708,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*Idle"
+              "options": "green.*Idle.*"
             },
             "properties": [
               {
@@ -835,7 +897,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*p50"
+              "options": "blue.*p50.*"
             },
             "properties": [
               {
@@ -860,7 +922,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*p95"
+              "options": "blue.*p95.*"
             },
             "properties": [
               {
@@ -889,7 +951,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*p99"
+              "options": "blue.*p99.*"
             },
             "properties": [
               {
@@ -918,7 +980,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*p50"
+              "options": "green.*p50.*"
             },
             "properties": [
               {
@@ -943,7 +1005,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*p95"
+              "options": "green.*p95.*"
             },
             "properties": [
               {
@@ -972,7 +1034,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*p99"
+              "options": "green.*p99.*"
             },
             "properties": [
               {
@@ -1013,7 +1075,7 @@
             "mean",
             "max"
           ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1156,7 +1218,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*5xx"
+              "options": "blue.*5xx.*"
             },
             "properties": [
               {
@@ -1181,7 +1243,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*4xx"
+              "options": "blue.*4xx.*"
             },
             "properties": [
               {
@@ -1210,7 +1272,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*5xx"
+              "options": "green.*5xx.*"
             },
             "properties": [
               {
@@ -1235,7 +1297,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*4xx"
+              "options": "green.*4xx.*"
             },
             "properties": [
               {
@@ -1368,7 +1430,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*Heap"
+              "options": "blue.*Heap.*"
             },
             "properties": [
               {
@@ -1393,7 +1455,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "blue.*System"
+              "options": "blue.*System.*"
             },
             "properties": [
               {
@@ -1422,7 +1484,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*Heap"
+              "options": "green.*Heap.*"
             },
             "properties": [
               {
@@ -1447,7 +1509,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "green.*System"
+              "options": "green.*System.*"
             },
             "properties": [
               {
@@ -1743,6 +1805,92 @@
       ],
       "title": "Top Endpoints by Traffic",
       "type": "piechart"
+    },
+    {
+      "id": 12,
+      "title": "Active Slot",
+      "type": "stat",
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "togather_app_info{slot=~\"$slot\", active_slot=\"true\"}",
+          "legendFormat": "{{slot}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "name",
+        "text": {
+          "titleSize": 12,
+          "valueSize": 18
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*blue.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1f77b4",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*green.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2ca02c",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     }
   ],
   "refresh": "30s",
