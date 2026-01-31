@@ -9,6 +9,23 @@ This provides two visual cues, making it easier to distinguish metrics at a glan
 
 ---
 
+## Active Slot Indicator
+
+The dashboard includes an "Active Slot" panel that shows which server is currently receiving production traffic.
+
+**Implementation:**
+- Uses `ACTIVE_SLOT` environment variable set in docker-compose
+- Exposed via `togather_app_info{active_slot="true"}` metric
+- Panel query: `togather_app_info{slot=~"$slot", active_slot="true"}`
+- Shows slot name with color-coded background (blue/green)
+
+**Configuration:**
+- Set `BLUE_ACTIVE_SLOT=true` for active blue slot
+- Set `GREEN_ACTIVE_SLOT=false` for inactive green slot
+- Switch values when performing blue-green deployments
+
+---
+
 ## Visual Scheme
 
 ### Primary Metrics (Most Important)
