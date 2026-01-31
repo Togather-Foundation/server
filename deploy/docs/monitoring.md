@@ -508,6 +508,91 @@ togather_db_connections_in_use / togather_db_connections_max_open > 0.8
 
 ---
 
+### Background Job Metrics
+
+#### `togather_idempotency_keys_deleted_total{slot}`
+**Type**: Counter  
+**Description**: Total number of expired idempotency keys deleted by cleanup job  
+**Labels**:
+- `slot`: Deployment slot (`blue` or `green`)
+
+**Example Queries**:
+```promql
+# Total keys deleted across all time
+togather_idempotency_keys_deleted_total
+
+# Keys deleted per hour (rate)
+rate(togather_idempotency_keys_deleted_total[1h]) * 3600
+
+# Keys deleted in last 24 hours
+increase(togather_idempotency_keys_deleted_total[24h])
+```
+
+#### `togather_idempotency_cleanup_duration_seconds{slot}`
+**Type**: Histogram  
+**Description**: Duration of idempotency cleanup job execution in seconds  
+**Buckets**: 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30 seconds
+
+**Example Queries**:
+```promql
+# p50 cleanup duration
+histogram_quantile(0.50,
+  rate(togather_idempotency_cleanup_duration_seconds_bucket[5m]))
+
+# p95 cleanup duration
+histogram_quantile(0.95,
+  rate(togather_idempotency_cleanup_duration_seconds_bucket[5m]))
+
+# p99 cleanup duration (alert if >30s)
+histogram_quantile(0.99,
+  rate(togather_idempotency_cleanup_duration_seconds_bucket[5m]))
+
+# Average cleanup duration
+rate(togather_idempotency_cleanup_duration_seconds_sum[5m])
+  / rate(togather_idempotency_cleanup_duration_seconds_count[5m])
+```
+
+#### `togather_idempotency_cleanup_errors_total{slot,error_type}`
+**Type**: Counter  
+**Description**: Total number of idempotency cleanup job failures  
+**Labels**:
+- `slot`: Deployment slot
+- `error_type`: Type of error (`database_error`, etc.)
+
+**Example Queries**:
+```promql
+# Total cleanup errors
+togather_idempotency_cleanup_errors_total
+
+# Error rate per hour
+rate(togather_idempotency_cleanup_errors_total[1h]) * 3600
+
+# Errors in last 24 hours
+increase(togather_idempotency_cleanup_errors_total[24h])
+
+# Alert if 3 consecutive failures
+increase(togather_idempotency_cleanup_errors_total[15m]) >= 3
+```
+
+#### `togather_idempotency_keys_table_size{slot}`
+**Type**: Gauge  
+**Description**: Current number of rows in the idempotency_keys table  
+**Note**: Updated after each cleanup job run
+
+**Example Queries**:
+```promql
+# Current table size
+togather_idempotency_keys_table_size
+
+# Table size growth rate
+deriv(togather_idempotency_keys_table_size[1h]) * 3600
+
+# Alert if growing >10K keys/day
+deriv(togather_idempotency_keys_table_size[24h]) > 10000
+```
+
+---
+
 ### Go Runtime Metrics
 
 Prometheus automatically collects Go runtime metrics with the `go_` prefix:
@@ -616,6 +701,40 @@ groups:
         annotations:
           summary: "Potential goroutine leak on {{ $labels.slot }}"
           description: "Goroutines growing at {{ $value | humanize }} per second"
+
+      # Idempotency cleanup job failing
+      - alert: IdempotencyCleanupFailing
+        expr: |
+          increase(togather_idempotency_cleanup_errors_total[15m]) >= 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Idempotency cleanup job failing on {{ $labels.slot }}"
+          description: "{{ $value }} cleanup failures in last 15 minutes"
+
+      # Idempotency cleanup job slow
+      - alert: IdempotencyCleanupSlow
+        expr: |
+          histogram_quantile(0.95,
+            rate(togather_idempotency_cleanup_duration_seconds_bucket[5m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Idempotency cleanup job slow on {{ $labels.slot }}"
+          description: "p95 cleanup duration is {{ $value | humanize }}s (threshold: 30s)"
+
+      # Idempotency table growing too fast
+      - alert: IdempotencyTableGrowthHigh
+        expr: |
+          deriv(togather_idempotency_keys_table_size[1h]) * 24 > 10000
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Idempotency keys table growing rapidly on {{ $labels.slot }}"
+          description: "Table growing at {{ $value | humanize }} keys/day (threshold: 10K/day)"
 ```
 
 ### Notification Channels (Planned)
@@ -812,6 +931,60 @@ receivers:
 3. **Verify metric exists**:
    ```bash
    curl http://localhost:8081/metrics | grep togather_health
+   ```
+
+---
+
+### Cleanup Job Metrics Not Appearing
+
+**Symptom**: `togather_idempotency_*` metrics don't show in Prometheus
+
+**Explanation**: Cleanup job metrics only appear after the job runs at least once. Prometheus doesn't expose counter/histogram metrics until they have data.
+
+**Solutions**:
+
+1. **Check if cleanup job has run**:
+   ```bash
+   # Query River job queue database
+   docker exec togather-db psql -U togather -d togather -c \
+     "SELECT id, state, created_at, finalized_at, errors 
+      FROM river_job 
+      WHERE kind = 'idempotency_cleanup' 
+      ORDER BY created_at DESC 
+      LIMIT 5;"
+   ```
+
+2. **Manually trigger cleanup job** (for testing):
+   ```bash
+   # Insert a cleanup job into River queue
+   docker exec togather-db psql -U togather -d togather -c \
+     "INSERT INTO river_job (kind, args, max_attempts, priority, queue, scheduled_at) 
+      VALUES ('idempotency_cleanup', '{}', 3, 1, 'default', NOW());"
+   ```
+
+3. **Wait for next scheduled run**:
+   - Cleanup jobs are typically scheduled periodically (check deployment configuration)
+   - Default schedule: Every 1 hour (configurable)
+
+4. **Check server logs for cleanup execution**:
+   ```bash
+   docker logs togather-server-blue 2>&1 | grep "idempotency cleanup"
+   docker logs togather-server-green 2>&1 | grep "idempotency cleanup"
+   
+   # Expected output:
+   # {"level":"info","slot":"blue","attempt":1,"time":"...","message":"starting idempotency cleanup job"}
+   # {"level":"info","slot":"blue","deleted_count":42,"duration_seconds":0.123,"time":"...","message":"idempotency cleanup job completed"}
+   ```
+
+5. **Verify metrics appear after job runs**:
+   ```bash
+   # Wait for job to complete, then check metrics
+   curl http://localhost:8081/metrics | grep togather_idempotency
+   
+   # Should show:
+   # togather_idempotency_keys_deleted_total{slot="blue"} 42
+   # togather_idempotency_cleanup_duration_seconds_bucket{slot="blue",le="0.5"} 1
+   # ...
    ```
 
 ---
