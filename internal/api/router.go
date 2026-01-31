@@ -51,9 +51,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
 
+	// Get deployment slot for metrics labeling (blue/green)
+	slot := os.Getenv("SLOT")
+	if slot == "" {
+		slot = "unknown"
+	}
+
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	workers := jobs.NewWorkersWithPool(pool, ingestService, slogLogger)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, slogLogger, slot)
 	riverClient, err := jobs.NewClient(pool, workers, slogLogger)
 	if err != nil {
 		logger.Error().Err(err).Msg("river client init failed")

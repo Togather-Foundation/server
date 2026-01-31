@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -79,7 +80,9 @@ func (IdempotencyCleanupArgs) Kind() string { return JobKindIdempotencyCleanup }
 // IdempotencyCleanupWorker removes expired idempotency keys (>24h old).
 type IdempotencyCleanupWorker struct {
 	river.WorkerDefaults[IdempotencyCleanupArgs]
-	Pool *pgxpool.Pool
+	Pool   *pgxpool.Pool
+	Logger *slog.Logger
+	Slot   string // Deployment slot (blue/green) for metrics labeling
 }
 
 func (IdempotencyCleanupWorker) Kind() string { return JobKindIdempotencyCleanup }
@@ -89,17 +92,73 @@ func (w IdempotencyCleanupWorker) Work(ctx context.Context, job *river.Job[Idemp
 		return fmt.Errorf("database pool not configured")
 	}
 
+	logger := w.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	// Track cleanup duration for metrics
+	start := time.Now()
+
+	logger.Info("starting idempotency cleanup job",
+		"slot", w.Slot,
+		"attempt", job.Attempt,
+	)
+
 	// Delete expired idempotency keys
 	const deleteQuery = `DELETE FROM idempotency_keys WHERE expires_at <= now()`
 	result, err := w.Pool.Exec(ctx, deleteQuery)
+	duration := time.Since(start).Seconds()
+
+	// Record duration metric (even on error, to track failed attempts)
+	if w.Slot != "" {
+		metrics.IdempotencyCleanupDuration.WithLabelValues(w.Slot).Observe(duration)
+	}
+
 	if err != nil {
+		logger.Error("idempotency cleanup job failed",
+			"slot", w.Slot,
+			"error", err,
+			"duration_seconds", duration,
+		)
+		if w.Slot != "" {
+			metrics.IdempotencyCleanupErrors.WithLabelValues(w.Slot, "database_error").Inc()
+		}
 		return fmt.Errorf("delete expired idempotency keys: %w", err)
 	}
 
 	rows := result.RowsAffected()
-	if rows > 0 {
-		// Log cleanup success (context available through River's logger)
-		_ = rows // Successfully cleaned up expired keys
+
+	// Record successful deletion count
+	if w.Slot != "" && rows > 0 {
+		metrics.IdempotencyKeysDeleted.WithLabelValues(w.Slot).Add(float64(rows))
+	}
+
+	logger.Info("idempotency cleanup job completed",
+		"slot", w.Slot,
+		"deleted_count", rows,
+		"duration_seconds", duration,
+	)
+
+	// Optionally record table size (requires additional query)
+	// This is useful for tracking table growth over time
+	if w.Slot != "" {
+		var tableSize int64
+		const countQuery = `SELECT COUNT(*) FROM idempotency_keys`
+		err := w.Pool.QueryRow(ctx, countQuery).Scan(&tableSize)
+		if err != nil {
+			logger.Warn("failed to get idempotency_keys table size",
+				"slot", w.Slot,
+				"error", err,
+			)
+			// Don't fail the job just because we couldn't get table size
+		} else {
+			metrics.IdempotencyKeysTableSize.WithLabelValues(w.Slot).Set(float64(tableSize))
+			logger.Info("idempotency_keys table size",
+				"slot", w.Slot,
+				"current_size", tableSize,
+			)
+		}
 	}
 
 	return nil
@@ -291,9 +350,13 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, logger *slog.Logger) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, logger *slog.Logger, slot string) *river.Workers {
 	workers := NewWorkers()
-	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{Pool: pool})
+	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
+		Pool:   pool,
+		Logger: logger,
+		Slot:   slot,
+	})
 	river.AddWorker[BatchResultsCleanupArgs](workers, BatchResultsCleanupWorker{
 		Pool:   pool,
 		Logger: logger,

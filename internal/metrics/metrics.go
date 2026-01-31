@@ -54,6 +54,47 @@ var HealthCheckLatency = promauto.With(Registry).NewGaugeVec(
 	[]string{"check", "slot"},
 )
 
+// IdempotencyKeysDeleted tracks the total number of expired idempotency keys deleted
+var IdempotencyKeysDeleted = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "idempotency_keys_deleted_total",
+		Help:      "Total number of expired idempotency keys deleted by cleanup job",
+	},
+	[]string{"slot"},
+)
+
+// IdempotencyCleanupDuration tracks the duration of idempotency cleanup operations
+var IdempotencyCleanupDuration = promauto.With(Registry).NewHistogramVec(
+	prometheus.HistogramOpts{
+		Namespace: namespace,
+		Name:      "idempotency_cleanup_duration_seconds",
+		Help:      "Duration of idempotency cleanup job execution in seconds",
+		Buckets:   []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30},
+	},
+	[]string{"slot"},
+)
+
+// IdempotencyCleanupErrors tracks cleanup job failures
+var IdempotencyCleanupErrors = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "idempotency_cleanup_errors_total",
+		Help:      "Total number of idempotency cleanup job failures",
+	},
+	[]string{"slot", "error_type"},
+)
+
+// IdempotencyKeysTableSize tracks the current size of the idempotency_keys table (optional)
+var IdempotencyKeysTableSize = promauto.With(Registry).NewGaugeVec(
+	prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "idempotency_keys_table_size",
+		Help:      "Current number of rows in the idempotency_keys table",
+	},
+	[]string{"slot"},
+)
+
 // Init initializes the metrics registry and sets version information
 func Init(version, commit, buildDate, activeSlot string) {
 	// Register default Go metrics (memory, goroutines, GC, etc.)
