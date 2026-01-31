@@ -27,6 +27,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/rs/zerolog"
 )
 
@@ -60,7 +61,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	workers := jobs.NewWorkersWithPool(pool, ingestService, slogLogger, slot)
-	riverClient, err := jobs.NewClient(pool, workers, slogLogger)
+
+	// Create River metrics hook for Prometheus monitoring
+	riverHooks := []rivertype.Hook{
+		metrics.NewRiverMetricsHook(slot),
+	}
+
+	riverClient, err := jobs.NewClient(pool, workers, slogLogger, riverHooks)
 	if err != nil {
 		logger.Error().Err(err).Msg("river client init failed")
 		return http.NewServeMux()

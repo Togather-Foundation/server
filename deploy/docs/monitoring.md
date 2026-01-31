@@ -593,6 +593,144 @@ deriv(togather_idempotency_keys_table_size[24h]) > 10000
 
 ---
 
+### River Background Job Metrics
+
+The Togather server uses River for background job processing (batch ingestion, cleanup tasks, etc.). These metrics track job queue health and execution performance.
+
+#### `togather_river_jobs_queued_total{kind,slot}`
+**Type**: Counter  
+**Description**: Total number of jobs queued through River's API  
+**Labels**:
+- `kind`: Job type (e.g., `batch_ingestion`, `idempotency_cleanup`, `deduplication`)
+- `slot`: Deployment slot (`blue` or `green`)
+
+**Note**: Only tracks jobs queued through River's client API. Jobs inserted directly into the database bypass this counter.
+
+**Example Queries**:
+```promql
+# Total jobs queued by type
+sum by (kind) (togather_river_jobs_queued_total)
+
+# Queue rate per job type (jobs/second)
+rate(togather_river_jobs_queued_total[5m])
+
+# Jobs queued in last hour by slot and kind
+increase(togather_river_jobs_queued_total[1h])
+```
+
+#### `togather_river_jobs_in_flight{kind,slot}`
+**Type**: Gauge  
+**Description**: Current number of jobs actively executing  
+**Labels**:
+- `kind`: Job type
+- `slot`: Deployment slot
+
+**Example Queries**:
+```promql
+# Total jobs currently executing
+sum(togather_river_jobs_in_flight)
+
+# In-flight jobs by type
+sum by (kind) (togather_river_jobs_in_flight)
+
+# Alert if jobs stuck in-flight for >5 minutes
+# (requires tracking duration separately)
+togather_river_jobs_in_flight > 0
+
+# Alert if queue depth grows (more queuing than completing)
+increase(togather_river_jobs_queued_total[5m]) 
+  > increase(togather_river_jobs_completed_total[5m])
+```
+
+#### `togather_river_job_duration_seconds{kind,slot}`
+**Type**: Histogram  
+**Description**: Job execution duration in seconds  
+**Buckets**: 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300 seconds  
+**Labels**:
+- `kind`: Job type
+- `slot`: Deployment slot
+
+**Example Queries**:
+```promql
+# p50 (median) job duration by type
+histogram_quantile(0.50,
+  sum by (kind, le) (rate(togather_river_job_duration_seconds_bucket[5m])))
+
+# p95 job duration (latency target)
+histogram_quantile(0.95,
+  rate(togather_river_job_duration_seconds_bucket[5m]))
+
+# p99 job duration (detect outliers)
+histogram_quantile(0.99,
+  rate(togather_river_job_duration_seconds_bucket[5m]))
+
+# Average duration per job type
+rate(togather_river_job_duration_seconds_sum[5m])
+  / rate(togather_river_job_duration_seconds_count[5m])
+
+# Alert if p95 duration >60s for batch ingestion
+histogram_quantile(0.95,
+  rate(togather_river_job_duration_seconds_bucket{kind="batch_ingestion"}[5m])) > 60
+```
+
+#### `togather_river_jobs_completed_total{kind,slot,result}`
+**Type**: Counter  
+**Description**: Total number of completed jobs by result  
+**Labels**:
+- `kind`: Job type
+- `slot`: Deployment slot
+- `result`: Execution result (`success` or `error`)
+
+**Example Queries**:
+```promql
+# Total completions by result
+sum by (result) (togather_river_jobs_completed_total)
+
+# Success rate per job type
+sum by (kind) (rate(togather_river_jobs_completed_total{result="success"}[5m]))
+  / sum by (kind) (rate(togather_river_jobs_completed_total[5m]))
+
+# Error rate (errors per second)
+sum(rate(togather_river_jobs_completed_total{result="error"}[5m]))
+
+# Failed jobs in last hour
+increase(togather_river_jobs_completed_total{result="error"}[1h])
+
+# Alert if error rate >5% for any job type
+sum by (kind) (rate(togather_river_jobs_completed_total{result="error"}[5m]))
+  / sum by (kind) (rate(togather_river_jobs_completed_total[5m])) > 0.05
+
+# Alert if 3+ consecutive failures
+increase(togather_river_jobs_completed_total{result="error"}[15m]) >= 3
+```
+
+**Common Dashboard Panels**:
+
+1. **Job Queue Depth** (shows backlog):
+   ```promql
+   sum by (kind) (togather_river_jobs_in_flight)
+   ```
+
+2. **Job Throughput** (jobs/sec by type):
+   ```promql
+   sum by (kind) (rate(togather_river_jobs_completed_total[5m]))
+   ```
+
+3. **Job Success Rate** (%):
+   ```promql
+   100 * (
+     sum by (kind) (rate(togather_river_jobs_completed_total{result="success"}[5m]))
+     / sum by (kind) (rate(togather_river_jobs_completed_total[5m]))
+   )
+   ```
+
+4. **Job Duration Heatmap**:
+   ```promql
+   sum by (le) (rate(togather_river_job_duration_seconds_bucket[5m]))
+   ```
+
+---
+
 ### Go Runtime Metrics
 
 Prometheus automatically collects Go runtime metrics with the `go_` prefix:
@@ -735,6 +873,72 @@ groups:
         annotations:
           summary: "Idempotency keys table growing rapidly on {{ $labels.slot }}"
           description: "Table growing at {{ $value | humanize }} keys/day (threshold: 10K/day)"
+```
+
+#### River Background Jobs
+
+```yaml
+groups:
+  - name: river_jobs
+    interval: 15s
+    rules:
+      # Alert if job error rate exceeds 5%
+      - alert: RiverJobHighErrorRate
+        expr: |
+          sum by (kind) (rate(togather_river_jobs_completed_total{result="error"}[5m]))
+            / sum by (kind) (rate(togather_river_jobs_completed_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate for {{ $labels.kind }} jobs"
+          description: "Job type {{ $labels.kind }} has {{ $value | humanizePercentage }} error rate (threshold: 5%)"
+
+      # Alert if 3+ consecutive job failures
+      - alert: RiverJobConsecutiveFailures
+        expr: increase(togather_river_jobs_completed_total{result="error"}[15m]) >= 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "Multiple consecutive failures for {{ $labels.kind }} on {{ $labels.slot }}"
+          description: "{{ $value }} failures in 15 minutes for job type {{ $labels.kind }}"
+
+      # Alert if jobs stuck in-flight for >5 minutes
+      - alert: RiverJobsStuckInFlight
+        expr: |
+          togather_river_jobs_in_flight > 0
+          and
+          changes(togather_river_jobs_in_flight[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Jobs stuck executing on {{ $labels.slot }}"
+          description: "{{ $value }} {{ $labels.kind }} jobs have been in-flight for >5 minutes without change"
+
+      # Alert if p95 duration exceeds 60s for batch ingestion
+      - alert: RiverBatchIngestionSlow
+        expr: |
+          histogram_quantile(0.95,
+            rate(togather_river_job_duration_seconds_bucket{kind="batch_ingestion"}[5m])) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Batch ingestion jobs running slow on {{ $labels.slot }}"
+          description: "p95 duration is {{ $value | humanizeDuration }} (threshold: 60s)"
+
+      # Alert if queue depth growing (more queuing than completing)
+      - alert: RiverJobQueueGrowing
+        expr: |
+          increase(togather_river_jobs_queued_total[5m]) 
+            > 1.5 * increase(togather_river_jobs_completed_total[5m])
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job queue depth growing for {{ $labels.kind }}"
+          description: "Queue is growing faster than jobs are completing (may indicate worker saturation)"
 ```
 
 ### Notification Channels (Planned)

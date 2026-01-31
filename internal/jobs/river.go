@@ -105,7 +105,7 @@ func InsertOptsForKind(kind string) river.InsertOpts {
 }
 
 // NewClientConfig builds a River client configuration with retry policy.
-func NewClientConfig(workers *river.Workers, logger *slog.Logger) *river.Config {
+func NewClientConfig(workers *river.Workers, logger *slog.Logger, hooks []rivertype.Hook) *river.Config {
 	policy := NewRetryPolicy()
 	config := &river.Config{
 		Workers:     workers,
@@ -114,6 +114,7 @@ func NewClientConfig(workers *river.Workers, logger *slog.Logger) *river.Config 
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 10},
 		},
+		Hooks: hooks,
 	}
 	if logger != nil {
 		config.Logger = logger
@@ -123,8 +124,8 @@ func NewClientConfig(workers *river.Workers, logger *slog.Logger) *river.Config 
 }
 
 // NewClient creates a River client using pgx v5.
-func NewClient(pool *pgxpool.Pool, workers *river.Workers, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
-	return river.NewClient(riverpgxv5.New(pool), NewClientConfig(workers, logger))
+func NewClient(pool *pgxpool.Pool, workers *river.Workers, logger *slog.Logger, hooks []rivertype.Hook) (*river.Client[pgx.Tx], error) {
+	return river.NewClient(riverpgxv5.New(pool), NewClientConfig(workers, logger, hooks))
 }
 
 func (p *RetryPolicy) configFor(kind string) RetryConfig {
