@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": null,
+  "id": 2,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -90,17 +90,17 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 14,
           "valueSize": 24
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "10.2.3",
       "targets": [
@@ -206,11 +206,11 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "textMode": "value_and_name"
       },
@@ -251,9 +251,9 @@
             "fillOpacity": 20,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -418,11 +418,11 @@
       "options": {
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "showThresholdLabels": false,
         "showThresholdMarkers": true,
@@ -490,11 +490,11 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "textMode": "value_and_name"
       },
@@ -535,9 +535,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -613,11 +613,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -642,11 +642,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     2,
                     4
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -696,11 +696,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -725,11 +725,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     2,
                     4
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -816,9 +816,9 @@
             "fillOpacity": 10,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -939,11 +939,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -968,11 +968,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     2,
                     4
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1022,11 +1022,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1051,11 +1051,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     2,
                     4
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1142,9 +1142,9 @@
             "fillOpacity": 20,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -1260,11 +1260,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1314,11 +1314,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1394,9 +1394,9 @@
             "fillOpacity": 10,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -1472,11 +1472,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1526,11 +1526,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
                   "dash": [
                     10,
                     5
-                  ]
+                  ],
+                  "fill": "dash"
                 }
               }
             ]
@@ -1606,9 +1606,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -1749,9 +1749,9 @@
           },
           "custom": {
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             }
           },
           "mappings": []
@@ -1779,11 +1779,11 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "tooltip": {
           "mode": "multi",
@@ -1807,42 +1807,13 @@
       "type": "piechart"
     },
     {
-      "id": 12,
-      "title": "Active Slot",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "togather_app_info{slot=~\"$slot\", active_slot=\"true\"}",
-          "legendFormat": "{{slot}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "textMode": "name",
-        "text": {
-          "titleSize": 12,
-          "valueSize": 18
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1851,8 +1822,7 @@
                 "value": null
               }
             ]
-          },
-          "mappings": []
+          }
         },
         "overrides": [
           {
@@ -1887,10 +1857,40 @@
           }
         ]
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      }
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "titleSize": 12,
+          "valueSize": 18
+        },
+        "textMode": "name"
+      },
+      "targets": [
+        {
+          "expr": "togather_app_info{slot=~\"$slot\", active_slot=\"true\"}",
+          "legendFormat": "{{slot}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Slot",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
@@ -1937,6 +1937,6 @@
   "timezone": "",
   "title": "Togather Server Overview",
   "uid": "togather-overview",
-  "version": 1,
+  "version": 6,
   "weekStart": ""
 }
