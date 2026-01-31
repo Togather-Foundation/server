@@ -11,19 +11,23 @@ This provides two visual cues, making it easier to distinguish metrics at a glan
 
 ## Visual Scheme
 
-### Blue Slot (Primary)
-- **Line Style**: Solid (`lineStyle: "solid"`)
-- **Colors**: Shades of blue from dark to light
-  - **Dark Blue**: `#1f77b4` (primary metric)
-  - **Medium Blue**: `#5da5da` (secondary metric)
-  - **Light Blue**: `#aec7e8` (tertiary metric)
+### Primary Metrics (Most Important)
+- **Line Style**: Solid
+- **Colors**: 
+  - **Blue slot**: Dark blue `#1f77b4`
+  - **Green slot**: Dark green `#2ca02c`
 
-### Green Slot (Secondary)
-- **Line Style**: Dashed (`lineStyle: "dash"`, `lineInterpolation: "linear"`)
-- **Colors**: Shades of green from dark to light
-  - **Dark Green**: `#2ca02c` (primary metric)
-  - **Medium Green**: `#6ec16e` (secondary metric)
-  - **Light Green**: `#b1d8b1` (tertiary metric)
+### Secondary Metrics
+- **Line Style**: Dashed `[10, 5]` (10px dash, 5px gap)
+- **Colors**: 
+  - **Blue slot**: Medium blue `#5da5da`
+  - **Green slot**: Medium green `#6ec16e`
+
+### Tertiary Metrics  
+- **Line Style**: Dotted `[2, 4]` (2px dot, 4px gap)
+- **Colors**: 
+  - **Blue slot**: Light blue `#aec7e8`
+  - **Green slot**: Light green `#b1d8b1`
 
 ---
 
@@ -34,14 +38,15 @@ This provides two visual cues, making it easier to distinguish metrics at a glan
 
 **Pattern**:
 - Blue slot: Dark blue, solid line
-- Green slot: Dark green, dashed line
+- Green slot: Dark green, solid line
 
 ```json
 {
   "matcher": {"id": "byRegexp", "options": ".*blue.*"},
   "properties": [
     {"id": "color", "value": {"fixedColor": "#1f77b4", "mode": "fixed"}},
-    {"id": "custom.lineStyle", "value": {"fill": "solid"}}
+    {"id": "custom.lineStyle", "value": {"fill": "solid"}},
+    {"id": "custom.lineWidth", "value": 2}
   ]
 }
 ```
@@ -51,15 +56,12 @@ This provides two visual cues, making it easier to distinguish metrics at a glan
 ### Multiple Metrics Per Slot
 **Examples**: Database Connections (Total/In Use/Idle), Request Latency (p50/p95/p99)
 
-**Pattern** (Blue slot):
-1. First metric (e.g., Total, p50): Dark blue (#1f77b4), solid
-2. Second metric (e.g., In Use, p95): Medium blue (#5da5da), solid
-3. Third metric (e.g., Idle, p99): Light blue (#aec7e8), solid
+**Pattern**:
+1. **First metric** (e.g., Total, p50): Dark color, **solid** line
+2. **Second metric** (e.g., In Use, p95): Medium color, **dashed** line
+3. **Third metric** (e.g., Idle, p99): Light color, **dotted** line
 
-**Pattern** (Green slot):
-1. First metric: Dark green (#2ca02c), dashed
-2. Second metric: Medium green (#6ec16e), dashed
-3. Third metric: Light green (#b1d8b1), dashed
+This applies to **both blue and green slots** - the line style differentiation is based on metric priority, not slot color.
 
 **Legend Format**: Always use `{{slot}} - MetricName` for clarity
 
@@ -82,30 +84,30 @@ This provides two visual cues, making it easier to distinguish metrics at a glan
           {"id": "custom.lineWidth", "value": 2}
         ]
       },
-      // Blue - In Use (medium blue, solid)
+      // Blue - In Use (medium blue, dashed)
       {
         "matcher": {"id": "byRegexp", "options": "blue.*In Use"},
         "properties": [
           {"id": "color", "value": {"fixedColor": "#5da5da", "mode": "fixed"}},
-          {"id": "custom.lineStyle", "value": {"fill": "solid"}},
+          {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 5]}},
           {"id": "custom.lineWidth", "value": 2}
         ]
       },
-      // Blue - Idle (light blue, solid)
+      // Blue - Idle (light blue, dotted)
       {
         "matcher": {"id": "byRegexp", "options": "blue.*Idle"},
         "properties": [
           {"id": "color", "value": {"fixedColor": "#aec7e8", "mode": "fixed"}},
-          {"id": "custom.lineStyle", "value": {"fill": "solid"}},
+          {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [2, 4]}},
           {"id": "custom.lineWidth", "value": 2}
         ]
       },
-      // Green - Total (dark green, dashed)
+      // Green - Total (dark green, solid)
       {
         "matcher": {"id": "byRegexp", "options": "green.*Total"},
         "properties": [
           {"id": "color", "value": {"fixedColor": "#2ca02c", "mode": "fixed"}},
-          {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 5]}},
+          {"id": "custom.lineStyle", "value": {"fill": "solid"}},
           {"id": "custom.lineWidth", "value": 2}
         ]
       },
@@ -118,12 +120,12 @@ This provides two visual cues, making it easier to distinguish metrics at a glan
           {"id": "custom.lineWidth", "value": 2}
         ]
       },
-      // Green - Idle (light green, dashed)
+      // Green - Idle (light green, dotted)
       {
         "matcher": {"id": "byRegexp", "options": "green.*Idle"},
         "properties": [
           {"id": "color", "value": {"fixedColor": "#b1d8b1", "mode": "fixed"}},
-          {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 5]}},
+          {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [2, 4]}},
           {"id": "custom.lineWidth", "value": 2}
         ]
       }
@@ -156,53 +158,53 @@ python3 deploy/scripts/update-dashboard-colors.py deploy/config/grafana/dashboar
 
 ### Request Rate (1 metric per slot)
 - Blue: Dark blue, solid
-- Green: Dark green, dashed
+- Green: Dark green, solid
 
 ### Database Connections (3 metrics per slot)
 - Blue Total: Dark blue, solid
-- Blue In Use: Medium blue, solid  
-- Blue Idle: Light blue, solid
-- Green Total: Dark green, dashed
+- Blue In Use: Medium blue, dashed
+- Blue Idle: Light blue, dotted
+- Green Total: Dark green, solid
 - Green In Use: Medium green, dashed
-- Green Idle: Light green, dashed
+- Green Idle: Light green, dotted
 
 ### Request Latency (3 metrics per slot)
 - Blue p50: Dark blue, solid (most important)
-- Blue p95: Medium blue, solid
-- Blue p99: Light blue, solid
-- Green p50: Dark green, dashed
+- Blue p95: Medium blue, dashed
+- Blue p99: Light blue, dotted
+- Green p50: Dark green, solid
 - Green p95: Medium green, dashed
-- Green p99: Light green, dashed
+- Green p99: Light green, dotted
 
 ### Error Rate (2 metrics per slot)
 - Blue 5xx: Dark blue, solid (more critical)
-- Blue 4xx: Medium blue, solid
-- Green 5xx: Dark green, dashed
+- Blue 4xx: Medium blue, dashed
+- Green 5xx: Dark green, solid
 - Green 4xx: Medium green, dashed
 
 ### Memory Usage (2 metrics per slot)
 - Blue Heap: Dark blue, solid
-- Blue System: Medium blue, solid
-- Green Heap: Dark green, dashed
+- Blue System: Medium blue, dashed
+- Green Heap: Dark green, solid
 - Green System: Medium green, dashed
 
 ### Goroutines (1 metric per slot)
 - Blue: Dark blue, solid
-- Green: Dark green, dashed
+- Green: Dark green, solid
 
 ---
 
 ## Accessibility Considerations
 
 ### Color Blindness
-The dual-coding (color + line style) ensures the dashboard works for:
-- **Deuteranopia** (red-green colorblind): Can distinguish by line style
-- **Protanopia** (red-green colorblind): Can distinguish by line style
-- **Tritanopia** (blue-yellow colorblind): Can distinguish blue/green hues + line style
+The triple-coding (color + brightness + line style) ensures the dashboard works for:
+- **Deuteranopia** (red-green colorblind): Can distinguish blue/green colors, brightness levels, and line styles (solid/dashed/dotted)
+- **Protanopia** (red-green colorblind): Can distinguish blue/green colors, brightness levels, and line styles
+- **Tritanopia** (blue-yellow colorblind): Can distinguish by line style and brightness levels
 
 ### Printing
-- Black & white printing: Line styles (solid vs. dashed) remain visible
-- Grayscale: Different shades of blue/green convert to different grays
+- Black & white printing: Line styles (solid/dashed/dotted) remain clearly visible
+- Grayscale: Different shades of blue/green convert to different grays, plus line style differentiation
 
 ---
 
@@ -211,15 +213,15 @@ The dual-coding (color + line style) ensures the dashboard works for:
 ### DO:
 ✓ Use `{{slot}} - MetricName` legend format for clarity
 ✓ Apply darker shades to more important metrics
-✓ Use solid lines for blue, dashed for green
+✓ Use solid lines for primary, dashed for secondary, dotted for tertiary
 ✓ Keep line width at 2px for readability
 ✓ Test dashboard with both blue and green selected in $slot variable
 
 ### DON'T:
-✗ Use more than 3 shades per slot (becomes hard to distinguish)
+✗ Use more than 3 metrics per slot (becomes hard to distinguish)
 ✗ Use the same color for different metrics in the same slot
 ✗ Forget to update legend format when adding new metrics
-✗ Use dotted lines (dashed is more visible)
+✗ Mix up the line style order (always solid → dashed → dotted)
 
 ---
 
@@ -238,10 +240,12 @@ Before committing:
 
 ## Quick Reference
 
-| Slot  | Line Style | Dark      | Medium    | Light     |
-|-------|-----------|-----------|-----------|-----------|
-| Blue  | Solid     | #1f77b4   | #5da5da   | #aec7e8   |
-| Green | Dashed    | #2ca02c   | #6ec16e   | #b1d8b1   |
+| Priority  | Line Style | Blue      | Green     |
+|-----------|-----------|-----------|-----------|
+| Primary   | Solid     | #1f77b4   | #2ca02c   |
+| Secondary | Dashed    | #5da5da   | #6ec16e   |
+| Tertiary  | Dotted    | #aec7e8   | #b1d8b1   |
 
-**Line Dash Pattern**: `[10, 5]` (10px dash, 5px gap)
+**Dashed Line Pattern**: `[10, 5]` (10px dash, 5px gap)  
+**Dotted Line Pattern**: `[2, 4]` (2px dot, 4px gap)  
 **Line Width**: `2px`

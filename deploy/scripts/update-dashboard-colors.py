@@ -68,14 +68,26 @@ def create_override(slot, pattern, priority):
         {"id": "custom.lineWidth", "value": 2},
     ]
 
-    # Add line style for green slot (dashed)
-    if slot == "green":
-        properties.append(
-            {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 5]}}
-        )
-    else:
-        # Blue slot: explicitly set solid (for clarity)
+    # Line style based on priority:
+    # Priority 0 (primary): Solid
+    # Priority 1 (secondary): Dashed
+    # Priority 2+ (tertiary): Dotted
+    if priority == 0:
         properties.append({"id": "custom.lineStyle", "value": {"fill": "solid"}})
+    elif priority == 1:
+        properties.append(
+            {
+                "id": "custom.lineStyle",
+                "value": {"fill": "dash", "dash": [10, 5]},  # Dashed pattern
+            }
+        )
+    else:  # priority >= 2
+        properties.append(
+            {
+                "id": "custom.lineStyle",
+                "value": {"fill": "dash", "dash": [2, 4]},  # Dotted pattern
+            }
+        )
 
     return {
         "matcher": {"id": "byRegexp", "options": regex},
@@ -180,8 +192,10 @@ def main():
         print(f"  (Skipped {skipped_count} unknown panels)")
     print()
     print("Visual scheme applied:")
-    print("  • Blue slot: Solid lines (dark → medium → light blue)")
-    print("  • Green slot: Dashed lines (dark → medium → light green)")
+    print("  • Primary metrics: Dark colors, solid lines")
+    print("  • Secondary metrics: Medium colors, dashed lines")
+    print("  • Tertiary metrics: Light colors, dotted lines")
+    print("  • Applies consistently to both blue and green slots")
 
 
 if __name__ == "__main__":

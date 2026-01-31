@@ -267,11 +267,7 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    10,
-                    5
-                  ]
+                  "fill": "solid"
                 }
               }
             ]
@@ -555,7 +551,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "solid"
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
                 }
               }
             ]
@@ -580,7 +580,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "solid"
+                  "fill": "dash",
+                  "dash": [
+                    2,
+                    4
+                  ]
                 }
               }
             ]
@@ -605,11 +609,7 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    10,
-                    5
-                  ]
+                  "fill": "solid"
                 }
               }
             ]
@@ -665,8 +665,8 @@
                 "value": {
                   "fill": "dash",
                   "dash": [
-                    10,
-                    5
+                    2,
+                    4
                   ]
                 }
               }
@@ -877,7 +877,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "solid"
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
                 }
               }
             ]
@@ -902,7 +906,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "solid"
+                  "fill": "dash",
+                  "dash": [
+                    2,
+                    4
+                  ]
                 }
               }
             ]
@@ -927,11 +935,7 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    10,
-                    5
-                  ]
+                  "fill": "solid"
                 }
               }
             ]
@@ -987,8 +991,8 @@
                 "value": {
                   "fill": "dash",
                   "dash": [
-                    10,
-                    5
+                    2,
+                    4
                   ]
                 }
               }
@@ -1194,7 +1198,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "solid"
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
                 }
               }
             ]
@@ -1219,11 +1227,7 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    10,
-                    5
-                  ]
+                  "fill": "solid"
                 }
               }
             ]
@@ -1406,7 +1410,11 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "solid"
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
                 }
               }
             ]
@@ -1431,11 +1439,7 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    10,
-                    5
-                  ]
+                  "fill": "solid"
                 }
               }
             ]
@@ -1626,11 +1630,7 @@
               {
                 "id": "custom.lineStyle",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    10,
-                    5
-                  ]
+                  "fill": "solid"
                 }
               }
             ]
