@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/testauth"
 	"github.com/Togather-Foundation/server/tests/testdata"
 )
 
@@ -87,22 +88,43 @@ var LoadProfiles = map[LoadProfile]ProfileConfig{
 
 // LoadTester orchestrates load testing operations.
 type LoadTester struct {
-	baseURL    string
-	httpClient *http.Client
-	generator  *testdata.Generator
-	stats      *Statistics
+	baseURL       string
+	httpClient    *http.Client
+	generator     *testdata.Generator
+	stats         *Statistics
+	authenticator *testauth.TestAuthenticator
 }
 
 // NewLoadTester creates a new load tester targeting the specified base URL.
 func NewLoadTester(baseURL string) *LoadTester {
+	// Try to create dev authenticator (will use dev defaults)
+	auth, err := testauth.NewDevAuthenticator()
+	if err != nil {
+		// If auth fails, continue without authentication
+		auth = nil
+	}
+
 	return &LoadTester{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		generator: testdata.NewGenerator(time.Now().UnixNano()),
-		stats:     &Statistics{},
+		generator:     testdata.NewGenerator(time.Now().UnixNano()),
+		stats:         &Statistics{},
+		authenticator: auth,
 	}
+}
+
+// WithAuth sets a custom authenticator for this load tester.
+func (lt *LoadTester) WithAuth(auth *testauth.TestAuthenticator) *LoadTester {
+	lt.authenticator = auth
+	return lt
+}
+
+// WithoutAuth disables authentication for this load tester.
+func (lt *LoadTester) WithoutAuth() *LoadTester {
+	lt.authenticator = nil
+	return lt
 }
 
 // Statistics tracks load test metrics.
@@ -348,6 +370,11 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 
 	if work.body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+
+	// Add authentication if available
+	if lt.authenticator != nil {
+		lt.authenticator.AddAuth(req)
 	}
 
 	// Execute request

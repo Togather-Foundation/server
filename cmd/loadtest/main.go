@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/Togather-Foundation/server/internal/loadtest"
+	"github.com/Togather-Foundation/server/internal/testauth"
 )
 
 func main() {
@@ -20,11 +21,23 @@ func main() {
 		duration  = flag.Duration("duration", 0, "Custom test duration (overrides profile)")
 		readRatio = flag.Float64("read-ratio", 0, "Read/write ratio 0.0-1.0 (overrides profile)")
 		noRamp    = flag.Bool("no-ramp", false, "Disable ramp-up/ramp-down (instant start/stop)")
+		apiKey    = flag.String("api-key", "", "API key for write endpoints (optional, for testing agent endpoints)")
 	)
 	flag.Parse()
 
-	// Create load tester
-	tester := loadtest.NewLoadTester(*baseURL)
+	// Create load tester (defaults to no auth)
+	tester := loadtest.NewLoadTester(*baseURL).WithoutAuth()
+
+	// If API key provided, use it for write endpoints
+	if *apiKey != "" {
+		auth, err := testauth.NewAPIKeyAuthenticator(*apiKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to create API key authenticator: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Note: API key auth is only needed for write-heavy testing\n")
+			os.Exit(1)
+		}
+		tester = tester.WithAuth(auth)
+	}
 
 	// Determine configuration
 	var config loadtest.ProfileConfig
