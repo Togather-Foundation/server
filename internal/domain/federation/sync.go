@@ -728,9 +728,13 @@ func extractOrganizationFromPayload(payload map[string]any) (*OrganizationCreate
 }
 
 // computePayloadHash generates a SHA-256 hash of the JSON-LD payload for idempotency checks.
+// Uses canonical JSON encoding to ensure deterministic output regardless of map key order.
 func computePayloadHash(payload map[string]any) (string, error) {
-	// Marshal to JSON (Go's json.Marshal produces deterministic output for maps)
-	data, err := json.Marshal(payload)
+	// Normalize to canonical form (sorted keys recursively)
+	canonical := normalizeToCanonical(payload)
+
+	// Marshal to JSON
+	data, err := json.Marshal(canonical)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal payload: %w", err)
 	}
@@ -738,4 +742,28 @@ func computePayloadHash(payload map[string]any) (string, error) {
 	// Compute SHA-256 hash
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:]), nil
+}
+
+// normalizeToCanonical converts a map[string]any to a canonical form by recursively
+// converting all maps to sorted key-value pairs. This ensures deterministic JSON marshaling.
+func normalizeToCanonical(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		// Convert map to sorted representation
+		normalized := make(map[string]any, len(val))
+		for k, v := range val {
+			normalized[k] = normalizeToCanonical(v)
+		}
+		return normalized
+	case []any:
+		// Recursively normalize array elements
+		normalized := make([]any, len(val))
+		for i, elem := range val {
+			normalized[i] = normalizeToCanonical(elem)
+		}
+		return normalized
+	default:
+		// Primitives (string, number, bool, nil) are already deterministic
+		return val
+	}
 }

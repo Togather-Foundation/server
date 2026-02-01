@@ -257,3 +257,182 @@ func TestSyncEvent_IdempotencyKey(t *testing.T) {
 		assert.Contains(t, err.Error(), "idempotency key conflict")
 	})
 }
+
+func TestComputePayloadHash_Deterministic(t *testing.T) {
+	t.Run("same payload produces same hash", func(t *testing.T) {
+		payload := map[string]any{
+			"@context":  "https://schema.org",
+			"@type":     "Event",
+			"@id":       "https://example.org/events/123",
+			"name":      "Test Event",
+			"startDate": "2026-07-10T19:00:00Z",
+		}
+
+		hash1, err := computePayloadHash(payload)
+		require.NoError(t, err)
+
+		hash2, err := computePayloadHash(payload)
+		require.NoError(t, err)
+
+		assert.Equal(t, hash1, hash2, "same payload should produce identical hash")
+	})
+
+	t.Run("map insertion order does not affect hash", func(t *testing.T) {
+		// Create two payloads with identical content but different construction order
+		payload1 := map[string]any{
+			"name":      "Test Event",
+			"@context":  "https://schema.org",
+			"startDate": "2026-07-10T19:00:00Z",
+			"@type":     "Event",
+			"@id":       "https://example.org/events/123",
+		}
+
+		payload2 := map[string]any{
+			"@id":       "https://example.org/events/123",
+			"@type":     "Event",
+			"name":      "Test Event",
+			"startDate": "2026-07-10T19:00:00Z",
+			"@context":  "https://schema.org",
+		}
+
+		hash1, err := computePayloadHash(payload1)
+		require.NoError(t, err)
+
+		hash2, err := computePayloadHash(payload2)
+		require.NoError(t, err)
+
+		assert.Equal(t, hash1, hash2, "map insertion order should not affect hash")
+	})
+
+	t.Run("nested maps are normalized", func(t *testing.T) {
+		payload1 := map[string]any{
+			"@type": "Event",
+			"name":  "Test Event",
+			"location": map[string]any{
+				"name":            "Venue",
+				"addressLocality": "Toronto",
+				"@type":           "Place",
+			},
+		}
+
+		payload2 := map[string]any{
+			"name":  "Test Event",
+			"@type": "Event",
+			"location": map[string]any{
+				"@type":           "Place",
+				"name":            "Venue",
+				"addressLocality": "Toronto",
+			},
+		}
+
+		hash1, err := computePayloadHash(payload1)
+		require.NoError(t, err)
+
+		hash2, err := computePayloadHash(payload2)
+		require.NoError(t, err)
+
+		assert.Equal(t, hash1, hash2, "nested map order should not affect hash")
+	})
+
+	t.Run("arrays maintain order", func(t *testing.T) {
+		payload1 := map[string]any{
+			"@type": "Event",
+			"tags":  []any{"music", "concert", "rock"},
+		}
+
+		payload2 := map[string]any{
+			"@type": "Event",
+			"tags":  []any{"rock", "music", "concert"}, // Different order
+		}
+
+		hash1, err := computePayloadHash(payload1)
+		require.NoError(t, err)
+
+		hash2, err := computePayloadHash(payload2)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, hash1, hash2, "array element order should affect hash")
+	})
+
+	t.Run("deep nested structures are normalized", func(t *testing.T) {
+		payload1 := map[string]any{
+			"@type": "Event",
+			"organizer": map[string]any{
+				"name": "Org Name",
+				"address": map[string]any{
+					"city":    "Toronto",
+					"country": "Canada",
+					"street":  "123 Main St",
+				},
+			},
+		}
+
+		payload2 := map[string]any{
+			"organizer": map[string]any{
+				"address": map[string]any{
+					"street":  "123 Main St",
+					"city":    "Toronto",
+					"country": "Canada",
+				},
+				"name": "Org Name",
+			},
+			"@type": "Event",
+		}
+
+		hash1, err := computePayloadHash(payload1)
+		require.NoError(t, err)
+
+		hash2, err := computePayloadHash(payload2)
+		require.NoError(t, err)
+
+		assert.Equal(t, hash1, hash2, "deep nested structures should normalize correctly")
+	})
+
+	t.Run("different payloads produce different hashes", func(t *testing.T) {
+		payload1 := map[string]any{
+			"@type": "Event",
+			"name":  "Event A",
+		}
+
+		payload2 := map[string]any{
+			"@type": "Event",
+			"name":  "Event B",
+		}
+
+		hash1, err := computePayloadHash(payload1)
+		require.NoError(t, err)
+
+		hash2, err := computePayloadHash(payload2)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, hash1, hash2, "different payloads should produce different hashes")
+	})
+
+	t.Run("multiple iterations produce consistent hash", func(t *testing.T) {
+		// Create payload and compute hash 100 times to catch any non-determinism
+		payload := map[string]any{
+			"@context":  "https://schema.org",
+			"@type":     "Event",
+			"@id":       "https://example.org/events/123",
+			"name":      "Test Event",
+			"startDate": "2026-07-10T19:00:00Z",
+			"location": map[string]any{
+				"@type":           "Place",
+				"name":            "Test Venue",
+				"addressLocality": "Toronto",
+			},
+		}
+
+		var firstHash string
+		for i := 0; i < 100; i++ {
+			hash, err := computePayloadHash(payload)
+			require.NoError(t, err)
+
+			if i == 0 {
+				firstHash = hash
+			} else {
+				assert.Equal(t, firstHash, hash, "hash should be identical on iteration %d", i)
+			}
+		}
+	})
+}
