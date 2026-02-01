@@ -95,7 +95,7 @@ func TestRootCommandSubcommands(t *testing.T) {
 
 // newRootCommand creates a fresh root command for testing
 func newRootCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
+	testRootCmd := &cobra.Command{
 		Use:   "server",
 		Short: "Togather SEL server - Shared Events Library backend",
 		Long: `Togather SEL server implements the Shared Events Library (SEL) specification,
@@ -115,15 +115,20 @@ The server supports:
 
 	// Add persistent flags
 	var configPath, logLevel, logFormat string
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "config file path (optional, uses env vars by default)")
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level (debug, info, warn, error) (default: info)")
-	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "log format (json, console) (default: json)")
+	testRootCmd.PersistentFlags().StringVar(&configPath, "config", "", "config file path (optional, uses env vars by default)")
+	testRootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level (debug, info, warn, error) (default: info)")
+	testRootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "log format (json, console) (default: json)")
 
-	// Add subcommands (using real commands to test registration)
-	rootCmd.AddCommand(versionCmd)
-	rootCmd.AddCommand(newServeCommand())
+	// Add all subcommands
+	testRootCmd.AddCommand(versionCmd)
+	testRootCmd.AddCommand(newServeCommand())
+	testRootCmd.AddCommand(setupCmd)
+	testRootCmd.AddCommand(snapshotCmd)
+	testRootCmd.AddCommand(deployCmd)
+	testRootCmd.AddCommand(ingestCmd)
+	testRootCmd.AddCommand(healthcheckCmd)
 
-	return rootCmd
+	return testRootCmd
 }
 
 // newServeCommand creates a serve command for testing (doesn't start server)

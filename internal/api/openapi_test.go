@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -117,9 +118,9 @@ func TestRepoRoot(t *testing.T) {
 			t.Error("expected non-empty root path when no error")
 		}
 
-		// Root should be an absolute path
-		if root[0] != '/' && len(root) < 2 || (len(root) >= 2 && root[1] != ':') {
-			t.Error("expected absolute path")
+		// Root should be an absolute path (starts with / on Unix or contains : on Windows)
+		if len(root) > 0 && root[0] != '/' && !strings.Contains(root, ":") {
+			t.Errorf("expected absolute path, got: %s", root)
 		}
 	}
 }
