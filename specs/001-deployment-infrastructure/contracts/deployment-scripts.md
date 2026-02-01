@@ -303,13 +303,23 @@ Last response (HTTP 503):
 
 ## 4. snapshot-db.sh
 
-**Purpose**: Create database snapshot before migrations.
+> **⚠️ DEPRECATED**: This script is deprecated. Use the `server snapshot` CLI command instead.
+> 
+> - `server snapshot create --reason "pre-deploy backup"`
+> - `server snapshot list`
+> - `server snapshot cleanup --retention-days 7`
+>
+> See `server snapshot --help` for full documentation.
+
+**Purpose**: Create database snapshot before migrations (wrapper for backward compatibility).
 
 ### Synopsis
 
 ```bash
 ./deploy/scripts/snapshot-db.sh [OPTIONS]
 ```
+
+**Note**: This script now forwards calls to `server snapshot` CLI. Update your scripts to use the CLI directly.
 
 ### Options
 

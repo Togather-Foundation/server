@@ -288,8 +288,7 @@ See [migrations.md](./migrations.md#issue-2-dirty-migration-state) for detailed 
 **Quick fix (restore from snapshot):**
 ```bash
 # List available snapshots
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Restore most recent snapshot (before failed migration)
 gunzip -c /var/lib/togather/db-snapshots/togather_production_YYYYMMDD_HHMMSS.sql.gz | psql "$DATABASE_URL"
@@ -865,8 +864,7 @@ If migrations were applied, restore from snapshot:
 
 ```bash
 # List snapshots
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Restore from pre-deployment snapshot
 # ⚠️  WARNING: This will lose any data written during failed deployment

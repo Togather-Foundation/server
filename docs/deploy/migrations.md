@@ -196,8 +196,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up 
 **Step 1: Restore from snapshot**
 ```bash
 # Find snapshot created before failed migration
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Restore (replaces current database state)
 gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
@@ -358,8 +357,7 @@ echo $?  # Should be 0 for success
 **If disk space insufficient:**
 ```bash
 # Clean up old snapshots
-cd deploy/scripts
-./snapshot-db.sh --cleanup
+server snapshot cleanup --retention-days 7
 
 # Or manually delete old snapshots
 rm /var/lib/togather/db-snapshots/togather_production_20260120_*.sql.gz
@@ -449,8 +447,7 @@ SQL
 
 ```bash
 # List all snapshots with details
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Restore specific snapshot (DESTRUCTIVE - replaces current database)
 gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
@@ -530,8 +527,7 @@ tail -100 /var/log/togather/deployments/$(ls -t /var/log/togather/deployments/ |
 du -sh /var/lib/togather/db-snapshots
 
 # Set up automatic cleanup
-cd deploy/scripts
-./snapshot-db.sh --cleanup  # Removes snapshots older than 7 days
+server snapshot cleanup --retention-days 7  # Removes snapshots older than 7 days
 ```
 
 ## Emergency Procedures
@@ -545,8 +541,7 @@ cd deploy/scripts
 docker-compose down
 
 # 2. Find appropriate snapshot
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # 3. Restore snapshot (DESTRUCTIVE)
 gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
@@ -658,8 +653,7 @@ When `.down.sql` files don't exist or are insufficient:
 
 ```bash
 # 1. List available snapshots
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Output example:
 # Snapshot: togather_production_20260128_143022.sql.gz
@@ -828,8 +822,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" for
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1
 
 # 3. OPTION B: Restore snapshot (safer)
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
 
@@ -860,8 +853,7 @@ curl https://staging.example.com/api/v1/events
 
 ```bash
 # Always create a "just before rollback" snapshot
-cd deploy/scripts
-./snapshot-db.sh create production --reason "before_rollback_migration_8"
+server snapshot create --reason "before_rollback_migration_8"
 
 # Now safe to rollback
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" down 1

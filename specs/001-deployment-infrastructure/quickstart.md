@@ -418,19 +418,19 @@ cat /var/lib/togather/deployments/production.json | jq '.history'
 
 ```bash
 # Create snapshot before risky operation
-./deploy/scripts/snapshot-db.sh
+server snapshot create --reason "before risky operation"
 
-# Output: /var/backups/togather/togather_production_20260128_103014_abc1234.sql.gz
+# Output: Created snapshot: togather_production_20260128_103014.sql.gz
 ```
 
 ### Restore Database from Snapshot
 
 ```bash
 # List available snapshots
-ls -lh /var/backups/togather/
+server snapshot list
 
 # Restore specific snapshot
-SNAPSHOT_FILE="/var/backups/togather/togather_production_20260128_103014_abc1234.sql.gz"
+SNAPSHOT_FILE="/var/backups/togather/togather_production_20260128_103014.sql.gz"
 gunzip -c $SNAPSHOT_FILE | psql "$DATABASE_URL"
 ```
 

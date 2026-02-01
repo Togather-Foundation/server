@@ -297,7 +297,7 @@ cd deploy/scripts
 # Only if migrations were run during failed deployment
 
 # 1. List snapshots
-./snapshot-db.sh list
+server snapshot list
 
 # 2. Restore from pre-deployment snapshot
 gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
@@ -451,18 +451,17 @@ add_header X-Download-Options "noopen" always;
 ### Backup Strategy
 
 **Automatic Snapshots:**
-- Created before every deployment (via `snapshot-db.sh`)
+- Created before every deployment (via `server snapshot`)
 - Retained for 7 days by default
 - Stored in `/var/lib/togather/db-snapshots/` or S3
 
 **Manual Backups:**
 ```bash
 # Create snapshot
-cd deploy/scripts
-./snapshot-db.sh create production
+server snapshot create --reason "before_risky_change"
 
 # List snapshots
-./snapshot-db.sh list
+server snapshot list
 
 # Restore snapshot
 gunzip -c /var/lib/togather/db-snapshots/<snapshot>.sql.gz | psql "$DATABASE_URL"
@@ -938,8 +937,7 @@ psql "$DATABASE_URL" -c "DROP INDEX CONCURRENTLY idx_unused;"
 **Pre-Maintenance (1 week before):**
 ```bash
 # 1. Create full database backup
-cd deploy/scripts
-./snapshot-db.sh create production
+server snapshot create --reason "pre-maintenance"
 
 # 2. Test all changes on staging
 ./deploy.sh staging
@@ -957,7 +955,7 @@ cd deploy/scripts
 # Edit nginx.conf to return 503 with custom page
 
 # 2. Create pre-maintenance snapshot
-./snapshot-db.sh create production
+server snapshot create --reason "pre-maintenance"
 
 # 3. Execute maintenance tasks
 # - Deploy new version

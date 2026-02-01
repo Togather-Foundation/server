@@ -226,7 +226,7 @@ ls -la internal/storage/postgres/migrations/
 # Find latest snapshot
 ls -lh /var/backups/togather/
 
-# Restore manually (snapshot-db.sh doesn't have restore command yet)
+# Restore manually using server snapshot CLI
 # Stop the application first to prevent conflicts
 docker compose down
 
@@ -341,8 +341,7 @@ docker build -f deploy/docker/Dockerfile -t togather-server:test .
 3. **Restore database if needed:**
    ```bash
    # List available snapshots
-   cd deploy/scripts
-   ./snapshot-db.sh --list
+   server snapshot list
    
    # Restore from gzipped snapshot
    gunzip -c /var/backups/togather/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
@@ -550,7 +549,7 @@ deploy/
 └── scripts/
     ├── deploy.sh               # Main deployment script (853 lines)
     ├── health-check.sh         # Health validation utility
-    └── snapshot-db.sh          # Database backup/restore (606 lines)
+    └── snapshot-db.sh          # Database backup wrapper (deprecated, use: server snapshot)
 ```
 
 ### Key Configuration Files

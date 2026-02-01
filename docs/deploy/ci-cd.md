@@ -769,8 +769,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
-          cd deploy/scripts
-          ./snapshot-db.sh create production --reason "pre-deploy-${{ github.sha }}"
+          server snapshot create --reason "pre-deploy-${{ github.sha }}"
       
       - name: Deploy to production
         id: deploy
@@ -940,10 +939,10 @@ deploy-production:
     - psql "${PROD_DATABASE_URL}" -c "SELECT 1"
     
     # Create snapshot
-    - cd deploy/scripts
-    - ./snapshot-db.sh create production --reason "pre-deploy-${CI_COMMIT_SHA}"
+    - server snapshot create --reason "pre-deploy-${CI_COMMIT_SHA}"
     
     # Deploy
+    - cd deploy/scripts
     - ./deploy.sh production
   after_script:
     # Always upload logs
@@ -1200,8 +1199,7 @@ EOF
             }
             steps {
                 sh '''
-                    cd deploy/scripts
-                    ./snapshot-db.sh create production --reason "pre-deploy-${GIT_COMMIT}"
+                    server snapshot create --reason "pre-deploy-${GIT_COMMIT}"
                 '''
             }
         }
