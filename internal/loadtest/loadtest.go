@@ -388,7 +388,7 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 	defer resp.Body.Close()
 
 	// Read response body (to ensure full response time is measured)
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// Record statistics
 	lt.recordResponse(resp.StatusCode, duration, work.endpoint)
