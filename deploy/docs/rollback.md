@@ -16,18 +16,23 @@ This guide helps operators troubleshoot common issues when rolling back Togather
 
 ### Basic Rollback Command
 ```bash
-cd deploy/scripts
-./rollback.sh <environment>
+server deploy rollback <environment>
 ```
 
 ### Force Rollback (Skip Confirmation)
 ```bash
-./rollback.sh <environment> --force
+server deploy rollback <environment> --force
 ```
 
-### Rollback to Specific Version
+### Check Deployment Status
 ```bash
-./rollback.sh <environment> --version <git-commit>
+server deploy status
+server deploy status --format json
+```
+
+### Dry Run (Validate Without Executing)
+```bash
+server deploy rollback <environment> --dry-run
 ```
 
 ### Check Deployment History
@@ -66,9 +71,9 @@ tail -f ~/.togather/logs/rollbacks/rollback_*.log
    ls -lh /var/lib/togather/deployments/production/*.json
    ```
 
-3. Use `--version` flag to rollback to a specific deployment:
+3. Check deployment status:
    ```bash
-   ./rollback.sh production --version abc123
+   server deploy status
    ```
 
 4. If no history exists, you cannot rollback. Deploy the desired version instead:
@@ -149,6 +154,9 @@ The rollback script automatically rebuilds the image from the Git commit. If reb
 
 4. **Manual health check:**
    ```bash
+   server healthcheck --slot blue
+   server healthcheck --slot green
+   # Or use curl directly:
    curl -f http://localhost:8081/health || echo "Health check failed"
    ```
 
@@ -188,8 +196,8 @@ The rollback script automatically rebuilds the image from the Git commit. If reb
    pg_restore -d $DATABASE_URL --clean --if-exists \
      /var/lib/togather/snapshots/<snapshot-file>.pgdump
    
-   # Restart application
-   ./rollback.sh development --force
+    # Restart application
+    server deploy rollback development --force
    ```
 
 3. **Rollback migrations manually (safer but complex):**
@@ -202,8 +210,7 @@ The rollback script automatically rebuilds the image from the Git commit. If reb
 
 4. **Create new database snapshot before attempting rollback:**
    ```bash
-   cd deploy/scripts
-   ./snapshot-db.sh development
+   server snapshot create --reason "pre-rollback backup"
    ```
 
 ---
@@ -365,8 +372,7 @@ pg_restore -d $DATABASE_URL \
 psql $DATABASE_URL -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
 
 # 4. Restart application
-cd deploy/scripts
-./rollback.sh development --force
+server deploy rollback development --force
 ```
 
 ---
@@ -375,13 +381,15 @@ cd deploy/scripts
 
 ### Debug Health Check Issues
 
-1. **View health check endpoint directly:**
+1. **View health check endpoint using CLI:**
    ```bash
-   curl -v http://localhost:8081/health | jq .
+   server healthcheck --slot blue --format json
+   server healthcheck --slot green --format table
    ```
 
-2. **Check individual health components:**
+2. **Or check directly with curl:**
    ```bash
+   curl -v http://localhost:8081/health | jq .
    curl http://localhost:8081/health | jq '.checks[] | {name, status, message}'
    ```
 
@@ -523,10 +531,12 @@ If automatic traffic switching fails:
 
 ## Additional Resources
 
+- **CLI Reference:**
+  - `server deploy --help` - Deployment operations
+  - `server healthcheck --help` - Health check commands
+  - `server snapshot --help` - Database snapshot commands
 - **Deployment Guide:** See `deploy/scripts/deploy.sh --help`
 - **Migration Guide:** See `deploy/docs/migrations.md`
-- **Health Check Script:** See `deploy/scripts/health-check.sh`
-- **Snapshot Script:** See `deploy/scripts/snapshot-db.sh`
 
 ## Getting Help
 

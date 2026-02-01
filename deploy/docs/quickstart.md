@@ -426,7 +426,11 @@ docker ps | grep togather
 ### 1. Health Check
 
 ```bash
-# Manual health check
+# Use CLI for health check
+server healthcheck
+server healthcheck --format json
+
+# Or direct curl
 curl http://localhost:8080/health | jq '.'
 ```
 
@@ -512,53 +516,64 @@ git pull origin main
 ### Rollback to Previous Version
 
 ```bash
+# Check deployment status first
+server deploy status
+
 # Interactive rollback
-./deploy/scripts/rollback.sh production
+server deploy rollback production
 
 # Force rollback (skip confirmation - for automation)
-./deploy/scripts/rollback.sh --force production
+server deploy rollback production --force
+
+# Dry run to validate
+server deploy rollback production --dry-run
 ```
 
 ### View Deployment History
 
 ```bash
-# Check current deployment status
-cat /var/lib/togather/deployments/production.json | jq '.current_deployment'
+# Check current deployment status (CLI)
+server deploy status
+server deploy status --format json
 
-# View deployment history
-cat /var/lib/togather/deployments/production.json | jq '.history'
+# Or view state file directly
+cat deploy/config/deployment-state.json | jq '.'
 ```
 
 ### Create Manual Database Snapshot
 
 ```bash
 # Create snapshot before risky operation
-./deploy/scripts/snapshot-db.sh
+server snapshot create --reason "pre-deployment backup"
 
-# Output: /var/backups/togather/togather_production_20260128_103014_abc1234.sql.gz
+# List existing snapshots
+server snapshot list
+
+# List with JSON output for scripting
+server snapshot list --format json
 ```
 
 ### Restore Database from Snapshot
 
 ```bash
 # List available snapshots
-ls -lh /var/backups/togather/
+server snapshot list
 
-# Restore specific snapshot
-SNAPSHOT_FILE="/var/backups/togather/togather_production_20260128_103014_abc1234.sql.gz"
-gunzip -c $SNAPSHOT_FILE | psql "$DATABASE_URL"
+# Restore specific snapshot (manual - use pg_restore)
+SNAPSHOT_FILE="/var/lib/togather/db-snapshots/togather_production_20260128_103014_abc1234.pgdump"
+pg_restore -d "$DATABASE_URL" --clean --if-exists "$SNAPSHOT_FILE"
 ```
 
 ### Clean Up Old Artifacts
 
 ```bash
-# Dry-run to see what would be deleted
+# Clean up old snapshots (CLI)
+server snapshot cleanup --dry-run
+server snapshot cleanup --retention-days 7
+
+# Clean up Docker artifacts (bash script - still used)
 ./deploy/scripts/cleanup.sh --dry-run
-
-# Run cleanup interactively
 ./deploy/scripts/cleanup.sh
-
-# Automated cleanup (no prompts)
 ./deploy/scripts/cleanup.sh --force
 ```
 

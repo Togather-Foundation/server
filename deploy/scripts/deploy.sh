@@ -882,24 +882,38 @@ create_db_snapshot() {
     # This adds ~2-5s but catches corrupt snapshots early
     export VALIDATE_SNAPSHOT="${VALIDATE_SNAPSHOT:-true}"
     
-    # Check if snapshot-db.sh exists (from T027)
-    local snapshot_script="${SCRIPT_DIR}/snapshot-db.sh"
+    # Use CLI for snapshot creation
+    local server_binary="${PROJECT_ROOT}/server"
     
-    if [[ ! -f "${snapshot_script}" ]]; then
-        log "WARN" "snapshot-db.sh not found, skipping snapshot"
-        log "WARN" "Database backup recommended before migrations"
-        SNAPSHOT_PATH=""
-        return 0
+    if [[ ! -f "${server_binary}" ]]; then
+        log "WARN" "server binary not found, attempting to build..."
+        if ! make -C "${PROJECT_ROOT}" build; then
+            log "ERROR" "Failed to build server binary"
+            log "ERROR" "Database backup recommended before migrations"
+            SNAPSHOT_PATH=""
+            return 1
+        fi
     fi
     
-    # Call snapshot script and capture snapshot path for rollback history
-    SNAPSHOT_PATH=$(bash "${snapshot_script}" "${env}")
+    # Create snapshot using CLI
+    log "INFO" "Creating database snapshot before deployment"
+    
+    local snapshot_output
+    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1)
     local snapshot_status=$?
     
     if [[ $snapshot_status -ne 0 ]]; then
-        log "ERROR" "Database snapshot creation failed"
+        log "ERROR" "Database snapshot creation failed: ${snapshot_output}"
         log "ERROR" "Aborting deployment to prevent data loss"
         return 1
+    fi
+    
+    # Extract snapshot path from JSON output
+    SNAPSHOT_PATH=$(echo "${snapshot_output}" | jq -r '.snapshot_path // empty')
+    
+    if [[ -z "${SNAPSHOT_PATH}" ]]; then
+        log "WARN" "Could not extract snapshot path from output"
+        SNAPSHOT_PATH="unknown"
     fi
     
     log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
@@ -983,8 +997,7 @@ run_migrations() {
         log "ERROR" "Option 1: Restore from automatic snapshot (RECOMMENDED)"
         log "ERROR" "  The most recent snapshot was created before this migration."
         log "ERROR" "  To restore:"
-        log "ERROR" "    cd ${SCRIPT_DIR}"
-        log "ERROR" "    ./snapshot-db.sh list  # Find the latest snapshot"
+        log "ERROR" "    server snapshot list  # Find the latest snapshot"
         log "ERROR" "    # Restore snapshot (requires manual confirmation):"
         log "ERROR" "    psql \$DATABASE_URL < /var/lib/togather/db-snapshots/<snapshot-file>"
         log "ERROR" ""
@@ -1146,11 +1159,11 @@ validate_health() {
     
     log "INFO" "Validating health of ${slot} deployment"
     
-    # Check if health-check.sh exists
-    local health_check_script="${SCRIPT_DIR}/health-check.sh"
+    # Use CLI for health check
+    local server_binary="${PROJECT_ROOT}/server"
     
-    if [[ ! -f "${health_check_script}" ]]; then
-        log "WARN" "health-check.sh not found, using basic HTTP check"
+    if [[ ! -f "${server_binary}" ]]; then
+        log "WARN" "server binary not found, using basic HTTP check"
         
         # Basic HTTP health check
         local health_url="http://localhost:8080/health"
@@ -1172,9 +1185,9 @@ validate_health() {
         return 1
     fi
     
-    # Call dedicated health check script
-    if ! bash "${health_check_script}" "${env}" "${slot}"; then
-        log "ERROR" "Health check validation failed"
+    # Call CLI health check with appropriate slot
+    if ! "${server_binary}" healthcheck --slot "${slot}" --retries 30 --retry-delay 2s; then
+        log "ERROR" "Health check validation failed for ${slot} slot"
         return 1
     fi
     
