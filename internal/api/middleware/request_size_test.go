@@ -116,6 +116,37 @@ func TestPublicRequestSize(t *testing.T) {
 	})
 }
 
+func TestEventRequestSize(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := EventRequestSize()(handler)
+
+	t.Run("256KB accepted", func(t *testing.T) {
+		body := bytes.Repeat([]byte("x"), int(EventMaxBodySize))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+
+		middleware.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+
+	t.Run("256KB+1 rejected", func(t *testing.T) {
+		body := bytes.Repeat([]byte("x"), int(EventMaxBodySize)+1)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+
+		middleware.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	})
+}
+
 func TestFederationRequestSize(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := io.ReadAll(r.Body)

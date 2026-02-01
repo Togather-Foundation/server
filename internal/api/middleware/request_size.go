@@ -8,6 +8,9 @@ const (
 	// DefaultMaxBodySize is 1MB for public endpoints
 	DefaultMaxBodySize int64 = 1 << 20 // 1MB
 
+	// EventMaxBodySize is 256KB for single event creation
+	EventMaxBodySize int64 = 256 << 10 // 256KB
+
 	// FederationMaxBodySize is 10MB for federation sync endpoints
 	FederationMaxBodySize int64 = 10 << 20 // 10MB
 
@@ -41,6 +44,11 @@ func RequestSize(maxBytes int64) func(http.Handler) http.Handler {
 // PublicRequestSize limits request bodies to 1MB for public endpoints.
 func PublicRequestSize() func(http.Handler) http.Handler {
 	return RequestSize(DefaultMaxBodySize)
+}
+
+// EventRequestSize limits request bodies to 256KB for single event creation.
+func EventRequestSize() func(http.Handler) http.Handler {
+	return RequestSize(EventMaxBodySize)
 }
 
 // FederationRequestSize limits request bodies to 10MB for federation endpoints.
