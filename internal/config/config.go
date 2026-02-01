@@ -153,6 +153,10 @@ func Load() (Config, error) {
 			AllowAllOrigins: false,
 			AllowedOrigins:  origins,
 		}
+		// Require explicit CORS configuration in production
+		if len(origins) == 0 {
+			return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production environment (comma-separated list of allowed origins)")
+		}
 	}
 
 	if cfg.Database.URL == "" {
