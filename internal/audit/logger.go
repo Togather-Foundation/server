@@ -111,7 +111,7 @@ func (l *Logger) LogFromRequest(r *http.Request, action, resourceType, resourceI
 	ipAddress := extractClientIP(r)
 	logger := l.logger
 	if r != nil {
-		if reqLogger := middleware.LoggerFromContext(r.Context()); reqLogger != nil {
+		if reqLogger := middleware.LoggerFromContext(r.Context()); reqLogger != nil && reqLogger.GetLevel() != zerolog.Disabled {
 			logger = *reqLogger
 		}
 		if requestID := middleware.GetRequestID(r.Context()); requestID != "" {

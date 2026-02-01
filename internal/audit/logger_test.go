@@ -38,9 +38,21 @@ func TestLogger_Log(t *testing.T) {
 	jsonStr := output[jsonStart:]
 	jsonStr = strings.TrimSpace(jsonStr)
 
-	var logged Entry
-	if err := json.Unmarshal([]byte(jsonStr), &logged); err != nil {
+	// Parse the zerolog wrapper first
+	var wrapper map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonStr), &wrapper); err != nil {
 		t.Fatalf("Failed to parse logged JSON: %v\nOutput: %s", err, output)
+	}
+
+	// Extract the nested "audit" field
+	auditData, ok := wrapper["audit"]
+	if !ok {
+		t.Fatal("No 'audit' field found in logged JSON")
+	}
+
+	var logged Entry
+	if err := json.Unmarshal(auditData, &logged); err != nil {
+		t.Fatalf("Failed to parse audit entry: %v\nOutput: %s", err, output)
 	}
 
 	// Verify fields
@@ -277,9 +289,21 @@ func TestLogger_AutoTimestamp(t *testing.T) {
 	jsonStr := output[jsonStart:]
 	jsonStr = strings.TrimSpace(jsonStr)
 
-	var logged Entry
-	if err := json.Unmarshal([]byte(jsonStr), &logged); err != nil {
+	// Parse the zerolog wrapper first
+	var wrapper map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonStr), &wrapper); err != nil {
 		t.Fatalf("Failed to parse logged JSON: %v", err)
+	}
+
+	// Extract the nested "audit" field
+	auditData, ok := wrapper["audit"]
+	if !ok {
+		t.Fatal("No 'audit' field found in logged JSON")
+	}
+
+	var logged Entry
+	if err := json.Unmarshal(auditData, &logged); err != nil {
+		t.Fatalf("Failed to parse audit entry: %v", err)
 	}
 
 	if logged.Timestamp.IsZero() {
