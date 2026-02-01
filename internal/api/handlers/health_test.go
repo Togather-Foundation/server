@@ -235,7 +235,7 @@ func TestHealthCheck_OverallTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	// All checks should have completed
-	assert.Len(t, response.Checks, 4, "all 4 checks should be present")
+	assert.Len(t, response.Checks, 5, "all 5 checks should be present")
 
 	// Verify each check has reasonable latency
 	for name, check := range response.Checks {
@@ -303,7 +303,7 @@ func TestHealthCheck_ResponseFormat(t *testing.T) {
 	assert.NoError(t, err, "timestamp should be valid RFC3339")
 
 	// Verify all expected checks are present
-	expectedChecks := []string{"database", "migrations", "job_queue", "jsonld_contexts"}
+	expectedChecks := []string{"database", "migrations", "job_queue", "jsonld_contexts", "http_endpoint"}
 	for _, checkName := range expectedChecks {
 		check, ok := response.Checks[checkName]
 		assert.True(t, ok, "check %s should be present", checkName)
@@ -393,18 +393,97 @@ func TestLegacyHealthz(t *testing.T) {
 }
 
 func TestLegacyReadyz(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupTestDB(t, ctx)
+	defer cleanup()
+
+	// Setup clean migration state
+	_, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version BIGINT PRIMARY KEY,
+			dirty BOOLEAN NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO schema_migrations (version, dirty)
+		VALUES (1, false)
+		ON CONFLICT (version) DO UPDATE SET dirty = false
+	`)
+	require.NoError(t, err)
+
+	checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
+
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	w := httptest.NewRecorder()
 
-	Readyz().ServeHTTP(w, req)
+	checker.Readyz().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 
 	var response healthResponse
-	err := json.NewDecoder(w.Body).Decode(&response)
+	err = json.NewDecoder(w.Body).Decode(&response)
 	require.NoError(t, err)
 	assert.Equal(t, "ready", response.Status)
+}
+
+// TestReadyz_DatabaseFailure verifies /readyz returns 503 when database fails
+func TestReadyz_DatabaseFailure(t *testing.T) {
+	// Create checker with nil pool to simulate database failure
+	checker := NewHealthChecker(nil, nil, "0.1.0", "test-commit")
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+
+	checker.Readyz().ServeHTTP(w, req)
+
+	// Should return 503 Service Unavailable when database is not available
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var response healthResponse
+	err := json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+	assert.Equal(t, "not_ready", response.Status)
+}
+
+// TestReadyz_MigrationFailure verifies /readyz returns 503 when migrations are dirty
+func TestReadyz_MigrationFailure(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupTestDB(t, ctx)
+	defer cleanup()
+
+	// Setup dirty migration state
+	_, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version BIGINT PRIMARY KEY,
+			dirty BOOLEAN NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO schema_migrations (version, dirty)
+		VALUES (1, true)
+		ON CONFLICT (version) DO UPDATE SET dirty = true
+	`)
+	require.NoError(t, err)
+
+	checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+
+	checker.Readyz().ServeHTTP(w, req)
+
+	// Should return 503 when migrations are in dirty state
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var response healthResponse
+	err = json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+	assert.Equal(t, "not_ready", response.Status)
 }
 
 // setupTestDB creates a test database connection for health check tests
@@ -637,4 +716,57 @@ func TestHealthCheck_MigrationWithNilPool(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "fail", migCheck.Status)
 	assert.Contains(t, migCheck.Message, "Database pool not initialized")
+}
+
+// TestHealthCheck_HTTPEndpoint verifies the HTTP endpoint check
+func TestHealthCheck_HTTPEndpoint(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupTestDB(t, ctx)
+	defer cleanup()
+
+	checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+
+	checker.Health().ServeHTTP(w, req)
+
+	// Parse response
+	var response HealthCheck
+	err := json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+
+	// Verify http_endpoint check exists and passes
+	httpCheck, ok := response.Checks["http_endpoint"]
+	require.True(t, ok, "http_endpoint check should be present")
+	assert.Equal(t, "pass", httpCheck.Status)
+	assert.Contains(t, httpCheck.Message, "HTTP endpoint operational")
+	assert.GreaterOrEqual(t, httpCheck.LatencyMs, int64(0))
+}
+
+// TestHealthCheck_HTTPEndpointCancelled verifies HTTP endpoint check with cancelled context
+func TestHealthCheck_HTTPEndpointCancelled(t *testing.T) {
+	ctx := context.Background()
+	pool, cleanup := setupTestDB(t, ctx)
+	defer cleanup()
+
+	checker := NewHealthChecker(pool, nil, "0.1.0", "test-commit")
+
+	// Create request with cancelled context
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel() // Cancel immediately
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+
+	checker.Health().ServeHTTP(w, req)
+
+	// Should return shutting_down status when context is cancelled at handler level
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var response map[string]string
+	err := json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+	assert.Equal(t, "shutting_down", response["status"])
 }

@@ -47,11 +47,21 @@ func TestReadyz(t *testing.T) {
 	resp, err := env.Server.Client().Get(env.Server.URL + "/readyz")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	// Should return 200 OK when database and migrations are healthy
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var payload healthPayload
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
 	require.Equal(t, "ready", payload.Status)
+}
+
+// TestReadyz_NotReady tests that /readyz returns 503 when dependencies fail
+func TestReadyz_NotReady(t *testing.T) {
+	// This test would require setting up a test server with a broken database
+	// connection, which is complex in integration tests. The unit tests in
+	// health_test.go cover this scenario more effectively.
+	t.Skip("Covered by unit tests - requires breaking database connection")
 }
 
 // TestHealthComprehensive tests the comprehensive health check endpoint (T011)

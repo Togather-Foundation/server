@@ -78,6 +78,7 @@ func (h *HealthChecker) Health() http.HandlerFunc {
 		checks["migrations"] = h.checkMigrations(ctx)
 		checks["job_queue"] = h.checkJobQueue(ctx)
 		checks["jsonld_contexts"] = h.checkJSONLDContexts()
+		checks["http_endpoint"] = h.checkHTTPEndpoint(ctx)
 
 		// Determine overall status
 		overallStatus := "healthy"
@@ -481,16 +482,67 @@ func (h *HealthChecker) checkJSONLDContexts() CheckResult {
 	}
 }
 
+// checkHTTPEndpoint verifies the HTTP server is responding
+func (h *HealthChecker) checkHTTPEndpoint(ctx context.Context) CheckResult {
+	start := time.Now()
+
+	// This check verifies the HTTP server layer is operational
+	// Since we're already in an HTTP handler, this is a pass
+	// But we verify the context is still valid
+	if ctx.Err() != nil {
+		latency := time.Since(start).Milliseconds()
+		return CheckResult{
+			Status:    "fail",
+			Message:   "HTTP endpoint context cancelled",
+			LatencyMs: latency,
+			Details: map[string]interface{}{
+				"error": ctx.Err().Error(),
+			},
+		}
+	}
+
+	latency := time.Since(start).Milliseconds()
+	return CheckResult{
+		Status:    "pass",
+		Message:   "HTTP endpoint operational",
+		LatencyMs: latency,
+	}
+}
+
 // Healthz returns a lightweight liveness response (legacy, kept for compatibility)
+// This only checks if the HTTP server is responding - it doesn't verify dependencies
 func Healthz() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Liveness check: server process is alive and responding
+		// This is intentionally simple - just verify HTTP layer works
 		respondHealth(w, http.StatusOK, "ok")
 	})
 }
 
-// Readyz returns a readiness response (legacy, kept for compatibility)
-func Readyz() http.Handler {
+// Readyz returns a readiness handler that checks critical dependencies
+// Unlike the comprehensive /health endpoint, this only checks what's needed
+// for the server to accept traffic (database + migrations)
+func (h *HealthChecker) Readyz() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		// Readiness check: verify critical dependencies are operational
+		// Check database (most critical - can't serve traffic without it)
+		dbCheck := h.checkDatabase(ctx)
+		if dbCheck.Status == "fail" {
+			respondHealth(w, http.StatusServiceUnavailable, "not_ready")
+			return
+		}
+
+		// Check migrations (database must be migrated to serve traffic)
+		migCheck := h.checkMigrations(ctx)
+		if migCheck.Status == "fail" {
+			respondHealth(w, http.StatusServiceUnavailable, "not_ready")
+			return
+		}
+
+		// All critical checks passed - ready to serve traffic
 		respondHealth(w, http.StatusOK, "ready")
 	})
 }
