@@ -128,7 +128,12 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update last login timestamp
-	_ = h.Queries.UpdateLastLogin(r.Context(), user.ID)
+	if err := h.Queries.UpdateLastLogin(r.Context(), user.ID); err != nil {
+		// Log warning but don't fail the login - this is a non-critical operation
+		if logger := middleware.LoggerFromContext(r.Context()); logger != nil {
+			logger.Warn().Err(err).Str("user_id", userID.String()).Msg("failed to update last login timestamp")
+		}
+	}
 
 	// Log successful login
 	if h.AuditLogger != nil {

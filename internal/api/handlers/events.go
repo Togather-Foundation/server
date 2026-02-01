@@ -281,6 +281,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any, contentType strin
 
 	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
+	// Note: We ignore encoding errors here because HTTP headers have already been sent
+	// (WriteHeader was called above), so we cannot return an error response.
+	// Encoding errors are extremely rare in practice for well-formed data structures.
+	// If this becomes a concern, callers should validate payloads before calling writeJSON.
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
