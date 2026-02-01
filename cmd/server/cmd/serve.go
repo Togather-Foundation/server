@@ -114,7 +114,7 @@ func runServer() error {
 	// Create HTTP server
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:           api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate),
+		Handler:           api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate).Handler,
 		ReadTimeout:       10 * time.Second, // Total time to read request
 		WriteTimeout:      30 * time.Second, // Total time to write response
 		ReadHeaderTimeout: 5 * time.Second,  // Time to read headers

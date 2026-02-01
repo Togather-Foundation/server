@@ -67,7 +67,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	initShared(t)
 	resetDatabase(t, sharedPool)
 
-	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date"))
+	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date").Handler)
 	t.Cleanup(server.Close)
 
 	return &testEnv{

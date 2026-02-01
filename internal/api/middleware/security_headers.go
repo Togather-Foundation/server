@@ -35,9 +35,9 @@ func SecurityHeaders(requireHTTPS bool) func(http.Handler) http.Handler {
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 			// Content Security Policy: XSS defense
-			// Start permissive, tighten later based on requirements
-			// TODO: Review CSP after admin UI is finalized
-			h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+			// All scripts and styles are in external files (no inline code)
+			// This prevents XSS attacks via injected inline scripts/styles
+			h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'")
 
 			// HSTS: enforce HTTPS in production
 			// Only set on HTTPS connections to avoid browser warnings
