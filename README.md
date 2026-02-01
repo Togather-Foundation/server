@@ -78,10 +78,10 @@ nano deploy/config/environments/.env.production  # Edit with your credentials
 ```
 
 ### Deployment Documentation
-- [Deployment Guide](deploy/docs/quickstart.md) - Complete setup instructions
-- [CI/CD Integration](deploy/docs/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
-- [Rollback Guide](deploy/docs/rollback.md) - Troubleshooting and recovery
-- [Migration Guide](deploy/docs/migrations.md) - Database schema management
+- [Deployment Guide](docs/deploy/quickstart.md) - Complete setup instructions
+- [CI/CD Integration](docs/deploy/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
+- [Rollback Guide](docs/deploy/rollback.md) - Troubleshooting and recovery
+- [Migration Guide](docs/deploy/migrations.md) - Database schema management
 
 **Deployment Features:**
 - ✅ Zero-downtime blue-green deployment

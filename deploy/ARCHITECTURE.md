@@ -260,7 +260,7 @@ Migrations are backed up automatically. See database snapshots:
 ls -lh /var/backups/togather/
 ```
 
-For detailed troubleshooting, see `deploy/docs/troubleshooting.md` (coming in future phases).
+For detailed troubleshooting, see `docs/deploy/troubleshooting.md` (coming in future phases).
 
 ## Development vs Production
 

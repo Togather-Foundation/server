@@ -19,7 +19,7 @@
 # See CLI documentation:
 #   ./server snapshot --help
 #
-# Migration guide: deploy/docs/quickstart.md
+# Migration guide: docs/deploy/quickstart.md
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "⚠️  WARNING: This script is DEPRECATED"

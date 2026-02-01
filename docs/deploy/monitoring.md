@@ -1223,7 +1223,7 @@ receivers:
      ```
 
 2. **Follow Design Guidelines**
-   - See `deploy/docs/grafana-dashboard-guidelines.md`
+   - See `grafana-dashboard-guidelines.md`
    - Use consistent colors for blue/green slots
    - Apply line style differentiation (solid/dashed/dotted)
 
@@ -1289,14 +1289,14 @@ receivers:
 - **Prometheus Documentation**: https://prometheus.io/docs/
 - **PromQL Guide**: https://prometheus.io/docs/prometheus/latest/querying/basics/
 - **Grafana Documentation**: https://grafana.com/docs/
-- **Togather Grafana Guidelines**: `deploy/docs/grafana-dashboard-guidelines.md`
+- **Togather Grafana Guidelines**: `grafana-dashboard-guidelines.md`
 
 ---
 
 ## Getting Help
 
-- **Dashboard Issues**: Check `deploy/docs/grafana-dashboard-guidelines.md`
-- **Deployment Issues**: See `deploy/docs/troubleshooting.md`
+- **Dashboard Issues**: Check `grafana-dashboard-guidelines.md`
+- **Deployment Issues**: See `troubleshooting.md`
 - **Metric Questions**: View `/metrics` endpoint directly: `curl http://localhost:8081/metrics`
 - **Report Bugs**: https://github.com/Togather-Foundation/server/issues
 

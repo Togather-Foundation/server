@@ -17,7 +17,7 @@
 # See CLI documentation:
 #   ./server deploy --help
 #
-# Migration guide: deploy/docs/rollback.md
+# Migration guide: docs/deploy/rollback.md
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "⚠️  WARNING: This script is DEPRECATED"

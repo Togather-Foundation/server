@@ -282,8 +282,8 @@ validate_help_documentation() {
     # Check for documentation files mentioned in quickstart
     local docs=(
         "specs/001-deployment-infrastructure/quickstart.md"
-        "deploy/docs/rollback.md"
-        "deploy/docs/migrations.md"
+        "docs/deploy/rollback.md"
+        "docs/deploy/migrations.md"
     )
     
     for doc in "${docs[@]}"; do

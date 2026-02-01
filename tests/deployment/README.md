@@ -290,9 +290,9 @@ These tests ensure that each step works correctly in isolation and as a complete
 
 ## Related Documentation
 
-- [Deployment Guide](../../deploy/docs/README.md) (if exists)
-- [Migration Guide](../../deploy/docs/migrations.md)
-- [Rollback Guide](../../deploy/docs/rollback.md)
+- [Deployment Guide](../../docs/deploy/README.md) (if exists)
+- [Migration Guide](../../docs/deploy/migrations.md)
+- [Rollback Guide](../../docs/deploy/rollback.md)
 - [Health Check Script](../../deploy/scripts/health-check.sh)
 
 ---

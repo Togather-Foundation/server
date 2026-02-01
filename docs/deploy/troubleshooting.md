@@ -265,7 +265,7 @@ curl http://localhost:8080/health | jq '.checks.database.details'
       "details": {
         "version": 5,
         "dirty": true,
-        "remediation": "See deploy/docs/migrations.md for recovery steps"
+        "remediation": "See migrations.md for recovery steps"
       }
     }
   }
@@ -283,7 +283,7 @@ psql "$DATABASE_URL" -c "SELECT * FROM schema_migrations;"
 
 **Resolution:**
 
-See [deploy/docs/migrations.md](./migrations.md#issue-2-dirty-migration-state) for detailed recovery steps.
+See [migrations.md](./migrations.md#issue-2-dirty-migration-state) for detailed recovery steps.
 
 **Quick fix (restore from snapshot):**
 ```bash
@@ -390,7 +390,7 @@ docker restart togather-<environment>-<slot>
 
 ## Migration Issues
 
-For comprehensive migration troubleshooting, see [deploy/docs/migrations.md](./migrations.md).
+For comprehensive migration troubleshooting, see [migrations.md](./migrations.md).
 
 ### Quick Reference
 
@@ -876,7 +876,7 @@ gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz 
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
 ```
 
-See [deploy/docs/rollback.md](./rollback.md) for detailed rollback procedures.
+See [rollback.md](./rollback.md) for detailed rollback procedures.
 
 ---
 
@@ -942,10 +942,10 @@ grep -i "slow\|timeout\|latency" <log-file>
 
 ## Additional Resources
 
-- **Migration Troubleshooting**: [deploy/docs/migrations.md](./migrations.md)
-- **Rollback Procedures**: [deploy/docs/rollback.md](./rollback.md)
-- **CI/CD Setup**: [deploy/docs/ci-cd.md](./ci-cd.md)
-- **Quick Start Guide**: [deploy/docs/quickstart.md](./quickstart.md)
+- **Migration Troubleshooting**: [migrations.md](./migrations.md)
+- **Rollback Procedures**: [rollback.md](./rollback.md)
+- **CI/CD Setup**: [ci-cd.md](./ci-cd.md)
+- **Quick Start Guide**: [quickstart.md](./quickstart.md)
 - **Deployment README**: [deploy/README.md](../README.md)
 
 For production incidents, follow the incident response process in your organization's runbook.

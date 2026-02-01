@@ -536,7 +536,7 @@ If automatic traffic switching fails:
   - `server healthcheck --help` - Health check commands
   - `server snapshot --help` - Database snapshot commands
 - **Deployment Guide:** See `deploy/scripts/deploy.sh --help`
-- **Migration Guide:** See `deploy/docs/migrations.md`
+- **Migration Guide:** See `migrations.md`
 
 ## Getting Help
 

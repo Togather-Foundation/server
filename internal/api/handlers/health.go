@@ -295,7 +295,7 @@ func (h *HealthChecker) checkMigrations(ctx context.Context) CheckResult {
 			Details: map[string]interface{}{
 				"version":     version,
 				"dirty":       dirty,
-				"remediation": "Migration failed mid-transaction. See deploy/docs/migrations.md for recovery steps",
+				"remediation": "Migration failed mid-transaction. See docs/deploy/migrations.md for recovery steps",
 				"action":      "Do NOT run new migrations until this is resolved",
 			},
 		}
