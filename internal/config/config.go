@@ -43,8 +43,9 @@ type RateLimitConfig struct {
 	PublicPerMinute     int
 	AgentPerMinute      int
 	AdminPerMinute      int
-	LoginPer15Minutes   int // Login attempts allowed per 15-minute window per IP
-	FederationPerMinute int // Federation sync rate limit
+	LoginPer15Minutes   int      // Login attempts allowed per 15-minute window per IP
+	FederationPerMinute int      // Federation sync rate limit
+	TrustedProxyCIDRs   []string // CIDRs of trusted proxies (e.g., load balancers) for X-Forwarded-For validation
 }
 
 type AdminBootstrapConfig struct {
@@ -109,6 +110,7 @@ func Load() (Config, error) {
 			AdminPerMinute:      getEnvInt("RATE_LIMIT_ADMIN", 0),
 			LoginPer15Minutes:   getEnvInt("RATE_LIMIT_LOGIN", 5),
 			FederationPerMinute: getEnvInt("RATE_LIMIT_FEDERATION", 500),
+			TrustedProxyCIDRs:   parseTrustedProxies(getEnv("TRUSTED_PROXY_CIDRS", "")),
 		},
 		AdminBootstrap: AdminBootstrapConfig{
 			Username: getEnv("ADMIN_USERNAME", ""),
@@ -186,6 +188,22 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+// parseTrustedProxies parses a comma-separated list of CIDR ranges
+func parseTrustedProxies(value string) []string {
+	if value == "" {
+		return nil
+	}
+
+	var cidrs []string
+	for _, cidr := range strings.Split(value, ",") {
+		trimmed := strings.TrimSpace(cidr)
+		if trimmed != "" {
+			cidrs = append(cidrs, trimmed)
+		}
+	}
+	return cidrs
 }
 
 // LoadEnvFile loads environment variables from a .env file

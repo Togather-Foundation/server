@@ -53,7 +53,7 @@ func RateLimit(cfg config.RateLimitConfig) func(http.Handler) http.Handler {
 				tier = value
 			}
 
-			limiter := store.limiter(tier, clientKey(r))
+			limiter := store.limiter(tier, clientKey(r, cfg.TrustedProxyCIDRs))
 			if limiter == nil {
 				next.ServeHTTP(w, r)
 				return
@@ -76,14 +76,20 @@ func RateLimit(cfg config.RateLimitConfig) func(http.Handler) http.Handler {
 }
 
 type limiterStore struct {
-	mu        sync.Mutex
-	limiters  map[string]*rate.Limiter
-	perMinute map[RateLimitTier]int
+	mu          sync.Mutex
+	limiters    map[string]*limiterEntry
+	perMinute   map[RateLimitTier]int
+	stopCleanup chan struct{}
+}
+
+type limiterEntry struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
 }
 
 func newLimiterStore(cfg config.RateLimitConfig) *limiterStore {
-	return &limiterStore{
-		limiters: make(map[string]*rate.Limiter),
+	store := &limiterStore{
+		limiters: make(map[string]*limiterEntry),
 		perMinute: map[RateLimitTier]int{
 			TierPublic:     cfg.PublicPerMinute,
 			TierAgent:      cfg.AgentPerMinute,
@@ -91,7 +97,14 @@ func newLimiterStore(cfg config.RateLimitConfig) *limiterStore {
 			TierLogin:      cfg.LoginPer15Minutes, // Special handling below
 			TierFederation: cfg.FederationPerMinute,
 		},
+		stopCleanup: make(chan struct{}),
 	}
+
+	// Start background cleanup goroutine
+	// Removes entries not accessed in 15 minutes to prevent unbounded memory growth
+	go store.cleanupLoop()
+
+	return store
 }
 
 func (s *limiterStore) limiter(tier RateLimitTier, key string) *rate.Limiter {
@@ -108,8 +121,10 @@ func (s *limiterStore) limiter(tier RateLimitTier, key string) *rate.Limiter {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if limiter, ok := s.limiters[lookup]; ok {
-		return limiter
+	if entry, ok := s.limiters[lookup]; ok {
+		// Update last seen time for TTL-based cleanup
+		entry.lastSeen = time.Now()
+		return entry.limiter
 	}
 
 	// Special handling for login tier: 5 attempts per 15 minutes
@@ -124,25 +139,103 @@ func (s *limiterStore) limiter(tier RateLimitTier, key string) *rate.Limiter {
 		limiter = rate.NewLimiter(rate.Every(interval), limit)
 	}
 
-	s.limiters[lookup] = limiter
+	s.limiters[lookup] = &limiterEntry{
+		limiter:  limiter,
+		lastSeen: time.Now(),
+	}
 	return limiter
 }
 
-func clientKey(r *http.Request) string {
+// cleanupLoop runs a background goroutine that periodically removes stale limiter entries
+// to prevent unbounded memory growth under attack scenarios (server-g746)
+func (s *limiterStore) cleanupLoop() {
+	// Cleanup every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanup()
+		case <-s.stopCleanup:
+			return
+		}
+	}
+}
+
+// cleanup removes limiter entries that haven't been accessed in 15 minutes
+func (s *limiterStore) cleanup() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	ttl := 15 * time.Minute
+
+	for key, entry := range s.limiters {
+		if now.Sub(entry.lastSeen) > ttl {
+			delete(s.limiters, key)
+		}
+	}
+}
+
+// Stop gracefully shuts down the cleanup goroutine
+func (s *limiterStore) Stop() {
+	close(s.stopCleanup)
+}
+
+// clientKey extracts the client identifier for rate limiting, with protection against
+// X-Forwarded-For spoofing by only trusting the header from configured proxy CIDRs (server-chgh)
+func clientKey(r *http.Request, trustedProxyCIDRs []string) string {
 	if r == nil {
 		return ""
 	}
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
+
+	// Get the immediate connection's remote address
+	remoteIP := ""
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		remoteIP = host
+	} else {
+		remoteIP = r.RemoteAddr
+	}
+
+	// Only trust X-Forwarded-For if the request comes from a trusted proxy
+	if isTrustedProxy(remoteIP, trustedProxyCIDRs) {
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			parts := strings.Split(forwarded, ",")
+			if len(parts) > 0 {
+				return strings.TrimSpace(parts[0])
+			}
+		}
+		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+			return strings.TrimSpace(realIP)
 		}
 	}
-	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-		return strings.TrimSpace(realIP)
+
+	// Fallback to direct connection IP (not trusting headers from untrusted sources)
+	return remoteIP
+}
+
+// isTrustedProxy checks if the given IP is within any of the trusted proxy CIDRs
+func isTrustedProxy(ip string, trustedCIDRs []string) bool {
+	if len(trustedCIDRs) == 0 {
+		// No trusted proxies configured - don't trust any headers
+		return false
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
 	}
-	return r.RemoteAddr
+
+	for _, cidrStr := range trustedCIDRs {
+		_, cidr, err := net.ParseCIDR(cidrStr)
+		if err != nil {
+			continue
+		}
+		if cidr.Contains(parsedIP) {
+			return true
+		}
+	}
+
+	return false
 }

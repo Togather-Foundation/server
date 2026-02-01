@@ -280,10 +280,29 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}))
 
 	// Admin HTML pages (T080) - placeholder routes for future implementation
+	// Apply CSRF protection to cookie-based admin routes to prevent cross-site request forgery
 	adminCookieAuth := middleware.AdminAuthCookie(jwtManager)
-	adminHTML := adminCookieAuth(http.HandlerFunc(handlers.AdminHTMLPlaceholder(cfg.Environment)))
+
+	// CSRF middleware - only initialize if CSRF key is configured
+	var csrfMiddleware func(http.Handler) http.Handler
+	if cfg.Auth.CSRFKey != "" {
+		// Secure flag: enabled for non-development environments
+		requireHTTPS := cfg.Environment != "development" && cfg.Environment != "test"
+		csrfMiddleware = middleware.CSRFProtection([]byte(cfg.Auth.CSRFKey), requireHTTPS)
+	} else {
+		// No-op middleware if CSRF key not configured (development mode)
+		csrfMiddleware = func(next http.Handler) http.Handler { return next }
+		if cfg.Environment != "development" && cfg.Environment != "test" {
+			logger.Warn().Msg("CSRF_KEY not configured - admin routes vulnerable to CSRF attacks")
+		}
+	}
+
+	// Admin routes with CSRF protection
+	adminHTML := csrfMiddleware(adminCookieAuth(http.HandlerFunc(handlers.AdminHTMLPlaceholder(cfg.Environment))))
 	mux.Handle("/admin", adminHTML)
 	mux.Handle("/admin/", adminHTML)
+
+	// Login page doesn't need CSRF (no auth required, no state-changing action on GET)
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
 
 	// Wrap entire router with middleware stack

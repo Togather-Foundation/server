@@ -251,9 +251,24 @@ func TestClientKey_PrioritizesXForwardedFor(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "203.0.113.45, 198.51.100.1")
 
-	key := clientKey(req)
+	// Configure 10.0.0.0/8 as trusted proxy
+	trustedProxies := []string{"10.0.0.0/8"}
+	key := clientKey(req, trustedProxies)
 	if key != "203.0.113.45" {
-		t.Errorf("expected first X-Forwarded-For IP, got %s", key)
+		t.Errorf("expected first X-Forwarded-For IP from trusted proxy, got %s", key)
+	}
+}
+
+func TestClientKey_IgnoresXForwardedForFromUntrustedSource(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.1:12345" // Untrusted source
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+
+	// Only trust 10.0.0.0/8 proxies
+	trustedProxies := []string{"10.0.0.0/8"}
+	key := clientKey(req, trustedProxies)
+	if key != "203.0.113.1" {
+		t.Errorf("expected RemoteAddr (untrusted X-Forwarded-For should be ignored), got %s", key)
 	}
 }
 
@@ -262,9 +277,11 @@ func TestClientKey_FallsBackToXRealIP(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:12345"
 	req.Header.Set("X-Real-IP", "203.0.113.45")
 
-	key := clientKey(req)
+	// Configure 10.0.0.0/8 as trusted proxy
+	trustedProxies := []string{"10.0.0.0/8"}
+	key := clientKey(req, trustedProxies)
 	if key != "203.0.113.45" {
-		t.Errorf("expected X-Real-IP, got %s", key)
+		t.Errorf("expected X-Real-IP from trusted proxy, got %s", key)
 	}
 }
 
@@ -272,7 +289,9 @@ func TestClientKey_FallsBackToRemoteAddr(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.100:12345"
 
-	key := clientKey(req)
+	// No headers, should use RemoteAddr
+	trustedProxies := []string{"10.0.0.0/8"}
+	key := clientKey(req, trustedProxies)
 	if key != "192.168.1.100" {
 		t.Errorf("expected RemoteAddr host, got %s", key)
 	}
@@ -389,4 +408,95 @@ func TestLoginRateLimit_TokenRefill(t *testing.T) {
 	// In production, after 3 minutes, 1 more request would be allowed.
 	// The token bucket will gradually refill, allowing sustained rate of
 	// 1 request per 3 minutes after the initial burst is exhausted.
+}
+
+// TestLimiterStore_Cleanup verifies that stale limiters are cleaned up (server-g746)
+func TestLimiterStore_Cleanup(t *testing.T) {
+	cfg := config.RateLimitConfig{
+		PublicPerMinute: 60,
+	}
+
+	store := newLimiterStore(cfg)
+	defer store.Stop()
+
+	// Create some limiter entries
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "192.168.1.1:12345"
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "192.168.1.2:12345"
+
+	// Access limiters to create entries (no trusted proxies)
+	store.limiter(TierPublic, clientKey(req1, nil))
+	store.limiter(TierPublic, clientKey(req2, nil))
+
+	// Verify entries exist
+	if len(store.limiters) != 2 {
+		t.Fatalf("expected 2 limiter entries, got %d", len(store.limiters))
+	}
+
+	// Manually set lastSeen to old time to simulate stale entries
+	store.mu.Lock()
+	for _, entry := range store.limiters {
+		entry.lastSeen = time.Now().Add(-20 * time.Minute) // 20 minutes ago
+	}
+	store.mu.Unlock()
+
+	// Run cleanup
+	store.cleanup()
+
+	// Verify entries were removed (TTL is 15 minutes)
+	store.mu.Lock()
+	count := len(store.limiters)
+	store.mu.Unlock()
+
+	if count != 0 {
+		t.Fatalf("expected 0 limiter entries after cleanup, got %d", count)
+	}
+}
+
+// TestLimiterStore_CleanupPreservesActive verifies cleanup doesn't remove active entries
+func TestLimiterStore_CleanupPreservesActive(t *testing.T) {
+	cfg := config.RateLimitConfig{
+		PublicPerMinute: 60,
+	}
+
+	store := newLimiterStore(cfg)
+	defer store.Stop()
+
+	// Create limiter entries
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "192.168.1.1:12345"
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "192.168.1.2:12345"
+
+	store.limiter(TierPublic, clientKey(req1, nil))
+	store.limiter(TierPublic, clientKey(req2, nil))
+
+	// Set one entry as stale, keep one recent
+	store.mu.Lock()
+	key1 := string(TierPublic) + ":192.168.1.1"
+	key2 := string(TierPublic) + ":192.168.1.2"
+	store.limiters[key1].lastSeen = time.Now().Add(-20 * time.Minute) // Stale
+	store.limiters[key2].lastSeen = time.Now()                        // Recent
+	store.mu.Unlock()
+
+	// Run cleanup
+	store.cleanup()
+
+	// Verify only stale entry was removed
+	store.mu.Lock()
+	count := len(store.limiters)
+	_, hasKey1 := store.limiters[key1]
+	_, hasKey2 := store.limiters[key2]
+	store.mu.Unlock()
+
+	if count != 1 {
+		t.Fatalf("expected 1 limiter entry after cleanup, got %d", count)
+	}
+	if hasKey1 {
+		t.Error("stale entry should have been removed")
+	}
+	if !hasKey2 {
+		t.Error("active entry should have been preserved")
+	}
 }
