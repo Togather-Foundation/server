@@ -22,15 +22,22 @@ type AdminAuthHandler struct {
 	AuditLogger *audit.Logger
 	Env         string
 	Templates   *template.Template
+	JWTExpiry   time.Duration
 }
 
-func NewAdminAuthHandler(queries *postgres.Queries, jwtManager *auth.JWTManager, auditLogger *audit.Logger, env string, templates *template.Template) *AdminAuthHandler {
+// dummyPasswordHash is a pre-computed bcrypt hash used for constant-time comparison
+// when a user doesn't exist, preventing timing attacks for username enumeration.
+// This is the hash of an empty string with cost 12.
+var dummyPasswordHash = []byte("$2a$12$1234567890123456789012eO/6Tg9BK8qLz1v1J8o2zZqzZ8kBRuGW")
+
+func NewAdminAuthHandler(queries *postgres.Queries, jwtManager *auth.JWTManager, auditLogger *audit.Logger, env string, templates *template.Template, jwtExpiry time.Duration) *AdminAuthHandler {
 	return &AdminAuthHandler{
 		Queries:     queries,
 		JWTManager:  jwtManager,
 		AuditLogger: auditLogger,
 		Env:         env,
 		Templates:   templates,
+		JWTExpiry:   jwtExpiry,
 	}
 }
 
@@ -74,15 +81,19 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Fetch user by username
 	user, err := h.Queries.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
-		// Log failed login attempt
-		if h.AuditLogger != nil {
-			ipAddress := extractClientIP(r)
-			h.AuditLogger.LogFailure("admin.login", req.Username, ipAddress, map[string]string{
-				"reason": "user_not_found",
-			})
-		}
-
 		if err == pgx.ErrNoRows {
+			// Run bcrypt comparison with dummy hash to prevent timing attacks
+			// This ensures the response time is similar whether user exists or not
+			_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(req.Password))
+
+			// Log failed login attempt
+			if h.AuditLogger != nil {
+				ipAddress := extractClientIP(r)
+				h.AuditLogger.LogFailure("admin.login", req.Username, ipAddress, map[string]string{
+					"reason": "invalid_credentials",
+				})
+			}
+
 			problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Invalid credentials", nil, h.Env)
 			return
 		}
@@ -96,7 +107,7 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		if h.AuditLogger != nil {
 			ipAddress := extractClientIP(r)
 			h.AuditLogger.LogFailure("admin.login", req.Username, ipAddress, map[string]string{
-				"reason": "invalid_password",
+				"reason": "invalid_credentials",
 			})
 		}
 
@@ -125,17 +136,19 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.AuditLogger.LogSuccess("admin.login", user.Username, "user", userID.String(), ipAddress, nil)
 	}
 
-	// Calculate expiry time
-	expiresAt := time.Now().Add(24 * time.Hour) // TODO: use config value
+	// Calculate expiry time using config value
+	expiresAt := time.Now().Add(h.JWTExpiry)
 
 	// Set HttpOnly cookie for HTML UI
+	// In production, always set Secure flag (even behind reverse proxy)
+	requireSecure := h.Env == "production"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    token,
 		Path:     "/",
 		Expires:  expiresAt,
 		HttpOnly: true,
-		Secure:   r.TLS != nil, // Only secure in HTTPS
+		Secure:   requireSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -203,13 +216,15 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clear the auth cookie
+	// Match the Secure flag used when setting the cookie
+	requireSecure := h.Env == "production"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   requireSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 

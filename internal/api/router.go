@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -25,8 +24,10 @@ import (
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 	"github.com/rs/zerolog"
 )
@@ -36,11 +37,20 @@ const (
 	maxRouterRetries = 10
 )
 
-func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string) http.Handler {
+// RouterWithClient bundles the HTTP handler with the River client for graceful shutdown.
+type RouterWithClient struct {
+	Handler     http.Handler
+	RiverClient *river.Client[pgx.Tx]
+}
+
+func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string) *RouterWithClient {
 	repo, err := postgres.NewRepository(pool)
 	if err != nil {
 		logger.Error().Err(err).Msg("repository init failed")
-		return http.NewServeMux()
+		return &RouterWithClient{
+			Handler:     http.NewServeMux(),
+			RiverClient: nil,
+		}
 	}
 
 	eventsService := events.NewService(repo.Events())
@@ -70,12 +80,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	riverClient, err := jobs.NewClient(pool, workers, slogLogger, riverHooks)
 	if err != nil {
 		logger.Error().Err(err).Msg("river client init failed")
-		return http.NewServeMux()
+		return &RouterWithClient{
+			Handler:     http.NewServeMux(),
+			RiverClient: nil,
+		}
 	}
-	// Start River workers for background job processing (use background context for long-running workers)
-	if err := riverClient.Start(context.Background()); err != nil {
-		logger.Error().Err(err).Msg("failed to start river workers")
-	}
+	// Note: River workers are started with a shutdown-aware context in serve.go
+	// DO NOT call riverClient.Start() here - it's handled during server initialization
 
 	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL)
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL)
@@ -92,7 +103,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Admin handlers
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
-	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates)
+	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates, cfg.Auth.JWTExpiry)
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
@@ -165,7 +176,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	publicOrgPage := rateLimitPublic(http.HandlerFunc(publicPages.GetOrganization))
 
 	// Authenticated write endpoints with agent rate limiting
-	createEvents := apiKeyAuth(rateLimitAgent(middleware.AdminRequestSize()(http.HandlerFunc(eventsHandler.Create))))
+	createEvents := apiKeyAuth(rateLimitAgent(middleware.EventRequestSize()(http.HandlerFunc(eventsHandler.Create))))
 	createBatch := apiKeyAuth(rateLimitAgent(middleware.FederationRequestSize()(http.HandlerFunc(eventsHandler.CreateBatch))))
 	batchStatus := rateLimitPublic(http.HandlerFunc(eventsHandler.GetBatchStatus))
 
@@ -316,7 +327,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	handler = middleware.RateLimit(cfg.RateLimit)(handler)
 	handler = metrics.HTTPMiddleware(handler)
 
-	return handler
+	return &RouterWithClient{
+		Handler:     handler,
+		RiverClient: riverClient,
+	}
 }
 
 func methodMux(handlers map[string]http.Handler) http.Handler {
