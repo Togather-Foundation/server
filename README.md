@@ -114,13 +114,20 @@ make build
 The setup command will:
 - ✅ Detect your environment (Docker or local PostgreSQL)
 - ✅ Check prerequisites
-- ✅ Generate secure secrets
+- ✅ **Generate secure secrets** (JWT_SECRET, CSRF_KEY, admin password using crypto/rand)
 - ✅ Configure database connection
-- ✅ Create .env file
+- ✅ **Create .env file** in project root with generated secrets and configuration
 - ✅ Set up database and run migrations
-- ✅ Create your first API key
+- ✅ **Create your first API key** and save it to .env as API_KEY
 
 After setup completes, your SEL server will be ready at `http://localhost:8080`!
+
+**Global CLI flags** (available for all commands):
+- `--config <path>` - Custom config file path (optional, defaults to .env in project root)
+- `--log-level <level>` - Set log level: debug, info, warn, error (default: info)
+- `--log-format <format>` - Set log format: json, console (default: json)
+
+Example: `./server serve --log-level debug --log-format console`
 
 **Note:** For local PostgreSQL, you'll need PostgreSQL 16+ with PostGIS, pgvector, and pg_trgm extensions installed. See [PostgreSQL Setup Guide](docs/contributors/POSTGRESQL_SETUP.md) for installation instructions.
 
@@ -213,7 +220,13 @@ The SEL server includes built-in CLI commands for easy testing:
 ./server api-key revoke <id>
 ```
 
-**Note:** After running `make build` or `go build ./cmd/server`, the binary is located at `./server`. The CLI automatically loads API keys and configuration from `.env` file.
+**Note:** After running `make build` or `go build ./cmd/server`, the binary is located at `./server`. 
+
+**Configuration Loading:**
+- The CLI automatically loads configuration from `.env` file in the project root (development/test environments)
+- All commands (serve, ingest, api-key, etc.) read from `.env` by default
+- In staging/production, set `ENV_FILE` environment variable to specify a different config file location
+- Priority: Environment variables > .env file > defaults
 
 **Example test-event.json:**
 ```json

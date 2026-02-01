@@ -103,7 +103,38 @@ API keys are the recommended authentication method for **long-lived integrations
 
 ### Obtaining an API Key
 
-**Contact the SEL administrator** to request an API key. Provide:
+**For Local Development:**
+
+The easiest way to create an API key is using the CLI:
+
+```bash
+# Create an API key (automatically saves to .env file)
+./server api-key create my-scraper-key
+
+# Output:
+# ✓ API key created successfully
+# 
+# Name:    my-scraper-key
+# ID:      01KG5PE0V9TGJQADQ0QT1KJ2E9
+# Key:     sel_live_abcdef1234567890...
+# Role:    agent
+# Created: 2026-02-01T12:00:00Z
+# 
+# ✓ API key saved to .env
+
+# The key is automatically added to your .env file as:
+# API_KEY=sel_live_abcdef1234567890...
+
+# List all your API keys:
+./server api-key list
+
+# Revoke a key:
+./server api-key revoke <id>
+```
+
+**For Production/Deployment:**
+
+Contact the SEL administrator to request an API key. Provide:
 - **Organization name**: Your organization or project name
 - **Use case**: Description of what you'll be doing (e.g., "Scraping events from City Arts Calendar")
 - **Expected volume**: Approximate requests per hour/day
@@ -114,7 +145,7 @@ API keys are the recommended authentication method for **long-lived integrations
 - **Role**: `agent` (or `admin` if appropriate)
 - **Rate Limit**: Assigned tier (usually 300 req/min for agents)
 
-**⚠️ IMPORTANT**: API keys are shown **only once**. Store them securely (environment variables, secret manager).
+**⚠️ IMPORTANT**: API keys are shown **only once** during creation. Store them securely (environment variables, secret manager).
 
 ### Using API Keys
 

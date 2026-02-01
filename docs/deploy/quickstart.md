@@ -48,7 +48,38 @@ curl http://localhost:8080/health | jq '.status'
 # Should return: "healthy"
 ```
 
-**Option 2: Local PostgreSQL**
+**Option 2: Interactive Setup (Recommended for First-Time Setup)**
+
+For a guided setup experience that generates all secrets and configures everything automatically:
+
+```bash
+git clone https://github.com/Togather-Foundation/server.git
+cd server
+make build
+
+# Interactive guided setup - answers questions and configures everything
+./server setup
+
+# What it does:
+# 1. Detects your environment (Docker vs local PostgreSQL)
+# 2. Checks prerequisites
+# 3. Generates secure secrets (JWT_SECRET, CSRF_KEY, admin password using crypto/rand)
+# 4. Creates .env file in project root with all configuration
+# 5. Sets up database and runs migrations
+# 6. Creates your first API key and saves it to .env
+
+# Or non-interactive setup for Docker:
+./server setup --docker --non-interactive
+```
+
+**Global CLI Flags** (available for all `./server` commands):
+- `--config <path>` - Custom config file path (optional, defaults to .env in project root)
+- `--log-level <level>` - Set log level: debug, info, warn, error (default: info)
+- `--log-format <format>` - Set log format: json, console (default: json)
+
+Example: `./server serve --log-level debug --log-format console`
+
+**Option 3: Local PostgreSQL (Manual Setup)**
 
 If you prefer using your local PostgreSQL (port 5432):
 

@@ -48,6 +48,13 @@ The server automatically loads configuration from `.env` files in the project ro
 - **All CLI commands**: Now load `.env` automatically in development/test (e.g., `ingest`, `api-key`, etc.)
 - **Priority**: Environment variables > `ENV_FILE` (staging/prod) or `.env` (dev/test) > defaults
 
+**Global CLI Flags** (available for all commands):
+```bash
+--config <path>     Custom config file (optional, defaults to .env in project root)
+--log-level <level> Log level: debug, info, warn, error (default: info)
+--log-format <fmt>  Log format: json, console (default: json)
+```
+
 Example:
 ```bash
 # .env file contains:
@@ -57,7 +64,15 @@ API_KEY=01KG5PE0V9TGJQADQ0QT1KJ2E9secret
 ./server ingest events.json          # Uses API_KEY from .env
 ./server api-key list                # Uses DATABASE_URL from .env
 ./server serve                       # Uses all config from .env
+./server serve --log-level debug --log-format console  # Override log settings
 ```
+
+**Secret Generation:**
+- The `./server setup` command automatically generates cryptographically secure secrets using Go's `crypto/rand` package
+- Generated secrets: `JWT_SECRET` (32 bytes), `CSRF_KEY` (32 bytes), admin password (16 bytes)
+- All secrets are base64-encoded and written to `.env` file in the project root
+- API keys created with `./server api-key create` are also saved to `.env` automatically
+- See `cmd/server/cmd/setup.go` for implementation details
 
 ## Logging Standards
 
