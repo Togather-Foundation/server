@@ -1280,9 +1280,25 @@ receivers:
 
 - [ ] **Alerting**: Configure Prometheus Alertmanager with notification channels
 - [ ] **Log Aggregation**: Integrate Loki for centralized logging
-- [ ] **Distributed Tracing**: Add OpenTelemetry for request tracing
+- [ ] **Distributed Tracing**: Add OpenTelemetry for request tracing (see note below)
 - [ ] **Custom Metrics**: Add business metrics (events created, organizations, etc.)
 - [ ] **SLO Dashboards**: Track service level objectives and error budgets
+
+#### OpenTelemetry Status
+
+OpenTelemetry dependencies appear in `go.mod` as **indirect** dependencies (pulled in by testcontainers-go/Docker client), but **no active tracing instrumentation is implemented**.
+
+Current observability stack:
+- **Logs**: Structured logging with zerolog, request correlation IDs
+- **Metrics**: Prometheus metrics (HTTP, health, database, background jobs)
+- **Tracing**: Planned for Phase 2
+
+This is intentional - following the project's "Simplicity Over Cleverness" principle. Distributed tracing will be added when:
+1. The system has multiple services that need correlation
+2. Federation requires cross-instance request tracking
+3. Performance debugging requires span-level visibility
+
+For now, correlation IDs in logs + Prometheus metrics provide sufficient observability for a single-instance deployment.
 
 ### Learning Resources
 
