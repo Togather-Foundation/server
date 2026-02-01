@@ -155,6 +155,8 @@ func TestValidateURL(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid HTTPS URL", "https://example.com/path", false},
+		{"valid HTTP URL", "http://example.com/path", false},
+		{"invalid scheme", "ftp://example.com/resource", true},
 		{"invalid URL", "not-a-url", true},
 		{"empty URL", "", true},
 		{"relative URL", "/path/to/resource", true},

@@ -124,6 +124,23 @@ func TestSyncEvent_CreatesOccurrence(t *testing.T) {
 	assert.Equal(t, "https://example.org/event-page", *repo.occurrenceParams.VirtualURL)
 }
 
+func TestSyncEvent_RejectsInvalidIDScheme(t *testing.T) {
+	repo := &mockSyncRepo{}
+	service := NewSyncService(repo, nil, zerolog.Nop())
+
+	payload := map[string]any{
+		"@context":  "https://schema.org",
+		"@type":     "Event",
+		"@id":       "ftp://example.org/events/123",
+		"name":      "Test Event",
+		"startDate": time.Now().Format(time.RFC3339),
+	}
+
+	_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrMissingID)
+}
+
 func TestSyncEvent_WithoutURL_UsesFederationURI(t *testing.T) {
 	repo := &mockSyncRepo{}
 	service := NewSyncService(repo, nil, zerolog.Nop())

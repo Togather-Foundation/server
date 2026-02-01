@@ -77,11 +77,17 @@ Write/ingestion endpoints are **implementation-specific** and out of scope for t
 | Parameter | Type | Description | Example |
 |-----------|------|-------------|---------|
 | `limit` | Integer | Max items per page (default 50, max 200) | `?limit=100` |
-| `cursor` | String | Opaque pagination cursor | `?cursor=seq_1048602` |
-| `start_from` | Date | Filter events starting from date | `?start_from=2025-07-01` |
-| `start_to` | Date | Filter events starting before date | `?start_to=2025-07-31` |
-| `location` | String | Filter by place name or region | `?location=Toronto` |
-| `organizer` | URI | Filter by organization URI | `?organizer=https://...` |
+| `after` | String | Opaque pagination cursor | `?after=MTczODg5...` |
+| `startDate` | Date | Filter events starting from date | `?startDate=2025-07-01` |
+| `endDate` | Date | Filter events starting before date | `?endDate=2025-07-31` |
+| `city` | String | Filter by place city | `?city=Toronto` |
+| `region` | String | Filter by place region | `?region=ON` |
+| `venueId` | ULID | Filter by venue ULID | `?venueId=01HYX4...` |
+| `organizerId` | ULID | Filter by organizer ULID | `?organizerId=01HYX5...` |
+| `state` | String | Filter by lifecycle state | `?state=published` |
+| `domain` | String | Filter by event domain | `?domain=music` |
+| `q` | String | Full-text search | `?q=festival` |
+| `keywords` | String | Comma-separated keywords | `?keywords=jazz,summer` |
 
 ---
 
@@ -132,15 +138,16 @@ paths:
 
 ## 3. Export Formats
 
-SEL nodes MUST support the following content types via `Accept` header negotiation:
+**Current implementation:** JSON-LD and JSON via `Accept` header negotiation.
+Other formats listed below are **planned** but **not implemented** yet.
 
-| Format | Content-Type | Use Case |
-|--------|--------------|----------|
-| JSON-LD | `application/ld+json` | Semantic web consumption |
-| JSON | `application/json` | Non-LD convenience view |
-| Turtle | `text/turtle` | RDF tooling |
-| N-Triples | `application/n-triples` | RDF dumps |
-| NDJSON | `application/x-ndjson` | Bulk streaming |
+| Format | Content-Type | Status | Use Case |
+|--------|--------------|--------|----------|
+| JSON-LD | `application/ld+json` | Implemented | Semantic web consumption |
+| JSON | `application/json` | Implemented | Non-LD convenience view |
+| Turtle | `text/turtle` | Planned | RDF tooling |
+| N-Triples | `application/n-triples` | Planned | RDF dumps |
+| NDJSON | `application/x-ndjson` | Planned | Bulk streaming |
 
 ### 3.1 Content Negotiation
 
@@ -169,11 +176,11 @@ curl -H "Accept: application/ld+json" \
 - MUST include `@context` with schema.org and SEL context
 - MUST include all required fields per CORE_PROFILE
 
-**Turtle/N-Triples:**
+**Turtle/N-Triples (planned):**
 - MUST use valid RDF serialization
 - MUST preserve all triples from JSON-LD representation
 
-**NDJSON:**
+**NDJSON (planned):**
 - One JSON-LD object per line
 - No commas between lines
 - Use for bulk streaming (see § 4)
@@ -182,21 +189,23 @@ curl -H "Accept: application/ld+json" \
 
 ## 4. Bulk Dataset Export
 
-**Endpoints:**
+**Status:** Planned, not implemented.
+
+**Planned Endpoints:**
 - `GET /api/v1/exports/events.jsonld` (single JSON-LD graph)
 - `GET /api/v1/exports/events.ndjson` (newline-delimited JSON-LD)
 - `GET /datasets/events.jsonld.gz` (compressed nightly dump)
 
-### 4.1 Query Parameters
+### 4.1 Query Parameters (Planned)
 
 | Parameter | Type | Description | Example |
 |-----------|------|-------------|---------|
 | `changed_since` | RFC3339 | Only entities changed after timestamp | `?changed_since=2025-07-01T00:00:00Z` |
-| `start_from` | Date | Event start date range (from) | `?start_from=2025-07-01` |
-| `start_to` | Date | Event start date range (to) | `?start_to=2025-07-31` |
+| `startDate` | Date | Event start date range (from) | `?startDate=2025-07-01` |
+| `endDate` | Date | Event start date range (to) | `?endDate=2025-07-31` |
 | `include_deleted` | Boolean | Include tombstones (default false) | `?include_deleted=true` |
 
-### 4.2 NDJSON Structure
+### 4.2 NDJSON Structure (Planned)
 
 Each line is a complete JSON-LD document:
 
@@ -211,7 +220,7 @@ Each line is a complete JSON-LD document:
 - Parallel processing friendly
 - Suitable for streaming ingestion
 
-### 4.3 Compressed Dumps
+### 4.3 Compressed Dumps (Planned)
 
 **Format:** Gzipped NDJSON  
 **Update Frequency:** Nightly  

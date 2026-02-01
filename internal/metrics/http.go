@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 // HTTP metrics
 var (
+	pathParamRegex = regexp.MustCompile(`\{[^/]+\}`)
 	// HTTPRequestsTotal counts HTTP requests by method, path, and status code
 	HTTPRequestsTotal = promauto.With(Registry).NewCounterVec(
 		prometheus.CounterOpts{
@@ -110,7 +112,7 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 
 		// Record metrics
 		duration := time.Since(start).Seconds()
-		path := r.URL.Path
+		path := normalizePath(r.URL.Path)
 		method := r.Method
 		status := strconv.Itoa(wrapped.statusCode)
 
@@ -128,4 +130,11 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 		// Record response size
 		HTTPResponseSize.WithLabelValues(method, path).Observe(float64(wrapped.bytesWritten))
 	})
+}
+
+func normalizePath(path string) string {
+	if path == "" || path[0] != '/' {
+		return path
+	}
+	return pathParamRegex.ReplaceAllString(path, "{param}")
 }

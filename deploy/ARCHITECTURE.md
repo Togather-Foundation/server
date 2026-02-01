@@ -48,7 +48,6 @@ deploy/
    Edit `.env.production` and replace all `CHANGE_ME` placeholders with actual values:
    - `DATABASE_URL`: PostgreSQL connection string
    - `JWT_SECRET`: Base64-encoded secret for JWT tokens
-   - `ADMIN_API_KEY`: Hex-encoded admin API key
 
 3. **Deploy:**
    ```bash
@@ -175,7 +174,6 @@ Environment-specific secrets and configuration:
   - `ENVIRONMENT`: `development`, `staging`, or `production`
   - `DATABASE_URL`: PostgreSQL connection string
   - `JWT_SECRET`: Application secret for JWT tokens
-  - `ADMIN_API_KEY`: Admin API authentication key
 
 ## Deployment Workflow
 

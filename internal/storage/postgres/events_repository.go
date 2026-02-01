@@ -90,10 +90,16 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 	escapedQuery := escapeILIKEPattern(filters.Query)
 
 	rows, err := queryer.Query(ctx, `
-SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
-	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
-	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
-	   e.keywords, e.created_at, e.updated_at, o.start_time
+SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
+	   lifecycle_state, event_domain, organizer_id, primary_venue_id,
+	   virtual_url, image_url, public_url, confidence, quality_score,
+	   keywords, created_at, updated_at, start_time
+  FROM (
+    SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+	       e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	       e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
+	       e.keywords, e.created_at, e.updated_at, o.start_time,
+	       row_number() OVER (PARTITION BY e.id ORDER BY o.start_time ASC, e.ulid ASC) AS row_num
 	  FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
   LEFT JOIN places p ON p.id = COALESCE(o.venue_id, e.primary_venue_id)
@@ -114,7 +120,9 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
       o.start_time > $11::timestamptz OR
       (o.start_time = $11::timestamptz AND e.ulid > $12)
     )
- ORDER BY o.start_time ASC, e.ulid ASC
+  ) filtered
+ WHERE row_num = 1
+ ORDER BY start_time ASC, ulid ASC
  LIMIT $13
 `,
 		filters.StartDate,

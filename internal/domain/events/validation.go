@@ -326,7 +326,12 @@ func validateURL(raw string) error {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return ids.ErrInvalidURI
 	}
-	return nil
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return ids.ErrInvalidURI
+	}
 }
 
 func isCC0License(value string) bool {

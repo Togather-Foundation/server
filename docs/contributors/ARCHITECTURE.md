@@ -59,12 +59,12 @@ The SEL MVP backend is designed as a **single Go service** (with optional auxili
 └────────────┬──────────────────────────────────┬─────────────┘
              │                                   │
     ┌────────▼────────┐                 ┌───────▼──────────┐
-    │   HTTP API      │                 │  MCP Server      │
-    │   (Huma/Chi)    │                 │  (LLM Agents)    │
+    │   HTTP API      │                 │  Agent Tooling   │
+    │   (net/http)    │                 │  (CLI + Scripts) │
     │                 │                 │                  │
     │ - REST endpoints│                 │ - Tool interface │
     │ - Content neg.  │                 │ - Natural lang   │
-    │ - OpenAPI 3.1   │                 │ - Context docs   │
+    │ - OpenAPI Spec │                 │ - Context docs   │
     └────────┬────────┘                 └───────┬──────────┘
              │                                   │
              └───────────────┬───────────────────┘
@@ -110,7 +110,7 @@ The SEL MVP backend is designed as a **single Go service** (with optional auxili
 - **Transactional Job Queue**: River ensures background work is never lost via ACID guarantees
 - **Content Negotiation**: Public pages support HTML and JSON-LD; API defaults to JSON-LD
 - **Federation-Ready**: Built-in change feeds, bulk export, and peer synchronization
-- **Agent-Friendly**: MCP server provides natural language interface for LLM agents
+- **Agent-Friendly**: CLI tooling and docs keep the system inspectable
 
 ---
 
@@ -177,7 +177,7 @@ Dereferenceable URIs (e.g., `https://toronto.togather.foundation/events/{id}`) M
 | `text/html` | Human-readable HTML page | Web browsers, human review |
 | `application/ld+json` | Canonical JSON-LD document | Semantic web agents, harvesters |
 | `application/json` | JSON-LD document (alias) | Generic API clients |
-| `text/turtle` | RDF Turtle document | Semantic web tooling |
+| `text/turtle` | RDF Turtle document | Semantic web tooling (planned) |
 
 **MVP Requirement**: Provide **both HTML and JSON-LD** for dereferenceable URIs. HTML enables human review of data, JSON-LD enables machine consumption. Embed canonical JSON-LD in HTML pages using `<script type="application/ld+json">`.
 
@@ -208,7 +208,7 @@ This preserves URI stability even after deletion. Consumers can discover merges 
 
 ### Ingestion API Server
 
-**Technology**: Huma (OpenAPI 3.1 auto-generation) on Chi router
+**Technology**: Standard library `net/http` with explicit handlers and middleware
 
 An HTTP RESTful API that accepts incoming event submissions and serves event queries. This layer handles:
 
@@ -218,7 +218,7 @@ An HTTP RESTful API that accepts incoming event submissions and serves event que
 - **Routing**: Clean REST-style URLs with versioned endpoints
 - **Error Handling**: RFC 7807 Problem Details for consistent error responses
 
-**Design Decision**: Huma was chosen over raw Chi or Gin because it auto-generates OpenAPI 3.1 specs from Go structs, preventing spec drift and making the API immediately usable by code generators and LLM agents.
+**Design Decision**: Use explicit handlers and SQLc-backed queries for clarity and observability. API docs live in `specs/` and `docs/` and are kept in sync via CI.
 
 ### Core Processing Pipeline
 
@@ -354,18 +354,9 @@ Components for multi-node federation enabling data sharing between SEL instances
 4. Apply in sequence order; cursor advances only after successful batch
 5. Exponential backoff on 5xx/timeouts
 
-### MCP Server (Model Context Protocol)
+### Agent Tooling
 
-An **embedded server** running alongside the HTTP API that exposes tool-based interfaces optimized for LLM agents.
-
-**Tools Provided:**
-- `find_events(query)`: Natural language event search
-- `reconcile_entity(type, name, properties)`: Knowledge graph reconciliation
-- `get_event(id)`: Retrieve event details with context
-
-**Agent Documentation**: Provides `/agent-context.md` endpoint with natural language documentation of the schema and domain rules.
-
-**Shared Infrastructure**: MCP server shares the same database and service layer as HTTP API. No separate deployment needed.
+The system is designed to be inspectable via CLI interfaces and well-documented APIs. There is no separate MCP server in the current implementation; agent workflows interact through HTTP endpoints, CLI commands, and documented artifacts.
 
 ---
 
@@ -474,16 +465,18 @@ Returns full event details. Supports content negotiation.
 Ordered change stream for federation and sync.
 
 **Query Parameters:**
-- `since={cursor}`: Start from this sequence number
-- `limit={n}`: Events per page (default 100, max 500)
+- `since={cursor}` or `after={cursor}`: Start from this sequence number
+- `limit={n}`: Events per page (default 100, max 1000)
 
 **Response**: Change feed envelope with cursor and changes array
 
 #### Bulk Export
+
+Planned endpoints (not implemented yet):
 - **`GET /api/v1/exports/events.jsonld`**: Single JSON-LD graph
 - **`GET /api/v1/exports/events.ndjson`**: Newline-delimited JSON-LD
 
-Both support `start_after` and `start_before` query params for time-based filtering.
+Planned filters: `start_after` and `start_before`.
 
 #### Admin Endpoints
 
@@ -499,7 +492,7 @@ Protected by admin role authentication (`/api/v1/admin/*`):
 
 ### OpenAPI Specification
 
-Published at `GET /api/v1/openapi.json` for client generation and agent use. Auto-generated from Go structs via Huma annotations.
+Published at `GET /api/v1/openapi.json` for client generation and agent use. The spec is maintained in `specs/` and kept in sync with handlers.
 
 ---
 
@@ -1203,7 +1196,7 @@ USEARCH_ENABLED=false
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
 | **Language** | Go 1.22+ | Type safety, performance, excellent stdlib, easy deployment |
-| **HTTP Framework** | Huma (on Chi) | OpenAPI 3.1 auto-generation, content negotiation, type-safe |
+| **HTTP Framework** | net/http | Explicit handlers and middleware |
 | **Database** | PostgreSQL 16+ | Robust, ACID, excellent JSON/GIS/vector support |
 | **SQL Generation** | SQLc | Type-safe SQL without ORM complexity |
 | **Job Queue** | River | Transactional queue built on Postgres, no external dependency |
@@ -1300,7 +1293,7 @@ func (s *EventService) CreateEvent(ctx context.Context, input CreateEventInput) 
 
 **Benefits**:
 - Business logic isolated from HTTP handlers
-- Reusable across API and MCP server
+- Reusable across API handlers and CLI tooling
 - Testable without HTTP layer
 
 ### Transactional Outbox Pattern

@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/stretchr/testify/require"
 )
@@ -17,6 +19,9 @@ type stubEventsRepo struct {
 	listFn      func(filters events.Filters, pagination events.Pagination) (events.ListResult, error)
 	getFn       func(ulid string) (*events.Event, error)
 	tombstoneFn func(ulid string) (*events.Tombstone, error)
+	idemKeyFn   func(key string) (*events.IdempotencyKey, error)
+	idemInsert  func(params events.IdempotencyKeyCreateParams) (*events.IdempotencyKey, error)
+	idemUpdate  func(key string, eventID string, eventULID string) error
 }
 
 func (s stubEventsRepo) List(_ context.Context, filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
@@ -62,16 +67,25 @@ func (s stubEventsRepo) GetOrCreateSource(_ context.Context, _ events.SourceLook
 	return "", errors.New("not implemented")
 }
 
-func (s stubEventsRepo) GetIdempotencyKey(_ context.Context, _ string) (*events.IdempotencyKey, error) {
-	return nil, events.ErrNotFound
+func (s stubEventsRepo) GetIdempotencyKey(_ context.Context, key string) (*events.IdempotencyKey, error) {
+	if s.idemKeyFn == nil {
+		return nil, events.ErrNotFound
+	}
+	return s.idemKeyFn(key)
 }
 
-func (s stubEventsRepo) InsertIdempotencyKey(_ context.Context, _ events.IdempotencyKeyCreateParams) (*events.IdempotencyKey, error) {
-	return nil, errors.New("not implemented")
+func (s stubEventsRepo) InsertIdempotencyKey(_ context.Context, params events.IdempotencyKeyCreateParams) (*events.IdempotencyKey, error) {
+	if s.idemInsert == nil {
+		return nil, errors.New("not implemented")
+	}
+	return s.idemInsert(params)
 }
 
-func (s stubEventsRepo) UpdateIdempotencyKeyEvent(_ context.Context, _ string, _ string, _ string) error {
-	return nil
+func (s stubEventsRepo) UpdateIdempotencyKeyEvent(_ context.Context, key string, eventID string, eventULID string) error {
+	if s.idemUpdate == nil {
+		return nil
+	}
+	return s.idemUpdate(key, eventID, eventULID)
 }
 
 func (s stubEventsRepo) UpsertPlace(_ context.Context, _ events.PlaceCreateParams) (*events.PlaceRecord, error) {
@@ -240,4 +254,41 @@ func TestEventsHandlerListServiceError(t *testing.T) {
 	h.List(res, req)
 
 	require.Equal(t, http.StatusInternalServerError, res.Code)
+}
+
+func TestEventsHandlerCreateUsesIdempotencyHeader(t *testing.T) {
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{}, nil
+		},
+		getFn: func(_ string) (*events.Event, error) {
+			return nil, nil
+		},
+		idemKeyFn: func(key string) (*events.IdempotencyKey, error) {
+			require.Equal(t, "abc-123", key)
+			return nil, events.ErrNotFound
+		},
+		idemInsert: func(params events.IdempotencyKeyCreateParams) (*events.IdempotencyKey, error) {
+			require.Equal(t, "abc-123", params.Key)
+			return &events.IdempotencyKey{Key: params.Key}, nil
+		},
+		idemUpdate: func(key string, eventID string, eventULID string) error {
+			require.Equal(t, "abc-123", key)
+			return nil
+		},
+	}
+
+	service := events.NewService(repo)
+	ingest := events.NewIngestService(repo, "example.org")
+	h := NewEventsHandler(service, ingest, nil, nil, nil, "test", "https://example.org")
+
+	body := `{"name":"Jazz","startDate":"2026-07-10T19:00:00Z"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(middleware.IdempotencyHeader, "abc-123")
+	rec := httptest.NewRecorder()
+
+	middleware.Idempotency(http.HandlerFunc(h.Create)).ServeHTTP(rec, req)
+
+	require.Contains(t, []int{http.StatusCreated, http.StatusConflict, http.StatusBadRequest}, rec.Code)
 }

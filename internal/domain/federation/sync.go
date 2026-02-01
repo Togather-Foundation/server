@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/ids"
@@ -447,13 +448,17 @@ func (s *SyncService) extractID(payload map[string]any) (string, error) {
 		return "", ErrMissingID
 	}
 
-	// Validate it's a valid URL
-	_, err := url.Parse(idStr)
-	if err != nil {
+	// Validate it's a valid URL with http(s) scheme
+	parsed, err := url.Parse(idStr)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("%w: invalid URL format", ErrMissingID)
 	}
-
-	return idStr, nil
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return idStr, nil
+	default:
+		return "", fmt.Errorf("%w: invalid URL scheme", ErrMissingID)
+	}
 }
 
 // extractType extracts the @type field from JSON-LD.

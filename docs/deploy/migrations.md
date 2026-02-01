@@ -42,8 +42,7 @@ psql "$DATABASE_URL" -c "SELECT * FROM schema_migrations;"
 ### View Recent Snapshots
 
 ```bash
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Output shows available restore points:
 # Snapshot: togather_production_20260128_143022.sql.gz
@@ -124,8 +123,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" ver
 **Option 1: Restore from snapshot (RECOMMENDED)**
 ```bash
 # List available snapshots
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Restore most recent snapshot (before failed migration)
 # WARNING: This will restore database to state before migration
@@ -1159,17 +1157,16 @@ migrate create -ext sql -dir <migrations_dir> -seq <migration_name>
 
 ```bash
 # List all snapshots
-cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Create manual snapshot
-./snapshot-db.sh --reason "before_risky_change"
+server snapshot create --reason "before_risky_change"
 
 # Clean up expired snapshots
-./snapshot-db.sh --cleanup
+server snapshot cleanup --retention-days 7
 
 # Restore snapshot (manual)
-psql "$DATABASE_URL" < /var/lib/togather/db-snapshots/<snapshot_file>
+gunzip -c /var/lib/togather/db-snapshots/<snapshot_file>.sql.gz | psql "$DATABASE_URL"
 ```
 
 ### Health Checks
@@ -1204,7 +1201,7 @@ If migrations continue to fail after following this guide:
 
 - **Deployment Guide:** `deploy/README.md`
 - **Architecture:** `deploy/ARCHITECTURE.md`
-- **Snapshot Script:** `deploy/scripts/snapshot-db.sh`
+- **Snapshot CLI:** `server snapshot`
 - **Deploy Script:** `deploy/scripts/deploy.sh`
 - **Health Checks:** `internal/api/handlers/health.go`
 

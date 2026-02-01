@@ -35,7 +35,7 @@ The SEL API provides endpoints for submitting, retrieving, and managing cultural
 
 ### Content Types
 
-The API returns JSON or JSON-LD via the `Accept` header. Dereferenceable entity pages (under `/events/{id}`, `/places/{id}`, `/organizations/{id}`) also support HTML and Turtle.
+The API returns JSON or JSON-LD via the `Accept` header. Dereferenceable entity pages (under `/events/{id}`, `/places/{id}`, `/organizations/{id}`) support HTML (and may support Turtle) but those are **public pages**, not `/api/v1/*` endpoints.
 
 ---
 

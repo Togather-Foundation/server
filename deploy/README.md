@@ -25,7 +25,6 @@ nano deploy/config/environments/.env.production
 **Required Variables:**
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET` - Secret for JWT token signing
-- `ADMIN_API_KEY` - Admin API authentication key
 - `PORT` - Server port (default: 8080)
 
 ### 2. Deploy
@@ -617,10 +616,6 @@ All `.env` files must include:
    - Rotate quarterly
    - Never reuse across environments
 
-3. **ADMIN_API_KEY** - Admin endpoint authentication
-   - Generate: `openssl rand -hex 32`
-   - Restrict to trusted IPs at network level
-   - Rotate after any potential exposure
 
 ### Log Sanitization
 
@@ -628,7 +623,6 @@ All logging automatically sanitizes sensitive patterns:
 
 - `DATABASE_URL=...` → `DATABASE_URL=***REDACTED***`
 - `JWT_SECRET=...` → `JWT_SECRET=***REDACTED***`
-- `ADMIN_API_KEY=...` → `ADMIN_API_KEY=***REDACTED***`
 - `password=...` → `password=***REDACTED***`
 - `Authorization: Bearer ...` → `Authorization: Bearer ***REDACTED***`
 
@@ -776,7 +770,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
           cd deploy/scripts
           ./deploy.sh production

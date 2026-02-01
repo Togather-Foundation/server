@@ -82,7 +82,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create audit logger for admin operations
-	auditLogger := audit.NewLogger()
+	auditLogger := audit.NewLoggerWithZerolog(logger)
 
 	// Load admin templates
 	templates, err := loadAdminTemplates()
@@ -165,8 +165,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	publicOrgPage := rateLimitPublic(http.HandlerFunc(publicPages.GetOrganization))
 
 	// Authenticated write endpoints with agent rate limiting
-	createEvents := apiKeyAuth(rateLimitAgent(http.HandlerFunc(eventsHandler.Create)))
-	createBatch := apiKeyAuth(rateLimitAgent(http.HandlerFunc(eventsHandler.CreateBatch)))
+	createEvents := apiKeyAuth(rateLimitAgent(middleware.AdminRequestSize()(http.HandlerFunc(eventsHandler.Create))))
+	createBatch := apiKeyAuth(rateLimitAgent(middleware.FederationRequestSize()(http.HandlerFunc(eventsHandler.CreateBatch))))
 	batchStatus := rateLimitPublic(http.HandlerFunc(eventsHandler.GetBatchStatus))
 
 	mux.Handle("/api/v1/events", methodMux(map[string]http.Handler{
@@ -191,57 +191,57 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Admin routes (T075, T076)
 	// Admin auth endpoints - login has aggressive rate limiting
 	rateLimitLogin := middleware.WithRateLimitTierHandler(middleware.TierLogin)
-	mux.Handle("/api/v1/admin/login", rateLimitLogin(http.HandlerFunc(adminAuthHandler.Login)))
+	mux.Handle("/api/v1/admin/login", rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(adminAuthHandler.Login))))
 	mux.Handle("/api/v1/admin/logout", http.HandlerFunc(adminAuthHandler.Logout))
 
 	// Admin event management endpoints (requires JWT auth)
 	jwtAuth := middleware.JWTAuth(jwtManager, cfg.Environment)
 	adminRateLimit := middleware.WithRateLimitTierHandler(middleware.TierAdmin)
 
-	adminPendingEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.ListPendingEvents)))
+	adminPendingEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListPendingEvents))))
 	mux.Handle("/api/v1/admin/events/pending", adminPendingEvents)
 
-	adminListEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.ListEvents)))
+	adminListEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListEvents))))
 	mux.Handle("/api/v1/admin/events", methodMux(map[string]http.Handler{
 		http.MethodGet: adminListEvents,
 	}))
 
-	adminUpdateEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UpdateEvent)))
-	adminDeleteEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeleteEvent)))
+	adminUpdateEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UpdateEvent))))
+	adminDeleteEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeleteEvent))))
 	mux.Handle("/api/v1/admin/events/{id}", methodMux(map[string]http.Handler{
 		http.MethodPut:    adminUpdateEvent,
 		http.MethodDelete: adminDeleteEvent,
 	}))
 
-	adminPublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.PublishEvent)))
+	adminPublishEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.PublishEvent))))
 	mux.Handle("/api/v1/admin/events/{id}/publish", methodMux(map[string]http.Handler{
 		http.MethodPost: adminPublishEvent,
 	}))
 
-	adminUnpublishEvent := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.UnpublishEvent)))
+	adminUnpublishEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UnpublishEvent))))
 	mux.Handle("/api/v1/admin/events/{id}/unpublish", methodMux(map[string]http.Handler{
 		http.MethodPost: adminUnpublishEvent,
 	}))
 
-	adminMergeEvents := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.MergeEvents)))
+	adminMergeEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergeEvents))))
 	mux.Handle("/api/v1/admin/events/merge", methodMux(map[string]http.Handler{
 		http.MethodPost: adminMergeEvents,
 	}))
 
-	adminDeletePlace := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeletePlace)))
+	adminDeletePlace := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeletePlace))))
 	mux.Handle("/api/v1/admin/places/{id}", methodMux(map[string]http.Handler{
 		http.MethodDelete: adminDeletePlace,
 	}))
 
-	adminDeleteOrganization := jwtAuth(adminRateLimit(http.HandlerFunc(adminHandler.DeleteOrganization)))
+	adminDeleteOrganization := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeleteOrganization))))
 	mux.Handle("/api/v1/admin/organizations/{id}", methodMux(map[string]http.Handler{
 		http.MethodDelete: adminDeleteOrganization,
 	}))
 
 	// Admin API key management (T078)
-	adminCreateAPIKey := jwtAuth(adminRateLimit(http.HandlerFunc(apiKeyHandler.CreateAPIKey)))
-	adminListAPIKeys := jwtAuth(adminRateLimit(http.HandlerFunc(apiKeyHandler.ListAPIKeys)))
-	adminRevokeAPIKey := jwtAuth(adminRateLimit(http.HandlerFunc(apiKeyHandler.RevokeAPIKey)))
+	adminCreateAPIKey := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(apiKeyHandler.CreateAPIKey))))
+	adminListAPIKeys := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(apiKeyHandler.ListAPIKeys))))
+	adminRevokeAPIKey := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(apiKeyHandler.RevokeAPIKey))))
 
 	mux.Handle("/api/v1/admin/api-keys", methodMux(map[string]http.Handler{
 		http.MethodPost: adminCreateAPIKey,
@@ -252,11 +252,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}))
 
 	// Admin federation node management (T081b)
-	adminCreateNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.CreateNode)))
-	adminListNodes := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.ListNodes)))
-	adminGetNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.GetNode)))
-	adminUpdateNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.UpdateNode)))
-	adminDeleteNode := jwtAuth(adminRateLimit(http.HandlerFunc(federationHandler.DeleteNode)))
+	adminCreateNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.CreateNode))))
+	adminListNodes := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.ListNodes))))
+	adminGetNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.GetNode))))
+	adminUpdateNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.UpdateNode))))
+	adminDeleteNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.DeleteNode))))
 
 	mux.Handle("/api/v1/admin/federation/nodes", methodMux(map[string]http.Handler{
 		http.MethodPost: adminCreateNode,
@@ -274,7 +274,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Federation sync endpoint (T111 - requires API key auth, federation rate limit, idempotency support)
 	rateLimitFederation := middleware.WithRateLimitTierHandler(middleware.TierFederation)
-	federationSync := apiKeyAuth(rateLimitFederation(middleware.Idempotency(http.HandlerFunc(federationHandler.Sync))))
+	federationSync := apiKeyAuth(rateLimitFederation(middleware.Idempotency(middleware.FederationRequestSize()(http.HandlerFunc(federationHandler.Sync)))))
 	mux.Handle("/api/v1/federation/sync", methodMux(map[string]http.Handler{
 		http.MethodPost: federationSync,
 	}))

@@ -4,19 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 func TestLogger_Log(t *testing.T) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	entry := Entry{
 		Action:       "admin.event.update",
@@ -31,11 +30,7 @@ func TestLogger_Log(t *testing.T) {
 
 	// Parse the logged JSON
 	output := buf.String()
-	if !strings.Contains(output, "[AUDIT]") {
-		t.Error("Output should contain [AUDIT] prefix")
-	}
-
-	// Extract JSON from output (after "[AUDIT] ")
+	// Extract JSON from output
 	jsonStart := strings.Index(output, "{")
 	if jsonStart == -1 {
 		t.Fatal("No JSON found in output")
@@ -74,9 +69,7 @@ func TestLogger_Log(t *testing.T) {
 
 func TestLogger_LogSuccess(t *testing.T) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	logger.LogSuccess("admin.event.delete", "alice", "event", "01HX12ABC123", "10.0.0.1", map[string]string{
 		"reason": "duplicate",
@@ -99,9 +92,7 @@ func TestLogger_LogSuccess(t *testing.T) {
 
 func TestLogger_LogFailure(t *testing.T) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	logger.LogFailure("admin.login", "bob", "192.168.1.1", map[string]string{
 		"reason": "invalid_password",
@@ -166,9 +157,7 @@ func TestExtractClientIP_PreferXForwardedFor(t *testing.T) {
 
 func TestLogFromRequest_ExtractsUsername(t *testing.T) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
 	req.RemoteAddr = "10.0.0.1:12345"
@@ -197,9 +186,7 @@ func TestLogFromRequest_ExtractsUsername(t *testing.T) {
 
 func TestLogFromRequest_NoClaimsInContext(t *testing.T) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
 	logger.LogFromRequest(req, "admin.event.create", "event", "01HX12NEW123", "success", nil)
@@ -273,9 +260,7 @@ func TestFromContext_NoLogger(t *testing.T) {
 
 func TestLogger_AutoTimestamp(t *testing.T) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	entry := Entry{
 		Action:    "admin.test",
@@ -310,9 +295,7 @@ func TestLogger_AutoTimestamp(t *testing.T) {
 // Benchmark audit logging performance
 func BenchmarkLogger_Log(b *testing.B) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	entry := Entry{
 		Action:       "admin.event.update",
@@ -331,9 +314,7 @@ func BenchmarkLogger_Log(b *testing.B) {
 
 func BenchmarkLogger_LogFromRequest(b *testing.B) {
 	var buf bytes.Buffer
-	logger := &Logger{
-		output: log.New(&buf, "[AUDIT] ", 0),
-	}
+	logger := NewLoggerWithZerolog(zerolog.New(&buf))
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/events", nil)
 	claims := map[string]interface{}{

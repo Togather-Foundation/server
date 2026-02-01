@@ -72,8 +72,19 @@ type CORSConfig struct {
 func Load() (Config, error) {
 	// Try to load .env files if DATABASE_URL not already set
 	if os.Getenv("DATABASE_URL") == "" {
-		LoadEnvFile(".env")
-		LoadEnvFile("deploy/docker/.env")
+		env := strings.TrimSpace(strings.ToLower(os.Getenv("ENVIRONMENT")))
+		switch env {
+		case "", "development", "dev", "test":
+			LoadEnvFile(".env")
+			LoadEnvFile("deploy/docker/.env")
+		default:
+			if path := strings.TrimSpace(os.Getenv("ENV_FILE")); path != "" {
+				LoadEnvFile(path)
+			}
+			if os.Getenv("DATABASE_URL") == "" {
+				return Config{}, fmt.Errorf("DATABASE_URL is required; set DATABASE_URL or ENV_FILE in %s", env)
+			}
+		}
 	}
 
 	cfg := Config{

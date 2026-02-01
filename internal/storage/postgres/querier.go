@@ -70,8 +70,6 @@ type Querier interface {
 	// SQLc queries for change feeds.
 	ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error)
 	ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error)
-	// SQLc queries for events domain.
-	ListEvents(ctx context.Context, arg ListEventsParams) ([]ListEventsRow, error)
 	ListFederationNodes(ctx context.Context, arg ListFederationNodesParams) ([]FederationNode, error)
 	// SQLc queries for organizations domain.
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error)

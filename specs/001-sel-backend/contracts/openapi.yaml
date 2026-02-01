@@ -12,11 +12,9 @@ info:
     - **Admins**: JWT token in `Authorization: Bearer <token>` header
     
     ## Content Negotiation
-    All entity endpoints support content negotiation via `Accept` header:
+    API endpoints return JSON/JSON-LD via `Accept` header:
     - `application/ld+json` - JSON-LD (default)
     - `application/json` - JSON-LD (alias)
-    - `text/html` - Human-readable HTML
-    - `text/turtle` - RDF Turtle
     
     ## Pagination
     List endpoints use cursor-based pagination with `after` and `limit` parameters.
@@ -155,12 +153,6 @@ paths:
             application/ld+json:
               schema:
                 $ref: '#/components/schemas/Event'
-            text/html:
-              schema:
-                type: string
-            text/turtle:
-              schema:
-                type: string
         '404':
           $ref: '#/components/responses/NotFound'
 

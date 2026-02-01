@@ -104,6 +104,22 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 		assert.ErrorIs(t, err, ErrInvalidDateFormat)
 	})
 
+	t.Run("invalid @id scheme", func(t *testing.T) {
+		repo := &mockSyncRepo{}
+		service := NewSyncService(repo, nil, zerolog.Nop())
+
+		payload := map[string]any{
+			"@context": "https://schema.org",
+			"@type":    "Event",
+			"@id":      "ftp://example.org/e/1",
+			"name":     "Test Event",
+		}
+
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrMissingID)
+	})
+
 	t.Run("missing federation node", func(t *testing.T) {
 		repo := &mockSyncRepoWithErrors{
 			federationNodeErr: errors.New("federation node not found"),

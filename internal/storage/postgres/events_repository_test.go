@@ -83,6 +83,44 @@ func TestEventRepositoryListFiltersAndPagination(t *testing.T) {
 	require.Equal(t, ulidA, domainResult.Events[0].ULID)
 }
 
+func TestEventRepositoryListDedupesOccurrences(t *testing.T) {
+	ctx := context.Background()
+	container, dbURL := setupPostgres(t, ctx)
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	repo := &EventRepository{pool: pool}
+
+	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
+	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
+	start := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	ulidValue := insertEvent(t, ctx, pool, "Jazz in the Park", "Live jazz", org, place, "music", "published", []string{"jazz"}, start)
+
+	var eventID string
+	err = pool.QueryRow(ctx, `SELECT id FROM events WHERE ulid = $1`, ulidValue).Scan(&eventID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO event_occurrences (event_id, start_time, end_time, venue_id)
+         VALUES ($1, $2, $3, $4)`,
+		eventID, start.Add(24*time.Hour), start.Add(26*time.Hour), place.ID,
+	)
+	require.NoError(t, err)
+
+	result, err := repo.List(ctx, events.Filters{}, events.Pagination{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, result.Events, 1)
+	require.Equal(t, ulidValue, result.Events[0].ULID)
+	require.True(t, result.Events[0].Occurrences[0].StartTime.UTC().Equal(start))
+}
+
 func TestEventRepositoryGetByULID(t *testing.T) {
 	ctx := context.Background()
 	container, dbURL := setupPostgres(t, ctx)

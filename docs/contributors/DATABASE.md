@@ -262,7 +262,7 @@ RETURNING *;
 **Step 2: Generate Go Code**
 
 ```bash
-make sqlc-generate
+make sqlc
 ```
 
 **Step 3: Use Generated Code**
@@ -852,7 +852,7 @@ LIMIT $1;
 
 **Generate Code**:
 ```bash
-make sqlc-generate
+make sqlc
 ```
 
 **Use in Go**:

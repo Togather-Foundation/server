@@ -42,11 +42,11 @@ The build includes metadata from git:
 
 ### Configuration Loading
 
-The server automatically loads configuration from `.env` files in the project root:
+The server automatically loads configuration from `.env` files in the project root for development and test environments. In staging/production, config is loaded from explicit environment variables or the optional `ENV_FILE` path.
 
-- **serve command**: Loads `.env` via `config.Load()`
-- **All CLI commands**: Now load `.env` automatically (e.g., `ingest`, `api-key`, etc.)
-- **Priority**: Environment variables > `.env` file > defaults
+- **serve command**: Loads `.env` via `config.Load()` when `ENVIRONMENT` is development/test
+- **All CLI commands**: Now load `.env` automatically in development/test (e.g., `ingest`, `api-key`, etc.)
+- **Priority**: Environment variables > `ENV_FILE` (staging/prod) or `.env` (dev/test) > defaults
 
 Example:
 ```bash

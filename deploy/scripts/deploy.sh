@@ -125,11 +125,9 @@ sanitize_secrets() {
     # Redact key=value or key:value patterns (handles quoted values and special chars)
     # Match until whitespace, quote, or end of line
     input=$(echo "$input" | sed -E 's|(JWT_SECRET[=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
-    input=$(echo "$input" | sed -E 's|(ADMIN_API_KEY[=:])([^[:space:]"'\'']+)|\1***REDACTED***|g')
     
     # Redact quoted values: KEY="value with spaces" or KEY='value'
     input=$(echo "$input" | sed -E 's|(JWT_SECRET[=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
-    input=$(echo "$input" | sed -E 's|(ADMIN_API_KEY[=:])["'\''][^"'\'']*["'\'']|\1***REDACTED***|g')
     
     # Redact generic secret patterns (case-insensitive, handles unquoted and quoted)
     # Unquoted: password=value or password:value (stop at whitespace)
@@ -379,7 +377,6 @@ validate_config() {
     # Save current env vars to detect overrides
     local saved_DATABASE_URL="${DATABASE_URL:-}"
     local saved_JWT_SECRET="${JWT_SECRET:-}"
-    local saved_ADMIN_API_KEY="${ADMIN_API_KEY:-}"
     local saved_ENVIRONMENT="${ENVIRONMENT:-}"
     
     source "${env_file}"
@@ -395,10 +392,6 @@ validate_config() {
         JWT_SECRET="${saved_JWT_SECRET}"
         ((override_count++))
     fi
-    if [[ -n "${saved_ADMIN_API_KEY}" ]]; then
-        ADMIN_API_KEY="${saved_ADMIN_API_KEY}"
-        ((override_count++))
-    fi
     if [[ -n "${saved_ENVIRONMENT}" ]]; then
         ENVIRONMENT="${saved_ENVIRONMENT}"
         ((override_count++))
@@ -410,7 +403,7 @@ validate_config() {
     fi
     
     # T039: Validate required environment variables with clear remediation
-    local required_vars=("ENVIRONMENT" "DATABASE_URL" "JWT_SECRET" "ADMIN_API_KEY")
+    local required_vars=("ENVIRONMENT" "DATABASE_URL" "JWT_SECRET")
     local missing_vars=()
     
     for var in "${required_vars[@]}"; do
@@ -432,7 +425,6 @@ validate_config() {
         log "ERROR" "  3. Example formats:"
         log "ERROR" "     DATABASE_URL=postgresql://user:pass@host:5432/dbname"
         log "ERROR" "     JWT_SECRET=\$(openssl rand -hex 32)"
-        log "ERROR" "     ADMIN_API_KEY=\$(openssl rand -hex 32)"
         log "ERROR" "     ENVIRONMENT=${env}"
         return 1
     fi
@@ -446,7 +438,6 @@ validate_config() {
         log "ERROR" "     grep CHANGE_ME ${env_file}"
         log "ERROR" "  2. Generate secure secrets:"
         log "ERROR" "     JWT_SECRET: openssl rand -hex 32"
-        log "ERROR" "     ADMIN_API_KEY: openssl rand -hex 32"
         log "ERROR" "  3. Edit the file and replace placeholders:"
         log "ERROR" "     ${EDITOR:-nano} ${env_file}"
         log "ERROR" "  4. Verify no placeholders remain:"

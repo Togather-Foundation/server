@@ -23,11 +23,16 @@ SELECT ec.id,
        e.federation_uri,
        e.license_url,
        e.license_status,
-       es.retrieved_at AS source_timestamp,
+       es.source_timestamp,
        e.created_at AS received_timestamp
   FROM event_changes ec
   JOIN events e ON e.id = ec.event_id
-  LEFT JOIN event_sources es ON es.event_id = ec.event_id
+  LEFT JOIN (
+    SELECT event_id,
+           MAX(retrieved_at)::timestamptz AS source_timestamp
+      FROM event_sources
+     GROUP BY event_id
+  ) es ON es.event_id = ec.event_id
  WHERE ec.id = $1
  LIMIT 1
 `
@@ -130,11 +135,16 @@ SELECT ec.id,
        e.federation_uri,
        e.license_url,
        e.license_status,
-       es.retrieved_at AS source_timestamp,
+       es.source_timestamp,
        e.created_at AS received_timestamp
   FROM event_changes ec
   JOIN events e ON e.id = ec.event_id
-  LEFT JOIN event_sources es ON es.event_id = ec.event_id
+  LEFT JOIN (
+    SELECT event_id,
+           MAX(retrieved_at)::timestamptz AS source_timestamp
+      FROM event_sources
+     GROUP BY event_id
+  ) es ON es.event_id = ec.event_id
  WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
    AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
    AND ($3 = '' OR ec.action = $3)

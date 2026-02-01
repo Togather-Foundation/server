@@ -56,14 +56,12 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
           # Create production environment file
           cat > deploy/config/environments/.env.production <<EOF
           ENVIRONMENT=production
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
-          ADMIN_API_KEY=$ADMIN_API_KEY
           SERVER_PORT=8080
           LOG_LEVEL=info
           SHUTDOWN_TIMEOUT=30s
@@ -124,13 +122,11 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
           cat > deploy/config/environments/.env.production <<EOF
           ENVIRONMENT=production
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
-          ADMIN_API_KEY=$ADMIN_API_KEY
           DEPLOYED_BY=${{ github.actor }}@github-actions
           EOF
           chmod 600 deploy/config/environments/.env.production
@@ -206,13 +202,11 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
-          ADMIN_API_KEY: ${{ secrets.STAGING_ADMIN_API_KEY }}
         run: |
           cat > deploy/config/environments/.env.staging <<EOF
           ENVIRONMENT=staging
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
-          ADMIN_API_KEY=$ADMIN_API_KEY
           EOF
           chmod 600 deploy/config/environments/.env.staging
       
@@ -247,13 +241,11 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
           cat > deploy/config/environments/.env.production <<EOF
           ENVIRONMENT=production
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
-          ADMIN_API_KEY=$ADMIN_API_KEY
           EOF
           chmod 600 deploy/config/environments/.env.production
       
@@ -305,7 +297,6 @@ deploy-production:
       ENVIRONMENT=production
       DATABASE_URL=$DATABASE_URL
       JWT_SECRET=$JWT_SECRET
-      ADMIN_API_KEY=$ADMIN_API_KEY
       DEPLOYED_BY=$GITLAB_USER_LOGIN@gitlab-ci
       EOF
     - chmod 600 deploy/config/environments/.env.production
@@ -346,7 +337,6 @@ pipeline {
     environment {
         DATABASE_URL = credentials('production-database-url')
         JWT_SECRET = credentials('production-jwt-secret')
-        ADMIN_API_KEY = credentials('production-admin-api-key')
     }
     
     stages {
@@ -372,7 +362,6 @@ pipeline {
                     ENVIRONMENT=production
                     DATABASE_URL=$DATABASE_URL
                     JWT_SECRET=$JWT_SECRET
-                    ADMIN_API_KEY=$ADMIN_API_KEY
                     DEPLOYED_BY=${BUILD_USER}@jenkins
                     EOF
                     
@@ -426,17 +415,14 @@ Store these as secrets in your CI/CD platform:
 **Production:**
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET` - JWT signing key (generate: `openssl rand -base64 32`)
-- `ADMIN_API_KEY` - Admin API key (generate: `openssl rand -hex 32`)
 
 **Staging:**
 - `STAGING_DATABASE_URL`
 - `STAGING_JWT_SECRET`
-- `STAGING_ADMIN_API_KEY`
 
 **Development:**
 - `DEV_DATABASE_URL`
 - `DEV_JWT_SECRET`
-- `DEV_ADMIN_API_KEY`
 
 ### GitHub Actions Setup
 
@@ -721,7 +707,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
-          ADMIN_API_KEY: ${{ secrets.PROD_ADMIN_API_KEY }}
           POSTGRES_HOST: ${{ secrets.PROD_POSTGRES_HOST }}
           POSTGRES_PORT: ${{ secrets.PROD_POSTGRES_PORT }}
           POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
@@ -754,7 +739,6 @@ jobs:
           
           # Security
           JWT_SECRET=${JWT_SECRET}
-          ADMIN_API_KEY=${ADMIN_API_KEY}
           TLS_ENABLED=true
           
           # Snapshots
@@ -939,7 +923,6 @@ deploy-production:
       
       # Security
       JWT_SECRET=${PROD_JWT_SECRET}
-      ADMIN_API_KEY=${PROD_ADMIN_API_KEY}
       TLS_ENABLED=true
       
       # Snapshots
@@ -1075,7 +1058,6 @@ pipeline {
         // Credentials (configured in Jenkins)
         PROD_DATABASE_URL = credentials('prod-database-url')
         PROD_JWT_SECRET = credentials('prod-jwt-secret')
-        PROD_ADMIN_API_KEY = credentials('prod-admin-api-key')
         PROD_POSTGRES_HOST = credentials('prod-postgres-host')
         PROD_POSTGRES_PORT = credentials('prod-postgres-port')
         PROD_POSTGRES_DB = credentials('prod-postgres-db')
@@ -1179,7 +1161,6 @@ SHUTDOWN_TIMEOUT=30s
 
 # Security
 JWT_SECRET=${PROD_JWT_SECRET}
-ADMIN_API_KEY=${PROD_ADMIN_API_KEY}
 TLS_ENABLED=true
 
 # Snapshots

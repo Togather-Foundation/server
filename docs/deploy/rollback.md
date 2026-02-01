@@ -192,9 +192,8 @@ The rollback script automatically rebuilds the image from the Git commit. If reb
    cd deploy/docker
    docker-compose -f docker-compose.blue-green.yml down blue green
    
-   # Restore snapshot
-   pg_restore -d $DATABASE_URL --clean --if-exists \
-     /var/lib/togather/snapshots/<snapshot-file>.pgdump
+    # Restore snapshot (.sql.gz from server snapshot create)
+    gunzip -c /var/lib/togather/db-snapshots/<snapshot-file>.sql.gz | psql "$DATABASE_URL"
    
     # Restart application
     server deploy rollback development --force
@@ -362,11 +361,8 @@ The rollback script automatically rebuilds the image from the Git commit. If reb
 cd deploy/docker
 docker-compose -f docker-compose.blue-green.yml down blue green
 
-# 2. Restore snapshot
-pg_restore -d $DATABASE_URL \
-  --clean \
-  --if-exists \
-  /var/lib/togather/snapshots/<snapshot-file>.pgdump
+# 2. Restore snapshot (.sql.gz from server snapshot create)
+gunzip -c /var/lib/togather/db-snapshots/<snapshot-file>.sql.gz | psql "$DATABASE_URL"
 
 # 3. Verify restore
 psql $DATABASE_URL -c "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
@@ -447,9 +443,8 @@ If rollback fails completely and application is down:
 
 4. **If deployment still fails, restore from backup:**
    ```bash
-   # Restore database from snapshot
-   pg_restore -d $DATABASE_URL --clean --if-exists \
-     /var/lib/togather/snapshots/<latest-good-snapshot>.pgdump
+# Restore database from snapshot (.sql.gz)
+gunzip -c /var/lib/togather/db-snapshots/<latest-good-snapshot>.sql.gz | psql "$DATABASE_URL"
    
    # Redeploy
    ./deploy.sh development --force

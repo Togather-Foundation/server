@@ -82,7 +82,6 @@ For local development and single-node deployments with PostgreSQL, use the inclu
    # Edit these critical values:
    POSTGRES_PASSWORD=your_secure_db_password
    JWT_SECRET=your_secure_jwt_secret_min_64_chars
-   ADMIN_API_KEY=your_secure_api_key
    ADMIN_PASSWORD=your_secure_admin_password
    ```
 
@@ -148,7 +147,6 @@ All configuration is managed through the `.env` file. Key variables:
 
 - **POSTGRES_PASSWORD**: Database password (required)
 - **JWT_SECRET**: JWT signing secret (required, min 64 chars)
-- **ADMIN_API_KEY**: Admin API authentication key (required)
 - **ADMIN_PASSWORD**: Bootstrap admin user password (required)
 - **DATABASE_URL**: Connection string (auto-configured for Docker)
 - **LOG_LEVEL**: Logging verbosity (debug/info/warn/error)

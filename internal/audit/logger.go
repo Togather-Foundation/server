@@ -3,9 +3,11 @@ package audit
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/rs/zerolog"
 )
 
 // Entry represents a single audit log entry with structured fields
@@ -22,14 +24,18 @@ type Entry struct {
 
 // Logger provides structured audit logging for admin operations
 type Logger struct {
-	output *log.Logger
+	logger zerolog.Logger
 }
 
 // NewLogger creates a new audit logger
 func NewLogger() *Logger {
 	return &Logger{
-		output: log.New(log.Writer(), "[AUDIT] ", 0),
+		logger: zerolog.New(zerolog.NewConsoleWriter()).With().Str("component", "audit").Logger(),
 	}
+}
+
+func NewLoggerWithZerolog(logger zerolog.Logger) *Logger {
+	return &Logger{logger: logger.With().Str("component", "audit").Logger()}
 }
 
 // Log writes an audit entry to the log output
@@ -42,12 +48,12 @@ func (l *Logger) Log(entry Entry) {
 	// Marshal to JSON
 	data, err := json.Marshal(entry)
 	if err != nil {
-		log.Printf("ERROR: Failed to marshal audit entry: %v", err)
+		l.logger.Error().Err(err).Msg("failed to marshal audit entry")
 		return
 	}
 
 	// Write to output
-	l.output.Println(string(data))
+	l.logger.Info().RawJSON("audit", data).Msg("audit")
 }
 
 // LogSuccess logs a successful admin operation
@@ -103,8 +109,17 @@ func (l *Logger) LogFromRequest(r *http.Request, action, resourceType, resourceI
 	}
 
 	ipAddress := extractClientIP(r)
+	logger := l.logger
+	if r != nil {
+		if reqLogger := middleware.LoggerFromContext(r.Context()); reqLogger != nil {
+			logger = *reqLogger
+		}
+		if requestID := middleware.GetRequestID(r.Context()); requestID != "" {
+			logger = logger.With().Str("request_id", requestID).Logger()
+		}
+	}
 
-	l.Log(Entry{
+	entry := Entry{
 		Action:       action,
 		AdminUser:    adminUser,
 		ResourceType: resourceType,
@@ -112,7 +127,17 @@ func (l *Logger) LogFromRequest(r *http.Request, action, resourceType, resourceI
 		IPAddress:    ipAddress,
 		Status:       status,
 		Details:      details,
-	})
+	}
+	// Ensure structured entry is still emitted for consumers expecting audit JSON
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to marshal audit entry")
+		return
+	}
+	logger.Info().RawJSON("audit", data).Msg("audit")
 }
 
 // contextKey is a custom type for context keys to avoid collisions

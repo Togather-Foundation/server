@@ -177,7 +177,6 @@ providers:
 #   - DATABASE_URL: PostgreSQL connection string
 #   - JWT_SECRET: Secret key for JWT token signing
 #   - LOG_LEVEL: Logging level (debug, info, warn, error)
-#   - ADMIN_API_KEY: API key for administrative endpoints
 #   - GIT_COMMIT: Git commit SHA (injected by deployment script)
 #   - DEPLOYMENT_ID: Unique deployment identifier (injected by deployment script)
 #   - GRAFANA_PASSWORD: Grafana admin password (if monitoring enabled)

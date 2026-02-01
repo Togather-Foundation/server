@@ -16,6 +16,7 @@ import (
 var (
 	setupNonInteractive bool
 	setupDockerMode     bool
+	setupAllowProd      bool
 )
 
 // setupCmd provides interactive first-time setup
@@ -51,11 +52,16 @@ func init() {
 
 	setupCmd.Flags().BoolVar(&setupNonInteractive, "non-interactive", false, "run setup without prompts (use defaults)")
 	setupCmd.Flags().BoolVar(&setupDockerMode, "docker", false, "configure for Docker environment")
+	setupCmd.Flags().BoolVar(&setupAllowProd, "allow-production-secrets", false, "allow writing secrets to .env when ENVIRONMENT is staging/production")
 }
 
 func runSetup() error {
 	fmt.Println("🚀 Welcome to Togather SEL Server Setup")
 	fmt.Println()
+
+	if strings.TrimSpace(os.Getenv("ENVIRONMENT")) == "" {
+		fmt.Println("ℹ️  ENVIRONMENT not set; defaulting to development")
+	}
 
 	// Check if .env already exists
 	if fileExists(".env") {
@@ -140,6 +146,15 @@ func runSetup() error {
 		fmt.Println("⚠️  jq not found (optional, but helpful for testing)")
 	}
 	fmt.Println()
+
+	// Resolve target environment for .env
+	appEnv := strings.TrimSpace(strings.ToLower(os.Getenv("ENVIRONMENT")))
+	if appEnv == "" {
+		appEnv = "development"
+	}
+	if (appEnv == "production" || appEnv == "staging") && !setupAllowProd {
+		return fmt.Errorf("refusing to write secrets to .env in %s; set ENVIRONMENT=development or pass --allow-production-secrets", appEnv)
+	}
 
 	// Step 3: Generate secrets
 	fmt.Println("Step 3: Generate Secrets")
@@ -255,6 +270,12 @@ func runSetup() error {
 	// Step 6: Write .env file
 	fmt.Println("Step 6: Write Configuration")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	if (appEnv == "production" || appEnv == "staging") && !setupAllowProd {
+		fmt.Println("⚠️  Writing secrets to .env in non-development environments is discouraged")
+		fmt.Println("   Set ENVIRONMENT=development or pass --allow-production-secrets if you really need this")
+		fmt.Println()
+		return nil
+	}
 
 	envContent := generateEnvFile(envConfig{
 		DatabaseURL:   dbURL,
@@ -263,7 +284,7 @@ func runSetup() error {
 		AdminUsername: adminUsername,
 		AdminPassword: adminPassword,
 		AdminEmail:    adminEmail,
-		Environment:   env,
+		Environment:   appEnv,
 	})
 
 	if err := os.WriteFile(".env", []byte(envContent), 0600); err != nil {
@@ -370,8 +391,13 @@ func runSetup() error {
 	// Step 8: Create first API key
 	fmt.Println("Step 8: Create First API Key")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 	createKey := setupNonInteractive || confirm("Create your first API key?", true)
+	if (appEnv == "production" || appEnv == "staging") && !setupAllowProd {
+		fmt.Println("⚠️  Skipping API key creation for non-development environment")
+		fmt.Println("   Use: server api-key create <name> and store it in your secret manager")
+		fmt.Println()
+		createKey = false
+	}
 	if createKey {
 		keyName := "default"
 		if !setupNonInteractive {
@@ -528,7 +554,7 @@ JOB_RETRY_RECONCILIATION=5
 JOB_RETRY_ENRICHMENT=10
 
 # Environment
-ENVIRONMENT=development
+ENVIRONMENT=%s
 
 # Logging
 LOG_LEVEL=info
@@ -549,6 +575,7 @@ ENABLE_AUTO_RECONCILIATION=false
 		cfg.AdminEmail,
 		cfg.JWTSecret,
 		cfg.CSRFKey,
+		cfg.Environment,
 	)
 }
 

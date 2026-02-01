@@ -238,9 +238,6 @@ DATABASE_URL=postgresql://togather:CHANGE_ME@localhost:5432/togather_production
 # JWT signing key (generate: openssl rand -base64 32)
 JWT_SECRET=CHANGE_ME_generate_random_string
 
-# Admin API key (generate: openssl rand -hex 32)
-ADMIN_API_KEY=CHANGE_ME_generate_random_string
-
 # Deployment metadata (automatically set by deployment script)
 DEPLOYED_VERSION=
 DEPLOYED_BY=operator@example.com
@@ -259,8 +256,6 @@ WEBHOOK_URL=
 # Generate JWT secret
 echo "JWT_SECRET=$(openssl rand -base64 32)"
 
-# Generate admin API key
-echo "ADMIN_API_KEY=$(openssl rand -hex 32)"
 ```
 
 ### 3. Secure Environment File
@@ -559,9 +554,9 @@ server snapshot list --format json
 # List available snapshots
 server snapshot list
 
-# Restore specific snapshot (manual - use pg_restore)
-SNAPSHOT_FILE="/var/lib/togather/db-snapshots/togather_production_20260128_103014_abc1234.pgdump"
-pg_restore -d "$DATABASE_URL" --clean --if-exists "$SNAPSHOT_FILE"
+# Restore specific snapshot (.sql.gz from server snapshot create)
+SNAPSHOT_FILE="/var/lib/togather/db-snapshots/togather_production_20260128_103014_abc1234.sql.gz"
+gunzip -c "$SNAPSHOT_FILE" | psql "$DATABASE_URL"
 ```
 
 ### Clean Up Old Artifacts
@@ -769,7 +764,6 @@ open http://localhost:3000
 | `ENVIRONMENT` | Yes | - | Target environment (`development`, `staging`, `production`) |
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `JWT_SECRET` | Yes | - | JWT signing key (base64-encoded) |
-| `ADMIN_API_KEY` | Yes | - | Admin API authentication key (hex-encoded) |
 | `DEPLOYED_VERSION` | Auto | - | Git commit SHA of deployed version (set by deploy script) |
 | `DEPLOYED_BY` | Auto | - | Email of operator who deployed (set by deploy script) |
 | `DEPLOYED_AT` | Auto | - | ISO 8601 timestamp of deployment (set by deploy script) |

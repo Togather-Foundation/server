@@ -227,7 +227,7 @@ make migrate-up
 make migrate-down
 
 # Regenerate SQLc code
-make sqlc-generate
+make sqlc
 ```
 
 ---
