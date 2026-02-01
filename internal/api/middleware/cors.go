@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/rs/zerolog"
 )
 
 // CORS handles Cross-Origin Resource Sharing (CORS) for browser-based API clients.
@@ -23,7 +24,11 @@ import (
 // Preflight Requests (OPTIONS):
 //
 //	Returns 204 No Content with CORS headers
-func CORS(cfg config.CORSConfig) func(http.Handler) http.Handler {
+//
+// Security Logging:
+//   - Logs rejected CORS requests in production mode for security monitoring
+//   - Includes origin, path, and method to detect potential attacks
+func CORS(cfg config.CORSConfig, logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
@@ -36,6 +41,7 @@ func CORS(cfg config.CORSConfig) func(http.Handler) http.Handler {
 
 			// Determine if origin is allowed
 			allowedOrigin := ""
+			originRejected := false
 			if cfg.AllowAllOrigins {
 				// Development mode: allow all origins
 				allowedOrigin = origin
@@ -43,7 +49,18 @@ func CORS(cfg config.CORSConfig) func(http.Handler) http.Handler {
 				// Production mode: check against whitelist
 				if isOriginAllowed(origin, cfg.AllowedOrigins) {
 					allowedOrigin = origin
+				} else {
+					originRejected = true
 				}
+			}
+
+			// Log rejected CORS requests for security monitoring
+			if originRejected {
+				logger.Warn().
+					Str("origin", origin).
+					Str("path", r.URL.Path).
+					Str("method", r.Method).
+					Msg("CORS request rejected: origin not in whitelist")
 			}
 
 			// Set CORS headers if origin is allowed

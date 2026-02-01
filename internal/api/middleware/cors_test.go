@@ -1,20 +1,91 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/rs/zerolog"
 )
+
+// TestCORS_ProductionMode_BlockedOrigin_LogsWarning verifies that rejected CORS requests are logged
+func TestCORS_ProductionMode_BlockedOrigin_LogsWarning(t *testing.T) {
+	cfg := config.CORSConfig{
+		AllowAllOrigins: false,
+		AllowedOrigins:  []string{"https://sel.events"},
+	}
+
+	// Create a buffer to capture log output
+	var logBuf bytes.Buffer
+	logger := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	handler := CORS(cfg, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	req.Header.Set("Origin", "https://evil.com")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Request should succeed but without CORS headers
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Origin header, got %s", got)
+	}
+
+	// Verify that a warning was logged
+	logOutput := logBuf.String()
+	if logOutput == "" {
+		t.Fatal("expected log output, got empty string")
+	}
+
+	// Parse the JSON log entry
+	var logEntry map[string]interface{}
+	if err := json.Unmarshal([]byte(logOutput), &logEntry); err != nil {
+		t.Fatalf("failed to parse log output as JSON: %v\nOutput: %s", err, logOutput)
+	}
+
+	// Verify log level is warning
+	if level, ok := logEntry["level"].(string); !ok || level != "warn" {
+		t.Errorf("expected log level 'warn', got %v", logEntry["level"])
+	}
+
+	// Verify origin is logged
+	if origin, ok := logEntry["origin"].(string); !ok || origin != "https://evil.com" {
+		t.Errorf("expected origin 'https://evil.com' in log, got %v", logEntry["origin"])
+	}
+
+	// Verify path is logged
+	if path, ok := logEntry["path"].(string); !ok || path != "/api/v1/events" {
+		t.Errorf("expected path '/api/v1/events' in log, got %v", logEntry["path"])
+	}
+
+	// Verify method is logged
+	if method, ok := logEntry["method"].(string); !ok || method != "GET" {
+		t.Errorf("expected method 'GET' in log, got %v", logEntry["method"])
+	}
+
+	// Verify message contains relevant info
+	if msg, ok := logEntry["message"].(string); !ok || msg != "CORS request rejected: origin not in whitelist" {
+		t.Errorf("expected message about CORS rejection, got %v", logEntry["message"])
+	}
+}
 
 func TestCORS_DevelopmentMode(t *testing.T) {
 	cfg := config.CORSConfig{
 		AllowAllOrigins: true,
 		AllowedOrigins:  nil,
 	}
+	logger := zerolog.Nop() // No-op logger for tests
 
-	handler := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS(cfg, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -41,8 +112,9 @@ func TestCORS_ProductionMode_AllowedOrigin(t *testing.T) {
 		AllowAllOrigins: false,
 		AllowedOrigins:  []string{"https://sel.events", "https://admin.sel.events"},
 	}
+	logger := zerolog.Nop() // No-op logger for tests
 
-	handler := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS(cfg, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -65,8 +137,9 @@ func TestCORS_ProductionMode_BlockedOrigin(t *testing.T) {
 		AllowAllOrigins: false,
 		AllowedOrigins:  []string{"https://sel.events"},
 	}
+	logger := zerolog.Nop() // No-op logger for tests
 
-	handler := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS(cfg, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -90,8 +163,9 @@ func TestCORS_NoOriginHeader(t *testing.T) {
 		AllowAllOrigins: true,
 		AllowedOrigins:  nil,
 	}
+	logger := zerolog.Nop() // No-op logger for tests
 
-	handler := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS(cfg, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -115,8 +189,9 @@ func TestCORS_PreflightRequest(t *testing.T) {
 		AllowAllOrigins: true,
 		AllowedOrigins:  nil,
 	}
+	logger := zerolog.Nop() // No-op logger for tests
 
-	handler := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORS(cfg, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler should not be called for OPTIONS preflight")
 	}))
 

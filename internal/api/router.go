@@ -321,7 +321,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Note: Security headers and CORS must be applied first to ensure they're set on all responses
 	// HTTPMetrics is last (innermost) so it captures actual handler latency, not middleware overhead
 	handler := middleware.SecurityHeaders(requireHTTPS)(mux)
-	handler = middleware.CORS(cfg.CORS)(handler)
+	handler = middleware.CORS(cfg.CORS, logger)(handler)
 	handler = middleware.CorrelationID(logger)(handler)
 	handler = middleware.RequestLogging(logger)(handler)
 	handler = middleware.RateLimit(cfg.RateLimit)(handler)
