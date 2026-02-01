@@ -17,6 +17,7 @@ var (
 	setupNonInteractive bool
 	setupDockerMode     bool
 	setupAllowProd      bool
+	setupNoBackup       bool
 )
 
 // setupCmd provides interactive first-time setup
@@ -53,6 +54,7 @@ func init() {
 	setupCmd.Flags().BoolVar(&setupNonInteractive, "non-interactive", false, "run setup without prompts (use defaults)")
 	setupCmd.Flags().BoolVar(&setupDockerMode, "docker", false, "configure for Docker environment")
 	setupCmd.Flags().BoolVar(&setupAllowProd, "allow-production-secrets", false, "allow writing secrets to .env when ENVIRONMENT is staging/production")
+	setupCmd.Flags().BoolVar(&setupNoBackup, "no-backup", false, "skip creating .env.backup file")
 }
 
 func runSetup() error {
@@ -64,6 +66,7 @@ func runSetup() error {
 	}
 
 	// Check if .env already exists
+	backupCreated := false
 	if fileExists(".env") {
 		if !setupNonInteractive {
 			fmt.Println("⚠️  .env file already exists!")
@@ -72,11 +75,19 @@ func runSetup() error {
 				return nil
 			}
 		}
-		// Backup existing .env
-		if err := os.Rename(".env", ".env.backup"); err != nil {
-			fmt.Printf("⚠️  Could not backup existing .env: %v\n", err)
+		// Backup existing .env unless --no-backup is set
+		if !setupNoBackup {
+			if err := os.Rename(".env", ".env.backup"); err != nil {
+				fmt.Printf("⚠️  Could not backup existing .env: %v\n", err)
+			} else {
+				fmt.Println("✓ Backed up existing .env to .env.backup")
+				backupCreated = true
+			}
 		} else {
-			fmt.Println("✓ Backed up existing .env to .env.backup")
+			// Just remove the old .env file
+			if err := os.Remove(".env"); err != nil {
+				fmt.Printf("⚠️  Could not remove existing .env: %v\n", err)
+			}
 		}
 	}
 
@@ -503,6 +514,30 @@ func runSetup() error {
 
 	fmt.Printf("Configuration saved to: %s\n", filepath.Join(getWorkingDir(), ".env"))
 	fmt.Println()
+
+	// Cleanup backup file if created
+	if backupCreated {
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println()
+		fmt.Println("A backup of your previous .env file was saved to .env.backup")
+
+		if setupNonInteractive {
+			// In non-interactive mode, keep the backup for safety
+			fmt.Println("Backup file retained. You can safely delete it once you've verified the new configuration.")
+		} else {
+			if confirm("Remove .env.backup file now?", false) {
+				if err := os.Remove(".env.backup"); err != nil {
+					fmt.Printf("⚠️  Could not remove .env.backup: %v\n", err)
+					fmt.Println("You can manually remove it with: rm .env.backup")
+				} else {
+					fmt.Println("✓ Removed .env.backup")
+				}
+			} else {
+				fmt.Println("Backup file retained. You can remove it later with: rm .env.backup")
+			}
+		}
+		fmt.Println()
+	}
 
 	return nil
 }
