@@ -948,11 +948,23 @@ create_db_snapshot() {
             return 1
         fi
     fi
+    # Load environment to get DATABASE_URL
+    local env_file="${CONFIG_DIR}/environments/.env.${env}"
+    if [[ -f "${env_file}" ]]; then
+        set -a  # Export all variables
+        source "${env_file}"
+        set +a
+        log "INFO" "Loaded environment from ${env_file}"
+    else
+        log "ERROR" "Environment file not found: ${env_file}"
+        return 1
+    fi
     
     # Create snapshot using CLI
     log "INFO" "Creating database snapshot before deployment"
     
     local snapshot_output
+    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" 2>&1)
     snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" 2>&1)
     local snapshot_status=$?
     
