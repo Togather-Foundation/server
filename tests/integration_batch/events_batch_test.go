@@ -1,4 +1,4 @@
-package integration
+package integration_batch
 
 import (
 	"bytes"

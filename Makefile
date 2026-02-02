@@ -95,6 +95,9 @@ test-ci:
 	@echo "==> Running integration tests..."
 	@go test -v -race ./tests/integration/...
 	@echo ""
+	@echo "==> Running batch integration tests (with River workers)..."
+	@go test -v -race ./tests/integration_batch/...
+	@echo ""
 	@echo "==> Running E2E tests..."
 	@go test -v -race ./tests/e2e/...
 	@echo ""

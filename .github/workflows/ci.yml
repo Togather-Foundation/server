@@ -170,12 +170,64 @@ jobs:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+       - name: Upload coverage to Codecov
+         uses: codecov/codecov-action@v4
+         with:
+           files: ./coverage-integration.out
+           flags: integration
+           fail_ci_if_error: false
+
+  # Batch integration tests (with River workers)
+  test-integration-batch:
+    name: Batch Integration Tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ci-full]')
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: sel_test
+          POSTGRES_PASSWORD: sel_test_pass
+          POSTGRES_DB: sel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          files: ./coverage-integration.out
-          flags: integration
-          fail_ci_if_error: false
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U sel_test; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+
+      - name: Install migrate tool
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+      - name: Run database migrations
+        run: make migrate-up
+        env:
+          DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+
+      - name: Run batch integration tests
+        run: go test -v -race -p 1 ./tests/integration_batch/...
+        env:
+          DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+          TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
 
   # Federation sync tests (T116)
   test-federation:

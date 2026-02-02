@@ -1,4 +1,4 @@
-package integration
+package integration_batch
 
 import (
 	"bytes"
@@ -50,7 +50,7 @@ var (
 	sharedConfig    config.Config
 )
 
-const sharedContainerName = "togather-integration-db"
+const sharedContainerName = "togather-integration-batch-db"
 
 func TestMain(m *testing.M) {
 	code := m.Run()
@@ -69,9 +69,18 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	routerWithClient := api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date")
 
-	// NOTE: River workers are NOT started in this package to optimize test execution time.
-	// Only batch ingestion tests (in tests/integration_batch/) require River workers.
-	// This saves ~6+ minutes of overhead for the 95% of tests that don't need job processing.
+	// Start River workers for batch ingestion tests
+	// This is the key difference from tests/integration - we NEED River workers here
+	if routerWithClient.RiverClient != nil {
+		if err := routerWithClient.RiverClient.Start(ctx); err != nil {
+			t.Fatalf("failed to start river workers: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := routerWithClient.RiverClient.Stop(context.Background()); err != nil {
+				t.Logf("failed to stop river workers: %v", err)
+			}
+		})
+	}
 
 	server := httptest.NewServer(routerWithClient.Handler)
 	t.Cleanup(server.Close)
