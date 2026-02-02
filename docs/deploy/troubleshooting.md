@@ -2,6 +2,36 @@
 
 Comprehensive guide for diagnosing and resolving common issues in Togather server deployments.
 
+## Installation Issues
+
+### Automated Installation Failed
+
+If `sudo ./install.sh` fails:
+
+1. **Check the installation log:**
+   ```bash
+   cat /var/log/togather-install.log
+   ```
+
+2. **Follow manual installation steps:**
+   See [MANUAL_INSTALL.md](./MANUAL_INSTALL.md) for step-by-step instructions to identify where the process failed.
+
+3. **Common installation failures:**
+   - **Docker permission denied**: User not in docker group
+     ```bash
+     sudo usermod -aG docker $USER
+     newgrp docker
+     ```
+   - **Port already in use**: Check ports 8080, 5433
+     ```bash
+     sudo lsof -i :8080
+     sudo lsof -i :5433
+     ```
+   - **Disk full**: Need 2GB+ free space
+     ```bash
+     df -h /opt
+     ```
+
 ## Quick Diagnosis
 
 ### Health Check Status

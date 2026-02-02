@@ -1,21 +1,80 @@
 # Quickstart: Deploying Togather Server
 
 **Target Audience**: Operators deploying Togather server for production, and developers setting up local development  
-**Time**: 30-45 minutes for production setup, 5-10 minutes for local development  
-**Prerequisites**: Linux server with Docker installed, Git, PostgreSQL access (for production)
+**Time**: 5 minutes for automated deployment, 30-45 minutes for manual setup, 5-10 minutes for local development  
+**Prerequisites**: Linux server with Docker installed, Git (for development)
 
 ---
 
 ## Table of Contents
 
-1. [Local Development Setup](#local-development-setup) ⭐ **Start here for development**
-2. [Production Deployment](#production-deployment)
-3. [Prerequisites Check](#prerequisites-check)
-4. [Initial Setup](#initial-setup)
-5. [First Deployment](#first-deployment)
-6. [Verify Deployment](#verify-deployment)
-7. [Common Operations](#common-operations)
-8. [Troubleshooting](#troubleshooting)
+1. [One-Command Installation](#one-command-installation) ⭐ **Start here for production**
+2. [Local Development Setup](#local-development-setup)
+3. [Production Deployment](#production-deployment)
+4. [Prerequisites Check](#prerequisites-check)
+5. [Initial Setup](#initial-setup)
+6. [First Deployment](#first-deployment)
+7. [Verify Deployment](#verify-deployment)
+8. [Common Operations](#common-operations)
+9. [Troubleshooting](#troubleshooting)
+
+---
+
+## One-Command Installation
+
+**⏱️ Time: 5 minutes | Target: Fresh Ubuntu/Debian server**
+
+The automated installer handles everything: binary installation, configuration generation, Docker setup, migrations, service creation, and health verification.
+
+### Quick Deploy
+
+```bash
+# On your local machine: Build and copy package
+make deploy-package
+scp dist/togather-server-*.tar.gz user@server:~/
+
+# On the target server: Extract and install
+tar -xzf togather-server-*.tar.gz
+cd togather-server-*/
+sudo ./install.sh
+
+# ✓ That's it! Server is healthy and running.
+```
+
+**What install.sh does:**
+1. Pre-flight checks (Docker, disk space, ports)
+2. Installs binary to `/usr/local/bin/togather-server`
+3. Copies files to `/opt/togather`
+4. Generates `.env` with secure secrets
+5. Starts Docker PostgreSQL and runs migrations
+6. Creates and starts systemd service
+7. Verifies health (30s timeout)
+8. Generates installation report with credentials
+
+**Outputs:**
+- **Credentials**: `/opt/togather/.env` (admin username/password, PostgreSQL credentials)
+- **Report**: `/opt/togather/installation-report.txt`
+- **Log**: `/var/log/togather-install.log`
+
+**Verify:**
+```bash
+# Check health
+togather-server healthcheck
+# Expected: "Status: healthy"
+
+# View credentials
+cat /opt/togather/installation-report.txt
+
+# Access API
+curl http://localhost:8080/api/v1/events | jq .
+```
+
+**Troubleshooting:**
+- **Installation failed**: Check `/var/log/togather-install.log`
+- **Manual steps needed**: See [MANUAL_INSTALL.md](./MANUAL_INSTALL.md)
+- **Common issues**: See [troubleshooting.md](./troubleshooting.md)
+
+**Skip to**: [Verify Deployment](#verify-deployment)
 
 ---
 
