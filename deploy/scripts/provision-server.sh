@@ -9,6 +9,7 @@
 # Environment variables:
 #   GO_VERSION - Go version to install (default: 1.24.12)
 #   DEPLOY_USER - Username for deployment (default: deploy)
+#   ENVIRONMENT - Application environment: development, staging, production (default: staging)
 #   SKIP_SSH_HARDEN - Skip SSH hardening prompt (default: false)
 #
 # Requirements:
@@ -22,6 +23,7 @@ set -euo pipefail
 # Default Go version matches go.mod toolchain requirement
 GO_VERSION="${GO_VERSION:-1.24.12}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
+APP_ENVIRONMENT="${ENVIRONMENT:-staging}"
 SKIP_SSH_HARDEN="${SKIP_SSH_HARDEN:-false}"
 
 # Colors for output
@@ -219,6 +221,25 @@ setup_deploy_user() {
         log_warn "  chmod 600 /home/$DEPLOY_USER/.ssh/authorized_keys"
     fi
     
+    # Set ENVIRONMENT variable globally for the deploy user
+    log_info "Setting ENVIRONMENT=$APP_ENVIRONMENT for $DEPLOY_USER..."
+    
+    # Add to user's profile so it's set on login
+    cat >> /home/"$DEPLOY_USER"/.profile <<EOF
+
+# Togather application environment (set by provisioning script)
+export ENVIRONMENT=$APP_ENVIRONMENT
+EOF
+    
+    # Also set in /etc/environment for system-wide access
+    if ! grep -q "^ENVIRONMENT=" /etc/environment 2>/dev/null; then
+        echo "ENVIRONMENT=$APP_ENVIRONMENT" >> /etc/environment
+        log_info "✓ ENVIRONMENT=$APP_ENVIRONMENT set system-wide in /etc/environment"
+    fi
+    
+    chown "$DEPLOY_USER":"$DEPLOY_USER" /home/"$DEPLOY_USER"/.profile
+    log_info "✓ ENVIRONMENT=$APP_ENVIRONMENT set in $DEPLOY_USER's profile"
+    
     log_info "✓ Deploy user created"
 }
 
@@ -318,7 +339,8 @@ print_next_steps() {
     echo ""
     echo "     # Configure and start:"
     echo "     cd /opt/togather"
-    echo "     ENVIRONMENT=staging ./server setup --docker --allow-production-secrets"
+    echo "     ./server setup --docker --allow-production-secrets"
+    echo "     # Note: ENVIRONMENT=$APP_ENVIRONMENT is set globally, no need to prefix commands"
     echo ""
     echo "Security notes:"
     echo "  - Root SSH login is now DISABLED"
@@ -336,6 +358,7 @@ main() {
     log_info "Configuration:"
     log_info "  GO_VERSION: ${GO_VERSION}"
     log_info "  DEPLOY_USER: ${DEPLOY_USER}"
+    log_info "  ENVIRONMENT: ${APP_ENVIRONMENT}"
     echo ""
     
     check_root
