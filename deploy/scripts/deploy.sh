@@ -59,6 +59,7 @@ GIT_SHORT_COMMIT=""
 DEPLOYMENT_TIMESTAMP=""
 DEPLOYED_BY="${USER}@$(hostname)"
 SNAPSHOT_PATH=""  # Captured during create_db_snapshot for rollback history
+COMPOSE_CMD="docker compose"  # Default to plugin mode, detected in validate_tool_versions()
 
 # ============================================================================
 # LOGGING FUNCTIONS
@@ -499,12 +500,12 @@ validate_tool_versions() {
         log "ERROR" "  Standalone: https://docs.docker.com/compose/install/standalone/"
         ((errors++))
     else
-        local compose_cmd="docker-compose"
+        COMPOSE_CMD="docker-compose"
         if ! command -v docker-compose &> /dev/null; then
-            compose_cmd="docker compose"
+            COMPOSE_CMD="docker compose"
         fi
         
-        local compose_version=$($compose_cmd version --short 2>/dev/null || echo "0.0.0")
+        local compose_version=$(${COMPOSE_CMD} version --short 2>/dev/null || echo "0.0.0")
         local compose_major=$(echo "$compose_version" | cut -d. -f1 | tr -d 'v')
         
         if [[ $compose_major -lt 2 ]]; then
@@ -1084,7 +1085,7 @@ deploy_to_slot() {
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"
     
-    if ! docker-compose -f "${compose_file}" up -d "${slot}"; then
+    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d "${slot}"; then
         log "ERROR" "Failed to deploy to ${slot} slot"
         return 1
     fi
