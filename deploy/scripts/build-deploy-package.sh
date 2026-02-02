@@ -241,7 +241,10 @@ if [[ -d "${APP_DIR}" ]]; then
 fi
 
 sudo mkdir -p "${APP_DIR}"
+# Use shopt to enable dotglob to include hidden files
+shopt -s dotglob
 sudo cp -r * "${APP_DIR}/"
+shopt -u dotglob
 sudo chown -R $(whoami):$(whoami) "${APP_DIR}"
 echo "  ✓ Application files installed"
 
