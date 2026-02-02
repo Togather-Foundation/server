@@ -120,7 +120,7 @@ func TestIngestEventsValidation(t *testing.T) {
 			if _, err := tmpFile.WriteString(tt.content); err != nil {
 				t.Fatalf("failed to write temp file: %v", err)
 			}
-			tmpFile.Close()
+			_ = tmpFile.Close()
 
 			// Set up test API key
 			origAPIKey := os.Getenv("API_KEY")
@@ -177,7 +177,7 @@ func TestIngestEventsMissingAPIKey(t *testing.T) {
 	if _, err := tmpFile.WriteString(content); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Clear API key
 	origAPIKey := os.Getenv("API_KEY")

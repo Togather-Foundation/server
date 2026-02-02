@@ -196,7 +196,7 @@ func TestDeploymentFullFlow(t *testing.T) {
 		// Get container logs for verification
 		logs, err := appContainer.Logs(ctx)
 		if err == nil {
-			defer logs.Close()
+			defer func() { _ = logs.Close() }()
 			t.Log("Application container logs available")
 		}
 	})
@@ -459,7 +459,7 @@ func validateHealthCheck(t *testing.T, ctx context.Context, healthURL string) {
 
 	resp, err := client.Do(req)
 	require.NoError(t, err, "Health check request failed")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "Health check returned non-200 status")
 

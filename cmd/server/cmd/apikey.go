@@ -195,8 +195,8 @@ func listAPIKeys() error {
 
 	// Print results in table format
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tNAME\tROLE\tSTATUS\tCREATED\tLAST USED")
-	fmt.Fprintln(w, "--\t----\t----\t------\t-------\t---------")
+	_, _ = fmt.Fprintln(w, "ID\tNAME\tROLE\tSTATUS\tCREATED\tLAST USED")
+	_, _ = fmt.Fprintln(w, "--\t----\t----\t------\t-------\t---------")
 
 	count := 0
 	for rows.Next() {
@@ -219,7 +219,7 @@ func listAPIKeys() error {
 			lastUsed = lastUsedAt.Format("2006-01-02")
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			id[:8]+"...", // Truncate UUID for display
 			name,
 			role,
@@ -230,7 +230,7 @@ func listAPIKeys() error {
 		count++
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	if count == 0 {
 		fmt.Println("\nNo API keys found. Create one with: server api-key create <name>")
@@ -299,7 +299,7 @@ func loadEnvFileSimple(path string) {
 	if err != nil {
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

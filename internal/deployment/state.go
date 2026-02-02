@@ -144,7 +144,7 @@ func SaveState(path string, state *State) error {
 	}
 
 	if err := os.Rename(tmpFile, path); err != nil {
-		os.Remove(tmpFile) // Clean up temp file
+		_ = os.Remove(tmpFile) // Clean up temp file
 		return fmt.Errorf("failed to rename state file: %w", err)
 	}
 

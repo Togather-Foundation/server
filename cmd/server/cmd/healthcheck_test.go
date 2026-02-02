@@ -70,7 +70,7 @@ func TestPerformHealthCheck(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
 				if str, ok := tt.responseBody.(string); ok {
-					fmt.Fprint(w, str)
+					_, _ = fmt.Fprint(w, str)
 				} else {
 					_ = json.NewEncoder(w).Encode(tt.responseBody)
 				}
@@ -370,9 +370,10 @@ func TestSlotDetectionFromURL(t *testing.T) {
 			testURL := tt.url
 			if tt.url != "http://example.com/health" {
 				testURL = server.URL
-				if tt.expectedSlot == "blue" {
+				switch tt.expectedSlot {
+				case "blue":
 					testURL = "http://localhost:8081/health"
-				} else if tt.expectedSlot == "green" {
+				case "green":
 					testURL = "http://localhost:8082/health"
 				}
 			}

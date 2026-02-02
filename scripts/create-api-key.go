@@ -106,7 +106,7 @@ func loadEnvFile(paths ...string) {
 	if err != nil {
 		return // File doesn't exist, that's ok
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -128,7 +128,7 @@ func loadEnvFile(paths ...string) {
 
 		// Only set if not already in environment
 		if os.Getenv(key) == "" {
-			os.Setenv(key, value)
+			_ = os.Setenv(key, value)
 		}
 	}
 }

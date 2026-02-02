@@ -136,9 +136,10 @@ func RecordQuery(operation string, start time.Time, err error) {
 	if err != nil {
 		// Classify error type (simplified - can be expanded based on pgx error types)
 		errorType := "query_error"
-		if err == context.Canceled {
+		switch err {
+		case context.Canceled:
 			errorType = "canceled"
-		} else if err == context.DeadlineExceeded {
+		case context.DeadlineExceeded:
 			errorType = "timeout"
 		}
 		DBErrors.WithLabelValues(operation, errorType).Inc()

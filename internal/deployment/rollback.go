@@ -55,7 +55,7 @@ func CheckHealth(ctx context.Context, url string, timeout time.Duration) (*Healt
 			Message: fmt.Sprintf("health check failed: %v", err),
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return &HealthCheckResult{

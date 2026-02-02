@@ -138,8 +138,8 @@ func TestDevJWTToken(t *testing.T) {
 
 func TestDevJWTToken_EnvVar(t *testing.T) {
 	// Set custom secret
-	os.Setenv("DEV_JWT_SECRET", "custom_test_secret")
-	defer os.Unsetenv("DEV_JWT_SECRET")
+	_ = os.Setenv("DEV_JWT_SECRET", "custom_test_secret")
+	defer func() { _ = os.Unsetenv("DEV_JWT_SECRET") }()
 
 	token, err := DevJWTToken("admin", "test-user")
 	if err != nil {

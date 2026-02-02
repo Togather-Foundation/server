@@ -197,8 +197,8 @@ func printStatusTable(state *deployment.State) error {
 	if len(state.DeploymentHistory) > 0 {
 		fmt.Printf("Deployment History (%d):\n", len(state.DeploymentHistory))
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(w, "  VERSION\tSLOT\tDEPLOYED AT\tGIT COMMIT\n")
-		fmt.Fprintf(w, "  -------\t----\t-----------\t----------\n")
+		_, _ = fmt.Fprintf(w, "  VERSION\tSLOT\tDEPLOYED AT\tGIT COMMIT\n")
+		_, _ = fmt.Fprintf(w, "  -------\t----\t-----------\t----------\n")
 		for _, dep := range state.DeploymentHistory {
 			gitCommit := dep.GitCommit
 			if len(gitCommit) > 8 {
@@ -211,7 +211,7 @@ func printStatusTable(state *deployment.State) error {
 				gitCommit,
 			)
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	return nil

@@ -162,14 +162,13 @@ func Create(ctx context.Context, opts CreateOptions) (*Snapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pgpass file: %w", err)
 	}
-	defer os.Remove(pgpassFile)
+	defer func() { _ = os.Remove(pgpassFile) }()
 
 	// Run pg_dump with gzip compression
 	startTime := time.Now()
 	if err := runPgDump(ctx, pgpassFile, opts, snapshotPath); err != nil {
 		// Clean up on failure
-		os.Remove(snapshotPath)
-		os.Remove(metadataPath)
+		_ = os.Remove(snapshotPath)
 		return nil, fmt.Errorf("pg_dump failed: %w", err)
 	}
 	duration := time.Since(startTime)
@@ -177,8 +176,7 @@ func Create(ctx context.Context, opts CreateOptions) (*Snapshot, error) {
 	// Validate snapshot if requested
 	if opts.Validate {
 		if err := validateSnapshot(snapshotPath); err != nil {
-			os.Remove(snapshotPath)
-			os.Remove(metadataPath)
+			_ = os.Remove(snapshotPath)
 			return nil, fmt.Errorf("snapshot validation failed: %w", err)
 		}
 	}
@@ -370,18 +368,18 @@ func createPgpassFile(host, port, database, user, password string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer tmpFile.Close()
+	defer func() { _ = tmpFile.Close() }()
 
 	// Set restrictive permissions
 	if err := os.Chmod(tmpFile.Name(), 0600); err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", err
 	}
 
 	// Write pgpass entry: hostname:port:database:username:password
 	line := fmt.Sprintf("%s:%s:%s:%s:%s\n", host, port, database, user, password)
 	if _, err := tmpFile.WriteString(line); err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", err
 	}
 
@@ -394,7 +392,7 @@ func runPgDump(ctx context.Context, pgpassFile string, opts CreateOptions, outpu
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 
 	// Run pg_dump
 	pgDumpCmd := exec.CommandContext(ctx, "pg_dump",

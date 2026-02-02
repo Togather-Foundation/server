@@ -17,9 +17,9 @@ func TestLoad_ProductionCORS_EmptyOrigins(t *testing.T) {
 	defer func() {
 		for k, v := range originalEnv {
 			if v == "" {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			} else {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 		}
 	}()
@@ -50,9 +50,9 @@ func TestLoad_ProductionCORS_ValidOrigins(t *testing.T) {
 	defer func() {
 		for k, v := range originalEnv {
 			if v == "" {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			} else {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 		}
 	}()
@@ -86,9 +86,9 @@ func TestLoad_DevelopmentCORS_AllowsAll(t *testing.T) {
 	defer func() {
 		for k, v := range originalEnv {
 			if v == "" {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			} else {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 		}
 	}()
@@ -119,9 +119,9 @@ func TestLoad_TestEnvironment_AllowsAll(t *testing.T) {
 	defer func() {
 		for k, v := range originalEnv {
 			if v == "" {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			} else {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 		}
 	}()

@@ -392,7 +392,7 @@ func outputJSON(results []HealthCheckResult) {
 // outputTable outputs results as a formatted table
 func outputTable(results []HealthCheckResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SLOT\tSTATUS\tDB\tRIVER\tJSONLD\tLATENCY\tURL")
+	_, _ = fmt.Fprintln(w, "SLOT\tSTATUS\tDB\tRIVER\tJSONLD\tLATENCY\tURL")
 	fmt.Fprintln(w, "----\t------\t--\t-----\t------\t-------\t---")
 
 	for _, result := range results {
@@ -428,7 +428,7 @@ func outputTable(results []HealthCheckResult) {
 			slot, status, dbStatus, riverStatus, jsonldStatus, latency, result.URL)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 }
 
 // outputSimple outputs a simple one-line result (for scripts)
