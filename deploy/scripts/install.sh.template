@@ -112,15 +112,27 @@ configure_caddy() {
         return 1
     fi
     
-    # Reload Caddy
-    log "  → Reloading Caddy service..."
-    if systemctl reload caddy; then
-        success "Caddy configured and reloaded for ${ENVIRONMENT}"
+    # Reload Caddy (or start if not active)
+    log "  → Starting/reloading Caddy service..."
+    if systemctl is-active --quiet caddy; then
+        # Caddy is running, reload config
+        if systemctl reload caddy; then
+            success "Caddy configuration reloaded"
+        else
+            warning "Failed to reload Caddy - attempting restart..."
+            systemctl restart caddy && success "Caddy restarted successfully"
+        fi
     else
-        warning "Failed to reload Caddy - you may need to restart it manually"
-        return 1
+        # Caddy not running, start it
+        if systemctl start caddy; then
+            success "Caddy started successfully"
+        else
+            warning "Failed to start Caddy - check systemctl status caddy"
+            # Don't return error - let script continue
+        fi
     fi
     
+    # Always return success - Caddy issues shouldn't block installation
     return 0
 }
 
