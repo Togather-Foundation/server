@@ -953,7 +953,7 @@ create_db_snapshot() {
     log "INFO" "Creating database snapshot before deployment"
     
     local snapshot_output
-    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1)
+    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" 2>&1)
     local snapshot_status=$?
     
     if [[ $snapshot_status -ne 0 ]]; then
@@ -962,14 +962,17 @@ create_db_snapshot() {
         return 1
     fi
     
-    # Extract snapshot path from JSON output
-    SNAPSHOT_PATH=$(echo "${snapshot_output}" | jq -r '.snapshot_path // empty')
+    # Try to extract snapshot path from output (format may vary)
+    # Look for lines containing "snapshot" and file paths
+    SNAPSHOT_PATH=$(echo "${snapshot_output}" | grep -oE '/[^ ]+\.sql' | head -1 || echo "unknown")
     
-    if [[ -z "${SNAPSHOT_PATH}" ]]; then
-        log "WARN" "Could not extract snapshot path from output"
-        SNAPSHOT_PATH="unknown"
+    log "INFO" "Snapshot output: ${snapshot_output}"
+    if [[ "${SNAPSHOT_PATH}" != "unknown" ]]; then
+        log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
+    else
+        log "SUCCESS" "Database snapshot created (path not extracted from output)"
+        SNAPSHOT_PATH="pre-deploy-${env}"
     fi
-    
     log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
     return 0
 }
