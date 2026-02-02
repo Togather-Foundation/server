@@ -58,56 +58,91 @@ This guide walks you through deploying the Togather server to a fresh Linode VM 
 
 ## Server Preparation
 
-### 1. SSH into Your Linode
+### Quick Start: Automated Provisioning (Recommended)
+
+The fastest way to set up your server is using our automated provisioning script:
+
+```bash
+# SSH into your Linode as root
+ssh root@YOUR_LINODE_IP
+
+# Download and run the provisioning script
+curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/togather/main/deploy/scripts/provision-server.sh | sudo bash
+
+# Or if you've already cloned the repo:
+sudo ./deploy/scripts/provision-server.sh
+```
+
+**This script will:**
+- Update system packages
+- Install Docker, Docker Compose, and Go
+- Create a 'deploy' user with sudo access
+- Configure firewall (UFW) - allow SSH, HTTP, HTTPS
+- Set up fail2ban for SSH protection
+- Harden SSH (disable root login, password auth)
+- Configure system limits and swap space
+
+After the script completes, reconnect as the deploy user:
+
+```bash
+ssh deploy@YOUR_LINODE_IP
+```
+
+---
+
+### Manual Setup (Alternative)
+
+If you prefer manual setup or the automated script doesn't work for your environment:
+
+<details>
+<summary>Click to expand manual setup instructions</summary>
+
+#### 1. SSH into Your Linode
 
 ```bash
 # Replace with your Linode's IP address
 ssh root@YOUR_LINODE_IP
 ```
 
-### 2. Initial Server Hardening
+#### 2. Initial Server Hardening
 
 ```bash
 # Update system packages
 apt update && apt upgrade -y
 
-# Create a non-root user (replace 'togather' with your preferred username)
-adduser togather
-usermod -aG sudo togather
+# Create a non-root user (replace 'deploy' with your preferred username)
+adduser deploy
+usermod -aG sudo deploy
 
 # Set up SSH key authentication for the new user
-mkdir -p /home/togather/.ssh
-cp /root/.ssh/authorized_keys /home/togather/.ssh/
-chown -R togather:togather /home/togather/.ssh
-chmod 700 /home/togather/.ssh
-chmod 600 /home/togather/.ssh/authorized_keys
+mkdir -p /home/deploy/.ssh
+cp /root/.ssh/authorized_keys /home/deploy/.ssh/
+chown -R deploy:deploy /home/deploy/.ssh
+chmod 700 /home/deploy/.ssh
+chmod 600 /home/deploy/.ssh/authorized_keys
 
 # Disable root SSH login (optional but recommended)
-sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-systemctl restart sshd
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl restart ssh
 
 # Set up firewall
 ufw allow OpenSSH
 ufw allow 80/tcp    # HTTP
 ufw allow 443/tcp   # HTTPS
-ufw allow 8080/tcp  # Application (temporarily, until you set up a reverse proxy)
 ufw --force enable
 
 # Exit and reconnect as the new user
 exit
 ```
 
-### 3. Reconnect as Your New User
+#### 3. Reconnect as Your New User
 
 ```bash
-ssh togather@YOUR_LINODE_IP
+ssh deploy@YOUR_LINODE_IP
 ```
 
----
-
-## Install Dependencies
-
-### 1. Install Docker & Docker Compose
+#### 4. Install Docker & Docker Compose
 
 ```bash
 # Install Docker
@@ -120,38 +155,34 @@ sudo apt-get install -y docker-compose-plugin
 
 # Log out and back in for group changes to take effect
 exit
-ssh togather@YOUR_LINODE_IP
+ssh deploy@YOUR_LINODE_IP
 
 # Verify installations
 docker --version        # Should show Docker version 27.x+
 docker compose version  # Should show Docker Compose version 2.x+
 ```
 
-### 2. Install PostgreSQL Client Tools
+#### 5. Install Go (if building from source)
 
 ```bash
-# Install PostgreSQL client (for pg_dump, psql)
-sudo apt-get install -y postgresql-client-16
-
-# Install other useful tools
-sudo apt-get install -y git jq curl make
-```
-
-### 3. Install Go (if you want to build from source)
-
-```bash
-# Download and install Go 1.24
-wget https://go.dev/dl/go1.24.12.linux-amd64.tar.gz
+# Download and install Go 1.23+
+GO_VERSION="1.23.5"
+wget "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.24.12.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
 
 # Add to PATH
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc
 source ~/.bashrc
 
+source ~/.bashrc
+
 # Verify
-go version  # Should show: go version go1.24.12 linux/amd64
+go version  # Should show: go version go1.23.5 linux/amd64
+```
+
+</details>
 ```
 
 ---
