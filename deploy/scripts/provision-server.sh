@@ -63,8 +63,16 @@ detect_os() {
 
 update_system() {
     log_info "Updating system packages..."
+    
+    # Set non-interactive mode and keep existing config files
+    export DEBIAN_FRONTEND=noninteractive
+    export DEBIAN_PRIORITY=critical
+    
     apt-get update -qq
-    apt-get upgrade -y -qq
+    
+    # Upgrade with config file handling (keep local versions)
+    apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade -y -qq
+    
     apt-get install -y -qq \
         apt-transport-https \
         ca-certificates \
