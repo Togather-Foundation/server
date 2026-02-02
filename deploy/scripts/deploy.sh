@@ -559,10 +559,24 @@ validate_tool_versions() {
 validate_git_commit() {
     log "INFO" "Validating Git commit"
     
-    # Get current Git commit
-    if ! git rev-parse HEAD &> /dev/null; then
-        log "ERROR" "Not in a Git repository"
-        return 1
+    # Check if we're in a Git repository
+    if ! git rev-parse HEAD &> /dev/null 2>&1; then
+        # Not a git repo - we're deploying from a package
+        # Extract version from package directory name (format: togather-server-<commit>)
+        local package_dir=$(basename "${PROJECT_ROOT}")
+        if [[ "$package_dir" =~ togather-server-([a-f0-9]+)$ ]]; then
+            GIT_SHORT_COMMIT="${BASH_REMATCH[1]}"
+            GIT_COMMIT="${GIT_SHORT_COMMIT}"
+            log "INFO" "Package deployment detected (not a git repository)"
+            log "INFO" "Using version from package name: ${GIT_SHORT_COMMIT}"
+            log "SUCCESS" "Package version validation passed: ${GIT_SHORT_COMMIT}"
+            return 0
+        else
+            log "ERROR" "Not in a Git repository and cannot determine version from package name"
+            log "ERROR" "Package directory: ${package_dir}"
+            log "ERROR" "Expected format: togather-server-<commit-hash>"
+            return 1
+        fi
     fi
     
     GIT_COMMIT=$(git rev-parse HEAD)
