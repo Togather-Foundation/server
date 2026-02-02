@@ -653,9 +653,10 @@ acquire_lock() {
         local state_dir=$(dirname "${STATE_FILE}")
         mkdir -p "${state_dir}"
         
-        # Create initial empty state file with minimal structure
-        cat > "${STATE_FILE}" <<'EOJSON'
+        # Create initial state file with environment set
+        cat > "${STATE_FILE}" <<EOJSON
 {
+  "environment": "${env}",
   "lock": {
     "locked": false
   },
@@ -667,6 +668,7 @@ EOJSON
         log "INFO" "State file created: ${STATE_FILE}"
     fi
     
+    # Try to create lock directory atomically (mkdir is atomic in POSIX)
     # Try to create lock directory atomically (mkdir is atomic in POSIX)
     if mkdir "$lock_dir" 2>/dev/null; then
         # Lock acquired - set trap to cleanup on exit
@@ -739,6 +741,10 @@ EOJSON
     local lock_expires_at=$(date -u -d "+30 minutes" +"%Y-%m-%dT%H:%M:%SZ")
     local locked_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
+    # Capture hostname before state update (avoid issues with command substitution)
+    local current_hostname=$(hostname)
+    local current_pid=$$
+    
     # Update state file with lock (atomic update with fsync)
     update_state_file_atomic \
         --arg lock_id "$lock_id" \
@@ -746,13 +752,15 @@ EOJSON
         --arg locked_by "$DEPLOYED_BY" \
         --arg locked_at "$locked_at" \
         --arg lock_expires_at "$lock_expires_at" \
-        --arg pid "$$" \
-        --arg hostname "$(hostname)" \
+        --arg pid "$current_pid" \
+        --arg hostname "$current_hostname" \
         '.lock = {locked: true, lock_id: $lock_id, deployment_id: $deployment_id, locked_by: $locked_by, locked_at: $locked_at, lock_expires_at: $lock_expires_at, pid: ($pid | tonumber), hostname: $hostname}'
     
     if [[ $? -ne 0 ]]; then
         log "ERROR" "Failed to update state file with lock"
-        rmdir "$lock_dir" 2>/dev/null || true
+        if [[ -n "${lock_dir:-}" ]]; then
+            rmdir "$lock_dir" 2>/dev/null || true
+        fi
         return 1
     fi
     
