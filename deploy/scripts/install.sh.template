@@ -524,9 +524,12 @@ fi
 # Configure Caddy
 configure_caddy
 
-# Restart service to pick up new port
-if systemctl restart togather; then
-    success "Service restarted with new configuration"
+# Restart service to pick up new port configuration
+log "  → Restarting service to apply port 8081..."
+systemctl stop togather
+sleep 2
+if systemctl start togather; then
+    success "Service restarted with port 8081"
     
     # Wait for service to be active
     sleep 3
@@ -540,11 +543,12 @@ if systemctl restart togather; then
         fi
         if [[ $i -eq 15 ]]; then
             warning "Health check timeout on port 8081 (service may still be starting)"
+            warning "Try: sudo systemctl status togather"
         fi
         sleep 1
     done
 else
-    warning "Failed to restart service - check configuration"
+    error_exit "Failed to restart service with new configuration"
 fi
 
 echo ""
