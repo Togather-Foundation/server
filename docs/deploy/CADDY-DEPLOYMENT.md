@@ -40,16 +40,16 @@ This guide covers deploying Togather SEL server behind Caddy reverse proxy with 
 - DNS A records configured (see DNS Setup section)
 - Togather server built and ready to deploy
 
-## DNS Setup (Gandi)
+## DNS Setup
 
-Before installing Caddy, configure DNS in Gandi.net:
+Before installing Caddy, configure DNS:
 
 ### Staging Environment
 
 Add **A record**:
-- **Name**: `staging.toronto`
+- **Name**: `staging.<your city>`
 - **Type**: A
-- **Value**: `192.46.222.199`
+- **Value**: `<your-staging-server-ip>`
 - **TTL**: 300 (5 minutes for testing)
 
 ### Production Environment
@@ -66,10 +66,10 @@ Wait 5-15 minutes for DNS propagation, then test:
 
 ```bash
 # Test staging
-dig staging.toronto.togather.foundation
+dig staging.<city>.togather.foundation
 
 # Test production
-dig toronto.togather.foundation
+dig <city>.togather.foundation
 
 # Should return your server IP in the ANSWER section
 ```
