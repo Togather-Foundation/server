@@ -322,10 +322,38 @@ if [[ $AVAILABLE_GB -lt 2 ]]; then
     log "  ⚠️  Warning: Low disk space (${AVAILABLE_GB}GB available, 2GB+ recommended)"
 fi
 
+# Check for existing installation BEFORE port checks
+EXISTING_INSTALL=false
+if [[ -f "${APP_DIR}/.env" ]] && [[ -f /usr/local/bin/togather-server ]]; then
+    EXISTING_INSTALL=true
+    log "  ℹ️  Existing installation detected"
+fi
+
 # Check if ports are available
+# If existing installation and port in use, offer to stop service first
 for PORT in 8080 5433; do
     if sudo lsof -i :$PORT > /dev/null 2>&1; then
-        error_exit "Port $PORT is already in use"
+        if [[ "$EXISTING_INSTALL" == "true" ]]; then
+            log "  ℹ️  Port $PORT is in use (likely by existing Togather installation)"
+            
+            # Check if systemd service is running
+            if systemctl is-active --quiet togather 2>/dev/null; then
+                log "  → Stopping existing Togather service..."
+                sudo systemctl stop togather || true
+                sleep 2
+                
+                # Check if port is now free
+                if ! sudo lsof -i :$PORT > /dev/null 2>&1; then
+                    log "  ✓ Port $PORT freed"
+                else
+                    error_exit "Port $PORT still in use after stopping service"
+                fi
+            else
+                error_exit "Port $PORT is in use by another process (not Togather service)"
+            fi
+        else
+            error_exit "Port $PORT is already in use"
+        fi
     fi
 done
 log "  ✓ Ports 8080, 5433 available"
@@ -392,16 +420,19 @@ cd "${APP_DIR}"
 # CRITICAL: Data Protection - Backup Before Reinstallation
 # ============================================================================
 
-# Check for existing installation and volumes
-EXISTING_INSTALL=false
+# Check for existing volumes (EXISTING_INSTALL already checked earlier)
 EXISTING_VOLUMES=false
+PRESERVE_CREDS_FLAG=""
 
-if [[ -f "${APP_DIR}/.env" ]] && [[ -f /usr/local/bin/togather-server ]]; then
-    EXISTING_INSTALL=true
-fi
-
-if sudo docker volume ls | grep -q togather-db-data; then
+# Try docker volume inspect first (most reliable)
+if docker volume inspect togather-db-data &>/dev/null; then
     EXISTING_VOLUMES=true
+    log "  ✓ Found existing volume: togather-db-data"
+elif sudo docker volume inspect togather-db-data &>/dev/null; then
+    EXISTING_VOLUMES=true
+    log "  ✓ Found existing volume: togather-db-data (via sudo)"
+else
+    log "  ℹ️  No existing database volumes found"
 fi
 
 # Handle existing installation with data protection
@@ -416,10 +447,16 @@ if [[ "$EXISTING_INSTALL" == "true" ]] || [[ "$EXISTING_VOLUMES" == "true" ]]; t
         log "  🗄️  Database volumes found: togather-db-data"
         log ""
         
-        # Create backup directory
+        # Create backup directory with proper permissions
         BACKUP_DIR="${APP_DIR}/backups"
-        sudo mkdir -p "$BACKUP_DIR"
-        sudo chown "${INSTALL_USER}":"${INSTALL_USER}" "$BACKUP_DIR"
+        if ! sudo mkdir -p "$BACKUP_DIR" 2>> "$LOG_FILE"; then
+            log "  ⚠️  Warning: Could not create backup directory"
+            log "     Continuing without backup (not recommended)"
+        else
+            sudo chown -R "${INSTALL_USER}":"${INSTALL_USER}" "$BACKUP_DIR"
+            sudo chmod 755 "$BACKUP_DIR"
+            log "  ✓ Backup directory ready: $BACKUP_DIR"
+        fi
         
         # Generate backup filename with timestamp
         BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -429,39 +466,71 @@ if [[ "$EXISTING_INSTALL" == "true" ]] || [[ "$EXISTING_VOLUMES" == "true" ]]; t
         log "     Backup location: $BACKUP_FILE"
         log ""
         
-        # Start database if not running (needed for backup)
-        if ! sudo docker ps | grep -q togather-db; then
-            log "  → Starting database for backup..."
-            cd "${APP_DIR}"
-            if ! sudo -u "${INSTALL_USER}" docker compose -f deploy/docker/docker-compose.yml --env-file .env up -d togather-db >> "$LOG_FILE" 2>&1; then
-                log "  ⚠️  Warning: Could not start database for backup"
-            else
-                # Wait for database
-                for i in {1..15}; do
-                    if sudo docker exec togather-db pg_isready -U togather &>/dev/null; then
-                        break
-                    fi
-                    sleep 1
-                done
-            fi
-        fi
-        
-        # Create backup using togather-server snapshot command
-        cd "${APP_DIR}"
-        BACKUP_SUCCESS=false
-        if sudo -u "${INSTALL_USER}" bash -c "cd ${APP_DIR} && togather-server snapshot create --reason 'pre-reinstall-${BACKUP_TIMESTAMP}' --retention-days 30 --snapshot-dir ${BACKUP_DIR}" >> "$LOG_FILE" 2>&1; then
-            BACKUP_SUCCESS=true
-            # Find the created backup file
-            LATEST_BACKUP=$(sudo ls -t "${BACKUP_DIR}"/*.sql.gz 2>/dev/null | head -1)
-            if [[ -f "$LATEST_BACKUP" ]]; then
-                BACKUP_SIZE=$(du -h "$LATEST_BACKUP" | cut -f1)
-                log "  ✓ Backup created successfully: $(basename "$LATEST_BACKUP") ($BACKUP_SIZE)"
-            else
-                log "  ✓ Backup created successfully"
-            fi
+        # Ensure .env file exists before trying to use docker compose
+        if [[ ! -f "${APP_DIR}/.env" ]]; then
+            log "  ⚠️  No .env file found - cannot start database for backup"
+            log "     Skipping backup creation"
+            BACKUP_SUCCESS=false
         else
-            log "  ⚠️  Warning: Backup creation failed (see log for details)"
-            log "     Continuing with installation options..."
+            # Start database if not running (needed for backup)
+            DB_STARTED_FOR_BACKUP=false
+            if ! docker ps 2>/dev/null | grep -q togather-db && ! sudo docker ps 2>/dev/null | grep -q togather-db; then
+                log "  → Starting database for backup..."
+                cd "${APP_DIR}"
+                
+                # Try without sudo first, then with sudo
+                if docker compose -f deploy/docker/docker-compose.yml --env-file .env up -d togather-db >> "$LOG_FILE" 2>&1; then
+                    DB_STARTED_FOR_BACKUP=true
+                elif sudo -u "${INSTALL_USER}" docker compose -f deploy/docker/docker-compose.yml --env-file .env up -d togather-db >> "$LOG_FILE" 2>&1; then
+                    DB_STARTED_FOR_BACKUP=true
+                else
+                    log "  ⚠️  Warning: Could not start database for backup"
+                    BACKUP_SUCCESS=false
+                fi
+                
+                if [[ "$DB_STARTED_FOR_BACKUP" == "true" ]]; then
+                    # Wait for database to be ready
+                    log "  → Waiting for database to be ready..."
+                    DB_READY=false
+                    for i in {1..30}; do
+                        if docker exec togather-db pg_isready -U togather &>/dev/null 2>&1 || sudo docker exec togather-db pg_isready -U togather &>/dev/null 2>&1; then
+                            DB_READY=true
+                            log "  ✓ Database is ready"
+                            break
+                        fi
+                        sleep 1
+                    done
+                    
+                    if [[ "$DB_READY" == "false" ]]; then
+                        log "  ⚠️  Warning: Database did not become ready in 30 seconds"
+                        BACKUP_SUCCESS=false
+                    fi
+                fi
+            else
+                log "  ✓ Database is already running"
+            fi
+            
+            # Create backup using togather-server snapshot command
+            if [[ "$BACKUP_SUCCESS" != "false" ]]; then
+                cd "${APP_DIR}"
+                BACKUP_SUCCESS=false
+                log "  → Running backup command..."
+                if sudo -u "${INSTALL_USER}" bash -c "cd ${APP_DIR} && togather-server snapshot create --reason 'pre-reinstall-${BACKUP_TIMESTAMP}' --retention-days 30 --snapshot-dir ${BACKUP_DIR}" >> "$LOG_FILE" 2>&1; then
+                    BACKUP_SUCCESS=true
+                    # Find the created backup file
+                    LATEST_BACKUP=$(ls -t "${BACKUP_DIR}"/*.sql.gz 2>/dev/null | head -1)
+                    if [[ -f "$LATEST_BACKUP" ]]; then
+                        BACKUP_SIZE=$(du -h "$LATEST_BACKUP" | cut -f1)
+                        log "  ✓ Backup created successfully: $(basename "$LATEST_BACKUP") ($BACKUP_SIZE)"
+                    else
+                        log "  ✓ Backup command completed"
+                    fi
+                else
+                    log "  ❌ Backup creation failed (see $LOG_FILE for details)"
+                    log "     Last 10 lines of log:"
+                    tail -10 "$LOG_FILE" | sed 's/^/     /'
+                fi
+            fi
         fi
         log ""
         
@@ -504,18 +573,32 @@ if [[ "$EXISTING_INSTALL" == "true" ]] || [[ "$EXISTING_VOLUMES" == "true" ]]; t
                 log "     Upgrading installation in place..."
                 log ""
                 # Don't remove volumes - just update files
+                # Use --preserve-credentials flag to reuse existing credentials
+                PRESERVE_CREDS_FLAG="--preserve-credentials"
                 ;;
             2)
                 log "  ⚠️  Selected: FRESH INSTALL"
                 log ""
+                
+                # Safety check: Don't allow FRESH INSTALL if backup failed
+                if [[ "$BACKUP_SUCCESS" != "true" ]]; then
+                    log "  ❌ CANNOT PROCEED WITH FRESH INSTALL"
+                    log ""
+                    log "  Backup creation failed, and FRESH INSTALL would destroy existing data."
+                    log "  This is too dangerous to proceed."
+                    log ""
+                    log "  Options:"
+                    log "    1. Choose PRESERVE DATA (option 1) to keep existing data"
+                    log "    2. Manually create a backup first, then run install.sh again"
+                    log "    3. Fix the backup issue (check $LOG_FILE for details)"
+                    log ""
+                    exit 1
+                fi
+                
                 log "  ⚠️⚠️⚠️  WARNING: THIS WILL DELETE ALL DATA ⚠️⚠️⚠️"
                 log ""
-                if [[ "$BACKUP_SUCCESS" == "true" ]]; then
-                    log "  Backup available at: ${BACKUP_DIR}/"
-                    log "  To restore later: togather-server snapshot restore <backup-file>"
-                else
-                    log "  ⚠️  Backup was not successful - data may be lost!"
-                fi
+                log "  ✓ Backup available at: ${BACKUP_DIR}/"
+                log "  To restore later: togather-server snapshot restore <backup-file>"
                 log ""
                 
                 # Final confirmation
@@ -549,8 +632,8 @@ if [[ "$EXISTING_INSTALL" == "true" ]] || [[ "$EXISTING_VOLUMES" == "true" ]]; t
 fi
 
 # Run server setup command
-log "  → Running: togather-server setup --docker --non-interactive --allow-production-secrets --no-backup"
-if ! sudo -u "${INSTALL_USER}" ENVIRONMENT="$ENVIRONMENT" togather-server setup --docker --non-interactive --allow-production-secrets --no-backup >> "$LOG_FILE" 2>&1; then
+log "  → Running: togather-server setup --docker --non-interactive --allow-production-secrets --no-backup ${PRESERVE_CREDS_FLAG}"
+if ! sudo -u "${INSTALL_USER}" ENVIRONMENT="$ENVIRONMENT" togather-server setup --docker --non-interactive --allow-production-secrets --no-backup ${PRESERVE_CREDS_FLAG} >> "$LOG_FILE" 2>&1; then
     error_exit "Server setup failed (see log for details)"
 fi
 

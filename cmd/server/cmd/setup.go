@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	setupNonInteractive bool
-	setupDockerMode     bool
-	setupAllowProd      bool
-	setupNoBackup       bool
+	setupNonInteractive      bool
+	setupDockerMode          bool
+	setupAllowProd           bool
+	setupNoBackup            bool
+	setupPreserveCredentials bool
 )
 
 // setupCmd provides interactive first-time setup
@@ -55,6 +56,7 @@ func init() {
 	setupCmd.Flags().BoolVar(&setupDockerMode, "docker", false, "configure for Docker environment")
 	setupCmd.Flags().BoolVar(&setupAllowProd, "allow-production-secrets", false, "allow writing secrets to .env when ENVIRONMENT is staging/production")
 	setupCmd.Flags().BoolVar(&setupNoBackup, "no-backup", false, "skip creating .env.backup file")
+	setupCmd.Flags().BoolVar(&setupPreserveCredentials, "preserve-credentials", false, "reuse credentials from existing .env file (for upgrades)")
 }
 
 func runSetup() error {
@@ -195,23 +197,50 @@ func runSetup() error {
 	fmt.Println("Step 3: Generate Secrets")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	jwtSecret, err := generateSecret(32)
-	if err != nil {
-		return fmt.Errorf("generate JWT secret: %w", err)
-	}
-	fmt.Println("✓ Generated JWT_SECRET")
+	var jwtSecret, csrfKey, adminPassword, postgresPassword string
+	var adminUsername, adminEmail string
 
-	csrfKey, err := generateSecret(32)
-	if err != nil {
-		return fmt.Errorf("generate CSRF key: %w", err)
-	}
-	fmt.Println("✓ Generated CSRF_KEY")
+	// If preserving credentials, read from existing .env
+	if setupPreserveCredentials && fileExists(".env.backup") {
+		fmt.Println("  ℹ️  Preserving credentials from existing .env")
+		existingCreds, err := readCredentialsFromEnv(".env.backup")
+		if err != nil {
+			return fmt.Errorf("read existing credentials: %w", err)
+		}
+		jwtSecret = existingCreds["JWT_SECRET"]
+		csrfKey = existingCreds["CSRF_KEY"]
+		adminPassword = existingCreds["ADMIN_PASSWORD"]
+		adminUsername = existingCreds["ADMIN_USERNAME"]
+		adminEmail = existingCreds["ADMIN_EMAIL"]
+		postgresPassword = existingCreds["POSTGRES_PASSWORD"]
 
-	adminPassword, err := generateSecret(16)
-	if err != nil {
-		return fmt.Errorf("generate admin password: %w", err)
+		fmt.Println("  ✓ Reusing JWT_SECRET")
+		fmt.Println("  ✓ Reusing CSRF_KEY")
+		fmt.Println("  ✓ Reusing admin password")
+		if postgresPassword != "" {
+			fmt.Println("  ✓ Reusing PostgreSQL password")
+		}
+	} else {
+		// Generate new secrets
+		var err error
+		jwtSecret, err = generateSecret(32)
+		if err != nil {
+			return fmt.Errorf("generate JWT secret: %w", err)
+		}
+		fmt.Println("✓ Generated JWT_SECRET")
+
+		csrfKey, err = generateSecret(32)
+		if err != nil {
+			return fmt.Errorf("generate CSRF key: %w", err)
+		}
+		fmt.Println("✓ Generated CSRF_KEY")
+
+		adminPassword, err = generateSecret(16)
+		if err != nil {
+			return fmt.Errorf("generate admin password: %w", err)
+		}
+		fmt.Println("✓ Generated admin password")
 	}
-	fmt.Println("✓ Generated admin password")
 	fmt.Println()
 
 	// Step 4: Database configuration
@@ -221,20 +250,23 @@ func runSetup() error {
 
 	var dbURL string
 	var dbPort string
-	var postgresPassword string
 	var postgresUser string
 	var postgresDB string
+
+	// If preserving credentials and we already have postgres password from .env, use it
 	if useDocker {
 		fmt.Println("Docker PostgreSQL will be created automatically.")
 		dbPort = "5433"
 		postgresUser = "togather"
 		postgresDB = "togather"
 
-		// Generate a secure password for Docker PostgreSQL
-		var err error
-		postgresPassword, err = generateSecret(24)
-		if err != nil {
-			return fmt.Errorf("generate PostgreSQL password: %w", err)
+		// Generate a secure password for Docker PostgreSQL if not already set
+		if postgresPassword == "" {
+			var err error
+			postgresPassword, err = generateSecret(24)
+			if err != nil {
+				return fmt.Errorf("generate PostgreSQL password: %w", err)
+			}
 		}
 
 		if !setupNonInteractive {
@@ -242,7 +274,11 @@ func runSetup() error {
 		}
 		dbURL = fmt.Sprintf("postgresql://%s:%s@localhost:%s/%s?sslmode=disable", postgresUser, postgresPassword, dbPort, postgresDB)
 		fmt.Printf("✓ Database URL: postgresql://%s:***@localhost:%s/%s\n", postgresUser, dbPort, postgresDB)
-		fmt.Println("✓ Generated PostgreSQL password")
+		if setupPreserveCredentials {
+			fmt.Println("✓ Reused PostgreSQL password")
+		} else {
+			fmt.Println("✓ Generated PostgreSQL password")
+		}
 	} else {
 		fmt.Println("Enter your PostgreSQL connection details.")
 		fmt.Println("These are your PostgreSQL server credentials (not the app admin user).")
@@ -300,10 +336,15 @@ func runSetup() error {
 	fmt.Println("(This is different from your PostgreSQL database user)")
 	fmt.Println()
 
-	adminUsername := "admin"
-	adminEmail := "admin@localhost"
+	// Set defaults if not already set from preserved credentials
+	if adminUsername == "" {
+		adminUsername = "admin"
+	}
+	if adminEmail == "" {
+		adminEmail = "admin@localhost"
+	}
 
-	if !setupNonInteractive {
+	if !setupNonInteractive && !setupPreserveCredentials {
 		adminUsername = prompt("Admin username", adminUsername)
 		adminEmail = prompt("Admin email", adminEmail)
 		fmt.Println()
@@ -892,4 +933,30 @@ func appendToEnvFile(path, key, value string) error {
 	}
 
 	return nil
+}
+
+func readCredentialsFromEnv(path string) (map[string]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read env file: %w", err)
+	}
+
+	creds := make(map[string]string)
+	lines := strings.Split(string(content), "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			creds[key] = value
+		}
+	}
+
+	return creds, nil
 }
