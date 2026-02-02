@@ -29,24 +29,27 @@ log_error() {
 
 # Check arguments
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 [user@]hostname [GO_VERSION] [DEPLOY_USER]"
+    echo "Usage: $0 [user@]hostname [GO_VERSION] [DEPLOY_USER] [SKIP_SSH_HARDEN]"
     echo ""
     echo "Examples:"
     echo "  $0 root@192.46.222.199"
     echo "  $0 togather-root"
     echo "  $0 root@192.46.222.199 1.25.0"
     echo "  $0 root@192.46.222.199 1.24.12 togather"
+    echo "  $0 root@192.46.222.199 1.24.12 deploy false  # Enable SSH hardening prompt"
     exit 1
 fi
 
 SSH_TARGET="$1"
 GO_VERSION="${2:-1.24.12}"
 DEPLOY_USER="${3:-deploy}"
+SKIP_SSH_HARDEN="${4:-true}"  # Default to true for remote execution
 
 log_info "Provisioning remote server: $SSH_TARGET"
 log_info "Configuration:"
 log_info "  GO_VERSION: $GO_VERSION"
 log_info "  DEPLOY_USER: $DEPLOY_USER"
+log_info "  SKIP_SSH_HARDEN: $SKIP_SSH_HARDEN (no interactive prompts)"
 echo ""
 
 # Test SSH connection
@@ -77,7 +80,7 @@ echo "════════════════════════�
 echo ""
 
 # Upload script and execute with environment variables (use sudo if not root)
-cat "$PROVISION_SCRIPT" | ssh "$SSH_TARGET" "GO_VERSION=$GO_VERSION DEPLOY_USER=$DEPLOY_USER sudo -E bash -s"
+cat "$PROVISION_SCRIPT" | ssh "$SSH_TARGET" "GO_VERSION=$GO_VERSION DEPLOY_USER=$DEPLOY_USER SKIP_SSH_HARDEN=$SKIP_SSH_HARDEN sudo -E bash -s"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
