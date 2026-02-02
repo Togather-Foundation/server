@@ -27,6 +27,8 @@ New to deployment? Start here:
 ### Essential Guides
 
 - **[Quickstart Guide](quickstart.md)** - Complete deployment setup from scratch
+- **[Caddy Deployment](CADDY-DEPLOYMENT.md)** - Production deployment with Caddy reverse proxy and automatic HTTPS
+- **[Linode Deployment](LINODE-DEPLOYMENT.md)** - Deploy to Linode cloud platform
 - **[Rollback Guide](rollback.md)** - Troubleshoot and recover from failed deployments
 - **[Migrations Guide](migrations.md)** - Manage database schema changes safely
 - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
@@ -49,7 +51,7 @@ Togather SEL uses **blue-green zero-downtime deployments**:
 
 ```
 ┌─────────────────────────────────────────┐
-│        Load Balancer (Nginx)            │
+│  Reverse Proxy (Caddy/Nginx) :80/:443  │
 │    Routes traffic to active slot        │
 └─────────────┬───────────────────────────┘
               │

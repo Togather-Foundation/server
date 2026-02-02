@@ -1095,19 +1095,19 @@ deploy_to_slot() {
 
 # switch_traffic - Switches load balancer traffic to new deployment slot
 # Implements zero-downtime traffic cutover for blue-green deployments
-# Updates nginx configuration to route traffic to newly deployed slot
+# Updates Caddy configuration to route traffic to newly deployed slot
 # Should only be called after successful health checks on new slot
 # Args:
 #   $1 - environment (e.g., "production", "staging")
 #   $2 - new_slot (optional: "blue" or "green", defaults to inactive slot)
 # Returns:
-#   0 on success, 1 on nginx reload failure
+#   0 on success, 1 on Caddy reload failure
 # Side effects:
-#   - Updates nginx configuration
-#   - Reloads nginx container to apply config changes
+#   - Updates Caddyfile configuration
+#   - Reloads Caddy container to apply config changes
 # Notes:
-#   - This is simplified version; production uses nginx config templates
-#   - Traffic switch is atomic (nginx reload is zero-downtime)
+#   - This is simplified version; production uses Caddy config templates
+#   - Traffic switch is atomic (Caddy reload is zero-downtime)
 # Example:
 #   validate_health production blue && switch_traffic production blue
 switch_traffic() {
@@ -1116,22 +1116,27 @@ switch_traffic() {
     
     log "INFO" "Switching traffic to ${new_slot} slot"
     
-    # Update nginx configuration to point to new slot
-    # Note: This is a simplified version. In production, you'd use nginx config templates
+    # Update Caddy configuration to point to new slot
+    # Note: This is a simplified version. In production, you'd use Caddy config templates
     
-    local nginx_config="${DOCKER_DIR}/nginx.conf"
-    local nginx_container="togather-${env}-nginx"
+    local caddy_config="${DOCKER_DIR}/Caddyfile"
+    local caddy_container="togather-${env}-caddy"
     
-    # Check if nginx container exists
-    if ! docker ps -q -f name="${nginx_container}" | grep -q .; then
-        log "WARN" "Nginx container not found: ${nginx_container}"
+    # For docker-compose deployments, use standard container name
+    if [ "${env}" = "dev" ] || [ "${env}" = "local" ]; then
+        caddy_container="togather-proxy"
+    fi
+    
+    # Check if Caddy container exists
+    if ! docker ps -q -f name="${caddy_container}" | grep -q .; then
+        log "WARN" "Caddy container not found: ${caddy_container}"
         log "WARN" "Skipping traffic switch (direct access only)"
         return 0
     fi
     
-    # Reload nginx configuration
-    if ! docker exec "${nginx_container}" nginx -s reload; then
-        log "ERROR" "Failed to reload nginx configuration"
+    # Reload Caddy configuration
+    if ! docker exec "${caddy_container}" caddy reload --config /etc/caddy/Caddyfile; then
+        log "ERROR" "Failed to reload Caddy configuration"
         return 1
     fi
     

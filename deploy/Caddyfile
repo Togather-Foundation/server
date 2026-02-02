@@ -1,0 +1,239 @@
+# Togather Server Caddyfile - Blue-Green Deployment with Automatic HTTPS
+# Caddy automatically obtains and renews SSL certificates via Let's Encrypt
+#
+# Reference: specs/001-deployment-infrastructure/spec.md FR-009
+# Usage: See docs/deploy/LINODE-DEPLOYMENT.md for deployment instructions
+
+# Global options
+{
+	# Email for Let's Encrypt notifications (optional but recommended)
+	# email admin@togather.foundation
+	
+	# Enable admin API on localhost only (for management)
+	admin localhost:2019
+	
+	# Log level (ERROR, WARN, INFO, DEBUG)
+	log {
+		level INFO
+	}
+}
+
+# ==============================================================================
+# STAGING - staging.toronto.togather.foundation
+# ==============================================================================
+# Blue-Green Deployment: Change the upstream address to switch traffic
+# Current: Points to blue slot (port 8081)
+# To switch to green: Change to localhost:8082
+# ==============================================================================
+
+staging.toronto.togather.foundation {
+	# Reverse proxy to active slot
+	# ACTIVE SLOT: Change between localhost:8081 (blue) and localhost:8082 (green)
+	reverse_proxy localhost:8081 {
+		# Health check configuration
+		health_uri /health
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+		
+		# Preserve client information
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		
+		# Add slot identifier for debugging
+		header_down X-Togather-Slot "blue"
+	}
+	
+	# Compression
+	encode gzip
+	
+	# Access logging
+	log {
+		output file /var/log/caddy/staging.toronto.log {
+			roll_size 100mb
+			roll_keep 5
+			roll_keep_for 168h
+		}
+		format json
+	}
+	
+	# Security headers
+	header {
+		# Remove server information
+		-Server
+		
+		# Security headers
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Download-Options "noopen"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		
+		# Content Security Policy
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self';"
+	}
+	
+	# Rate limiting (optional - Caddy Enterprise feature)
+	# For open-source Caddy, implement rate limiting in the application layer
+	
+	# Client body size limit
+	request_body {
+		max_size 10MB
+	}
+}
+
+# ==============================================================================
+# PRODUCTION - toronto.togather.foundation
+# ==============================================================================
+# Blue-Green Deployment: Change the upstream address to switch traffic
+# Current: Points to blue slot (port 8081)
+# To switch to green: Change to localhost:8082
+# ==============================================================================
+
+toronto.togather.foundation {
+	# Reverse proxy to active slot
+	# ACTIVE SLOT: Change between localhost:8081 (blue) and localhost:8082 (green)
+	reverse_proxy localhost:8081 {
+		# Health check configuration
+		health_uri /health
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+		
+		# Preserve client information
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		
+		# Add slot identifier for debugging
+		header_down X-Togather-Slot "blue"
+	}
+	
+	# Compression
+	encode gzip
+	
+	# Access logging
+	log {
+		output file /var/log/caddy/toronto.log {
+			roll_size 100mb
+			roll_keep 5
+			roll_keep_for 168h
+		}
+		format json
+	}
+	
+	# Security headers (production - includes HSTS)
+	header {
+		# Remove server information
+		-Server
+		
+		# HSTS - Force HTTPS (only for production)
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		
+		# Security headers
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Download-Options "noopen"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		
+		# Content Security Policy with upgrade-insecure-requests
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; upgrade-insecure-requests;"
+	}
+	
+	# Client body size limit
+	request_body {
+		max_size 10MB
+	}
+}
+
+# ==============================================================================
+# DEPLOYMENT INSTRUCTIONS
+# ==============================================================================
+#
+# Blue-Green Traffic Switching:
+# -----------------------------
+# To switch traffic from blue to green:
+# 1. Update the reverse_proxy address:
+#    FROM: reverse_proxy localhost:8081
+#    TO:   reverse_proxy localhost:8082
+# 2. Update the X-Togather-Slot header:
+#    FROM: header_down X-Togather-Slot "blue"
+#    TO:   header_down X-Togather-Slot "green"
+# 3. Reload Caddy: sudo systemctl reload caddy
+# 4. Verify: curl -I https://staging.toronto.togather.foundation/health
+#
+# Installation:
+# ------------
+# 1. Install Caddy:
+#    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+#    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+#      sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+#    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
+#      sudo tee /etc/apt/sources.list.d/caddy-stable.list
+#    sudo apt update
+#    sudo apt install caddy
+#
+# 2. Copy this file to /etc/caddy/Caddyfile
+#    sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#
+# 3. Create log directory:
+#    sudo mkdir -p /var/log/caddy
+#    sudo chown caddy:caddy /var/log/caddy
+#
+# 4. Ensure ports 80 and 443 are open in firewall:
+#    sudo ufw allow 80/tcp
+#    sudo ufw allow 443/tcp
+#
+# 5. Ensure DNS is configured correctly:
+#    dig staging.toronto.togather.foundation
+#    dig toronto.togather.foundation
+#
+# 6. Start Caddy:
+#    sudo systemctl enable caddy
+#    sudo systemctl start caddy
+#
+# 7. Verify SSL certificates were obtained:
+#    sudo journalctl -u caddy -f
+#    curl -I https://staging.toronto.togather.foundation/health
+#
+# Certificate Management:
+# ----------------------
+# Caddy automatically:
+# - Obtains SSL certificates from Let's Encrypt
+# - Renews certificates before expiry (60 days)
+# - Handles HTTP-01 ACME challenges
+# - Redirects HTTP to HTTPS
+#
+# Prerequisites for SSL:
+# - Ports 80 and 443 accessible from internet
+# - DNS records pointing to server IP
+# - Valid domain name
+#
+# Troubleshooting:
+# ---------------
+# Check Caddy logs:
+#   sudo journalctl -u caddy -f
+#
+# Test configuration:
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#
+# Manual reload:
+#   sudo systemctl reload caddy
+#
+# Check certificate status:
+#   curl -I https://staging.toronto.togather.foundation
+#
+# View active config via API:
+#   curl http://localhost:2019/config/
+#
+# Common Issues:
+# - "acme: error: 400": DNS hasn't propagated, wait 5-15 minutes
+# - Connection refused: Check if application is running on port 8081/8082
+# - Certificate fails: Verify ports 80/443 are accessible from internet
+#

@@ -5,18 +5,18 @@
 # Blue-Green Deployment Strategy:
 # ================================
 # Run TWO instances of the app simultaneously: "blue" and "green"
-# Only ONE receives traffic at a time via nginx reverse proxy
+# Only ONE receives traffic at a time via Caddy reverse proxy
 #
 # Deployment Workflow:
 # 1. Deploy new version to inactive slot (e.g., if blue is active, deploy to green)
 # 2. Run health checks on new version in the inactive slot
-# 3. Switch traffic to new version by updating nginx upstream (atomic cutover)
+# 3. Switch traffic to new version by updating Caddy reverse_proxy target (atomic cutover)
 # 4. Keep old version running briefly for rollback capability
 # 5. Stop old version after confirmation new version is stable
 #
 # Traffic Switching:
-# - Controlled by nginx upstream configuration (deploy/docker/nginx.conf)
-# - Deploy script (T021) will handle updating nginx config and reloading
+# - Controlled by Caddy reverse_proxy configuration (deploy/docker/Caddyfile)
+# - Deploy script will handle updating Caddyfile and reloading
 # - Rollback is as simple as switching traffic back to the previous slot
 #
 # Slot Detection:
@@ -124,12 +124,12 @@ services:
     # Health check inherited from base app service
 
   # ============================================================================
-  # Nginx Reverse Proxy - Traffic Router
+  # Caddy Reverse Proxy - Traffic Router
   # ============================================================================
   # Routes all incoming traffic to either blue or green slot
-  # Traffic switching is controlled by nginx upstream configuration
-  nginx:
-    image: nginx:alpine
+  # Traffic switching is controlled by Caddy reverse_proxy configuration
+  caddy:
+    image: caddy:2-alpine
     container_name: togather-proxy
     
     # Public-facing port
@@ -141,13 +141,14 @@ services:
     networks:
       - togather-net
     
-    # Mount nginx configuration
+    # Mount Caddy configuration
     # Configuration file specifies which slot receives traffic
     volumes:
       # Read-only mount to prevent accidental modification
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      # Optional: Custom error pages
-      # - ./nginx-errors:/usr/share/nginx/errors:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddy data directory for certificates and state
+      - caddy-data:/data
+      - caddy-config:/config
     
     # Proxy depends on both slots being available
     # This ensures slots are running before proxy starts
@@ -159,7 +160,7 @@ services:
     
     # Health check for proxy itself
     healthcheck:
-      # Check that nginx is responding and can reach upstream
+      # Check that Caddy is responding and can reach upstream
       test: ["CMD-SHELL", "wget -q --spider http://localhost:80/health || exit 1"]
       interval: 10s
       timeout: 5s
@@ -326,10 +327,24 @@ services:
           memory: 128M
 
 # Networks configuration inherited from base docker-compose.yml
-# All services (togather-db, blue, green, nginx, prometheus, grafana) share the togather-net network
+# All services (togather-db, blue, green, caddy, prometheus, grafana) share the togather-net network
 
 # Volumes configuration
 volumes:
+  # Caddy data directory (certificates and persistent state)
+  caddy-data:
+    driver: local
+    labels:
+      com.togather.service: proxy
+      com.togather.component: caddy
+  
+  # Caddy config directory
+  caddy-config:
+    driver: local
+    labels:
+      com.togather.service: proxy
+      com.togather.component: caddy
+  
   # Prometheus persistent storage for metrics
   prometheus-data:
     driver: local
@@ -347,11 +362,11 @@ volumes:
 # Usage Instructions:
 # ===================
 #
-# 1. Start both slots with nginx proxy:
+# 1. Start both slots with Caddy proxy:
 #    docker compose -f docker-compose.yml -f docker-compose.blue-green.yml up -d
 #
 # 2. Check which slot is active:
-#    cat deploy/docker/nginx.conf | grep "server togather-server-"
+#    cat deploy/docker/Caddyfile | grep "reverse_proxy togather-server-"
 #
 # 3. Deploy new version to inactive slot:
 #    - If blue is active, update green:
@@ -364,11 +379,11 @@ volumes:
 #    curl http://localhost:8082/health  # Green slot
 #
 # 5. Switch traffic to updated slot:
-#    - Update nginx.conf to point to the new slot
-#    - Reload nginx: docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+#    - Update Caddyfile to point to the new slot
+#    - Reload Caddy: docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
 #
 # 6. Verify traffic is flowing to new slot:
-#    curl http://localhost/health
+#    curl -I http://localhost/health | grep X-Togather-Slot
 #    docker compose -f docker-compose.blue-green.yml logs -f togather-green  # or togather-blue
 #
 # 7. After confirmation, stop old slot (optional):
@@ -377,15 +392,15 @@ volumes:
 # Rollback:
 # =========
 # If new version has issues, switch traffic back to old slot:
-# 1. Update nginx.conf to point to old slot
-# 2. Reload nginx: docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+# 1. Update Caddyfile to point to old slot
+# 2. Reload Caddy: docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
 # 3. Traffic is now back on the stable version (zero downtime)
 #
 # Notes:
 # ======
 # - Both slots share the same database (single source of truth)
 # - Database migrations must be forward-compatible (old code runs against new schema during cutover)
-# - Deploy script (T021) will automate steps 3-6 above
+# - Deploy script will automate steps 3-6 above
 # - Manual testing can be done by accessing slots directly on ports 8081/8082
 # - Production deployments should use the deploy script for safety checks
 

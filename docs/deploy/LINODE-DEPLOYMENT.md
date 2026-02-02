@@ -373,7 +373,68 @@ curl http://YOUR_LINODE_IP:8080/health | jq
 
 ## Configure Domain & SSL (Optional)
 
-### Option 1: Nginx Reverse Proxy with Let's Encrypt
+For production deployments, use a reverse proxy with SSL. **Caddy is recommended** for automatic SSL certificate management.
+
+### Option 1: Caddy (Recommended)
+
+Caddy automatically obtains and renews SSL certificates from Let's Encrypt.
+
+```bash
+# Install Caddy
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+
+# Create Caddyfile
+sudo nano /etc/caddy/Caddyfile
+```
+
+**Caddyfile (automatic HTTPS):**
+
+```caddyfile
+your-domain.com {
+    reverse_proxy localhost:8080
+    
+    # Optional: Add logging
+    log {
+        output file /var/log/caddy/access.log
+    }
+}
+```
+
+**Enable and verify:**
+
+```bash
+# Create log directory
+sudo mkdir -p /var/log/caddy
+sudo chown caddy:caddy /var/log/caddy
+
+# Reload Caddy (it will automatically get SSL cert!)
+sudo systemctl reload caddy
+
+# Check logs for certificate acquisition
+sudo journalctl -u caddy -f
+
+# Update firewall (no longer need port 8080 exposed)
+sudo ufw delete allow 8080/tcp
+
+# Update .env to use HTTPS
+cd ~/server
+nano .env
+# Change: BASE_URL=https://your-domain.com
+# Change: CORS_ALLOWED_ORIGINS=https://your-domain.com
+
+# Restart application
+docker compose -f deploy/docker/docker-compose.yml restart app
+```
+
+**See [Caddy Deployment Guide](CADDY-DEPLOYMENT.md) for production blue-green deployments.**
+
+### Option 2: Nginx with Let's Encrypt
+
+If you prefer nginx or have existing nginx infrastructure:
 
 ```bash
 # Install Nginx
@@ -428,36 +489,6 @@ nano .env
 
 # Restart application
 docker compose -f deploy/docker/docker-compose.yml restart app
-```
-
-### Option 2: Caddy Server (Easier SSL)
-
-```bash
-# Install Caddy
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
-
-# Create Caddyfile
-sudo nano /etc/caddy/Caddyfile
-```
-
-**Caddyfile (automatic HTTPS):**
-
-```caddyfile
-your-domain.com {
-    reverse_proxy localhost:8080
-}
-```
-
-```bash
-# Reload Caddy (it will automatically get SSL cert!)
-sudo systemctl reload caddy
-
-# Update firewall
-sudo ufw delete allow 8080/tcp
 ```
 
 ---

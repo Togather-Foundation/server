@@ -1,0 +1,151 @@
+# Caddy Configuration for Docker Blue-Green Deployment
+# Local development reverse proxy - routes traffic to blue or green slot
+# Reference: specs/001-deployment-infrastructure/spec.md FR-009
+#
+# This file replaces nginx.conf for Docker-based deployments
+# For production deployment, see deploy/Caddyfile
+
+# Global options for Docker environment
+{
+	# No admin API in Docker (prevents port conflicts)
+	admin off
+	
+	# Auto HTTPS is disabled for localhost
+	auto_https off
+	
+	# Logging for development
+	log {
+		level INFO
+		format console
+	}
+}
+
+# ==============================================================================
+# Main HTTP Server - Port 80
+# ==============================================================================
+# Routes traffic to either blue or green slot
+# For development: HTTP only (no SSL in local Docker)
+
+:80 {
+	# ACTIVE SLOT CONFIGURATION
+	# Change between togather-server-blue:8080 and togather-server-green:8080
+	# Default: Route to blue slot initially
+	# 
+	# To switch to green: Change to togather-server-green:8080
+	# To switch to blue:  Change to togather-server-blue:8080
+	# 
+	# After changing, reload Caddy:
+	#   docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
+	
+	reverse_proxy togather-server-blue:8080 {
+		# Health check configuration
+		health_uri /health
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+		
+		# Preserve client information
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		
+		# Connection pooling for performance
+		transport http {
+			keepalive 30s
+			keepalive_idle_conns 32
+		}
+	}
+	
+	# Add slot identifier header for debugging
+	header X-Togather-Slot "blue"
+	
+	# Compression
+	encode gzip
+	
+	# Security headers (development-friendly)
+	header {
+		# Remove server information
+		-Server
+		
+		# Basic security headers
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		
+		# Relaxed CSP for development
+		Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https:; connect-src 'self';"
+	}
+	
+	# Access logging (JSON format for easy parsing)
+	log {
+		output stdout
+		format json {
+			time_format "2006-01-02T15:04:05.000Z07:00"
+			message_key "msg"
+			time_key "ts"
+		}
+	}
+	
+	# Request body size limit
+	request_body {
+		max_size 10MB
+	}
+}
+
+# ==============================================================================
+# DEPLOYMENT INSTRUCTIONS
+# ==============================================================================
+#
+# Blue-Green Traffic Switching:
+# -----------------------------
+# To switch traffic from blue to green:
+# 1. Update the reverse_proxy target:
+#    FROM: reverse_proxy togather-server-blue:8080 {
+#    TO:   reverse_proxy togather-server-green:8080 {
+# 2. Update the X-Togather-Slot header:
+#    FROM: header X-Togather-Slot "blue"
+#    TO:   header X-Togather-Slot "green"
+# 3. Reload Caddy:
+#    docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
+# 4. Verify:
+#    curl -I http://localhost/health | grep X-Togather-Slot
+#
+# Manual Testing:
+# --------------
+# You can access slots directly (bypassing proxy):
+#   - Blue slot:  http://localhost:8081
+#   - Green slot: http://localhost:8082
+#
+# Health Checks:
+# -------------
+# Check proxy health:
+#   curl http://localhost/health
+# 
+# Check slot health directly:
+#   curl http://localhost:8081/health  # Blue
+#   curl http://localhost:8082/health  # Green
+#
+# View active slot:
+#   curl -I http://localhost/health | grep X-Togather-Slot
+#
+# Troubleshooting:
+# ---------------
+# View Caddy logs:
+#   docker compose -f docker-compose.blue-green.yml logs -f caddy
+#
+# Validate configuration:
+#   docker compose -f docker-compose.blue-green.yml exec caddy caddy validate --config /etc/caddy/Caddyfile
+#
+# Reload configuration:
+#   docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# Check Caddy admin API (not available in Docker - admin off):
+#   N/A - admin API disabled for Docker deployments
+#
+# Common Issues:
+# - Connection refused: Check if target slot is running
+# - Health check fails: Check /health endpoint on target slot
+# - Config reload fails: Validate syntax with caddy validate
+#

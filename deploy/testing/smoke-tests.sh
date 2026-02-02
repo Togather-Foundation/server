@@ -80,9 +80,15 @@ http_get() {
     local url="$1"
     local expected_status="${2:-200}"
     local retry_count=0
+    local last_error=""
     
     while [[ $retry_count -lt $RETRY_COUNT ]]; do
-        local response=$(curl -s -w "\n%{http_code}" --max-time "$TIMEOUT" "$url" 2>/dev/null || echo -e "\n000")
+        # Capture stderr to get curl error messages
+        local curl_stderr=$(mktemp)
+        local response=$(curl -s -w "\n%{http_code}" --max-time "$TIMEOUT" "$url" 2>"$curl_stderr" || echo -e "\n000")
+        last_error=$(cat "$curl_stderr")
+        rm -f "$curl_stderr"
+        
         local body=$(echo "$response" | head -n -1)
         local status=$(echo "$response" | tail -n 1)
         
@@ -96,6 +102,13 @@ http_get() {
             sleep "$RETRY_DELAY"
         fi
     done
+    
+    # Log the actual error on final failure
+    if [[ -n "$last_error" ]]; then
+        log "ERROR" "Connection failed: $last_error"
+    elif [[ "$status" != "000" ]]; then
+        log "ERROR" "HTTP $status (expected $expected_status)"
+    fi
     
     return 1
 }

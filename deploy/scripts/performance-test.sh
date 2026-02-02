@@ -66,7 +66,7 @@ SLOT TARGETING:
     By default, tests target port 8080. You can target specific deployment slots:
     - blue: Port 8081
     - green: Port 8082
-    - lb: Port 80 (load-balanced through nginx)
+    - lb: Port 80 (load-balanced through Caddy)
 
 EOF
     exit 0
