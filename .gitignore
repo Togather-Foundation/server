@@ -99,6 +99,11 @@ reports/
 deploy/config/environments/.env.development
 deploy/config/environments/.env.staging
 deploy/config/environments/.env.production
+# Caddyfiles (allow examples for documentation)
+deploy/Caddyfile
+!deploy/Caddyfile.example
+deploy/docker/Caddyfile
+!deploy/docker/Caddyfile.example
 # Deployment state and lock files
 deployment-state.json
 *.state

@@ -34,6 +34,9 @@ echo "→ Copying essential files..."
 mkdir -p "${PACKAGE_DIR}/deploy/docker"
 cp -r deploy/docker/* "${PACKAGE_DIR}/deploy/docker/"
 
+# Caddy configuration template
+cp deploy/Caddyfile.example "${PACKAGE_DIR}/deploy/"
+
 # Deployment scripts (exclude build and provisioning scripts)
 mkdir -p "${PACKAGE_DIR}/deploy/scripts"
 for script in deploy/scripts/*.sh; do
@@ -713,6 +716,36 @@ else
 fi
 log ""
 
+# Configure Caddy if installed
+if command -v caddy &>/dev/null; then
+    log "  → Configuring Caddy reverse proxy..."
+    
+    # Copy Docker Caddyfile for local development
+    if [[ ! -f "${APP_DIR}/deploy/docker/Caddyfile" ]]; then
+        sudo cp "${APP_DIR}/deploy/docker/Caddyfile.example" "${APP_DIR}/deploy/docker/Caddyfile"
+        sudo chown ${INSTALL_USER}:${INSTALL_USER} "${APP_DIR}/deploy/docker/Caddyfile"
+        log "  ✓ Docker Caddyfile created from example"
+    else
+        log "  ℹ️  Docker Caddyfile already exists (not overwriting)"
+    fi
+    
+    # Copy production Caddyfile to /etc/caddy if not exists
+    if [[ ! -f /etc/caddy/Caddyfile ]]; then
+        log "  → Installing production Caddyfile template..."
+        sudo cp "${APP_DIR}/deploy/Caddyfile.example" /etc/caddy/Caddyfile
+        sudo chown caddy:caddy /etc/caddy/Caddyfile
+        sudo chmod 644 /etc/caddy/Caddyfile
+        log "  ✓ Production Caddyfile installed (CUSTOMIZE: sudo nano /etc/caddy/Caddyfile)"
+        log "     See docs/deploy/CADDY-DEPLOYMENT.md for configuration guide"
+    else
+        log "  ℹ️  /etc/caddy/Caddyfile already exists (not overwriting)"
+    fi
+else
+    log "  ℹ️  Caddy not installed (skipping Caddyfile setup)"
+    log "     Run provision.sh to install Caddy for automatic HTTPS"
+fi
+log ""
+
 # ============================================================================
 # STEP 5: Create Systemd Service
 # ============================================================================
@@ -954,6 +987,13 @@ if [[ -f "$TEMP_ENV" ]]; then
 fi
 
 echo "  ✓ Files updated"
+
+# Update Docker Caddyfile if it doesn't exist (but don't overwrite customized ones)
+if [[ ! -f "${APP_DIR}/deploy/docker/Caddyfile" ]] && [[ -f "${APP_DIR}/deploy/docker/Caddyfile.example" ]]; then
+    echo "→ Creating Docker Caddyfile from example..."
+    sudo cp "${APP_DIR}/deploy/docker/Caddyfile.example" "${APP_DIR}/deploy/docker/Caddyfile"
+    echo "  ✓ Docker Caddyfile created"
+fi
 
 # Update systemd service
 if [[ -d /etc/systemd/system ]]; then

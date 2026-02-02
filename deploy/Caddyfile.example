@@ -1,8 +1,12 @@
 # Togather Server Caddyfile - Blue-Green Deployment with Automatic HTTPS
 # Caddy automatically obtains and renews SSL certificates via Let's Encrypt
 #
+# IMPORTANT: Copy this file to 'Caddyfile' and customize for your deployment:
+#   cp deploy/Caddyfile.example deploy/Caddyfile
+#   nano deploy/Caddyfile  # Update domain names
+#
 # Reference: specs/001-deployment-infrastructure/spec.md FR-009
-# Usage: See docs/deploy/LINODE-DEPLOYMENT.md for deployment instructions
+# Usage: See docs/deploy/CADDY-DEPLOYMENT.md for deployment instructions
 
 # Global options
 {

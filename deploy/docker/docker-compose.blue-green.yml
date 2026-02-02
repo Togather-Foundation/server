@@ -145,6 +145,7 @@ services:
     # Configuration file specifies which slot receives traffic
     volumes:
       # Read-only mount to prevent accidental modification
+      # Note: Copy Caddyfile.example to Caddyfile and customize for your deployment
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Caddy data directory for certificates and state
       - caddy-data:/data
