@@ -866,20 +866,56 @@ build_docker_image() {
         return 1
     fi
     
-    # Build image with version metadata
     cd "${PROJECT_ROOT}"
     
-    if ! docker build \
-        -f "${DOCKER_DIR}/Dockerfile" \
-        -t "${image_name}:${image_tag}" \
-        -t "${image_name}:latest" \
-        --build-arg GIT_COMMIT="${GIT_COMMIT}" \
-        --build-arg GIT_SHORT_COMMIT="${GIT_SHORT_COMMIT}" \
-        --build-arg BUILD_TIMESTAMP="${build_timestamp}" \
-        --build-arg VERSION="${GIT_SHORT_COMMIT}" \
-        . ; then
-        log "ERROR" "Docker image build failed"
-        return 1
+    # Check if we have a pre-built binary (package deployment)
+    if [[ -f "${PROJECT_ROOT}/server" ]] && [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
+        log "INFO" "Package deployment detected - using pre-built binary"
+        
+        # Create temporary Dockerfile for pre-built binary
+        cat > "${DOCKER_DIR}/Dockerfile.prebuilt" <<'EOFDOCKERFILE'
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata && update-ca-certificates
+COPY server /usr/local/bin/togather-server
+RUN chmod +x /usr/local/bin/togather-server
+RUN adduser -D -u 1000 togather
+WORKDIR /app
+USER togather
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD ["togather-server", "healthcheck"]
+EXPOSE 8080
+CMD ["togather-server", "serve"]
+EOFDOCKERFILE
+        
+        # Build image from pre-built binary
+        if ! docker build \
+            -f "${DOCKER_DIR}/Dockerfile.prebuilt" \
+            -t "${image_name}:${image_tag}" \
+            -t "${image_name}:latest" \
+            --build-arg VERSION="${GIT_SHORT_COMMIT}" \
+            . ; then
+            log "ERROR" "Docker image build failed"
+            rm -f "${DOCKER_DIR}/Dockerfile.prebuilt"
+            return 1
+        fi
+        
+        # Clean up temporary Dockerfile
+        rm -f "${DOCKER_DIR}/Dockerfile.prebuilt"
+    else
+        # Build from source (development deployment)
+        log "INFO" "Building from source"
+        
+        if ! docker build \
+            -f "${DOCKER_DIR}/Dockerfile" \
+            -t "${image_name}:${image_tag}" \
+            -t "${image_name}:latest" \
+            --build-arg GIT_COMMIT="${GIT_COMMIT}" \
+            --build-arg GIT_SHORT_COMMIT="${GIT_SHORT_COMMIT}" \
+            --build-arg BUILD_TIMESTAMP="${build_timestamp}" \
+            --build-arg VERSION="${GIT_SHORT_COMMIT}" \
+            . ; then
+            log "ERROR" "Docker image build failed"
+            return 1
+        fi
     fi
     
     log "SUCCESS" "Docker image built: ${image_name}:${image_tag}"
