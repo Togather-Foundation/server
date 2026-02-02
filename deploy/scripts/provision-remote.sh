@@ -3,13 +3,14 @@
 # Provisions a remote server from your local machine via SSH
 #
 # Usage:
-#   ./provision-remote.sh [user@]hostname [GO_VERSION] [DEPLOY_USER]
+#   ./provision-remote.sh [user@]hostname [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER]
 #
 # Examples:
 #   ./provision-remote.sh root@192.46.222.199
-#   ./provision-remote.sh togather-root  # Using SSH config alias
-#   ./provision-remote.sh root@192.46.222.199 1.25.0
-#   ./provision-remote.sh root@192.46.222.199 1.24.12 togather
+#   ./provision-remote.sh togather-root staging
+#   ./provision-remote.sh togather-root production
+#   ./provision-remote.sh root@192.46.222.199 staging 1.25.0
+#   ./provision-remote.sh root@192.46.222.199 production 1.24.12 togather
 
 set -euo pipefail
 
@@ -29,24 +30,33 @@ log_error() {
 
 # Check arguments
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 [user@]hostname [GO_VERSION] [DEPLOY_USER] [SKIP_SSH_HARDEN]"
+    echo "Usage: $0 [user@]hostname [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER] [SKIP_SSH_HARDEN]"
+    echo ""
+    echo "Arguments:"
+    echo "  hostname          - SSH target (user@host or SSH config alias)"
+    echo "  ENVIRONMENT       - Application environment: development, staging (default), production"
+    echo "  GO_VERSION        - Go version (default: 1.24.12)"
+    echo "  DEPLOY_USER       - Deploy user name (default: deploy)"
+    echo "  SKIP_SSH_HARDEN   - Skip SSH hardening prompt (default: true)"
     echo ""
     echo "Examples:"
     echo "  $0 root@192.46.222.199"
-    echo "  $0 togather-root"
-    echo "  $0 root@192.46.222.199 1.25.0"
-    echo "  $0 root@192.46.222.199 1.24.12 togather"
-    echo "  $0 root@192.46.222.199 1.24.12 deploy false  # Enable SSH hardening prompt"
+    echo "  $0 togather-root staging"
+    echo "  $0 togather-root production"
+    echo "  $0 root@192.46.222.199 staging 1.25.0"
+    echo "  $0 root@192.46.222.199 production 1.24.12 togather"
     exit 1
 fi
 
 SSH_TARGET="$1"
-GO_VERSION="${2:-1.24.12}"
-DEPLOY_USER="${3:-deploy}"
-SKIP_SSH_HARDEN="${4:-true}"  # Default to true for remote execution
+APP_ENVIRONMENT="${2:-staging}"
+GO_VERSION="${3:-1.24.12}"
+DEPLOY_USER="${4:-deploy}"
+SKIP_SSH_HARDEN="${5:-true}"  # Default to true for remote execution
 
 log_info "Provisioning remote server: $SSH_TARGET"
 log_info "Configuration:"
+log_info "  ENVIRONMENT: $APP_ENVIRONMENT"
 log_info "  GO_VERSION: $GO_VERSION"
 log_info "  DEPLOY_USER: $DEPLOY_USER"
 log_info "  SKIP_SSH_HARDEN: $SKIP_SSH_HARDEN (no interactive prompts)"
@@ -80,7 +90,7 @@ echo "════════════════════════�
 echo ""
 
 # Upload script and execute with environment variables (use sudo if not root)
-cat "$PROVISION_SCRIPT" | ssh "$SSH_TARGET" "GO_VERSION=$GO_VERSION DEPLOY_USER=$DEPLOY_USER SKIP_SSH_HARDEN=$SKIP_SSH_HARDEN sudo -E bash -s"
+cat "$PROVISION_SCRIPT" | ssh "$SSH_TARGET" "ENVIRONMENT=$APP_ENVIRONMENT GO_VERSION=$GO_VERSION DEPLOY_USER=$DEPLOY_USER SKIP_SSH_HARDEN=$SKIP_SSH_HARDEN sudo -E bash -s"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
