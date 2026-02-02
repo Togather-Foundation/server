@@ -125,7 +125,7 @@ for PORT in 8080 5433; do
                 COMPOSE_PROJECT=$(docker inspect togather-db --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || echo "")
                 if [[ -n "$COMPOSE_PROJECT" ]] && [[ -d "${APP_DIR}/deploy/docker" ]]; then
                     log "  → Detected Docker Compose project: $COMPOSE_PROJECT"
-                    (cd "${APP_DIR}/deploy/docker" && sudo docker compose down) 2>/dev/null || true
+                    (cd "${APP_DIR}/deploy/docker" && sudo docker compose --env-file ../../.env down) 2>/dev/null || true
                 fi
                 
                 # Method 2: Fallback to direct container stop if compose failed
@@ -190,7 +190,7 @@ if [[ "$EXISTING_INSTALL" == "true" ]]; then
         if ! docker ps | grep -q togather-db; then
             log "  → Starting database temporarily for backup..."
             cd "${APP_DIR}/deploy/docker"
-            docker compose up -d db 2>/dev/null || true
+            docker compose --env-file ../../.env up -d db 2>/dev/null || true
             sleep 5
         fi
         
@@ -301,16 +301,16 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 cd "${APP_DIR}/deploy/docker"
 
 # Stop any existing containers first (cleanup)
-docker compose down 2>/dev/null || true
+docker compose --env-file ../../.env down 2>/dev/null || true
 
 # Start database
 log "  → Starting PostgreSQL database..."
-docker compose up -d db
+docker compose --env-file ../../.env up -d db
 
 # Wait for database to be healthy
 log "  → Waiting for database to be ready..."
 for i in {1..30}; do
-    if docker compose ps db | grep -q "healthy"; then
+    if docker compose --env-file ../../.env ps db | grep -q "healthy"; then
         success "Database is ready"
         break
     fi

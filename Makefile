@@ -508,7 +508,7 @@ docker-up:
 		echo ""; \
 		exit 1; \
 	fi
-	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env up -d
 	@echo ""
 	@echo "✓ Containers started!"
 	@echo ""
@@ -532,7 +532,7 @@ docker-db:
 		echo ""; \
 		exit 1; \
 	fi
-	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d togather-db
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env up -d togather-db
 	@echo ""
 	@echo "✓ Database started on localhost:5433"
 	@echo ""
@@ -542,20 +542,20 @@ docker-db:
 .PHONY: docker-down
 docker-down:
 	@echo "Stopping Docker containers..."
-	@cd $(DOCKER_COMPOSE_DIR) && docker compose down
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env down
 	@echo "✓ Containers stopped"
 
 # View Docker container logs
 .PHONY: docker-logs
 docker-logs:
 	@echo "Viewing Docker logs (Ctrl+C to exit)..."
-	@cd $(DOCKER_COMPOSE_DIR) && docker compose logs -f
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env logs -f
 
 # Rebuild and restart containers
 .PHONY: docker-rebuild
 docker-rebuild:
 	@echo "Rebuilding and restarting containers..."
-	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d --build
+	@cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env up -d --build
 	@echo ""
 	@echo "✓ Containers rebuilt and restarted!"
 	@echo ""
@@ -570,7 +570,7 @@ docker-clean:
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "Stopping containers and removing volumes..."; \
-		cd $(DOCKER_COMPOSE_DIR) && docker compose down -v; \
+		cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env down -v; \
 		echo "✓ Containers and volumes removed"; \
 	else \
 		echo "Cancelled"; \
