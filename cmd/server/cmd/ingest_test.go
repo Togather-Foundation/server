@@ -115,7 +115,7 @@ func TestIngestEventsValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create temp file: %v", err)
 			}
-			defer os.Remove(tmpFile.Name())
+			defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 			if _, err := tmpFile.WriteString(tt.content); err != nil {
 				t.Fatalf("failed to write temp file: %v", err)
@@ -124,12 +124,12 @@ func TestIngestEventsValidation(t *testing.T) {
 
 			// Set up test API key
 			origAPIKey := os.Getenv("API_KEY")
-			os.Setenv("API_KEY", "test-key")
+			_ = os.Setenv("API_KEY", "test-key")
 			defer func() {
 				if origAPIKey != "" {
-					os.Setenv("API_KEY", origAPIKey)
+					_ = os.Setenv("API_KEY", origAPIKey)
 				} else {
-					os.Unsetenv("API_KEY")
+					_ = os.Unsetenv("API_KEY")
 				}
 			}()
 
@@ -268,16 +268,16 @@ func TestIngestEventsServerResponse(t *testing.T) {
 			if _, err := tmpFile.WriteString(content); err != nil {
 				t.Fatalf("failed to write temp file: %v", err)
 			}
-			tmpFile.Close()
+			_ = tmpFile.Close()
 
 			// Set up test API key
 			origAPIKey := os.Getenv("API_KEY")
-			os.Setenv("API_KEY", "test-key")
+			_ = os.Setenv("API_KEY", "test-key")
 			defer func() {
 				if origAPIKey != "" {
-					os.Setenv("API_KEY", origAPIKey)
+					_ = os.Setenv("API_KEY", origAPIKey)
 				} else {
-					os.Unsetenv("API_KEY")
+					_ = os.Unsetenv("API_KEY")
 				}
 			}()
 

@@ -206,7 +206,7 @@ func watchBatchStatus(client *http.Client, batchID string) error {
 			}
 
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err != nil {
 				return fmt.Errorf("read status response: %w", err)
 			}

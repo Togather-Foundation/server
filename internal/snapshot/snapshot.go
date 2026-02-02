@@ -294,7 +294,7 @@ func Cleanup(snapshotDir string, retentionDays int, dryRun bool) ([]Snapshot, er
 
 				// Delete metadata file
 				metadataPath := strings.TrimSuffix(snapshot.Path, ".sql.gz") + ".meta.json"
-				os.Remove(metadataPath) // Ignore error if metadata doesn't exist
+				_ = os.Remove(metadataPath) // Ignore error if metadata doesn't exist
 			}
 
 			deleted = append(deleted, snapshot)

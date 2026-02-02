@@ -266,7 +266,7 @@ func printSnapshotsTable(snapshots []snapshot.Snapshot) error {
 		expiresIn := time.Until(snap.Metadata.ExpiresAt)
 		expiresStr := formatExpiration(expiresIn)
 
-		fmt.Fprintf(w, "%s\t%dMB\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%dMB\t%s\t%s\t%s\n",
 			snap.Metadata.SnapshotName,
 			snap.SizeMB,
 			age,

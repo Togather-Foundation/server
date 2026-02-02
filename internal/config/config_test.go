@@ -25,10 +25,10 @@ func TestLoad_ProductionCORS_EmptyOrigins(t *testing.T) {
 	}()
 
 	// Test case: production with empty CORS_ALLOWED_ORIGINS should fail
-	os.Setenv("ENVIRONMENT", "production")
-	os.Setenv("CORS_ALLOWED_ORIGINS", "")
-	os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
-	os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("ENVIRONMENT", "production")
+	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
 
 	_, err := Load()
 	if err == nil {
