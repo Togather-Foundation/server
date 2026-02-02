@@ -86,7 +86,10 @@ update_system() {
         htop \
         vim \
         ufw \
-        fail2ban
+        fail2ban \
+        build-essential \
+        make \
+        jq
     log_info "✓ System packages updated"
 }
 
