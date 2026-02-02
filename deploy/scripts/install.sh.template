@@ -344,8 +344,8 @@ chmod +x "${BINARY_PATH}"
 success "Installed binary to: ${BINARY_PATH}"
 
 # Verify binary works
-if ! "${BINARY_PATH}" --version &> /dev/null; then
-    error_exit "Binary verification failed (server --version returned error)"
+if ! "${BINARY_PATH}" version &> /dev/null; then
+    error_exit "Binary verification failed (server version returned error)"
 fi
 success "Binary verified"
 
@@ -365,12 +365,12 @@ docker compose --env-file ../../.env down 2>/dev/null || true
 
 # Start database
 log "  → Starting PostgreSQL database..."
-docker compose --env-file ../../.env up -d db
+docker compose --env-file ../../.env up -d togather-db
 
 # Wait for database to be healthy
 log "  → Waiting for database to be ready..."
 for i in {1..30}; do
-    if docker compose --env-file ../../.env ps db | grep -q "healthy"; then
+    if docker compose --env-file ../../.env ps togather-db | grep -q "healthy"; then
         success "Database is ready"
         break
     fi
@@ -397,13 +397,13 @@ source .env
 set +a
 
 log "  → Running schema migrations..."
-if ! "${BINARY_PATH}" migrate up 2>&1; then
+if ! "${APP_DIR}/migrate" -path "${APP_DIR}/internal/storage/postgres/migrations" -database "$DATABASE_URL" up 2>&1; then
     error_exit "Schema migrations failed"
 fi
 success "Schema migrations completed"
 
 log "  → Running River job queue migrations..."
-if ! "${BINARY_PATH}" migrate river 2>&1; then
+if ! "${APP_DIR}/river" migrate-up --database-url "$DATABASE_URL" 2>&1; then
     error_exit "River migrations failed"
 fi
 success "River migrations completed"

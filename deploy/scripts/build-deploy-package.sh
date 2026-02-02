@@ -34,8 +34,10 @@ echo "→ Copying essential files..."
 mkdir -p "${PACKAGE_DIR}/deploy/docker"
 cp -r deploy/docker/* "${PACKAGE_DIR}/deploy/docker/"
 
-# Caddy configuration template
+# Caddy configuration templates (example + environment-specific)
+mkdir -p "${PACKAGE_DIR}/deploy/config/environments"
 cp deploy/Caddyfile.example "${PACKAGE_DIR}/deploy/"
+cp deploy/config/environments/Caddyfile.* "${PACKAGE_DIR}/deploy/config/environments/" 2>/dev/null || true
 
 # Deployment scripts (exclude build and provisioning scripts)
 mkdir -p "${PACKAGE_DIR}/deploy/scripts"

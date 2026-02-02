@@ -201,6 +201,11 @@ install_caddy() {
     apt-get update -qq
     apt-get install -y -qq caddy
     
+    # Create log directory with correct ownership to prevent permission issues
+    mkdir -p /var/log/caddy
+    chown caddy:caddy /var/log/caddy
+    chmod 750 /var/log/caddy
+    
     # Enable and start Caddy service
     systemctl enable caddy
     systemctl start caddy
