@@ -321,7 +321,7 @@ func loadEnvFileSimple(path string) {
 
 		// Only set if not already in environment
 		if os.Getenv(key) == "" {
-			os.Setenv(key, value)
+			_ = os.Setenv(key, value)
 		}
 	}
 }

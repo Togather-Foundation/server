@@ -154,7 +154,7 @@ func TestGetSlotPort(t *testing.T) {
 func TestDetermineHealthCheckURLs(t *testing.T) {
 	// Save original env
 	originalPort := os.Getenv("SERVER_PORT")
-	defer os.Setenv("SERVER_PORT", originalPort)
+	defer func() { _ = os.Setenv("SERVER_PORT", originalPort) }()
 
 	tests := []struct {
 		name         string
