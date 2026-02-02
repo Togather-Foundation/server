@@ -28,6 +28,9 @@ services:
       dockerfile: Dockerfile.postgres
     container_name: togather-db
     restart: unless-stopped
+    # Load environment variables from root .env file (../../.env from docker-compose.yml location)
+    env_file:
+      - ../../.env
     networks:
       - togather-net
     ports:
@@ -90,6 +93,9 @@ services:
         BUILD_DATE: ${BUILD_DATE:-unknown}
     container_name: togather-server
     restart: unless-stopped
+    # Load environment variables from root .env file (../../.env from docker-compose.yml location)
+    env_file:
+      - ../../.env
     networks:
       - togather-net
     # NOTE: Port mapping removed from base service to prevent conflicts in blue-green deployment
