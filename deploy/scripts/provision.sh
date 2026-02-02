@@ -318,6 +318,38 @@ install_docker() {
     log_info "✓ Docker installed ($(docker --version))"
 }
 
+install_caddy() {
+    log_info "Installing Caddy..."
+    
+    if command -v caddy &> /dev/null; then
+        log_info "Caddy already installed ($(caddy version))"
+        return
+    fi
+    
+    # Add Caddy's official GPG key
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    
+    # Add Caddy repository
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+    
+    # Install Caddy
+    apt-get update -qq
+    apt-get install -y -qq caddy
+    
+    # Create log directory
+    mkdir -p /var/log/caddy
+    chown caddy:caddy /var/log/caddy
+    chmod 755 /var/log/caddy
+    
+    # Enable and start Caddy service
+    systemctl enable caddy
+    systemctl start caddy
+    
+    log_info "✓ Caddy installed ($(caddy version))"
+    log_info "  Note: Caddy config should be placed at /etc/caddy/Caddyfile"
+}
+
 install_go() {
     log_info "Installing Go ${GO_VERSION}..."
     
@@ -472,6 +504,12 @@ print_next_steps() {
     echo "✓ Server provisioning complete!"
     echo "═══════════════════════════════════════════════════════════════"
     echo ""
+    echo "Installed components:"
+    echo "  ✓ Docker (container runtime)"
+    echo "  ✓ Caddy (reverse proxy with automatic HTTPS)"
+    echo "  ✓ Go ${GO_VERSION} (application runtime)"
+    echo "  ✓ Firewall (UFW) and Fail2ban"
+    echo ""
     echo "IMPORTANT: Docker group membership requires a new login session"
     echo ""
     echo "Next steps:"
@@ -499,6 +537,11 @@ print_next_steps() {
     echo "     ./server setup --docker --allow-production-secrets"
     echo "     # Note: ENVIRONMENT=$APP_ENVIRONMENT is set globally, no need to prefix commands"
     echo ""
+    echo "  5. Configure Caddy for your domain (optional):"
+    echo "     sudo nano /etc/caddy/Caddyfile"
+    echo "     # See docs/deploy/CADDY-DEPLOYMENT.md for examples"
+    echo "     sudo systemctl reload caddy"
+    echo ""
     echo "Security notes:"
     echo "  - Root SSH login is now DISABLED"
     echo "  - Password authentication is DISABLED"
@@ -525,6 +568,7 @@ main() {
     configure_firewall
     configure_fail2ban
     install_docker
+    install_caddy
     install_go
     setup_deploy_user
     configure_system_limits
