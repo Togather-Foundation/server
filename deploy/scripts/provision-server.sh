@@ -316,6 +316,8 @@ print_next_steps() {
     echo "  - Fail2ban is protecting SSH"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
+}
+
 main() {
     log_info "Starting Togather server provisioning..."
     echo ""
