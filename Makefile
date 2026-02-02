@@ -431,14 +431,16 @@ migrate-down:
 .PHONY: migrate-river
 migrate-river:
 	@echo "Running River job queue migrations..."
-	@if command -v river > /dev/null 2>&1; then \
+	@if [ -f ./river ]; then \
+		./river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
+	elif command -v river > /dev/null 2>&1; then \
 		river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
 	elif [ -f $(HOME)/go/bin/river ]; then \
 		$(HOME)/go/bin/river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
 	elif [ -f $(GOPATH)/bin/river ]; then \
 		$(GOPATH)/bin/river migrate-up --database-url "$${DATABASE_URL:?DATABASE_URL is required}"; \
 	else \
-		echo "river CLI not found. Install with 'make install-tools'"; \
+		echo "river CLI not found. Install with 'make install-tools' or use bundled ./river"; \
 		exit 1; \
 	fi
 	@echo "✓ River migrations complete"

@@ -841,7 +841,7 @@ func waitForPostgres(dbURL string, timeoutSecs int) error {
 		}
 
 		fmt.Print(".")
-		exec.Command("sleep", "1").Run()
+		_ = exec.Command("sleep", "1").Run()
 	}
 	fmt.Println()
 
