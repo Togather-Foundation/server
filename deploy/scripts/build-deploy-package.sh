@@ -109,15 +109,17 @@ cat > "${PACKAGE_DIR}/.env.example" <<'EOF'
 # Copy this file to .env and update with your values
 
 # Database
-DATABASE_URL=postgres://togather:password@localhost:5432/togather?sslmode=disable
+DATABASE_URL=postgres://togather:changeme@localhost:5433/togather?sslmode=disable
+POSTGRES_PASSWORD=changeme
 
 # Server
 SERVER_PORT=8080
 SERVER_HOST=0.0.0.0
 
 # Security
-JWT_SECRET=your-secret-key-here-min-32-chars
-CSRF_KEY=your-csrf-key-here-exactly-32-chars
+JWT_SECRET=change-this-to-a-secure-random-string-min-32-chars
+CSRF_KEY=change-this-to-exactly-32chars!!
+ADMIN_PASSWORD=changeme
 
 # CORS (required in production)
 CORS_ALLOWED_ORIGINS=https://yourdomain.com

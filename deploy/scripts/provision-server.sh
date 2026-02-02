@@ -215,12 +215,15 @@ install_caddy() {
 }
 
 setup_deploy_user() {
+    USER_EXISTS=false
     if id "$DEPLOY_USER" &>/dev/null; then
         log_info "Deploy user '$DEPLOY_USER' already exists"
-        return
+        USER_EXISTS=true
+    else
+        log_info "Creating deploy user '$DEPLOY_USER'..."
     fi
     
-    log_info "Creating deploy user '$DEPLOY_USER'..."
+    if [[ "$USER_EXISTS" == "false" ]]; then
     
     # Create deploy user with no password
     adduser --disabled-password --gecos "" "$DEPLOY_USER"
@@ -251,7 +254,10 @@ setup_deploy_user() {
         log_warn "  chmod 600 /home/$DEPLOY_USER/.ssh/authorized_keys"
     fi
     
-    # Set ENVIRONMENT variable globally for the deploy user
+    log_info "✓ Deploy user created"
+    fi  # End of USER_EXISTS check
+    
+    # Set ENVIRONMENT variable globally (always run, even if user exists)
     log_info "Setting ENVIRONMENT=$APP_ENVIRONMENT for $DEPLOY_USER..."
     
     # Add to user's profile so it's set on login
@@ -267,10 +273,9 @@ EOF
         log_info "✓ ENVIRONMENT=$APP_ENVIRONMENT set system-wide in /etc/environment"
     fi
     
-    chown "$DEPLOY_USER":"$DEPLOY_USER" /home/"$DEPLOY_USER"/.profile
+    chown "$DEPLOY_USER":"$DEPLOY_USER" /home/"$DEPLOY_USER"/.profile 2>/dev/null || true
     log_info "✓ ENVIRONMENT=$APP_ENVIRONMENT set in $DEPLOY_USER's profile"
-    
-    log_info "✓ Deploy user created"
+    log_info "✓ Deploy user setup complete"
 }
 
 harden_ssh() {

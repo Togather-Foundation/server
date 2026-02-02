@@ -97,6 +97,13 @@ configure_caddy() {
     log "  → Deploying ${ENVIRONMENT} Caddyfile to /etc/caddy/Caddyfile..."
     cp "$CADDYFILE_SOURCE" /etc/caddy/Caddyfile
     
+    # Create log file with correct permissions (prevents "permission denied" errors)
+    log "  → Creating Caddy log file..."
+    touch "/var/log/caddy/${ENVIRONMENT}.toronto.log"
+    chown caddy:caddy "/var/log/caddy/${ENVIRONMENT}.toronto.log"
+    chmod 644 "/var/log/caddy/${ENVIRONMENT}.toronto.log"
+    success "Log file created: /var/log/caddy/${ENVIRONMENT}.toronto.log"
+    
     # Validate Caddyfile
     if caddy validate --config /etc/caddy/Caddyfile 2>&1 | grep -q "Valid"; then
         success "Caddyfile validated successfully"
@@ -316,8 +323,16 @@ if [[ "$INSTALL_MODE" == "new" ]]; then
     if [[ -f "${SCRIPT_DIR}/.env" ]]; then
         cp "${SCRIPT_DIR}/.env" "${APP_DIR}/.env"
         success ".env copied from package"
+    elif [[ -f "${SCRIPT_DIR}/.env.example" ]]; then
+        cp "${SCRIPT_DIR}/.env.example" "${APP_DIR}/.env"
+        warning ".env created from .env.example - UPDATE PASSWORDS AND SECRETS!"
+        warning "Edit ${APP_DIR}/.env and change:"
+        warning "  - POSTGRES_PASSWORD (used by database)"
+        warning "  - JWT_SECRET (min 32 chars)"
+        warning "  - CSRF_KEY (exactly 32 chars)"
+        warning "  - ADMIN_PASSWORD"
     else
-        error_exit ".env file not found in package"
+        error_exit ".env.example file not found in package"
     fi
 else
     log "  → Preserving existing .env (backed up to .env.backup)"
@@ -362,6 +377,13 @@ cd "${APP_DIR}/deploy/docker"
 
 # Stop any existing containers first (cleanup)
 docker compose --env-file ../../.env down 2>/dev/null || true
+
+# Clean old volumes on new install to prevent password mismatch issues
+if [[ "$INSTALL_MODE" == "new" ]]; then
+    log "  → Cleaning old Docker volumes (new install)..."
+    docker volume rm togather-db-data togather-db-snapshots 2>/dev/null || true
+    success "Old volumes cleaned"
+fi
 
 # Start database
 log "  → Starting PostgreSQL database..."
