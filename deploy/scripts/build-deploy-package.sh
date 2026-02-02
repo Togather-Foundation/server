@@ -394,6 +394,8 @@ if [[ -d "${APP_DIR}" ]]; then
     if [[ -f "${APP_DIR}/.env" ]]; then
         BACKUP_FILE="${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
         sudo cp "${APP_DIR}/.env" "$BACKUP_FILE"
+        # Also create/update .env.backup symlink for setup command compatibility
+        sudo ln -sf "$(basename "$BACKUP_FILE")" "${APP_DIR}/.env.backup"
         log "  ✓ Backed up .env to $(basename "$BACKUP_FILE")"
     fi
 fi
@@ -926,6 +928,8 @@ if [[ -f "${APP_DIR}/.env" ]]; then
     BACKUP_FILE="${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
     echo "→ Backing up .env to ${BACKUP_FILE}..."
     sudo cp "${APP_DIR}/.env" "$BACKUP_FILE"
+    # Also create/update .env.backup symlink for setup command compatibility
+    sudo ln -sf "$(basename "$BACKUP_FILE")" "${APP_DIR}/.env.backup"
 fi
 
 # Update binary
