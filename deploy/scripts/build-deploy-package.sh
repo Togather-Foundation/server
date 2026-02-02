@@ -63,6 +63,9 @@ mkdir -p "${PACKAGE_DIR}/docs"
 cp -r docs/deploy "${PACKAGE_DIR}/docs/" 2>/dev/null || true
 cp README.md "${PACKAGE_DIR}/" 2>/dev/null || true
 
+# Makefile for convenience commands
+cp Makefile "${PACKAGE_DIR}/" 2>/dev/null || true
+
 # Example .env file
 cat > "${PACKAGE_DIR}/.env.example" <<'EOF'
 # Togather Server Configuration
@@ -116,6 +119,8 @@ head -c 32 /dev/urandom | base64  # For CSRF_KEY
 
 ### 3. Start Services
 
+**Option A: Using docker compose directly (recommended for production)**
+
 ```bash
 # Start database
 docker compose -f deploy/docker/docker-compose.yml up -d postgres
@@ -129,6 +134,18 @@ sleep 5
 # Start all services
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
+
+**Option B: Using Makefile shortcuts (if make is installed)**
+
+```bash
+# Start all services
+make docker-up
+
+# Run migrations
+./server migrate up
+```
+
+Note: The Makefile is included for convenience but not required.
 
 ### 4. Verify
 
