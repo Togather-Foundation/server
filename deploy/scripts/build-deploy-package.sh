@@ -212,11 +212,38 @@ echo "  ✓ Installed as: togather-server"
 
 # Create application directory
 APP_DIR="/opt/togather"
-echo "→ Creating application directory: ${APP_DIR}"
+echo "→ Installing to ${APP_DIR}..."
+
+if [[ -d "${APP_DIR}" ]]; then
+    echo "  Existing installation detected"
+    
+    # Backup .env if it exists
+    if [[ -f "${APP_DIR}/.env" ]]; then
+        echo "  Backing up existing .env..."
+        sudo cp "${APP_DIR}/.env" "${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    # Ask if user wants clean install
+    read -p "  Clean install (removes old files)? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "  Removing old installation..."
+        sudo rm -rf "${APP_DIR:?}"/*
+        # Restore .env if it was backed up
+        if ls "${APP_DIR}"/.env.backup.* 1> /dev/null 2>&1; then
+            LATEST_BACKUP=$(ls -t "${APP_DIR}"/.env.backup.* | head -1)
+            sudo cp "$LATEST_BACKUP" "${APP_DIR}/.env"
+            echo "  ✓ Restored .env from backup"
+        fi
+    else
+        echo "  Upgrading in place (preserving existing files)..."
+    fi
+fi
+
 sudo mkdir -p "${APP_DIR}"
 sudo cp -r * "${APP_DIR}/"
 sudo chown -R $(whoami):$(whoami) "${APP_DIR}"
-echo "  ✓ Application files copied"
+echo "  ✓ Application files installed"
 
 # Create systemd service
 if [[ -d /etc/systemd/system ]]; then
@@ -258,6 +285,97 @@ echo "Check status: togather-server healthcheck"
 INSTALLEOF
 
 chmod +x "${PACKAGE_DIR}/install.sh"
+
+# Create upgrade script
+cat > "${PACKAGE_DIR}/upgrade.sh" <<'UPGRADEEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Togather Server Upgrade"
+echo "======================="
+echo ""
+
+APP_DIR="/opt/togather"
+
+if [[ ! -d "$APP_DIR" ]]; then
+    echo "Error: No existing installation found at ${APP_DIR}"
+    echo "Use ./install.sh for first-time installation"
+    exit 1
+fi
+
+# Stop service if running
+if systemctl is-active --quiet togather; then
+    echo "→ Stopping service..."
+    sudo systemctl stop togather
+fi
+
+# Backup .env
+if [[ -f "${APP_DIR}/.env" ]]; then
+    BACKUP_FILE="${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
+    echo "→ Backing up .env to ${BACKUP_FILE}..."
+    sudo cp "${APP_DIR}/.env" "$BACKUP_FILE"
+fi
+
+# Update binary
+echo "→ Updating server binary..."
+sudo install -m 755 server /usr/local/bin/togather-server
+echo "  ✓ Binary updated"
+
+# Update application files (preserve .env)
+echo "→ Updating application files..."
+TEMP_ENV=$(mktemp)
+if [[ -f "${APP_DIR}/.env" ]]; then
+    sudo cp "${APP_DIR}/.env" "$TEMP_ENV"
+fi
+
+# Copy new files
+sudo cp -r contexts shapes deploy internal docs DEPLOY.md README.md "${APP_DIR}/" 2>/dev/null || true
+
+# Restore .env
+if [[ -f "$TEMP_ENV" ]]; then
+    sudo cp "$TEMP_ENV" "${APP_DIR}/.env"
+    rm "$TEMP_ENV"
+fi
+
+echo "  ✓ Files updated"
+
+# Update systemd service
+if [[ -d /etc/systemd/system ]]; then
+    echo "→ Updating systemd service..."
+    sudo tee /etc/systemd/system/togather.service > /dev/null <<EOF
+[Unit]
+Description=Togather SEL Server
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$(whoami)
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+ExecStart=/usr/local/bin/togather-server serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    echo "  ✓ Systemd service updated"
+fi
+
+echo ""
+echo "Upgrade complete!"
+echo ""
+echo "Next steps:"
+echo "  1. Review changes: diff ${APP_DIR}/.env ${APP_DIR}/.env.example"
+echo "  2. Run migrations: togather-server migrate up"
+echo "  3. Start service: sudo systemctl start togather"
+echo "  4. Check status: togather-server healthcheck"
+echo ""
+UPGRADEEOF
+
+chmod +x "${PACKAGE_DIR}/upgrade.sh"
 
 # Create tarball
 echo "→ Creating tarball..."
