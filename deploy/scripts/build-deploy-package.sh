@@ -118,8 +118,45 @@ This package contains everything needed to deploy the Togather SEL server.
 - `deploy/docker/` - Docker Compose configuration
 - `internal/storage/postgres/migrations/` - Database schema migrations
 - `contexts/`, `shapes/` - JSON-LD contexts and SHACL shapes
-- `install.sh` - Automated installation script
-- `upgrade.sh` - Upgrade existing installation
+- `install.sh` - Automated installation script (first-time install OR upgrade)
+- `upgrade.sh` - Manual upgrade script (legacy, for manual control)
+
+## Installation Type
+
+**Choose the right command for your scenario:**
+
+### First-Time Installation
+
+```bash
+sudo ./install.sh
+```
+
+Installs Togather server to `/opt/togather`, creates systemd service, starts everything.
+
+### Upgrading Existing Installation
+
+**Recommended: Use install.sh (automatic data protection)**
+
+```bash
+sudo ./install.sh
+```
+
+When existing installation is detected:
+1. Creates automatic backup to `/opt/togather/backups/`
+2. Offers three options:
+   - **[1] PRESERVE DATA** - Keep database intact, update files/binary (recommended)
+   - **[2] FRESH INSTALL** - Delete all data (requires explicit confirmation)
+   - **[3] ABORT** - Cancel installation
+3. For non-interactive mode: defaults to PRESERVE DATA (safest)
+
+**Alternative: Use upgrade.sh (manual control)**
+
+```bash
+sudo ./upgrade.sh
+# Then manually: togather-server migrate up && sudo systemctl start togather
+```
+
+Use this only if you need manual control over migrations/startup timing.
 
 ## Quick Start
 
@@ -129,59 +166,28 @@ This package contains everything needed to deploy the Togather SEL server.
 - 2GB+ RAM
 - Open ports: 80 (HTTP), 443 (HTTPS), 8080 (app)
 
-### 2. Configuration
+### 2. Run Installation
 
 ```bash
-# Copy and edit environment file
-cp .env.example .env
-nano .env
+# First-time installation
+sudo ./install.sh
 
-# Generate secure secrets
-./server api-key generate  # For JWT_SECRET
-head -c 32 /dev/urandom | base64  # For CSRF_KEY
+# Or upgrade existing installation
+sudo ./install.sh
+# (will auto-detect and offer upgrade options)
 ```
 
-### 3. Start Services
-
-**Option A: Using docker compose directly (recommended for production)**
-
-```bash
-# Start database
-docker compose -f deploy/docker/docker-compose.yml up -d postgres
-
-# Wait for database
-sleep 5
-
-# Run migrations (using bundled migrate tool)
-./migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
-
-# Or use the server CLI
-./server migrate up
-
-# Start all services
-docker compose -f deploy/docker/docker-compose.yml up -d
-```
-
-**Option B: Using Makefile shortcuts (if make is installed)**
-
-```bash
-# Start all services
-make docker-up
-
-# Run migrations
-./server migrate up
-```
-
-Note: The Makefile is included for convenience but not required.
-
-### 4. Verify
+### 3. Verify
 
 ```bash
 # Check health
-./server healthcheck
+togather-server healthcheck
+
+# View credentials
+cat /opt/togather/installation-report.txt
 
 # View logs
-docker compose -f deploy/docker/docker-compose.yml logs -f server
+sudo journalctl -u togather -f
 ```
 
 ## CLI Commands
@@ -761,10 +767,28 @@ chmod +x "${PACKAGE_DIR}/install.sh"
 # Create upgrade script
 cat > "${PACKAGE_DIR}/upgrade.sh" <<'UPGRADEEOF'
 #!/usr/bin/env bash
+# Togather Server Manual Upgrade Script
+# 
+# NOTE: For most cases, use ./install.sh instead!
+# install.sh automatically detects existing installations, creates backups,
+# and offers smart upgrade options. This script is for manual control only.
+#
+# Recommendation: Use ./install.sh and choose option [1] PRESERVE DATA
+
 set -euo pipefail
 
-echo "Togather Server Upgrade"
-echo "======================="
+echo "Togather Server Manual Upgrade"
+echo "==============================="
+echo ""
+echo "ℹ️  TIP: For automatic backup + upgrade, use ./install.sh instead"
+echo "    This script gives you manual control but requires more steps."
+echo ""
+read -p "Continue with manual upgrade? (y/N): " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted. Consider using ./install.sh for easier upgrade."
+    exit 0
+fi
 echo ""
 
 APP_DIR="/opt/togather"
@@ -839,7 +863,7 @@ fi
 echo ""
 echo "Upgrade complete!"
 echo ""
-echo "Next steps:"
+echo "⚠️  IMPORTANT: Manual steps required:"
 echo "  1. Review changes: diff ${APP_DIR}/.env ${APP_DIR}/.env.example"
 echo "  2. Run migrations: togather-server migrate up"
 echo "  3. Start service: sudo systemctl start togather"
@@ -848,6 +872,7 @@ echo ""
 UPGRADEEOF
 
 chmod +x "${PACKAGE_DIR}/upgrade.sh"
+
 
 # Create tarball
 echo "→ Creating tarball..."

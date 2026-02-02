@@ -588,7 +588,102 @@ cat /var/log/togather/deployments/dep_01JBQR2KXYZ9876543210.json | jq '.'
 
 ## Common Operations
 
-### Update to New Version
+### Upgrade Existing Installation
+
+**⏱️ Time: 3-5 minutes | Target: Server with existing installation**
+
+There are two ways to upgrade an existing Togather installation:
+
+#### Option 1: Using install.sh (Recommended)
+
+The `install.sh` script automatically detects existing installations and offers smart upgrade options:
+
+```bash
+# On your local machine: Build latest package
+make deploy-package
+scp dist/togather-server-*.tar.gz user@server:~/
+
+# On the target server: Extract and run install.sh
+tar -xzf togather-server-*.tar.gz
+cd togather-server-*/
+sudo ./install.sh
+```
+
+**What happens during upgrade:**
+1. Detects existing installation at `/opt/togather`
+2. Creates automatic backup to `/opt/togather/backups/pre-reinstall-YYYYMMDD-HHMMSS.sql.gz`
+3. Presents three options:
+   - **[1] PRESERVE DATA** - Keep database intact, update files/binary (recommended)
+   - **[2] FRESH INSTALL** - Delete all data (requires explicit `DELETE ALL DATA` confirmation)
+   - **[3] ABORT** - Cancel installation
+4. If you choose option 1:
+   - Preserves all database volumes
+   - Updates binary to `/usr/local/bin/togather-server`
+   - Updates application files
+   - Runs migrations (idempotent, safe)
+   - Restarts service
+   - **No data loss**
+
+**Non-interactive mode** (for automation):
+```bash
+# Defaults to PRESERVE DATA (option 1) - safest behavior
+echo "" | sudo ./install.sh
+```
+
+#### Option 2: Using upgrade.sh (Legacy)
+
+For manual control over the upgrade process:
+
+```bash
+# On the target server: Extract and run upgrade.sh
+tar -xzf togather-server-*.tar.gz
+cd togather-server-*/
+sudo ./upgrade.sh
+```
+
+**What upgrade.sh does:**
+1. Checks for existing installation
+2. Stops the service gracefully
+3. Backs up `.env` file
+4. Updates binary
+5. Updates application files (preserves `.env`)
+6. Updates systemd service
+
+**After running upgrade.sh, you must manually:**
+```bash
+# 1. Run migrations
+togather-server migrate up
+
+# 2. Start service
+sudo systemctl start togather
+
+# 3. Verify health
+togather-server healthcheck
+```
+
+#### Recommendation
+
+- **Use install.sh (Option 1)** - Fully automated, creates database backups, handles everything
+- **Use upgrade.sh (Option 2)** - Only if you need manual control over migrations/startup
+
+### Update to New Version (Docker Compose Development)
+
+For local development with Docker Compose:
+
+```bash
+# Pull latest code
+git pull origin main
+
+# Rebuild and restart
+make docker-rebuild
+
+# Verify
+curl http://localhost:8080/health | jq '.status'
+```
+
+### Update to New Version (Production with deploy.sh)
+
+For production deployments using the blue-green deployment script:
 
 ```bash
 # Pull latest code
