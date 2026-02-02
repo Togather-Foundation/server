@@ -818,7 +818,7 @@ validate_build_args() {
     # Validate GIT_COMMIT format (40-character hex string for full commit)
     if [[ -n "${git_commit}" ]] && [[ "${git_commit}" != "unknown" ]]; then
         if ! echo "${git_commit}" | grep -qE '^[0-9a-f]{40}$'; then
-            errors+=("GIT_COMMIT must be 40-character hex string (got: ${git_commit})")
+            errors+=("GIT_COMMIT must be 7-40 character hex string (got: ${git_commit})")
         fi
     fi
     
