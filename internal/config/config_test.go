@@ -61,7 +61,7 @@ func TestLoad_ProductionCORS_ValidOrigins(t *testing.T) {
 	_ = os.Setenv("ENVIRONMENT", "production")
 	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://app.example.com")
 	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
-	os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
 
 	cfg, err := Load()
 	if err != nil {
@@ -94,10 +94,10 @@ func TestLoad_DevelopmentCORS_AllowsAll(t *testing.T) {
 	}()
 
 	// Test case: development should allow all origins regardless of CORS_ALLOWED_ORIGINS
-	os.Setenv("ENVIRONMENT", "development")
-	os.Setenv("CORS_ALLOWED_ORIGINS", "")
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "")
 	os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
-	os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
 
 	cfg, err := Load()
 	if err != nil {
@@ -130,7 +130,7 @@ func TestLoad_TestEnvironment_AllowsAll(t *testing.T) {
 	os.Setenv("ENVIRONMENT", "test")
 	os.Setenv("CORS_ALLOWED_ORIGINS", "")
 	os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
-	os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
 
 	cfg, err := Load()
 	if err != nil {

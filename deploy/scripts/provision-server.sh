@@ -141,7 +141,7 @@ install_go() {
         return
     fi
     
-    GO_VERSION="1.23.5"
+    GO_VERSION="1.24.12"
     GO_ARCH=$(dpkg --print-architecture | sed 's/armhf/armv6l/')
     
     wget -q "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"

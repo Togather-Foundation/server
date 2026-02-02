@@ -194,7 +194,7 @@ func TestAppendToEnvFile(t *testing.T) {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	// Write initial content
 	initialContent := "EXISTING_KEY=existing_value\n"

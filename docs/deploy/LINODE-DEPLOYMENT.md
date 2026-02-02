@@ -165,8 +165,8 @@ docker compose version  # Should show Docker Compose version 2.x+
 #### 5. Install Go (if building from source)
 
 ```bash
-# Download and install Go 1.23+
-GO_VERSION="1.23.5"
+# Download and install Go 1.24.12
+GO_VERSION="1.24.12"
 wget "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 sudo rm -rf /usr/local/go
 sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
@@ -176,10 +176,8 @@ echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc
 source ~/.bashrc
 
-source ~/.bashrc
-
 # Verify
-go version  # Should show: go version go1.23.5 linux/amd64
+go version  # Should show: go version go1.24.12 linux/amd64
 ```
 
 </details>
