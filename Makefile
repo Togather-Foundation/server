@@ -398,28 +398,32 @@ sqlc: sqlc-generate
 .PHONY: migrate-up
 migrate-up:
 	@echo "Running migrations..."
-	@if command -v migrate > /dev/null 2>&1; then \
+	@if [ -f ./migrate ]; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} ./migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
+	elif command -v migrate > /dev/null 2>&1; then \
 		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
 	elif [ -f $(HOME)/go/bin/migrate ]; then \
 		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(HOME)/go/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
 	elif [ -f $(GOPATH)/bin/migrate ]; then \
 		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(GOPATH)/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" up; \
 	else \
-		echo "migrate not found. Install with 'make install-tools'"; \
+		echo "migrate not found. Install with 'make install-tools' or use bundled ./migrate"; \
 		exit 1; \
 	fi
 
 .PHONY: migrate-down
 migrate-down:
 	@echo "Rolling back last migration..."
-	@if command -v migrate > /dev/null 2>&1; then \
+	@if [ -f ./migrate ]; then \
+		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} ./migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
+	elif command -v migrate > /dev/null 2>&1; then \
 		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
 	elif [ -f $(HOME)/go/bin/migrate ]; then \
 		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(HOME)/go/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
 	elif [ -f $(GOPATH)/bin/migrate ]; then \
 		DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} $(GOPATH)/bin/migrate -path $(MIGRATIONS_DIR) -database "$$DATABASE_URL" down 1; \
 	else \
-		echo "migrate not found. Install with 'make install-tools'"; \
+		echo "migrate not found. Install with 'make install-tools' or use bundled ./migrate"; \
 		exit 1; \
 	fi
 
