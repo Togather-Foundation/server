@@ -145,45 +145,31 @@ This package contains everything needed to deploy the Togather SEL server.
 - `internal/storage/postgres/migrations/` - Database schema migrations
 - `internal/river/migrations/` - River job queue migrations
 - `contexts/`, `shapes/` - JSON-LD contexts and SHACL shapes
-- `install.sh` - Automated installation script (first-time install OR upgrade)
-- `upgrade.sh` - Manual upgrade script (legacy, for manual control)
+- `install.sh` - Automated installation script (handles both new installs and upgrades)
 
-## Installation Type
+## Installation
 
-**Choose the right command for your scenario:**
+**Use `install.sh` for both first-time installation and upgrades:**
+
+```bash
+sudo ./install.sh
+```
 
 ### First-Time Installation
 
-```bash
-sudo ./install.sh
-```
-
-Installs Togather server to `/opt/togather`, creates systemd service, starts everything.
+Installs Togather server to `/opt/togather`, creates systemd service, starts everything automatically.
 
 ### Upgrading Existing Installation
 
-**Recommended: Use install.sh (automatic data protection)**
-
-```bash
-sudo ./install.sh
-```
-
-When existing installation is detected:
-1. Creates automatic backup to `/opt/togather/backups/`
+When existing installation is detected, `install.sh` automatically:
+1. Creates backup to `/opt/togather/backups/` (both .env and database)
 2. Offers three options:
    - **[1] PRESERVE DATA** - Keep database intact, update files/binary (recommended)
    - **[2] FRESH INSTALL** - Delete all data (requires explicit confirmation)
    - **[3] ABORT** - Cancel installation
-3. For non-interactive mode: defaults to PRESERVE DATA (safest)
-
-**Alternative: Use upgrade.sh (manual control)**
-
-```bash
-sudo ./upgrade.sh
-# Then manually: togather-server migrate up && sudo systemctl start togather
-```
-
-Use this only if you need manual control over migrations/startup timing.
+3. Runs migrations automatically
+4. Restarts service and validates health
+5. For non-interactive mode: defaults to PRESERVE DATA (safest option)
 
 ## Quick Start
 
@@ -265,124 +251,6 @@ echo "  ✓ install.sh copied from template"
 
 chmod +x "${PACKAGE_DIR}/install.sh"
 
-# Create upgrade script
-cat > "${PACKAGE_DIR}/upgrade.sh" <<'UPGRADEEOF'
-#!/usr/bin/env bash
-# Togather Server Manual Upgrade Script
-# 
-# NOTE: For most cases, use ./install.sh instead!
-# install.sh automatically detects existing installations, creates backups,
-# and offers smart upgrade options. This script is for manual control only.
-#
-# Recommendation: Use ./install.sh and choose option [1] PRESERVE DATA
-
-set -euo pipefail
-
-echo "Togather Server Manual Upgrade"
-echo "==============================="
-echo ""
-echo "ℹ️  TIP: For automatic backup + upgrade, use ./install.sh instead"
-echo "    This script gives you manual control but requires more steps."
-echo ""
-read -p "Continue with manual upgrade? (y/N): " -n 1 -r
-echo ""
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted. Consider using ./install.sh for easier upgrade."
-    exit 0
-fi
-echo ""
-
-APP_DIR="/opt/togather"
-
-if [[ ! -d "$APP_DIR" ]]; then
-    echo "Error: No existing installation found at ${APP_DIR}"
-    echo "Use ./install.sh for first-time installation"
-    exit 1
-fi
-
-# Stop service if running
-if systemctl is-active --quiet togather; then
-    echo "→ Stopping service..."
-    sudo systemctl stop togather
-fi
-
-# Backup .env
-if [[ -f "${APP_DIR}/.env" ]]; then
-    BACKUP_FILE="${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
-    echo "→ Backing up .env to ${BACKUP_FILE}..."
-    sudo cp "${APP_DIR}/.env" "$BACKUP_FILE"
-    # Also create/update .env.backup symlink for setup command compatibility
-    sudo ln -sf "$(basename "$BACKUP_FILE")" "${APP_DIR}/.env.backup"
-fi
-
-# Update binary
-echo "→ Updating server binary..."
-sudo install -m 755 server /usr/local/bin/togather-server
-echo "  ✓ Binary updated"
-
-# Update application files (preserve .env)
-echo "→ Updating application files..."
-TEMP_ENV=$(mktemp)
-if [[ -f "${APP_DIR}/.env" ]]; then
-    sudo cp "${APP_DIR}/.env" "$TEMP_ENV"
-fi
-
-# Copy new files
-sudo cp -r contexts shapes deploy internal docs DEPLOY.md README.md "${APP_DIR}/" 2>/dev/null || true
-
-# Restore .env
-if [[ -f "$TEMP_ENV" ]]; then
-    sudo cp "$TEMP_ENV" "${APP_DIR}/.env"
-    rm "$TEMP_ENV"
-fi
-
-echo "  ✓ Files updated"
-
-# Update Docker Caddyfile if it doesn't exist (but don't overwrite customized ones)
-if [[ ! -f "${APP_DIR}/deploy/docker/Caddyfile" ]] && [[ -f "${APP_DIR}/deploy/docker/Caddyfile.example" ]]; then
-    echo "→ Creating Docker Caddyfile from example..."
-    sudo cp "${APP_DIR}/deploy/docker/Caddyfile.example" "${APP_DIR}/deploy/docker/Caddyfile"
-    echo "  ✓ Docker Caddyfile created"
-fi
-
-# Update systemd service
-if [[ -d /etc/systemd/system ]]; then
-    echo "→ Updating systemd service..."
-    sudo tee /etc/systemd/system/togather.service > /dev/null <<EOF
-[Unit]
-Description=Togather SEL Server
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Type=simple
-User=$(whoami)
-WorkingDirectory=${APP_DIR}
-EnvironmentFile=${APP_DIR}/.env
-ExecStart=/usr/local/bin/togather-server serve
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    sudo systemctl daemon-reload
-    echo "  ✓ Systemd service updated"
-fi
-
-echo ""
-echo "Upgrade complete!"
-echo ""
-echo "⚠️  IMPORTANT: Manual steps required:"
-echo "  1. Review changes: diff ${APP_DIR}/.env ${APP_DIR}/.env.example"
-echo "  2. Run migrations: togather-server migrate up"
-echo "  3. Start service: sudo systemctl start togather"
-echo "  4. Check status: togather-server healthcheck"
-echo ""
-UPGRADEEOF
-
-chmod +x "${PACKAGE_DIR}/upgrade.sh"
-
 
 # Create tarball
 echo "→ Creating tarball..."
@@ -412,7 +280,7 @@ echo "To upgrade existing installation:"
 echo "  1. Copy to server: scp ${OUTPUT_DIR}/${PACKAGE_NAME}.tar.gz user@server:~/"
 echo "  2. SSH to server:  ssh user@server"
 echo "  3. Extract:        tar -xzf ${PACKAGE_NAME}.tar.gz"
-echo "  4. Upgrade:        cd ${PACKAGE_NAME} && sudo ./upgrade.sh"
+echo "  4. Upgrade:        cd ${PACKAGE_NAME} && sudo ./install.sh"
 echo ""
 echo "Or quick deploy:"
 echo "  scp ${OUTPUT_DIR}/${PACKAGE_NAME}.tar.gz user@server:~/ && \\"

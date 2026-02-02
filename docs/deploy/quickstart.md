@@ -630,42 +630,6 @@ sudo ./install.sh
 echo "" | sudo ./install.sh
 ```
 
-#### Option 2: Using upgrade.sh (Legacy)
-
-For manual control over the upgrade process:
-
-```bash
-# On the target server: Extract and run upgrade.sh
-tar -xzf togather-server-*.tar.gz
-cd togather-server-*/
-sudo ./upgrade.sh
-```
-
-**What upgrade.sh does:**
-1. Checks for existing installation
-2. Stops the service gracefully
-3. Backs up `.env` file
-4. Updates binary
-5. Updates application files (preserves `.env`)
-6. Updates systemd service
-
-**After running upgrade.sh, you must manually:**
-```bash
-# 1. Run migrations
-togather-server migrate up
-
-# 2. Start service
-sudo systemctl start togather
-
-# 3. Verify health
-togather-server healthcheck
-```
-
-#### Recommendation
-
-- **Use install.sh (Option 1)** - Fully automated, creates database backups, handles everything
-- **Use upgrade.sh (Option 2)** - Only if you need manual control over migrations/startup
-
 ### Update to New Version (Docker Compose Development)
 
 For local development with Docker Compose:
