@@ -351,7 +351,23 @@ func runSetup() error {
 		fmt.Println("Step 7: Start Docker Services")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		if setupNonInteractive || confirm("Start Docker services now?", true) {
+		// Check if user can access Docker
+		dockerAccessible := canAccessDocker()
+
+		if !dockerAccessible {
+			fmt.Println("⚠️  Docker permission issue detected")
+			fmt.Println()
+			fmt.Println("You need to be in the 'docker' group to run Docker commands.")
+			fmt.Println()
+			fmt.Println("Fix this by running ONE of these commands:")
+			fmt.Println("  1. Log out and log back in (group changes take effect)")
+			fmt.Println("  2. Run: newgrp docker")
+			fmt.Println("  3. Run: sudo usermod -aG docker $USER && newgrp docker")
+			fmt.Println()
+			fmt.Println("After fixing permissions, start Docker with:")
+			fmt.Println("  docker compose -f deploy/docker/docker-compose.yml up -d")
+			fmt.Println()
+		} else if setupNonInteractive || confirm("Start Docker services now?", true) {
 			fmt.Println("Starting Docker containers...")
 			if err := runCommand("make", "docker-up"); err != nil {
 				fmt.Printf("⚠️  Failed to start Docker: %v\n", err)
@@ -746,6 +762,14 @@ func generateSecret(length int) (string, error) {
 func checkCommand(cmd string) bool {
 	_, err := exec.LookPath(cmd)
 	return err == nil
+}
+
+func canAccessDocker() bool {
+	// Try to run 'docker ps' to check if we have access
+	cmd := exec.Command("docker", "ps")
+	cmd.Stdout = nil // Suppress output
+	cmd.Stderr = nil // Suppress errors
+	return cmd.Run() == nil
 }
 
 func runCommand(name string, args ...string) error {
