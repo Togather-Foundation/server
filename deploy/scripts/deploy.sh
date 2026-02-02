@@ -177,11 +177,11 @@ get_file_perms() {
 # Example:
 #   update_state_file_atomic --arg status "deployed" '.deployments[-1].status = $status'
 update_state_file_atomic() {
-    local jq_expression="$1"
+    # All arguments are passed to jq
     local temp_file=$(mktemp)
     
-    # Write to temp file
-    if ! jq "$jq_expression" "${STATE_FILE}" > "$temp_file"; then
+    # Write to temp file, passing all arguments to jq
+    if ! jq "$@" "${STATE_FILE}" > "$temp_file"; then
         log "ERROR" "Failed to update state file with jq"
         rm -f "$temp_file"
         return 1
@@ -740,27 +740,21 @@ EOJSON
     local locked_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
     # Update state file with lock (atomic update with fsync)
-    update_state_file_atomic --arg lock_id "$lock_id" \
-       --arg deployment_id "$DEPLOYMENT_ID" \
-       --arg locked_by "$DEPLOYED_BY" \
-       --arg locked_at "$locked_at" \
-       --arg lock_expires_at "$lock_expires_at" \
-       --arg pid "$$" \
-       --arg hostname "$(hostname)" \
-       '.lock = {
-          locked: true,
-          lock_id: $lock_id,
-          deployment_id: $deployment_id,
-          locked_by: $locked_by,
-          locked_at: $locked_at,
-          lock_expires_at: $lock_expires_at,
-          pid: ($pid | tonumber),
-          hostname: $hostname
-        }' || {
+    update_state_file_atomic \
+        --arg lock_id "$lock_id" \
+        --arg deployment_id "$DEPLOYMENT_ID" \
+        --arg locked_by "$DEPLOYED_BY" \
+        --arg locked_at "$locked_at" \
+        --arg lock_expires_at "$lock_expires_at" \
+        --arg pid "$$" \
+        --arg hostname "$(hostname)" \
+        '.lock = {locked: true, lock_id: $lock_id, deployment_id: $deployment_id, locked_by: $locked_by, locked_at: $locked_at, lock_expires_at: $lock_expires_at, pid: ($pid | tonumber), hostname: $hostname}'
+    
+    if [[ $? -ne 0 ]]; then
         log "ERROR" "Failed to update state file with lock"
         rmdir "$lock_dir" 2>/dev/null || true
         return 1
-    }
+    fi
     
     log "SUCCESS" "Deployment lock acquired: ${DEPLOYMENT_ID}"
     return 0
