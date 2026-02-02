@@ -127,6 +127,7 @@ The server supports:
 	testRootCmd.AddCommand(deployCmd)
 	testRootCmd.AddCommand(ingestCmd)
 	testRootCmd.AddCommand(healthcheckCmd)
+	testRootCmd.AddCommand(cleanupCmd)
 
 	return testRootCmd
 }
