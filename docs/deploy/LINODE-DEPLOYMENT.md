@@ -60,30 +60,65 @@ This guide walks you through deploying the Togather server to a fresh Linode VM 
 
 ### Quick Start: Automated Provisioning (Recommended)
 
-The fastest way to set up your server is using our automated provisioning script:
+The fastest way to set up your server is using our automated provisioning script.
+
+#### Option 1: Run from Your Local Machine (Easiest)
+
+```bash
+# From your local machine (in the repo directory)
+cd deploy/scripts
+./provision-remote.sh root@192.46.222.199
+
+# Or with custom Go version
+./provision-remote.sh root@192.46.222.199 1.25.0
+
+# Or with custom deploy username
+./provision-remote.sh root@192.46.222.199 1.24.12 togather
+
+# Or using SSH config alias
+./provision-remote.sh togather-root
+```
+
+This script will SSH into your server, upload the provisioning script, and execute it remotely.
+
+#### Option 2: Run Directly on Server
 
 ```bash
 # SSH into your Linode as root
 ssh root@YOUR_LINODE_IP
 
 # Download and run the provisioning script
-curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/togather/main/deploy/scripts/provision-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Togather-Foundation/server/001-sel-backend/deploy/scripts/provision-server.sh | bash
 
-# Or if you've already cloned the repo:
-sudo ./deploy/scripts/provision-server.sh
+# Or with environment variables
+GO_VERSION=1.25.0 bash <(curl -fsSL https://raw.githubusercontent.com/Togather-Foundation/server/001-sel-backend/deploy/scripts/provision-server.sh)
+```
+
+#### Option 3: Clone Repo First, Then Provision
+
+```bash
+ssh root@YOUR_LINODE_IP
+git clone https://github.com/Togather-Foundation/server.git
+cd server/deploy/scripts
+
+# Run with defaults
+sudo ./provision-server.sh
+
+# Or customize
+GO_VERSION=1.25.0 DEPLOY_USER=togather sudo ./provision-server.sh
 ```
 
 **Customization via environment variables:**
 
 ```bash
 # Install a specific Go version
-GO_VERSION=1.25.0 sudo ./deploy/scripts/provision-server.sh
+GO_VERSION=1.25.0 sudo ./provision-server.sh
 
 # Use a different deploy username
-DEPLOY_USER=togather sudo ./deploy/scripts/provision-server.sh
+DEPLOY_USER=togather sudo ./provision-server.sh
 
 # Skip SSH hardening prompt (for automation)
-SKIP_SSH_HARDEN=true GO_VERSION=1.24.12 sudo ./deploy/scripts/provision-server.sh
+SKIP_SSH_HARDEN=true GO_VERSION=1.24.12 sudo ./provision-server.sh
 ```
 
 **This script will:**
