@@ -1,0 +1,119 @@
+# Togather Server Caddyfile - PRODUCTION Environment
+# toronto.togather.foundation
+#
+# Blue-Green Deployment: Change the upstream address to switch traffic
+# Reference: specs/001-deployment-infrastructure/spec.md FR-009
+
+# Global options
+{
+	# Email for Let's Encrypt notifications
+	email admin@togather.foundation
+	
+	# Enable admin API on localhost only (for management)
+	admin localhost:2019
+	
+	# Log level
+	log {
+		level INFO
+	}
+}
+
+# ==============================================================================
+# PRODUCTION - toronto.togather.foundation
+# ==============================================================================
+# ACTIVE SLOT: Change between localhost:8081 (blue) and localhost:8082 (green)
+# ==============================================================================
+
+toronto.togather.foundation {
+	# Reverse proxy to active slot
+	# Current: Blue slot (port 8081)
+	# To switch to green: Change to localhost:8082
+	reverse_proxy localhost:8081 {
+		# Health check configuration
+		health_uri /health
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+		
+		# Preserve client information
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		
+		# Add slot identifier for debugging
+		# Update this when switching slots: "blue" or "green"
+		header_down X-Togather-Slot "blue"
+	}
+	
+	# Compression
+	encode gzip
+	
+	# Access logging
+	log {
+		output file /var/log/caddy/toronto.log {
+			roll_size 100mb
+			roll_keep 5
+			roll_keep_for 168h
+		}
+		format json
+	}
+	
+	# Security headers (production - includes HSTS)
+	header {
+		# Remove server information
+		-Server
+		
+		# HSTS - Force HTTPS (only for production)
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		
+		# Security headers
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Download-Options "noopen"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		
+		# Content Security Policy with upgrade-insecure-requests
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; upgrade-insecure-requests;"
+	}
+	
+	# Client body size limit
+	request_body {
+		max_size 10MB
+	}
+}
+
+# ==============================================================================
+# DEPLOYMENT INSTRUCTIONS
+# ==============================================================================
+#
+# Blue-Green Traffic Switching:
+# -----------------------------
+# To switch traffic from blue to green:
+# 1. Update line 29: FROM localhost:8081 TO localhost:8082
+# 2. Update line 41: FROM "blue" TO "green"
+# 3. Reload Caddy: sudo systemctl reload caddy
+# 4. Verify: curl -I https://toronto.togather.foundation/health | grep X-Togather-Slot
+#
+# Deploy this file:
+# ----------------
+# scp deploy/config/environments/Caddyfile.production SERVER:/tmp/
+# ssh SERVER 'sudo cp /tmp/Caddyfile.production /etc/caddy/Caddyfile && sudo systemctl reload caddy'
+#
+# Prerequisites:
+# -------------
+# - DNS: toronto.togather.foundation → server IP
+# - Firewall: Ports 80 and 443 open
+# - Caddy installed: sudo apt install caddy
+# - Log directory: sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
+# - Application running on port 8081 (blue) or 8082 (green)
+#
+# ⚠️ PRODUCTION SAFETY:
+# --------------------
+# - Always test configuration before reloading: sudo caddy validate --config /etc/caddy/Caddyfile
+# - Monitor logs after changes: sudo journalctl -u caddy -f
+# - Keep old slot running until new slot is verified
+# - Use smoke tests after switching: make test-production-smoke
+#
