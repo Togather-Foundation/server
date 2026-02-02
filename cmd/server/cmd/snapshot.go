@@ -254,10 +254,10 @@ func printSnapshotsTable(snapshots []snapshot.Snapshot) error {
 	fmt.Printf("Snapshots in %s:\n\n", snapshotDir)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	defer w.Flush()
+	defer func() { _ = w.Flush() }()
 
-	fmt.Fprintf(w, "SNAPSHOT\tSIZE\tAGE\tEXPIRES\tREASON\n")
-	fmt.Fprintf(w, "--------\t----\t---\t-------\t------\n")
+	_, _ = fmt.Fprintf(w, "SNAPSHOT\tSIZE\tAGE\tEXPIRES\tREASON\n")
+	_, _ = fmt.Fprintf(w, "--------\t----\t---\t-------\t------\n")
 
 	for _, snap := range snapshots {
 		age := formatDuration(snap.Age)

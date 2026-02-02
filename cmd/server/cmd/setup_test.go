@@ -120,7 +120,7 @@ func TestFileExists(t *testing.T) {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	defer os.Remove(tmpPath)
 
 	tests := []struct {
@@ -201,7 +201,7 @@ func TestAppendToEnvFile(t *testing.T) {
 	if _, err := tmpFile.WriteString(initialContent); err != nil {
 		t.Fatalf("failed to write initial content: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Append new key
 	if err := appendToEnvFile(tmpPath, "API_KEY", "test-api-key-123"); err != nil {
