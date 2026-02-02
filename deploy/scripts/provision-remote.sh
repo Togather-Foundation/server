@@ -76,8 +76,8 @@ echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# Upload script and execute with environment variables
-cat "$PROVISION_SCRIPT" | ssh "$SSH_TARGET" "GO_VERSION=$GO_VERSION DEPLOY_USER=$DEPLOY_USER bash -s"
+# Upload script and execute with environment variables (use sudo if not root)
+cat "$PROVISION_SCRIPT" | ssh "$SSH_TARGET" "GO_VERSION=$GO_VERSION DEPLOY_USER=$DEPLOY_USER sudo -E bash -s"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
