@@ -447,39 +447,18 @@ migrate-river:
 .PHONY: docker-up
 docker-up:
 	@echo "Starting Docker containers (database + server)..."
-	@if [ ! -f $(DOCKER_COMPOSE_DIR)/.env ]; then \
+	@if [ ! -f .env ]; then \
 		echo ""; \
-		echo "⚠️  No .env file found in $(DOCKER_COMPOSE_DIR)/"; \
+		echo "⚠️  No .env file found in project root"; \
 		echo ""; \
-		echo "Creating .env with development defaults..."; \
-		echo "POSTGRES_DB=togather" > $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "POSTGRES_USER=togather" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "POSTGRES_PASSWORD=dev_password_change_me" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "POSTGRES_PORT=5433" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "DATABASE_URL=postgresql://togather:dev_password_change_me@togather-db:5432/togather?sslmode=disable" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "ENVIRONMENT=development" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "LOG_LEVEL=debug" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "SERVER_PORT=8080" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "JWT_SECRET=dev_jwt_secret_change_me_in_production" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "ADMIN_PASSWORD=admin123" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "Run 'server setup --docker' first to generate .env"; \
+		echo "Or create .env manually based on .env.example"; \
 		echo ""; \
-		echo "✓ Created $(DOCKER_COMPOSE_DIR)/.env with development defaults"; \
-		echo "⚠️  WARNING: These are INSECURE defaults for local development only!"; \
-		echo ""; \
+		exit 1; \
 	fi
 	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d
 	@echo ""
 	@echo "✓ Containers started!"
-	@echo ""
-	@echo "Running database migrations..."
-	@sleep 3
-	@if command -v migrate > /dev/null 2>&1 || [ -f $(HOME)/go/bin/migrate ]; then \
-		DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" $(MAKE) migrate-up 2>/dev/null || echo "⚠️  Migrations failed (run 'make migrate-up' manually)"; \
-		DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" $(MAKE) migrate-river 2>/dev/null || echo "⚠️  River migrations failed (run 'make migrate-river' manually)"; \
-	else \
-		echo "⚠️  migrate/river tools not found. Run 'make install-tools' first"; \
-		echo "Then run: DATABASE_URL='postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable' make migrate-up migrate-river"; \
-	fi
 	@echo ""
 	@echo "Server:   http://localhost:8080"
 	@echo "Database: localhost:5433"
@@ -492,31 +471,20 @@ docker-up:
 .PHONY: docker-db
 docker-db:
 	@echo "Starting PostgreSQL database in Docker..."
-	@if [ ! -f $(DOCKER_COMPOSE_DIR)/.env ]; then \
+	@if [ ! -f .env ]; then \
 		echo ""; \
-		echo "⚠️  No .env file found in $(DOCKER_COMPOSE_DIR)/"; \
-		echo "Creating minimal .env for database..."; \
-		echo "POSTGRES_DB=togather" > $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "POSTGRES_USER=togather" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "POSTGRES_PASSWORD=dev_password_change_me" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "POSTGRES_PORT=5433" >> $(DOCKER_COMPOSE_DIR)/.env; \
-		echo "DATABASE_URL=postgresql://togather:dev_password_change_me@togather-db:5432/togather?sslmode=disable" >> $(DOCKER_COMPOSE_DIR)/.env; \
+		echo "⚠️  No .env file found in project root"; \
 		echo ""; \
-		echo "✓ Created $(DOCKER_COMPOSE_DIR)/.env"; \
+		echo "Run 'server setup --docker' first to generate .env"; \
+		echo "Or create .env manually based on .env.example"; \
 		echo ""; \
+		exit 1; \
 	fi
 	@cd $(DOCKER_COMPOSE_DIR) && docker compose up -d togather-db
 	@echo ""
-	@echo "✓ Database started!"
+	@echo "✓ Database started on localhost:5433"
 	@echo ""
-	@echo "Connection: postgresql://togather:dev_password_change_me@localhost:5433/togather"
-	@echo ""
-	@echo "To run the server natively:"
-	@echo "  1. Create .env in project root with DATABASE_URL"
-	@echo "  2. Run: make run"
-	@echo ""
-	@echo "View logs: make docker-logs"
-	@echo "Stop:      make docker-down"
+	@echo "Stop: make docker-down"
 
 # Stop all Docker containers
 .PHONY: docker-down
