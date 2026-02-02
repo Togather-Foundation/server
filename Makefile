@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup
+.PHONY: help build test test-ci lint lint-ci vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -32,6 +32,7 @@ help:
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server"
 	@echo "  make dev           - Run in development mode (with air if available)"
+	@echo "  make deploy-package - Build deployment package (binary + configs, no source)"
 	@echo "  make install-tools - Install development tools (Go tools)"
 	@echo "  make install-pyshacl - Install pyshacl for SHACL validation"
 	@echo "  make test-contracts - Run contract tests (requires pyshacl)"
@@ -702,3 +703,11 @@ setup-docker:
 setup-help:
 	@go build -o server ./cmd/server
 	@./server setup --help
+
+# =================
+# Deployment Package
+# =================
+
+deploy-package:
+	@echo "Building deployment package..."
+	@./deploy/scripts/build-deploy-package.sh

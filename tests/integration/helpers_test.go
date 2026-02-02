@@ -67,7 +67,21 @@ func setupTestEnv(t *testing.T) *testEnv {
 	initShared(t)
 	resetDatabase(t, sharedPool)
 
-	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date").Handler)
+	routerWithClient := api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date")
+
+	// Start River workers for batch ingestion tests
+	if routerWithClient.RiverClient != nil {
+		if err := routerWithClient.RiverClient.Start(ctx); err != nil {
+			t.Fatalf("failed to start river workers: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := routerWithClient.RiverClient.Stop(context.Background()); err != nil {
+				t.Logf("failed to stop river workers: %v", err)
+			}
+		})
+	}
+
+	server := httptest.NewServer(routerWithClient.Handler)
 	t.Cleanup(server.Close)
 
 	return &testEnv{
@@ -84,6 +98,9 @@ func initShared(t *testing.T) {
 	sharedOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
+
+		// Disable ryuk (resource reaper) to prevent premature container cleanup
+		_ = os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
 
 		container, err := tcpostgres.Run(
 			ctx,
@@ -143,9 +160,8 @@ func cleanupShared() {
 	if sharedPool != nil {
 		sharedPool.Close()
 	}
-	if sharedContainer != nil {
-		_ = sharedContainer.Terminate(context.Background())
-	}
+	// Note: Do NOT terminate the shared container - testcontainers will clean it up
+	// Terminating it here causes connection errors in tests that haven't run yet
 }
 
 func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
@@ -163,6 +179,7 @@ SELECT tablename
   FROM pg_tables
  WHERE schemaname = 'public'
    AND tablename <> 'schema_migrations'
+   AND tablename <> 'river_migration'
  ORDER BY tablename;
 `)
 	require.NoError(t, err)
