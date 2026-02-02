@@ -68,6 +68,24 @@ else
     echo "  ✓ Migration tool bundled (${MIGRATE_VERSION}, linux-${ARCH})"
 fi
 
+# Bundle River CLI binary
+echo "→ Bundling River CLI tool..."
+RIVER_VERSION="v0.30.2"
+RIVER_PKG="github.com/riverqueue/river/cmd/river@${RIVER_VERSION}"
+
+# Create temporary GOBIN directory for building River CLI
+TEMP_GOBIN=$(mktemp -d)
+trap "rm -rf $TEMP_GOBIN" EXIT
+
+if GOBIN="$TEMP_GOBIN" CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go install "$RIVER_PKG" 2>/dev/null; then
+    cp "$TEMP_GOBIN/river" "${PACKAGE_DIR}/river"
+    chmod +x "${PACKAGE_DIR}/river"
+    echo "  ✓ River CLI bundled (${RIVER_VERSION}, linux-amd64)"
+else
+    echo "  ⚠ Warning: Failed to build River CLI"
+    echo "  River CLI will need to be installed manually on target system"
+fi
+
 # Contexts and shapes (for JSON-LD and SHACL validation)
 cp -r contexts "${PACKAGE_DIR}/"
 cp -r shapes "${PACKAGE_DIR}/"
@@ -115,8 +133,10 @@ This package contains everything needed to deploy the Togather SEL server.
 
 - `server` - Togather server binary with CLI commands
 - `migrate` - golang-migrate tool (bundled, no separate installation needed)
+- `river` - River CLI tool for job queue migrations (bundled, no separate installation needed)
 - `deploy/docker/` - Docker Compose configuration
 - `internal/storage/postgres/migrations/` - Database schema migrations
+- `internal/river/migrations/` - River job queue migrations
 - `contexts/`, `shapes/` - JSON-LD contexts and SHACL shapes
 - `install.sh` - Automated installation script (first-time install OR upgrade)
 - `upgrade.sh` - Manual upgrade script (legacy, for manual control)
@@ -226,7 +246,7 @@ EOF
 # Create installation script
 cat > "${PACKAGE_DIR}/install.sh" <<'INSTALLEOF'
 #!/usr/bin/env bash
-# Togather Server Installation (Bulletproof Edition)
+# Togather Server Installation
 # Orchestrates existing server CLI and tools for one-command installation
 
 set -euo pipefail
@@ -259,9 +279,9 @@ error_exit() {
 }
 
 # Start installation
-log "╔════════════════════════════════════════════════════════════╗"
-log "║        Togather Server Installation (Bulletproof)         ║"
-log "╚════════════════════════════════════════════════════════════╝"
+log "╔════════════════════════════════════════════════╗"
+log "║         Togather Server Installation           ║"
+log "╚════════════════════════════════════════════════╝"
 log ""
 
 # Initialize log file
