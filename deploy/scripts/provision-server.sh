@@ -208,7 +208,7 @@ install_caddy() {
     
     # Enable and start Caddy service
     systemctl enable caddy
-    systemctl start caddy
+    systemctl stop caddy 2>/dev/null || true  # Don't start yet - no Caddyfile
     
     log_info "✓ Caddy installed ($(caddy version | awk '{print $1}'))"
     log_info "  Note: Caddyfile will be configured during application installation"
