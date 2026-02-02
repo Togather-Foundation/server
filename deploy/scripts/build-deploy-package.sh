@@ -362,13 +362,164 @@ log "  ✓ User $INSTALL_USER is in docker group"
 
 cd "${APP_DIR}"
 
-# Check for existing Docker volumes from previous installation (Bug #5 Fix)
+# ============================================================================
+# CRITICAL: Data Protection - Backup Before Reinstallation
+# ============================================================================
+
+# Check for existing installation and volumes
+EXISTING_INSTALL=false
+EXISTING_VOLUMES=false
+
+if [[ -f "${APP_DIR}/.env" ]] && [[ -f /usr/local/bin/togather-server ]]; then
+    EXISTING_INSTALL=true
+fi
+
 if sudo docker volume ls | grep -q togather-db-data; then
-    log "  ⚠️  Existing database volumes detected from previous installation"
-    log "     These volumes may contain data with different credentials."
-    log "     Removing volumes to ensure clean installation..."
-    sudo docker compose -f "${APP_DIR}/deploy/docker/docker-compose.yml" --env-file "${APP_DIR}/.env" down -v >> "$LOG_FILE" 2>&1 || true
-    log "  ✓ Old volumes removed"
+    EXISTING_VOLUMES=true
+fi
+
+# Handle existing installation with data protection
+if [[ "$EXISTING_INSTALL" == "true" ]] || [[ "$EXISTING_VOLUMES" == "true" ]]; then
+    log ""
+    log "╔════════════════════════════════════════════════════════════╗"
+    log "║          ⚠️  EXISTING INSTALLATION DETECTED                ║"
+    log "╚════════════════════════════════════════════════════════════╝"
+    log ""
+    
+    if [[ "$EXISTING_VOLUMES" == "true" ]]; then
+        log "  🗄️  Database volumes found: togather-db-data"
+        log ""
+        
+        # Create backup directory
+        BACKUP_DIR="${APP_DIR}/backups"
+        sudo mkdir -p "$BACKUP_DIR"
+        sudo chown "${INSTALL_USER}":"${INSTALL_USER}" "$BACKUP_DIR"
+        
+        # Generate backup filename with timestamp
+        BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        BACKUP_FILE="${BACKUP_DIR}/pre-reinstall-${BACKUP_TIMESTAMP}.sql.gz"
+        
+        log "  📦 Creating backup before proceeding..."
+        log "     Backup location: $BACKUP_FILE"
+        log ""
+        
+        # Start database if not running (needed for backup)
+        if ! sudo docker ps | grep -q togather-db; then
+            log "  → Starting database for backup..."
+            cd "${APP_DIR}"
+            if ! sudo -u "${INSTALL_USER}" docker compose -f deploy/docker/docker-compose.yml --env-file .env up -d togather-db >> "$LOG_FILE" 2>&1; then
+                log "  ⚠️  Warning: Could not start database for backup"
+            else
+                # Wait for database
+                for i in {1..15}; do
+                    if sudo docker exec togather-db pg_isready -U togather &>/dev/null; then
+                        break
+                    fi
+                    sleep 1
+                done
+            fi
+        fi
+        
+        # Create backup using togather-server snapshot command
+        cd "${APP_DIR}"
+        BACKUP_SUCCESS=false
+        if sudo -u "${INSTALL_USER}" bash -c "cd ${APP_DIR} && togather-server snapshot create --reason 'pre-reinstall-${BACKUP_TIMESTAMP}' --retention-days 30 --snapshot-dir ${BACKUP_DIR}" >> "$LOG_FILE" 2>&1; then
+            BACKUP_SUCCESS=true
+            # Find the created backup file
+            LATEST_BACKUP=$(sudo ls -t "${BACKUP_DIR}"/*.sql.gz 2>/dev/null | head -1)
+            if [[ -f "$LATEST_BACKUP" ]]; then
+                BACKUP_SIZE=$(du -h "$LATEST_BACKUP" | cut -f1)
+                log "  ✓ Backup created successfully: $(basename "$LATEST_BACKUP") ($BACKUP_SIZE)"
+            else
+                log "  ✓ Backup created successfully"
+            fi
+        else
+            log "  ⚠️  Warning: Backup creation failed (see log for details)"
+            log "     Continuing with installation options..."
+        fi
+        log ""
+        
+        # Offer user choice
+        log "╔════════════════════════════════════════════════════════════╗"
+        log "║              INSTALLATION OPTIONS                         ║"
+        log "╚════════════════════════════════════════════════════════════╝"
+        log ""
+        log "  Choose how to proceed:"
+        log ""
+        log "  [1] PRESERVE DATA - Keep existing database (upgrade/reinstall)"
+        log "      • Database volumes preserved"
+        log "      • Credentials remain the same"
+        log "      • No data loss"
+        log ""
+        log "  [2] FRESH INSTALL - Delete everything and start clean"
+        log "      • All database volumes DESTROYED"
+        log "      • New credentials generated"
+        log "      • Backup available at: ${BACKUP_DIR}/"
+        log ""
+        log "  [3] ABORT - Cancel installation"
+        log ""
+        
+        # Read user choice (with timeout for non-interactive environments)
+        CHOICE=""
+        if [[ -t 0 ]]; then
+            # Interactive mode
+            read -p "Enter choice [1-3]: " -t 30 CHOICE || CHOICE="3"
+        else
+            # Non-interactive: default to preserve data (safest option)
+            CHOICE="1"
+            log "  ℹ️  Non-interactive mode: Defaulting to PRESERVE DATA (option 1)"
+        fi
+        log ""
+        
+        case "$CHOICE" in
+            1)
+                log "  ✓ Selected: PRESERVE DATA"
+                log "     Keeping existing database volumes..."
+                log "     Upgrading installation in place..."
+                log ""
+                # Don't remove volumes - just update files
+                ;;
+            2)
+                log "  ⚠️  Selected: FRESH INSTALL"
+                log ""
+                log "  ⚠️⚠️⚠️  WARNING: THIS WILL DELETE ALL DATA ⚠️⚠️⚠️"
+                log ""
+                if [[ "$BACKUP_SUCCESS" == "true" ]]; then
+                    log "  Backup available at: ${BACKUP_DIR}/"
+                    log "  To restore later: togather-server snapshot restore <backup-file>"
+                else
+                    log "  ⚠️  Backup was not successful - data may be lost!"
+                fi
+                log ""
+                
+                # Final confirmation
+                if [[ -t 0 ]]; then
+                    read -p "Type 'DELETE ALL DATA' to confirm: " -t 30 CONFIRM || CONFIRM=""
+                    if [[ "$CONFIRM" != "DELETE ALL DATA" ]]; then
+                        log "  ✗ Confirmation failed. Aborting installation."
+                        exit 1
+                    fi
+                fi
+                
+                log "  → Removing all volumes..."
+                sudo docker compose -f "${APP_DIR}/deploy/docker/docker-compose.yml" --env-file "${APP_DIR}/.env" down -v >> "$LOG_FILE" 2>&1 || true
+                log "  ✓ Volumes removed"
+                log ""
+                ;;
+            3|*)
+                log "  ✗ Installation aborted by user"
+                log ""
+                if [[ "$BACKUP_SUCCESS" == "true" ]]; then
+                    log "  Backup preserved at: ${BACKUP_DIR}/"
+                fi
+                exit 0
+                ;;
+        esac
+    else
+        log "  ℹ️  Installation files found but no database volumes"
+        log "     Proceeding with upgrade..."
+        log ""
+    fi
 fi
 
 # Run server setup command
@@ -542,11 +693,21 @@ Endpoints:
   API: http://localhost:8080/api/v1
   Health: http://localhost:8080/health
 
+Backup & Restore:
+  Backups directory: ${APP_DIR}/backups/
+  Create backup: togather-server snapshot create --reason "manual-backup"
+  List backups: togather-server snapshot list --snapshot-dir ${APP_DIR}/backups
+  Restore backup: pg_restore -d togather < backup-file.sql
+  
+  Note: Backups are created automatically before reinstallation
+        to protect against data loss.
+
 Quick Commands:
   Check health: togather-server healthcheck
   View logs: sudo journalctl -u togather -f
   Restart: sudo systemctl restart togather
   Stop: sudo systemctl stop togather
+  Create backup: togather-server snapshot create
 
 Documentation:
   ${APP_DIR}/docs/deploy/
@@ -570,6 +731,20 @@ log "🔐 Credentials:"
 log "   Admin: $(grep ADMIN_USERNAME ${APP_DIR}/.env | cut -d= -f2) / $(grep ADMIN_PASSWORD ${APP_DIR}/.env | cut -d= -f2 | cut -c1-16)..."
 log "   Full credentials in: ${APP_DIR}/.env"
 log ""
+
+# Show backup info if backups directory exists with files
+if [[ -d "${APP_DIR}/backups" ]] && [[ -n "$(ls -A ${APP_DIR}/backups 2>/dev/null)" ]]; then
+    BACKUP_COUNT=$(ls -1 ${APP_DIR}/backups/*.sql.gz 2>/dev/null | wc -l || echo 0)
+    if [[ $BACKUP_COUNT -gt 0 ]]; then
+        log "💾 Database Backups:"
+        log "   Location: ${APP_DIR}/backups/"
+        log "   Count: $BACKUP_COUNT backup(s)"
+        log "   List backups: togather-server snapshot list --snapshot-dir ${APP_DIR}/backups"
+        log "   Create backup: togather-server snapshot create"
+        log ""
+    fi
+fi
+
 log "🚀 Next Steps:"
 log "   1. Check health: togather-server healthcheck"
 log "   2. View logs: sudo journalctl -u togather -f"
