@@ -327,7 +327,7 @@ func TestCreatePgpassFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createPgpassFile() error: %v", err)
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	// Verify file exists
 	if _, err := os.Stat(path); err != nil {

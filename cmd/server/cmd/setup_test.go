@@ -121,7 +121,7 @@ func TestFileExists(t *testing.T) {
 	}
 	tmpPath := tmpFile.Name()
 	_ = tmpFile.Close()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	tests := []struct {
 		name     string

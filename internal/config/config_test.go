@@ -58,9 +58,9 @@ func TestLoad_ProductionCORS_ValidOrigins(t *testing.T) {
 	}()
 
 	// Test case: production with valid CORS_ALLOWED_ORIGINS should succeed
-	os.Setenv("ENVIRONMENT", "production")
-	os.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://app.example.com")
-	os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("ENVIRONMENT", "production")
+	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://app.example.com")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
 	os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
 
 	cfg, err := Load()

@@ -262,7 +262,7 @@ func TestIngestEventsServerResponse(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create temp file: %v", err)
 			}
-			defer os.Remove(tmpFile.Name())
+			defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 			content := `{"events": [{"@type": "Event", "name": "Test Event"}]}`
 			if _, err := tmpFile.WriteString(content); err != nil {
