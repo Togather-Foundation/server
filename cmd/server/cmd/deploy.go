@@ -204,7 +204,7 @@ func printStatusTable(state *deployment.State) error {
 			if len(gitCommit) > 8 {
 				gitCommit = gitCommit[:8]
 			}
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
 				dep.Version,
 				dep.Slot,
 				dep.DeployedAt.Format("2006-01-02 15:04"),

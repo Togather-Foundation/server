@@ -276,7 +276,7 @@ func performHealthCheck(url string) HealthCheckResult {
 		result.LatencyMs = time.Since(start).Milliseconds()
 		return result
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	result.StatusCode = resp.StatusCode
 	result.LatencyMs = time.Since(start).Milliseconds()
@@ -393,7 +393,7 @@ func outputJSON(results []HealthCheckResult) {
 func outputTable(results []HealthCheckResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "SLOT\tSTATUS\tDB\tRIVER\tJSONLD\tLATENCY\tURL")
-	fmt.Fprintln(w, "----\t------\t--\t-----\t------\t-------\t---")
+	_, _ = fmt.Fprintln(w, "----\t------\t--\t-----\t------\t-------\t---")
 
 	for _, result := range results {
 		slot := result.Slot
@@ -424,7 +424,7 @@ func outputTable(results []HealthCheckResult) {
 
 		latency := fmt.Sprintf("%dms", result.LatencyMs)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			slot, status, dbStatus, riverStatus, jsonldStatus, latency, result.URL)
 	}
 

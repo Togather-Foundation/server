@@ -171,7 +171,7 @@ func TestIngestEventsMissingAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	content := `{"events": [{"@type": "Event", "name": "Test"}]}`
 	if _, err := tmpFile.WriteString(content); err != nil {
@@ -181,10 +181,10 @@ func TestIngestEventsMissingAPIKey(t *testing.T) {
 
 	// Clear API key
 	origAPIKey := os.Getenv("API_KEY")
-	os.Unsetenv("API_KEY")
+	_ = os.Unsetenv("API_KEY")
 	defer func() {
 		if origAPIKey != "" {
-			os.Setenv("API_KEY", origAPIKey)
+			_ = os.Setenv("API_KEY", origAPIKey)
 		}
 	}()
 
@@ -369,12 +369,12 @@ func TestWatchBatchStatus(t *testing.T) {
 func TestIngestCommandFileNotFound(t *testing.T) {
 	// Set up test API key
 	origAPIKey := os.Getenv("API_KEY")
-	os.Setenv("API_KEY", "test-key")
+	_ = os.Setenv("API_KEY", "test-key")
 	defer func() {
 		if origAPIKey != "" {
-			os.Setenv("API_KEY", origAPIKey)
+			_ = os.Setenv("API_KEY", origAPIKey)
 		} else {
-			os.Unsetenv("API_KEY")
+			_ = os.Unsetenv("API_KEY")
 		}
 	}()
 

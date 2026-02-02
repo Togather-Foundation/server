@@ -198,9 +198,9 @@ func TestDetermineHealthCheckURLs(t *testing.T) {
 
 			// Set environment
 			if tt.serverPort != "" {
-				os.Setenv("SERVER_PORT", tt.serverPort)
+				_ = os.Setenv("SERVER_PORT", tt.serverPort)
 			} else {
-				os.Unsetenv("SERVER_PORT")
+				_ = os.Unsetenv("SERVER_PORT")
 			}
 
 			urls, err := determineHealthCheckURLs()
