@@ -354,7 +354,22 @@ log "━━━━━━━━━━━━━━━━━━━━━━━━━
 ENVIRONMENT="${ENVIRONMENT:-staging}"
 log "  ℹ️  Environment: $ENVIRONMENT"
 
+# Check Docker group membership (Bug #2 Fix)
+if ! groups "$INSTALL_USER" | grep -q '\bdocker\b'; then
+    error_exit "User $INSTALL_USER is not in 'docker' group. Run: sudo usermod -aG docker $INSTALL_USER && newgrp docker"
+fi
+log "  ✓ User $INSTALL_USER is in docker group"
+
 cd "${APP_DIR}"
+
+# Check for existing Docker volumes from previous installation (Bug #5 Fix)
+if sudo docker volume ls | grep -q togather-db-data; then
+    log "  ⚠️  Existing database volumes detected from previous installation"
+    log "     These volumes may contain data with different credentials."
+    log "     Removing volumes to ensure clean installation..."
+    sudo docker compose -f "${APP_DIR}/deploy/docker/docker-compose.yml" --env-file "${APP_DIR}/.env" down -v >> "$LOG_FILE" 2>&1 || true
+    log "  ✓ Old volumes removed"
+fi
 
 # Run server setup command
 log "  → Running: togather-server setup --docker --non-interactive --allow-production-secrets --no-backup"
@@ -364,8 +379,63 @@ fi
 
 log "  ✓ Environment configured (.env created)"
 log "  ✓ Secrets generated"
-log "  ✓ Docker PostgreSQL started"
-log "  ✓ Migrations completed"
+
+# Verify PostgreSQL is actually running (Bug #3 Fix)
+log "  → Verifying PostgreSQL container..."
+if ! sudo -u "${INSTALL_USER}" docker ps | grep -q togather-db; then
+    log "  ⚠️  PostgreSQL container not running, starting it now..."
+    if ! sudo -u "${INSTALL_USER}" docker compose -f deploy/docker/docker-compose.yml --env-file .env up -d togather-db >> "$LOG_FILE" 2>&1; then
+        error_exit "Failed to start PostgreSQL container"
+    fi
+fi
+
+# Wait for PostgreSQL to be ready
+log "  → Waiting for PostgreSQL to be ready..."
+for i in {1..30}; do
+    if sudo docker exec togather-db pg_isready -U togather &>/dev/null; then
+        log "  ✓ PostgreSQL is ready"
+        break
+    fi
+    if [[ $i -eq 30 ]]; then
+        error_exit "PostgreSQL did not become ready within 30 seconds"
+    fi
+    sleep 1
+done
+
+# Verify migrations ran (Bug #4 Fix)
+log "  → Verifying database migrations..."
+cd "${APP_DIR}"
+
+# Give PostgreSQL a moment to fully accept external connections
+sleep 2
+
+set +e  # Don't exit on error for this check
+source .env
+MIGRATION_VERSION=$(./migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version 2>&1 | grep -oE '^[0-9]+$')
+set -e
+
+if [[ -z "$MIGRATION_VERSION" ]]; then
+    log "  ⚠️  Migrations not applied, running now..."
+    # Run migrations with retry logic
+    MIGRATION_SUCCESS=false
+    for attempt in {1..3}; do
+        if sudo -u "${INSTALL_USER}" bash -c "source .env && ./migrate -path internal/storage/postgres/migrations -database \"\$DATABASE_URL\" up" >> "$LOG_FILE" 2>&1; then
+            MIGRATION_SUCCESS=true
+            break
+        fi
+        if [[ $attempt -lt 3 ]]; then
+            log "     Migration attempt $attempt failed, retrying..."
+            sleep 2
+        fi
+    done
+    
+    if [[ "$MIGRATION_SUCCESS" == "false" ]]; then
+        error_exit "Database migrations failed after 3 attempts"
+    fi
+    log "  ✓ Migrations completed"
+else
+    log "  ✓ Migrations applied (version $MIGRATION_VERSION)"
+fi
 log ""
 
 # ============================================================================
@@ -418,17 +488,22 @@ log ""
 log "Step 7/7: Verify Health"
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# Bug #1 Fix: Health Check Loop with timeout wrapper
 log "  → Checking server health (timeout: 30s)..."
+HEALTH_OK=false
 for i in {1..30}; do
-    if togather-server healthcheck >> "$LOG_FILE" 2>&1; then
+    if timeout 5 togather-server healthcheck >> "$LOG_FILE" 2>&1; then
         log "  ✓ Server is healthy!"
         HEALTH_OK=true
         break
     fi
+    echo -n "."
     if [[ $i -eq 30 ]]; then
-        log "  ⚠️  Health check timed out"
+        echo ""
+        log "  ⚠️  Health check timed out after 30 seconds"
         log "     Server may still be starting. Check with: togather-server healthcheck"
         HEALTH_OK=false
+        break
     fi
     sleep 1
 done
