@@ -184,6 +184,31 @@ install_go() {
     log_info "✓ Go ${GO_VERSION} installed successfully"
 }
 
+install_caddy() {
+    log_info "Installing Caddy reverse proxy..."
+    
+    if command -v caddy &> /dev/null; then
+        INSTALLED_VERSION=$(caddy version | awk '{print $1}')
+        log_info "Caddy already installed (${INSTALLED_VERSION})"
+        return
+    fi
+    
+    # Install Caddy from official repository
+    # https://caddyserver.com/docs/install#debian-ubuntu-raspbian
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -qq
+    apt-get install -y -qq caddy
+    
+    # Enable and start Caddy service
+    systemctl enable caddy
+    systemctl start caddy
+    
+    log_info "✓ Caddy installed ($(caddy version | awk '{print $1}'))"
+    log_info "  Note: Caddyfile will be configured during application installation"
+}
+
 setup_deploy_user() {
     if id "$DEPLOY_USER" &>/dev/null; then
         log_info "Deploy user '$DEPLOY_USER' already exists"
@@ -368,6 +393,7 @@ main() {
     configure_fail2ban
     install_docker
     install_go
+    install_caddy
     setup_deploy_user
     configure_system_limits
     setup_swap
