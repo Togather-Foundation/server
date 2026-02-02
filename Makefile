@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package
+.PHONY: help build test test-ci lint lint-ci vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -43,6 +43,13 @@ help:
 	@echo "  make migrate-down  - Roll back one migration"
 	@echo "  make migrate-river - Run River job queue migrations"
 	@echo "  make docker-compose-lint - Validate docker-compose YAML files"
+	@echo ""
+	@echo "Remote Testing:"
+	@echo "  make test-local           - Run all tests on local server"
+	@echo "  make test-staging         - Run all tests on staging server"
+	@echo "  make test-staging-smoke   - Run smoke tests on staging server"
+	@echo "  make test-production-smoke - Run smoke tests on production (read-only)"
+	@echo "  make test-remote ENV=<env> TYPE=<type> - Run custom remote tests"
 	@echo ""
 	@echo "Docker Development:"
 	@echo "  make docker-up     - Start database and server in Docker (port 5433)"
@@ -143,6 +150,42 @@ coverage-check:
 		echo "  3. Add tests for uncovered code paths"; \
 		exit 1; \
 	fi
+
+# ============================================================================
+# Remote Testing
+# ============================================================================
+
+# Test local server (all tests)
+test-local:
+	@echo "Running all tests on local server..."
+	@./deploy/scripts/test-remote.sh local all
+
+# Test staging server (all tests)
+test-staging:
+	@echo "Running all tests on staging server..."
+	@./deploy/scripts/test-remote.sh staging all
+
+# Test staging server (smoke tests only)
+test-staging-smoke:
+	@echo "Running smoke tests on staging server..."
+	@./deploy/scripts/test-remote.sh staging smoke
+
+# Test production server (smoke tests only, read-only)
+test-production-smoke:
+	@echo "Running smoke tests on production server (read-only)..."
+	@./deploy/scripts/test-remote.sh production smoke
+
+# Generic remote test target (use ENV and TYPE variables)
+# Example: make test-remote ENV=staging TYPE=smoke
+test-remote:
+	@if [ -z "$(ENV)" ]; then \
+		echo "ERROR: ENV variable is required"; \
+		echo "Usage: make test-remote ENV=<local|staging|production> TYPE=<smoke|perf|all>"; \
+		exit 1; \
+	fi
+	@TYPE=$${TYPE:-smoke}; \
+	echo "Running $$TYPE tests on $(ENV) server..."; \
+	./deploy/scripts/test-remote.sh $(ENV) $$TYPE
 
 # Run linter (requires golangci-lint)
 lint:
