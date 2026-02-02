@@ -38,6 +38,8 @@ cp -r deploy/docker/* "${PACKAGE_DIR}/deploy/docker/"
 mkdir -p "${PACKAGE_DIR}/deploy/config/environments"
 cp deploy/Caddyfile.example "${PACKAGE_DIR}/deploy/"
 cp deploy/config/environments/Caddyfile.* "${PACKAGE_DIR}/deploy/config/environments/" 2>/dev/null || true
+# Deployment configuration
+cp deploy/config/deployment.yml "${PACKAGE_DIR}/deploy/config/"
 
 # Deployment scripts (exclude build and provisioning scripts)
 mkdir -p "${PACKAGE_DIR}/deploy/scripts"
