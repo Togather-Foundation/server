@@ -647,14 +647,24 @@ acquire_lock() {
     
     log "INFO" "Acquiring deployment lock for ${env}"
     
-    # Check if state file exists
+    # Check if state file exists, create if needed (first deployment)
     if [[ ! -f "${STATE_FILE}" ]]; then
-        log "ERROR" "Deployment state file not found: ${STATE_FILE}"
-        log "ERROR" ""
-        log "ERROR" "REMEDIATION:"
-        log "ERROR" "  Initialize deployment infrastructure:"
-        log "ERROR" "  cd deploy/scripts && ./deploy.sh init"
-        return 1
+        log "INFO" "State file not found, creating for first deployment"
+        local state_dir=$(dirname "${STATE_FILE}")
+        mkdir -p "${state_dir}"
+        
+        # Create initial empty state file with minimal structure
+        cat > "${STATE_FILE}" <<'EOJSON'
+{
+  "lock": {
+    "locked": false
+  },
+  "deployments": [],
+  "active_slot": "none"
+}
+EOJSON
+        chmod 600 "${STATE_FILE}"
+        log "INFO" "State file created: ${STATE_FILE}"
     fi
     
     # Try to create lock directory atomically (mkdir is atomic in POSIX)
