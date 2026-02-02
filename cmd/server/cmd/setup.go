@@ -95,13 +95,41 @@ func runSetup() error {
 	fmt.Println("Step 1: Environment Detection")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// Check current ENVIRONMENT setting
+	appEnv := strings.TrimSpace(strings.ToLower(os.Getenv("ENVIRONMENT")))
+	if appEnv == "" {
+		appEnv = "development"
+	}
+
 	useDocker := setupDockerMode
 	if !setupNonInteractive && !setupDockerMode {
-		fmt.Println("Choose your setup:")
-		fmt.Println("  1. Docker (recommended) - Database runs in container")
-		fmt.Println("  2. Local PostgreSQL - Use existing PostgreSQL installation")
+		fmt.Println("Choose your database setup:")
 		fmt.Println()
-		useDocker = promptChoice("Select option", []string{"Docker", "Local PostgreSQL"}, 0) == 0
+		fmt.Println("  1. Docker (RECOMMENDED) - Database runs in container")
+		fmt.Println("     ✓ Works in dev, staging, and production")
+		fmt.Println("     ✓ Consistent across all environments")
+		fmt.Println("     ✓ Includes PostgreSQL 16 + PostGIS + pgvector")
+		fmt.Println()
+		fmt.Println("  2. Local PostgreSQL - Use existing system installation")
+		fmt.Println("     ⚠️  Development only - NOT for staging/production")
+		fmt.Println("     ⚠️  Requires manual PostgreSQL 16+ installation with extensions")
+		fmt.Println()
+
+		// Force Docker in production/staging
+		if appEnv == "production" || appEnv == "staging" {
+			fmt.Printf("⚠️  ENVIRONMENT=%s detected\n", strings.ToUpper(appEnv))
+			fmt.Println("   Docker is REQUIRED for staging/production")
+			fmt.Println("   (Local PostgreSQL is only for development)")
+			fmt.Println()
+			useDocker = true
+		} else {
+			useDocker = promptChoice("Select option", []string{"Docker (recommended)", "Local PostgreSQL (dev only)"}, 0) == 0
+		}
+	}
+
+	// Prevent local PostgreSQL in non-dev environments
+	if !useDocker && (appEnv == "production" || appEnv == "staging") {
+		return fmt.Errorf("local PostgreSQL is not supported for ENVIRONMENT=%s\nUse: ./server setup --docker", appEnv)
 	}
 
 	env := "docker"
@@ -158,11 +186,7 @@ func runSetup() error {
 	}
 	fmt.Println()
 
-	// Resolve target environment for .env
-	appEnv := strings.TrimSpace(strings.ToLower(os.Getenv("ENVIRONMENT")))
-	if appEnv == "" {
-		appEnv = "development"
-	}
+	// Check if we can write secrets for this environment
 	if (appEnv == "production" || appEnv == "staging") && !setupAllowProd {
 		return fmt.Errorf("refusing to write secrets to .env in %s; set ENVIRONMENT=development or pass --allow-production-secrets", appEnv)
 	}
