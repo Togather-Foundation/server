@@ -34,6 +34,18 @@ echo "→ Copying essential files..."
 mkdir -p "${PACKAGE_DIR}/deploy/docker"
 cp -r deploy/docker/* "${PACKAGE_DIR}/deploy/docker/"
 
+# Deployment scripts (exclude build and provisioning scripts)
+mkdir -p "${PACKAGE_DIR}/deploy/scripts"
+for script in deploy/scripts/*.sh; do
+    filename=$(basename "$script")
+    # Include operational scripts, exclude build/provision scripts
+    if [[ ! "$filename" =~ ^(build-deploy-package|provision-server|provision-remote)\.sh$ ]]; then
+        cp "$script" "${PACKAGE_DIR}/deploy/scripts/"
+    fi
+done
+# Include Python scripts
+cp deploy/scripts/*.py "${PACKAGE_DIR}/deploy/scripts/" 2>/dev/null || true
+
 # Database migrations
 mkdir -p "${PACKAGE_DIR}/internal/storage/postgres/migrations"
 cp -r internal/storage/postgres/migrations/* "${PACKAGE_DIR}/internal/storage/postgres/migrations/"
