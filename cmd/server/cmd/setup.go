@@ -369,14 +369,45 @@ func runSetup() error {
 			fmt.Println()
 		} else if setupNonInteractive || confirm("Start Docker services now?", true) {
 			fmt.Println("Starting Docker containers...")
-			if err := runCommand("make", "docker-up"); err != nil {
+			if err := runCommand("make", "docker-db"); err != nil {
 				fmt.Printf("⚠️  Failed to start Docker: %v\n", err)
-				fmt.Println("You can start manually with: make docker-up")
+				fmt.Println("You can start manually with: make docker-db")
 			} else {
-				fmt.Println("✓ Docker services started")
+				fmt.Println("✓ Docker database container started")
+
+				// Wait for PostgreSQL to be ready
+				fmt.Println("Waiting for PostgreSQL to be ready...")
+				if err := waitForPostgres(dbURL, 30); err != nil {
+					fmt.Printf("⚠️  PostgreSQL not ready: %v\n", err)
+					fmt.Println()
+					fmt.Println("You can run migrations manually once database is ready:")
+					fmt.Println("  make migrate-up")
+				} else {
+					fmt.Println("✓ PostgreSQL is ready")
+
+					// Set DATABASE_URL for migration commands
+					_ = os.Setenv("DATABASE_URL", dbURL)
+
+					// Run migrations automatically
+					fmt.Println("Running database migrations...")
+					if err := runCommand("make", "migrate-up"); err != nil {
+						fmt.Printf("⚠️  App migrations failed: %v\n", err)
+						fmt.Println("You can run manually with: make migrate-up")
+					} else {
+						fmt.Println("✓ App migrations complete")
+					}
+
+					// Run River migrations
+					if err := runCommand("make", "migrate-river"); err != nil {
+						fmt.Printf("⚠️  River migrations failed: %v\n", err)
+						fmt.Println("You can run manually with: make migrate-river")
+					} else {
+						fmt.Println("✓ River migrations complete")
+					}
+				}
 			}
 		} else {
-			fmt.Println("ℹ️  Run 'make docker-up' to start services")
+			fmt.Println("ℹ️  Run 'make docker-db' to start database, then 'make migrate-up'")
 		}
 		fmt.Println()
 	} else {
@@ -526,6 +557,23 @@ func runSetup() error {
 	fmt.Println()
 	fmt.Println("Your SEL server is configured and ready!")
 	fmt.Println()
+
+	// Print credentials summary
+	fmt.Println("📋 Credentials Summary")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("Admin Username: %s\n", adminUsername)
+	fmt.Printf("Admin Email:    %s\n", adminEmail)
+	fmt.Printf("Admin Password: %s\n", adminPassword)
+	if useDocker && postgresPassword != "" {
+		fmt.Printf("PostgreSQL User: %s\n", postgresUser)
+		fmt.Printf("PostgreSQL Password: %s\n", postgresPassword)
+		fmt.Printf("PostgreSQL Port: %s\n", dbPort)
+	}
+	fmt.Println()
+	fmt.Printf("⚠️  IMPORTANT: Save these credentials securely!\n")
+	fmt.Printf("   Configuration file: %s\n", filepath.Join(getWorkingDir(), ".env"))
+	fmt.Println()
+
 	fmt.Println("Next steps:")
 	fmt.Println()
 
@@ -652,6 +700,10 @@ JWT_EXPIRY_HOURS=24
 # CSRF Protection
 CSRF_KEY=%s
 
+# CORS Configuration
+# WARNING: In production, replace * with your actual domain(s)
+CORS_ALLOWED_ORIGINS=*
+
 # Rate Limiting
 RATE_LIMIT_PUBLIC=60
 RATE_LIMIT_AGENT=300
@@ -770,6 +822,30 @@ func canAccessDocker() bool {
 	cmd.Stdout = nil // Suppress output
 	cmd.Stderr = nil // Suppress errors
 	return cmd.Run() == nil
+}
+
+func waitForPostgres(dbURL string, timeoutSecs int) error {
+	// Extract connection details from DATABASE_URL for pg_isready
+	// Format: postgresql://user:pass@host:port/dbname
+	// We'll use docker exec to check if postgres is ready inside the container
+
+	for i := 0; i < timeoutSecs; i++ {
+		// Try to check if postgres is accepting connections
+		// Using docker exec pg_isready since we know we're using Docker here
+		cmd := exec.Command("docker", "exec", "togather-postgres", "pg_isready", "-U", "togather")
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+
+		if cmd.Run() == nil {
+			return nil
+		}
+
+		fmt.Print(".")
+		exec.Command("sleep", "1").Run()
+	}
+	fmt.Println()
+
+	return fmt.Errorf("PostgreSQL did not become ready within %d seconds", timeoutSecs)
 }
 
 func runCommand(name string, args ...string) error {

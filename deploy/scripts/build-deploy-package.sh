@@ -54,6 +54,20 @@ cp -r internal/storage/postgres/migrations/* "${PACKAGE_DIR}/internal/storage/po
 mkdir -p "${PACKAGE_DIR}/internal/river/migrations"
 cp -r internal/river/migrations/* "${PACKAGE_DIR}/internal/river/migrations/" 2>/dev/null || true
 
+# Bundle golang-migrate binary
+echo "→ Bundling golang-migrate tool..."
+MIGRATE_VERSION="v4.18.1"
+ARCH=$(uname -m | sed "s/x86_64/amd64/;s/aarch64/arm64/")
+MIGRATE_URL="https://github.com/golang-migrate/migrate/releases/download/${MIGRATE_VERSION}/migrate.linux-${ARCH}.tar.gz"
+
+if ! curl -sfL "$MIGRATE_URL" | tar xz -C "${PACKAGE_DIR}/" migrate 2>/dev/null; then
+    echo "  ⚠ Warning: Failed to download migrate for linux-${ARCH}"
+    echo "  Migration tool will need to be installed manually on target system"
+else
+    chmod +x "${PACKAGE_DIR}/migrate"
+    echo "  ✓ Migration tool bundled (${MIGRATE_VERSION}, linux-${ARCH})"
+fi
+
 # Contexts and shapes (for JSON-LD and SHACL validation)
 cp -r contexts "${PACKAGE_DIR}/"
 cp -r shapes "${PACKAGE_DIR}/"
@@ -97,6 +111,16 @@ cat > "${PACKAGE_DIR}/DEPLOY.md" <<'EOF'
 
 This package contains everything needed to deploy the Togather SEL server.
 
+## What's Included
+
+- `server` - Togather server binary with CLI commands
+- `migrate` - golang-migrate tool (bundled, no separate installation needed)
+- `deploy/docker/` - Docker Compose configuration
+- `internal/storage/postgres/migrations/` - Database schema migrations
+- `contexts/`, `shapes/` - JSON-LD contexts and SHACL shapes
+- `install.sh` - Automated installation script
+- `upgrade.sh` - Upgrade existing installation
+
 ## Quick Start
 
 ### 1. Prerequisites
@@ -128,7 +152,10 @@ docker compose -f deploy/docker/docker-compose.yml up -d postgres
 # Wait for database
 sleep 5
 
-# Run migrations
+# Run migrations (using bundled migrate tool)
+./migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
+
+# Or use the server CLI
 ./server migrate up
 
 # Start all services
@@ -193,86 +220,161 @@ EOF
 # Create installation script
 cat > "${PACKAGE_DIR}/install.sh" <<'INSTALLEOF'
 #!/usr/bin/env bash
+# Togather Server Installation (Bulletproof Edition)
+# Orchestrates existing server CLI and tools for one-command installation
+
 set -euo pipefail
 
-echo "Togather Server Installation"
-echo "============================="
-echo ""
+# Configuration
+APP_DIR="/opt/togather"
+LOG_FILE="/var/log/togather-install.log"
+INSTALL_USER="${SUDO_USER:-$(whoami)}"
+
+# Logging function
+log() {
+    echo "$1" | tee -a "$LOG_FILE"
+}
+
+log_quiet() {
+    echo "$1" >> "$LOG_FILE"
+}
+
+# Error handler
+error_exit() {
+    log ""
+    log "❌ Installation failed: $1"
+    log ""
+    log "Troubleshooting:"
+    log "  - Check full log: $LOG_FILE"
+    log "  - Manual installation guide: ${APP_DIR}/docs/deploy/MANUAL_INSTALL.md"
+    log "  - Troubleshooting guide: ${APP_DIR}/docs/deploy/troubleshooting.md"
+    log ""
+    exit 1
+}
+
+# Start installation
+log "╔════════════════════════════════════════════════════════════╗"
+log "║        Togather Server Installation (Bulletproof)         ║"
+log "╚════════════════════════════════════════════════════════════╝"
+log ""
+
+# Initialize log file
+sudo mkdir -p "$(dirname "$LOG_FILE")"
+sudo touch "$LOG_FILE"
+sudo chmod 666 "$LOG_FILE"
+
+# ============================================================================
+# STEP 1: Pre-flight Checks
+# ============================================================================
+log "Step 1/7: Pre-flight Checks"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Detect OS
 if [[ -f /etc/os-release ]]; then
     . /etc/os-release
-    OS=$ID
+    log "  ✓ OS detected: $ID $VERSION_ID"
+    log_quiet "    OS: $PRETTY_NAME"
 else
-    echo "Error: Cannot detect OS"
-    exit 1
+    error_exit "Cannot detect OS (missing /etc/os-release)"
 fi
 
 # Check Docker
 if ! command -v docker &> /dev/null; then
-    echo "Error: Docker is not installed"
-    echo "Please install Docker first: https://docs.docker.com/engine/install/"
-    exit 1
+    error_exit "Docker not installed. Install from: https://docs.docker.com/engine/install/"
 fi
+log "  ✓ Docker found: $(docker --version)"
 
 # Check Docker Compose
 if ! docker compose version &> /dev/null; then
-    echo "Error: Docker Compose v2 is not installed"
-    echo "Please install Docker Compose v2"
-    exit 1
+    error_exit "Docker Compose v2 not installed"
+fi
+log "  ✓ Docker Compose found: $(docker compose version)"
+
+# Check disk space (need at least 2GB)
+AVAILABLE_GB=$(df -BG . | tail -1 | awk '{print $4}' | sed 's/G//')
+if [[ $AVAILABLE_GB -lt 2 ]]; then
+    log "  ⚠️  Warning: Low disk space (${AVAILABLE_GB}GB available, 2GB+ recommended)"
 fi
 
-# Install binary
-echo "→ Installing server binary to /usr/local/bin..."
+# Check if ports are available
+for PORT in 8080 5433; do
+    if sudo lsof -i :$PORT > /dev/null 2>&1; then
+        error_exit "Port $PORT is already in use"
+    fi
+done
+log "  ✓ Ports 8080, 5433 available"
+log ""
+
+# ============================================================================
+# STEP 2: Install Binary
+# ============================================================================
+log "Step 2/7: Install Binary"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 sudo install -m 755 server /usr/local/bin/togather-server
-echo "  ✓ Installed as: togather-server"
+log "  ✓ Binary installed: /usr/local/bin/togather-server"
+log "  ✓ Version: $(togather-server version 2>/dev/null || echo 'dev')"
+log ""
 
-# Create application directory
-APP_DIR="/opt/togather"
-echo "→ Installing to ${APP_DIR}..."
+# ============================================================================
+# STEP 3: Install Application Files
+# ============================================================================
+log "Step 3/7: Install Application Files"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# Handle existing installation
 if [[ -d "${APP_DIR}" ]]; then
-    echo "  Existing installation detected"
+    log "  ℹ️  Existing installation detected"
     
     # Backup .env if it exists
     if [[ -f "${APP_DIR}/.env" ]]; then
-        echo "  Backing up existing .env..."
-        sudo cp "${APP_DIR}/.env" "${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
-    fi
-    
-    # Ask if user wants clean install
-    read -p "  Clean install (removes old files)? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "  Removing old installation..."
-        sudo rm -rf "${APP_DIR:?}"/*
-        # Restore .env if it was backed up
-        if ls "${APP_DIR}"/.env.backup.* 1> /dev/null 2>&1; then
-            LATEST_BACKUP=$(ls -t "${APP_DIR}"/.env.backup.* | head -1)
-            sudo cp "$LATEST_BACKUP" "${APP_DIR}/.env"
-            echo "  ✓ Restored .env from backup"
-        fi
-    else
-        echo "  Upgrading in place (preserving existing files)..."
+        BACKUP_FILE="${APP_DIR}/.env.backup.$(date +%Y%m%d_%H%M%S)"
+        sudo cp "${APP_DIR}/.env" "$BACKUP_FILE"
+        log "  ✓ Backed up .env to $(basename "$BACKUP_FILE")"
     fi
 fi
 
 sudo mkdir -p "${APP_DIR}"
-# Use shopt to enable dotglob to include hidden files
 shopt -s dotglob
 sudo cp -r * "${APP_DIR}/"
 shopt -u dotglob
 
-# Determine the actual user (handle both direct run and sudo)
-INSTALL_USER="${SUDO_USER:-$(whoami)}"
 sudo chown -R "${INSTALL_USER}":"${INSTALL_USER}" "${APP_DIR}"
-echo "  ✓ Application files installed (owner: ${INSTALL_USER})"
+log "  ✓ Files installed to ${APP_DIR}"
+log "  ✓ Owner: ${INSTALL_USER}"
+log ""
 
-# Create systemd service
+# ============================================================================
+# STEP 4: Configure Environment
+# ============================================================================
+log "Step 4/7: Configure Environment"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Detect environment from ENVIRONMENT variable, default to staging
+ENVIRONMENT="${ENVIRONMENT:-staging}"
+log "  ℹ️  Environment: $ENVIRONMENT"
+
+cd "${APP_DIR}"
+
+# Run server setup command
+log "  → Running: togather-server setup --docker --non-interactive --allow-production-secrets --no-backup"
+if ! sudo -u "${INSTALL_USER}" ENVIRONMENT="$ENVIRONMENT" togather-server setup --docker --non-interactive --allow-production-secrets --no-backup >> "$LOG_FILE" 2>&1; then
+    error_exit "Server setup failed (see log for details)"
+fi
+
+log "  ✓ Environment configured (.env created)"
+log "  ✓ Secrets generated"
+log "  ✓ Docker PostgreSQL started"
+log "  ✓ Migrations completed"
+log ""
+
+# ============================================================================
+# STEP 5: Create Systemd Service
+# ============================================================================
+log "Step 5/7: Create Systemd Service"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 if [[ -d /etc/systemd/system ]]; then
-    echo "→ Creating systemd service..."
-    # Determine the actual user (handle both direct run and sudo)
-    INSTALL_USER="${SUDO_USER:-$(whoami)}"
     sudo tee /etc/systemd/system/togather.service > /dev/null <<EOF
 [Unit]
 Description=Togather SEL Server
@@ -292,21 +394,116 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
     sudo systemctl daemon-reload
-    echo "  ✓ Systemd service created"
+    sudo systemctl enable togather >> "$LOG_FILE" 2>&1
+    log "  ✓ Systemd service created and enabled"
+else
+    log "  ⚠️  Systemd not detected, skipping service creation"
 fi
+log ""
 
-echo ""
-echo "Installation complete!"
-echo ""
-echo "Next steps:"
-echo "  1. cd ${APP_DIR}"
-echo "  2. cp .env.example .env"
-echo "  3. nano .env  # Configure your settings"
-echo "  4. docker compose -f deploy/docker/docker-compose.yml up -d postgres"
-echo "  5. togather-server migrate up"
-echo "  6. sudo systemctl enable --now togather"
-echo ""
-echo "Check status: togather-server healthcheck"
+# ============================================================================
+# STEP 6: Start Service
+# ============================================================================
+log "Step 6/7: Start Service"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+sudo systemctl start togather >> "$LOG_FILE" 2>&1 || true
+sleep 3
+log "  ✓ Service started"
+log ""
+
+# ============================================================================
+# STEP 7: Verify Health
+# ============================================================================
+log "Step 7/7: Verify Health"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+log "  → Checking server health (timeout: 30s)..."
+for i in {1..30}; do
+    if togather-server healthcheck >> "$LOG_FILE" 2>&1; then
+        log "  ✓ Server is healthy!"
+        HEALTH_OK=true
+        break
+    fi
+    if [[ $i -eq 30 ]]; then
+        log "  ⚠️  Health check timed out"
+        log "     Server may still be starting. Check with: togather-server healthcheck"
+        HEALTH_OK=false
+    fi
+    sleep 1
+done
+log ""
+
+# ============================================================================
+# Generate Installation Report
+# ============================================================================
+REPORT_FILE="${APP_DIR}/installation-report.txt"
+
+cat > "$REPORT_FILE" <<REPORT
+Togather Server Installation Report
+Generated: $(date)
+═══════════════════════════════════════════════════════════════
+
+Installation Details:
+  Environment: $ENVIRONMENT
+  Install Dir: ${APP_DIR}
+  User: ${INSTALL_USER}
+  OS: $PRETTY_NAME
+  
+Credentials (from ${APP_DIR}/.env):
+  Admin Username: $(grep ADMIN_USERNAME ${APP_DIR}/.env | cut -d= -f2)
+  Admin Password: $(grep ADMIN_PASSWORD ${APP_DIR}/.env | cut -d= -f2)
+  Admin Email: $(grep ADMIN_EMAIL ${APP_DIR}/.env | cut -d= -f2)
+  
+  PostgreSQL User: $(grep POSTGRES_USER ${APP_DIR}/.env | cut -d= -f2)
+  PostgreSQL Password: $(grep POSTGRES_PASSWORD ${APP_DIR}/.env | cut -d= -f2)
+  PostgreSQL Port: $(grep POSTGRES_PORT ${APP_DIR}/.env | cut -d= -f2)
+
+Service Status:
+  Systemd: $(systemctl is-enabled togather 2>/dev/null || echo "N/A")
+  Running: $(systemctl is-active togather 2>/dev/null || echo "N/A")
+
+Endpoints:
+  API: http://localhost:8080/api/v1
+  Health: http://localhost:8080/health
+
+Quick Commands:
+  Check health: togather-server healthcheck
+  View logs: sudo journalctl -u togather -f
+  Restart: sudo systemctl restart togather
+  Stop: sudo systemctl stop togather
+
+Documentation:
+  ${APP_DIR}/docs/deploy/
+  ${APP_DIR}/DEPLOY.md
+
+Full installation log: $LOG_FILE
+REPORT
+
+sudo chown "${INSTALL_USER}":"${INSTALL_USER}" "$REPORT_FILE"
+
+# ============================================================================
+# Success Summary
+# ============================================================================
+log "╔════════════════════════════════════════════════════════════╗"
+log "║                  ✓ Installation Complete!                 ║"
+log "╚════════════════════════════════════════════════════════════╝"
+log ""
+log "📋 Installation Report: ${REPORT_FILE}"
+log ""
+log "🔐 Credentials:"
+log "   Admin: $(grep ADMIN_USERNAME ${APP_DIR}/.env | cut -d= -f2) / $(grep ADMIN_PASSWORD ${APP_DIR}/.env | cut -d= -f2 | cut -c1-16)..."
+log "   Full credentials in: ${APP_DIR}/.env"
+log ""
+log "🚀 Next Steps:"
+log "   1. Check health: togather-server healthcheck"
+log "   2. View logs: sudo journalctl -u togather -f"
+log "   3. Access API: http://$(hostname -I | awk '{print $1}'):8080/api/v1"
+log ""
+log "📚 Documentation: ${APP_DIR}/docs/deploy/"
+log "📝 Full log: $LOG_FILE"
+log ""
+
 INSTALLEOF
 
 chmod +x "${PACKAGE_DIR}/install.sh"
