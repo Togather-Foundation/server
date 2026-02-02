@@ -6,12 +6,23 @@
 #   Local:  ./provision-server.sh
 #   Remote: curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/togather/main/deploy/scripts/provision-server.sh | bash
 #
+# Environment variables:
+#   GO_VERSION - Go version to install (default: 1.24.12)
+#   DEPLOY_USER - Username for deployment (default: deploy)
+#   SKIP_SSH_HARDEN - Skip SSH hardening prompt (default: false)
+#
 # Requirements:
 #   - Ubuntu 22.04+ or Debian 11+
 #   - Run as root or with sudo
 #   - SSH access configured
 
 set -euo pipefail
+
+# Configuration (can be overridden via environment)
+# Default Go version matches go.mod toolchain requirement
+GO_VERSION="${GO_VERSION:-1.24.12}"
+DEPLOY_USER="${DEPLOY_USER:-deploy}"
+SKIP_SSH_HARDEN="${SKIP_SSH_HARDEN:-false}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -134,16 +145,21 @@ install_docker() {
 }
 
 install_go() {
-    log_info "Installing Go..."
+    log_info "Installing Go ${GO_VERSION}..."
     
     if command -v go &> /dev/null; then
-        log_info "Go already installed ($(go version))"
+        INSTALLED_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+        log_info "Go already installed (version ${INSTALLED_VERSION})"
+        if [[ "$INSTALLED_VERSION" != "$GO_VERSION" ]]; then
+            log_warn "Installed version differs from requested version ${GO_VERSION}"
+            log_warn "To upgrade, remove /usr/local/go and run this script again"
+        fi
         return
     fi
     
-    GO_VERSION="1.24.12"
     GO_ARCH=$(dpkg --print-architecture | sed 's/armhf/armv6l/')
     
+    log_info "Downloading Go ${GO_VERSION} for ${GO_ARCH}..."
     wget -q "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
     rm -rf /usr/local/go
     tar -C /usr/local -xzf "go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
@@ -152,18 +168,16 @@ install_go() {
     # Add to PATH for all users
     echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
     
-    log_info "✓ Go installed (version ${GO_VERSION})"
+    log_info "✓ Go ${GO_VERSION} installed successfully"
 }
 
 setup_deploy_user() {
-    local DEPLOY_USER="deploy"
-    
     if id "$DEPLOY_USER" &>/dev/null; then
         log_info "Deploy user '$DEPLOY_USER' already exists"
         return
     fi
     
-    log_info "Creating deploy user..."
+    log_info "Creating deploy user '$DEPLOY_USER'..."
     
     # Create deploy user with no password
     adduser --disabled-password --gecos "" "$DEPLOY_USER"
@@ -269,10 +283,15 @@ print_next_steps() {
     log_info "Server provisioning complete! 🚀"
     echo "═══════════════════════════════════════════════════════════════"
     echo ""
+    echo "Installed versions:"
+    echo "  - Docker: $(docker --version 2>/dev/null | awk '{print $3}' | sed 's/,//')"
+    echo "  - Docker Compose: $(docker compose version 2>/dev/null | awk '{print $4}')"
+    echo "  - Go: ${GO_VERSION}"
+    echo ""
     echo "Next steps:"
     echo ""
-    echo "1. Test SSH access as deploy user:"
-    echo "   ssh deploy@$(hostname -I | awk '{print $1}')"
+    echo "1. Test SSH access as $DEPLOY_USER user:"
+    echo "   ssh $DEPLOY_USER@$(hostname -I | awk '{print $1}')"
     echo ""
     echo "2. Clone the Togather repository:"
     echo "   git clone https://github.com/YOUR_ORG/togather.git"
@@ -292,15 +311,17 @@ print_next_steps() {
     echo "Security notes:"
     echo "  - Root SSH login is now DISABLED"
     echo "  - Password authentication is DISABLED"
-    echo "  - Use 'deploy' user for all operations"
+    echo "  - Use '$DEPLOY_USER' user for all operations"
     echo "  - Firewall (UFW) is active (SSH, HTTP, HTTPS allowed)"
     echo "  - Fail2ban is protecting SSH"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
-}
-
 main() {
     log_info "Starting Togather server provisioning..."
+    echo ""
+    log_info "Configuration:"
+    log_info "  GO_VERSION: ${GO_VERSION}"
+    log_info "  DEPLOY_USER: ${DEPLOY_USER}"
     echo ""
     
     check_root
@@ -315,14 +336,18 @@ main() {
     setup_swap
     
     # SSH hardening should be done last (after deploy user is set up)
-    log_warn "About to harden SSH (disable root login, password auth)"
-    log_warn "Make sure you can log in as 'deploy' user before continuing!"
-    read -p "Continue with SSH hardening? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        harden_ssh
+    if [[ "$SKIP_SSH_HARDEN" == "true" ]]; then
+        log_warn "Skipping SSH hardening (SKIP_SSH_HARDEN=true)"
     else
-        log_warn "Skipped SSH hardening. Run manually later if needed."
+        log_warn "About to harden SSH (disable root login, password auth)"
+        log_warn "Make sure you can log in as '$DEPLOY_USER' user before continuing!"
+        read -p "Continue with SSH hardening? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            harden_ssh
+        else
+            log_warn "Skipped SSH hardening. Run manually later if needed."
+        fi
     fi
     
     print_next_steps

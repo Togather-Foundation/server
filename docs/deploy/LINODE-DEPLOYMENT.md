@@ -73,10 +73,23 @@ curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/togather/main/deploy/scrip
 sudo ./deploy/scripts/provision-server.sh
 ```
 
+**Customization via environment variables:**
+
+```bash
+# Install a specific Go version
+GO_VERSION=1.25.0 sudo ./deploy/scripts/provision-server.sh
+
+# Use a different deploy username
+DEPLOY_USER=togather sudo ./deploy/scripts/provision-server.sh
+
+# Skip SSH hardening prompt (for automation)
+SKIP_SSH_HARDEN=true GO_VERSION=1.24.12 sudo ./deploy/scripts/provision-server.sh
+```
+
 **This script will:**
 - Update system packages
-- Install Docker, Docker Compose, and Go
-- Create a 'deploy' user with sudo access
+- Install Docker, Docker Compose, and Go (configurable version, default: 1.24.12)
+- Create a 'deploy' user with sudo access (configurable username)
 - Configure firewall (UFW) - allow SSH, HTTP, HTTPS
 - Set up fail2ban for SSH protection
 - Harden SSH (disable root login, password auth)
