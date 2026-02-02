@@ -262,12 +262,17 @@ sudo mkdir -p "${APP_DIR}"
 shopt -s dotglob
 sudo cp -r * "${APP_DIR}/"
 shopt -u dotglob
-sudo chown -R $(whoami):$(whoami) "${APP_DIR}"
-echo "  ✓ Application files installed"
+
+# Determine the actual user (handle both direct run and sudo)
+INSTALL_USER="${SUDO_USER:-$(whoami)}"
+sudo chown -R "${INSTALL_USER}":"${INSTALL_USER}" "${APP_DIR}"
+echo "  ✓ Application files installed (owner: ${INSTALL_USER})"
 
 # Create systemd service
 if [[ -d /etc/systemd/system ]]; then
     echo "→ Creating systemd service..."
+    # Determine the actual user (handle both direct run and sudo)
+    INSTALL_USER="${SUDO_USER:-$(whoami)}"
     sudo tee /etc/systemd/system/togather.service > /dev/null <<EOF
 [Unit]
 Description=Togather SEL Server
@@ -276,7 +281,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=$(whoami)
+User=${INSTALL_USER}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
 ExecStart=/usr/local/bin/togather-server serve
