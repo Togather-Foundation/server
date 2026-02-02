@@ -340,6 +340,16 @@ for PORT in 8080 5433; do
             if systemctl is-active --quiet togather 2>/dev/null; then
                 log "  → Stopping existing Togather service..."
                 sudo systemctl stop togather || true
+                
+                # Bug #5 Fix: Also stop Docker containers explicitly
+                # Stopping systemd service doesn't always stop DB container
+                if sudo docker ps | grep -q togather 2>/dev/null; then
+                    log "  → Stopping Docker containers..."
+                    cd "${APP_DIR}"
+                    sudo docker compose -f deploy/docker/docker-compose.yml down 2>/dev/null || true
+                fi
+                
+                # Wait for ports to free
                 sleep 2
                 
                 # Check if port is now free
@@ -465,6 +475,9 @@ if [[ "$EXISTING_INSTALL" == "true" ]] || [[ "$EXISTING_VOLUMES" == "true" ]]; t
         log "  📦 Creating backup before proceeding..."
         log "     Backup location: $BACKUP_FILE"
         log ""
+        
+        # Initialize BACKUP_SUCCESS variable (Bug #6 Fix)
+        BACKUP_SUCCESS=true
         
         # Ensure .env file exists before trying to use docker compose
         if [[ ! -f "${APP_DIR}/.env" ]]; then
