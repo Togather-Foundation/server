@@ -177,11 +177,11 @@ get_file_perms() {
 # Example:
 #   update_state_file_atomic --arg status "deployed" '.deployments[-1].status = $status'
 update_state_file_atomic() {
-    local jq_expression="$1"
+    # All arguments are passed to jq, with the last one being the expression
     local temp_file=$(mktemp)
     
     # Write to temp file
-    if ! jq "$jq_expression" "${STATE_FILE}" > "$temp_file"; then
+    if ! jq "$@" "${STATE_FILE}" > "$temp_file"; then
         log "ERROR" "Failed to update state file with jq"
         rm -f "$temp_file"
         return 1
