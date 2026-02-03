@@ -163,19 +163,6 @@ When adding a new environment (e.g., `production-montreal`):
 
 **DO NOT put secrets in .deploy.conf files!**
 
-## Migration from Old System
-
-Previously, domain names and SSH hosts were:
-- Hardcoded in scripts
-- Passed via command line arguments
-- Guessed by agents
-
-Now with `.deploy.conf.*` files:
-- Configuration is discoverable
-- No guessing required
-- Single source of truth per environment
-- Scripts auto-load configuration
-
 ## Related Documentation
 
 - **Deployment Config:** `docs/deploy/deploy-conf.md`
