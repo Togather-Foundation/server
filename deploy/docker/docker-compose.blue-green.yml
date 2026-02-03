@@ -76,6 +76,11 @@ services:
       togather-db:
         condition: service_healthy
     
+    # Explicitly declare network connection
+    # Docker Compose extends doesn't always inherit network configuration
+    networks:
+      - togather-net
+
     # Add label for identifying slot in docker ps and logs
     labels:
       com.togather.deployment.slot: blue
@@ -124,6 +129,11 @@ services:
       togather-db:
         condition: service_healthy
     
+    # Explicitly declare network connection
+    # Docker Compose extends doesn't always inherit network configuration
+    networks:
+      - togather-net
+
     # Add label for identifying slot
     labels:
       com.togather.deployment.slot: green
