@@ -46,9 +46,10 @@ This checklist is designed to be used by:
 
 ### Environment Preparation
 
-- [ ] **Target environment configured**
-  - Staging: `deploy/config/environments/.env.staging` exists
-  - Production: `deploy/config/environments/.env.production` exists
+- [ ] **Target environment configured on server**
+  - Staging: `/opt/togather/.env.staging` exists on staging server
+  - Production: `/opt/togather/.env.production` exists on production server
+  - Note: These files live on the server, NOT in the local git repo
 
 - [ ] **SSH access verified**
   ```bash
@@ -723,9 +724,10 @@ ssh deploy@<server> 'cat /opt/togather/src/deploy/config/deployment-state.json |
 ### Configuration File Locations
 
 **Environment Files:**
-- **Active runtime:** `/opt/togather/.env` (symlink or main file)
-- **Slot-specific:** `/opt/togather/.env.blue`, `/opt/togather/.env.green`
-- **Templates:** `deploy/config/environments/.env.staging`, `.env.production`
+- **Active runtime (on server):** `/opt/togather/.env` (symlink or main file)
+- **Slot-specific (on server):** `/opt/togather/.env.blue`, `/opt/togather/.env.green`
+- **Templates (in repo):** `deploy/config/environments/.env.staging.example`, `.env.production.example`
+- **Note:** Actual `.env.staging` and `.env.production` files exist ONLY on the server at `/opt/togather/`
 
 **Caddy Configuration:**
 - **System Caddy (staging/prod):** `/etc/caddy/Caddyfile`

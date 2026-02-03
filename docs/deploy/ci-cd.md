@@ -198,22 +198,16 @@ jobs:
           sudo mv migrate /usr/local/bin/
           sudo apt-get update && sudo apt-get install -y postgresql-client jq
       
-      - name: Configure staging
+      - name: Deploy to staging
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
         run: |
-          cat > deploy/config/environments/.env.staging <<EOF
-          ENVIRONMENT=staging
-          DATABASE_URL=$DATABASE_URL
-          JWT_SECRET=$JWT_SECRET
-          EOF
-          chmod 600 deploy/config/environments/.env.staging
-      
-      - name: Deploy to staging
-        run: |
+          # Note: deploy.sh expects .env files on the SERVER, not locally
+          # The server should have /opt/togather/.env.staging pre-configured
+          # This script connects remotely and deploys
           cd deploy/scripts
-          ./deploy.sh staging
+          ./deploy.sh staging --remote deploy@staging.server.com
       
       - name: Test staging
         run: |

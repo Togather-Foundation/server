@@ -284,7 +284,7 @@ This would work
 **Result:** ✅ CONFIRMED - Bug would cause deployment failure
 
 #### ⚠️ Test 6: Full Deployment Test (NOT EXECUTED)
-**Reason:** Deployment configuration files (.env.staging, deployment.yml) not present in package (by design).  
+**Reason:** Deployment configuration files (`.env.staging`, `deployment.yml`) not present in package by design. These files exist on the server at `/opt/togather/.env.staging` and are symlinked to the repo during deployment.  
 **Decision:** Bug confirmed through static analysis + command availability testing. Full deployment test unnecessary as bug location and impact are proven.
 
 ### Test Summary
