@@ -148,8 +148,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/readyz", healthChecker.Readyz()) // Readiness check with dependency verification
 	mux.Handle("/version", VersionHandler(version, gitCommit, buildDate))
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
-	mux.Handle("/api/docs/", web.APIDocsHandler()) // Scalar API documentation UI (server-6lnc)
-	mux.Handle("/api/docs", web.APIDocsHandler())  // Scalar API documentation UI (server-6lnc)
+	mux.Handle("/api/v1/openapi.yaml", OpenAPIYAMLHandler()) // YAML format (server-v7yn)
+	mux.Handle("/api/docs/", web.APIDocsHandler())           // Scalar API documentation UI (server-6lnc)
+	mux.Handle("/api/docs", web.APIDocsHandler())            // Scalar API documentation UI (server-6lnc)
 	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
 
 	// Prometheus metrics endpoint (FR-022)

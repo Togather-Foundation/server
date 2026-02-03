@@ -351,6 +351,46 @@ test_api_docs_endpoint() {
     fi
 }
 
+test_openapi_yaml_endpoint() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing OpenAPI YAML endpoint: GET ${BASE_URL}/api/v1/openapi.yaml"
+    
+    local response=$(http_get "${BASE_URL}/api/v1/openapi.yaml" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Validate YAML format and OpenAPI structure
+        local has_openapi_version=false
+        local has_info_title=false
+        local has_paths=false
+        
+        if echo "$response" | grep -q "^openapi: 3\\."; then
+            has_openapi_version=true
+        fi
+        
+        if echo "$response" | grep -q "title: Shared Events Library"; then
+            has_info_title=true
+        fi
+        
+        if echo "$response" | grep -q "^paths:"; then
+            has_paths=true
+        fi
+        
+        if [[ "$has_openapi_version" == "true" && "$has_info_title" == "true" && "$has_paths" == "true" ]]; then
+            log "SUCCESS" "OpenAPI YAML endpoint verified (valid YAML structure)"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "OpenAPI YAML missing required fields (openapi: ${has_openapi_version}, title: ${has_info_title}, paths: ${has_paths})"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "OpenAPI YAML endpoint not responding"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -399,6 +439,9 @@ main() {
     echo ""
     
     test_api_docs_endpoint
+    echo ""
+    
+    test_openapi_yaml_endpoint
     echo ""
     
     local end_time=$(date +%s)

@@ -15,6 +15,8 @@ const openAPISourcePath = "specs/001-sel-backend/contracts/openapi.yaml"
 var (
 	openAPIJSON    []byte
 	openAPIJSONErr error
+	openAPIYAML    []byte
+	openAPIYAMLErr error
 	openAPIOnce    sync.Once
 )
 
@@ -31,9 +33,13 @@ func OpenAPIHandler() http.HandlerFunc {
 				data, err = os.ReadFile(resolveOpenAPIPath())
 				if err != nil {
 					openAPIJSONErr = err
+					openAPIYAMLErr = err
 					return
 				}
 			}
+			// Store raw YAML for YAML endpoint
+			openAPIYAML = data
+			// Convert to JSON for JSON endpoint
 			openAPIJSON, openAPIJSONErr = yaml.YAMLToJSON(data)
 		})
 
@@ -45,6 +51,42 @@ func OpenAPIHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(openAPIJSON)
+	}
+}
+
+// OpenAPIYAMLHandler returns the OpenAPI specification in YAML format.
+// Serves the raw YAML file without conversion.
+func OpenAPIYAMLHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		openAPIOnce.Do(func() {
+			data, err := os.ReadFile(openAPISourcePath)
+			if err != nil {
+				data, err = os.ReadFile(resolveOpenAPIPath())
+				if err != nil {
+					openAPIJSONErr = err
+					openAPIYAMLErr = err
+					return
+				}
+			}
+			// Store raw YAML for YAML endpoint
+			openAPIYAML = data
+			// Convert to JSON for JSON endpoint
+			openAPIJSON, openAPIJSONErr = yaml.YAMLToJSON(data)
+		})
+
+		if openAPIYAMLErr != nil {
+			http.Error(w, "openapi unavailable", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-yaml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(openAPIYAML)
 	}
 }
 

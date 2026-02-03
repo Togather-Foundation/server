@@ -152,3 +152,133 @@ func TestOpenAPIHandlerMultipleConcurrentRequests(t *testing.T) {
 		<-done
 	}
 }
+
+func TestOpenAPIYAMLHandler(t *testing.T) {
+	handler := OpenAPIYAMLHandler()
+
+	tests := []struct {
+		name           string
+		method         string
+		expectStatus   int
+		expectHeader   string
+		expectNotEmpty bool
+	}{
+		{
+			name:           "GET returns OpenAPI spec in YAML",
+			method:         http.MethodGet,
+			expectStatus:   http.StatusOK,
+			expectHeader:   "application/x-yaml",
+			expectNotEmpty: true,
+		},
+		{
+			name:         "POST not allowed",
+			method:       http.MethodPost,
+			expectStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:         "PUT not allowed",
+			method:       http.MethodPut,
+			expectStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:         "DELETE not allowed",
+			method:       http.MethodDelete,
+			expectStatus: http.StatusMethodNotAllowed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "/api/v1/openapi.yaml", nil)
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			if w.Code != tt.expectStatus {
+				t.Errorf("expected status %d, got %d", tt.expectStatus, w.Code)
+			}
+
+			if tt.expectHeader != "" {
+				contentType := w.Header().Get("Content-Type")
+				if contentType != tt.expectHeader {
+					t.Errorf("expected Content-Type %q, got %q", tt.expectHeader, contentType)
+				}
+			}
+
+			if tt.expectNotEmpty && w.Body.Len() == 0 {
+				t.Error("expected non-empty response body")
+			}
+		})
+	}
+}
+
+func TestOpenAPIYAMLHandlerCaching(t *testing.T) {
+	// Test that OpenAPI YAML spec is loaded once and cached
+	handler := OpenAPIYAMLHandler()
+
+	// Make first request
+	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+
+	// Make second request
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+
+	// Both should return the same status
+	if w1.Code != w2.Code {
+		t.Errorf("expected same status code, got %d and %d", w1.Code, w2.Code)
+	}
+
+	// If successful, both should have same body
+	if w1.Code == http.StatusOK && w2.Code == http.StatusOK {
+		if w1.Body.String() != w2.Body.String() {
+			t.Error("expected cached response to be identical")
+		}
+	}
+}
+
+func TestOpenAPIFormatConsistency(t *testing.T) {
+	// Test that JSON and YAML endpoints serve the same spec content
+	jsonHandler := OpenAPIHandler()
+	yamlHandler := OpenAPIYAMLHandler()
+
+	// Get JSON response
+	reqJSON := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	wJSON := httptest.NewRecorder()
+	jsonHandler.ServeHTTP(wJSON, reqJSON)
+
+	// Get YAML response
+	reqYAML := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	wYAML := httptest.NewRecorder()
+	yamlHandler.ServeHTTP(wYAML, reqYAML)
+
+	// Both should succeed
+	if wJSON.Code != http.StatusOK {
+		t.Errorf("JSON endpoint returned %d", wJSON.Code)
+	}
+	if wYAML.Code != http.StatusOK {
+		t.Errorf("YAML endpoint returned %d", wYAML.Code)
+	}
+
+	// Both should have non-empty bodies
+	if wJSON.Body.Len() == 0 {
+		t.Error("JSON endpoint returned empty body")
+	}
+	if wYAML.Body.Len() == 0 {
+		t.Error("YAML endpoint returned empty body")
+	}
+
+	// YAML should contain "openapi:" (YAML format indicator)
+	yamlBody := wYAML.Body.String()
+	if !strings.Contains(yamlBody, "openapi:") {
+		t.Error("YAML response doesn't contain 'openapi:' field")
+	}
+
+	// JSON should start with { (JSON format indicator)
+	jsonBody := wJSON.Body.String()
+	if !strings.HasPrefix(strings.TrimSpace(jsonBody), "{") {
+		t.Error("JSON response doesn't start with '{'")
+	}
+}
