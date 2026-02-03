@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/Togather-Foundation/server/internal/loadtest"
@@ -21,22 +22,34 @@ func main() {
 		duration  = flag.Duration("duration", 0, "Custom test duration (overrides profile)")
 		readRatio = flag.Float64("read-ratio", 0, "Read/write ratio 0.0-1.0 (overrides profile)")
 		noRamp    = flag.Bool("no-ramp", false, "Disable ramp-up/ramp-down (instant start/stop)")
-		apiKey    = flag.String("api-key", "", "API key for write endpoints (optional, for testing agent endpoints)")
+		apiKey    = flag.String("api-key", "", "API key(s) for write endpoints (comma-separated or repeatable in wrapper scripts)")
 	)
 	flag.Parse()
 
 	// Create load tester (defaults to no auth)
 	tester := loadtest.NewLoadTester(*baseURL).WithoutAuth()
 
-	// If API key provided, use it for write endpoints
-	if *apiKey != "" {
-		auth, err := testauth.NewAPIKeyAuthenticator(*apiKey)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to create API key authenticator: %v\n", err)
-			fmt.Fprintf(os.Stderr, "Note: API key auth is only needed for write-heavy testing\n")
-			os.Exit(1)
+	// If API key(s) provided, use them for write endpoints
+	if strings.TrimSpace(*apiKey) != "" {
+		parts := strings.Split(*apiKey, ",")
+		keys := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				keys = append(keys, trimmed)
+			}
 		}
-		tester = tester.WithAuth(auth)
+		if len(keys) > 0 {
+			tester = tester.WithAPIKeys(keys)
+		} else {
+			auth, err := testauth.NewAPIKeyAuthenticator(*apiKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: Failed to create API key authenticator: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Note: API key auth is only needed for write-heavy testing\n")
+				os.Exit(1)
+			}
+			tester = tester.WithAuth(auth)
+		}
 	}
 
 	// Determine configuration

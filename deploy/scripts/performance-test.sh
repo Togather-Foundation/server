@@ -35,6 +35,7 @@ OPTIONS:
     -d, --duration TIME    Custom test duration (e.g., 30s, 2m, 1h)
     -R, --read-ratio NUM   Read/write ratio 0.0-1.0 (default: 0.8)
     -s, --slot SLOT        Target specific slot: blue, green, or lb (load balanced)
+    -k, --api-key KEY      API key for write endpoints (optional, repeatable)
     --no-ramp              Disable ramp-up/ramp-down (instant start/stop)
     -h, --help             Show this help message
 
@@ -62,6 +63,12 @@ EXAMPLES:
     # Custom read-heavy test (95% reads)
     $0 --rps 50 --duration 2m --read-ratio 0.95
 
+    # Use API key for authenticated writes
+    $0 --profile light --api-key YOUR_API_KEY
+
+    # Use multiple API keys
+    $0 --profile light --api-key KEY_ONE --api-key KEY_TWO
+
 SLOT TARGETING:
     By default, tests target port 8080. You can target specific deployment slots:
     - blue: Port 8081
@@ -70,6 +77,15 @@ SLOT TARGETING:
 
 EOF
     exit 0
+}
+
+perf_api_keys=()
+
+add_perf_key() {
+    local key="$1"
+    if [[ -n "$key" ]]; then
+        perf_api_keys+=("$key")
+    fi
 }
 
 # Parse arguments
@@ -117,6 +133,10 @@ while [[ $# -gt 0 ]]; do
             esac
             shift 2
             ;;
+        -k|--api-key)
+            add_perf_key "$2"
+            shift 2
+            ;;
         --no-ramp)
             NO_RAMP=true
             shift
@@ -127,6 +147,15 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Collect API keys from environment variables
+if [[ -n "${PERF_ADMIN_API_KEY:-}" ]]; then
+    add_perf_key "$PERF_ADMIN_API_KEY"
+fi
+
+if [[ -n "${PERF_AGENT_API_KEY:-}" ]]; then
+    add_perf_key "$PERF_AGENT_API_KEY"
+fi
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║        Togather Server - Performance Load Test                 ║${NC}"
@@ -187,6 +216,13 @@ fi
 
 if [[ "$NO_RAMP" == "true" ]]; then
     ARGS+=(--no-ramp)
+fi
+
+if [[ ${#perf_api_keys[@]} -gt 0 ]]; then
+    IFS=','
+    perf_api_keys_joined="${perf_api_keys[*]}"
+    unset IFS
+    ARGS+=(--api-key "${perf_api_keys_joined}")
 fi
 
 # Execute load test

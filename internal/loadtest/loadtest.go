@@ -93,6 +93,8 @@ type LoadTester struct {
 	generator     *testdata.Generator
 	stats         *Statistics
 	authenticator *testauth.TestAuthenticator
+	apiKeys       []string
+	apiKeyIndex   uint32
 }
 
 // NewLoadTester creates a new load tester targeting the specified base URL.
@@ -118,11 +120,22 @@ func NewLoadTester(baseURL string) *LoadTester {
 // WithAuth sets a custom authenticator for this load tester.
 func (lt *LoadTester) WithAuth(auth *testauth.TestAuthenticator) *LoadTester {
 	lt.authenticator = auth
+	lt.apiKeys = nil
 	return lt
 }
 
 // WithoutAuth disables authentication for this load tester.
 func (lt *LoadTester) WithoutAuth() *LoadTester {
+	lt.authenticator = nil
+	lt.apiKeys = nil
+	return lt
+}
+
+// WithAPIKeys configures a rotating set of API keys for requests.
+// When set, these keys are used instead of the authenticator.
+func (lt *LoadTester) WithAPIKeys(keys []string) *LoadTester {
+	lt.apiKeys = keys
+	lt.apiKeyIndex = 0
 	lt.authenticator = nil
 	return lt
 }
@@ -373,7 +386,13 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 	}
 
 	// Add authentication if available
-	if lt.authenticator != nil {
+	if len(lt.apiKeys) > 0 {
+		idx := atomic.AddUint32(&lt.apiKeyIndex, 1)
+		key := lt.apiKeys[int(idx-1)%len(lt.apiKeys)]
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+	} else if lt.authenticator != nil {
 		lt.authenticator.AddAuth(req)
 	}
 

@@ -95,6 +95,13 @@ Deploy to staging environment:
 | `REGION` | Region/province/state | `ontario` |
 | `BLUE_GREEN_ENABLED` | Enable blue-green deployment | `true` |
 | `HEALTH_CHECK_TIMEOUT` | Health check timeout in seconds | `30` |
+| `RATE_LIMIT_PUBLIC` | Public read requests per minute | `60` |
+| `RATE_LIMIT_AGENT` | Authenticated write requests per minute | `300` |
+| `RATE_LIMIT_ADMIN` | Admin requests per minute | `0` (unlimited) |
+| `RATE_LIMIT_LOGIN` | Login attempts per 15 minutes | `5` |
+| `RATE_LIMIT_FEDERATION` | Federation sync requests per minute | `500` |
+| `PERF_ADMIN_API_KEY` | Perf API key with admin role (sensitive) | (unset) |
+| `PERF_AGENT_API_KEY` | Perf API key with agent role (sensitive) | (unset) |
 
 ## Setup
 
@@ -138,6 +145,8 @@ When setting up a new city/node:
 - API keys
 - Passwords
 - Private keys
+
+Note: Perf API keys are sensitive. If you store them in `.deploy.conf.*`, protect the file and avoid sharing it.
 
 ## Integration
 

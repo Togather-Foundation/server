@@ -568,10 +568,7 @@ Unified test interface with environment-aware testing:
 # 1. Deploy
 ./deploy/scripts/deploy.sh staging --remote deploy@staging.toronto.togather.foundation
 
-# 2. Wait for stabilization
-sleep 60
-
-# 3. Run automated tests (all on staging)
+# 2. Run automated tests (all on staging)
 ./deploy/scripts/test-remote.sh staging all
 ```
 
@@ -594,6 +591,10 @@ Each configuration includes:
 - `TIMEOUT` - Request timeout settings
 - `ALLOW_DESTRUCTIVE` - Whether to allow data modification
 - `ALLOW_LOAD_TESTING` - Whether performance tests are allowed
+
+Optional environment overrides (for test runners):
+- `WAIT_TIMEOUT` - Health wait timeout in seconds (default: 60)
+- `SKIP_WAIT_FOR_HEALTH` - Set to `true` to skip pre-test health polling
 
 ---
 

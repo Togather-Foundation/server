@@ -141,6 +141,22 @@ main() {
     
     # Track overall status
     local tests_passed=true
+
+    # Wait for service readiness before tests
+    local wait_script="${SCRIPTS_DIR}/wait-for-health.sh"
+    local wait_timeout="${WAIT_TIMEOUT:-60}"
+    if [ "${SKIP_WAIT_FOR_HEALTH:-false}" != "true" ]; then
+        if [ -x "${wait_script}" ]; then
+            log "INFO" "Waiting for health before running tests (timeout: ${wait_timeout}s)"
+            if ! "${wait_script}" --base-url "${BASE_URL}" --timeout "${wait_timeout}"; then
+                log "ERROR" "Health wait timed out for ${BASE_URL}"
+                exit 1
+            fi
+            echo ""
+        else
+            log "WARN" "Health wait script not found; skipping pre-test wait"
+        fi
+    fi
     
     # Run tests based on type
     case "$test_type" in
@@ -171,7 +187,7 @@ main() {
                 log "WARN" "Performance test script not found: $perf_script"
                 log "INFO" "Skipping performance tests"
             else
-                    if "$perf_script" --profile light --url "$BASE_URL"; then
+                if "$perf_script" --profile light --url "$BASE_URL"; then
                     log "SUCCESS" "Performance tests passed"
                 else
                     log "ERROR" "Performance tests failed"
@@ -207,7 +223,7 @@ main() {
                     log "WARN" "Performance test script not found: $perf_script"
                     log "INFO" "Skipping performance tests"
                 else
-                if "$perf_script" --profile light --url "$BASE_URL"; then
+                    if "$perf_script" --profile light --url "$BASE_URL"; then
                         log "SUCCESS" "Performance tests passed"
                     else
                         log "ERROR" "Performance tests failed"

@@ -1407,43 +1407,16 @@ validate_health() {
     
     log "INFO" "Validating health of ${slot} deployment"
     
-    # Use CLI for health check
-    local server_binary="${PROJECT_ROOT}/server"
+    local wait_script="${SCRIPT_DIR}/wait-for-health.sh"
+    local timeout_seconds="${HEALTH_WAIT_TIMEOUT:-60}"
     
-    if [[ ! -f "${server_binary}" ]]; then
-        log "WARN" "server binary not found, using basic HTTP check"
-        
-        # Basic HTTP health check
-        # Determine port based on slot
-        local health_port="8080"
-        if [[ "${slot}" == "blue" ]]; then
-            health_port="8081"
-        elif [[ "${slot}" == "green" ]]; then
-            health_port="8082"
-        fi
-        
-        # Basic HTTP health check on slot-specific port
-        local health_url="http://localhost:${health_port}/health"
-        local max_attempts=30
-        local attempt=0
-        
-        while [[ $attempt -lt $max_attempts ]]; do
-            if curl -sf "${health_url}" > /dev/null 2>&1; then
-                log "SUCCESS" "Health check passed"
-                return 0
-            fi
-            
-            ((attempt++))
-            log "INFO" "Health check attempt ${attempt}/${max_attempts}..."
-            sleep 2
-        done
-        
-        log "ERROR" "Health check failed after ${max_attempts} attempts"
+    if [[ ! -x "${wait_script}" ]]; then
+        log "ERROR" "Health wait script not found or not executable: ${wait_script}"
         return 1
     fi
     
-    # Call CLI health check with appropriate slot
-    if ! "${server_binary}" healthcheck --slot "${slot}" --retries 30 --retry-delay 2s; then
+    log "INFO" "Waiting for health (timeout: ${timeout_seconds}s)"
+    if ! "${wait_script}" --slot "${slot}" --timeout "${timeout_seconds}"; then
         log "ERROR" "Health check validation failed for ${slot} slot"
         return 1
     fi
@@ -1901,6 +1874,8 @@ main() {
         # Export variables for use in this script and subprocesses
         export NODE_DOMAIN SSH_HOST SSH_USER CITY REGION ENVIRONMENT
         export BLUE_GREEN_ENABLED HEALTH_CHECK_TIMEOUT
+        export RATE_LIMIT_PUBLIC RATE_LIMIT_AGENT RATE_LIMIT_ADMIN RATE_LIMIT_LOGIN RATE_LIMIT_FEDERATION
+        export PERF_ADMIN_API_KEY PERF_AGENT_API_KEY
         
         # Use SSH_HOST for remote_host if not explicitly provided
         if [[ -z "$remote_host" && -n "${SSH_HOST:-}" ]]; then

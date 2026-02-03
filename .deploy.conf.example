@@ -20,3 +20,15 @@ ENVIRONMENT=production
 # Deployment settings
 BLUE_GREEN_ENABLED=true
 HEALTH_CHECK_TIMEOUT=30
+
+# Rate limiting overrides (requests per minute)
+# Set to higher values for staging perf testing
+# RATE_LIMIT_PUBLIC=10000
+# RATE_LIMIT_AGENT=20000
+# RATE_LIMIT_ADMIN=0
+# RATE_LIMIT_LOGIN=0
+# RATE_LIMIT_FEDERATION=5000
+
+# Perf testing API keys (optional, sensitive)
+# PERF_ADMIN_API_KEY=change_me
+# PERF_AGENT_API_KEY=change_me

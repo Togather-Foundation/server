@@ -40,6 +40,7 @@ if [ -f "$DEPLOY_CONF" ]; then
     source "$DEPLOY_CONF"
     # Export for use in tests
     export NODE_DOMAIN SSH_HOST SSH_USER CITY REGION
+    export PERF_ADMIN_API_KEY PERF_AGENT_API_KEY
 fi
 
 # Load environment config
@@ -103,6 +104,8 @@ export ALLOW_LOAD_TESTING
 export ALLOW_MIGRATION_TESTS
 export AUTO_CLEANUP
 export SSH_SERVER
+export PERF_ADMIN_API_KEY
+export PERF_AGENT_API_KEY
 export API_KEY
 export JWT_TOKEN
 
