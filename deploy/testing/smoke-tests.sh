@@ -297,23 +297,35 @@ test_cors_headers() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 6/16: CORS headers check"
     
-    local headers=$(curl -s -I --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
+    # CORS headers are only sent when Origin header is present (cross-origin requests)
+    # Send a test Origin header to check if CORS is configured
+    local test_origin="https://example.com"
+    local headers=$(curl -s -I -H "Origin: ${test_origin}" --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
     
-    if [[ -n "$headers" ]]; then
-        if echo "$headers" | grep -qi "Access-Control-Allow-Origin"; then
-            local origin=$(echo "$headers" | grep -i "Access-Control-Allow-Origin" | cut -d: -f2- | tr -d ' \r')
-            log "SUCCESS" "CORS headers present (origin: ${origin})"
-            ((TESTS_PASSED++)) || true
-            return 0
-        else
-            log "WARN" "CORS headers not found (may be configured for OPTIONS requests only)"
-            ((TESTS_PASSED++)) || true
-            return 0
-        fi
-    else
+    if [[ -z "$headers" ]]; then
         log "FAIL" "Could not retrieve headers"
         ((TESTS_FAILED++)) || true
         return 1
+    fi
+    
+    # Check for CORS headers
+    if echo "$headers" | grep -qi "Access-Control-Allow-Origin"; then
+        local origin=$(echo "$headers" | grep -i "Access-Control-Allow-Origin" | cut -d: -f2- | tr -d ' \r')
+        log "SUCCESS" "CORS headers present (origin: ${origin})"
+        ((TESTS_PASSED++)) || true
+        return 0
+    else
+        # CORS not configured - this may be expected for environments without frontends
+        if [[ "$ENVIRONMENT" == "production" ]]; then
+            log "FAIL" "CORS headers not found in production - frontend clients will be blocked"
+            log "ERROR" "  Set CORS_ALLOWED_ORIGINS environment variable with allowed domains"
+            ((TESTS_FAILED++)) || true
+            return 1
+        else
+            log "WARN" "CORS headers not found (may not be needed for ${ENVIRONMENT} without frontend)"
+            ((TESTS_PASSED++)) || true
+            return 0
+        fi
     fi
 }
 
@@ -410,16 +422,17 @@ test_places_api() {
     local response=$(http_get "${BASE_URL}/api/v1/places" 200)
     
     if [[ $? -eq 0 ]]; then
-        # Validate response structure
-        if echo "$response" | jq -e '.data' >/dev/null 2>&1; then
-            local count=$(echo "$response" | jq '.data | length')
+        # Validate response structure (SEL APIs use 'items' not 'data')
+        if echo "$response" | jq -e '.items' >/dev/null 2>&1; then
+            local count=$(echo "$response" | jq '.items | length')
             log "SUCCESS" "Places API accessible and working (${count} places)"
             ((TESTS_PASSED++)) || true
             return 0
         else
-            log "WARN" "Places API returned unexpected format (may use different structure)"
-            ((TESTS_PASSED++)) || true
-            return 0
+            log "FAIL" "Places API returned unexpected format (expected 'items' array)"
+            log "ERROR" "  Response: $(echo "$response" | jq -c '.' | head -c 200)"
+            ((TESTS_FAILED++)) || true
+            return 1
         fi
     else
         log "FAIL" "Places API not accessible"
@@ -435,16 +448,17 @@ test_organizations_api() {
     local response=$(http_get "${BASE_URL}/api/v1/organizations" 200)
     
     if [[ $? -eq 0 ]]; then
-        # Validate response structure
-        if echo "$response" | jq -e '.data' >/dev/null 2>&1; then
-            local count=$(echo "$response" | jq '.data | length')
+        # Validate response structure (SEL APIs use 'items' not 'data')
+        if echo "$response" | jq -e '.items' >/dev/null 2>&1; then
+            local count=$(echo "$response" | jq '.items | length')
             log "SUCCESS" "Organizations API accessible and working (${count} organizations)"
             ((TESTS_PASSED++)) || true
             return 0
         else
-            log "WARN" "Organizations API returned unexpected format (may use different structure)"
-            ((TESTS_PASSED++)) || true
-            return 0
+            log "FAIL" "Organizations API returned unexpected format (expected 'items' array)"
+            log "ERROR" "  Response: $(echo "$response" | jq -c '.' | head -c 200)"
+            ((TESTS_FAILED++)) || true
+            return 1
         fi
     else
         log "FAIL" "Organizations API not accessible"
@@ -516,15 +530,24 @@ test_https_certificate() {
     
     local domain=$(echo "$BASE_URL" | sed -E 's|https?://([^/]+).*|\1|')
     
-    # Use timeout to prevent hanging
-    if timeout 5 curl -vI "$BASE_URL/" 2>&1 | grep -q "SSL certificate verify ok"; then
+    # Check certificate validity
+    local cert_output=$(timeout 10 curl -vI "$BASE_URL/" 2>&1 || echo "")
+    
+    if echo "$cert_output" | grep -q "SSL certificate verify ok"; then
         log "SUCCESS" "HTTPS certificate valid for ${domain}"
         ((TESTS_PASSED++)) || true
         return 0
     else
-        log "WARN" "HTTPS certificate validation failed or timed out for ${domain} (may be self-signed or Let's Encrypt pending)"
-        ((TESTS_PASSED++)) || true
-        return 0
+        # Check if it's a certificate error or connection issue
+        if echo "$cert_output" | grep -qi "certificate\|SSL"; then
+            log "FAIL" "HTTPS certificate validation failed for ${domain}"
+            log "ERROR" "  Certificate issue detected - check Let's Encrypt status"
+        else
+            log "FAIL" "HTTPS connection failed for ${domain}"
+            log "ERROR" "  Could not establish HTTPS connection"
+        fi
+        ((TESTS_FAILED++)) || true
+        return 1
     fi
 }
 

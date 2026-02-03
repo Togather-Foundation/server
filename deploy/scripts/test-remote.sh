@@ -25,8 +25,9 @@
 
 set -euo pipefail
 
-# Get script directory
+# Get script directory (save before config.sh overwrites it)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$SCRIPT_DIR"  # Preserve for performance-test.sh path
 TESTING_DIR="${SCRIPT_DIR}/../testing"
 
 # Color codes
@@ -165,7 +166,7 @@ main() {
             fi
             
             # Check if performance test script exists
-            local perf_script="${SCRIPT_DIR}/performance-test.sh"
+            local perf_script="${SCRIPTS_DIR}/performance-test.sh"
             if [ ! -f "$perf_script" ]; then
                 log "WARN" "Performance test script not found: $perf_script"
                 log "INFO" "Skipping performance tests"
@@ -201,7 +202,7 @@ main() {
                 log "INFO" "Step 2/2: Running performance tests..."
                 echo ""
                 
-                local perf_script="${SCRIPT_DIR}/performance-test.sh"
+                local perf_script="${SCRIPTS_DIR}/performance-test.sh"
                 if [ ! -f "$perf_script" ]; then
                     log "WARN" "Performance test script not found: $perf_script"
                     log "INFO" "Skipping performance tests"
