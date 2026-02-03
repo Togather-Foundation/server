@@ -1103,7 +1103,7 @@ deploy_to_slot() {
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"
     
-    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d "togather-${slot}"; then
+    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d --no-deps "togather-${slot}"; then
         log "ERROR" "Failed to deploy to ${slot} slot"
         return 1
     fi
