@@ -1493,6 +1493,8 @@ fi
 ln -sf "${PERSISTENT_ENV}" "${CONFIG_DIR}/.env.${ENVIRONMENT}"
 # Ensure target file has secure permissions
 chmod 600 "${PERSISTENT_ENV}"
+# Also create symlink at project root for docker-compose.yml compatibility
+ln -sf "${PERSISTENT_ENV}" "${REPO_DIR}/.env"
 echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
 
 
