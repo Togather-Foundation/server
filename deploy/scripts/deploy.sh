@@ -1380,13 +1380,110 @@ deploy() {
     return 0
 }
 
+
+# ============================================================================
+# REMOTE DEPLOYMENT
+# ============================================================================
+
+# Deploy to a remote server via SSH
+# This function runs on the local machine and orchestrates remote deployment
+deploy_remote() {
+    local env="$1"
+    local remote_host="$2"
+    local target_commit="${3:-${GIT_COMMIT}}"
+    local repo_dir="/opt/togather/src"
+    
+    log "INFO" "Remote deployment to ${remote_host}"
+    log "INFO" "Target environment: ${env}"
+    log "INFO" "Local commit: ${GIT_SHORT_COMMIT}"
+    
+    # Validate local git state first
+    validate_git_commit || return 1
+    
+    # Auto-detect repository URL from git remote
+    local repo_url=$(git remote get-url origin 2>/dev/null)
+    if [[ -z "$repo_url" ]]; then
+        log "ERROR" "Cannot detect git remote URL"
+        log "ERROR" "Run: git remote add origin <url>"
+        return 1
+    fi
+    
+    log "INFO" "Repository URL: ${repo_url}"
+    log "INFO" "Target commit: ${target_commit}"
+    
+    # Build remote command to execute
+    local remote_cmd=$(cat <<'REMOTE_EOF'
+set -euo pipefail
+
+REPO_DIR="/opt/togather/src"
+REPO_URL="__REPO_URL__"
+TARGET_COMMIT="__TARGET_COMMIT__"
+ENVIRONMENT="__ENVIRONMENT__"
+
+echo "→ Remote deployment starting..."
+echo "  Environment: ${ENVIRONMENT}"
+echo "  Repository: ${REPO_URL}"
+echo "  Commit: ${TARGET_COMMIT}"
+echo ""
+
+# Ensure repo directory exists and is owned by current user
+if [ ! -d "${REPO_DIR}/.git" ]; then
+    echo "→ Repository not found, cloning to ${REPO_DIR}..."
+    sudo mkdir -p "${REPO_DIR}"
+    sudo chown ${USER}:${USER} "${REPO_DIR}"
+    git clone "${REPO_URL}" "${REPO_DIR}"
+    cd "${REPO_DIR}"
+else
+    echo "→ Repository found, updating..."
+    cd "${REPO_DIR}"
+    git fetch origin
+fi
+
+# Checkout target commit
+echo "→ Checking out commit ${TARGET_COMMIT}..."
+git checkout "${TARGET_COMMIT}"
+
+# Verify we're on the right commit
+CURRENT_COMMIT=$(git rev-parse HEAD)
+if [[ "${CURRENT_COMMIT}" != "${TARGET_COMMIT}"* ]]; then
+    echo "ERROR: Failed to checkout ${TARGET_COMMIT}"
+    echo "Current commit: ${CURRENT_COMMIT}"
+    exit 1
+fi
+
+echo "→ Running deploy.sh on remote server..."
+echo ""
+./deploy/scripts/deploy.sh "${ENVIRONMENT}"
+REMOTE_EOF
+)
+    
+    # Substitute variables in remote command
+    remote_cmd="${remote_cmd//__REPO_URL__/${repo_url}}"
+    remote_cmd="${remote_cmd//__TARGET_COMMIT__/${target_commit}}"
+    remote_cmd="${remote_cmd//__ENVIRONMENT__/${env}}"
+    
+    # Execute remotely via SSH
+    log "INFO" "Connecting to ${remote_host}..."
+    echo ""
+    
+    if ssh -t "${remote_host}" "${remote_cmd}"; then
+        log "SUCCESS" "Remote deployment completed successfully"
+        return 0
+    else
+        local exit_code=$?
+        log "ERROR" "Remote deployment failed (exit code: ${exit_code})"
+        return 1
+    fi
+}
+
 # ============================================================================
 # USAGE AND MAIN
 # ============================================================================
 
+
 usage() {
-    cat <<EOF
-Usage: $0 [OPTIONS] ENVIRONMENT
+    cat << USAGE_EOF
+Usage: ./deploy/scripts/deploy.sh [OPTIONS] ENVIRONMENT
 
 Deploy Togather server using blue-green zero-downtime strategy.
 
@@ -1394,21 +1491,28 @@ Arguments:
   ENVIRONMENT         Target environment (development, staging, production)
 
 Options:
+  --remote USER@HOST  Deploy to remote server via SSH
+  --version COMMIT    Deploy specific git commit/tag (default: current HEAD)
   --dry-run           Validate configuration without deploying
   --skip-migrations   Skip database migration execution (use with caution)
   --force             Force deployment even if lock exists or validations fail
-  --version           Show script version and exit
   --help              Show this help message
 
 Examples:
-  $0 production
-  $0 --dry-run staging
-  $0 development
-  $0 production --skip-migrations
-  $0 staging --force
+  # Deploy current commit to production (local)
+  ./deploy/scripts/deploy.sh production
+
+  # Deploy to remote staging server
+  ./deploy/scripts/deploy.sh staging --remote deploy@staging.example.com
+
+  # Deploy specific version to remote production
+  ./deploy/scripts/deploy.sh production --remote deploy@prod.example.com --version v1.2.3
+
+  # Dry-run validation
+  ./deploy/scripts/deploy.sh --dry-run staging
 
 See: specs/001-deployment-infrastructure/spec.md
-EOF
+USAGE_EOF
 }
 
 main() {
@@ -1417,6 +1521,8 @@ main() {
     local skip_migrations=false
     local force_deploy=false
     local environment=""
+    local remote_host=""
+    local target_version=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1432,19 +1538,34 @@ main() {
                 force_deploy=true
                 shift
                 ;;
+            --remote)
+                if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+                    echo "ERROR: --remote requires user@host argument" >&2
+                    exit 1
+                fi
+                remote_host="$2"
+                shift 2
+                ;;
             --version)
-                echo "Togather Deployment Script v${SCRIPT_VERSION}"
-                exit 0  # Success
+                if [[ "${2:-}" == "--help" || "${2:-}" == "-h" ]]; then
+                    echo "Togather Deployment Script v${SCRIPT_VERSION}"
+                    exit 0
+                elif [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+                    echo "ERROR: --version requires commit/tag argument" >&2
+                    exit 1
+                fi
+                target_version="$2"
+                shift 2
                 ;;
             --help)
                 usage
-                exit 0  # Success
+                exit 0
                 ;;
             -*)
                 echo "ERROR: Unknown option: $1" >&2
                 echo "" >&2
                 usage
-                exit 1  # Configuration error
+                exit 1
                 ;;
             *)
                 environment="$1"
@@ -1458,7 +1579,7 @@ main() {
         echo "ERROR: ENVIRONMENT argument required" >&2
         echo "" >&2
         usage
-        exit 1  # Configuration error
+        exit 1
     fi
     
     # Validate environment value
@@ -1470,9 +1591,33 @@ main() {
             echo "Must be one of: development, staging, production" >&2
             echo "" >&2
             usage
-            exit 1  # Configuration error
+            exit 1
             ;;
     esac
+    
+    # If --remote specified, delegate to remote execution
+    if [[ -n "$remote_host" ]]; then
+        # Initialize logging for local tracking
+        init_logging "$environment"
+        
+        # Validate local git first
+        validate_git_commit || exit 1
+        
+        # Determine target commit
+        local target_commit="${GIT_COMMIT}"
+        if [[ -n "$target_version" ]]; then
+            # Resolve version to commit hash
+            target_commit=$(git rev-parse "${target_version}" 2>/dev/null)
+            if [[ -z "$target_commit" ]]; then
+                log "ERROR" "Cannot resolve version: ${target_version}"
+                exit 1
+            fi
+            log "INFO" "Version override: ${target_version} -> ${target_commit}"
+        fi
+        
+        deploy_remote "$environment" "$remote_host" "$target_commit"
+        exit $?
+    fi
     
     # Initialize logging
     init_logging "$environment"
@@ -1480,11 +1625,11 @@ main() {
     # Dry run mode
     if [[ "$dry_run" == "true" ]]; then
         log "INFO" "DRY RUN MODE - No changes will be made"
-        validate_config "$environment" || exit 1  # Configuration error
-        validate_tool_versions || exit 1  # Configuration error
-        validate_git_commit || exit 1  # Configuration error
+        validate_config "$environment" || exit 1
+        validate_tool_versions || exit 1
+        validate_git_commit || exit 1
         log "SUCCESS" "Dry run validation passed"
-        exit 0  # Success
+        exit 0
     fi
     
     # Run deployment
