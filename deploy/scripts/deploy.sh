@@ -1567,7 +1567,12 @@ deploy() {
     fi
     
     # Generate web files (robots.txt, sitemap.xml) before build
-    generate_web_files "$env" || return 1
+    # Skip if SKIP_WEBFILES_GENERATION=true (set by remote deployment)
+    if [[ "${SKIP_WEBFILES_GENERATION:-false}" != "true" ]]; then
+        generate_web_files "$env" || return 1
+    else
+        log "INFO" "Skipping web files generation (already done locally)"
+    fi
     
     # T016: Build Docker image
     build_docker_image "$env" || return 1
@@ -1736,7 +1741,7 @@ echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
 
 echo "→ Running deploy.sh on remote server..."
 echo ""
-./deploy/scripts/deploy.sh "${ENVIRONMENT}"
+SKIP_WEBFILES_GENERATION=true ./deploy/scripts/deploy.sh "${ENVIRONMENT}"
 REMOTE_EOF
 )
     
