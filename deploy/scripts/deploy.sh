@@ -659,7 +659,6 @@ STATE_EOF
     # Try to create lock directory atomically (mkdir is atomic in POSIX)
     if mkdir "$lock_dir" 2>/dev/null; then
         # Lock acquired - set trap to cleanup on exit
-        trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
         log "INFO" "Lock directory created: ${lock_dir}"
     else
         # Lock directory exists - check if stale
@@ -698,7 +697,6 @@ STATE_EOF
                 log "WARN" "Stale lock removed, retrying acquisition"
                 # Retry lock acquisition
                 if mkdir "$lock_dir" 2>/dev/null; then
-                    trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
                     log "INFO" "Lock acquired after removing stale lock"
                 else
                     log "ERROR" "Failed to acquire lock after removing stale lock"
