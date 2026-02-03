@@ -26,7 +26,7 @@ Run `bd prime` for workflow context, or install hooks (`bd hooks install`) for a
 For full workflow details: `bd prime`
 
 
-## Workflow (do this every task)
+## Workflow (do this every coding or documentation task)
 1) Pick work:
    - `bd list --status ready` (or equivalent) and choose ONE task.
 2) Bind to the spec:
@@ -123,6 +123,8 @@ gofmt -w path/to/file.go
 
 When the user asks to deploy (to local/staging/production), follow the comprehensive deployment testing process. 
 Ask which environment to deploy to if not specified, and create a subagent to complete the task.
+
+DO NOT create a bead to track this task!
 
 ### Deployment Workflow
 
