@@ -1093,6 +1093,13 @@ deploy_to_slot() {
     export IMAGE_TAG="${image_tag}"
     export ENV_FILE="${env_file}"
     
+    # Source .env file to make variables available for docker-compose interpolation
+    # Docker Compose requires variables in shell environment for ${VAR} syntax
+    local project_env="${PROJECT_ROOT}/.env"
+    if [[ -f "${project_env}" ]]; then
+        set -a; source "${project_env}"; set +a
+    fi
+    
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"
     
