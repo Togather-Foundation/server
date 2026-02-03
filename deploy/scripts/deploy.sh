@@ -758,6 +758,11 @@ STATE_EOF
 
 # Release deployment lock
 release_lock() {
+    # Skip lock release if no lock was acquired (e.g., in remote deployment local context)
+    if [[ -z "${DEPLOYMENT_ID}" ]]; then
+        return 0
+    fi
+
     log "INFO" "Releasing deployment lock"
     
     # Extract environment from state file for lock directory name
