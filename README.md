@@ -22,7 +22,9 @@ We exist to rebuild event discovery as a public good where:
 
 ## The Problem
 
-Event discovery is broken because data is fragmented across walled platforms (social media, ticket sites) and individual websites. Organizers exhaust themselves cross-posting, while users are trapped in algorithm-driven feeds.
+Events are scattered across platforms.
+Organizers post everywhere, reach no one.
+Communities miss what matters most.
 
 **The real issue:** There is no lack of event data, but open access and expert, personalized curation are missing.
 
@@ -30,8 +32,21 @@ Event discovery is broken because data is fragmented across walled platforms (so
 
 We are creating an events commons using shared standards (Schema.org, ActivityPub) that everyone can build on.
 
+### What the SEL Does
+
+The **Shared Events Library (SEL)** is a backend server that:
+- **Ingests** event data from any source using Schema.org Event markup
+- **Validates** events against JSON-LD schemas and SHACL shapes
+- **Enriches** events with linked open data from knowledge graphs (Artsdata, Wikidata, MusicBrainz)
+- **Stores** events in a queryable database with provenance tracking (preserving original source data)
+- **Serves** events via REST and GraphQL APIs with content negotiation (JSON-LD, JSON)
+- **Federates** using ActivityPub to sync with other SEL nodes and services
+
+Each SEL instance typically serves a specific geographic area (city/region), acting as a public utility for event data in that community.
+
 ### The Architecture
-The ecosystem works in three layers:
+
+The larger ecosystem works in three layers:
 
 1.  **Data Publishing (Structured Metadata):** Events are published on source websites using AI-assisted Schema.org markup.
 2.  **Shared Infrastructure (This Project):** A distributed collection system and "Shared Event Library" that aggregates, validates, and serves this data as a public utility. SEL integrates with multiple knowledge graphs (Artsdata, Wikidata, MusicBrainz, etc.) to enrich events with linked open data, supporting both arts and non-arts events.
