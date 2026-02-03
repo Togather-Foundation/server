@@ -95,7 +95,7 @@ test_health_endpoint() {
         # Validate JSON structure
         if echo "$response" | jq -e '.status' >/dev/null 2>&1; then
             local status=$(echo "$response" | jq -r '.status')
-            if [[ "$status" == "pass" || "$status" == "warn" ]]; then
+            if [[ "$status" == "healthy" || "$status" == "degraded" ]]; then
                 log "SUCCESS" "Health check passed (status: ${status})"
                 ((TESTS_PASSED++)) || true
                 return 0
