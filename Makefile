@@ -259,7 +259,7 @@ docker-compose-lint:
 	@echo "✓ docker-compose.blue-green.yml is valid"
 
 # Run full CI pipeline locally
-ci: lint-ci vulncheck
+ci: sqlc-generate lint-ci vulncheck
 	@echo ""
 	@echo "==> Checking code formatting..."
 	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
@@ -284,12 +284,11 @@ ci: lint-ci vulncheck
 	fi
 	@echo "✓ Build successful"
 	@echo ""
-	@echo "==> Checking SQLc generation..."
-	@$(MAKE) sqlc-generate
-	@if [ -n "$$(git status --porcelain)" ]; then \
+	@echo "==> Checking SQLc generation is up to date..."
+	@if [ -n "$$(git status --porcelain internal/storage/postgres/sqlc)" ]; then \
 		echo "✗ Generated SQLc code differs from committed version"; \
 		echo "Run 'make sqlc-generate' and commit changes"; \
-		git diff; \
+		git diff internal/storage/postgres/sqlc; \
 		exit 1; \
 	else \
 		echo "✓ SQLc code is up to date"; \

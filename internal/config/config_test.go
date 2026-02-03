@@ -140,3 +140,75 @@ func TestLoad_TestEnvironment_AllowsAll(t *testing.T) {
 		t.Error("Expected AllowAllOrigins to be true in test environment")
 	}
 }
+
+func TestLoad_ProductionCORS_WildcardAllowsAll(t *testing.T) {
+	// Setup
+	originalEnv := map[string]string{
+		"ENVIRONMENT":          os.Getenv("ENVIRONMENT"),
+		"CORS_ALLOWED_ORIGINS": os.Getenv("CORS_ALLOWED_ORIGINS"),
+		"DATABASE_URL":         os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":           os.Getenv("JWT_SECRET"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	// Test case: production with CORS_ALLOWED_ORIGINS='*' should allow all origins
+	_ = os.Setenv("ENVIRONMENT", "production")
+	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error with wildcard CORS_ALLOWED_ORIGINS, got: %v", err)
+	}
+	if !cfg.CORS.AllowAllOrigins {
+		t.Error("Expected AllowAllOrigins to be true with wildcard '*'")
+	}
+	if cfg.CORS.AllowedOrigins != nil {
+		t.Error("Expected AllowedOrigins to be nil with wildcard '*'")
+	}
+}
+
+func TestLoad_StagingCORS_WildcardAllowsAll(t *testing.T) {
+	// Setup
+	originalEnv := map[string]string{
+		"ENVIRONMENT":          os.Getenv("ENVIRONMENT"),
+		"CORS_ALLOWED_ORIGINS": os.Getenv("CORS_ALLOWED_ORIGINS"),
+		"DATABASE_URL":         os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":           os.Getenv("JWT_SECRET"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	// Test case: staging with CORS_ALLOWED_ORIGINS='*' should allow all origins
+	_ = os.Setenv("ENVIRONMENT", "staging")
+	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error with wildcard CORS_ALLOWED_ORIGINS in staging, got: %v", err)
+	}
+	if !cfg.CORS.AllowAllOrigins {
+		t.Error("Expected AllowAllOrigins to be true in staging with wildcard '*'")
+	}
+	if cfg.CORS.AllowedOrigins != nil {
+		t.Error("Expected AllowedOrigins to be nil in staging with wildcard '*'")
+	}
+}

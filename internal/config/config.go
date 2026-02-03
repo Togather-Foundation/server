@@ -138,24 +138,34 @@ func Load() (Config, error) {
 			AllowedOrigins:  nil,
 		}
 	} else {
-		// Production: require explicit whitelist
+		// Production: require explicit whitelist or wildcard
 		allowedOrigins := getEnv("CORS_ALLOWED_ORIGINS", "")
-		origins := []string{}
-		if allowedOrigins != "" {
+		if allowedOrigins == "" {
+			return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production environment (use '*' for all origins or comma-separated list)")
+		}
+
+		// Handle wildcard '*' as special case to allow all origins
+		if strings.TrimSpace(allowedOrigins) == "*" {
+			cfg.CORS = CORSConfig{
+				AllowAllOrigins: true,
+				AllowedOrigins:  nil,
+			}
+		} else {
+			// Parse comma-separated list of allowed origins
+			origins := []string{}
 			for _, origin := range strings.Split(allowedOrigins, ",") {
 				trimmed := strings.TrimSpace(origin)
 				if trimmed != "" {
 					origins = append(origins, trimmed)
 				}
 			}
-		}
-		cfg.CORS = CORSConfig{
-			AllowAllOrigins: false,
-			AllowedOrigins:  origins,
-		}
-		// Require explicit CORS configuration in production
-		if len(origins) == 0 {
-			return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production environment (comma-separated list of allowed origins)")
+			if len(origins) == 0 {
+				return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production environment (use '*' for all origins or comma-separated list)")
+			}
+			cfg.CORS = CORSConfig{
+				AllowAllOrigins: false,
+				AllowedOrigins:  origins,
+			}
 		}
 	}
 
