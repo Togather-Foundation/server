@@ -63,248 +63,38 @@ Events are the heartbeat of local culture. By building this shared infrastructur
 
 The [**Togather Foundation**](https://togather.foundation) is a coordination point, not a platform owner. We provide reference implementations (like this library), documentation, and standards guidance. We do not own the data or monetize the community.
 
+---
+
 ## Quick Start: Deploying SEL
 
-Two deployment workflows:
-
-### Development/Staging: Simple Deployment
+**New server:** provision and install the base system (one-time).
 
 ```bash
-make deploy-package
-scp dist/togather-server-*.tar.gz deploy@server:~/
-ssh deploy@server 'cd ~ && tar -xzf togather-server-*.tar.gz && cd togather-server-* && sudo ./install.sh'
+./deploy/scripts/provision.sh deploy@server production --with-app
 ```
 
-**Use when:** dev/staging, low-traffic updates, brief downtime OK.
-
-See [DEPLOY.md](DEPLOY.md) and `docs/deploy/quickstart.md` for full steps.
-
-### Production: Zero-Downtime Deployment
+**Existing server:** deploy with zero downtime.
 
 ```bash
 # Uses .deploy.conf.production when present
 ./deploy/scripts/deploy.sh production
 ```
 
-**Features:** blue/green, Caddy traffic switch, health-gated, auto rollback.
-
 **Deploy specific version:** `./deploy/scripts/deploy.sh production --version v1.2.3`
 
-### Deployment Documentation
-- [Deployment Guide](DEPLOY.md) - Upgrade and deployment methods
-- [Quickstart Guide](docs/deploy/quickstart.md) - Complete setup instructions
-- [Remote Deployment](docs/deploy/remote-deployment.md) - Zero-downtime deployment guide
-- [Rollback Guide](docs/deploy/rollback.md) - Troubleshooting and recovery
-- [Deployment Testing](docs/deploy/deployment-testing.md) - Post-deploy checklist
-- [CI/CD Integration](docs/deploy/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
+**Docs:** [DEPLOY.md](DEPLOY.md) · [docs/deploy/quickstart.md](docs/deploy/quickstart.md) · [docs/deploy/remote-deployment.md](docs/deploy/remote-deployment.md)
 
----
-
-## Quick Start: Local Development
-
-For developers working on the SEL codebase:
-
-### Recommended: Interactive Setup
-The fastest way to get started is with the interactive setup command:
+## Local Development
 
 ```bash
-# Clone and build
 git clone https://github.com/Togather-Foundation/server.git
 cd server
 make build
-
-# Interactive guided setup (recommended)
 ./server setup
-
-# Or non-interactive Docker setup
-./server setup --docker --non-interactive
-# Or: make setup-docker
 ```
 
-The setup command will:
-- ✅ Detect your environment (Docker or local PostgreSQL)
-- ✅ Check prerequisites
-- ✅ **Generate secure secrets** (JWT_SECRET, CSRF_KEY, admin password using crypto/rand)
-- ✅ Configure database connection
-- ✅ **Create .env file** in project root with generated secrets and configuration
-- ✅ Set up database and run migrations
-- ✅ **Create your first API key** and save it to .env as API_KEY
+**Docs:** [docs/contributors/DEVELOPMENT.md](docs/contributors/DEVELOPMENT.md) · [docs/contributors/POSTGRESQL_SETUP.md](docs/contributors/POSTGRESQL_SETUP.md)
 
-After setup completes, your SEL server will be ready at `http://localhost:8080`!
-
-**Global CLI flags** (available for all commands):
-- `--config <path>` - Custom config file path (optional, defaults to .env in project root)
-- `--log-level <level>` - Set log level: debug, info, warn, error (default: info)
-- `--log-format <format>` - Set log format: json, console (default: json)
-
-Example: `./server serve --log-level debug --log-format console`
-
-**Note:** For local PostgreSQL, you'll need PostgreSQL 16+ with PostGIS, pgvector, and pg_trgm extensions installed. See [PostgreSQL Setup Guide](docs/contributors/POSTGRESQL_SETUP.md) for installation instructions.
-
-### Option 1: Docker (Manual Setup)
-```bash
-# Install development tools
-make install-tools
-
-# Start everything (database + server on Docker)
-make docker-up
-
-# Server: http://localhost:8080
-# Database: localhost:5433
-# Migrations run automatically ✅
-```
-
-### Option 2: Local PostgreSQL (Manual Setup)
-
-**Prerequisites:** PostgreSQL 16+ with PostGIS, pgvector, and pg_trgm extensions. See [PostgreSQL Setup Guide](docs/contributors/POSTGRESQL_SETUP.md) for installation instructions.
-
-```bash
-# Install tools
-make install-tools
-
-# Set up local database
-make db-check      # Verify PostgreSQL has required extensions
-make db-setup      # Create database with postgis, pgvector
-make db-init       # Generate .env with auto-generated secrets
-
-# Run migrations
-make migrate-up
-make migrate-river
-
-# Start server
-make run           # Build and run server (auto-kills existing processes)
-make dev           # Run with live reload (auto-restarts on code changes)
-                   # Note: First run 'make install-tools' to get air for live reload
-
-# Manage running server
-make stop          # Stop any running server processes
-make restart       # Restart the server (stop + run)
-
-# Quick reference for manual control:
-pkill togather-server           # Kill server if make stop doesn't work
-ps aux | grep togather-server   # Check if server is running
-```
-
-### Common Commands
-```bash
-make docker-down      # Stop Docker containers
-make docker-logs      # View logs
-make test             # Run tests
-make lint             # Run linter
-make ci               # Full CI pipeline locally
-```
-
-### Build Output
-
-Both `make build` and `go build ./cmd/server` produce the same output:
-- **Binary location**: `./server` (in the project root)
-- **Version info**: `make build` includes git version metadata, `go build` shows "dev"
-
-```bash
-# Either method works:
-make build              # Builds to ./server with version info
-go build ./cmd/server   # Builds to ./server (dev version)
-
-# Run the binary:
-./server --help
-./server version
-```
-
-### Development Documentation
-- [Development Guide](docs/contributors/DEVELOPMENT.md) - Full development workflow
-- [Architecture Guide](docs/contributors/ARCHITECTURE.md) - System design
-- [Testing Guide](docs/contributors/TESTING.md) - TDD workflow
-
-## Quick API Test
-
-Once your local environment is running, verify event ingestion works:
-
-### Exploring the API
-
-The SEL server provides interactive API documentation at `http://localhost:8080/api/docs` using [Scalar](https://scalar.com).
-
-**Features:**
-- 🌐 **Interactive Testing**: Try all API endpoints directly from your browser
-- 📖 **Complete Documentation**: Automatically generated from OpenAPI 3.1 spec
-- 🔑 **API Key Instructions**: Email info@togather.foundation to request an API key
-- 📥 **OpenAPI Spec**: Available at `/api/v1/openapi.json`
-
-**Quick links:**
-- API Documentation: http://localhost:8080/api/docs
-- Health Check: http://localhost:8080/health (includes `docs_url` field)
-- SEL Profile: http://localhost:8080/.well-known/sel-profile (includes `api_documentation` field)
-
-### Using the CLI (Recommended)
-
-The SEL server includes built-in CLI commands for easy testing:
-
-```bash
-# 1. Create an API key (adds to .env automatically)
-./server api-key create my-test-key
-
-# 2. Ingest a test event (reads API_KEY from .env automatically)
-./server ingest test-event.json
-
-# 3. Watch processing in real-time
-./server ingest test-event.json --watch
-
-# 4. List your API keys
-./server api-key list
-
-# 5. Revoke a key
-./server api-key revoke <id>
-```
-
-**Note:** After running `make build` or `go build ./cmd/server`, the binary is located at `./server`. 
-
-**Configuration Loading:**
-- The CLI automatically loads configuration from `.env` file in the project root (development/test environments)
-- All commands (serve, ingest, api-key, etc.) read from `.env` by default
-- In staging/production, set `ENV_FILE` environment variable to specify a different config file location
-- Priority: Environment variables > .env file > defaults
-
-**Example test-event.json:**
-```json
-{
-  "events": [{
-    "@type": "Event",
-    "name": "Test Concert",
-    "startDate": "2026-02-15T20:00:00Z",
-    "location": {
-      "@type": "Place",
-      "name": "Community Hall",
-      "addressLocality": "Toronto",
-      "addressRegion": "ON",
-      "addressCountry": "CA"
-    }
-  }]
-}
-```
-
-### Using curl (Alternative)
-
-If you prefer direct HTTP API testing without using the CLI:
-
-```bash
-# 1. Create an API key
-go run scripts/create-api-key.go my-test-key
-# (Or use: ./server api-key create my-test-key)
-
-# 2. Export the key (if not using CLI which reads from .env)
-export API_KEY="<key-from-output>"
-
-# 3. Ingest event
-curl -X POST http://localhost:8080/api/v1/events:batch \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d @test-event.json
-
-# 4. List events
-curl http://localhost:8080/api/v1/events | jq .
-
-# 5. Check health
-curl http://localhost:8080/health | jq .
-```
 
 ## Documentation & Contributor Resources
 
