@@ -1,8 +1,8 @@
 # Quickstart: Deploying Togather Server
 
-**Target Audience**: Operators deploying Togather server for production, and developers setting up local development  
-**Time**: 5 minutes for automated deployment, 30-45 minutes for manual setup, 5-10 minutes for local development  
-**Prerequisites**: Linux server with Docker installed, Git (for development)
+**Target Audience**: Operators deploying Togather server (staging/production)  
+**Time**: 5 minutes for automated deployment, 30-45 minutes for manual setup  
+**Prerequisites**: Linux server with Docker installed, SSH access
 
 ---
 
@@ -10,14 +10,10 @@
 
 1. [One-Command Installation](#one-command-installation) ⭐ **Start here for production**
 2. [Deployment Workflows](#deployment-workflows)
-3. [Local Development Setup](#local-development-setup)
-4. [Production Deployment](#production-deployment)
-5. [Prerequisites Check](#prerequisites-check)
-6. [Initial Setup](#initial-setup)
-7. [First Deployment](#first-deployment)
-8. [Verify Deployment](#verify-deployment)
-9. [Common Operations](#common-operations)
-10. [Troubleshooting](#troubleshooting)
+3. [Production Deployment](#production-deployment)
+4. [Verify Deployment](#verify-deployment)
+5. [Common Operations](#common-operations)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 ---
@@ -73,7 +69,7 @@ curl http://localhost:8080/api/v1/events | jq .
 
 **Troubleshooting:**
 - **Installation failed**: Check `/var/log/togather-install.log`
-- **Manual steps needed**: See [MANUAL_INSTALL.md](./MANUAL_INSTALL.md)
+- **Manual steps needed**: See [manual-install.md](./manual-install.md)
 - **Common issues**: See [troubleshooting.md](./troubleshooting.md)
 
 **Skip to**: [Verify Deployment](#verify-deployment)
@@ -158,14 +154,14 @@ Use `deploy.sh --remote` for production-grade deployments:
 cd ~/togather/server
 git pull origin main
 
-# Deploy to staging
-./deploy/scripts/deploy.sh staging --remote deploy@staging.server.com
+# Deploy to staging (uses .deploy.conf.staging if present)
+./deploy/scripts/deploy.sh staging
 
-# Deploy to production
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com
+# Deploy to production (uses .deploy.conf.production if present)
+./deploy/scripts/deploy.sh production
 
 # Deploy specific version
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com --version v1.2.3
+./deploy/scripts/deploy.sh production --version v1.2.3
 ```
 
 **Characteristics:**
@@ -201,140 +197,14 @@ ssh deploy@server
 sudo ./install.sh
 
 # 2. Then use deploy.sh for all future updates
-./deploy/scripts/deploy.sh staging --remote deploy@server
+./deploy/scripts/deploy.sh staging
 ```
 
 ---
-cd server
 
-# Install development tools (golang-migrate, River CLI, golangci-lint, sqlc)
-make install-tools
+## Local Development
 
-# Start everything (database + server in Docker)
-make docker-up
-
-# ✓ Containers started!
-# ✓ Migrations run automatically
-# ✓ Server: http://localhost:8080
-# ✓ Database: localhost:5433
-```
-
-**Verify it's working:**
-```bash
-curl http://localhost:8080/health | jq '.status'
-# Should return: "healthy"
-```
-
-**Option 2: Interactive Setup (Recommended for First-Time Setup)**
-
-For a guided setup experience that generates all secrets and configures everything automatically:
-
-```bash
-git clone https://github.com/Togather-Foundation/server.git
-cd server
-make build
-
-# Interactive guided setup - answers questions and configures everything
-./server setup
-
-# What it does:
-# 1. Detects your environment (Docker vs local PostgreSQL)
-# 2. Checks prerequisites
-# 3. Generates secure secrets (JWT_SECRET, CSRF_KEY, admin password using crypto/rand)
-# 4. Creates .env file in project root with all configuration
-# 5. Sets up database and runs migrations
-# 6. Creates your first API key and saves it to .env
-
-# Or non-interactive setup for Docker:
-./server setup --docker --non-interactive
-```
-
-**Global CLI Flags** (available for all `./server` commands):
-- `--config <path>` - Custom config file path (optional, defaults to .env in project root)
-- `--log-level <level>` - Set log level: debug, info, warn, error (default: info)
-- `--log-format <format>` - Set log format: json, console (default: json)
-
-Example: `./server serve --log-level debug --log-format console`
-
-**Option 3: Local PostgreSQL (Manual Setup)**
-
-If you prefer using your local PostgreSQL (port 5432):
-
-```bash
-# Install tools
-make install-tools
-
-# Check PostgreSQL has required extensions
-make db-check
-
-# Create database and install extensions
-make db-setup
-
-# Generate .env with auto-generated secrets
-make db-init
-
-# Run migrations
-make migrate-up
-make migrate-river
-
-# Start server
-make run           # Or: make dev (with hot reload)
-```
-
-### Development Commands
-
-```bash
-# Docker commands
-make docker-up        # Start database + server (port 5433)
-make docker-db        # Start only database
-make docker-down      # Stop containers
-make docker-logs      # View logs
-make docker-rebuild   # Rebuild after code changes
-make docker-clean     # Remove everything including volumes
-
-# Database commands
-make db-setup         # Create local database
-make db-init          # Generate .env for local PostgreSQL
-make db-check         # Check required extensions
-make migrate-up       # Run app migrations
-make migrate-river    # Run River job queue migrations
-
-# Development commands
-make test             # Run tests
-make test-ci          # Run tests as CI does
-make lint             # Run linter
-make ci               # Full CI pipeline locally
-make run              # Build and run server
-make dev              # Run with hot reload (requires air)
-```
-
-### Troubleshooting Local Setup
-
-**Port 5432 already in use:**
-- Docker PostgreSQL uses port 5433 by default (no conflict!)
-- Your system PostgreSQL stays on 5432
-- Both can run simultaneously
-
-**Migrations fail:**
-```bash
-# Ensure tools are installed
-make install-tools
-
-# Run migrations manually
-DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" make migrate-up
-DATABASE_URL="postgres://togather:dev_password_change_me@localhost:5433/togather?sslmode=disable" make migrate-river
-```
-
-**Health check shows unhealthy:**
-```bash
-# Check which components are failing
-curl http://localhost:8080/health | jq '.checks'
-
-# Common fixes:
-# - Database not ready: wait 5 seconds and retry
-# - Migrations not run: see migrations section above
-# - River migrations missing: run make migrate-river
-```
+Local development setup is documented in `docs/contributors/DEVELOPMENT.md` and `docs/contributors/POSTGRESQL_SETUP.md`.
 
 ---
 
@@ -427,14 +297,14 @@ git branch
 Copy the environment template and customize:
 
 ```bash
-# Copy production environment template
-cp deploy/config/environments/.env.production.example deploy/config/environments/.env.production
+# Copy production environment template (for reference only)
+cp deploy/config/environments/.env.production.example /opt/togather/.env.production
 
 # Edit configuration (use your preferred editor)
-nano deploy/config/environments/.env.production
+nano /opt/togather/.env.production
 ```
 
-**Required Configuration** (`deploy/config/environments/.env.production`):
+**Required Configuration** (`/opt/togather/.env.production` on server):
 
 ```bash
 # Environment identifier
@@ -470,10 +340,10 @@ echo "JWT_SECRET=$(openssl rand -base64 32)"
 
 ```bash
 # Set restrictive permissions (readable only by owner)
-chmod 600 deploy/config/environments/.env.production
+chmod 600 /opt/togather/.env.production
 
 # Verify permissions
-ls -la deploy/config/environments/.env.production
+ls -la /opt/togather/.env.production
 # Should show: -rw------- (600)
 ```
 
@@ -507,15 +377,13 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ```bash
 # Create required directories
-sudo mkdir -p /var/lib/togather/deployments
-sudo mkdir -p /var/backups/togather
-sudo mkdir -p /var/log/togather/deployments
+sudo mkdir -p /var/lib/togather/db-snapshots
+sudo mkdir -p /var/lib/togather/db-snapshots
 sudo mkdir -p /var/lock
 
 # Set ownership (replace 'youruser' with your username)
 sudo chown -R $USER:$USER /var/lib/togather
-sudo chown -R $USER:$USER /var/backups/togather
-sudo chown -R $USER:$USER /var/log/togather
+sudo chown -R $USER:$USER /var/lib/togather
 ```
 
 ### 6. Validate Configuration
@@ -530,7 +398,7 @@ docker ps
 # Should show running containers (or empty list if none running)
 
 # Check available disk space
-df -h /var/backups/togather
+df -h /var/lib/togather
 # Should show at least 10GB available
 ```
 
@@ -550,13 +418,13 @@ chmod +x deploy/scripts/*.sh
 
 ```bash
 # Validate configuration without deploying
-./deploy/scripts/deploy.sh --dry-run production
+./deploy/scripts/deploy.sh production --dry-run
 ```
 
 **Expected Output**:
 ```
 ==> Validating deployment configuration
-✓ Environment file found: deploy/config/environments/.env.production
+✓ Environment file found: /opt/togather/.env.production
 ✓ Database connection successful
 ✓ Required environment variables present
 ✓ Docker daemon accessible
@@ -608,7 +476,7 @@ Dry-run complete - configuration valid
 Deployment ID: dep_01JBQR2KXYZ9876543210
 Version: abc1234
 Duration: 4m 32s
-Logs: /var/log/togather/deployments/dep_01JBQR2KXYZ9876543210.json
+Logs: ~/.togather/logs/deployments/production_20260203_210001.log
 ```
 
 ### 4. Verify Application is Running
@@ -699,7 +567,7 @@ curl http://localhost:8080/api/v1/events | jq '.'
 docker logs togather-server-green
 
 # View deployment log
-cat /var/log/togather/deployments/dep_01JBQR2KXYZ9876543210.json | jq '.'
+cat ~/.togather/logs/deployments/production_20260203_210001.log
 ```
 
 ---
@@ -798,8 +666,8 @@ server deploy rollback production --dry-run
 server deploy status
 server deploy status --format json
 
-# Or view state file directly
-cat deploy/config/deployment-state.json | jq '.'
+# Or view state file directly (on server)
+cat /opt/togather/src/deploy/config/deployment-state.json | jq '.'
 ```
 
 ### Create Manual Database Snapshot
@@ -848,7 +716,7 @@ server snapshot cleanup --retention-days 7
 **Error**:
 ```
 ERROR: Another deployment is in progress
-If deployment is stuck, remove lock: rm /var/lock/togather-deploy-production.lock
+If deployment is stuck, remove lock: rm -rf /tmp/togather-deploy-production.lock
 ```
 
 **Solution**:
@@ -857,7 +725,7 @@ If deployment is stuck, remove lock: rm /var/lock/togather-deploy-production.loc
 ps aux | grep deploy.sh
 
 # If no process found, remove stale lock
-rm /var/lock/togather-deploy-production.lock
+rm -rf /tmp/togather-deploy-production.lock
 
 # Retry deployment
 ./deploy/scripts/deploy.sh production
@@ -890,7 +758,7 @@ Last response (HTTP 503): {"status": "unhealthy", ...}
 
 4. **Manual rollback**:
    ```bash
-   ./deploy/scripts/rollback.sh --force production
+   server deploy rollback production --force
    ```
 
 ### Migration Fails
@@ -918,10 +786,10 @@ Last response (HTTP 503): {"status": "unhealthy", ...}
 3. **Restore from snapshot** (if unfixable):
    ```bash
    # Find pre-migration snapshot
-   ls -lt /var/backups/togather/ | head -3
+   ls -lt /var/lib/togather/db-snapshots/ | head -3
    
    # Restore
-   gunzip -c /var/backups/togather/togather_production_TIMESTAMP_COMMIT.sql.gz \
+   gunzip -c /var/lib/togather/db-snapshots/togather_production_TIMESTAMP_COMMIT.sql.gz \
      | psql "$DATABASE_URL"
    ```
 
@@ -946,7 +814,7 @@ Last response (HTTP 503): {"status": "unhealthy", ...}
 
 3. **Check largest directories**:
    ```bash
-   du -sh /var/backups/togather/*
+   du -sh /var/lib/togather/db-snapshots/*
    du -sh /var/lib/docker/volumes/*
    ```
 
@@ -977,7 +845,7 @@ Last response (HTTP 503): {"status": "unhealthy", ...}
 4. **Run container interactively for debugging**:
    ```bash
    docker run -it --rm \
-     --env-file deploy/config/environments/.env.production \
+     --env-file /opt/togather/.env.production \
      togather-server:abc1234 /bin/sh
    ```
 
@@ -1003,7 +871,7 @@ Last response (HTTP 503): {"status": "unhealthy", ...}
 
 ```bash
 # Enable monitoring in environment config
-echo "ENABLE_MONITORING=true" >> deploy/config/environments/.env.production
+echo "ENABLE_MONITORING=true" >> /opt/togather/.env.production
 
 # Deploy with monitoring stack
 ./deploy/scripts/deploy.sh production
@@ -1018,7 +886,7 @@ open http://localhost:3000
 ## Getting Help
 
 - **Documentation**: See `specs/001-deployment-infrastructure/` for detailed architecture
-- **Logs**: Check `/var/log/togather/deployments/` for deployment history
+- **Logs**: Check `~/.togather/logs/deployments/` for deployment history
 - **Issues**: Report deployment problems at https://github.com/Togather-Foundation/server/issues
 - **Community**: Join the Togather community forum for operator support
 

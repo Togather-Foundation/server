@@ -30,13 +30,13 @@ The performance testing tool generates realistic traffic patterns using test fix
 1. **Server running**: Ensure the Togather server is running:
    ```bash
    cd deploy/docker
-   docker compose -f docker-compose.yml -f docker-compose.blue-green.yml up -d
+   docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml up -d
    ```
 
 2. **Monitoring stack** (optional but recommended):
    ```bash
    cd deploy/docker
-   docker compose -f docker-compose.yml -f docker-compose.blue-green.yml --profile monitoring up -d
+   docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml --profile monitoring up -d
    ```
 
 ## Load Profiles
@@ -275,7 +275,7 @@ diff blue-results.txt green-results.txt
 **Solution**: Start the server:
 ```bash
 cd deploy/docker
-docker compose -f docker-compose.yml -f docker-compose.blue-green.yml up -d
+docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml up -d
 ```
 
 ### All Requests Failing

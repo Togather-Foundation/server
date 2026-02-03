@@ -67,19 +67,19 @@ ssh deploy@server "cd togather-*/ && sudo ./install.sh"
 ```bash
 cd ~/togather/server
 git pull origin main
-./deploy/scripts/deploy.sh staging --remote deploy@staging.server.com
+./deploy/scripts/deploy.sh staging
 ```
 
 ### Deploy Specific Version
 
 ```bash
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com --version v1.2.3
+./deploy/scripts/deploy.sh production --version v1.2.3
 ```
 
 ### Deploy Specific Commit
 
 ```bash
-./deploy/scripts/deploy.sh staging --remote deploy@staging.server.com --version abc1234
+./deploy/scripts/deploy.sh staging --version abc1234
 ```
 
 ## How It Works
@@ -208,8 +208,7 @@ ssh deploy@server 'git ls-remote git@github.com:Togather-Foundation/server.git'
 # Check repository state on server
 ssh deploy@server 'cd /opt/togather/src && git status'
 
-# Force clean state
-ssh deploy@server 'cd /opt/togather/src && git fetch origin && git reset --hard origin/main'
+# Avoid force-resetting the repo. Prefer running deploy.sh again or re-cloning if needed.
 ```
 
 ### Deployment Failures
@@ -247,10 +246,7 @@ ssh deploy@server 'sudo nano /etc/caddy/Caddyfile'
 ssh deploy@server 'sudo systemctl reload caddy'
 ```
 
-Automated rollback (future):
-```bash
-./deploy/scripts/rollback.sh production --remote deploy@prod.server.com
-```
+Automated rollback is handled by `deploy.sh` when health checks fail.
 
 ## Best Practices
 

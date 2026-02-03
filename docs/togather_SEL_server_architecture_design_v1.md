@@ -912,7 +912,7 @@ SEL's security design addresses these primary threat vectors:
 **Security Best Practices for Operators:**
 
 1. **Generate Strong Secrets:** Use `openssl rand -base64 48` or similar for JWT_SECRET
-2. **Enable HTTPS:** Always run behind TLS termination (nginx, Traefik, or cloud load balancer)
+2. **Enable HTTPS:** Always run behind TLS termination (Caddy, Traefik, or cloud load balancer)
 3. **Database Security:** Use `sslmode=require` in DATABASE_URL and restrict network access via firewall rules
 4. **Monitor Rate Limits:** Watch for 429 errors indicating potential attacks or misconfigured clients
 5. **Rotate API Keys:** Implement key rotation policy for long-lived agent credentials
@@ -1002,7 +1002,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
 
     - For multiple cities, we’ll deploy multiple instances each with its own DB. Federation between them is at a higher level (not via a single load balancer).
 
-- In summary, the typical deployment is one Docker container for SEL and one for Postgres (plus perhaps one for Nginx as a reverse proxy if serving through web, or directly exposing the port).
+- In summary, the typical deployment is one Docker container for SEL and one for Postgres (plus perhaps one for Caddy as a reverse proxy if serving through web, or directly exposing the port).
 
 **Volumes & Data Persistence:**
 
@@ -1408,4 +1408,3 @@ In conclusion, the Shared Events Library backend in Go is structured not just to
 - AT Protocol PDS – personal data servers give individuals control/portability of their data and identity[box464.com](https://box464.com/posts/bluesky-pds/#:~:text=Post%20Summary)
 
 ![](https://www.google.com/s2/favicons?domain=https://dev.to&sz=32)![](https://www.google.com/s2/favicons?domain=https://www.reddit.com&sz=32)![](https://www.google.com/s2/favicons?domain=https://medium.com&sz=32)![](https://www.google.com/s2/favicons?domain=http://docs.artsdata.ca&sz=32)Sources
-

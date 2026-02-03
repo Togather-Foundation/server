@@ -242,4 +242,4 @@ ssh deploy@server "cd /opt/togather/src && ./deploy/scripts/unlock.sh staging --
 - [Deployment Overview](quickstart.md)
 - [Remote Deployment](remote-deployment.md)
 - [Troubleshooting](troubleshooting.md)
-- [Deployment Testing](DEPLOYMENT-TESTING.md)
+- [Deployment Testing](deployment-testing.md)

@@ -270,7 +270,7 @@ HTTP_MAX_HEADER_BYTES=1048576
 
 - [ ] `JWT_SECRET` is 32+ characters and cryptographically random
 - [ ] `DATABASE_URL` uses `sslmode=require`
-- [ ] Server runs behind HTTPS termination (nginx, Traefik, cloud LB)
+- [ ] Server runs behind HTTPS termination (Caddy, Traefik, or cloud LB)
 - [ ] Database firewall rules restrict access to application servers only
 - [ ] Rate limits configured appropriately for expected traffic
 - [ ] Monitoring configured for 429 (rate limit) errors
@@ -299,7 +299,7 @@ openssl rand -hex 32
 
 **Always** run the SEL server behind a TLS-terminating reverse proxy:
 
-- **Nginx**: Use `proxy_pass` with SSL certificate (Let's Encrypt recommended)
+- **Caddy**: Automatic HTTPS and simple `reverse_proxy` config
 - **Traefik**: Use automatic HTTPS with Let's Encrypt integration
 - **Cloud Load Balancer**: AWS ALB, GCP Load Balancer, Azure Application Gateway
 

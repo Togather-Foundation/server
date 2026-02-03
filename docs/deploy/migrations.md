@@ -79,7 +79,7 @@ test -d /tmp/togather-migration-production.lock && echo "Lock exists"
 ```bash
 # Wait for migration to complete
 # Monitor progress in deployment logs
-tail -f /var/log/togather/deployments/<deployment-id>.log
+tail -f ~/.togather/logs/deployments/<env>_<timestamp>.log
 ```
 
 **If process crashed (stale lock):**
@@ -179,7 +179,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
 **Diagnosis:**
 ```bash
 # Check deployment logs for error details
-tail -100 /var/log/togather/deployments/<deployment-id>.log | grep -A10 "MIGRATION FAILED"
+tail -100 ~/.togather/logs/deployments/<env>_<timestamp>.log | grep -A10 "MIGRATION FAILED"
 
 # Check migrate CLI output
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up 2>&1 | tee migration_error.log
@@ -307,7 +307,7 @@ test -d /tmp/togather-migration-production.lock && echo "Migration lock exists"
 
 ```bash
 # Wait for first deployment to complete
-tail -f /var/log/togather/deployments/<first-deployment-id>.log
+tail -f ~/.togather/logs/deployments/<env>_<timestamp>.log
 
 # After first deployment finishes, retry second deployment
 cd deploy/scripts
@@ -517,7 +517,7 @@ Every `.up.sql` should have a corresponding `.down.sql`:
 
 ```bash
 # Check recent deployment logs for migration details
-tail -100 /var/log/togather/deployments/$(ls -t /var/log/togather/deployments/ | head -1) | grep -i migration
+tail -100 ~/.togather/logs/deployments/$(ls -t ~/.togather/logs/deployments/ | head -1) | grep -i migration
 ```
 
 ### 6. Monitor Snapshot Disk Usage
@@ -538,7 +538,7 @@ server snapshot cleanup --retention-days 7  # Removes snapshots older than 7 day
 
 ```bash
 # 1. Stop application to prevent new writes
-docker-compose down
+docker compose -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml down
 
 # 2. Find appropriate snapshot
 server snapshot list
@@ -553,7 +553,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" ver
 migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" force <version>
 
 # 6. Restart application
-docker-compose up -d
+docker compose -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml up -d
 
 # 7. Check health
 curl http://localhost:8080/health | jq '.checks.migrations'
@@ -738,7 +738,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" ver
 
 # 4. Redeploy old application version
 cd deploy/scripts
-./rollback.sh production  # This rolls back the application deployment
+server deploy rollback production  # This rolls back the application deployment
 ```
 
 ---
@@ -872,7 +872,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" dow
 ```bash
 # ✅ Rollback application first, then migrations
 cd deploy/scripts
-./rollback.sh production  # Rollback app deployment
+server deploy rollback production  # Rollback app deployment
 
 # Wait for health checks to pass with old app + new schema
 sleep 30
@@ -1183,7 +1183,7 @@ curl http://localhost:8080/health | jq '.checks.migrations'
 
 If migrations continue to fail after following this guide:
 
-1. **Check deployment logs:** `/var/log/togather/deployments/<deployment-id>.log`
+1. **Check deployment logs:** `~/.togather/logs/deployments/<env>_<timestamp>.log`
 2. **Review migration files:** `internal/storage/postgres/migrations/`
 3. **Inspect database state:** `psql "$DATABASE_URL" -c "\dt"`
 4. **Consult specification:** `specs/001-deployment-infrastructure/spec.md`

@@ -72,8 +72,8 @@ The Togather monitoring stack provides real-time observability into server perfo
 
 ```bash
 # Start server with monitoring stack
-docker compose -f deploy/docker/docker-compose.yml \
-  -f deploy/docker/docker-compose.blue-green.yml \
+docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml \
+  -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml \
   --profile monitoring up -d
 
 # Verify containers are running
@@ -89,7 +89,7 @@ docker ps | grep togather
 
 **Production**:
 
-Add to `deploy/config/environments/.env.production`:
+Add to `/opt/togather/.env.production`:
 
 ```bash
 # Enable monitoring stack
@@ -179,7 +179,7 @@ global:
 
 **Changing Retention Period**:
 
-Edit `deploy/docker/docker-compose.yml`:
+Edit `/opt/togather/src/deploy/docker/docker-compose.yml`:
 
 ```yaml
 prometheus:
@@ -1070,7 +1070,7 @@ receivers:
 
 1. **Reduce retention period**:
    ```yaml
-   # deploy/docker/docker-compose.yml
+   # /opt/togather/src/deploy/docker/docker-compose.yml
    prometheus:
      command:
        - '--storage.tsdb.retention.time=7d'  # Reduce from 15d
@@ -1246,7 +1246,7 @@ receivers:
 
 3. **Resource Limits**
    ```yaml
-   # deploy/docker/docker-compose.yml
+   # /opt/togather/src/deploy/docker/docker-compose.yml
    prometheus:
      deploy:
        resources:

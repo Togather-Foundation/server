@@ -27,8 +27,9 @@ New to deployment? Start here:
 ### Essential Guides
 
 - **[Quickstart Guide](quickstart.md)** - Complete deployment setup from scratch
-- **[Caddy Deployment](CADDY-DEPLOYMENT.md)** - Production deployment with Caddy reverse proxy and automatic HTTPS
-- **[Linode Deployment](LINODE-DEPLOYMENT.md)** - Deploy to Linode cloud platform
+- **[Deployment Testing](deployment-testing.md)** - Post-deploy checklist and agent steps
+- **[Caddy Deployment](caddy-deployment.md)** - Production deployment with Caddy reverse proxy and automatic HTTPS
+- **[Linode Deployment](linode-deployment.md)** - Deploy to Linode cloud platform
 - **[Rollback Guide](rollback.md)** - Troubleshoot and recover from failed deployments
 - **[Migrations Guide](migrations.md)** - Manage database schema changes safely
 - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
@@ -37,6 +38,7 @@ New to deployment? Start here:
 
 - **[Monitoring](monitoring.md)** - Observability setup (Prometheus, Grafana)
 - **[Log Management](log-management.md)** - Structured logging and analysis
+- **[Lock Management](lock-management.md)** - Deployment lock handling
 - **[Performance Testing](performance-testing.md)** - Load testing and benchmarking
 - **[Best Practices](best-practices.md)** - Production deployment recommendations
 
@@ -80,7 +82,7 @@ Togather SEL uses **blue-green zero-downtime deployments**:
 
 ## CLI Commands
 
-All deployment operations use the `server` CLI:
+Some deployment operations use the `server` CLI:
 
 ```bash
 # Database Snapshots
@@ -88,7 +90,8 @@ server snapshot create --reason "pre-deploy"
 server snapshot list
 server snapshot cleanup --retention-days 7
 
-# Deployment Operations
+
+# Deployment Operations (if enabled in CLI)
 server deploy status
 server deploy rollback <environment>
 

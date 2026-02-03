@@ -65,7 +65,7 @@ The [**Togather Foundation**](https://togather.foundation) is a coordination poi
 
 ## Quick Start: Deploying SEL
 
-Togather supports two deployment workflows:
+Two deployment workflows:
 
 ### Development/Staging: Simple Deployment
 
@@ -75,37 +75,27 @@ scp dist/togather-server-*.tar.gz deploy@server:~/
 ssh deploy@server 'cd ~ && tar -xzf togather-server-*.tar.gz && cd togather-server-* && sudo ./install.sh'
 ```
 
-**Characteristics:**
-- Brief downtime (~10-30 seconds)
-- Simple, one-command installation
-- Good for: Development, staging, low-traffic updates
+**Use when:** dev/staging, low-traffic updates, brief downtime OK.
 
-See [DEPLOY.md](DEPLOY.md) for full installation guide.
+See [DEPLOY.md](DEPLOY.md) and `docs/deploy/quickstart.md` for full steps.
 
 ### Production: Zero-Downtime Deployment
 
 ```bash
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com
+# Uses .deploy.conf.production when present
+./deploy/scripts/deploy.sh production
 ```
 
-**Features:**
-- ✅ Zero downtime during deployment
-- ✅ Blue-green deployment strategy
-- ✅ Automatic Caddy traffic switching
-- ✅ Database migration safety checks
-- ✅ Health validation before traffic switch
-- ✅ Automatic rollback on failure
+**Features:** blue/green, Caddy traffic switch, health-gated, auto rollback.
 
-**Deploy specific version:**
-```bash
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com --version v1.2.3
-```
+**Deploy specific version:** `./deploy/scripts/deploy.sh production --version v1.2.3`
 
 ### Deployment Documentation
 - [Deployment Guide](DEPLOY.md) - Upgrade and deployment methods
 - [Quickstart Guide](docs/deploy/quickstart.md) - Complete setup instructions
 - [Remote Deployment](docs/deploy/remote-deployment.md) - Zero-downtime deployment guide
 - [Rollback Guide](docs/deploy/rollback.md) - Troubleshooting and recovery
+- [Deployment Testing](docs/deploy/deployment-testing.md) - Post-deploy checklist
 - [CI/CD Integration](docs/deploy/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
 
 ---

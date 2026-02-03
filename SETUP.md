@@ -1,6 +1,6 @@
-# SETUP
+# Development Setup
 
-# Ryan Kelln
+# opencode + beads + spec kit
 
 This setup uses Ubuntu, with Spec kit and beads and the copilot model with opencode and openskills.
 
@@ -49,41 +49,3 @@ Notes for setting up new projects:
    1. `cp .env.example .env`
 2. Update `.env` with your local database credentials and secrets.
 3. Keep `.env` local only (it is gitignored).
-
-### Security Configuration
-
-The SEL server requires specific security configurations for safe operation:
-
-**Required Environment Variables:**
-
-```bash
-# JWT Secret (REQUIRED - minimum 32 characters)
-# Generate with: openssl rand -base64 48
-JWT_SECRET=<your-cryptographically-random-secret-here>
-
-# Database connection (use sslmode=require for production)
-DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
-```
-
-**Optional Security Configuration:**
-
-```bash
-# Rate limiting (requests per minute)
-RATE_LIMIT_PUBLIC=60      # Public/unauthenticated tier (default: 60)
-RATE_LIMIT_AGENT=300      # Agent/authenticated tier (default: 300)
-RATE_LIMIT_ADMIN=0        # Admin tier - 0 means unlimited (default: 0)
-
-# HTTP server timeouts (seconds)
-HTTP_READ_TIMEOUT=10      # Protects against slow read attacks (default: 10)
-HTTP_WRITE_TIMEOUT=30     # Protects against slow write attacks (default: 30)
-HTTP_MAX_HEADER_BYTES=1048576  # 1 MB limit (default: 1048576)
-```
-
-**Security Best Practices:**
-
-- **JWT_SECRET**: Must be at least 32 characters. Use `openssl rand -base64 48` to generate a strong secret.
-- **DATABASE_URL**: Always use `sslmode=require` in production to encrypt database connections.
-- **API Keys**: When issuing API keys to agents, use strong random generation and rotate periodically.
-- **HTTPS**: Always run the server behind a TLS-terminating reverse proxy (nginx, Traefik, etc.) in production.
-
-For complete security details, see `docs/togather_SEL_server_architecture_design_v1.md` § 7.1 (Security Hardening) and `CODE_REVIEW.md`.

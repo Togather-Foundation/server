@@ -22,13 +22,13 @@ Choose the right deployment tool for your scenario:
 | **Brand new server** | `provision.sh --with-app` | `./deploy/scripts/provision.sh deploy@server staging --with-app` | One command setup: provisions server + installs app |
 | **First install only** | `provision.sh` + `install.sh` | See [New Installation](#new-installation) | Manual control over provisioning and install steps |
 | **Simple update (dev)** | `install.sh` | `sudo ./install.sh` | Fast deployment, ~30s downtime OK |
-| **Production deployment** | `deploy.sh --remote` | `./deploy/scripts/deploy.sh staging --remote deploy@server` | Zero downtime, automatic health checks + rollback |
+| **Production deployment** | `deploy.sh` | `./deploy/scripts/deploy.sh staging` | Zero downtime, automatic health checks + rollback |
 | **Rollback** | `deploy.sh` with state | See [Rollback](#rollback) | Uses deployment state to switch slots |
 
 **Key Features:**
 - **provision.sh --with-app**: Combines server provisioning and application install in one command
 - **install.sh**: Now auto-detects blue-green mode if Caddy is configured; preserves data on existing installs
-- **deploy.sh --remote**: Full blue-green deployment from local machine via SSH
+- **deploy.sh**: Full blue-green deployment from local machine via SSH (uses `.deploy.conf.{env}` when present)
 
 **Decision Flow:**
 1. **Is this a brand new server?** → Use `provision.sh --with-app` for fastest setup
@@ -72,10 +72,10 @@ cd ~/togather/server
 git pull origin main
 
 # Deploy to staging
-./deploy/scripts/deploy.sh staging --remote deploy@staging.server.com
+./deploy/scripts/deploy.sh staging
 
 # Deploy to production (after testing on staging)
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com
+./deploy/scripts/deploy.sh production
 ```
 
 **What happens:**
@@ -92,11 +92,11 @@ git pull origin main
 
 **Deploy specific version:**
 ```bash
-./deploy/scripts/deploy.sh production --remote deploy@prod.server.com --version v1.2.3
+./deploy/scripts/deploy.sh production --version v1.2.3
 ```
 
 **Requirements:**
-- SSH access to server
+- SSH access to server (configured via `.deploy.conf.{env}` or `--remote`)
 - `install.sh` must have been run once to provision the server
 - Git repository access (deploy keys configured)
 
@@ -149,7 +149,7 @@ When existing installation detected, choose option **[1] PRESERVE DATA**.
 - First-time installations
 - Simple, straightforward upgrades
 
-**Zero-Downtime (`deploy.sh --remote`):**
+**Zero-Downtime (`deploy.sh`):**
 - Production systems
 - High-availability requirements
 - Frequent deployments

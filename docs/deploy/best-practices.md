@@ -276,7 +276,7 @@ Is production impacted?
 **Automatic Rollback (Recommended):**
 ```bash
 cd deploy/scripts
-./rollback.sh production
+server deploy rollback production
 
 # What it does:
 # 1. Confirms rollback intent
@@ -289,7 +289,7 @@ cd deploy/scripts
 **Force Rollback (No Confirmation):**
 ```bash
 # Use when every second counts
-./rollback.sh production --force
+server deploy rollback production --force
 ```
 
 **Database Rollback (If Migrations Applied):**
@@ -394,55 +394,17 @@ TLS_KEY_FILE=/path/to/private.key
 # Let's Encrypt recommended for public deployments
 ```
 
-**Nginx TLS (see deploy/docker/nginx.conf):**
-```nginx
-# TLS 1.2+ only
-ssl_protocols TLSv1.2 TLSv1.3;
+**Caddy TLS:**
 
-# Strong cipher suites
-ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256...';
-
-# HSTS (force HTTPS)
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-```
+TLS is handled by Caddy automatically when it terminates HTTPS. See `docs/deploy/caddy-deployment.md` for the default config and operational guidance.
 
 ### Rate Limiting
 
-Nginx rate limiting is configured by default (see `deploy/docker/nginx.conf`):
-
-```nginx
-# API endpoints: 30 req/min per IP
-limit_req_zone $binary_remote_addr zone=api:10m rate=30r/m;
-
-# Batch endpoints: 10 req/min per IP
-limit_req_zone $binary_remote_addr zone=batch:10m rate=10r/m;
-
-# Auth endpoints: 5 req/min per IP
-limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/m;
-```
-
-**Adjust for production load:**
-- Monitor rate limit rejections: `docker logs togather-nginx | grep "limiting requests"`
-- Increase limits if legitimate traffic is blocked
-- Decrease limits if under DDoS attack
+Rate limiting is implemented in the Togather application layer. If you need reverse proxy rate limits, use a Caddy rate limit plugin and monitor 429s in application logs.
 
 ### Security Headers
 
-Configured in `deploy/docker/nginx.conf`:
-
-```nginx
-# Prevent clickjacking
-add_header X-Frame-Options "SAMEORIGIN" always;
-
-# XSS protection
-add_header X-Content-Type-Options "nosniff" always;
-
-# CSP (Content Security Policy)
-add_header Content-Security-Policy "default-src 'self'; ..." always;
-
-# Disable Adobe PDF options
-add_header X-Download-Options "noopen" always;
-```
+Prefer app-level security headers. If you need proxy-level headers, add them to your Caddyfile.
 
 ---
 
@@ -613,7 +575,7 @@ max_connections = 200
 
 ```bash
 # Check for CHANGE_ME placeholders
-grep -r "CHANGE_ME" deploy/config/environments/.env.production
+grep -r "CHANGE_ME" /opt/togather/.env.production
 
 # Validate required variables are set
 required_vars=(
@@ -627,14 +589,14 @@ required_vars=(
 )
 
 for var in "${required_vars[@]}"; do
-  if ! grep -q "^${var}=" deploy/config/environments/.env.production; then
+  if ! grep -q "^${var}=" /opt/togather/.env.production; then
     echo "ERROR: Missing required variable: $var"
     exit 1
   fi
 done
 
 # Test database connection
-psql "$(grep DATABASE_URL deploy/config/environments/.env.production | cut -d'=' -f2-)" -c "SELECT 1"
+psql "$(grep DATABASE_URL /opt/togather/.env.production | cut -d'=' -f2-)" -c "SELECT 1"
 ```
 
 ### Configuration Change Process
@@ -642,10 +604,10 @@ psql "$(grep DATABASE_URL deploy/config/environments/.env.production | cut -d'='
 1. **Make changes in version control**
    ```bash
    # Edit configuration file
-   nano deploy/config/environments/.env.staging
+   nano /opt/togather/.env.staging
    
    # Commit change
-   git add deploy/config/environments/.env.staging
+   # Do not commit .env files
    git commit -m "Update staging database pool size"
    ```
 
@@ -717,7 +679,7 @@ curl http://localhost:8080/health | jq .
 ```bash
 # If rollback needed:
 cd deploy/scripts
-./rollback.sh production --force
+server deploy rollback production --force
 
 # If not rolling back:
 # - Scale resources if performance issue
@@ -952,7 +914,7 @@ server snapshot create --reason "pre-maintenance"
 **During Maintenance:**
 ```bash
 # 1. Put site in maintenance mode (optional)
-# Edit nginx.conf to return 503 with custom page
+# Configure Caddy to return 503 with custom page
 
 # 2. Create pre-maintenance snapshot
 server snapshot create --reason "pre-maintenance"

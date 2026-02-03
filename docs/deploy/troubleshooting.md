@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Comprehensive guide for diagnosing and resolving common issues in Togather server deployments.
+Concise guide for diagnosing common issues in Togather server deployments.
 
 ## Installation Issues
 
@@ -14,7 +14,7 @@ If `sudo ./install.sh` fails:
    ```
 
 2. **Follow manual installation steps:**
-   See [MANUAL_INSTALL.md](./MANUAL_INSTALL.md) for step-by-step instructions to identify where the process failed.
+   See [manual-install.md](./manual-install.md) for step-by-step instructions to identify where the process failed.
 
 3. **Common installation failures:**
    - **Docker permission denied**: User not in docker group
@@ -65,17 +65,17 @@ curl http://localhost:8080/health | jq .
 ### Quick Checks
 
 ```bash
-# Check deployment state
-cat deploy/config/deployment-state.json | jq .
+# Check deployment state (on server)
+cat /opt/togather/src/deploy/config/deployment-state.json | jq .
 
 # Check running containers
 docker ps -a | grep togather
 
 # View deployment logs
-tail -f /var/log/togather/deployments/<deployment-id>.log
+tail -f ~/.togather/logs/deployments/<env>_<timestamp>.log
 
 # Check application logs
-docker logs togather-<environment>-<slot>
+docker logs togather-server-<slot>
 ```
 
 ---
@@ -93,13 +93,13 @@ docker logs togather-<environment>-<slot>
 **Diagnosis:**
 ```bash
 # Check deployment logs
-tail -100 /var/log/togather/deployments/deploy_*.log
+tail -100 ~/.togather/logs/deployments/<env>_*.log
 
 # Check Docker logs
-docker logs togather-production-blue
+docker logs togather-server-blue
 
-# Check environment config
-cat deploy/config/environments/.env.production
+# Check environment config (on server)
+cat /opt/togather/.env.production
 ```
 
 **Common Causes:**
@@ -107,11 +107,11 @@ cat deploy/config/environments/.env.production
 1. **Missing required environment variables**
    ```bash
    # Verify all required vars are set
-   grep CHANGE_ME deploy/config/environments/.env.production
+   grep CHANGE_ME /opt/togather/.env.production
    
    # If any CHANGE_ME placeholders exist, deployment will fail
    # Edit .env.production and set real values
-   nano deploy/config/environments/.env.production
+   nano /opt/togather/.env.production
    ```
 
 2. **Database connection failure**
@@ -120,7 +120,7 @@ cat deploy/config/environments/.env.production
    psql "$DATABASE_URL" -c "SELECT 1"
    
    # Common fixes:
-   # - Verify PostgreSQL is running: docker ps | grep postgres
+   # - Verify PostgreSQL is running: docker ps | grep togather-db
    # - Check POSTGRES_HOST/PORT/DB/USER/PASSWORD in .env
    # - For production, ensure POSTGRES_SSLMODE=require or verify-full
    ```
@@ -140,13 +140,13 @@ cat deploy/config/environments/.env.production
 **Symptom:**
 ```
 [ERROR] Another deployment is in progress
-[ERROR] Lock file: /tmp/togather-deployment-production.lock
+[ERROR] Lock file: /tmp/togather-deploy-production.lock
 ```
 
 **Diagnosis:**
 ```bash
-# Check lock file
-cat /tmp/togather-deployment-production.lock
+# Check lock directory
+ls -la /tmp/togather-deploy-production.lock
 
 # Check if deployment process is running
 ps aux | grep deploy.sh
@@ -158,7 +158,7 @@ ps aux | grep deploy.sh
 ```bash
 # Wait for deployment to complete
 # Monitor progress
-tail -f /var/log/togather/deployments/<deployment-id>.log
+tail -f ~/.togather/logs/deployments/<env>_<timestamp>.log
 ```
 
 **If deployment crashed (stale lock):**
@@ -167,11 +167,11 @@ tail -f /var/log/togather/deployments/<deployment-id>.log
 ps aux | grep deploy.sh
 
 # Remove stale lock
-rm /tmp/togather-deployment-production.lock
+rm -rf /tmp/togather-deploy-production.lock
 
 # Retry deployment
-cd deploy/scripts
-./deploy.sh production
+cd /opt/togather/src
+./deploy/scripts/deploy.sh production
 ```
 
 ---
@@ -181,43 +181,40 @@ cd deploy/scripts
 **Symptom:**
 ```
 [ERROR] Failed to switch traffic to green slot
-[ERROR] Nginx reload failed
+[ERROR] Caddy reload failed
 ```
 
 **Diagnosis:**
 ```bash
-# Check Nginx configuration syntax
-docker exec togather-nginx nginx -t
+# Check Caddy configuration
+sudo caddy validate --config /etc/caddy/Caddyfile
 
 # Check current traffic routing
-curl -I http://localhost:8080 | grep X-Served-By
+curl -I https://<domain>/health | grep -i x-togather-slot
 
 # Check deployment state
-jq '.active_slot' deploy/config/deployment-state.json
+jq '.current_deployment.active_slot' /opt/togather/src/deploy/config/deployment-state.json
 ```
 
 **Resolution:**
 
-1. **Fix Nginx configuration syntax error**
+1. **Fix Caddy configuration syntax error**
    ```bash
-   # Test configuration
-   docker exec togather-nginx nginx -t
+   # Validate configuration
+   sudo caddy validate --config /etc/caddy/Caddyfile
    
-   # If syntax error, edit nginx.conf
-   nano deploy/docker/nginx.conf
+   # If syntax error, edit Caddyfile
+   sudo nano /etc/caddy/Caddyfile
    
-   # Reload Nginx
-   docker exec togather-nginx nginx -s reload
+   # Reload Caddy
+   sudo systemctl reload caddy
    ```
 
 2. **Manual traffic switch**
    ```bash
-   # Edit deployment-state.json
-   jq '.active_slot = "green"' deploy/config/deployment-state.json > tmp.json
-   mv tmp.json deploy/config/deployment-state.json
-   
-   # Update Nginx upstream
-   # (Deployment script handles this automatically)
+   # Update Caddyfile to point to the target slot (8081 or 8082)
+   sudo nano /etc/caddy/Caddyfile
+   sudo systemctl reload caddy
    ```
 
 ---
@@ -243,7 +240,7 @@ jq '.active_slot' deploy/config/deployment-state.json
 **Diagnosis:**
 ```bash
 # Check PostgreSQL is running
-docker ps | grep postgres
+docker ps | grep togather-db
 
 # Test database connection
 psql "$DATABASE_URL" -c "SELECT 1"
@@ -257,19 +254,19 @@ curl http://localhost:8080/health | jq '.checks.database.details'
 1. **PostgreSQL not running**
    ```bash
    # Start PostgreSQL
-   docker-compose -f deploy/docker/docker-compose.yml up -d postgres
+    docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml up -d togather-db
    
    # Check logs
-   docker logs togather-postgres
+    docker logs togather-db
    ```
 
 2. **Wrong credentials**
    ```bash
    # Verify credentials in .env file
-   cat deploy/docker/.env | grep POSTGRES
+    cat /opt/togather/.env | grep POSTGRES
    
    # Test connection with explicit credentials
-   PGPASSWORD=your_password psql -h localhost -U togather -d togather -c "SELECT 1"
+    PGPASSWORD=your_password psql -h localhost -U togather -d togather -c "SELECT 1"
    ```
 
 3. **Connection pool exhausted**
@@ -305,7 +302,7 @@ curl http://localhost:8080/health | jq '.checks.database.details'
 **Diagnosis:**
 ```bash
 # Check migration status
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+migrate -path /opt/togather/src/internal/storage/postgres/migrations -database "$DATABASE_URL" version
 
 # Query schema_migrations table
 psql "$DATABASE_URL" -c "SELECT * FROM schema_migrations;"
@@ -315,20 +312,7 @@ psql "$DATABASE_URL" -c "SELECT * FROM schema_migrations;"
 
 See [migrations.md](./migrations.md#issue-2-dirty-migration-state) for detailed recovery steps.
 
-**Quick fix (restore from snapshot):**
-```bash
-# List available snapshots
-server snapshot list
-
-# Restore most recent snapshot (before failed migration)
-gunzip -c /var/lib/togather/db-snapshots/togather_production_YYYYMMDD_HHMMSS.sql.gz | psql "$DATABASE_URL"
-
-# Verify clean state
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
-
-# Fix the problematic migration file, then redeploy
-./deploy.sh production
-```
+See [rollback.md](./rollback.md) for snapshot restore steps.
 
 ---
 
@@ -353,7 +337,7 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" ver
 psql "$DATABASE_URL" -c "\dt river_job"
 
 # Check migration status
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
+migrate -path /opt/togather/src/internal/storage/postgres/migrations -database "$DATABASE_URL" version
 ```
 
 **Resolution:**
@@ -362,11 +346,11 @@ This is expected during early development or initial deployment.
 
 ```bash
 # Run migrations to create River tables
-cd deploy/scripts
-./deploy.sh <environment>
+cd /opt/togather/src
+./deploy/scripts/deploy.sh <environment>
 
 # Or run migrations manually
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
+migrate -path /opt/togather/src/internal/storage/postgres/migrations -database "$DATABASE_URL" up
 
 # Verify job queue health
 curl http://localhost:8080/health | jq '.checks.job_queue'
@@ -386,10 +370,10 @@ curl http://localhost:8080/health | jq '.checks.job_queue'
 **Diagnosis:**
 ```bash
 # Check if graceful shutdown is in progress
-docker logs togather-<environment>-<slot> | grep -i shutdown
+   docker logs togather-server-<slot> | grep -i shutdown
 
 # Check deployment state
-jq . deploy/config/deployment-state.json
+   jq . /opt/togather/src/deploy/config/deployment-state.json
 ```
 
 **Resolution:**
@@ -409,10 +393,10 @@ This is **expected behavior** during:
 **If stuck in shutdown:**
 ```bash
 # Check for hung connections
-docker exec togather-<environment>-<slot> netstat -an | grep :8080
+    docker exec togather-server-<slot> netstat -an | grep :8080
 
 # Force restart if necessary (last resort)
-docker restart togather-<environment>-<slot>
+   docker restart togather-server-<slot>
 ```
 
 ---
@@ -426,8 +410,8 @@ For comprehensive migration troubleshooting, see [migrations.md](./migrations.md
 | Issue | Quick Fix |
 |-------|-----------|
 | **Migration lock exists** | `rm /tmp/togather-migration-production.lock` (if stale) |
-| **Dirty migration state** | Restore from snapshot, fix migration, redeploy |
-| **Migration failed** | Restore from snapshot, fix SQL syntax, test locally |
+| **Dirty migration state** | Restore from snapshot, fix migration, redeploy (see rollback.md) |
+| **Migration failed** | Restore from snapshot, fix SQL syntax, test locally (see rollback.md) |
 | **Version mismatch** | Check git branch, ensure codebase matches database state |
 | **Connection timeout** | Increase migration timeout in deploy.sh |
 | **Permission denied** | Grant necessary privileges to database user |
@@ -441,16 +425,16 @@ For comprehensive migration troubleshooting, see [migrations.md](./migrations.md
 **Symptom:**
 ```bash
 $ docker ps -a | grep togather
-togather-production-blue   Restarting (1) 2 seconds ago
+togather-server-blue   Restarting (1) 2 seconds ago
 ```
 
 **Diagnosis:**
 ```bash
 # Check why container is restarting
-docker logs togather-production-blue --tail 50
+docker logs togather-server-blue --tail 50
 
 # Check exit code
-docker inspect togather-production-blue | jq '.[0].State'
+docker inspect togather-server-blue | jq '.[0].State'
 
 # Common exit codes:
 # - 1: General error (check logs for panic/fatal)
@@ -463,7 +447,7 @@ docker inspect togather-production-blue | jq '.[0].State'
 1. **Out of Memory (exit 137)**
    ```bash
    # Increase memory limit in docker-compose.yml
-   nano deploy/docker/docker-compose.yml
+   nano /opt/togather/src/deploy/docker/docker-compose.yml
    
    # Update limits:
    # deploy:
@@ -472,13 +456,13 @@ docker inspect togather-production-blue | jq '.[0].State'
    #       memory: 1G  # Increase from 512M
    
    # Restart with new limits
-   docker-compose -f deploy/docker/docker-compose.yml up -d --force-recreate
+    docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml up -d --force-recreate
    ```
 
 2. **Application panic/fatal error**
    ```bash
    # Check logs for panic stack trace
-   docker logs togather-production-blue 2>&1 | grep -A 20 "panic:"
+docker logs togather-server-blue 2>&1 | grep -A 20 "panic:"
    
    # Common causes:
    # - Database connection failure
@@ -495,19 +479,19 @@ docker inspect togather-production-blue | jq '.[0].State'
 **Symptom:**
 ```
 [ERROR] Failed to connect to database
-dial tcp: lookup postgres: no such host
+dial tcp: lookup togather-db: no such host
 ```
 
 **Diagnosis:**
 ```bash
 # Check if PostgreSQL container is running
-docker ps | grep postgres
+  docker ps | grep togather-db
 
 # Check Docker network
-docker network inspect togather-network
+docker network inspect togather-net
 
 # Verify POSTGRES_HOST setting
-cat deploy/docker/.env | grep POSTGRES_HOST
+cat /opt/togather/.env | grep POSTGRES_HOST
 ```
 
 **Resolution:**
@@ -516,10 +500,10 @@ cat deploy/docker/.env | grep POSTGRES_HOST
    ```bash
    # POSTGRES_HOST should be container name, not 'localhost'
    # Edit .env:
-   POSTGRES_HOST=postgres  # NOT localhost
+  POSTGRES_HOST=togather-db  # NOT localhost
    
    # Restart services
-   docker-compose -f deploy/docker/docker-compose.yml restart
+  docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml restart
    ```
 
 2. **Using external PostgreSQL**
@@ -550,10 +534,10 @@ cat deploy/docker/.env | grep POSTGRES_HOST
 **Diagnosis:**
 ```bash
 # Check which variables are undefined
-docker exec togather-production-blue env | sort
+docker exec togather-server-blue env | sort
 
 # Check .env file for CHANGE_ME placeholders
-grep CHANGE_ME deploy/config/environments/.env.production
+grep CHANGE_ME /opt/togather/.env.production
 ```
 
 **Resolution:**
@@ -567,7 +551,7 @@ grep CHANGE_ME deploy/config/environments/.env.production
    openssl rand -hex 32
    
    # Edit .env file
-   nano deploy/config/environments/.env.production
+nano /opt/togather/.env.production
    
    # Replace CHANGE_ME with generated values
    JWT_SECRET=<generated-value>
@@ -585,8 +569,8 @@ grep CHANGE_ME deploy/config/environments/.env.production
    JWT_SECRET
    
    # Required for production:
-   POSTGRES_SSLMODE=require
-   TLS_ENABLED=true
+POSTGRES_SSLMODE=require
+TLS_ENABLED=true
    ```
 
 ---
@@ -602,10 +586,10 @@ yaml: line 42: mapping values are not allowed in this context
 **Diagnosis:**
 ```bash
 # Validate YAML syntax
-python3 -c "import yaml; yaml.safe_load(open('deploy/config/environments/production.yml'))"
+python3 -c "import yaml; yaml.safe_load(open('deploy/config/deployment.yml'))"
 
 # Or use yamllint if installed
-yamllint deploy/config/environments/production.yml
+yamllint deploy/config/deployment.yml
 ```
 
 **Resolution:**
@@ -656,7 +640,7 @@ curl: (7) Failed to connect to localhost port 8080: Connection refused
 docker ps | grep togather
 
 # Check if application is listening
-docker exec togather-production-blue netstat -tlnp | grep 8080
+docker exec togather-server-blue netstat -tlnp | grep 8080
 
 # Check firewall rules (if applicable)
 sudo ufw status
@@ -667,14 +651,14 @@ sudo ufw status
 1. **Port not mapped**
    ```bash
    # Check docker-compose.yml port mapping
-   cat deploy/docker/docker-compose.yml | grep -A 5 "ports:"
+    cat /opt/togather/src/deploy/docker/docker-compose.yml | grep -A 5 "ports:"
    
    # Should have:
    # ports:
    #   - "8080:8080"  # host:container
    
    # Recreate container with port mapping
-   docker-compose -f deploy/docker/docker-compose.yml up -d --force-recreate
+    docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml up -d --force-recreate
    ```
 
 2. **Application not binding to 0.0.0.0**
@@ -684,8 +668,8 @@ sudo ufw status
    SERVER_HOST=0.0.0.0  # NOT 127.0.0.1
    
    # Edit and restart
-   nano deploy/docker/.env
-   docker-compose -f deploy/docker/docker-compose.yml restart
+nano /opt/togather/.env
+docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml restart
    ```
 
 3. **Firewall blocking port**
@@ -699,7 +683,7 @@ sudo ufw status
 
 ---
 
-### Issue: Nginx Returns 502 Bad Gateway
+### Issue: Caddy Returns 502 Bad Gateway
 
 **Symptom:**
 ```bash
@@ -714,14 +698,14 @@ $ curl http://localhost/health
 
 **Diagnosis:**
 ```bash
-# Check Nginx logs
-docker logs togather-nginx
+# Check Caddy logs
+sudo journalctl -u caddy -n 100
 
 # Check upstream containers
-docker ps | grep togather
+docker ps | grep togather-server
 
 # Test direct connection to upstream
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 ```
 
 **Common Causes:**
@@ -729,43 +713,29 @@ curl http://localhost:8080/health
 1. **Upstream container not running**
    ```bash
    # Check active slot
-   jq '.active_slot' deploy/config/deployment-state.json
+    jq '.current_deployment.active_slot' /opt/togather/src/deploy/config/deployment-state.json
    
    # Ensure that slot's container is running
-   docker ps | grep togather-production-blue  # if active_slot is "blue"
+    docker ps | grep togather-server-blue  # if active_slot is "blue"
    ```
 
 2. **Nginx configuration error**
    ```bash
-   # Test Nginx config
-   docker exec togather-nginx nginx -t
-   
-   # Check upstream definition
-   docker exec togather-nginx cat /etc/nginx/conf.d/default.conf | grep upstream
+    # Validate Caddy config
+    sudo caddy validate --config /etc/caddy/Caddyfile
    ```
 
 3. **Port mismatch**
    ```bash
-   # Verify upstream port matches container port
-   docker exec togather-nginx cat /etc/nginx/conf.d/default.conf | grep proxy_pass
-   # Should be: proxy_pass http://upstream_server
-   
-   # Check upstream definition
-   docker exec togather-nginx cat /etc/nginx/conf.d/default.conf | grep -A 3 "upstream upstream_server"
-   # Should have: server <container_name>:8080;
+    # Verify reverse_proxy target port (8081 or 8082)
+    grep -n "reverse_proxy" /etc/caddy/Caddyfile
    ```
 
 **Resolution:**
 
 ```bash
-# Restart Nginx
-docker restart togather-nginx
-
-# Or reload configuration
-docker exec togather-nginx nginx -s reload
-
-# If still failing, check Docker network connectivity
-docker exec togather-nginx ping togather-production-blue
+# Restart Caddy
+sudo systemctl restart caddy
 ```
 
 ---
@@ -786,7 +756,7 @@ curl http://localhost:8080/health | jq '.checks.database.latency_ms'
 curl http://localhost:8080/health | jq '.checks.database.details'
 
 # Check system resources
-docker stats togather-production-blue
+docker stats togather-server-blue
 ```
 
 **Common Causes:**
@@ -801,30 +771,30 @@ docker stats togather-production-blue
    DB_MAX_CONNECTIONS=50  # Default: 25
    
    # Restart to apply
-   docker-compose -f deploy/docker/docker-compose.yml restart
+    docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml restart
    ```
 
 2. **Database query slow**
    ```bash
    # Enable slow query logging in PostgreSQL
-   docker exec togather-postgres psql -U togather -c \
+    docker exec togather-db psql -U togather -c \
      "ALTER SYSTEM SET log_min_duration_statement = 1000;"  # Log queries >1s
    
    # Reload PostgreSQL
-   docker exec togather-postgres psql -U togather -c "SELECT pg_reload_conf();"
+    docker exec togather-db psql -U togather -c "SELECT pg_reload_conf();"
    
    # Check slow query log
-   docker logs togather-postgres | grep "duration:"
+    docker logs togather-db | grep "duration:"
    ```
 
 3. **CPU/Memory constrained**
    ```bash
    # Check resource usage
-   docker stats togather-production-blue
+docker stats togather-server-blue
    
    # If CPU near 100% or memory near limit:
    # Increase limits in docker-compose.yml
-   nano deploy/docker/docker-compose.yml
+nano /opt/togather/src/deploy/docker/docker-compose.yml
    
    # Update:
    # deploy:
@@ -834,79 +804,9 @@ docker stats togather-production-blue
    #       memory: 1G
    ```
 
----
 
-## Rollback Procedures
 
-### When to Rollback
-
-Rollback immediately if:
-- Health checks remain unhealthy after 5 minutes
-- Critical functionality broken (events/places/orgs CRUD)
-- Database in inconsistent state
-- High error rate in logs (>10% of requests)
-
-### Automatic Rollback
-
-```bash
-cd deploy/scripts
-
-# Interactive rollback (with confirmation)
-./rollback.sh production
-
-# Force rollback (no confirmation)
-./rollback.sh production --force
-```
-
-**What automatic rollback does:**
-1. Switches traffic back to previous slot
-2. Stops the failed deployment container
-3. Updates deployment-state.json
-4. Logs rollback reason
-
-### Manual Rollback
-
-If automatic rollback fails:
-
-```bash
-# 1. Determine previous slot
-jq '.previous_slot' deploy/config/deployment-state.json
-# Returns: "blue" or "green"
-
-# 2. Verify previous slot is healthy
-docker ps | grep togather-production-<previous-slot>
-curl http://localhost:8081/health  # Or 8082, depending on slot
-
-# 3. Update deployment state
-jq '.active_slot = "blue"' deploy/config/deployment-state.json > tmp.json
-mv tmp.json deploy/config/deployment-state.json
-
-# 4. Reload Nginx to switch traffic
-docker exec togather-nginx nginx -s reload
-
-# 5. Stop failed deployment
-docker stop togather-production-green  # Or blue, whichever failed
-```
-
-### Database Rollback
-
-If migrations were applied, restore from snapshot:
-
-```bash
-# List snapshots
-server snapshot list
-
-# Restore from pre-deployment snapshot
-# ⚠️  WARNING: This will lose any data written during failed deployment
-gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
-
-# Verify database state
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version
-```
-
-See [rollback.md](./rollback.md) for detailed rollback procedures.
-
----
+See [rollback.md](./rollback.md) for rollback procedures and database recovery.
 
 ## Getting Help
 
@@ -919,31 +819,31 @@ When reporting issues, include:
 curl http://localhost:8080/health | jq . > health.json
 
 # 2. Deployment state
-jq . deploy/config/deployment-state.json > deployment-state.json
+jq . /opt/togather/src/deploy/config/deployment-state.json > deployment-state.json
 
 # 3. Recent deployment logs
-tail -500 /var/log/togather/deployments/deploy_*.log > deployment.log
+tail -500 ~/.togather/logs/deployments/<env>_*.log > deployment.log
 
 # 4. Application logs
-docker logs togather-production-blue --tail 500 > application.log
+docker logs togather-server-blue --tail 500 > application.log
 
 # 5. Container status
 docker ps -a > docker-ps.txt
 
 # 6. Environment info
-cat deploy/config/environments/.env.production | sed 's/=.*$/=REDACTED/' > env-redacted.txt
+cat /opt/togather/.env.production | sed 's/=.*$/=REDACTED/' > env-redacted.txt
 
 # 7. Database migration status
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" version > migration-status.txt
+migrate -path /opt/togather/src/internal/storage/postgres/migrations -database "$DATABASE_URL" version > migration-status.txt
 ```
 
 ### Log Locations
 
-- **Deployment logs**: `/var/log/togather/deployments/deploy_<deployment-id>.log`
-- **Application logs**: `docker logs togather-<environment>-<slot>`
-- **Nginx logs**: `docker logs togather-nginx`
-- **PostgreSQL logs**: `docker logs togather-postgres`
-- **Snapshot logs**: `/var/log/togather/db-snapshots/snapshot_<timestamp>.log`
+- **Deployment logs**: `~/.togather/logs/deployments/<env>_<timestamp>.log`
+- **Application logs**: `docker logs togather-server-<slot>`
+- **Caddy logs**: `sudo journalctl -u caddy -n 100`
+- **PostgreSQL logs**: `docker logs togather-db`
+- **Snapshots**: `/var/lib/togather/db-snapshots/`
 
 ### Common Log Patterns
 

@@ -151,7 +151,7 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
 ### Deployment Workflow
 
 **For full deployment + testing:**
-1. Read `docs/deploy/DEPLOYMENT-TESTING.md` for complete instructions
+1. Read `docs/deploy/deployment-testing.md` for complete instructions
 2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
 3. Execute deployment (config auto-loads if available):
    ```bash
@@ -167,14 +167,14 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
    ./deploy/testing/smoke-tests.sh staging
    ```
 6. If automated tests pass, report success summary
-7. If issues found, run specific checks from DEPLOYMENT-TESTING.md checklist
+7. If issues found, run specific checks from deployment-testing.md checklist
 8. Report comprehensive results to user
 
 
 ### Deployment Documentation
 
 - **Deployment Config:** `docs/deploy/deploy-conf.md` - Per-environment .deploy.conf files
-- **Complete Testing Checklist:** `docs/deploy/DEPLOYMENT-TESTING.md`
+- **Complete Testing Checklist:** `docs/deploy/deployment-testing.md`
 - **Quick Start Guide:** `docs/deploy/quickstart.md`
 - **Remote Deployment:** `docs/deploy/remote-deployment.md`
 - **Troubleshooting:** `docs/deploy/troubleshooting.md`

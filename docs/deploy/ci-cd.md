@@ -58,7 +58,7 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
           # Create production environment file
-          cat > deploy/config/environments/.env.production <<EOF
+          cat > /opt/togather/.env.production <<EOF
           ENVIRONMENT=production
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
@@ -68,7 +68,7 @@ jobs:
           DEPLOYED_BY=${{ github.actor }}@github-actions
           EOF
           
-          chmod 600 deploy/config/environments/.env.production
+          chmod 600 /opt/togather/.env.production
       
       - name: Deploy to production
         run: |
@@ -123,13 +123,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
-          cat > deploy/config/environments/.env.production <<EOF
+          cat > /opt/togather/.env.production <<EOF
           ENVIRONMENT=production
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
           DEPLOYED_BY=${{ github.actor }}@github-actions
           EOF
-          chmod 600 deploy/config/environments/.env.production
+          chmod 600 /opt/togather/.env.production
       
       - name: Deploy
         id: deploy
@@ -157,8 +157,7 @@ jobs:
         if: steps.deploy.outcome == 'failure' || steps.smoke_tests.outcome == 'failure'
         run: |
           echo "Deployment or smoke tests failed - rolling back"
-          cd deploy/scripts
-          ./rollback.sh production --force
+          server deploy rollback production --force
       
       - name: Verify rollback
         if: steps.deploy.outcome == 'failure' || steps.smoke_tests.outcome == 'failure'
@@ -236,12 +235,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
-          cat > deploy/config/environments/.env.production <<EOF
+          cat > /opt/togather/.env.production <<EOF
           ENVIRONMENT=production
           DATABASE_URL=$DATABASE_URL
           JWT_SECRET=$JWT_SECRET
           EOF
-          chmod 600 deploy/config/environments/.env.production
+          chmod 600 /opt/togather/.env.production
       
       - name: Deploy to production
         run: |
@@ -287,13 +286,13 @@ deploy-production:
   script:
     # Configure environment
     - |
-      cat > deploy/config/environments/.env.production <<EOF
+      cat > /opt/togather/.env.production <<EOF
       ENVIRONMENT=production
       DATABASE_URL=$DATABASE_URL
       JWT_SECRET=$JWT_SECRET
       DEPLOYED_BY=$GITLAB_USER_LOGIN@gitlab-ci
       EOF
-    - chmod 600 deploy/config/environments/.env.production
+    - chmod 600 /opt/togather/.env.production
     
     # Deploy
     - cd deploy/scripts
@@ -352,14 +351,14 @@ pipeline {
         stage('Configure') {
             steps {
                 sh '''
-                    cat > deploy/config/environments/.env.production <<EOF
+                    cat > /opt/togather/.env.production <<EOF
                     ENVIRONMENT=production
                     DATABASE_URL=$DATABASE_URL
                     JWT_SECRET=$JWT_SECRET
                     DEPLOYED_BY=${BUILD_USER}@jenkins
                     EOF
                     
-                    chmod 600 deploy/config/environments/.env.production
+                    chmod 600 /opt/togather/.env.production
                 '''
             }
         }
@@ -388,7 +387,7 @@ pipeline {
             sh '''
                 echo "Deployment failed - consider rollback"
                 cd deploy/scripts
-                ./rollback.sh production --force
+                server deploy rollback production --force
             '''
         }
         success {
@@ -447,8 +446,8 @@ Store these as secrets in your CI/CD platform:
 .env
 .env.*
 !.env.*.example
-deploy/config/environments/.env.*
-!deploy/config/environments/.env.*.example
+/opt/togather/.env.*
+!.env.*.example
 ```
 
 ### 2. Use Deployment Keys
@@ -478,7 +477,7 @@ All deployments log:
 
 Logs stored in:
 - `~/.togather/logs/deployments/`
-- `/var/lib/togather/deployments/{env}/`
+- `~/.togather/logs/deployments/`
 
 ### 5. Rollback Plan
 
@@ -489,7 +488,7 @@ Always have rollback capability:
   if: failure()
   run: |
     cd deploy/scripts
-    ./rollback.sh production --force
+    server deploy rollback production --force
 ```
 
 ---
@@ -707,9 +706,9 @@ jobs:
           POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
         run: |
-          mkdir -p deploy/config/environments
+          # .env files live on the server under /opt/togather
           
-          cat > deploy/config/environments/.env.production <<EOF
+          cat > /opt/togather/.env.production <<EOF
           # Environment
           ENVIRONMENT=production
           DEPLOYED_BY=${{ github.actor }}@github-actions
@@ -740,12 +739,12 @@ jobs:
           RETENTION_DAYS=30
           EOF
           
-          chmod 600 deploy/config/environments/.env.production
+          chmod 600 /opt/togather/.env.production
       
       - name: Pre-deployment checks
         run: |
           # Verify no CHANGE_ME placeholders
-          if grep -r "CHANGE_ME" deploy/config/environments/.env.production; then
+          if grep -r "CHANGE_ME" /opt/togather/.env.production; then
             echo "ERROR: CHANGE_ME placeholders found in configuration"
             exit 1
           fi
@@ -806,8 +805,7 @@ jobs:
         if: failure() && steps.deploy.outcome == 'failure'
         run: |
           echo "Deployment failed, initiating automatic rollback..."
-          cd deploy/scripts
-          ./rollback.sh production --force
+          server deploy rollback production --force
           
           # Wait for rollback to complete
           sleep 15
@@ -893,7 +891,7 @@ deploy-production:
   script:
     # Configure environment
     - |
-      cat > deploy/config/environments/.env.production <<EOF
+      cat > /opt/togather/.env.production <<EOF
       ENVIRONMENT=production
       DEPLOYED_BY=${GITLAB_USER_LOGIN}@gitlab-ci
       DEPLOYED_AT=$(date -Iseconds)
@@ -922,11 +920,11 @@ deploy-production:
       SNAPSHOT_ENABLED=true
       RETENTION_DAYS=30
       EOF
-    - chmod 600 deploy/config/environments/.env.production
+    - chmod 600 /opt/togather/.env.production
     
     # Pre-deployment checks
     - |
-      if grep -r "CHANGE_ME" deploy/config/environments/.env.production; then
+      if grep -r "CHANGE_ME" /opt/togather/.env.production; then
         echo "ERROR: CHANGE_ME placeholders found"
         exit 1
       fi
@@ -996,7 +994,7 @@ rollback-production:
     - *install_deps
   script:
     - cd deploy/scripts
-    - ./rollback.sh production --force
+    - server deploy rollback production --force
     - sleep 15
     - curl -f http://localhost:8080/health
 
@@ -1021,7 +1019,7 @@ notify-failure:
   script:
     - echo "✗ Deployment to production failed, rolling back..."
     - cd deploy/scripts
-    - ./rollback.sh production --force
+    - server deploy rollback production --force
     # Add Slack/email notification
 ```
 
@@ -1129,9 +1127,9 @@ pipeline {
             }
             steps {
                 sh '''
-                    mkdir -p deploy/config/environments
+                    # .env files live on the server under /opt/togather
                     
-                    cat > deploy/config/environments/.env.production <<EOF
+                    cat > /opt/togather/.env.production <<EOF
 ENVIRONMENT=production
 DEPLOYED_BY=${DEPLOYED_BY}
 DEPLOYED_AT=${DEPLOYED_AT}
@@ -1161,7 +1159,7 @@ SNAPSHOT_ENABLED=true
 RETENTION_DAYS=30
 EOF
                     
-                    chmod 600 deploy/config/environments/.env.production
+                    chmod 600 /opt/togather/.env.production
                 '''
             }
         }
@@ -1173,7 +1171,7 @@ EOF
             steps {
                 sh '''
                     # Verify no placeholders
-                    if grep -r "CHANGE_ME" deploy/config/environments/.env.production; then
+                    if grep -r "CHANGE_ME" /opt/togather/.env.production; then
                         echo "ERROR: CHANGE_ME placeholders found"
                         exit 1
                     fi
@@ -1249,7 +1247,7 @@ EOF
                     sh '''
                         echo "Deployment failed, initiating rollback..."
                         cd deploy/scripts
-                        ./rollback.sh production --force
+                        server deploy rollback production --force
                         
                         # Verify rollback
                         sleep 15
@@ -1342,13 +1340,13 @@ EOF
 
 ```bash
 # Automatic (with prompt)
-./deploy/scripts/rollback.sh production
+server deploy rollback production
 
 # Force (no prompt)
-./deploy/scripts/rollback.sh production --force
+server deploy rollback production --force
 
 # Specific version
-./deploy/scripts/rollback.sh production --version abc123
+server deploy rollback production --version abc123
 ```
 
 ---

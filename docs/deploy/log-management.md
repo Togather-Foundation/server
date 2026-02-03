@@ -128,7 +128,7 @@ cat /etc/cron.daily/logrotate
 
 ### Deployment Logs
 
-**Location**: `/var/log/togather/deployments/*.log`
+**Location**: `~/.togather/logs/deployments/*.log`
 
 **Policy**:
 - **Frequency**: Daily
@@ -258,7 +258,7 @@ sudo logrotate -d /etc/logrotate.d/togather
 ```bash
 # Create temporary logrotate config for specific logs
 cat > /tmp/rotate-deployments.conf <<EOF
-/var/log/togather/deployments/*.log {
+~/.togather/logs/deployments/*.log {
     daily
     rotate 90
     compress
@@ -485,7 +485,7 @@ sudo cat /var/log/logrotate.log | grep -i error
 4. **Log files locked by process**
    ```bash
    # Check if processes have files open
-   sudo lsof /var/log/togather/deployments/deploy_*.log
+   lsof ~/.togather/logs/deployments/*.log
    
    # Use copytruncate option in logrotate config (already enabled)
    ```
@@ -539,10 +539,10 @@ find /var/log/togather/ -name "*.log" -size +100M
 **Diagnosis**:
 ```bash
 # Check rotated logs with date suffix
-ls -lh /var/log/togather/deployments/deploy_*.log*
+ls -lh ~/.togather/logs/deployments/*.log*
 
 # Check compressed logs
-ls -lh /var/log/togather/deployments/*.gz
+ls -lh ~/.togather/logs/deployments/*.gz
 
 # Check logrotate history
 sudo cat /var/lib/logrotate/status | grep togather
@@ -556,8 +556,8 @@ Logs are renamed with date suffix and compressed:
 # After rotation: deploy_abc123.log-20260130.gz
 
 # View rotated/compressed logs
-zcat /var/log/togather/deployments/deploy_abc123.log-20260130.gz | less
-zgrep "ERROR" /var/log/togather/deployments/deploy_*.log*.gz
+zcat ~/.togather/logs/deployments/deploy_abc123.log-20260130.gz | less
+zgrep "ERROR" ~/.togather/logs/deployments/deploy_*.log*.gz
 ```
 
 ---
@@ -566,7 +566,7 @@ zgrep "ERROR" /var/log/togather/deployments/deploy_*.log*.gz
 
 **Symptom**:
 ```
-error: error creating output file /var/log/togather/deployments/deploy.log.1: Permission denied
+error: error creating output file ~/.togather/logs/deployments/deploy.log.1: Permission denied
 ```
 
 **Solution**:
@@ -576,7 +576,7 @@ sudo groupadd togather
 
 # Fix ownership
 sudo chown -R root:togather /var/log/togather/
-sudo chmod 770 /var/log/togather/deployments/
+chmod 770 ~/.togather/logs/deployments/
 
 # Add current user to togather group
 sudo usermod -aG togather $USER
