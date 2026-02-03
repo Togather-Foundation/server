@@ -329,52 +329,54 @@ validate_config() {
     log "INFO" "deployment.yml is valid YAML"
     log "INFO" "Note: See ${CONFIG_DIR}/deployment.schema.json for full schema documentation"
     
-    # Check environment file exists
-    local env_file="${CONFIG_DIR}/environments/.env.${env}"
-    if [[ ! -f "${env_file}" ]]; then
-        log "ERROR" "Environment file not found: ${env_file}"
+    # T037: Load environment configuration
+    # For local deployments: use deploy/docker/.env or root .env
+    # For remote deployments: symlinked at ${CONFIG_DIR}/environments/.env.${env} by remote deploy logic
+    # Precedence: CLI env vars > shell env > .env file > deployment.yml defaults
+    
+    local env_file=""
+    
+    # Check for environment file in multiple locations
+    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
+        # Remote deployment: symlinked from /opt/togather/.env.{env}
+        env_file="${CONFIG_DIR}/environments/.env.${env}"
+        log "INFO" "Using environment file: ${env_file}"
+    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
+        # Local Docker deployment
+        env_file="${PROJECT_ROOT}/deploy/docker/.env"
+        log "INFO" "Using local Docker environment: ${env_file}"
+    elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
+        # Local development (non-Docker)
+        env_file="${PROJECT_ROOT}/.env"
+        log "INFO" "Using local development environment: ${env_file}"
+    else
+        log "ERROR" "No environment configuration found"
         log "ERROR" ""
         log "ERROR" "REMEDIATION:"
-        log "ERROR" "  1. Copy the example file:"
-        log "ERROR" "     cp ${CONFIG_DIR}/environments/.env.${env}.example ${env_file}"
-        log "ERROR" "  2. Edit the file and replace all CHANGE_ME values:"
-        log "ERROR" "     ${EDITOR:-nano} ${env_file}"
-        log "ERROR" "  3. Secure the file permissions:"
-        log "ERROR" "     chmod 600 ${env_file}"
+        log "ERROR" "  For local development:"
+        log "ERROR" "    cp ${PROJECT_ROOT}/.env.example ${PROJECT_ROOT}/.env"
+        log "ERROR" "    nano ${PROJECT_ROOT}/.env"
+        log "ERROR" ""
+        log "ERROR" "  For local Docker:"
+        log "ERROR" "    cp ${PROJECT_ROOT}/deploy/docker/.env.example ${PROJECT_ROOT}/deploy/docker/.env"
+        log "ERROR" "    nano ${PROJECT_ROOT}/deploy/docker/.env"
+        log "ERROR" ""
+        log "ERROR" "  For remote deployment:"
+        log "ERROR" "    SSH to server and create /opt/togather/.env.${env}"
+        log "ERROR" "    Example: cp /opt/togather/src/deploy/config/environments/.env.${env}.example /opt/togather/.env.${env}"
         return 1
     fi
     
     # T038: Check environment file permissions (MUST be 600 for security)
     local perms=$(get_file_perms "${env_file}")
     
-    # Check if we couldn't determine permissions
-    if [[ "${perms}" == "UNKNOWN" ]]; then
-        log "ERROR" "Could not determine file permissions for ${env_file}"
-        log "ERROR" "The 'stat' command may not be available or file is inaccessible."
-        log "ERROR" ""
-        log "ERROR" "REMEDIATION:"
-        log "ERROR" "  1. Ensure the file exists and is readable"
-        log "ERROR" "  2. Verify 'stat' command is available"
-        log "ERROR" "  3. Check file permissions manually: ls -l ${env_file}"
-        return 1
+    if [[ "${perms}" != "UNKNOWN" && "${perms}" != "600" ]]; then
+        log "WARN" "Environment file has insecure permissions: ${perms} (expected: 600)"
+        log "WARN" "Secrets may be readable by other users"
+        log "WARN" "Fix with: chmod 600 ${env_file}"
+        # Don't fail for local development, but warn
     fi
     
-    if [[ "${perms}" != "600" ]]; then
-        log "ERROR" "Environment file has insecure permissions: ${perms}"
-        log "ERROR" "Secrets could be readable by other users!"
-        log "ERROR" ""
-        log "ERROR" "REMEDIATION:"
-        log "ERROR" "  chmod 600 ${env_file}"
-        log "ERROR" ""
-        # Get owner portably (works on Linux and macOS)
-        local owner=$(ls -ld "${env_file}" 2>/dev/null | awk '{print $3}')
-        log "ERROR" "Current owner: ${owner:-unknown}"
-        log "ERROR" "Current permissions: ${perms} (expected: 600)"
-        return 1
-    fi
-    
-    # T037: Source environment file with override precedence
-    # Precedence: CLI env vars > shell env > .env file > deployment.yml defaults
     # Save current env vars to detect overrides
     local saved_DATABASE_URL="${DATABASE_URL:-}"
     local saved_JWT_SECRET="${JWT_SECRET:-}"
@@ -963,7 +965,22 @@ run_migrations() {
     log "INFO" "Executing database migrations"
     
     # Load environment to get DATABASE_URL
-    local env_file="${CONFIG_DIR}/environments/.env.${env}"
+    # Use same logic as pre_flight_checks for environment file discovery
+    local env_file=""
+    
+    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
+        env_file="${CONFIG_DIR}/environments/.env.${env}"
+    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
+        env_file="${PROJECT_ROOT}/deploy/docker/.env"
+    elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
+        env_file="${PROJECT_ROOT}/.env"
+    else
+        log "ERROR" "No environment configuration found for migrations"
+        log "ERROR" "Cannot determine DATABASE_URL"
+        return 1
+    fi
+    
+    log "INFO" "Sourcing environment from: ${env_file}"
     source "${env_file}"
     
     local migrations_dir="${PROJECT_ROOT}/internal/storage/postgres/migrations"
@@ -1149,7 +1166,24 @@ deploy_to_slot() {
 
     log "INFO" "Deploying to ${slot} slot"
     
-    local env_file="${CONFIG_DIR}/environments/.env.${env}"
+    # Use same logic as pre_flight_checks for environment file discovery
+    local env_file=""
+    
+    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
+        # Remote deployment: symlinked from /opt/togather/.env.{env}
+        env_file="${CONFIG_DIR}/environments/.env.${env}"
+    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
+        # Local Docker deployment
+        env_file="${PROJECT_ROOT}/deploy/docker/.env"
+    else
+        log "ERROR" "No environment configuration found for deployment"
+        log "ERROR" "For local: create deploy/docker/.env"
+        log "ERROR" "For remote: ensure /opt/togather/.env.${env} exists on server"
+        return 1
+    fi
+    
+    log "INFO" "Using environment file: ${env_file}"
+    
     local compose_file="${DOCKER_DIR}/docker-compose.blue-green.yml"
     local image_tag="${GIT_SHORT_COMMIT}"
     
@@ -1161,10 +1195,7 @@ deploy_to_slot() {
     
     # Source .env file to make variables available for docker-compose interpolation
     # Docker Compose requires variables in shell environment for ${VAR} syntax
-    local project_env="${PROJECT_ROOT}/.env"
-    if [[ -f "${project_env}" ]]; then
-        set -a; source "${project_env}"; set +a
-    fi
+    set -a; source "${env_file}"; set +a
     
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"

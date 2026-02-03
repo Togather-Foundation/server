@@ -2,16 +2,132 @@
 
 This directory contains environment-specific configuration files for different deployment targets.
 
+## Quick Reference: Environment File Locations
+
+**The golden rule: Environment configs live where they're used.**
+
+| Use Case | File Location | Template | Commit? |
+|----------|---------------|----------|---------|
+| **Local dev (non-Docker)** | `<repo>/.env` | `<repo>/.env.example` | ❌ No |
+| **Local dev (Docker)** | `<repo>/deploy/docker/.env` | `<repo>/deploy/docker/.env.example` | ❌ No |
+| **Staging server** | `/opt/togather/.env.staging` | `deploy/config/environments/.env.staging.example` | ❌ No |
+| **Production server** | `/opt/togather/.env.production` | `deploy/config/environments/.env.production.example` | ❌ No |
+
+### IMPORTANT: What NOT to Do
+
+- ❌ **DO NOT** create `deploy/config/environments/.env.staging` locally
+- ❌ **DO NOT** create `deploy/config/environments/.env.production` locally
+- ❌ **DO NOT** commit any `.env` files (only `.env.example` templates)
+- ❌ **DO NOT** copy production secrets to your local machine
+- ✅ **DO** keep secrets on servers where they belong
+- ✅ **DO** use templates (`.env.example`) as documentation
+
 ## Structure
 
 ```
 deploy/config/environments/
 ├── Caddyfile.staging           # Caddy config for staging
 ├── Caddyfile.production         # Caddy config for production
-├── .env.staging.example         # Runtime env template for staging
-├── .env.production.example      # Runtime env template for production
-└── .env.development.example     # Runtime env template for local dev
+├── .env.staging.example         # Runtime env template for staging (SERVER-SIDE)
+├── .env.production.example      # Runtime env template for production (SERVER-SIDE)
+└── .env.development.example     # Runtime env template for local Docker dev
 ```
+
+## Environment File Setup
+
+### Local Development (Non-Docker)
+
+**Use case**: Running `go run cmd/server/main.go` or `./server` directly
+
+1. Copy template to repo root:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit configuration:
+   ```bash
+   nano .env
+   # Update DATABASE_URL to point to local PostgreSQL
+   # Set JWT_SECRET to a dev value
+   ```
+
+3. Run server:
+   ```bash
+   go run cmd/server/main.go
+   # or
+   make run
+   ```
+
+### Local Development (Docker)
+
+**Use case**: Running via `docker-compose up` for testing blue-green deployment locally
+
+1. Copy template:
+   ```bash
+   cp deploy/docker/.env.example deploy/docker/.env
+   ```
+
+2. Edit configuration:
+   ```bash
+   nano deploy/docker/.env
+   # DATABASE_URL should use 'togather-db' as hostname (Docker service name)
+   # Update passwords and secrets
+   ```
+
+3. Start Docker stack:
+   ```bash
+   docker-compose -f deploy/docker/docker-compose.blue-green.yml up -d
+   ```
+
+**Note**: Root `.env` and `deploy/docker/.env` have different purposes:
+- Root `.env`: For local non-Docker Go development
+- `deploy/docker/.env`: For local Docker Compose deployment
+
+Keep them in sync for DATABASE_URL (with appropriate hostname differences: `localhost` vs `togather-db`).
+
+### Remote Staging Server
+
+**Use case**: Deploying to staging.toronto.togather.foundation
+
+1. SSH to staging server:
+   ```bash
+   ssh deploy@staging.toronto.togather.foundation
+   ```
+
+2. Copy template from repo (pulled during provision):
+   ```bash
+   cp /opt/togather/src/deploy/config/environments/.env.staging.example /opt/togather/.env.staging
+   ```
+
+3. Edit configuration:
+   ```bash
+   nano /opt/togather/.env.staging
+   # Update DATABASE_URL with staging database credentials
+   # Generate new JWT_SECRET: openssl rand -base64 32
+   # Set ENVIRONMENT=staging
+   # Set LOG_LEVEL=info
+   ```
+
+4. Secure permissions:
+   ```bash
+   chmod 600 /opt/togather/.env.staging
+   ```
+
+5. Deploy from local machine:
+   ```bash
+   # No local .env.staging needed!
+   ./deploy/scripts/deploy.sh staging --remote deploy@staging.toronto.togather.foundation
+   ```
+
+The deploy script will:
+- SSH to server
+- Find `/opt/togather/.env.staging` on the server
+- Symlink it to the repo location
+- Use it for deployment
+
+### Remote Production Server
+
+Same process as staging, but use `.env.production.example` template and create `/opt/togather/.env.production` on the production server.
 
 ## File Types
 
@@ -24,7 +140,7 @@ deploy/config/environments/
 
 ### .env.*.example (Runtime Environment Templates)
 - **Purpose**: Templates for application runtime configuration
-- **Location on server**: `/opt/togather/.env` (after copying and filling in)
+- **Location on server**: `/opt/togather/.env.{environment}` (after copying and filling in)
 - **Used by**: `./server` binary (the application)
 - **Contains**: DATABASE_URL, JWT_SECRET, port settings, feature flags
 - **Secrets**: YES - do not commit actual values
@@ -32,8 +148,8 @@ deploy/config/environments/
 ### Testing Configs (in `deploy/testing/environments/`)
 - **Purpose**: Configuration for smoke tests and performance tests
 - **Files**: `local.test.env`, `staging.test.env`, `production.test.env`
-- **Used by**: Test scripts (`make test-staging-smoke`, etc.)
-- **Contains**: BASE_URL, timeouts, test permissions
+- **Used by**: Test scripts (`./deploy/scripts/test-remote.sh`, etc.)
+- **Contains**: BASE_URL, SSH_SERVER, timeouts, test permissions
 - **Secrets**: API keys (set via environment variables, not committed)
 
 ## Deployment Workflow
