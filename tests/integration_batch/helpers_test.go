@@ -284,6 +284,7 @@ func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	return key
 }
 
+// nolint:unused
 func createdEventLocation(payload map[string]any) (map[string]any, error) {
 	if payload == nil {
 		return nil, errors.New("missing payload")
@@ -295,6 +296,7 @@ func createdEventLocation(payload map[string]any) (map[string]any, error) {
 	return location, nil
 }
 
+// nolint:unused
 func eventIDFromPayload(payload map[string]any) string {
 	if payload == nil {
 		return ""
@@ -330,6 +332,7 @@ func eventIDFromPayload(payload map[string]any) string {
 }
 
 // insertAdminUser inserts a user into the database with hashed password
+// nolint:unused
 func insertAdminUser(t *testing.T, env *testEnv, username, password, email, role string) {
 	t.Helper()
 
@@ -344,6 +347,7 @@ func insertAdminUser(t *testing.T, env *testEnv, username, password, email, role
 }
 
 // adminLogin performs login and returns the JWT token
+// nolint:unused
 func adminLogin(t *testing.T, env *testEnv, username, password string) string {
 	t.Helper()
 
@@ -377,6 +381,7 @@ func adminLogin(t *testing.T, env *testEnv, username, password string) string {
 // Change Feed Test Helpers
 
 // changeFeedResponse represents the response from /api/v1/feeds/changes
+// nolint:unused
 type changeFeedResponse struct {
 	Cursor     string           `json:"cursor"`      // Current cursor position
 	Changes    []changeFeedItem `json:"changes"`     // List of changes (renamed from Items per Interop Profile)
@@ -384,6 +389,7 @@ type changeFeedResponse struct {
 }
 
 // changeFeedItem represents a single change entry in the feed
+// nolint:unused
 type changeFeedItem struct {
 	SequenceNumber int64           `json:"sequence_number"`
 	EventID        string          `json:"event_id"`
@@ -394,6 +400,7 @@ type changeFeedItem struct {
 }
 
 // fetchChangeFeed makes a GET request to /api/v1/feeds/changes
+// nolint:unused
 func fetchChangeFeed(t *testing.T, env *testEnv, params url.Values) changeFeedResponse {
 	t.Helper()
 
