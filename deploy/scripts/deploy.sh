@@ -1131,38 +1131,106 @@ deploy_to_slot() {
 #   - Traffic switch is atomic (Caddy reload is zero-downtime)
 # Example:
 #   validate_health production blue && switch_traffic production blue
+# T021: Switch traffic to new slot
 switch_traffic() {
     local env="$1"
-    local new_slot="${2:-$(get_inactive_slot)}"  # Accept slot as parameter or determine it
+    local target_slot="$2"
     
-    log "INFO" "Switching traffic to ${new_slot} slot"
+    log "INFO" "Switching traffic to ${target_slot} slot"
     
-    # Update Caddy configuration to point to new slot
-    # Note: This is a simplified version. In production, you'd use Caddy config templates
-    
-    local caddy_config="${DOCKER_DIR}/Caddyfile"
-    local caddy_container="togather-${env}-caddy"
-    
-    # For docker-compose deployments, use standard container name
-    if [ "${env}" = "dev" ] || [ "${env}" = "local" ]; then
-        caddy_container="togather-proxy"
+    # Determine target port based on slot
+    local target_port=8081
+    if [[ "${target_slot}" == "green" ]]; then
+        target_port=8082
     fi
     
-    # Check if Caddy container exists
-    if ! docker ps -q -f name="${caddy_container}" | grep -q .; then
-        log "WARN" "Caddy container not found: ${caddy_container}"
-        log "WARN" "Skipping traffic switch (direct access only)"
+    # Check if Caddy is running
+    if ! systemctl is-active --quiet caddy; then
+        log "WARN" "Caddy service not running"
+        log "WARN" "Skipping traffic switch (deployments will still work on direct ports)"
+        return 0  # Non-fatal - deployments can work without Caddy
+    fi
+    
+    local caddyfile="/etc/caddy/Caddyfile"
+    
+    # Check if Caddyfile exists
+    if [[ ! -f "${caddyfile}" ]]; then
+        log "WARN" "Caddyfile not found at ${caddyfile}"
+        log "WARN" "Skipping traffic switch (deployments will still work on direct ports)"
+        return 0  # Non-fatal
+    fi
+    
+    # Determine current active port
+    local current_port=$(grep -oP 'reverse_proxy\s+localhost:\K\d+' "${caddyfile}" | head -1)
+    log "INFO" "Current active port: ${current_port}"
+    log "INFO" "Target port: ${target_port}"
+    
+    # Skip if already pointing to target
+    if [[ "${current_port}" == "${target_port}" ]]; then
+        log "INFO" "Traffic already pointing to ${target_slot} slot"
         return 0
     fi
     
-    # Reload Caddy configuration
-    if ! docker exec "${caddy_container}" caddy reload --config /etc/caddy/Caddyfile; then
-        log "ERROR" "Failed to reload Caddy configuration"
+    # Create backup of Caddyfile
+    local backup_file="${caddyfile}.backup.$(date +%Y%m%d_%H%M%S)"
+    sudo cp "${caddyfile}" "${backup_file}"
+    log "INFO" "Created Caddyfile backup: ${backup_file}"
+    
+    # Update Caddyfile with new port and slot name
+    log "INFO" "Updating Caddyfile to point to localhost:${target_port} (${target_slot})"
+    sudo sed -i "s/reverse_proxy localhost:[0-9]\\+/reverse_proxy localhost:${target_port}/" "${caddyfile}"
+    sudo sed -i "s/header_down X-Togather-Slot \"[^\"]*\"/header_down X-Togather-Slot \"${target_slot}\"/" "${caddyfile}"
+    
+    # Validate Caddyfile syntax
+    if ! sudo caddy validate --config "${caddyfile}" &> /dev/null; then
+        log "ERROR" "Caddyfile validation failed after update"
+        log "ERROR" "Restoring backup: ${backup_file}"
+        sudo cp "${backup_file}" "${caddyfile}"
         return 1
     fi
     
-    log "SUCCESS" "Traffic switched to ${new_slot} slot"
-    return 0
+    log "SUCCESS" "Caddyfile validated"
+    
+    # Reload Caddy (graceful reload with zero downtime)
+    log "INFO" "Reloading Caddy configuration..."
+    if sudo systemctl reload caddy; then
+        log "SUCCESS" "Caddy reloaded successfully"
+    else
+        log "ERROR" "Caddy reload failed"
+        log "ERROR" "Restoring backup: ${backup_file}"
+        sudo cp "${backup_file}" "${caddyfile}"
+        sudo systemctl reload caddy
+        return 1
+    fi
+    
+    # Verify traffic switch worked
+    local verification_attempts=3
+    local verification_delay=2
+    
+    for ((i=1; i<=verification_attempts; i++)); do
+        log "INFO" "Verifying traffic switch (attempt ${i}/${verification_attempts})..."
+        
+        # Check via Caddy's public endpoint
+        local response=$(curl -s -H "Host: ${env}.toronto.togather.foundation" \
+                            http://localhost/health 2>/dev/null || echo "")
+        
+        if [[ -n "$response" ]]; then
+            log "SUCCESS" "Traffic successfully switched to ${target_slot} slot"
+            log "INFO" "Caddy is now routing to localhost:${target_port}"
+            return 0
+        fi
+        
+        if [[ $i -lt $verification_attempts ]]; then
+            log "WARN" "Verification failed, retrying in ${verification_delay}s..."
+            sleep $verification_delay
+        fi
+    done
+    
+    log "WARN" "Could not verify traffic switch through Caddy"
+    log "WARN" "Deployment successful but traffic routing unverified"
+    log "INFO" "Manual verification: curl -I https://${env}.toronto.togather.foundation/health"
+    
+    return 0  # Non-fatal - deployment succeeded
 }
 
 # ============================================================================
