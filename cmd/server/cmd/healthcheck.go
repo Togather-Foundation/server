@@ -298,7 +298,8 @@ func performHealthCheck(url string) HealthCheckResult {
 
 	result.Response = &healthResp
 	result.Status = healthResp.Status
-	result.IsHealthy = (healthResp.Status == "healthy")
+	// Accept both "healthy" and "degraded" as passing - only "unhealthy" fails
+	result.IsHealthy = (healthResp.Status == "healthy" || healthResp.Status == "degraded")
 
 	return result
 }

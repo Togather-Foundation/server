@@ -43,7 +43,7 @@ func TestPerformHealthCheck(t *testing.T) {
 					"job_queue": {Status: "warn"},
 				},
 			},
-			expectHealthy:  false,
+			expectHealthy:  true,
 			expectError:    false,
 			expectedStatus: "degraded",
 		},
