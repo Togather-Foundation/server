@@ -311,6 +311,46 @@ test_response_time() {
     fi
 }
 
+test_api_docs_endpoint() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing API docs endpoint: GET ${BASE_URL}/api/docs"
+    
+    local response=$(http_get "${BASE_URL}/api/docs" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Validate HTML structure and Scalar UI presence
+        local has_title=false
+        local has_scalar=false
+        local has_openapi_ref=false
+        
+        if echo "$response" | grep -q "Togather API Documentation"; then
+            has_title=true
+        fi
+        
+        if echo "$response" | grep -q "scalar-standalone.js"; then
+            has_scalar=true
+        fi
+        
+        if echo "$response" | grep -q "/api/v1/openapi.json"; then
+            has_openapi_ref=true
+        fi
+        
+        if [[ "$has_title" == "true" && "$has_scalar" == "true" && "$has_openapi_ref" == "true" ]]; then
+            log "SUCCESS" "API docs endpoint verified (Scalar UI detected)"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "API docs missing required elements (title: ${has_title}, scalar: ${has_scalar}, openapi: ${has_openapi_ref})"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "API docs endpoint not responding"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -356,6 +396,9 @@ main() {
     echo ""
     
     test_response_time
+    echo ""
+    
+    test_api_docs_endpoint
     echo ""
     
     local end_time=$(date +%s)
