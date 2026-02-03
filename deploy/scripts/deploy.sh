@@ -1452,6 +1452,36 @@ if [[ "${CURRENT_COMMIT}" != "${TARGET_COMMIT}"* ]]; then
     exit 1
 fi
 
+# Setup environment configuration
+echo "→ Setting up environment configuration..."
+CONFIG_DIR="${REPO_DIR}/deploy/config/environments"
+PERSISTENT_ENV="/opt/togather/.env.${ENVIRONMENT}"
+
+# Check if persistent env file exists
+if [ ! -f "${PERSISTENT_ENV}" ]; then
+    # Fall back to shared .env file from install.sh
+    if [ -f "/opt/togather/.env" ]; then
+        echo "  Using shared environment file: /opt/togather/.env"
+        PERSISTENT_ENV="/opt/togather/.env"
+    else
+        echo "ERROR: No environment configuration found"
+        echo ""
+        echo "Create one of:"
+        echo "  - ${PERSISTENT_ENV} (environment-specific)"
+        echo "  - /opt/togather/.env (shared)"
+        echo ""
+        echo "Copy from example:"
+        echo "  cp ${CONFIG_DIR}/.env.${ENVIRONMENT}.example ${PERSISTENT_ENV}"
+        echo "  nano ${PERSISTENT_ENV}  # Edit configuration"
+        echo "  chmod 600 ${PERSISTENT_ENV}"
+        exit 1
+    fi
+fi
+
+# Symlink persistent env file to expected location
+ln -sf "${PERSISTENT_ENV}" "${CONFIG_DIR}/.env.${ENVIRONMENT}"
+echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
+
 echo "→ Running deploy.sh on remote server..."
 echo ""
 ./deploy/scripts/deploy.sh "${ENVIRONMENT}"
