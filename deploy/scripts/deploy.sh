@@ -1096,7 +1096,7 @@ deploy_to_slot() {
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"
     
-    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d "${slot}"; then
+    if ! ${COMPOSE_CMD} --env-file "${env_file}" -f "${compose_file}" up -d "${slot}"; then
         log "ERROR" "Failed to deploy to ${slot} slot"
         return 1
     fi
