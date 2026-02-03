@@ -633,14 +633,24 @@ acquire_lock() {
     
     log "INFO" "Acquiring deployment lock for ${env}"
     
-    # Check if state file exists
+    # Check if state file exists, create if this is first deployment
     if [[ ! -f "${STATE_FILE}" ]]; then
-        log "ERROR" "Deployment state file not found: ${STATE_FILE}"
-        log "ERROR" ""
-        log "ERROR" "REMEDIATION:"
-        log "ERROR" "  Initialize deployment infrastructure:"
-        log "ERROR" "  cd deploy/scripts && ./deploy.sh init"
-        return 1
+        log "INFO" "First deployment - creating initial state file"
+        mkdir -p "$(dirname "${STATE_FILE}")"
+        
+        # Create initial empty state file with minimal valid JSON
+        cat > "${STATE_FILE}" << 'STATE_EOF'
+{
+  "environment": "",
+  "active_slot": "blue",
+  "slots": {
+    "blue": {"status": "inactive"},
+    "green": {"status": "inactive"}
+  },
+  "last_deployment": null
+}
+STATE_EOF
+        chmod 600 "${STATE_FILE}"
     fi
     
     # Try to create lock directory atomically (mkdir is atomic in POSIX)
@@ -1484,13 +1494,6 @@ ln -sf "${PERSISTENT_ENV}" "${CONFIG_DIR}/.env.${ENVIRONMENT}"
 chmod 600 "${PERSISTENT_ENV}"
 echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
 
-# Initialize deployment infrastructure if needed
-if [ ! -f "${REPO_DIR}/deploy/config/deployment-state.json" ]; then
-    echo "→ Initializing deployment infrastructure..."
-    cd "${REPO_DIR}"
-    ./deploy/scripts/deploy.sh init || exit 1
-    echo ""
-fi
 
 echo "→ Running deploy.sh on remote server..."
 echo ""
