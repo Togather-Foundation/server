@@ -1409,11 +1409,6 @@ deploy_remote() {
     fi
     
     
-    # Convert HTTPS URLs to SSH for remote deployment (HTTPS requires credentials)
-    if [[ "$repo_url" =~ ^https://github\.com/(.+)$ ]]; then
-        repo_url="git@github.com:${BASH_REMATCH[1]}"
-        log "INFO" "Converted HTTPS URL to SSH: ${repo_url}"
-    fi
     log "INFO" "Repository URL: ${repo_url}"
     log "INFO" "Target commit: ${target_commit}"
     
