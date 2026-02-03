@@ -7,13 +7,16 @@
 #     ./provision.sh
 #
 #   Remote mode (SSH to target server):
-#     ./provision.sh [user@]hostname [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER]
+#     ./provision.sh [user@]hostname [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER] [--with-app]
 #     ./provision.sh togather-root staging
-#     ./provision.sh root@192.46.222.199 production
+#     ./provision.sh root@192.46.222.199 production --with-app
 #
 #   Local mode (run on this machine):
-#     ./provision.sh --local [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER]
-#     ./provision.sh --local staging
+#     ./provision.sh --local [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER] [--with-app]
+#     ./provision.sh --local staging --with-app
+#
+# Flags:
+#   --with-app        - After provisioning, build and install the application
 #
 # Environment Variables:
 #   ENVIRONMENT       - Application environment: development, staging (default), production
@@ -57,6 +60,128 @@ is_desktop_environment() {
         return 0
     fi
     return 1
+}
+
+
+# Install application after provisioning (remote)
+install_app_remote() {
+    local ssh_target="$1"
+    local deploy_user="$2"
+    local environment="$3"
+    
+    log_info "Building and installing application on $ssh_target..."
+    echo ""
+    
+    # Check if we're in the project root
+    if [ ! -f "Makefile" ]; then
+        log_error "Must be in project root to build deployment package"
+        log_error "Current directory: $(pwd)"
+        return 1
+    fi
+    
+    # Build deployment package
+    log_info "Building deployment package..."
+    if ! make deploy-package; then
+        log_error "Failed to build deployment package"
+        return 1
+    fi
+    
+    # Find the generated tarball
+    local tarball=$(ls -t togather-server-*.tar.gz 2>/dev/null | head -1)
+    if [ -z "$tarball" ]; then
+        log_error "No deployment package found (togather-server-*.tar.gz)"
+        return 1
+    fi
+    
+    log_info "Found package: $tarball"
+    
+    # Copy to remote server
+    log_info "Copying package to remote server..."
+    if ! scp "$tarball" "${ssh_target}:~/"; then
+        log_error "Failed to copy package to remote server"
+        return 1
+    fi
+    
+    # Extract and install on remote
+    log_info "Installing application on remote server..."
+    if ! ssh "$ssh_target" 'bash -s' << "INSTALL_END"
+set -euo pipefail
+cd ~
+TARBALL=$(ls -t togather-server-*.tar.gz | head -1)
+if [ -z "$TARBALL" ]; then
+    echo "ERROR: No tarball found"
+    exit 1
+fi
+echo "Extracting $TARBALL..."
+tar -xzf "$TARBALL"
+EXTRACT_DIR=$(tar -tzf "$TARBALL" | head -1 | cut -f1 -d"/")
+cd "$EXTRACT_DIR"
+echo "Running install.sh..."
+sudo ./install.sh
+echo "Installation complete!"
+INSTALL_END
+    then
+        log_error "Failed to install application on remote server"
+        return 1
+    fi
+    
+    log_info "✓ Application installed successfully"
+    echo ""
+    return 0
+}
+
+# Install application locally
+install_app_local() {
+    local environment="$1"
+    
+    log_info "Building and installing application locally..."
+    echo ""
+    
+    # Check if we're in the project root
+    if [ ! -f "Makefile" ]; then
+        log_error "Must be in project root to build deployment package"
+        log_error "Current directory: $(pwd)"
+        return 1
+    fi
+    
+    # Build deployment package
+    log_info "Building deployment package..."
+    if ! make deploy-package; then
+        log_error "Failed to build deployment package"
+        return 1
+    fi
+    
+    # Find the generated tarball
+    local tarball=$(ls -t togather-server-*.tar.gz 2>/dev/null | head -1)
+    if [ -z "$tarball" ]; then
+        log_error "No deployment package found (togather-server-*.tar.gz)"
+        return 1
+    fi
+    
+    log_info "Found package: $tarball"
+    
+    # Extract to temp directory
+    local temp_dir=$(mktemp -d)
+    log_info "Extracting to $temp_dir..."
+    tar -xzf "$tarball" -C "$temp_dir"
+    
+    # Find extracted directory
+    local extract_dir=$(ls -d "$temp_dir"/*/ | head -1)
+    
+    # Run install.sh
+    log_info "Running install.sh..."
+    if ! (cd "$extract_dir" && sudo ./install.sh); then
+        log_error "Failed to run install.sh"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+    
+    # Cleanup
+    rm -rf "$temp_dir"
+    
+    log_info "✓ Application installed successfully"
+    echo ""
+    return 0
 }
 
 # Interactive mode: ask user what they want to do
@@ -141,10 +266,37 @@ interactive_mode() {
 # Provision a remote server via SSH
 provision_remote() {
     local ssh_target="$1"
-    local environment="${2:-staging}"
-    local go_version="${3:-1.24.12}"
-    local deploy_user="${4:-deploy}"
+    shift
+    
+    local environment="staging"
+    local go_version="1.24.12"
+    local deploy_user="deploy"
+    local with_app=false
     local skip_ssh_harden="true"  # Default to true for remote execution
+    
+    # Parse remaining arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --with-app)
+                with_app=true
+                shift
+                ;;
+            *)
+                # Positional arguments
+                if [ -z "${environment_set:-}" ]; then
+                    environment="$1"
+                    environment_set=true
+                elif [ -z "${go_version_set:-}" ]; then
+                    go_version="$1"
+                    go_version_set=true
+                elif [ -z "${deploy_user_set:-}" ]; then
+                    deploy_user="$1"
+                    deploy_user_set=true
+                fi
+                shift
+                ;;
+        esac
+    done
     
     log_remote "Provisioning remote server: $ssh_target"
     echo ""
@@ -153,6 +305,7 @@ provision_remote() {
     log_info "  Environment: $environment"
     log_info "  Go version: $go_version"
     log_info "  Deploy user: $deploy_user"
+    log_info "  Install app: $with_app"
     echo ""
     
     # Test SSH connection
@@ -600,13 +753,75 @@ REMOTE_SCRIPT
     echo "════════════════════════════════════════════════════════════"
     log_remote "✓ Remote provisioning complete!"
     echo ""
+    
+    # Install application if requested
+    if [ "$with_app" = true ]; then
+        echo "════════════════════════════════════════════════════════════"
+        echo "Installing Application"
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        
+        if install_app_remote "$ssh_target" "$deploy_user" "$environment"; then
+            log_info "✓ Application installation complete!"
+            echo ""
+            echo "Next steps:"
+            echo ""
+            echo "  1. SSH to the server:"
+            echo "     ssh $deploy_user@$ssh_target"
+            echo ""
+            echo "  2. Configure the application (if not already done):"
+            echo "     cd /opt/togather"
+            echo "     ./server setup --docker --allow-production-secrets"
+            echo ""
+            echo "  3. Start the service:"
+            echo "     sudo systemctl start togather"
+            echo "     sudo systemctl status togather"
+            echo ""
+            echo "  4. Configure Caddy for your domain (optional):"
+            echo "     sudo nano /etc/caddy/Caddyfile"
+            echo "     sudo systemctl reload caddy"
+            echo ""
+        else
+            log_warn "Application installation failed (provisioning succeeded)"
+            log_warn "You can install manually later following the standard steps"
+            echo ""
+        fi
+    else
+        log_info "Application not installed (use --with-app flag to install)"
+        echo ""
+    fi
 }
 
 # Provision local machine
 provision_local() {
-    local environment="${1:-staging}"
-    local go_version="${2:-1.24.12}"
-    local deploy_user="${3:-deploy}"
+    local environment="staging"
+    local go_version="1.24.12"
+    local deploy_user="deploy"
+    local with_app=false
+    
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --with-app)
+                with_app=true
+                shift
+                ;;
+            *)
+                # Positional arguments
+                if [ -z "${environment_set:-}" ]; then
+                    environment="$1"
+                    environment_set=true
+                elif [ -z "${go_version_set:-}" ]; then
+                    go_version="$1"
+                    go_version_set=true
+                elif [ -z "${deploy_user_set:-}" ]; then
+                    deploy_user="$1"
+                    deploy_user_set=true
+                fi
+                shift
+                ;;
+        esac
+    done
     
     log_info "Starting local provisioning..."
     echo ""
@@ -614,6 +829,7 @@ provision_local() {
     log_info "  Environment: $environment"
     log_info "  Go version: $go_version"
     log_info "  Deploy user: $deploy_user"
+    log_info "  Install app: $with_app"
     echo ""
     
     # Check if running as root
@@ -655,6 +871,45 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 echo "Local provisioning would run here with the same logic"
 log_info "This is a placeholder - full implementation would include all provisioning functions"
 LOCAL_SCRIPT
+    
+    local_result=$?
+    
+    if [ $local_result -ne 0 ]; then
+        log_error "Local provisioning failed"
+        exit 1
+    fi
+    
+    log_info "✓ Local provisioning complete!"
+    echo ""
+    
+    # Install application if requested
+    if [ "$with_app" = true ]; then
+        echo "════════════════════════════════════════════════════════════"
+        echo "Installing Application"
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+        
+        if install_app_local "$environment"; then
+            log_info "✓ Application installation complete!"
+            echo ""
+            echo "Next steps:"
+            echo ""
+            echo "  1. Configure the application:"
+            echo "     cd /opt/togather"
+            echo "     ./server setup --docker --allow-production-secrets"
+            echo ""
+            echo "  2. Start the service:"
+            echo "     sudo systemctl start togather"
+            echo "     sudo systemctl status togather"
+            echo ""
+        else
+            log_warn "Application installation failed (provisioning succeeded)"
+            echo ""
+        fi
+    else
+        log_info "Application not installed (use --with-app flag to install)"
+        echo ""
+    fi
 }
 
 # Parse arguments and route to appropriate mode
@@ -676,16 +931,21 @@ Usage:
     $0
 
   Remote provisioning:
-    $0 [user@]hostname [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER]
+    $0 [user@]hostname [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER] [--with-app]
     
   Local provisioning:
-    $0 --local [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER]
+    $0 --local [ENVIRONMENT] [GO_VERSION] [DEPLOY_USER] [--with-app]
+
+Flags:
+  --with-app     Build and install application after provisioning
 
 Examples:
-  $0                                    # Interactive mode
-  $0 togather-root staging              # Remote: SSH config alias
-  $0 root@192.46.222.199 production     # Remote: explicit SSH
-  $0 --local staging                    # Local provisioning
+  $0                                          # Interactive mode
+  $0 togather-root staging                    # Remote: SSH config alias
+  $0 togather-root staging --with-app         # Remote with app install
+  $0 root@192.46.222.199 production           # Remote: explicit SSH
+  $0 --local staging                          # Local provisioning
+  $0 --local staging --with-app               # Local with app install
 
 Arguments:
   hostname       SSH target (user@host or SSH config alias)
