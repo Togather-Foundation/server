@@ -642,13 +642,16 @@ acquire_lock() {
         cat > "${STATE_FILE}" <<STATE_EOF
 {
   "environment": "${env}",
+  "lock": {
+    "locked": false
+  },
   "active_slot": "blue",
   "slots": {
     "blue": {"status": "inactive"},
     "green": {"status": "inactive"}
-  },
   "last_deployment": null
 }
+STATE_EOF
 STATE_EOF
         chmod 600 "${STATE_FILE}"
     fi
