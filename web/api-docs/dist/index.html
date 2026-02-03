@@ -5,13 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Togather API Documentation</title>
     <meta name="description" content="Interactive API documentation for the Togather Shared Events Library backend">
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        }
-    </style>
 </head>
 <body>
     <div id="api-reference"></div>
@@ -21,43 +14,9 @@
     
     <!-- Initialize Scalar API Reference -->
     <script>
-        // Configuration for Scalar API Reference
-        const configuration = {
-            // Point to our OpenAPI spec endpoint
-            spec: {
-                url: '/api/v1/openapi.json',
-            },
-            // Customize the appearance
-            theme: 'default',
-            // Show the API client (try-it-out feature)
-            showSidebar: true,
-            // Custom metadata
-            customCss: '',
-            // Hide the "Powered by Scalar" badge (we're self-hosting)
-            hideDownloadButton: false,
-            // Authentication configuration
-            authentication: {
-                // API Key authentication instructions
-                apiKey: {
-                    token: '',
-                    // Instructions for obtaining API keys
-                    description: 'To obtain an API key, please email info@togather.foundation with your use case and organization details.',
-                },
-            },
-            // Server configuration (defaults to same origin)
-            servers: [
-                {
-                    url: window.location.origin,
-                    description: 'Current server',
-                },
-            ],
-        };
-        
-        // Create the API reference
-        document.addEventListener('DOMContentLoaded', function() {
-            var apiReference = document.getElementById('api-reference');
-            Scalar.createApiReference(apiReference, configuration);
-        });
+      Scalar.createApiReference('#api-reference', {
+        url: '/api/v1/openapi.json',
+      })
     </script>
 </body>
 </html>
