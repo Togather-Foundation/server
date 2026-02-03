@@ -960,7 +960,7 @@ run_migrations() {
     if mkdir "$migration_lock_dir" 2>/dev/null; then
         # Lock acquired - set trap to cleanup on ALL exit paths
         # Note: RETURN is function-scoped only, removed to ensure cleanup on script exit
-        trap 'rmdir "$migration_lock_dir" 2>/dev/null || true' EXIT INT TERM
+        # Cleanup will be handled explicitly at function exit to avoid unbound variable error
         log "INFO" "Migration lock acquired"
     else
         log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
@@ -981,6 +981,7 @@ run_migrations() {
         log "ERROR" "  1. Review the failed migration in: ${migrations_dir}"
         log "ERROR" "  2. Fix the database manually or restore from snapshot"
         log "ERROR" "  3. Force migration version: migrate -path ${migrations_dir} -database \$DATABASE_URL force <version>"
+        rmdir "$migration_lock_dir" 2>/dev/null || true
         return 1
     fi
     
@@ -1019,7 +1020,8 @@ run_migrations() {
         log "ERROR" ""
         log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         
-        # Trap will cleanup lock on exit
+        # Explicit lock cleanup
+        rmdir "$migration_lock_dir" 2>/dev/null || true
         return 1
     fi
     
@@ -1034,7 +1036,9 @@ run_migrations() {
         log "INFO" "No new migrations to apply (already at version ${new_version})"
     fi
     
-    log "INFO" "Migration lock will be released on function exit"
+    # Explicit lock cleanup
+    rmdir "$migration_lock_dir" 2>/dev/null || true
+    log "INFO" "Migration lock released"
     return 0
 }
 
