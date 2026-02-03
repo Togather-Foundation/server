@@ -634,6 +634,9 @@ acquire_lock() {
     log "INFO" "Acquiring deployment lock for ${env}"
     
     # Check if state file exists, create if this is first deployment
+    # Extract environment from state file for lock directory name
+    local env=$(jq -r '.environment // ""' "${STATE_FILE}" 2>/dev/null || echo "")
+    
     if [[ ! -f "${STATE_FILE}" ]]; then
         log "INFO" "First deployment - creating initial state file"
         mkdir -p "$(dirname "${STATE_FILE}")"
@@ -757,6 +760,9 @@ STATE_EOF
 release_lock() {
     log "INFO" "Releasing deployment lock"
     
+    # Extract environment from state file for lock directory name
+    local env=$(jq -r '.environment // ""' "${STATE_FILE}" 2>/dev/null || echo "")
+    
     if [[ ! -f "${STATE_FILE}" ]]; then
         log "WARN" "State file not found, cannot release lock"
         return 0
@@ -769,7 +775,7 @@ release_lock() {
     }
     
     # Remove lock directory
-    local lock_dir="/tmp/togather-deploy-${TOGATHER_ENV}.lock"
+    local lock_dir="/tmp/togather-deploy-${env}.lock"
     if ! rmdir "$lock_dir" 2>/dev/null; then
         log "WARN" "Failed to remove lock directory: ${lock_dir}"
         log "WARN" "Lock state updated but directory may need manual cleanup"
@@ -1054,6 +1060,9 @@ run_migrations() {
 
 # Get current active slot (blue or green)
 get_active_slot() {
+    # Extract environment from state file for lock directory name
+    local env=$(jq -r '.environment // ""' "${STATE_FILE}" 2>/dev/null || echo "")
+    
     if [[ ! -f "${STATE_FILE}" ]]; then
         echo "blue"  # Default to blue for first deployment
         return 0
