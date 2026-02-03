@@ -768,6 +768,14 @@ release_lock() {
         return 1
     }
     
+    # Remove lock directory
+    local lock_dir="/tmp/togather-deploy-${TOGATHER_ENV}.lock"
+    if ! rmdir "$lock_dir" 2>/dev/null; then
+        log "WARN" "Failed to remove lock directory: ${lock_dir}"
+        log "WARN" "Lock state updated but directory may need manual cleanup"
+        # Don't fail - state file is already updated
+    fi
+    
     log "SUCCESS" "Deployment lock released"
     return 0
 }
