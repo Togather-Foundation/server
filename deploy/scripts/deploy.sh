@@ -177,11 +177,11 @@ get_file_perms() {
 # Example:
 #   update_state_file_atomic --arg status "deployed" '.deployments[-1].status = $status'
 update_state_file_atomic() {
-    # All arguments are passed to jq
+    local jq_expression="$1"
     local temp_file=$(mktemp)
     
-    # Write to temp file, passing all arguments to jq
-    if ! jq "$@" "${STATE_FILE}" > "$temp_file"; then
+    # Write to temp file
+    if ! jq "$jq_expression" "${STATE_FILE}" > "$temp_file"; then
         log "ERROR" "Failed to update state file with jq"
         rm -f "$temp_file"
         return 1
@@ -559,24 +559,10 @@ validate_tool_versions() {
 validate_git_commit() {
     log "INFO" "Validating Git commit"
     
-    # Check if we're in a Git repository
-    if ! git rev-parse HEAD &> /dev/null 2>&1; then
-        # Not a git repo - we're deploying from a package
-        # Extract version from package directory name (format: togather-server-<commit>)
-        local package_dir=$(basename "${PROJECT_ROOT}")
-        if [[ "$package_dir" =~ togather-server-([a-f0-9]+)$ ]]; then
-            GIT_SHORT_COMMIT="${BASH_REMATCH[1]}"
-            GIT_COMMIT="${GIT_SHORT_COMMIT}"
-            log "INFO" "Package deployment detected (not a git repository)"
-            log "INFO" "Using version from package name: ${GIT_SHORT_COMMIT}"
-            log "SUCCESS" "Package version validation passed: ${GIT_SHORT_COMMIT}"
-            return 0
-        else
-            log "ERROR" "Not in a Git repository and cannot determine version from package name"
-            log "ERROR" "Package directory: ${package_dir}"
-            log "ERROR" "Expected format: togather-server-<commit-hash>"
-            return 1
-        fi
+    # Get current Git commit
+    if ! git rev-parse HEAD &> /dev/null; then
+        log "ERROR" "Not in a Git repository"
+        return 1
     fi
     
     GIT_COMMIT=$(git rev-parse HEAD)
@@ -647,28 +633,16 @@ acquire_lock() {
     
     log "INFO" "Acquiring deployment lock for ${env}"
     
-    # Check if state file exists, create if needed (first deployment)
+    # Check if state file exists
     if [[ ! -f "${STATE_FILE}" ]]; then
-        log "INFO" "State file not found, creating for first deployment"
-        local state_dir=$(dirname "${STATE_FILE}")
-        mkdir -p "${state_dir}"
-        
-        # Create initial state file with environment set
-        cat > "${STATE_FILE}" <<EOJSON
-{
-  "environment": "${env}",
-  "lock": {
-    "locked": false
-  },
-  "deployments": [],
-  "active_slot": "none"
-}
-EOJSON
-        chmod 600 "${STATE_FILE}"
-        log "INFO" "State file created: ${STATE_FILE}"
+        log "ERROR" "Deployment state file not found: ${STATE_FILE}"
+        log "ERROR" ""
+        log "ERROR" "REMEDIATION:"
+        log "ERROR" "  Initialize deployment infrastructure:"
+        log "ERROR" "  cd deploy/scripts && ./deploy.sh init"
+        return 1
     fi
     
-    # Try to create lock directory atomically (mkdir is atomic in POSIX)
     # Try to create lock directory atomically (mkdir is atomic in POSIX)
     if mkdir "$lock_dir" 2>/dev/null; then
         # Lock acquired - set trap to cleanup on exit
@@ -741,28 +715,28 @@ EOJSON
     local lock_expires_at=$(date -u -d "+30 minutes" +"%Y-%m-%dT%H:%M:%SZ")
     local locked_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
-    # Capture hostname before state update (avoid issues with command substitution)
-    local current_hostname=$(hostname)
-    local current_pid=$$
-    
     # Update state file with lock (atomic update with fsync)
-    update_state_file_atomic \
-        --arg lock_id "$lock_id" \
-        --arg deployment_id "$DEPLOYMENT_ID" \
-        --arg locked_by "$DEPLOYED_BY" \
-        --arg locked_at "$locked_at" \
-        --arg lock_expires_at "$lock_expires_at" \
-        --arg pid "$current_pid" \
-        --arg hostname "$current_hostname" \
-        '.lock = {locked: true, lock_id: $lock_id, deployment_id: $deployment_id, locked_by: $locked_by, locked_at: $locked_at, lock_expires_at: $lock_expires_at, pid: ($pid | tonumber), hostname: $hostname}'
-    
-    if [[ $? -ne 0 ]]; then
+    update_state_file_atomic --arg lock_id "$lock_id" \
+       --arg deployment_id "$DEPLOYMENT_ID" \
+       --arg locked_by "$DEPLOYED_BY" \
+       --arg locked_at "$locked_at" \
+       --arg lock_expires_at "$lock_expires_at" \
+       --arg pid "$$" \
+       --arg hostname "$(hostname)" \
+       '.lock = {
+          locked: true,
+          lock_id: $lock_id,
+          deployment_id: $deployment_id,
+          locked_by: $locked_by,
+          locked_at: $locked_at,
+          lock_expires_at: $lock_expires_at,
+          pid: ($pid | tonumber),
+          hostname: $hostname
+        }' || {
         log "ERROR" "Failed to update state file with lock"
-        if [[ -n "${lock_dir:-}" ]]; then
-            rmdir "$lock_dir" 2>/dev/null || true
-        fi
+        rmdir "$lock_dir" 2>/dev/null || true
         return 1
-    fi
+    }
     
     log "SUCCESS" "Deployment lock acquired: ${DEPLOYMENT_ID}"
     return 0
@@ -815,10 +789,10 @@ validate_build_args() {
     
     local errors=()
     
-    # Validate GIT_COMMIT format (7-40 character hex string for full commit)
+    # Validate GIT_COMMIT format (40-character hex string for full commit)
     if [[ -n "${git_commit}" ]] && [[ "${git_commit}" != "unknown" ]]; then
-        if ! echo "${git_commit}" | grep -qE '^[0-9a-f]{7,40}$'; then
-            errors+=("GIT_COMMIT must be 7-40 character hex string (got: ${git_commit})")
+        if ! echo "${git_commit}" | grep -qE '^[0-9a-f]{40}$'; then
+            errors+=("GIT_COMMIT must be 40-character hex string (got: ${git_commit})")
         fi
     fi
     
@@ -866,56 +840,20 @@ build_docker_image() {
         return 1
     fi
     
+    # Build image with version metadata
     cd "${PROJECT_ROOT}"
     
-    # Check if we have a pre-built binary (package deployment)
-    if [[ -f "${PROJECT_ROOT}/server" ]] && [[ ! -d "${PROJECT_ROOT}/.git" ]]; then
-        log "INFO" "Package deployment detected - using pre-built binary"
-        
-        # Create temporary Dockerfile for pre-built binary
-        cat > "${DOCKER_DIR}/Dockerfile.prebuilt" <<'EOFDOCKERFILE'
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates tzdata && update-ca-certificates
-COPY server /usr/local/bin/togather-server
-RUN chmod +x /usr/local/bin/togather-server
-RUN adduser -D -u 1000 togather
-WORKDIR /app
-USER togather
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD ["togather-server", "healthcheck"]
-EXPOSE 8080
-CMD ["togather-server", "serve"]
-EOFDOCKERFILE
-        
-        # Build image from pre-built binary
-        if ! docker build \
-            -f "${DOCKER_DIR}/Dockerfile.prebuilt" \
-            -t "${image_name}:${image_tag}" \
-            -t "${image_name}:latest" \
-            --build-arg VERSION="${GIT_SHORT_COMMIT}" \
-            . ; then
-            log "ERROR" "Docker image build failed"
-            rm -f "${DOCKER_DIR}/Dockerfile.prebuilt"
-            return 1
-        fi
-        
-        # Clean up temporary Dockerfile
-        rm -f "${DOCKER_DIR}/Dockerfile.prebuilt"
-    else
-        # Build from source (development deployment)
-        log "INFO" "Building from source"
-        
-        if ! docker build \
-            -f "${DOCKER_DIR}/Dockerfile" \
-            -t "${image_name}:${image_tag}" \
-            -t "${image_name}:latest" \
-            --build-arg GIT_COMMIT="${GIT_COMMIT}" \
-            --build-arg GIT_SHORT_COMMIT="${GIT_SHORT_COMMIT}" \
-            --build-arg BUILD_TIMESTAMP="${build_timestamp}" \
-            --build-arg VERSION="${GIT_SHORT_COMMIT}" \
-            . ; then
-            log "ERROR" "Docker image build failed"
-            return 1
-        fi
+    if ! docker build \
+        -f "${DOCKER_DIR}/Dockerfile" \
+        -t "${image_name}:${image_tag}" \
+        -t "${image_name}:latest" \
+        --build-arg GIT_COMMIT="${GIT_COMMIT}" \
+        --build-arg GIT_SHORT_COMMIT="${GIT_SHORT_COMMIT}" \
+        --build-arg BUILD_TIMESTAMP="${build_timestamp}" \
+        --build-arg VERSION="${GIT_SHORT_COMMIT}" \
+        . ; then
+        log "ERROR" "Docker image build failed"
+        return 1
     fi
     
     log "SUCCESS" "Docker image built: ${image_name}:${image_tag}"
@@ -948,24 +886,12 @@ create_db_snapshot() {
             return 1
         fi
     fi
-    # Load environment to get DATABASE_URL
-    local env_file="${CONFIG_DIR}/environments/.env.${env}"
-    if [[ -f "${env_file}" ]]; then
-        set -a  # Export all variables
-        source "${env_file}"
-        set +a
-        log "INFO" "Loaded environment from ${env_file}"
-    else
-        log "ERROR" "Environment file not found: ${env_file}"
-        return 1
-    fi
     
     # Create snapshot using CLI
     log "INFO" "Creating database snapshot before deployment"
     
     local snapshot_output
-    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" 2>&1)
-    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" 2>&1)
+    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1)
     local snapshot_status=$?
     
     if [[ $snapshot_status -ne 0 ]]; then
@@ -974,17 +900,14 @@ create_db_snapshot() {
         return 1
     fi
     
-    # Try to extract snapshot path from output (format may vary)
-    # Look for lines containing "snapshot" and file paths
-    SNAPSHOT_PATH=$(echo "${snapshot_output}" | grep -oE '/[^ ]+\.sql' | head -1 || echo "unknown")
+    # Extract snapshot path from JSON output
+    SNAPSHOT_PATH=$(echo "${snapshot_output}" | jq -r '.snapshot_path // empty')
     
-    log "INFO" "Snapshot output: ${snapshot_output}"
-    if [[ "${SNAPSHOT_PATH}" != "unknown" ]]; then
-        log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
-    else
-        log "SUCCESS" "Database snapshot created (path not extracted from output)"
-        SNAPSHOT_PATH="pre-deploy-${env}"
+    if [[ -z "${SNAPSHOT_PATH}" ]]; then
+        log "WARN" "Could not extract snapshot path from output"
+        SNAPSHOT_PATH="unknown"
     fi
+    
     log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
     return 0
 }
@@ -1162,7 +1085,7 @@ deploy_to_slot() {
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"
     
-    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d "togather-${slot}"; then
+    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d "${slot}"; then
         log "ERROR" "Failed to deploy to ${slot} slot"
         return 1
     fi
