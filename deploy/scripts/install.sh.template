@@ -298,6 +298,65 @@ else
     log "  → Mode: NEW INSTALLATION"
 fi
 
+
+# ============================================================================
+# Blue-Green Deployment Detection
+# ============================================================================
+
+log "Step 2.5/8: Deployment Mode Detection"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+DEPLOYMENT_MODE="simple"
+TARGET_SLOT=""
+DEPLOYMENT_STATE_FILE="${APP_DIR}/deploy/config/deployment-state.json"
+
+# Check if blue-green infrastructure exists
+if [[ -f "$DEPLOYMENT_STATE_FILE" ]]; then
+    DEPLOYMENT_MODE="blue-green"
+    log "  → Mode: BLUE-GREEN DEPLOYMENT"
+    
+    # Read active slot from deployment-state.json
+    if command -v jq &> /dev/null; then
+        ACTIVE_SLOT=$(jq -r '.active_slot' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "blue")
+    else
+        # Fallback parsing without jq
+        ACTIVE_SLOT=$(grep -oP '"active_slot"\s*:\s*"\K[^"]+' "$DEPLOYMENT_STATE_FILE" 2>/dev/null || echo "blue")
+    fi
+    
+    # Determine target slot (opposite of active)
+    if [[ "$ACTIVE_SLOT" == "blue" ]]; then
+        TARGET_SLOT="green"
+    else
+        TARGET_SLOT="blue"
+    fi
+    
+    # Set slot-specific service name
+    SYSTEMD_SERVICE="/etc/systemd/system/${APP_NAME}-${TARGET_SLOT}.service"
+    
+    # Set slot-specific port (blue=8080, green=8081)
+    if [[ "$TARGET_SLOT" == "blue" ]]; then
+        SERVER_PORT=8080
+    else
+        SERVER_PORT=8081
+    fi
+    
+    success "Active slot: ${ACTIVE_SLOT}"
+    success "Target slot: ${TARGET_SLOT} (port ${SERVER_PORT})"
+    log "  → Will install to slot: ${TARGET_SLOT}"
+    log "  → Service name: ${APP_NAME}-${TARGET_SLOT}"
+else
+    DEPLOYMENT_MODE="simple"
+    log "  → Mode: SIMPLE (single service)"
+    log "  → No blue-green infrastructure detected"
+    
+    # Use traditional single service
+    SYSTEMD_SERVICE="/etc/systemd/system/${APP_NAME}.service"
+    SERVER_PORT=8080
+    
+    success "Using traditional single-service deployment"
+fi
+
+echo ""
 echo ""
 
 # ============================================================================
@@ -452,7 +511,35 @@ log "Step 7/8: Install Systemd Service"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Create systemd service file
-cat > "${SYSTEMD_SERVICE}" <<EOF
+if [[ "$DEPLOYMENT_MODE" == "blue-green" ]]; then
+    # Blue-green mode: include slot information
+    cat > "${SYSTEMD_SERVICE}" <<EOF
+[Unit]
+Description=Togather SEL Server (${TARGET_SLOT} slot)
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=${APP_DIR}
+Environment="SLOT=${TARGET_SLOT}"
+Environment="PORT=${SERVER_PORT}"
+EnvironmentFile=${APP_DIR}/.env
+ExecStart=${BINARY_PATH} serve
+Restart=always
+RestartSec=5
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+else
+    # Simple mode: traditional single service
+    cat > "${SYSTEMD_SERVICE}" <<EOF
 [Unit]
 Description=Togather SEL Server
 After=network.target docker.service
@@ -474,6 +561,7 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 
 success "Created systemd service: ${SYSTEMD_SERVICE}"
 
@@ -481,29 +569,34 @@ success "Created systemd service: ${SYSTEMD_SERVICE}"
 systemctl daemon-reload
 success "Systemd configuration reloaded"
 
-# Enable service
-systemctl enable togather
-success "Service enabled (will start on boot)"
+# Enable service (use appropriate service name)
+if [[ "$DEPLOYMENT_MODE" == "blue-green" ]]; then
+    SERVICE_NAME="${APP_NAME}-${TARGET_SLOT}"
+else
+    SERVICE_NAME="${APP_NAME}"
+fi
+
+systemctl enable "${SERVICE_NAME}"
 
 # Start service
 log "  → Starting Togather server..."
-systemctl start togather
+systemctl start "${SERVICE_NAME}"
 
 # Wait for service to be active
 sleep 3
 
 # Check service status
-if systemctl is-active --quiet togather; then
+if systemctl is-active --quiet "${SERVICE_NAME}"; then
     success "Service started successfully"
 else
-    error_exit "Service failed to start. Check logs with: journalctl -u togather -f"
+    error_exit "Service failed to start. Check logs with: journalctl -u ${SERVICE_NAME} -f"
 fi
 
 # Health check
 log "  → Running health check..."
 for i in {1..15}; do
-    if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
-        success "Health check passed"
+    if curl -sf "http://localhost:${SERVER_PORT}/health" > /dev/null 2>&1; then
+        success "Health check passed (port ${SERVER_PORT})"
         break
     fi
     if [[ $i -eq 15 ]]; then
@@ -512,7 +605,6 @@ for i in {1..15}; do
     sleep 1
 done
 
-echo ""
 
 # ============================================================================
 # Configure Caddy Reverse Proxy
@@ -523,39 +615,47 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 log "  → Detected environment: ${ENVIRONMENT}"
 
-# Update SERVER_PORT in .env for blue-green deployment (8081 for blue slot)
-log "  → Configuring server port for reverse proxy..."
-if grep -q "^SERVER_PORT=" "${APP_DIR}/.env"; then
-    sed -i 's/^SERVER_PORT=.*/SERVER_PORT=8081/' "${APP_DIR}/.env"
-    success "SERVER_PORT set to 8081 (blue slot)"
+# Update SERVER_PORT in .env based on deployment mode
+if [[ "$DEPLOYMENT_MODE" == "blue-green" ]]; then
+    log "  → Configuring server port for blue-green deployment..."
+    if grep -q "^SERVER_PORT=" "${APP_DIR}/.env"; then
+        sed -i "s/^SERVER_PORT=.*/SERVER_PORT=${SERVER_PORT}/" "${APP_DIR}/.env"
+        success "SERVER_PORT set to ${SERVER_PORT} (${TARGET_SLOT} slot)"
+    else
+        echo "SERVER_PORT=${SERVER_PORT}" >> "${APP_DIR}/.env"
+        success "SERVER_PORT added to .env (${SERVER_PORT} - ${TARGET_SLOT} slot)"
+    fi
 else
-    echo "SERVER_PORT=8081" >> "${APP_DIR}/.env"
-    success "SERVER_PORT added to .env (8081 - blue slot)"
+    log "  → Configuring server port for simple deployment..."
+    if ! grep -q "^SERVER_PORT=" "${APP_DIR}/.env"; then
+        echo "SERVER_PORT=${SERVER_PORT}" >> "${APP_DIR}/.env"
+        success "SERVER_PORT added to .env (${SERVER_PORT})"
+    fi
 fi
 
 # Configure Caddy
 configure_caddy
 
-# Restart service to pick up new port configuration
-log "  → Restarting service to apply port 8081..."
-systemctl stop togather
+# Restart service to pick up new configuration
+log "  → Restarting service to apply configuration..."
+systemctl stop "${SERVICE_NAME}"
 sleep 2
-if systemctl start togather; then
-    success "Service restarted with port 8081"
+if systemctl start "${SERVICE_NAME}"; then
+    success "Service restarted with port ${SERVER_PORT}"
     
     # Wait for service to be active
     sleep 3
     
-    # Health check on new port
-    log "  → Running health check on port 8081..."
+    # Health check on configured port
+    log "  → Running health check on port ${SERVER_PORT}..."
     for i in {1..15}; do
-        if curl -sf http://localhost:8081/health > /dev/null 2>&1; then
-            success "Health check passed on port 8081"
+        if curl -sf "http://localhost:${SERVER_PORT}/health" > /dev/null 2>&1; then
+            success "Health check passed on port ${SERVER_PORT}"
             break
         fi
         if [[ $i -eq 15 ]]; then
-            warning "Health check timeout on port 8081 (service may still be starting)"
-            warning "Try: sudo systemctl status togather"
+            warning "Health check timeout on port ${SERVER_PORT} (service may still be starting)"
+            warning "Try: sudo systemctl status ${SERVICE_NAME}"
         fi
         sleep 1
     done
@@ -584,21 +684,27 @@ fi
 
 echo "  • Application directory: ${APP_DIR}"
 echo "  • Binary: ${BINARY_PATH}"
-echo "  • Service: togather.service"
+if [[ "$DEPLOYMENT_MODE" == "blue-green" ]]; then
+    echo "  • Service: ${SERVICE_NAME}.service (${TARGET_SLOT} slot on port ${SERVER_PORT})"
+    echo "  • Mode: Blue-Green Deployment"
+else
+    echo "  • Service: ${SERVICE_NAME}.service"
+    echo "  • Mode: Simple Deployment"
+fi
 echo ""
 
 echo "Service Management:"
-echo "  • Status:  sudo systemctl status togather"
-echo "  • Stop:    sudo systemctl stop togather"
-echo "  • Start:   sudo systemctl start togather"
-echo "  • Restart: sudo systemctl restart togather"
-echo "  • Logs:    sudo journalctl -u togather -f"
+echo "  • Status:  sudo systemctl status ${SERVICE_NAME}"
+echo "  • Stop:    sudo systemctl stop ${SERVICE_NAME}"
+echo "  • Start:   sudo systemctl start ${SERVICE_NAME}"
+echo "  • Restart: sudo systemctl restart ${SERVICE_NAME}"
+echo "  • Logs:    sudo journalctl -u ${SERVICE_NAME} -f"
 echo ""
 
 echo "Health Check:"
-echo "  • Local:   curl http://localhost:8081/health"
+echo "  • Local:   curl http://localhost:${SERVER_PORT}/health"
 if command -v jq &> /dev/null; then
-    echo "  • Pretty:  curl -s http://localhost:8081/health | jq"
+    echo "  • Pretty:  curl -s http://localhost:${SERVER_PORT}/health | jq"
 fi
 if command -v caddy &> /dev/null; then
     case "$ENVIRONMENT" in
@@ -614,7 +720,7 @@ echo ""
 
 echo "Configuration:"
 echo "  • Edit: ${APP_DIR}/.env"
-echo "  • After editing, restart: sudo systemctl restart togather"
+echo "  • After editing, restart: sudo systemctl restart ${SERVICE_NAME}"
 if command -v caddy &> /dev/null; then
     echo "  • Caddy config: /etc/caddy/Caddyfile"
     echo "  • Reload Caddy: sudo systemctl reload caddy"
@@ -624,10 +730,9 @@ echo ""
 if [[ "$INSTALL_MODE" == "upgrade" ]]; then
     echo "Rollback (if needed):"
     echo "  • Restore config: cp ${BACKUP_FILE} ${APP_DIR}/.env"
-    echo "  • Restart service: sudo systemctl restart togather"
+    echo "  • Restart service: sudo systemctl restart ${SERVICE_NAME}"
     echo ""
 fi
-
 echo "Next steps:"
 if command -v caddy &> /dev/null; then
     echo "  1. Verify DNS points to this server"
