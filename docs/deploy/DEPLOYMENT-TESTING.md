@@ -263,6 +263,20 @@ This checklist is designed to be used by:
   # Should show dashboard.html, login.html
   ```
 
+- [ ] **robots.txt has correct domain**
+  ```bash
+  curl -s https://<domain>/robots.txt | grep "Sitemap:"
+  # Should show: Sitemap: https://<domain>/sitemap.xml
+  # Domain should match environment (togather.foundation for prod, staging.toronto.togather.foundation for staging)
+  ```
+
+- [ ] **sitemap.xml has correct domain**
+  ```bash
+  curl -s https://<domain>/sitemap.xml | grep -o "<loc>https://[^<]*" | head -3
+  # All URLs should use correct domain for environment
+  # Should see: <loc>https://<domain>/...
+  ```
+
 ### Configuration
 
 - [ ] **.env file exists and is readable**
