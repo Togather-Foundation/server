@@ -1,13 +1,26 @@
+# ============================================================================
 # Caddy Configuration for Docker Blue-Green Deployment
-# Local development reverse proxy - routes traffic to blue or green slot
+# LOCAL DEVELOPMENT ONLY
+# ============================================================================
+#
+# ⚠️  WARNING: This file is for LOCAL DEVELOPMENT with Docker Compose
+# ⚠️  Staging/Production servers use SYSTEM CADDY with environment-specific configs
+#
+# Deployment Architecture:
+# ------------------------
+# LOCAL:       This file → Docker Caddy container
+# STAGING:     deploy/config/environments/Caddyfile.staging → /etc/caddy/Caddyfile (system)
+# PRODUCTION:  deploy/config/environments/Caddyfile.production → /etc/caddy/Caddyfile (system)
+#
+# Setup Instructions (Local Development):
+# 1. Copy this file: cp deploy/docker/Caddyfile.example deploy/docker/Caddyfile
+# 2. Start containers: docker compose -f docker-compose.yml -f docker-compose.blue-green.yml up -d
+# 3. Access via: http://localhost/health
+#
+# For staging/production setup, see: deploy/scripts/provision-server.sh and install.sh.template
+#
 # Reference: specs/001-deployment-infrastructure/spec.md FR-009
 #
-# IMPORTANT: Copy this file to 'Caddyfile' before running docker-compose:
-#   cp deploy/docker/Caddyfile.example deploy/docker/Caddyfile
-#
-# This file replaces nginx.conf for Docker-based deployments
-# For production deployment, see deploy/Caddyfile.example
-
 # Global options for Docker environment
 {
 	# No admin API in Docker (prevents port conflicts)

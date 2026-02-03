@@ -1,6 +1,11 @@
 # Docker Compose configuration for Blue-Green Deployment
 # Extends the base docker-compose.yml to add zero-downtime deployment capability
 # Reference: specs/001-deployment-infrastructure/spec.md FR-009 (blue-green strategy)
+#
+# ⚠️  IMPORTANT: This configuration uses Docker Caddy for LOCAL DEVELOPMENT ONLY
+# ⚠️  Staging/Production deployments use SYSTEM CADDY (installed via provision.sh)
+# See the Caddy service section below for full architecture details.
+
 
 # Blue-Green Deployment Strategy:
 # ================================
@@ -142,9 +147,34 @@ services:
     # Health check inherited from base app service
 
   # ============================================================================
-  # Caddy Reverse Proxy - Traffic Router
   # ============================================================================
-  # Routes all incoming traffic to either blue or green slot
+  # Caddy Reverse Proxy - Traffic Router (LOCAL DEVELOPMENT ONLY)
+  # ============================================================================
+  # ⚠️  WARNING: This Caddy service is for LOCAL DEVELOPMENT ONLY
+  # ⚠️  Staging/Production servers use SYSTEM CADDY (installed via provision.sh)
+  #
+  # Deployment Architecture:
+  # ------------------------
+  # LOCAL:       Docker Caddy (this service) routes to localhost:8081/8082
+  # STAGING:     System Caddy at /etc/caddy/Caddyfile routes to localhost:8081/8082
+  # PRODUCTION:  System Caddy at /etc/caddy/Caddyfile routes to localhost:8081/8082
+  #
+  # System Caddy Configuration:
+  # - Installed: deploy/scripts/provision-server.sh (installs Caddy via apt)
+  # - Configured: deploy/scripts/install.sh.template (deploys Caddyfile)
+  # - Switched: deploy/scripts/deploy.sh (switches traffic between slots)
+  # - Config files: deploy/config/environments/Caddyfile.{staging,production}
+  #
+  # Why System Caddy for staging/production?
+  # - Automatic Let's Encrypt SSL certificate management
+  # - Survives Docker container restarts
+  # - Easier systemctl management (systemctl status caddy)
+  # - Consistent with existing deploy.sh traffic switching logic
+  #
+  # This Docker Caddy service:
+  # - Routes all incoming traffic to either blue or green slot
+  # - Traffic switching is controlled by Caddy reverse_proxy configuration
+  # - For local testing of blue-green deployment
   # Traffic switching is controlled by Caddy reverse_proxy configuration
   caddy:
     image: caddy:2-alpine
