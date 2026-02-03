@@ -1101,10 +1101,52 @@ get_inactive_slot() {
 # Example:
 #   deploy_to_slot production blue  # Deploy to blue slot explicitly
 #   deploy_to_slot production        # Deploy to inactive slot (auto-detected)
+
+# cleanup_slot_orphans - Removes orphaned containers and processes for a slot
+# Handles edge case where Docker container failed to start but left processes running
+# This can happen when container creation fails but the entrypoint already started
+# Args:
+#   $1 - slot ("blue" or "green")
+# Returns:
+#   0 always (cleanup is best-effort, failures are logged but not fatal)
+# Side effects:
+#   - Removes containers in Created/Dead/Exited state
+#   - Kills processes holding ports 8081 (blue) or 8082 (green)
+cleanup_slot_orphans() {
+    local slot="$1"
+    local container_name="togather-server-${slot}"
+    local port=8081
+    
+    if [[ "${slot}" == "green" ]]; then
+        port=8082
+    fi
+    
+    # Remove container if it exists in non-running state
+    local container_state=$(docker inspect --format='{{.State.Status}}' "${container_name}" 2>/dev/null || echo "")
+    if [[ -n "${container_state}" ]] && [[ "${container_state}" != "running" ]]; then
+        log "INFO" "Removing ${slot} container in ${container_state} state"
+        docker rm -f "${container_name}" 2>/dev/null || true
+    fi
+    
+    # Kill any processes holding the port (safety net for orphaned processes)
+    # This handles cases where Docker's process cleanup failed
+    local pid=$(lsof -ti tcp:${port} 2>/dev/null || true)
+    if [[ -n "${pid}" ]]; then
+        log "WARN" "Found process ${pid} holding port ${port}, killing it"
+        kill -9 ${pid} 2>/dev/null || true
+        sleep 0.5  # Give OS time to release the port
+    fi
+    
+    return 0
+}
+
 deploy_to_slot() {
     local env="$1"
     local slot="${2:-$(get_inactive_slot)}"  # Accept slot as parameter or determine it
     
+    # Clean up any orphaned containers or processes from previous failed deployments
+    cleanup_slot_orphans "${slot}"
+
     log "INFO" "Deploying to ${slot} slot"
     
     local env_file="${CONFIG_DIR}/environments/.env.${env}"
