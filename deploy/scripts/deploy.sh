@@ -891,13 +891,11 @@ create_db_snapshot() {
     local server_binary="${PROJECT_ROOT}/server"
     
     if [[ ! -f "${server_binary}" ]]; then
-        log "WARN" "server binary not found, attempting to build..."
-        if ! make -C "${PROJECT_ROOT}" build; then
-            log "ERROR" "Failed to build server binary"
-            log "ERROR" "Database backup recommended before migrations"
-            SNAPSHOT_PATH=""
-            return 1
-        fi
+        log "WARN" "server binary not found, skipping automated snapshot"
+        log "WARN" "Consider creating a manual database backup before migrations"
+        log "WARN" "  pg_dump -U togather -h localhost -p 5433 togather > backup.sql"
+        SNAPSHOT_PATH=""
+        return 0
     fi
     
     # Create snapshot using CLI
