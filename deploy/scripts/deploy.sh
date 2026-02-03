@@ -1484,6 +1484,14 @@ ln -sf "${PERSISTENT_ENV}" "${CONFIG_DIR}/.env.${ENVIRONMENT}"
 chmod 600 "${PERSISTENT_ENV}"
 echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
 
+# Initialize deployment infrastructure if needed
+if [ ! -f "${REPO_DIR}/deploy/config/deployment-state.json" ]; then
+    echo "→ Initializing deployment infrastructure..."
+    cd "${REPO_DIR}"
+    ./deploy/scripts/deploy.sh init || exit 1
+    echo ""
+fi
+
 echo "→ Running deploy.sh on remote server..."
 echo ""
 ./deploy/scripts/deploy.sh "${ENVIRONMENT}"
