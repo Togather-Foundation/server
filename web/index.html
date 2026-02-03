@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en-us" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Shared Events Library server for Toronto. Open API for event discovery, federation-ready, privacy-first infrastructure for local culture.">
+    <title>Shared Events Library – Toronto Togather</title>
+    
+    <!-- OpenGraph metadata -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://togather.foundation/">
+    <meta property="og:title" content="Shared Events Library – Toronto Togather">
+    <meta property="og:description" content="Community-owned infrastructure for event discovery. Open API, federation-ready, privacy-first.">
+    
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebAPI",
+        "name": "Shared Events Library API",
+        "description": "RESTful API for discovering and publishing local events in Toronto. Part of the Togather ecosystem.",
+        "url": "https://togather.foundation/",
+        "documentation": "/api/docs",
+        "provider": {
+            "@type": "Organization",
+            "name": "Togather Foundation",
+            "url": "https://togather.foundation",
+            "email": "info@togather.foundation"
+        },
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": "/api/v1/events?search={search_term}",
+            "query-input": "required name=search_term"
+        }
+    }
+    </script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: #fafafa;
+            padding: 2rem 1rem;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 3rem 2rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #0a0a0a;
+        }
+        
+        .subtitle {
+            font-size: 1.25rem;
+            color: #666;
+            margin-bottom: 2rem;
+            font-weight: 400;
+        }
+        
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 2.5rem 0 1rem;
+            color: #0a0a0a;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0.5rem;
+        }
+        
+        section {
+            margin-bottom: 2rem;
+        }
+        
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        li {
+            margin: 0.75rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+        
+        li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #16a085;
+        }
+        
+        a {
+            color: #16a085;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
+        }
+        
+        a:hover {
+            border-bottom-color: #16a085;
+        }
+        
+        code {
+            background: #f5f5f5;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 0.9em;
+        }
+        
+        .stats {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+        }
+        
+        .stats h3 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 0.5rem 0;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            font-weight: 500;
+            color: #666;
+        }
+        
+        .stat-value {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            color: #0a0a0a;
+        }
+        
+        .status-healthy {
+            color: #16a085;
+            font-weight: 600;
+        }
+        
+        .status-degraded {
+            color: #e67e22;
+            font-weight: 600;
+        }
+        
+        .status-error {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+        
+        footer {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e0e0e0;
+            color: #666;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        
+        footer a {
+            color: #666;
+        }
+        
+        @media (max-width: 600px) {
+            body {
+                padding: 1rem 0.5rem;
+            }
+            
+            .container {
+                padding: 2rem 1.5rem;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .subtitle {
+                font-size: 1.1rem;
+            }
+            
+            h2 {
+                font-size: 1.3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Shared Events Library</h1>
+        <p class="subtitle">Toronto Togather</p>
+        
+        <section>
+            <h2>For Coding Agents</h2>
+            <ul>
+                <li><strong>GitHub:</strong> <a href="https://github.com/Togather-Foundation/server">Togather-Foundation/server</a></li>
+                <li><strong>API Endpoints:</strong> <code>/api/v1/events</code>, <code>/api/v1/places</code>, <code>/api/v1/organizations</code></li>
+                <li><strong>Interactive API Docs:</strong> <a href="/api/docs">/api/docs</a> (Scalar UI)</li>
+                <li><strong>OpenAPI Specs:</strong> <a href="/api/v1/openapi.json">JSON</a> | <a href="/api/v1/openapi.yaml">YAML</a></li>
+                <li><strong>Health Check:</strong> <a href="/health">/health</a></li>
+                <li><strong>Version Info:</strong> <a href="/version">/version</a></li>
+            </ul>
+        </section>
+        
+        <section>
+            <h2>For Humans</h2>
+            <ul>
+                <li><strong>About:</strong> <a href="https://togather.foundation">Togather Foundation</a></li>
+                <li><strong>Vision:</strong> <a href="https://togather.foundation/ecosystem">Explore the Ecosystem</a></li>
+                <li><strong>Interactive Docs:</strong> <a href="/api/docs">Browse the API</a></li>
+                <li><strong>Contact:</strong> <a href="mailto:info@togather.foundation">info@togather.foundation</a></li>
+            </ul>
+        </section>
+        
+        <section>
+            <div class="stats">
+                <h3>Live Server Stats</h3>
+                <div id="stats-content">
+                    <div class="stat-row">
+                        <span class="stat-label">Status:</span>
+                        <span class="stat-value" id="status">Loading...</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Version:</span>
+                        <span class="stat-value" id="version">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section>
+            <h2>For Bots</h2>
+            <ul>
+                <li><strong>Sitemap:</strong> <a href="/sitemap.xml">/sitemap.xml</a></li>
+                <li><strong>Robots:</strong> <a href="/robots.txt">/robots.txt</a></li>
+                <li><strong>SEL Profile:</strong> <a href="/.well-known/sel-profile">/.well-known/sel-profile</a></li>
+            </ul>
+        </section>
+        
+        <footer>
+            <p>&copy; 2026 <a href="https://togather.foundation/">Togather Foundation</a> | <a href="mailto:info@togather.foundation">Get in Touch</a></p>
+        </footer>
+    </div>
+    
+    <script>
+        // Fetch live server stats
+        (async function() {
+            try {
+                // Fetch health status
+                const healthRes = await fetch('/health');
+                const health = await healthRes.json();
+                
+                const statusEl = document.getElementById('status');
+                if (health.status === 'healthy') {
+                    statusEl.textContent = 'Healthy';
+                    statusEl.className = 'stat-value status-healthy';
+                } else if (health.status === 'degraded') {
+                    statusEl.textContent = 'Degraded';
+                    statusEl.className = 'stat-value status-degraded';
+                } else {
+                    statusEl.textContent = 'Error';
+                    statusEl.className = 'stat-value status-error';
+                }
+                
+                // Fetch version info
+                const versionRes = await fetch('/version');
+                const version = await versionRes.json();
+                
+                const versionEl = document.getElementById('version');
+                versionEl.textContent = version.git_commit ? 
+                    `${version.version} (${version.git_commit.substring(0, 7)})` : 
+                    version.version;
+                
+            } catch (error) {
+                console.error('Failed to fetch server stats:', error);
+                document.getElementById('status').textContent = 'Unavailable';
+                document.getElementById('status').className = 'stat-value status-error';
+                document.getElementById('version').textContent = 'Unavailable';
+            }
+        })();
+    </script>
+</body>
+</html>

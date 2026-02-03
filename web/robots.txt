@@ -1,0 +1,13 @@
+# robots.txt for Shared Events Library (Toronto Togather)
+# Allow all bots to crawl public content
+
+User-agent: *
+Allow: /
+Crawl-delay: 1
+
+# Disallow admin routes
+Disallow: /admin
+Disallow: /api/v1/admin/
+
+# Sitemap
+Sitemap: https://togather.foundation/sitemap.xml

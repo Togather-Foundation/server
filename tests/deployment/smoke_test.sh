@@ -391,6 +391,51 @@ test_openapi_yaml_endpoint() {
     fi
 }
 
+test_landing_page() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing landing page: GET ${BASE_URL}/"
+    
+    local response=$(http_get "${BASE_URL}/" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Validate HTML structure and content
+        local has_title=false
+        local has_agents_section=false
+        local has_api_docs_link=false
+        local has_github_link=false
+        
+        if echo "$response" | grep -q "Shared Events Library"; then
+            has_title=true
+        fi
+        
+        if echo "$response" | grep -q "For Coding Agents"; then
+            has_agents_section=true
+        fi
+        
+        if echo "$response" | grep -q "/api/docs"; then
+            has_api_docs_link=true
+        fi
+        
+        if echo "$response" | grep -q "https://github.com/Togather-Foundation/server"; then
+            has_github_link=true
+        fi
+        
+        if [[ "$has_title" == "true" && "$has_agents_section" == "true" && "$has_api_docs_link" == "true" && "$has_github_link" == "true" ]]; then
+            log "SUCCESS" "Landing page verified (all required content present)"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "Landing page missing required content (title: ${has_title}, agents: ${has_agents_section}, api_docs: ${has_api_docs_link}, github: ${has_github_link})"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "Landing page not responding"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -413,6 +458,9 @@ main() {
     
     # Run smoke tests
     local start_time=$(date +%s)
+    
+    test_landing_page
+    echo ""
     
     test_health_endpoint
     echo ""

@@ -143,6 +143,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	healthChecker := handlers.NewHealthChecker(pool, riverClient, version, gitCommit)
 
 	mux := http.NewServeMux()
+	// Landing page at web root (server-4i67)
+	mux.Handle("/", web.IndexHandler())
+	mux.Handle("/robots.txt", web.RobotsTxtHandler())
+	mux.Handle("/sitemap.xml", web.SitemapHandler())
 	mux.Handle("/health", healthChecker.Health()) // Comprehensive health check (T011)
 	mux.Handle("/healthz", handlers.Healthz())    // Legacy liveness check
 	mux.Handle("/readyz", healthChecker.Readyz()) // Readiness check with dependency verification
