@@ -152,7 +152,7 @@ get_file_perms() {
     local file="$1"
     
     # Try Linux (GNU) stat first
-    if stat -c '%a' "$file" 2>/dev/null; then
+    if stat -L -c '%a' "$file" 2>/dev/null; then
         return 0
     fi
     
@@ -1480,6 +1480,8 @@ fi
 
 # Symlink persistent env file to expected location
 ln -sf "${PERSISTENT_ENV}" "${CONFIG_DIR}/.env.${ENVIRONMENT}"
+# Ensure target file has secure permissions
+chmod 600 "${PERSISTENT_ENV}"
 echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
 
 echo "→ Running deploy.sh on remote server..."
