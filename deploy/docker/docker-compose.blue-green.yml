@@ -58,6 +58,8 @@ services:
       # All environment variables from base app service are inherited
       # Add slot identifier for logging and debugging
       SLOT: blue
+      # Force internal port to 8080 (external port mapping handles slot differentiation)
+      SERVER_PORT: "8080"
       
       # Override container name in logs
       CONTAINER_NAME: togather-server-blue
@@ -103,6 +105,8 @@ services:
       # All environment variables from base app service are inherited
       # Add slot identifier for logging and debugging
       SLOT: green
+      # Force internal port to 8080 (external port mapping handles slot differentiation)
+      SERVER_PORT: "8080"
       
       # Override container name in logs
       CONTAINER_NAME: togather-server-green

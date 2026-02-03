@@ -1181,7 +1181,16 @@ validate_health() {
         log "WARN" "server binary not found, using basic HTTP check"
         
         # Basic HTTP health check
-        local health_url="http://localhost:8080/health"
+        # Determine port based on slot
+        local health_port="8080"
+        if [[ "${slot}" == "blue" ]]; then
+            health_port="8081"
+        elif [[ "${slot}" == "green" ]]; then
+            health_port="8082"
+        fi
+        
+        # Basic HTTP health check on slot-specific port
+        local health_url="http://localhost:${health_port}/health"
         local max_attempts=30
         local attempt=0
         
