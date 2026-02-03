@@ -52,43 +52,50 @@ The [**Togather Foundation**](https://togather.foundation) is a coordination poi
 
 ## Quick Start: Deploying SEL
 
-For operators deploying a Togather node to production:
+Togather supports two deployment workflows:
 
-### Prerequisites
-- Linux server with Docker
-- PostgreSQL 16+ with PostGIS
-- 2GB+ RAM, 20GB+ disk
+### Development/Staging: Simple Deployment
 
-### Deploy to Production
 ```bash
-git clone https://github.com/Togather-Foundation/server.git
-cd server
-
-# Configure environment
-cp deploy/config/environments/.env.production.example deploy/config/environments/.env.production
-nano deploy/config/environments/.env.production  # Edit with your credentials
-
-# Deploy
-./deploy/scripts/deploy.sh production
+make deploy-package
+scp dist/togather-server-*.tar.gz deploy@server:~/
+ssh deploy@server 'cd ~ && tar -xzf togather-server-*.tar.gz && cd togather-server-* && sudo ./install.sh'
 ```
 
-### Rollback if Needed
+**Characteristics:**
+- Brief downtime (~10-30 seconds)
+- Simple, one-command installation
+- Good for: Development, staging, low-traffic updates
+
+See [DEPLOY.md](DEPLOY.md) for full installation guide.
+
+### Production: Zero-Downtime Deployment
+
 ```bash
-./deploy/scripts/rollback.sh production
+./deploy/scripts/deploy.sh production --remote deploy@prod.server.com
+```
+
+**Features:**
+- ✅ Zero downtime during deployment
+- ✅ Blue-green deployment strategy
+- ✅ Automatic Caddy traffic switching
+- ✅ Database migration safety checks
+- ✅ Health validation before traffic switch
+- ✅ Automatic rollback on failure
+
+**Deploy specific version:**
+```bash
+./deploy/scripts/deploy.sh production --remote deploy@prod.server.com --version v1.2.3
 ```
 
 ### Deployment Documentation
-- [Deployment Guide](docs/deploy/quickstart.md) - Complete setup instructions
-- [CI/CD Integration](docs/deploy/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
+- [Deployment Guide](DEPLOY.md) - Upgrade and deployment methods
+- [Quickstart Guide](docs/deploy/quickstart.md) - Complete setup instructions
+- [Remote Deployment](docs/deploy/remote-deployment.md) - Zero-downtime deployment guide
 - [Rollback Guide](docs/deploy/rollback.md) - Troubleshooting and recovery
-- [Migration Guide](docs/deploy/migrations.md) - Database schema management
+- [CI/CD Integration](docs/deploy/ci-cd.md) - GitHub Actions, GitLab CI, Jenkins
 
-**Deployment Features:**
-- ✅ Zero-downtime blue-green deployment
-- ✅ Automatic database migrations with snapshots
-- ✅ One-command rollback with health validation
-- ✅ Multi-environment support (dev/staging/prod)
-- ✅ Comprehensive testing and validation
+---
 
 ## Quick Start: Local Development
 

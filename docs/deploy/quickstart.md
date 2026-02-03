@@ -9,15 +9,17 @@
 ## Table of Contents
 
 1. [One-Command Installation](#one-command-installation) ⭐ **Start here for production**
-2. [Local Development Setup](#local-development-setup)
-3. [Production Deployment](#production-deployment)
-4. [Prerequisites Check](#prerequisites-check)
-5. [Initial Setup](#initial-setup)
-6. [First Deployment](#first-deployment)
-7. [Verify Deployment](#verify-deployment)
-8. [Common Operations](#common-operations)
-9. [Troubleshooting](#troubleshooting)
+2. [Deployment Workflows](#deployment-workflows)
+3. [Local Development Setup](#local-development-setup)
+4. [Production Deployment](#production-deployment)
+5. [Prerequisites Check](#prerequisites-check)
+6. [Initial Setup](#initial-setup)
+7. [First Deployment](#first-deployment)
+8. [Verify Deployment](#verify-deployment)
+9. [Common Operations](#common-operations)
+10. [Troubleshooting](#troubleshooting)
 
+---
 ---
 
 ## One-Command Installation
@@ -78,6 +80,85 @@ curl http://localhost:8080/api/v1/events | jq .
 
 ---
 
+## Deployment Workflows
+
+Togather supports two deployment approaches:
+
+### 1. Simple Deployment (with brief downtime)
+
+Use `install.sh` for straightforward upgrades:
+
+```bash
+# On developer machine
+make deploy-package
+scp dist/togather-server-<hash>.tar.gz deploy@server:~/
+
+# On server
+ssh deploy@server
+cd ~
+tar -xzf togather-server-<hash>.tar.gz
+cd togather-server-<hash>/
+sudo ./install.sh  # Choose option [1] PRESERVE DATA
+```
+
+**Characteristics:**
+- Brief downtime during service restart (~10-30 seconds)
+- Simple, reliable, few moving parts
+- Good for: Development, staging, low-traffic updates
+- Requires: Deployment package only (no git repo on server)
+
+### 2. Zero-Downtime Deployment (blue-green)
+
+Use `deploy.sh --remote` for production-grade deployments:
+
+```bash
+# From developer machine (local git repo)
+cd ~/togather/server
+git pull origin main
+
+# Deploy to staging
+./deploy/scripts/deploy.sh staging --remote deploy@staging.server.com
+
+# Deploy to production
+./deploy/scripts/deploy.sh production --remote deploy@prod.server.com
+
+# Deploy specific version
+./deploy/scripts/deploy.sh production --remote deploy@prod.server.com --version v1.2.3
+```
+
+**Characteristics:**
+- Zero downtime during deployment
+- Blue-green slot switching (runs two versions temporarily)
+- Automatic Caddy traffic routing
+- Automatic health checks and validation
+- Automatic rollback on failure
+- Good for: Production, high-traffic services, critical updates
+- Requires: Git repository on server (auto-cloned if missing)
+
+**How it works:**
+1. SSH to server and clone/update git repo at `/opt/togather/src/`
+2. Checkout target commit
+3. Build Docker image for inactive slot (blue or green)
+4. Run database migrations
+5. Deploy to inactive slot
+6. Run health checks
+7. Switch Caddy traffic to new slot
+8. Update deployment state
+
+**First-time setup:**
+
+`install.sh` must be run first to provision the server:
+```bash
+# Run install.sh first (one time only)
+scp dist/togather-server-<hash>.tar.gz deploy@server:~/
+ssh deploy@server
+sudo ./install.sh
+
+# Then use deploy.sh for all future updates
+./deploy/scripts/deploy.sh staging --remote deploy@server
+```
+
+---
 ## Local Development Setup
 
 ### Quick Start (5 minutes)
