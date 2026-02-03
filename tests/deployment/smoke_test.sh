@@ -391,6 +391,98 @@ test_openapi_yaml_endpoint() {
     fi
 }
 
+test_robots_txt() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing robots.txt: GET ${BASE_URL}/robots.txt"
+    
+    local response=$(http_get "${BASE_URL}/robots.txt" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Validate robots.txt content
+        local has_user_agent=false
+        local has_sitemap=false
+        local correct_domain=false
+        
+        if echo "$response" | grep -q "User-agent:"; then
+            has_user_agent=true
+        fi
+        
+        if echo "$response" | grep -q "Sitemap:"; then
+            has_sitemap=true
+        fi
+        
+        # Extract domain from BASE_URL and check if sitemap references it
+        local domain=$(echo "$BASE_URL" | sed -E 's|^https?://([^/]+).*|\1|')
+        if echo "$response" | grep -q "Sitemap:.*${domain}"; then
+            correct_domain=true
+        fi
+        
+        if [[ "$has_user_agent" == "true" && "$has_sitemap" == "true" && "$correct_domain" == "true" ]]; then
+            log "SUCCESS" "robots.txt verified (correct domain: ${domain})"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "robots.txt invalid (user-agent: ${has_user_agent}, sitemap: ${has_sitemap}, domain: ${correct_domain})"
+            echo "$response" | grep "Sitemap:" >&2
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "robots.txt endpoint not responding"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_sitemap_xml() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing sitemap.xml: GET ${BASE_URL}/sitemap.xml"
+    
+    local response=$(http_get "${BASE_URL}/sitemap.xml" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Validate sitemap.xml content
+        local has_xml_declaration=false
+        local has_urlset=false
+        local has_urls=false
+        local correct_domain=false
+        
+        if echo "$response" | grep -q "<?xml version"; then
+            has_xml_declaration=true
+        fi
+        
+        if echo "$response" | grep -q "<urlset"; then
+            has_urlset=true
+        fi
+        
+        if echo "$response" | grep -q "<loc>"; then
+            has_urls=true
+        fi
+        
+        # Extract domain from BASE_URL and check if URLs reference it
+        local domain=$(echo "$BASE_URL" | sed -E 's|^https?://([^/]+).*|\1|')
+        if echo "$response" | grep -q "<loc>.*${domain}"; then
+            correct_domain=true
+        fi
+        
+        if [[ "$has_xml_declaration" == "true" && "$has_urlset" == "true" && "$has_urls" == "true" && "$correct_domain" == "true" ]]; then
+            local url_count=$(echo "$response" | grep -c "<loc>")
+            log "SUCCESS" "sitemap.xml verified (${url_count} URLs, correct domain: ${domain})"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "sitemap.xml invalid (xml: ${has_xml_declaration}, urlset: ${has_urlset}, urls: ${has_urls}, domain: ${correct_domain})"
+            echo "$response" | grep "<loc>" | head -3 >&2
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "sitemap.xml endpoint not responding"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
 test_landing_page() {
     ((TESTS_RUN++)) || true
     log "INFO" "Testing landing page: GET ${BASE_URL}/"
@@ -490,6 +582,12 @@ main() {
     echo ""
     
     test_openapi_yaml_endpoint
+    echo ""
+    
+    test_robots_txt
+    echo ""
+    
+    test_sitemap_xml
     echo ""
     
     local end_time=$(date +%s)
