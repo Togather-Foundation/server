@@ -24,7 +24,9 @@ COPY . .
 # Build arguments for version metadata
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
-ARG BUILD_DATE=unknown
+# Accept BUILD_TIMESTAMP from deploy script, use it as BUILD_DATE for ldflags
+ARG BUILD_TIMESTAMP=unknown
+ARG BUILD_DATE=${BUILD_TIMESTAMP}
 
 # Build static binary with version metadata embedded via ldflags
 # CGO_ENABLED=0: Build fully static binary (no C dependencies)
