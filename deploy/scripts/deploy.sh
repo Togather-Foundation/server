@@ -639,9 +639,9 @@ acquire_lock() {
         mkdir -p "$(dirname "${STATE_FILE}")"
         
         # Create initial empty state file with minimal valid JSON
-        cat > "${STATE_FILE}" << 'STATE_EOF'
+        cat > "${STATE_FILE}" <<STATE_EOF
 {
-  "environment": "",
+  "environment": "${env}",
   "active_slot": "blue",
   "slots": {
     "blue": {"status": "inactive"},
