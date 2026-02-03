@@ -126,26 +126,54 @@ Ask which environment to deploy to if not specified, and create a subagent to co
 
 DO NOT create a bead to track this task!
 
+### Deployment Configuration
+
+**IMPORTANT:** Each environment has a `.deploy.conf.{environment}` file (gitignored) that contains:
+- `NODE_DOMAIN` - The FQDN for this environment (e.g., `staging.toronto.togather.foundation`)
+- `SSH_HOST` - SSH hostname/alias for deployment (e.g., `togather`)
+- `SSH_USER` - SSH username (e.g., `deploy`)
+- `CITY`, `REGION` - Geographic identifiers
+- Other deployment settings
+
+**Before deploying, check if `.deploy.conf.{environment}` exists:**
+```bash
+# Read staging config
+if [ -f .deploy.conf.staging ]; then
+    source .deploy.conf.staging
+    echo "Deploying to: $NODE_DOMAIN via $SSH_HOST"
+fi
+```
+
+**DO NOT guess or hallucinate domain names or SSH hosts** - always read from `.deploy.conf.*` files.
+
+See `docs/deploy/deploy-conf.md` for complete documentation.
+
 ### Deployment Workflow
 
 **For full deployment + testing:**
 1. Read `docs/deploy/DEPLOYMENT-TESTING.md` for complete instructions
-2. Execute deployment:
+2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
+3. Execute deployment (config auto-loads if available):
    ```bash
-   ./deploy/scripts/deploy.sh <environment> --remote deploy@<server>
+   # With .deploy.conf.staging, just specify environment:
+   ./deploy/scripts/deploy.sh staging
+   
+   # Or explicitly specify remote (overrides config):
+   ./deploy/scripts/deploy.sh staging --remote deploy@server
    ```
-3. Wait 30-60 seconds for health stabilization
-4. Run automated tests:
+4. Wait 30-60 seconds for health stabilization
+5. Run automated tests (auto-uses NODE_DOMAIN from config):
    ```bash
-   ./deploy/scripts/test-deployment.sh <environment> deploy@<server> <domain>
+   ./deploy/testing/smoke-tests.sh staging
    ```
-5. If automated tests pass, report success summary
-6. If issues found, run specific checks from DEPLOYMENT-TESTING.md checklist
-7. Report comprehensive results to user
+6. If automated tests pass, report success summary
+7. If issues found, run specific checks from DEPLOYMENT-TESTING.md checklist
+8. Report comprehensive results to user
 
 
 ### Deployment Documentation
 
+- **Deployment Config:** `docs/deploy/deploy-conf.md` - Per-environment .deploy.conf files
 - **Complete Testing Checklist:** `docs/deploy/DEPLOYMENT-TESTING.md`
 - **Quick Start Guide:** `docs/deploy/quickstart.md`
 - **Remote Deployment:** `docs/deploy/remote-deployment.md`

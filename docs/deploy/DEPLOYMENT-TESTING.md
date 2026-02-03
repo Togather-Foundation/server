@@ -9,17 +9,41 @@ This checklist is designed to be used by:
 - Automated CI/CD pipelines
 - Agents performing "deploy and test" workflows
 
-## Quick Reference
+## Quick Reference for Agents
+
+**IMPORTANT:** Each environment has a `.deploy.conf.{environment}` file (gitignored) that contains deployment metadata like NODE_DOMAIN, SSH_HOST, etc. Always check for this file first to avoid guessing configuration.
 
 ```bash
-# For agents: Run full deploy + test workflow
-./deploy/scripts/deploy.sh <environment> --remote deploy@<server>
-# Then run through this checklist systematically
+# 1. Check for deployment config
+if [ -f .deploy.conf.staging ]; then
+    source .deploy.conf.staging
+    echo "Deploying to: $NODE_DOMAIN via $SSH_HOST"
+fi
+
+# 2. Deploy (auto-loads .deploy.conf if available)
+./deploy/scripts/deploy.sh staging
+
+# 3. Run automated tests (auto-uses NODE_DOMAIN from .deploy.conf)
+./deploy/testing/smoke-tests.sh staging
 ```
+
+See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
 
 ---
 
 ## Pre-Deployment Checks
+
+### Deployment Configuration
+
+- [ ] **Deployment config exists**
+  ```bash
+  # Check if .deploy.conf.{environment} exists
+  ls -l .deploy.conf.staging
+  cat .deploy.conf.staging  # Verify NODE_DOMAIN, SSH_HOST, etc.
+  ```
+  - If missing, copy from `.deploy.conf.example` and customize
+  - Contains: NODE_DOMAIN, SSH_HOST, SSH_USER, CITY, REGION
+  - See `docs/deploy/deploy-conf.md` for details
 
 ### Local Build Verification
 
