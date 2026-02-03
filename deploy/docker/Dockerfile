@@ -63,6 +63,12 @@ COPY --from=builder /build/server /app/server
 # Copy timezone data for time zone support
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
+# Copy admin templates from build stage (for admin UI)
+COPY --from=builder /build/web/admin /app/web/admin
+
+# Copy JSON-LD contexts from build stage (for JSON-LD export)
+COPY --from=builder /build/contexts /app/contexts
+
 # Set ownership to non-root user
 RUN chown -R togather:togather /app
 
