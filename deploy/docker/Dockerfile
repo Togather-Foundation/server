@@ -30,6 +30,12 @@ ARG BUILD_DATE=${BUILD_TIMESTAMP}
 # Domain for generating environment-specific web files (robots.txt, sitemap.xml)
 ARG DOMAIN=togather.foundation
 
+# Create placeholder web files for initial build (required for go:embed directives)
+# These will be replaced with environment-specific versions after the first build
+RUN mkdir -p /build/web && \
+    echo "# robots.txt placeholder" > /build/web/robots.txt && \
+    echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>" > /build/web/sitemap.xml
+
 # Build the server binary first (needed for webfiles generation)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -trimpath \
