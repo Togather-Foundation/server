@@ -24,6 +24,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/web"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -147,6 +148,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/readyz", healthChecker.Readyz()) // Readiness check with dependency verification
 	mux.Handle("/version", VersionHandler(version, gitCommit, buildDate))
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
+	mux.Handle("/api/docs/", web.APIDocsHandler()) // Scalar API documentation UI (server-6lnc)
+	mux.Handle("/api/docs", web.APIDocsHandler())  // Scalar API documentation UI (server-6lnc)
 	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
 
 	// Prometheus metrics endpoint (FR-022)

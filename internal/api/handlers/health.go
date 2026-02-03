@@ -21,6 +21,7 @@ type HealthCheck struct {
 	Version   string                 `json:"version"`
 	GitCommit string                 `json:"git_commit"`
 	Slot      string                 `json:"slot,omitempty"`
+	DocsURL   string                 `json:"docs_url,omitempty"` // API documentation URL (server-6lnc)
 	Checks    map[string]CheckResult `json:"checks"`
 	Timestamp string                 `json:"timestamp"`
 }
@@ -104,6 +105,7 @@ func (h *HealthChecker) Health() http.HandlerFunc {
 			Version:   h.version,
 			GitCommit: h.gitCommit,
 			Slot:      slot,
+			DocsURL:   "/api/docs", // Link to interactive API documentation (server-6lnc)
 			Checks:    checks,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		}

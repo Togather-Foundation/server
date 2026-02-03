@@ -30,10 +30,11 @@ func (h *WellKnownHandler) SELProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]any{
-		"profile": "https://sel.events/profiles/interop",
-		"version": h.Version,
-		"node":    h.BaseURL,
-		"updated": h.Updated.Format("2006-01-02"),
+		"profile":           "https://sel.events/profiles/interop",
+		"version":           h.Version,
+		"node":              h.BaseURL,
+		"updated":           h.Updated.Format("2006-01-02"),
+		"api_documentation": h.BaseURL + "/api/docs", // Link to interactive API documentation (server-6lnc)
 	}
 
 	writeJSON(w, http.StatusOK, payload, "application/json")

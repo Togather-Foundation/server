@@ -219,6 +219,21 @@ go build ./cmd/server   # Builds to ./server (dev version)
 
 Once your local environment is running, verify event ingestion works:
 
+### Exploring the API
+
+The SEL server provides interactive API documentation at `http://localhost:8080/api/docs` using [Scalar](https://scalar.com).
+
+**Features:**
+- 🌐 **Interactive Testing**: Try all API endpoints directly from your browser
+- 📖 **Complete Documentation**: Automatically generated from OpenAPI 3.1 spec
+- 🔑 **API Key Instructions**: Email info@togather.foundation to request an API key
+- 📥 **OpenAPI Spec**: Available at `/api/v1/openapi.json`
+
+**Quick links:**
+- API Documentation: http://localhost:8080/api/docs
+- Health Check: http://localhost:8080/health (includes `docs_url` field)
+- SEL Profile: http://localhost:8080/.well-known/sel-profile (includes `api_documentation` field)
+
 ### Using the CLI (Recommended)
 
 The SEL server includes built-in CLI commands for easy testing:
