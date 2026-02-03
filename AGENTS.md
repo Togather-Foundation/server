@@ -121,7 +121,8 @@ gofmt -w path/to/file.go
 
 ## Deployment and Testing
 
-When the user asks to deploy, follow the comprehensive deployment testing process.
+When the user asks to deploy (to local/staging/production), follow the comprehensive deployment testing process. 
+Ask which environment to deploy to if not specified, and create a subagent to complete the task.
 
 ### Deployment Workflow
 

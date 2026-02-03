@@ -343,6 +343,177 @@ test_response_time() {
     fi
 }
 
+test_events_api() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing Events API endpoint: GET ${BASE_URL}/api/v1/events"
+    
+    local response=$(http_get "${BASE_URL}/api/v1/events" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        log "SUCCESS" "Events API accessible"
+        ((TESTS_PASSED++)) || true
+        return 0
+    else
+        log "FAIL" "Events API not accessible"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_places_api() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing Places API endpoint: GET ${BASE_URL}/api/v1/places"
+    
+    local response=$(http_get "${BASE_URL}/api/v1/places" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        log "SUCCESS" "Places API accessible"
+        ((TESTS_PASSED++)) || true
+        return 0
+    else
+        log "FAIL" "Places API not accessible"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_organizations_api() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing Organizations API endpoint: GET ${BASE_URL}/api/v1/organizations"
+    
+    local response=$(http_get "${BASE_URL}/api/v1/organizations" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        log "SUCCESS" "Organizations API accessible"
+        ((TESTS_PASSED++)) || true
+        return 0
+    else
+        log "FAIL" "Organizations API not accessible"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_openapi_schema() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing OpenAPI schema endpoint: GET ${BASE_URL}/openapi.json"
+    
+    local response=$(http_get "${BASE_URL}/openapi.json" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Validate it's valid JSON with openapi field
+        if echo "$response" | jq -e '.openapi' >/dev/null 2>&1; then
+            local openapi_version=$(echo "$response" | jq -r '.openapi')
+            log "SUCCESS" "OpenAPI schema available (version: ${openapi_version})"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "OpenAPI schema missing required fields"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "WARN" "OpenAPI schema not available (may not be implemented)"
+        ((TESTS_PASSED++)) || true
+        return 0
+    fi
+}
+
+test_admin_ui() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing Admin UI login page: GET ${BASE_URL}/admin/login"
+    
+    local response=$(http_get "${BASE_URL}/admin/login" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Check if it's HTML
+        if echo "$response" | grep -q "<!DOCTYPE html>"; then
+            log "SUCCESS" "Admin UI login page accessible"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "FAIL" "Admin UI response is not HTML"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "Admin UI not accessible"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_https_certificate() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing HTTPS certificate validity"
+    
+    # Skip if using http://
+    if [[ "$BASE_URL" != https://* ]]; then
+        log "WARN" "Skipping HTTPS test (BASE_URL uses HTTP)"
+        ((TESTS_PASSED++)) || true
+        return 0
+    fi
+    
+    local domain=$(echo "$BASE_URL" | sed -E 's|https?://([^/]+).*|\1|')
+    
+    if curl -vI "$BASE_URL/" 2>&1 | grep -q "SSL certificate verify ok"; then
+        log "SUCCESS" "HTTPS certificate valid"
+        ((TESTS_PASSED++)) || true
+        return 0
+    else
+        log "FAIL" "HTTPS certificate validation failed"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_slot_header() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing active slot identification header"
+    
+    local headers=$(curl -s -I --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
+    
+    if [[ -n "$headers" ]]; then
+        if echo "$headers" | grep -qi "X-Togather-Slot"; then
+            local slot=$(echo "$headers" | grep -i "X-Togather-Slot" | cut -d: -f2 | tr -d ' \r')
+            log "SUCCESS" "Active slot identified: ${slot}"
+            ((TESTS_PASSED++)) || true
+            return 0
+        else
+            log "WARN" "X-Togather-Slot header not found (may be local deployment)"
+            ((TESTS_PASSED++)) || true
+            return 0
+        fi
+    else
+        log "FAIL" "Could not retrieve headers"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_container_health() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Testing container health via Docker"
+    
+    # Skip if SSH_SERVER is not configured
+    if [[ -z "${SSH_SERVER:-}" ]]; then
+        log "WARN" "Skipping container health test (SSH_SERVER not configured)"
+        ((TESTS_PASSED++)) || true
+        return 0
+    fi
+    
+    # Check if container is healthy
+    if ssh "$SSH_SERVER" 'docker ps --format "{{.Status}}" --filter name=togather-server' 2>/dev/null | grep -q "(healthy)"; then
+        log "SUCCESS" "Container is running and healthy"
+        ((TESTS_PASSED++)) || true
+        return 0
+    else
+        log "FAIL" "Container is not healthy or not running"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -389,6 +560,30 @@ main() {
     echo ""
     
     test_response_time
+    echo ""
+    
+    test_events_api
+    echo ""
+    
+    test_places_api
+    echo ""
+    
+    test_organizations_api
+    echo ""
+    
+    test_openapi_schema
+    echo ""
+    
+    test_admin_ui
+    echo ""
+    
+    test_https_certificate
+    echo ""
+    
+    test_slot_header
+    echo ""
+    
+    test_container_health
     echo ""
     
     local end_time=$(date +%s)

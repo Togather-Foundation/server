@@ -456,22 +456,16 @@ When an agent is asked to "deploy and test", they should:
 
 2. **Wait for health stabilization** (30-60 seconds)
 
-3. **Run through critical checks** (at minimum):
-   - Container health status
-   - External HTTPS health endpoint  
-   - API endpoints respond
-   - Admin UI loads
-   - Active slot matches expected
+3. **Run automated tests:**
+   ```bash
+   # Run all automated tests (smoke + performance if allowed)
+   ./deploy/scripts/test-remote.sh <environment> all
+   
+   # Or just smoke tests (faster, production-safe)
+   ./deploy/scripts/test-remote.sh <environment> smoke
+   ```
 
-4. **Report results** in summary format:
-   ```
-   Deployment: ✅ Success
-   Health: ✅ Healthy
-   API: ✅ Responding
-   Admin UI: ✅ Accessible
-   Slot: blue (switched from green)
-   Version: v1.2.3
-   ```
+4. **Report results** - The test script will provide a summary automatically
 
 5. **If any check fails**, capture logs and report:
    ```bash
@@ -480,83 +474,87 @@ When an agent is asked to "deploy and test", they should:
 
 ---
 
-## Automated Testing Script
+## Automated Testing Scripts
 
-For automated testing, save this as `deploy/scripts/test-deployment.sh`:
+The project includes comprehensive automated test scripts for deployment verification.
+
+### Primary Test Script: `test-remote.sh`
+
+Unified test interface with environment-aware testing:
 
 ```bash
-#!/bin/bash
-# test-deployment.sh - Automated deployment testing
+# Run all tests on staging (smoke + performance)
+./deploy/scripts/test-remote.sh staging all
 
-set -euo pipefail
+# Run just smoke tests (fast, production-safe)
+./deploy/scripts/test-remote.sh staging smoke
 
-ENVIRONMENT="${1:-staging}"
-SERVER="${2:-deploy@staging}"
-DOMAIN="${3:-staging.toronto.togather.foundation}"
+# Run performance tests only (requires ALLOW_LOAD_TESTING=true)
+./deploy/scripts/test-remote.sh staging perf
 
-echo "Testing deployment on $DOMAIN..."
-
-FAILED=0
-
-# Health check
-if curl -sf "https://$DOMAIN/health" | jq -e '.status == "healthy" or .status == "degraded"' > /dev/null; then
-    echo "✓ Health check passed"
-else
-    echo "✗ Health check failed"
-    FAILED=$((FAILED + 1))
-fi
-
-# API check
-if curl -sf "https://$DOMAIN/api/v1/events" > /dev/null; then
-    echo "✓ Events API accessible"
-else
-    echo "✗ Events API failed"
-    FAILED=$((FAILED + 1))
-fi
-
-# Admin UI check
-if curl -sf "https://$DOMAIN/admin/login" | grep -q "<!DOCTYPE html>"; then
-    echo "✓ Admin UI accessible"
-else
-    echo "✗ Admin UI failed"
-    FAILED=$((FAILED + 1))
-fi
-
-# Container health
-if ssh "$SERVER" 'docker ps --format "{{.Status}}" --filter name=togather-server' | grep -q "(healthy)"; then
-    echo "✓ Container healthy"
-else
-    echo "✗ Container unhealthy"
-    FAILED=$((FAILED + 1))
-fi
-
-# Slot verification
-ACTIVE_SLOT=$(curl -sI "https://$DOMAIN/health" | grep -i "X-Togather-Slot" | cut -d: -f2 | tr -d ' \r')
-echo "Active slot: $ACTIVE_SLOT"
-
-# Final result
-if [ $FAILED -eq 0 ]; then
-    echo "✅ All checks passed!"
-    exit 0
-else
-    echo "❌ $FAILED checks failed"
-    exit 1
-fi
+# Test production (read-only, smoke tests only)
+./deploy/scripts/test-remote.sh production smoke
 ```
 
-Make it executable:
+**Features:**
+- Environment-aware configuration (local/staging/production)
+- Comprehensive smoke tests (16 checks including health, database, migrations, APIs, security, containers)
+- Optional performance testing (staging only)
+- Production safety (read-only mode, no destructive tests)
+- Detailed logging with color-coded output
+- Container health verification via SSH
+
+**Smoke test coverage:**
+1. Health endpoint validation
+2. Version endpoint verification
+3. Database connectivity check
+4. Migration status validation
+5. HTTP endpoint health check
+6. CORS headers verification
+7. Security headers check
+8. Response time measurement
+9. Events API endpoint
+10. Places API endpoint
+11. Organizations API endpoint
+12. OpenAPI schema validation
+13. Admin UI accessibility
+14. HTTPS certificate validation
+15. Active slot identification
+16. Container health via Docker
+
+### Usage Recommendations
+
+**For agents performing "deploy and test":**
 ```bash
-chmod +x deploy/scripts/test-deployment.sh
+# 1. Deploy
+./deploy/scripts/deploy.sh staging --remote deploy@staging.toronto.togather.foundation
+
+# 2. Wait for stabilization
+sleep 60
+
+# 3. Run automated tests (all on staging)
+./deploy/scripts/test-remote.sh staging all
 ```
 
-Usage:
+**For production deployments:**
 ```bash
-# Test staging
-./deploy/scripts/test-deployment.sh staging deploy@192.46.222.199 staging.toronto.togather.foundation
-
-# Test production
-./deploy/scripts/test-deployment.sh production deploy@prod-server prod.togather.foundation
+# Production only allows smoke tests (no load testing)
+./deploy/scripts/test-remote.sh production smoke
 ```
+
+### Configuration
+
+Tests use environment-specific configuration files:
+- `deploy/testing/environments/local.test.env`
+- `deploy/testing/environments/staging.test.env`
+- `deploy/testing/environments/production.test.env`
+
+Each configuration includes:
+- `BASE_URL` - Server URL to test
+- `SSH_SERVER` - SSH connection for container checks (optional for local)
+- `TIMEOUT` - Request timeout settings
+- `ALLOW_DESTRUCTIVE` - Whether to allow data modification
+- `ALLOW_LOAD_TESTING` - Whether performance tests are allowed
 
 ---
 
