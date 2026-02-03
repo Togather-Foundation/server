@@ -338,6 +338,20 @@ ssh deploy@server 'cd /opt/togather/src && git status'
 
 ---
 
+## Quick Troubleshooting Reference
+
+| Symptom | Likely Cause | Quick Fix |
+|---------|-------------|-----------|
+| "Lock file exists" | Stale deployment lock | Wait 30 min or manually remove lock |
+| "Port already in use" | Orphaned container | Rerun deploy.sh (auto-cleans orphans) |
+| Health check fails | Configuration error | Check logs: `docker logs togather-blue` |
+| Caddy not switching | Manual intervention | See rollback.md for manual traffic switch |
+| DNS resolution fails | Network misconfiguration | Verify `docker network inspect togather-network` |
+
+For detailed troubleshooting, see [troubleshooting.md](docs/deploy/troubleshooting.md).
+
+---
+
 ## Additional Resources
 
 - [Quickstart Guide](docs/deploy/quickstart.md) - Installation and setup
