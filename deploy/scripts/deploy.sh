@@ -1642,6 +1642,11 @@ deploy_remote() {
     # Validate local git state first
     validate_git_commit || return 1
     
+    # Generate web files locally (before remote deployment)
+    # This avoids needing Go toolchain on remote server
+    log "INFO" "Generating web files locally for ${env}"
+    generate_web_files "$env" || return 1
+    
     # Auto-detect repository URL from git remote
     local repo_url=$(git remote get-url origin 2>/dev/null)
     if [[ -z "$repo_url" ]]; then

@@ -10,4 +10,4 @@ Disallow: /admin
 Disallow: /api/v1/admin/
 
 # Sitemap
-Sitemap: https://togather.foundation/sitemap.xml
+Sitemap: https://staging.toronto.togather.foundation/sitemap.xml

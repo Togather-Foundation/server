@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <!-- Landing page -->
     <url>
-        <loc>https://togather.foundation/</loc>
+        <loc>https://staging.toronto.togather.foundation/</loc>
         <lastmod>2026-02-03</lastmod>
         <changefreq>weekly</changefreq>
         <priority>1.0</priority>
@@ -10,7 +10,7 @@
     
     <!-- API documentation -->
     <url>
-        <loc>https://togather.foundation/api/docs</loc>
+        <loc>https://staging.toronto.togather.foundation/api/docs</loc>
         <lastmod>2026-02-03</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.8</priority>
@@ -18,14 +18,14 @@
     
     <!-- OpenAPI specifications -->
     <url>
-        <loc>https://togather.foundation/api/v1/openapi.json</loc>
+        <loc>https://staging.toronto.togather.foundation/api/v1/openapi.json</loc>
         <lastmod>2026-02-03</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
     
     <url>
-        <loc>https://togather.foundation/api/v1/openapi.yaml</loc>
+        <loc>https://staging.toronto.togather.foundation/api/v1/openapi.yaml</loc>
         <lastmod>2026-02-03</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
@@ -33,7 +33,7 @@
     
     <!-- Well-known endpoints -->
     <url>
-        <loc>https://togather.foundation/.well-known/sel-profile</loc>
+        <loc>https://staging.toronto.togather.foundation/.well-known/sel-profile</loc>
         <lastmod>2026-02-03</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
