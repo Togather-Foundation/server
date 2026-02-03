@@ -82,7 +82,12 @@ services:
   # Togather Server Application Service
   # ============================================================================
   app:
+    # Use pre-built image when IMAGE_TAG is set (deployment mode)
+    # Falls back to building if image doesn't exist (development mode)
+    image: togather-server:${IMAGE_TAG:-latest}
+    
     # Build from repository root using multi-stage Dockerfile
+    # Only used if image doesn't exist (development mode)
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
