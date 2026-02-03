@@ -97,6 +97,59 @@ go test -v ./path/to/package -run TestName
 gofmt -w path/to/file.go
 ```
 
+
+## Deployment and Testing
+
+When the user asks to deploy or "deploy and test", follow the comprehensive deployment testing process.
+
+### Deployment Workflow
+
+**For full deployment + testing:**
+1. Read `docs/deploy/DEPLOYMENT-TESTING.md` for complete instructions
+2. Execute deployment:
+   ```bash
+   ./deploy/scripts/deploy.sh <environment> --remote deploy@<server>
+   ```
+3. Wait 30-60 seconds for health stabilization
+4. Run automated tests:
+   ```bash
+   ./deploy/scripts/test-deployment.sh <environment> deploy@<server> <domain>
+   ```
+5. If automated tests pass, report success summary
+6. If issues found, run specific checks from DEPLOYMENT-TESTING.md checklist
+7. Report comprehensive results to user
+
+**Quick deployment commands:**
+```bash
+# Staging deployment
+./deploy/scripts/deploy.sh staging --remote deploy@192.46.222.199
+
+# Staging deployment + automated tests
+./deploy/scripts/test-deployment.sh staging deploy@192.46.222.199 staging.toronto.togather.foundation
+
+# Production deployment
+./deploy/scripts/deploy.sh production --remote deploy@prod-server
+```
+
+### Critical Checks (Minimum)
+
+After any deployment, verify at minimum:
+- [ ] Container health status: `docker ps --filter name=togather-server`
+- [ ] External HTTPS health check: `curl https://<domain>/health`
+- [ ] API endpoints respond: `curl https://<domain>/api/v1/events`
+- [ ] Admin UI loads: `curl https://<domain>/admin/login`
+- [ ] Active slot matches expected: Check `X-Togather-Slot` header
+- [ ] Version deployed correctly: Check health endpoint `version` field
+
+### Deployment Documentation
+
+- **Complete Testing Checklist:** `docs/deploy/DEPLOYMENT-TESTING.md`
+- **Quick Start Guide:** `docs/deploy/quickstart.md`
+- **Remote Deployment:** `docs/deploy/remote-deployment.md`
+- **Troubleshooting:** `docs/deploy/troubleshooting.md`
+- **Caddy Architecture:** `deploy/CADDY-ARCHITECTURE.md`
+
+
 ## Repo Layout (quick map)
 
 - `internal/api/` - HTTP routing, handlers, middleware, content negotiation helpers
