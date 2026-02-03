@@ -27,8 +27,25 @@ ARG GIT_COMMIT=unknown
 # Accept BUILD_TIMESTAMP from deploy script, use it as BUILD_DATE for ldflags
 ARG BUILD_TIMESTAMP=unknown
 ARG BUILD_DATE=${BUILD_TIMESTAMP}
+# Domain for generating environment-specific web files (robots.txt, sitemap.xml)
+ARG DOMAIN=togather.foundation
 
-# Build static binary with version metadata embedded via ldflags
+# Build the server binary first (needed for webfiles generation)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -trimpath \
+    -ldflags "-s -w \
+      -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=${VERSION}' \
+      -X 'github.com/Togather-Foundation/server/cmd/server/cmd.GitCommit=${GIT_COMMIT}' \
+      -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=${BUILD_DATE}'" \
+    -o /build/server \
+    ./cmd/server
+
+# Generate web files with environment-specific domain
+# This embeds the correct domain into robots.txt and sitemap.xml before they're embedded via go:embed
+RUN /build/server webfiles --domain="${DOMAIN}" --output=/build/web/ || \
+    echo "Warning: webfiles generation failed, continuing with defaults"
+
+# Rebuild the server binary to embed the generated web files via go:embed
 # CGO_ENABLED=0: Build fully static binary (no C dependencies)
 # -trimpath: Remove file system paths from binary for reproducibility
 # -ldflags "-s -w": Strip debug info and symbol table for smaller binary

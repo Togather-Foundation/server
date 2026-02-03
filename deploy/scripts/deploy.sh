@@ -913,13 +913,33 @@ build_docker_image() {
     local image_tag="${GIT_SHORT_COMMIT}"
     local build_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
+    # Determine domain based on environment
+    local domain=""
+    case "$env" in
+        production)
+            domain="togather.foundation"
+            ;;
+        staging)
+            domain="staging.toronto.togather.foundation"
+            ;;
+        development)
+            domain="localhost:8080"
+            ;;
+        *)
+            log "WARN" "Unknown environment: ${env}, using default domain"
+            domain="togather.foundation"
+            ;;
+    esac
+    
+    log "INFO" "Building with domain: ${domain}"
+    
     # Validate build arguments before building
     if ! validate_build_args "${GIT_COMMIT}" "${build_timestamp}" "${GIT_SHORT_COMMIT}"; then
         log "ERROR" "Build argument validation failed"
         return 1
     fi
     
-    # Build image with version metadata
+    # Build image with version metadata and domain
     cd "${PROJECT_ROOT}"
     
     if ! docker build \
@@ -930,6 +950,7 @@ build_docker_image() {
         --build-arg GIT_SHORT_COMMIT="${GIT_SHORT_COMMIT}" \
         --build-arg BUILD_TIMESTAMP="${build_timestamp}" \
         --build-arg VERSION="${GIT_SHORT_COMMIT}" \
+        --build-arg DOMAIN="${domain}" \
         . ; then
         log "ERROR" "Docker image build failed"
         return 1
@@ -1566,15 +1587,7 @@ deploy() {
         DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
     fi
     
-    # Generate web files (robots.txt, sitemap.xml) before build
-    # Skip if SKIP_WEBFILES_GENERATION=true (set by remote deployment)
-    if [[ "${SKIP_WEBFILES_GENERATION:-false}" != "true" ]]; then
-        generate_web_files "$env" || return 1
-    else
-        log "INFO" "Skipping web files generation (already done locally)"
-    fi
-    
-    # T016: Build Docker image
+    # T016: Build Docker image (web files generated during build via DOMAIN build arg)
     build_docker_image "$env" || return 1
     
     # Pre-flight check: Validate migrations directory exists before snapshot
@@ -1646,11 +1659,6 @@ deploy_remote() {
     
     # Validate local git state first
     validate_git_commit || return 1
-    
-    # Generate web files locally (before remote deployment)
-    # This avoids needing Go toolchain on remote server
-    log "INFO" "Generating web files locally for ${env}"
-    generate_web_files "$env" || return 1
     
     # Auto-detect repository URL from git remote
     local repo_url=$(git remote get-url origin 2>/dev/null)
@@ -1741,7 +1749,7 @@ echo "  Linked ${PERSISTENT_ENV} → ${CONFIG_DIR}/.env.${ENVIRONMENT}"
 
 echo "→ Running deploy.sh on remote server..."
 echo ""
-SKIP_WEBFILES_GENERATION=true ./deploy/scripts/deploy.sh "${ENVIRONMENT}"
+./deploy/scripts/deploy.sh "${ENVIRONMENT}"
 REMOTE_EOF
 )
     
