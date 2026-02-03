@@ -94,6 +94,11 @@ func TestAPIDocsHandler(t *testing.T) {
 					if cacheControl != "no-cache, must-revalidate" {
 						t.Errorf("expected no-cache for HTML, got %q", cacheControl)
 					}
+					// HTML should have relaxed CSP to allow Scalar inline scripts
+					csp := rec.Header().Get("Content-Security-Policy")
+					if !contains(csp, "'unsafe-inline'") {
+						t.Errorf("expected CSP to allow unsafe-inline for HTML, got %q", csp)
+					}
 				}
 			}
 		})

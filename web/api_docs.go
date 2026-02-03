@@ -18,6 +18,10 @@ var ApiDocsFS embed.FS
 // with appropriate cache headers:
 //   - JS files: long-term caching (1 year, immutable)
 //   - HTML files: no caching (allows spec updates to be reflected)
+//
+// Security: The HTML page overrides the default CSP to allow inline scripts
+// since Scalar requires inline initialization. This is safe because the HTML
+// is controlled content from our embedded filesystem, not user input
 func APIDocsHandler() http.Handler {
 	// Strip the "api-docs/dist" prefix to serve files from the root
 	stripped, err := fs.Sub(ApiDocsFS, "api-docs/dist")
@@ -51,6 +55,9 @@ func APIDocsHandler() http.Handler {
 		} else if strings.HasSuffix(path, ".html") {
 			// HTML should not be cached to allow spec updates
 			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			// Override CSP for API docs HTML to allow inline scripts
+			// This is safe because the HTML is controlled content from our embedded filesystem
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
 		}
 
 		// Open the file from embedded filesystem
