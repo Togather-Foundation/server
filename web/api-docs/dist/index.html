@@ -4,18 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Togather API Documentation</title>
-    <meta name="description" content="Interactive API documentation for the Togather Shared Events Library backend">
 </head>
 <body>
-    <div id="api-reference"></div>
-    
-    <!-- Load Scalar standalone bundle -->
     <script src="/api/docs/scalar-standalone.js"></script>
-    
-    <!-- Initialize Scalar API Reference -->
     <script>
-      Scalar.createApiReference('#api-reference', {
-        url: '/api/v1/openapi.json',
+      document.addEventListener('DOMContentLoaded', function() {
+        var container = document.createElement('div');
+        container.id = 'api-reference';
+        document.body.appendChild(container);
+        
+        Scalar.createApiReference('#api-reference', {
+          url: '/api/v1/openapi.json',
+          layout: 'modern',
+        })
       })
     </script>
 </body>

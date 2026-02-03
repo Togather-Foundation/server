@@ -19,9 +19,13 @@ var ApiDocsFS embed.FS
 //   - JS files: long-term caching (1 year, immutable)
 //   - HTML files: no caching (allows spec updates to be reflected)
 //
-// Security: The HTML page overrides the default CSP to allow inline scripts
-// since Scalar requires inline initialization. This is safe because the HTML
-// is controlled content from our embedded filesystem, not user input
+// Security: The HTML page uses a relaxed CSP to support Scalar features:
+//   - 'unsafe-inline' + 'unsafe-eval': Vue.js runtime requires eval
+//   - fonts.scalar.com: Inter and JetBrains Mono fonts
+//   - proxy.scalar.com: AI-powered search feature
+//   - api.scalar.com: Registry and search API
+//
+// This is safe because the HTML is controlled content from our embedded filesystem
 func APIDocsHandler() http.Handler {
 	// Strip the "api-docs/dist" prefix to serve files from the root
 	stripped, err := fs.Sub(ApiDocsFS, "api-docs/dist")
@@ -55,9 +59,16 @@ func APIDocsHandler() http.Handler {
 		} else if strings.HasSuffix(path, ".html") {
 			// HTML should not be cached to allow spec updates
 			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
-			// Override CSP for API docs HTML to allow inline scripts
-			// This is safe because the HTML is controlled content from our embedded filesystem
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+			// Override CSP for API docs HTML to allow Scalar requirements:
+			// - 'unsafe-inline' + 'unsafe-eval': Scalar uses Vue.js which needs eval
+			// - fonts.scalar.com: External font loading (Inter, JetBrains Mono)
+			// - proxy.scalar.com: AI search feature
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; "+
+					"style-src 'self' 'unsafe-inline'; "+
+					"script-src 'self' 'unsafe-inline' 'unsafe-eval'; "+
+					"font-src 'self' https://fonts.scalar.com; "+
+					"connect-src 'self' https://proxy.scalar.com https://api.scalar.com")
 		}
 
 		// Open the file from embedded filesystem
