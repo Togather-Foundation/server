@@ -216,6 +216,18 @@ SEL nodes MUST expose profile information at:
 }
 ```
 
+**OpenAPI Specification:**
+
+SEL nodes MUST provide their API specification at:
+
+**Endpoint:** `GET /api/v1/openapi.json`
+
+Returns OpenAPI 3.1.0 specification in JSON format, enabling:
+- Programmatic discovery of all API endpoints
+- Client library generation
+- Request/response validation
+- API compatibility verification for federation
+
 ---
 
 ## 2. Canonical JSON-LD Output

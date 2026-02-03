@@ -71,6 +71,9 @@ COPY --from=builder /build/web/admin /app/web/admin
 # Copy JSON-LD contexts from build stage (for JSON-LD export)
 COPY --from=builder /build/contexts /app/contexts
 
+# Copy OpenAPI specification from build stage (for /api/v1/openapi.json endpoint)
+COPY --from=builder /build/specs /app/specs
+
 # Set ownership to non-root user
 RUN chown -R togather:togather /app
 

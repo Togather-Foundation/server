@@ -469,26 +469,31 @@ test_organizations_api() {
 
 test_openapi_schema() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 12/16: OpenAPI schema endpoint - GET ${BASE_URL}/openapi.json"
+    log "INFO" "Test 12/16: OpenAPI schema endpoint - GET ${BASE_URL}/api/v1/openapi.json"
     
-    local response=$(http_get "${BASE_URL}/openapi.json" 200 2>/dev/null || echo "")
+    local response=$(http_get "${BASE_URL}/api/v1/openapi.json" 200 2>/dev/null || echo "")
     
     if [[ -n "$response" && $? -eq 0 ]]; then
         # Validate it's valid JSON with openapi field
         if echo "$response" | jq -e '.openapi' >/dev/null 2>&1; then
             local openapi_version=$(echo "$response" | jq -r '.openapi')
+            local api_title=$(echo "$response" | jq -r '.info.title // "unknown"')
             log "SUCCESS" "OpenAPI schema available (OpenAPI ${openapi_version})"
+            log "INFO" "  API: ${api_title}"
             ((TESTS_PASSED++)) || true
             return 0
         else
-            log "WARN" "OpenAPI schema endpoint exists but has unexpected format"
-            ((TESTS_PASSED++)) || true
-            return 0
+            log "FAIL" "OpenAPI schema has invalid format (missing 'openapi' field)"
+            log "ERROR" "  Response preview: $(echo "$response" | head -c 200)"
+            ((TESTS_FAILED++)) || true
+            return 1
         fi
     else
-        log "WARN" "OpenAPI schema endpoint not found (may not be implemented yet)"
-        ((TESTS_PASSED++)) || true
-        return 0
+        log "FAIL" "OpenAPI schema endpoint not available - API documentation missing"
+        log "ERROR" "  Endpoint should return OpenAPI 3.1.0 specification"
+        log "ERROR" "  This is required for API clients and tools"
+        ((TESTS_FAILED++)) || true
+        return 1
     fi
 }
 

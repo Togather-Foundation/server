@@ -9,14 +9,15 @@
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Authentication](#authentication)
-3. [Rate Limiting](#rate-limiting)
-4. [Event Submission (POST /api/v1/events)](#event-submission)
-5. [Event Retrieval (GET /api/v1/events)](#event-retrieval)
-6. [Idempotency](#idempotency)
-7. [Duplicate Detection](#duplicate-detection)
-8. [Error Handling](#error-handling)
-9. [Examples](#examples)
+2. [OpenAPI Specification](#openapi-specification)
+3. [Authentication](#authentication)
+4. [Rate Limiting](#rate-limiting)
+5. [Event Submission (POST /api/v1/events)](#event-submission)
+6. [Event Retrieval (GET /api/v1/events)](#event-retrieval)
+7. [Idempotency](#idempotency)
+8. [Duplicate Detection](#duplicate-detection)
+9. [Error Handling](#error-handling)
+10. [Examples](#examples)
 
 ---
 
@@ -36,6 +37,37 @@ The SEL API provides endpoints for submitting, retrieving, and managing cultural
 ### Content Types
 
 The API returns JSON or JSON-LD via the `Accept` header. Dereferenceable entity pages (under `/events/{id}`, `/places/{id}`, `/organizations/{id}`) support HTML (and may support Turtle) but those are **public pages**, not `/api/v1/*` endpoints.
+
+---
+
+## OpenAPI Specification
+
+The complete OpenAPI 3.1.0 specification is available at:
+
+**Endpoint:** `GET /api/v1/openapi.json`
+
+**Example:**
+```bash
+curl https://sel.togather.events/api/v1/openapi.json
+```
+
+**Response:** OpenAPI 3.1.0 specification in JSON format
+
+The OpenAPI spec provides:
+- Complete endpoint documentation with request/response schemas
+- Authentication requirements for each endpoint
+- Rate limiting information
+- Pagination patterns
+- Error response formats
+- Example requests and responses
+
+**Using the Specification:**
+- Import into **Postman** or **Insomnia** for API testing
+- Generate client libraries with **OpenAPI Generator**
+- Validate API contracts in CI/CD pipelines
+- Auto-generate documentation with **ReDoc** or **Swagger UI**
+
+**Source:** The canonical YAML source is maintained at `specs/001-sel-backend/contracts/openapi.yaml` in the repository.
 
 ---
 
