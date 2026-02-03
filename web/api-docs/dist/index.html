@@ -16,6 +16,25 @@
         Scalar.createApiReference('#api-reference', {
           url: '/api/v1/openapi.json',
           layout: 'modern',
+          // Custom tag order: most important/common endpoints first
+          tagsSorter: function(a, b) {
+            const tagOrder = ['Events', 'Places', 'Organizations', 'Feeds', 'Health', 'Admin'];
+            const indexA = tagOrder.indexOf(a);
+            const indexB = tagOrder.indexOf(b);
+            
+            // If both tags are in the order list, use that order
+            if (indexA !== -1 && indexB !== -1) {
+              return indexA - indexB;
+            }
+            // If only A is in the list, it comes first
+            if (indexA !== -1) return -1;
+            // If only B is in the list, it comes first
+            if (indexB !== -1) return 1;
+            // Otherwise, alphabetical
+            return a.localeCompare(b);
+          },
+          // Sort operations by method (GET, POST, PUT, DELETE)
+          operationsSorter: 'method',
         })
       })
     </script>
