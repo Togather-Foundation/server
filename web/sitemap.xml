@@ -3,6 +3,7 @@
     <!-- Landing page -->
     <url>
         <loc>https://togather.foundation/</loc>
+        <lastmod>2026-02-03</lastmod>
         <changefreq>weekly</changefreq>
         <priority>1.0</priority>
     </url>
@@ -10,6 +11,7 @@
     <!-- API documentation -->
     <url>
         <loc>https://togather.foundation/api/docs</loc>
+        <lastmod>2026-02-03</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.8</priority>
     </url>
@@ -17,12 +19,14 @@
     <!-- OpenAPI specifications -->
     <url>
         <loc>https://togather.foundation/api/v1/openapi.json</loc>
+        <lastmod>2026-02-03</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
     
     <url>
         <loc>https://togather.foundation/api/v1/openapi.yaml</loc>
+        <lastmod>2026-02-03</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
@@ -30,9 +34,10 @@
     <!-- Well-known endpoints -->
     <url>
         <loc>https://togather.foundation/.well-known/sel-profile</loc>
+        <lastmod>2026-02-03</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
     
-    <!-- Note: Dynamic event/place/org URLs will be added by server-b5s6 -->
+    <!-- Note: Dynamic event/place/org URLs will be added in future iterations -->
 </urlset>

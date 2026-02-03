@@ -856,6 +856,53 @@ validate_build_args() {
     return 0
 }
 
+# Generate web files (robots.txt, sitemap.xml) for deployment
+generate_web_files() {
+    local env="$1"
+    
+    log "INFO" "Generating web files for ${env}"
+    
+    # Determine domain based on environment
+    local domain=""
+    case "$env" in
+        production)
+            domain="togather.foundation"
+            ;;
+        staging)
+            domain="staging.toronto.togather.foundation"
+            ;;
+        development)
+            domain="localhost:8080"
+            ;;
+        *)
+            log "ERROR" "Unknown environment: ${env}"
+            return 1
+            ;;
+    esac
+    
+    log "INFO" "Using domain: ${domain}"
+    
+    # Build server binary if not present (needed for webfiles command)
+    if [[ ! -f "${PROJECT_ROOT}/server" ]]; then
+        log "INFO" "Building server binary for webfiles generation"
+        cd "${PROJECT_ROOT}"
+        if ! make build; then
+            log "ERROR" "Failed to build server binary"
+            return 1
+        fi
+    fi
+    
+    # Generate web files using server CLI
+    cd "${PROJECT_ROOT}"
+    if ! ./server webfiles --domain "${domain}" --output "${PROJECT_ROOT}/web"; then
+        log "ERROR" "Failed to generate web files"
+        return 1
+    fi
+    
+    log "SUCCESS" "Web files generated for domain: ${domain}"
+    return 0
+}
+
 # Build Docker image with version metadata
 build_docker_image() {
     local env="$1"
@@ -1518,6 +1565,9 @@ deploy() {
         log "WARN" "Skipping deployment lock (--force flag)"
         DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
     fi
+    
+    # Generate web files (robots.txt, sitemap.xml) before build
+    generate_web_files "$env" || return 1
     
     # T016: Build Docker image
     build_docker_image "$env" || return 1
