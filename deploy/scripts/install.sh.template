@@ -33,6 +33,14 @@ BINARY_PATH="/usr/local/bin/${APP_NAME}-server"
 # Set by provision-server.sh during initial server setup
 ENVIRONMENT="${ENVIRONMENT:-staging}"
 
+# Load deployment configuration if available
+# These files contain deployment metadata (domains, SSH info) but NO SECRETS
+DEPLOY_CONF_FILE="${APP_DIR}/.deploy.conf.${ENVIRONMENT}"
+if [[ -f "$DEPLOY_CONF_FILE" ]]; then
+    source "$DEPLOY_CONF_FILE"
+    log "  ✓ Loaded deployment config: $DEPLOY_CONF_FILE"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -98,11 +106,13 @@ configure_caddy() {
     cp "$CADDYFILE_SOURCE" /etc/caddy/Caddyfile
     
     # Create log file with correct permissions (prevents "permission denied" errors)
+    # Use CITY from .deploy.conf if available, otherwise default to 'toronto'
     log "  → Creating Caddy log file..."
-    touch "/var/log/caddy/${ENVIRONMENT}.toronto.log"
-    chown caddy:caddy "/var/log/caddy/${ENVIRONMENT}.toronto.log"
-    chmod 644 "/var/log/caddy/${ENVIRONMENT}.toronto.log"
-    success "Log file created: /var/log/caddy/${ENVIRONMENT}.toronto.log"
+    LOG_CITY="${CITY:-toronto}"
+    touch "/var/log/caddy/${ENVIRONMENT}.${LOG_CITY}.log"
+    chown caddy:caddy "/var/log/caddy/${ENVIRONMENT}.${LOG_CITY}.log"
+    chmod 644 "/var/log/caddy/${ENVIRONMENT}.${LOG_CITY}.log"
+    success "Log file created: /var/log/caddy/${ENVIRONMENT}.${LOG_CITY}.log"
     
     # Validate Caddyfile
     if caddy validate --config /etc/caddy/Caddyfile 2>&1 | grep -q "Valid"; then
@@ -707,14 +717,19 @@ if command -v jq &> /dev/null; then
     echo "  • Pretty:  curl -s http://localhost:${SERVER_PORT}/health | jq"
 fi
 if command -v caddy &> /dev/null; then
-    case "$ENVIRONMENT" in
-        staging)
-            echo "  • Staging: curl https://staging.toronto.togather.foundation/health"
-            ;;
-        production)
-            echo "  • Production: curl https://toronto.togather.foundation/health"
-            ;;
-    esac
+    # Use NODE_DOMAIN from .deploy.conf if available, otherwise fall back to defaults
+    if [[ -n "${NODE_DOMAIN:-}" ]]; then
+        echo "  • Public:  curl https://${NODE_DOMAIN}/health"
+    else
+        case "$ENVIRONMENT" in
+            staging)
+                echo "  • Staging: curl https://staging.toronto.togather.foundation/health"
+                ;;
+            production)
+                echo "  • Production: curl https://toronto.togather.foundation/health"
+                ;;
+        esac
+    fi
 fi
 echo ""
 
