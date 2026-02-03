@@ -8,6 +8,7 @@ set -euo pipefail
 
 # Get script directory (absolute path)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ENVIRONMENTS_DIR="${SCRIPT_DIR}/environments"
 
 # Determine environment
@@ -31,6 +32,16 @@ case "$TEST_ENVIRONMENT" in
         ;;
 esac
 
+# Try loading .deploy.conf file first (contains NODE_DOMAIN etc)
+DEPLOY_CONF="${PROJECT_ROOT}/.deploy.conf.${TEST_ENVIRONMENT}"
+if [ -f "$DEPLOY_CONF" ]; then
+    echo "📋 Loading deployment config: $DEPLOY_CONF"
+    # shellcheck disable=SC1090
+    source "$DEPLOY_CONF"
+    # Export for use in tests
+    export NODE_DOMAIN SSH_HOST SSH_USER CITY REGION
+fi
+
 # Load environment config
 CONFIG_FILE="${ENVIRONMENTS_DIR}/${TEST_ENVIRONMENT}.test.env"
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -41,6 +52,15 @@ fi
 echo "📋 Loading test config: $TEST_ENVIRONMENT"
 # shellcheck disable=SC1090
 source "$CONFIG_FILE"
+
+# If NODE_DOMAIN is set from .deploy.conf and BASE_URL wasn't overridden, use it
+if [ -n "${NODE_DOMAIN:-}" ] && [ -z "${BASE_URL_OVERRIDE:-}" ]; then
+    # Only set BASE_URL if it's not already set by the test config
+    if [ -z "${BASE_URL:-}" ]; then
+        BASE_URL="https://${NODE_DOMAIN}"
+        echo "  Using NODE_DOMAIN for BASE_URL: $BASE_URL"
+    fi
+fi
 
 # Validate required variables
 : "${BASE_URL:?BASE_URL must be set in config}"

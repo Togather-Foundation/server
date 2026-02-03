@@ -1,0 +1,22 @@
+# Deployment Configuration Example
+# Copy this file to .deploy.conf.{environment} and customize
+# This file is gitignored - contains non-secret deployment metadata
+# DO NOT put secrets here - use .env files for that
+
+# Node domain (used for URI generation and webfiles)
+NODE_DOMAIN=api.city.togather.foundation
+
+# SSH connection details
+SSH_HOST=hostname-or-ip
+SSH_USER=deploy
+
+# City/region identifier
+CITY=cityname
+REGION=region
+
+# Environment identifier (development, staging, production)
+ENVIRONMENT=production
+
+# Deployment settings
+BLUE_GREEN_ENABLED=true
+HEALTH_CHECK_TIMEOUT=30

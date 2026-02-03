@@ -1891,6 +1891,30 @@ main() {
             ;;
     esac
     
+    # Load deployment configuration if available
+    DEPLOY_CONF="${PROJECT_ROOT}/.deploy.conf.${environment}"
+    if [[ -f "$DEPLOY_CONF" ]]; then
+        echo "→ Loading deployment configuration from ${DEPLOY_CONF}"
+        # shellcheck disable=SC1090
+        source "$DEPLOY_CONF"
+        
+        # Export variables for use in this script and subprocesses
+        export NODE_DOMAIN SSH_HOST SSH_USER CITY REGION ENVIRONMENT
+        export BLUE_GREEN_ENABLED HEALTH_CHECK_TIMEOUT
+        
+        # Use SSH_HOST for remote_host if not explicitly provided
+        if [[ -z "$remote_host" && -n "${SSH_HOST:-}" ]]; then
+            if [[ -n "${SSH_USER:-}" ]]; then
+                remote_host="${SSH_USER}@${SSH_HOST}"
+            else
+                remote_host="${SSH_HOST}"
+            fi
+        fi
+        
+        echo "  NODE_DOMAIN: ${NODE_DOMAIN:-not set}"
+        echo "  Remote host: ${remote_host:-not set}"
+    fi
+    
     # If --remote specified, delegate to remote execution
     if [[ -n "$remote_host" ]]; then
         # Initialize logging for local tracking

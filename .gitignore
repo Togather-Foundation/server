@@ -99,6 +99,9 @@ reports/
 deploy/config/environments/.env.development
 deploy/config/environments/.env.staging
 deploy/config/environments/.env.production
+# Deployment configuration files (gitignored, but allow examples)
+.deploy.conf.*
+!.deploy.conf.example
 # Caddyfiles (allow examples for documentation)
 deploy/Caddyfile
 !deploy/Caddyfile.example
