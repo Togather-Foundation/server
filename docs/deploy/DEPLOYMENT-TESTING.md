@@ -580,3 +580,216 @@ This checklist ensures that deployments are:
 - ✅ Rollback-capable
 
 Use this checklist after **every** deployment to catch issues early and maintain system reliability.
+
+---
+
+## Project Structure Reference
+
+Understanding the deployment structure is critical for troubleshooting and verification.
+
+### Docker Compose Files
+
+**Blue-Green Deployment (Staging/Production):**
+- **File:** `deploy/docker/docker-compose.blue-green.yml`
+- **Location on server:** `/opt/togather/src/deploy/docker/docker-compose.blue-green.yml`
+- **Services defined:** `togather-blue`, `togather-green`, `togather-db`
+- **Usage:** `docker compose -f deploy/docker/docker-compose.blue-green.yml up -d`
+
+**Local Development:**
+- **File:** `deploy/docker/docker-compose.yml` (if exists, or use blue-green file)
+- **Note:** For local dev, use single service or blue-green with manual switching
+
+### Container Naming Conventions
+
+**Service names in compose file:**
+- `togather-blue` (blue slot)
+- `togather-green` (green slot)
+- `togather-db` (PostgreSQL database)
+
+**Actual container names on server:**
+- **With environment prefix:** `togather-staging-togather-blue`, `togather-staging-togather-green`
+- **Or simple names:** `togather-server-blue`, `togather-server-green`
+- **Database:** `togather-db` or `togather-staging-togather-db`
+
+**To check actual names:**
+```bash
+ssh deploy@<server> 'docker ps --format "{{.Names}}"'
+```
+
+### Port Mapping Conventions
+
+**Internal Container Ports:**
+- **Blue slot:** Port `8080` inside container
+- **Green slot:** Port `8081` inside container
+- **Database:** Port `5432` inside container
+
+**External Port Mappings:**
+- **Blue:** Host `localhost:8080` → Container `8080`
+- **Green:** Host `localhost:8081` → Container `8081`
+- **Database:** Host `localhost:5432` → Container `5432` (usually not exposed externally)
+
+**Caddy Proxy:**
+- **HTTPS (443)** → Active slot port (8080 or 8081)
+- **HTTP (80)** → Redirects to HTTPS
+
+**Quick check which slot is active:**
+```bash
+ssh deploy@<server> 'grep "reverse_proxy localhost:" /etc/caddy/Caddyfile'
+# Output: reverse_proxy localhost:8080  (means blue is active)
+# Output: reverse_proxy localhost:8081  (means green is active)
+```
+
+### Image Build and Tagging Strategy
+
+**Build process:**
+1. **Local build:** `make deploy-package` creates `dist/togather-<version>.tar.gz`
+2. **Remote build:** `deploy.sh` builds on server with commit hash tag
+3. **Image tag format:** `togather-server:<git-commit-hash>`
+   - Example: `togather-server:908511e`
+
+**Docker Compose expectations:**
+- Compose file uses `build:` directive pointing to `deploy/docker/`
+- Built images should be tagged to match service names for proper recreation
+- **Known issue:** Images built with commit hash but compose may not detect changes
+
+**Image tagging workaround (if needed):**
+```bash
+# Tag commit-based image to compose service name
+docker tag togather-server:908511e togather-staging-togather-blue:latest
+
+# Force recreation
+docker compose -f deploy/docker/docker-compose.blue-green.yml up -d --force-recreate togather-blue
+```
+
+### Deployment State File
+
+**Location:** `/opt/togather/src/deploy/config/deployment-state.json`
+
+**Structure:**
+```json
+{
+  "version": "1.0.0",
+  "current_deployment": {
+    "active_slot": "blue",
+    "version": "908511e",
+    "deployed_at": "2026-02-03T15:19:23Z",
+    "health_status": "healthy"
+  },
+  "previous_deployment": {
+    "active_slot": "green",
+    "version": "7641375",
+    "deployed_at": "2026-02-03T10:00:00Z"
+  }
+}
+```
+
+**Read current active slot:**
+```bash
+ssh deploy@<server> 'cat /opt/togather/src/deploy/config/deployment-state.json | jq -r ".current_deployment.active_slot"'
+```
+
+**Read current version:**
+```bash
+ssh deploy@<server> 'cat /opt/togather/src/deploy/config/deployment-state.json | jq -r ".current_deployment.version"'
+```
+
+### Directory Structure on Server
+
+```
+/opt/togather/
+├── .env                          # Environment variables (DATABASE_URL, etc.)
+├── .env.blue                     # Blue slot specific vars
+├── .env.green                    # Green slot specific vars
+├── contexts/                     # JSON-LD context files (if using volume mount)
+│   └── sel/
+│       └── v0.1.jsonld
+├── src/                          # Git repository clone
+│   ├── deploy/
+│   │   ├── config/
+│   │   │   ├── deployment-state.json    # Active slot tracker
+│   │   │   └── environments/
+│   │   │       ├── .env.staging
+│   │   │       └── .env.production
+│   │   ├── docker/
+│   │   │   ├── docker-compose.blue-green.yml
+│   │   │   └── Dockerfile
+│   │   └── scripts/
+│   │       ├── deploy.sh
+│   │       ├── install.sh
+│   │       └── provision.sh
+│   └── ...
+└── data/                         # PostgreSQL data volume
+    └── postgres/
+```
+
+### Configuration File Locations
+
+**Environment Files:**
+- **Active runtime:** `/opt/togather/.env` (symlink or main file)
+- **Slot-specific:** `/opt/togather/.env.blue`, `/opt/togather/.env.green`
+- **Templates:** `deploy/config/environments/.env.staging`, `.env.production`
+
+**Caddy Configuration:**
+- **System Caddy (staging/prod):** `/etc/caddy/Caddyfile`
+- **Template (staging):** `deploy/config/environments/Caddyfile.staging`
+- **Template (production):** `deploy/config/environments/Caddyfile.production`
+
+**Deployment Scripts:**
+- **On server:** `/opt/togather/src/deploy/scripts/deploy.sh`
+- **In repo:** `deploy/scripts/deploy.sh`
+
+### Common Misunderstandings to Avoid
+
+1. **Docker Compose file is NOT at project root**
+   - ❌ Wrong: `./docker-compose.yml`
+   - ✅ Correct: `deploy/docker/docker-compose.blue-green.yml`
+
+2. **Container names may have environment prefix**
+   - ❌ Wrong: Assuming always `togather-server-blue`
+   - ✅ Correct: Check actual names with `docker ps`, may be `togather-staging-togather-blue`
+
+3. **Images need proper tagging for compose to detect changes**
+   - ❌ Wrong: Assuming `docker compose up` auto-detects new builds
+   - ✅ Correct: Use `--force-recreate` or proper image tags
+
+4. **Port 8080/8081 are INTERNAL to containers**
+   - ❌ Wrong: Accessing `http://server-ip:8080` directly
+   - ✅ Correct: Access via Caddy on port 443, or localhost:8080 from server
+
+5. **Deployment state file is under src/deploy/, not root**
+   - ❌ Wrong: `/opt/togather/deployment-state.json`
+   - ✅ Correct: `/opt/togather/src/deploy/config/deployment-state.json`
+
+6. **Health endpoint is accessed via HTTPS through Caddy**
+   - ❌ Wrong: `http://server-ip:8080/health` (bypasses Caddy)
+   - ✅ Correct: `https://domain/health` (through Caddy proxy)
+
+### Quick Reference Commands
+
+```bash
+# Check which compose file is being used
+ssh deploy@<server> 'ls -la /opt/togather/src/deploy/docker/docker-compose*.yml'
+
+# Check actual container names
+ssh deploy@<server> 'docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"'
+
+# Check which ports are exposed
+ssh deploy@<server> 'docker ps --format "table {{.Names}}\t{{.Ports}}"'
+
+# Check active slot from state file
+ssh deploy@<server> 'cat /opt/togather/src/deploy/config/deployment-state.json | jq -r ".current_deployment.active_slot"'
+
+# Check active slot from Caddy config
+ssh deploy@<server> 'grep "reverse_proxy localhost:" /etc/caddy/Caddyfile'
+
+# Check active slot from HTTP header
+curl -I https://<domain>/health | grep X-Togather-Slot
+
+# List all environment files
+ssh deploy@<server> 'ls -la /opt/togather/.env*'
+
+# Check image tags
+ssh deploy@<server> 'docker images | grep togather-server'
+```
+
+---
