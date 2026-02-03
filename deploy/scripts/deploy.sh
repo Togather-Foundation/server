@@ -649,9 +649,9 @@ acquire_lock() {
   "slots": {
     "blue": {"status": "inactive"},
     "green": {"status": "inactive"}
+  },
   "last_deployment": null
 }
-STATE_EOF
 STATE_EOF
         chmod 600 "${STATE_FILE}"
     fi
