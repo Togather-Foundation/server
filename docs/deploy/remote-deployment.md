@@ -21,10 +21,44 @@ Remote deployment enables developers to deploy directly from their local machine
 - Deploy user credentials (deploy keys configured)
 
 ### On Remote Server
-- `install.sh` must be run first (one time only)
+
+**Quick Setup (Recommended):**
+```bash
+# One command to provision server and install application
+./deploy/scripts/provision.sh deploy@server staging --with-app
+```
+
+**Manual Setup:**
+
+The server must be prepared before first deployment. Either:
+
+**Option A: Use provision.sh --with-app (Fastest)**
+```bash
+./deploy/scripts/provision.sh deploy@server staging --with-app
+```
+This provisions the server AND installs the application in one command.
+
+**Option B: Use provision.sh + install.sh (Manual Control)**
+```bash
+# 1. Provision server infrastructure
+./deploy/scripts/provision.sh deploy@server staging
+
+# 2. Install application
+make deploy-package
+scp dist/togather-server-*.tar.gz deploy@server:~/
+ssh deploy@server "cd togather-*/ && sudo ./install.sh"
+```
+
+**What must be in place:**
 - Docker and Docker Compose installed
-- Caddy reverse proxy configured
-- SSH access for deploy user
+- Caddy reverse proxy configured (for blue-green traffic switching)
+- SSH access for deploy user with sudo privileges
+- `install.sh` run at least once (sets up directories, database, initial deployment)
+
+**After prerequisites are met:**
+- `deploy.sh --remote` can be used for all subsequent deployments
+- Git repository will be auto-cloned to `/opt/togather/src/` on first deployment
+- Blue-green deployments will work automatically
 
 ## Basic Usage
 

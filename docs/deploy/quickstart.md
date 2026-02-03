@@ -82,9 +82,50 @@ curl http://localhost:8080/api/v1/events | jq .
 
 ## Deployment Workflows
 
-Togather supports two deployment approaches:
+Togather supports multiple deployment approaches:
 
-### 1. Simple Deployment (with brief downtime)
+### 1. One-Command Setup (New Server)
+
+Use `provision.sh --with-app` for brand new servers:
+
+```bash
+# NEW: One-command server setup (provisions server + installs app)
+./deploy/scripts/provision.sh deploy@server staging --with-app
+```
+
+**What happens:**
+1. Provisions server (Docker, Caddy, firewall, deploy user)
+2. Builds and copies deployment package
+3. Runs `install.sh` on server
+4. Server is ready with zero manual steps
+
+**Characteristics:**
+- Fastest path from zero to running server
+- Combines provisioning + installation
+- Good for: New deployments, fresh servers, automated setups
+- Requires: SSH access to fresh Ubuntu/Debian server
+
+### 2. Manual Step-by-Step Setup
+
+Use `provision.sh` + `install.sh` for manual control:
+
+```bash
+# Step 1: Provision server (one time)
+./deploy/scripts/provision.sh deploy@server staging
+
+# Step 2: Install application
+make deploy-package
+scp dist/togather-server-<hash>.tar.gz deploy@server:~/
+ssh deploy@server "cd togather-*/ && sudo ./install.sh"
+```
+
+**Characteristics:**
+- Manual control over each step
+- Review configuration before install
+- Good for: Custom setups, security reviews, learning the process
+- Requires: Same as one-command setup
+
+### 3. Simple Deployment (with brief downtime)
 
 Use `install.sh` for straightforward upgrades:
 
@@ -98,16 +139,17 @@ ssh deploy@server
 cd ~
 tar -xzf togather-server-<hash>.tar.gz
 cd togather-server-<hash>/
-sudo ./install.sh  # Choose option [1] PRESERVE DATA
+sudo ./install.sh  # Auto-detects existing install, preserves data
 ```
 
 **Characteristics:**
 - Brief downtime during service restart (~10-30 seconds)
 - Simple, reliable, few moving parts
+- **Auto-detects blue-green mode** if Caddy is configured
 - Good for: Development, staging, low-traffic updates
 - Requires: Deployment package only (no git repo on server)
 
-### 2. Zero-Downtime Deployment (blue-green)
+### 4. Zero-Downtime Deployment (blue-green)
 
 Use `deploy.sh --remote` for production-grade deployments:
 
@@ -149,25 +191,20 @@ git pull origin main
 
 `install.sh` must be run first to provision the server:
 ```bash
-# Run install.sh first (one time only)
+# Option A: One-command setup (recommended)
+./deploy/scripts/provision.sh deploy@server staging --with-app
+
+# Option B: Manual setup
+# 1. Run install.sh first (one time only)
 scp dist/togather-server-<hash>.tar.gz deploy@server:~/
 ssh deploy@server
 sudo ./install.sh
 
-# Then use deploy.sh for all future updates
+# 2. Then use deploy.sh for all future updates
 ./deploy/scripts/deploy.sh staging --remote deploy@server
 ```
 
 ---
-## Local Development Setup
-
-### Quick Start (5 minutes)
-
-**Option 1: Docker (Recommended for Development)**
-
-```bash
-# Clone repository
-git clone https://github.com/Togather-Foundation/server.git
 cd server
 
 # Install development tools (golang-migrate, River CLI, golangci-lint, sqlc)

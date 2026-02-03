@@ -4,11 +4,39 @@ This guide covers deploying and upgrading Togather server installations.
 
 ## Table of Contents
 
-1. [New Installation](#new-installation)
-2. [Upgrading Existing Installation](#upgrading-existing-installation)
-3. [Deployment Methods](#deployment-methods)
-4. [Verification](#verification)
-5. [Rollback](#rollback)
+1. [Which Tool Should I Use?](#which-tool-should-i-use) ⭐
+2. [New Installation](#new-installation)
+3. [Upgrading Existing Installation](#upgrading-existing-installation)
+4. [Deployment Methods](#deployment-methods)
+5. [Verification](#verification)
+6. [Rollback](#rollback)
+
+---
+
+## Which Tool Should I Use?
+
+Choose the right deployment tool for your scenario:
+
+| Scenario | Tool | Command | Why |
+|----------|------|---------|-----|
+| **Brand new server** | `provision.sh --with-app` | `./deploy/scripts/provision.sh deploy@server staging --with-app` | One command setup: provisions server + installs app |
+| **First install only** | `provision.sh` + `install.sh` | See [New Installation](#new-installation) | Manual control over provisioning and install steps |
+| **Simple update (dev)** | `install.sh` | `sudo ./install.sh` | Fast deployment, ~30s downtime OK |
+| **Production deployment** | `deploy.sh --remote` | `./deploy/scripts/deploy.sh staging --remote deploy@server` | Zero downtime, automatic health checks + rollback |
+| **Rollback** | `deploy.sh` with state | See [Rollback](#rollback) | Uses deployment state to switch slots |
+
+**Key Features:**
+- **provision.sh --with-app**: Combines server provisioning and application install in one command
+- **install.sh**: Now auto-detects blue-green mode if Caddy is configured; preserves data on existing installs
+- **deploy.sh --remote**: Full blue-green deployment from local machine via SSH
+
+**Decision Flow:**
+1. **Is this a brand new server?** → Use `provision.sh --with-app` for fastest setup
+2. **Already provisioned but no app?** → Use `install.sh` to install the application
+3. **Need to update existing installation?**
+   - Dev/staging with low traffic? → Use `install.sh` (simple, fast)
+   - Production or zero downtime required? → Use `deploy.sh --remote` (blue-green)
+4. **Need to rollback?** → Use deployment state or Caddy slot switching
 
 ---
 
