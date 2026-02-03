@@ -3,10 +3,13 @@
 This repository is for the Togather server, a Shared Events Library (SEL) backend implemented in Go.
 
 IMPORTANT:
+- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
 - The server and code are under active early development and are not yet deployed to production.
 - Use Beads (`bd`) for task discovery + progress tracking (NOT markdown TODO lists).
 - Use Spec Kit artifacts as the source of intent: constitution → spec → plan → tasks.
 - Use context7 to look up docs for external libs.
+- Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+
 
 ## Issue Tracking
 
@@ -39,6 +42,33 @@ For full workflow details: `bd prime`
    - `bd sync` (safe to run often).
 7) Never merge `beads-sync` into main.
 
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds: `make ci`
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+
 ## Build, Lint, Test Commands
 
 The project uses a `Makefile` for common build tasks. Use `make help` to see all available targets.
@@ -61,9 +91,6 @@ make build
 # Run all tests
 make test
 
-# Run tests with verbose output
-make test-v
-
 # Run tests with race detector
 make test-race
 
@@ -78,12 +105,6 @@ make fmt
 
 # Clean build artifacts
 make clean
-
-# Build and run the server
-make run
-
-# Run in development mode (with live reload if air is available)
-make dev
 
 # Install development tools (golangci-lint, air)
 make install-tools
@@ -100,7 +121,7 @@ gofmt -w path/to/file.go
 
 ## Deployment and Testing
 
-When the user asks to deploy or "deploy and test", follow the comprehensive deployment testing process.
+When the user asks to deploy, follow the comprehensive deployment testing process.
 
 ### Deployment Workflow
 
@@ -119,27 +140,6 @@ When the user asks to deploy or "deploy and test", follow the comprehensive depl
 6. If issues found, run specific checks from DEPLOYMENT-TESTING.md checklist
 7. Report comprehensive results to user
 
-**Quick deployment commands:**
-```bash
-# Staging deployment
-./deploy/scripts/deploy.sh staging --remote deploy@192.46.222.199
-
-# Staging deployment + automated tests
-./deploy/scripts/test-deployment.sh staging deploy@192.46.222.199 staging.toronto.togather.foundation
-
-# Production deployment
-./deploy/scripts/deploy.sh production --remote deploy@prod-server
-```
-
-### Critical Checks (Minimum)
-
-After any deployment, verify at minimum:
-- [ ] Container health status: `docker ps --filter name=togather-server`
-- [ ] External HTTPS health check: `curl https://<domain>/health`
-- [ ] API endpoints respond: `curl https://<domain>/api/v1/events`
-- [ ] Admin UI loads: `curl https://<domain>/admin/login`
-- [ ] Active slot matches expected: Check `X-Togather-Slot` header
-- [ ] Version deployed correctly: Check health endpoint `version` field
 
 ### Deployment Documentation
 
@@ -156,14 +156,14 @@ After any deployment, verify at minimum:
 - `internal/domain/` - Core domain logic by feature (`events`, `places`, `organizations`, `federation`)
 - `internal/storage/postgres/` - SQLc queries, repositories, migrations
 - `tests/integration/` - End-to-end integration tests and helpers
-- `docs/` - SEL documentation and profiles
+- `docs/` - SEL and deployment documentation and profiles
 - `plan/` and `specs/` - Spec Kit artifacts (source of intent)
 - `contexts/` and `shapes/` - JSON-LD contexts and SHACL shapes
 - `Makefile` - Common build/test/lint targets
 
 ## Code Style and Architecture Guidelines
 
-Use idiomatic Go, consistent with SEL docs in `docs/` and `plan/`.
+Use idiomatic Go, consistent with SEL docs in `docs/`.
 
 This project uses Specification Driven Development:
 
@@ -251,32 +251,6 @@ This project uses Specification Driven Development:
 - Keep schema and context artifacts (`contexts/`, `shapes/`) in sync with code changes.
 
 
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds: `make ci`
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
 <skills_system priority="1">
 
 ## Available Skills
@@ -330,9 +304,8 @@ Usage notes:
 
 ## Active Technologies
 - Go 1.25+ + Docker Compose v2 (orchestration)
-- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI) (001-sel-backend)
+- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions, golang-migrate (migrations) with volume persistence, pg_dump snapshots to filesystem or S3-compatible storage
+- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI)
 - CLI Commands (`server` binary):
   - `server snapshot` - Database backup management (create, list, cleanup with retention policy)
-  - `server deploy` - Deployment operations (status, rollback with health checks and dry-run)
   - `server healthcheck` - Health monitoring with blue-green slot support, watch mode, multiple output formats
-- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions (001-sel-backend), golang-migrate (migrations) with volume persistence, pg_dump snapshots to filesystem or S3-compatible storage
