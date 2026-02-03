@@ -1,8 +1,6 @@
 # Shared Events Library (SEL)
 
-**Part of the [Togather Ecosystem](https://togather.foundation)**
-
-The **Shared Events Library (SEL)** is the infrastructure component of [**Togather**](https://togather.foundation)—a collaborative initiative to rebuild event discovery as shared civic infrastructure.
+The **Shared Events Library (SEL)** is the events storage and query component of [**Togather**](https://togather.foundation)—a collaborative, community driven initiative to rebuild event discovery as shared civic infrastructure.
 
 ## Project Vision
 
