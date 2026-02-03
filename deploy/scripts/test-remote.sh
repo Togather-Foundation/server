@@ -170,7 +170,7 @@ main() {
                 log "WARN" "Performance test script not found: $perf_script"
                 log "INFO" "Skipping performance tests"
             else
-                if "$perf_script" --mode light --url "$BASE_URL"; then
+                    if "$perf_script" --profile light --url "$BASE_URL"; then
                     log "SUCCESS" "Performance tests passed"
                 else
                     log "ERROR" "Performance tests failed"
@@ -206,7 +206,7 @@ main() {
                     log "WARN" "Performance test script not found: $perf_script"
                     log "INFO" "Skipping performance tests"
                 else
-                    if "$perf_script" --mode light --url "$BASE_URL"; then
+                if "$perf_script" --profile light --url "$BASE_URL"; then
                         log "SUCCESS" "Performance tests passed"
                     else
                         log "ERROR" "Performance tests failed"
