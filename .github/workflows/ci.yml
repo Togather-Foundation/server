@@ -40,6 +40,26 @@ jobs:
             exit 1
           fi
 
+  # OpenAPI validation
+  lint-openapi:
+    name: OpenAPI Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install vacuum
+        run: go install github.com/daveshanley/vacuum@latest
+
+      - name: Validate OpenAPI spec
+        run: vacuum lint specs/001-sel-backend/contracts/openapi.yaml
+
   vulncheck:
     name: Vulnerability Scan
     runs-on: ubuntu-latest

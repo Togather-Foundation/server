@@ -39,6 +39,7 @@ info:
   contact:
     name: SEL Team
     url: https://togather.foundation
+    email: hello@togather.foundation
   license:
     name: CC0 1.0
     url: https://creativecommons.org/publicdomain/zero/1.0/
@@ -52,18 +53,18 @@ servers:
         description: SEL node domain
 
 tags:
-  - name: Events
-    description: Event discovery and submission
-  - name: Places
-    description: Venue information
-  - name: Organizations
-    description: Organizer information
   - name: Admin
     description: Administrative operations (requires admin auth)
+  - name: Events
+    description: Event discovery and submission
   - name: Feeds
     description: Change feeds for federation
   - name: Health
     description: Health check endpoints
+  - name: Organizations
+    description: Organizer information
+  - name: Places
+    description: Venue information
 
 paths:
   /events:
@@ -289,7 +290,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Problem'
+                $ref: '#/components/schemas/ProblemDetails'
 
         '410':
           $ref: '#/components/responses/Gone'
@@ -298,6 +299,7 @@ paths:
     get:
       operationId: listPlaces
       summary: List places
+      description: Query places (venues) with optional filters. Returns paginated JSON-LD.
       tags: [Places]
       parameters:
         - $ref: '#/components/parameters/city'
@@ -316,11 +318,13 @@ paths:
     get:
       operationId: getPlace
       summary: Get place by ID
+      description: Retrieve a single place (venue) by its unique identifier. Returns JSON-LD.
       tags: [Places]
       parameters:
         - name: id
           in: path
           required: true
+          description: Unique identifier of the place (ULID or URI)
           schema:
             type: string
       responses:
@@ -337,6 +341,7 @@ paths:
     get:
       operationId: listOrganizations
       summary: List organizations
+      description: Query organizations (event organizers) with optional filters. Returns paginated JSON-LD.
       tags: [Organizations]
       parameters:
         - $ref: '#/components/parameters/query'
@@ -354,11 +359,13 @@ paths:
     get:
       operationId: getOrganization
       summary: Get organization by ID
+      description: Retrieve a single organization by its unique identifier. Returns JSON-LD.
       tags: [Organizations]
       parameters:
         - name: id
           in: path
           required: true
+          description: Unique identifier of the organization (ULID or URI)
           schema:
             type: string
       responses:
@@ -494,6 +501,7 @@ paths:
     get:
       operationId: listApiKeys
       summary: List API keys
+      description: Retrieve all API keys (without secrets). Requires admin authentication.
       tags: [Admin]
       security:
         - bearerAuth: []
@@ -513,6 +521,7 @@ paths:
     post:
       operationId: createApiKey
       summary: Create a new API key
+      description: Generate a new API key for agent authentication. Returns the API key secret only once. Requires admin authentication.
       tags: [Admin]
       security:
         - bearerAuth: []
@@ -603,6 +612,7 @@ paths:
     get:
       operationId: healthLiveness
       summary: Liveness probe
+      description: Check if the service is alive and running. Used by orchestrators (Kubernetes, etc.) to determine if the service should be restarted.
       tags: [Health]
       responses:
         '200':
@@ -620,6 +630,7 @@ paths:
     get:
       operationId: healthReadiness
       summary: Readiness probe
+      description: Check if the service is ready to accept traffic. Verifies database connectivity and other dependencies.
       tags: [Health]
       responses:
         '200':
@@ -672,10 +683,11 @@ paths:
                     type: string
                     format: date-time
 
-  openapi.json:
+  /openapi.json:
     get:
       operationId: getOpenApiSpec
       summary: OpenAPI specification
+      description: Retrieve the OpenAPI 3.1 specification for this API in JSON format. Useful for API documentation and client generation.
       tags: [Health]
       responses:
         '200':

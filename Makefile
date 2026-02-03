@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
+.PHONY: help build test test-ci lint lint-ci lint-openapi vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -20,6 +20,7 @@ help:
 	@echo "  make test-ci       - Run tests exactly as CI does (race detector, verbose)"
 	@echo "  make lint          - Run golangci-lint"
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
+	@echo "  make lint-openapi  - Validate OpenAPI specification"
 	@echo "  make vulncheck     - Run govulncheck vulnerability scan"
 	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
 	@echo "  make test-v        - Run tests with verbose output"
@@ -217,6 +218,20 @@ lint-ci:
 		exit 1; \
 		fi
 
+# Validate OpenAPI specification
+lint-openapi:
+	@echo "Validating OpenAPI specification..."
+	@if command -v vacuum > /dev/null 2>&1; then \
+		vacuum lint specs/001-sel-backend/contracts/openapi.yaml; \
+	elif [ -f $(HOME)/go/bin/vacuum ]; then \
+		$(HOME)/go/bin/vacuum lint specs/001-sel-backend/contracts/openapi.yaml; \
+	elif [ -f $(GOPATH)/bin/vacuum ]; then \
+		$(GOPATH)/bin/vacuum lint specs/001-sel-backend/contracts/openapi.yaml; \
+	else \
+		echo "vacuum not found. Install with 'make install-tools'"; \
+		exit 1; \
+	fi
+
 # Run vulnerability scan (requires govulncheck)
 vulncheck:
 	@echo "Running govulncheck..."
@@ -254,6 +269,9 @@ ci: lint-ci vulncheck
 	else \
 		echo "✓ Code is properly formatted"; \
 	fi
+	@echo ""
+	@echo "==> Validating OpenAPI specification..."
+	@$(MAKE) lint-openapi
 	@echo ""
 	@echo "==> Validating docker-compose files..."
 	@$(MAKE) docker-compose-lint
@@ -383,6 +401,8 @@ install-tools:
 	@go install github.com/riverqueue/river/cmd/river@latest
 	@echo "Installing govulncheck..."
 	@go install golang.org/x/vuln/cmd/govulncheck@latest
+	@echo "Installing vacuum (OpenAPI linter)..."
+	@go install github.com/daveshanley/vacuum@latest
 	@echo ""
 	@echo "==> Installing golang-migrate (pre-built binary with database drivers)..."
 	@if [ "$$(uname -m)" = "x86_64" ]; then \
