@@ -1097,7 +1097,7 @@ get_inactive_slot() {
 #   0 on success, 1 on docker-compose failure
 # Side effects:
 #   - Exports COMPOSE_PROJECT_NAME, DEPLOYMENT_SLOT, IMAGE_TAG, ENV_FILE
-#   - Starts docker container for specified slot
+#   - Recreates and starts docker container for specified slot with new image
 # Example:
 #   deploy_to_slot production blue  # Deploy to blue slot explicitly
 #   deploy_to_slot production        # Deploy to inactive slot (auto-detected)
@@ -1169,7 +1169,7 @@ deploy_to_slot() {
     # Deploy to slot using docker-compose
     cd "${DOCKER_DIR}"
     
-    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d --no-deps "togather-${slot}"; then
+    if ! ${COMPOSE_CMD} -f "${compose_file}" up -d --no-deps --force-recreate "togather-${slot}"; then
         log "ERROR" "Failed to deploy to ${slot} slot"
         return 1
     fi
