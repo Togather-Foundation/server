@@ -60,6 +60,8 @@ services:
       SLOT: blue
       # Force internal port to 8080 (external port mapping handles slot differentiation)
       SERVER_PORT: "8080"
+      # Force database connection to use Docker network hostname
+      DATABASE_URL: "postgresql://togather:${POSTGRES_PASSWORD}@togather-db:5432/togather?sslmode=disable"
       
       # Override container name in logs
       CONTAINER_NAME: togather-server-blue
@@ -107,6 +109,8 @@ services:
       SLOT: green
       # Force internal port to 8080 (external port mapping handles slot differentiation)
       SERVER_PORT: "8080"
+      # Force database connection to use Docker network hostname
+      DATABASE_URL: "postgresql://togather:${POSTGRES_PASSWORD}@togather-db:5432/togather?sslmode=disable"
       
       # Override container name in logs
       CONTAINER_NAME: togather-server-green
