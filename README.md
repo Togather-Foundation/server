@@ -182,7 +182,17 @@ make migrate-up
 make migrate-river
 
 # Start server
-make run           # Or: make dev (with hot reload)
+make run           # Build and run server (auto-kills existing processes)
+make dev           # Run with live reload (auto-restarts on code changes)
+                   # Note: First run 'make install-tools' to get air for live reload
+
+# Manage running server
+make stop          # Stop any running server processes
+make restart       # Restart the server (stop + run)
+
+# Quick reference for manual control:
+pkill togather-server           # Kill server if make stop doesn't work
+ps aux | grep togather-server   # Check if server is running
 ```
 
 ### Common Commands

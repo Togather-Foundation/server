@@ -30,8 +30,10 @@ help:
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
-	@echo "  make run           - Build and run the server"
-	@echo "  make dev           - Run in development mode (with air if available)"
+	@echo "  make run           - Build and run the server (kills existing first)"
+	@echo "  make dev           - Run in development mode with live reload (requires air from install-tools)"
+	@echo "  make stop          - Stop running server processes"
+	@echo "  make restart       - Restart the server (stop + run)"
 	@echo "  make deploy-package - Build deployment package (binary + configs, no source)"
 	@echo "  make install-tools - Install development tools (Go tools)"
 	@echo "  make install-pyshacl - Install pyshacl for SHACL validation"
@@ -295,21 +297,67 @@ clean:
 	@rm -f coverage.out coverage.html
 	@go clean
 
-# Build and run the server
+# Stop running server processes
+stop:
+	@echo "Stopping server processes..."
+	@# Kill by port first (most reliable)
+	@if lsof -ti:8080 > /dev/null 2>&1; then \
+		echo "Stopping process on port 8080..."; \
+		lsof -ti:8080 | xargs -r kill 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@# Force kill if still running
+	@if lsof -ti:8080 > /dev/null 2>&1; then \
+		echo "Force stopping process on port 8080..."; \
+		lsof -ti:8080 | xargs -r kill -9 2>/dev/null || true; \
+		sleep 1; \
+	fi
+	@# Also try killing by binary name as backup
+	@-killall togather-server 2>/dev/null || true
+	@echo "✓ Server stopped"
+
+# Build and run the server (kills existing processes first)
 run: build
+	@echo "Checking for existing server processes..."
+	@# Stop any existing server on port 8080
+	@if lsof -ti:8080 > /dev/null 2>&1; then \
+		echo "Found running server on port 8080, stopping it..."; \
+		lsof -ti:8080 | xargs -r kill 2>/dev/null || true; \
+		sleep 1; \
+		if lsof -ti:8080 > /dev/null 2>&1; then \
+			lsof -ti:8080 | xargs -r kill -9 2>/dev/null || true; \
+			sleep 1; \
+		fi; \
+	fi
 	@echo "Running server..."
 	@./server
 
-# Development mode (with live reload if air is installed)
+# Development mode with live reload (requires air - run 'make install-tools' first)
 dev:
+	@echo "Checking for existing server processes..."
+	@# Stop any existing server on port 8080
+	@if lsof -ti:8080 > /dev/null 2>&1; then \
+		echo "Found running server on port 8080, stopping it..."; \
+		lsof -ti:8080 | xargs -r kill 2>/dev/null || true; \
+		sleep 1; \
+		if lsof -ti:8080 > /dev/null 2>&1; then \
+			lsof -ti:8080 | xargs -r kill -9 2>/dev/null || true; \
+			sleep 1; \
+		fi; \
+	fi
 	@if which air > /dev/null; then \
 		echo "Running with air (live reload)..."; \
 		air; \
 	else \
 		echo "air not found, running without live reload..."; \
-		echo "Install air with: go install github.com/air-verse/air@latest"; \
+		echo "Install air with: make install-tools"; \
 		go run ./cmd/server; \
 	fi
+
+# Restart server (stop + run)
+restart: stop
+	@sleep 1
+	@$(MAKE) run
 
 # Install development tools
 install-tools:
