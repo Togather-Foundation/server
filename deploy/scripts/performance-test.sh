@@ -184,7 +184,10 @@ echo ""
 
 # Build the Go load test binary if needed
 LOADTEST_BIN="$PROJECT_ROOT/bin/loadtest"
-if [[ ! -f "$LOADTEST_BIN" ]] || [[ "$PROJECT_ROOT/tests/performance/load_test.go" -nt "$LOADTEST_BIN" ]]; then
+if [[ ! -f "$LOADTEST_BIN" ]] \
+    || [[ "$PROJECT_ROOT/tests/performance/load_test.go" -nt "$LOADTEST_BIN" ]] \
+    || [[ "$PROJECT_ROOT/cmd/loadtest/main.go" -nt "$LOADTEST_BIN" ]] \
+    || [[ "$PROJECT_ROOT/internal/loadtest/loadtest.go" -nt "$LOADTEST_BIN" ]]; then
     echo -e "${YELLOW}Building load test binary...${NC}"
     mkdir -p "$PROJECT_ROOT/bin"
     
