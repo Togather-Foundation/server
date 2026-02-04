@@ -23,11 +23,12 @@ func main() {
 		readRatio = flag.Float64("read-ratio", 0, "Read/write ratio 0.0-1.0 (overrides profile)")
 		noRamp    = flag.Bool("no-ramp", false, "Disable ramp-up/ramp-down (instant start/stop)")
 		apiKey    = flag.String("api-key", "", "API key(s) for write endpoints (comma-separated or repeatable in wrapper scripts)")
+		debugAuth = flag.Bool("debug-auth", false, "Log auth debug lines for 401 responses")
 	)
 	flag.Parse()
 
 	// Create load tester (defaults to no auth)
-	tester := loadtest.NewLoadTester(*baseURL).WithoutAuth()
+	tester := loadtest.NewLoadTester(*baseURL).WithoutAuth().WithDebugAuth(*debugAuth)
 
 	// If API key(s) provided, use them for write endpoints
 	if strings.TrimSpace(*apiKey) != "" {

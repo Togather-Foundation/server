@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -95,6 +96,7 @@ type LoadTester struct {
 	authenticator *testauth.TestAuthenticator
 	apiKeys       []string
 	apiKeyIndex   uint32
+	debugAuth     bool
 }
 
 // NewLoadTester creates a new load tester targeting the specified base URL.
@@ -128,6 +130,12 @@ func (lt *LoadTester) WithAuth(auth *testauth.TestAuthenticator) *LoadTester {
 func (lt *LoadTester) WithoutAuth() *LoadTester {
 	lt.authenticator = nil
 	lt.apiKeys = nil
+	return lt
+}
+
+// WithDebugAuth enables auth debugging logs for 401 responses.
+func (lt *LoadTester) WithDebugAuth(enabled bool) *LoadTester {
+	lt.debugAuth = enabled
 	return lt
 }
 
@@ -386,14 +394,19 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 	}
 
 	// Add authentication if available
+	authMode := "none"
+	keyPrefix := ""
 	if len(lt.apiKeys) > 0 {
 		idx := atomic.AddUint32(&lt.apiKeyIndex, 1)
 		key := lt.apiKeys[int(idx-1)%len(lt.apiKeys)]
 		if key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
+			authMode = "api_key"
+			keyPrefix = apiKeyPrefix(key)
 		}
 	} else if lt.authenticator != nil {
 		lt.authenticator.AddAuth(req)
+		authMode = "authenticator"
 	}
 
 	// Execute request
@@ -411,6 +424,19 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 
 	// Record statistics
 	lt.recordResponse(resp.StatusCode, duration, work.endpoint)
+	if lt.debugAuth && resp.StatusCode == http.StatusUnauthorized {
+		fmt.Fprintf(os.Stderr, "AUTH_DEBUG status=401 endpoint=%s method=%s path=%s auth=%s key_prefix=%s\n",
+			work.endpoint, work.method, work.path, authMode, keyPrefix,
+		)
+	}
+}
+
+func apiKeyPrefix(key string) string {
+	const prefixLen = 8
+	if len(key) <= prefixLen {
+		return key
+	}
+	return key[:prefixLen]
 }
 
 // recordResponse records a successful response.

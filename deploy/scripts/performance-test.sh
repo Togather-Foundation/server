@@ -14,6 +14,7 @@ DURATION="1m"
 RPS=5
 READ_RATIO=0.8
 NO_RAMP=false
+DEBUG_AUTH=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -36,6 +37,7 @@ OPTIONS:
     -R, --read-ratio NUM   Read/write ratio 0.0-1.0 (default: 0.8)
     -s, --slot SLOT        Target specific slot: blue, green, or lb (load balanced)
     -k, --api-key KEY      API key for write endpoints (optional, repeatable)
+    --debug-auth           Log auth debug lines for 401 responses
     --no-ramp              Disable ramp-up/ramp-down (instant start/stop)
     -h, --help             Show this help message
 
@@ -68,6 +70,9 @@ EXAMPLES:
 
     # Use multiple API keys
     $0 --profile light --api-key KEY_ONE --api-key KEY_TWO
+
+    # Debug auth failures
+    $0 --profile light --debug-auth
 
 SLOT TARGETING:
     By default, tests target port 8080. You can target specific deployment slots:
@@ -136,6 +141,10 @@ while [[ $# -gt 0 ]]; do
         -k|--api-key)
             add_perf_key "$2"
             shift 2
+            ;;
+        --debug-auth)
+            DEBUG_AUTH=true
+            shift
             ;;
         --no-ramp)
             NO_RAMP=true
@@ -216,6 +225,10 @@ fi
 
 if [[ "$NO_RAMP" == "true" ]]; then
     ARGS+=(--no-ramp)
+fi
+
+if [[ "$DEBUG_AUTH" == "true" ]]; then
+    ARGS+=(--debug-auth)
 fi
 
 if [[ ${#perf_api_keys[@]} -gt 0 ]]; then
