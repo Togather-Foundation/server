@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duplicate Events - SEL Admin</title>
+    <link rel="stylesheet" href="/admin/static/css/admin.css">
+    <style>
+        .comparison-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .event-card {
+            flex: 1;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            background: white;
+        }
+        
+        .event-card h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #4299e1;
+            padding-bottom: 10px;
+        }
+        
+        .event-field {
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .event-field label {
+            font-weight: bold;
+            color: #666;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.875rem;
+        }
+        
+        .event-field .value {
+            color: #333;
+            word-wrap: break-word;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .badge-info {
+            background: #4299e1;
+            color: white;
+        }
+        
+        .badge-warning {
+            background: #f76707;
+            color: white;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        .btn-primary {
+            background: #2fb344;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #26913a;
+        }
+        
+        .btn-danger {
+            background: #d63939;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #b82e2e;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            opacity: 0.4;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4299e1;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #333;
+        }
+        
+        .close {
+            font-size: 28px;
+            font-weight: bold;
+            color: #999;
+            cursor: pointer;
+            border: none;
+            background: none;
+            padding: 0;
+            line-height: 1;
+        }
+        
+        .close:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            margin-bottom: 20px;
+            color: #666;
+        }
+        
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .comparison-container {
+                flex-direction: column;
+            }
+            
+            .navigation {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="admin-nav">
+        <h1>SEL Admin</h1>
+        <ul>
+            <li><a href="/admin/dashboard">Dashboard</a></li>
+            <li><a href="/admin/events">Events</a></li>
+            <li><a href="/admin/duplicates" class="active">Duplicates</a></li>
+            <li><a href="/admin/api-keys">API Keys</a></li>
+            <li><a href="/admin/federation">Federation Nodes</a></li>
+            <li><a href="/api/v1/admin/logout">Logout</a></li>
+        </ul>
+    </nav>
+    
+    <main>
+        <h2>Review Duplicate Events</h2>
+        
+        <!-- Loading state -->
+        <div id="loading-state" class="loading">
+            <div class="spinner"></div>
+            <p>Loading duplicate candidates...</p>
+        </div>
+        
+        <!-- Empty state -->
+        <div id="empty-state" class="empty-state" style="display: none;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 11l3 3L22 4"></path>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+            </svg>
+            <h3>No Duplicate Events Found</h3>
+            <p>All events appear to be unique. Great job!</p>
+        </div>
+        
+        <!-- Navigation between duplicate pairs -->
+        <div id="navigation" class="navigation" style="display: none;">
+            <button id="prev-btn" class="btn btn-secondary" onclick="navigatePrevious()">
+                &larr; Previous
+            </button>
+            <span id="pair-counter">Pair 1 of 1</span>
+            <button id="next-btn" class="btn btn-secondary" onclick="navigateNext()">
+                Next &rarr;
+            </button>
+        </div>
+        
+        <!-- Comparison view -->
+        <div id="comparison-view" style="display: none;">
+            <div class="comparison-container">
+                <!-- Event A -->
+                <div class="event-card">
+                    <h3>Event A</h3>
+                    <div id="event-a-content"></div>
+                </div>
+                
+                <!-- Event B -->
+                <div class="event-card">
+                    <h3>Event B</h3>
+                    <div id="event-b-content"></div>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <button class="btn btn-danger" onclick="skipPair()">
+                    Skip
+                </button>
+                <button class="btn btn-primary" onclick="showMergeModal('a')">
+                    Keep Event A
+                </button>
+                <button class="btn btn-primary" onclick="showMergeModal('b')">
+                    Keep Event B
+                </button>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Merge confirmation modal -->
+    <div id="merge-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirm Merge</h3>
+                <button class="close" onclick="closeMergeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="merge-message"></p>
+                <p><strong>This action cannot be undone.</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeMergeModal()">Cancel</button>
+                <button id="confirm-merge-btn" class="btn btn-danger" onclick="confirmMerge()">
+                    Merge Events
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/admin/static/js/duplicates.js"></script>
+</body>
+</html>

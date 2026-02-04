@@ -1,0 +1,209 @@
+/* SEL Admin Custom Styles */
+/* Extends Tabler with project-specific overrides */
+
+:root {
+    /* Lifecycle state colors (align with backend enum) */
+    --sel-published: var(--tblr-success);
+    --sel-pending: var(--tblr-warning);
+    --sel-cancelled: var(--tblr-danger);
+    --sel-draft: var(--tblr-secondary);
+}
+
+/* Status badges for lifecycle states */
+.badge-published {
+    background-color: var(--sel-published);
+    color: white;
+}
+
+.badge-pending {
+    background-color: var(--sel-pending);
+    color: white;
+}
+
+.badge-cancelled {
+    background-color: var(--sel-cancelled);
+    color: white;
+}
+
+.badge-draft {
+    background-color: var(--sel-draft);
+    color: white;
+}
+
+/* Loading skeleton for tables */
+.skeleton-row .skeleton-line {
+    height: 16px;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Copy button for API keys */
+.copy-button {
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.copy-button:hover {
+    opacity: 0.7;
+}
+
+/* Side-by-side comparison for duplicates */
+.duplicate-comparison .card {
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
+}
+
+.duplicate-comparison .card.selected {
+    border-color: var(--tblr-primary);
+}
+
+.duplicate-comparison dl dt {
+    font-weight: 600;
+}
+
+.duplicate-comparison dl dd {
+    margin-bottom: 0.5rem;
+}
+
+/* Responsive table helpers */
+@media (max-width: 768px) {
+    /* Stack action buttons vertically on mobile */
+    .btn-list {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .btn-list .btn {
+        width: 100%;
+    }
+    
+    /* Make stat cards full width on mobile */
+    .row-deck .col-sm-6 {
+        margin-bottom: 1rem;
+    }
+}
+
+/* Toast container positioning */
+.toast-container {
+    z-index: 10000;
+}
+
+/* Empty state icon size */
+.empty-icon svg {
+    width: 48px;
+    height: 48px;
+    color: var(--tblr-muted);
+}
+
+/* Form validation styles */
+.form-control.is-invalid {
+    border-color: var(--tblr-danger);
+}
+
+.form-control.is-valid {
+    border-color: var(--tblr-success);
+}
+
+.invalid-feedback,
+.valid-feedback {
+    display: none;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+.form-control.is-invalid ~ .invalid-feedback {
+    display: block;
+    color: var(--tblr-danger);
+}
+
+.form-control.is-valid ~ .valid-feedback {
+    display: block;
+    color: var(--tblr-success);
+}
+
+/* Occurrence management styling */
+.occurrence-list {
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+    padding: 1rem;
+    background: var(--tblr-bg-surface);
+}
+
+.occurrence-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.occurrence-item:last-child {
+    border-bottom: none;
+}
+
+/* Date range filter styling */
+.date-range-filter {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+    .date-range-filter {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* Federation node status indicators */
+.node-status-active {
+    color: var(--tblr-success);
+}
+
+.node-status-inactive {
+    color: var(--tblr-muted);
+}
+
+.node-status-error {
+    color: var(--tblr-danger);
+}
+
+/* Sticky table header */
+.table-sticky-header thead {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Highlight row on hover */
+.table-hover tbody tr:hover {
+    background-color: var(--tblr-bg-surface-secondary);
+    cursor: pointer;
+}
+
+/* Custom scrollbar for table containers */
+.table-responsive::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+    background: var(--tblr-bg-surface);
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+    background: var(--tblr-border-color);
+    border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: var(--tblr-muted);
+}

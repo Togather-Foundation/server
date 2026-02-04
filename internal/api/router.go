@@ -106,6 +106,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Admin handlers
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates, cfg.Auth.JWTExpiry)
+	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment)
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
@@ -317,10 +318,20 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		}
 	}
 
-	// Admin routes with CSRF protection
-	adminHTML := csrfMiddleware(adminCookieAuth(http.HandlerFunc(handlers.AdminHTMLPlaceholder(cfg.Environment))))
-	mux.Handle("/admin", adminHTML)
-	mux.Handle("/admin/", adminHTML)
+	// Admin HTML routes with CSRF protection and cookie auth
+	mux.Handle("/admin/dashboard", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDashboard))))
+	mux.Handle("/admin/events", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeEventsList))))
+	mux.Handle("/admin/events/{id}", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeEventEdit))))
+	mux.Handle("/admin/duplicates", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDuplicates))))
+	mux.Handle("/admin/api-keys", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeAPIKeys))))
+	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
+
+	// Redirect /admin and /admin/ to dashboard
+	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+	})))
+	mux.Handle("/admin", adminRoot)
+	mux.Handle("/admin/", adminRoot)
 
 	// Login page doesn't need CSRF (no auth required, no state-changing action on GET)
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
