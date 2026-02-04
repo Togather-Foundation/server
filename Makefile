@@ -34,7 +34,11 @@ help:
 	@echo "  make run           - Build and run the server (kills existing first)"
 	@echo "  make dev           - Run in development mode with live reload (requires air from install-tools)"
 	@echo "  make stop          - Stop running server processes"
-	@echo "  make restart       - Restart the server (stop + run)"
+	@echo "  make restart       - Restart the server (stop + run, full rebuild)"
+	@echo "  make restart-quick - Quick restart without rebuild (local only)"
+	@echo "  make restart-staging - Restart staging server via SSH"
+	@echo "  make restart-production - Restart production server via SSH"
+	@echo "  make restart-slot SLOT=blue|green ENV=local|staging|production - Restart specific slot"
 	@echo "  make deploy-package - Build deployment package (binary + configs, no source)"
 	@echo "  make install-tools - Install development tools (Go tools)"
 	@echo "  make install-pyshacl - Install pyshacl for SHACL validation"
@@ -375,6 +379,55 @@ dev:
 restart: stop
 	@sleep 1
 	@$(MAKE) run
+
+# Quick restart using deployment script (faster than full rebuild)
+# Restarts the active slot without rebuilding or redeploying
+restart-quick:
+	@echo "Restarting local server (quick mode)..."
+	@./deploy/scripts/restart.sh local
+
+# Restart staging server (requires SSH access)
+restart-staging:
+	@echo "Restarting staging server..."
+	@if [ -f .deploy.conf.staging ]; then \
+		SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.staging | cut -d= -f2); \
+		SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.staging | cut -d= -f2); \
+		./deploy/scripts/restart.sh staging --remote $$SSH_USER@$$SSH_HOST; \
+	else \
+		echo "Error: .deploy.conf.staging not found"; \
+		exit 1; \
+	fi
+
+# Restart production server (requires SSH access)
+restart-production:
+	@echo "Restarting production server..."
+	@if [ -f .deploy.conf.production ]; then \
+		SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.production | cut -d= -f2); \
+		SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.production | cut -d= -f2); \
+		./deploy/scripts/restart.sh production --remote $$SSH_USER@$$SSH_HOST; \
+	else \
+		echo "Error: .deploy.conf.production not found"; \
+		exit 1; \
+	fi
+
+# Restart specific slot (blue or green)
+# Usage: make restart-slot SLOT=blue ENV=staging
+restart-slot:
+	@if [ -z "$(SLOT)" ]; then echo "Error: SLOT not specified (use SLOT=blue or SLOT=green)"; exit 1; fi
+	@if [ -z "$(ENV)" ]; then echo "Error: ENV not specified (use ENV=local|staging|production)"; exit 1; fi
+	@echo "Restarting $(ENV) server (slot: $(SLOT))..."
+	@if [ "$(ENV)" = "local" ]; then \
+		./deploy/scripts/restart.sh $(ENV) --slot $(SLOT); \
+	else \
+		if [ -f .deploy.conf.$(ENV) ]; then \
+			SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.$(ENV) | cut -d= -f2); \
+			SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.$(ENV) | cut -d= -f2); \
+			./deploy/scripts/restart.sh $(ENV) --slot $(SLOT) --remote $$SSH_USER@$$SSH_HOST; \
+		else \
+			echo "Error: .deploy.conf.$(ENV) not found"; \
+			exit 1; \
+		fi \
+	fi
 
 # Install development tools
 install-tools:
