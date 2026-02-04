@@ -324,6 +324,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Login page doesn't need CSRF (no auth required, no state-changing action on GET)
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
 
+	// Serve admin static files (CSS, JS, images)
+	adminStaticFS := http.FileServer(http.FS(web.AdminStaticFiles))
+	mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", adminStaticFS))
+
 	// Wrap entire router with middleware stack
 	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit -> HTTPMetrics
 	// Note: Security headers and CORS must be applied first to ensure they're set on all responses

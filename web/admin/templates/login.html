@@ -9,6 +9,7 @@
 <body>
     <div class="login-container">
         <h1>SEL Events Admin</h1>
+        <div id="error-message" class="error-message" style="display: none;"></div>
         <form action="/api/v1/admin/login" method="POST">
             <div class="form-group">
                 <label for="username">Username</label>
@@ -21,5 +22,6 @@
             <button type="submit">Login</button>
         </form>
     </div>
+    <script src="/admin/static/js/login.js"></script>
 </body>
 </html>
