@@ -65,7 +65,7 @@ This workflow kept the project moving quickly while maintaining a clear separati
 
 ---
 
-## Development Velocity (Jan 2026)
+## Initial sprint (Jan 2026)
 
 In two days of collaborative development between human oversight and AI agents, the team delivered:
 
@@ -84,11 +84,37 @@ In two days of collaborative development between human oversight and AI agents, 
 - Security hardening (CORS, rate limiting, request size limits)
 - Full CRUD operations for events, places, and organizations
 
-**Tech stack:**
-- Go 1.23+ with Huma (HTTP/OpenAPI 3.1)
-- PostgreSQL 16+ with PostGIS, pgvector, full-text search
-- SQLc for type-safe SQL queries
-- River for transactional job queues
-- JSON-LD for semantic web interoperability
-
 This velocity came from spec-driven planning, issue tracking with beads, and tight human-in-the-loop reviews.
+
+---
+
+## Approaching v0.1 Release
+
+As of February 4, 2026, the Togather SEL server repository shows sustained development momentum:
+
+### Codebase Metrics
+- **534 total commits** (Jan 21 – Feb 3, 2026)
+  - 209 commits during the initial sprint (Jan 21-27)
+  - 199 commits in February so far
+- **54,101 lines of Go code** across 38 packages
+  - 24,821 lines of production code
+  - 29,280 lines of test code (117% test-to-code ratio)
+- **642 individual test functions**
+- **34 database migrations** managing PostgreSQL + PostGIS schema
+- **72 markdown documentation files**
+- 320 commits since Jan 28 (spanning Jan 28 - Feb 3)
+- 180 deployment/infrastructure related commits (56% of all work)
+- 64 feature commits, 113 fix commits, 49 docs/test commits
+- 28,820+ lines added across deployment documentation and scripts
+- 19 deployment docs created in docs/deploy/
+- 20+ deployment scripts in deploy/scripts/
+
+Key themes:
+1. Blue-Green Deployment System
+2. Configuration Managements
+3. Automated Testing & Validation - smoke tests, validation, health checks
+4. SEO & Public Facing - landing page, seo, API docs, OpenAPI endpoint
+5. Build & Release Process
+6. Documentation - 19 comprehensive deployment guides (quickstart, troubleshooting, migrations, monitoring, etc.)
+
+The project demonstrates that human-AI collaboration with proper workflow discipline (beads, spec kit, quality gates) can sustain high velocity while maintaining code quality and comprehensive test coverage.
