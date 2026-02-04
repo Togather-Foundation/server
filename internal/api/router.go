@@ -2,6 +2,7 @@ package api
 
 import (
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -325,8 +326,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
 
 	// Serve admin static files (CSS, JS, images)
-	adminStaticFS := http.FileServer(http.FS(web.AdminStaticFiles))
-	mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", adminStaticFS))
+	// The embed.FS contains admin/static/..., so we need to create a sub-filesystem
+	adminStaticSubFS, err := fs.Sub(web.AdminStaticFiles, "admin/static")
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to create admin static sub-filesystem")
+	} else {
+		adminStaticFS := http.FileServer(http.FS(adminStaticSubFS))
+		mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", adminStaticFS))
+	}
 
 	// Wrap entire router with middleware stack
 	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit -> HTTPMetrics
