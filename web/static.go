@@ -1,7 +1,7 @@
 package web
 
 import (
-	_ "embed"
+	"embed"
 	"net/http"
 )
 
@@ -10,6 +10,9 @@ var robotsTxt []byte
 
 //go:embed sitemap.xml
 var sitemapXML []byte
+
+//go:embed admin/static
+var AdminStaticFiles embed.FS
 
 // RobotsTxtHandler serves the robots.txt file.
 func RobotsTxtHandler() http.Handler {

@@ -53,6 +53,16 @@ button[type="submit"]:hover {
     background: #0056b3;
 }
 
+.error-message {
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
 .admin-nav {
     background: #2c3e50;
     color: white;
