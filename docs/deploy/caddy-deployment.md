@@ -370,6 +370,13 @@ sudo crontab -e
 0 2 * * 0 apt update && apt upgrade -y caddy && systemctl reload caddy
 ```
 
+### Restricting Metrics Access
+
+Prometheus runs locally in our deployment, so `/metrics` should only be reachable from `127.0.0.1` (or `::1`).
+The staging and production Caddyfiles include a localhost-only block for `/metrics`.
+
+If Prometheus moves off-host, replace the localhost allowlist with your private subnet IPs instead.
+
 ### Rate Limiting
 
 The included Caddyfile does not include rate limiting (Caddy Enterprise feature). 

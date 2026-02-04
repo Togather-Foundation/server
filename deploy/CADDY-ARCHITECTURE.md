@@ -77,7 +77,7 @@ systemctl status caddy
 - Logs: `/var/log/caddy/staging.toronto.log`
 
 **Traffic Switching:**
-- Automatic during deployment via `deploy.sh`
+- Automatic during deployment via `deploy.sh` (syncs the environment Caddyfile)
 - Manual: Edit `/etc/caddy/Caddyfile` and run `systemctl reload caddy`
 
 ### Production Deployment (System Caddy)
@@ -92,11 +92,14 @@ systemctl status caddy
 
 ### Fix Missing Caddy on Staging Server
 
-If staging server was provisioned but Caddy isn't routing traffic:
+If staging server was provisioned but Caddy isn't routing traffic, deploy
+the environment Caddyfile and start the service:
 
 ```bash
 # On staging server
-sudo ./deploy/scripts/fix-caddy-staging.sh
+sudo cp /opt/togather/deploy/config/environments/Caddyfile.staging /etc/caddy/Caddyfile
+sudo systemctl enable caddy
+sudo systemctl start caddy
 ```
 
 Or manually:
@@ -146,7 +149,6 @@ grep "reverse_proxy localhost:" /etc/caddy/Caddyfile
 | `deploy/scripts/provision-server.sh` | Installs system Caddy |
 | `deploy/scripts/install.sh.template` | Deploys Caddyfile |
 | `deploy/scripts/deploy.sh` | Switches traffic |
-| `deploy/scripts/fix-caddy-staging.sh` | Quick fix for missing Caddy |
 
 ## Troubleshooting
 

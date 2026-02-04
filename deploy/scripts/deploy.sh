@@ -1313,8 +1313,25 @@ switch_traffic() {
         log "WARN" "Skipping traffic switch (deployments will still work on direct ports)"
         return 0  # Non-fatal - deployments can work without Caddy
     fi
-    
+
     local caddyfile="/etc/caddy/Caddyfile"
+
+    # Sync environment Caddyfile if available
+    local caddy_source="${CONFIG_DIR}/environments/Caddyfile.${env}"
+    if [[ -f "${caddy_source}" ]]; then
+        if ! cmp -s "${caddy_source}" "${caddyfile}" 2>/dev/null; then
+            log "INFO" "Syncing Caddyfile from ${caddy_source}"
+            sudo cp "${caddy_source}" "${caddyfile}"
+        fi
+    else
+        log "WARN" "Caddyfile source not found: ${caddy_source}"
+        log "WARN" "Skipping Caddyfile sync"
+    fi
+
+    if ! sudo caddy validate --config "${caddyfile}" &> /dev/null; then
+        log "ERROR" "Caddyfile validation failed before traffic switch"
+        return 1
+    fi
     
     # Check if Caddyfile exists
     if [[ ! -f "${caddyfile}" ]]; then

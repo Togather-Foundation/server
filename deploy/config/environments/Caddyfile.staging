@@ -25,6 +25,12 @@
 # ==============================================================================
 
 staging.toronto.togather.foundation {
+	@metrics_block {
+		path /metrics
+		not remote_ip 127.0.0.1 ::1
+	}
+	respond @metrics_block "Forbidden" 403
+
 	# Reverse proxy to active slot
 	# Current: Blue slot (port 8081)
 	# To switch to green: Change to localhost:8082
