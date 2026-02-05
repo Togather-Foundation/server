@@ -1790,17 +1790,24 @@ Arguments:
 Options:
   --remote USER@HOST  Deploy to remote server via SSH
   --version COMMIT    Deploy specific git commit/tag (default: current HEAD)
+  --branch BRANCH     Deploy latest commit from specified branch (resolves to commit hash)
   --dry-run           Validate configuration without deploying
   --skip-migrations   Skip database migration execution (use with caution)
   --force             Force deployment even if lock exists or validations fail
   --help              Show this help message
 
 Examples:
-  # Deploy current commit to production (local)
-  ./deploy/scripts/deploy.sh production
+  # Deploy current HEAD commit (RECOMMENDED for feature branches)
+  ./deploy/scripts/deploy.sh staging --version HEAD
 
-  # Deploy to remote staging server
-  ./deploy/scripts/deploy.sh staging --remote deploy@staging.example.com
+  # Deploy current commit to production (local)
+  ./deploy/scripts/deploy.sh production --version $(git rev-parse HEAD)
+
+  # Deploy latest commit from feature branch
+  ./deploy/scripts/deploy.sh staging --branch feature/user-administration
+
+  # Deploy to remote staging server with current HEAD
+  ./deploy/scripts/deploy.sh staging --remote deploy@staging.example.com --version HEAD
 
   # Deploy specific version to remote production
   ./deploy/scripts/deploy.sh production --remote deploy@prod.example.com --version v1.2.3
@@ -1820,6 +1827,7 @@ main() {
     local environment=""
     local remote_host=""
     local target_version=""
+    local target_branch=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1854,6 +1862,14 @@ main() {
                 target_version="$2"
                 shift 2
                 ;;
+            --branch)
+                if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+                    echo "ERROR: --branch requires branch name argument" >&2
+                    exit 1
+                fi
+                target_branch="$2"
+                shift 2
+                ;;
             --help)
                 usage
                 exit 0
@@ -1877,6 +1893,24 @@ main() {
         echo "" >&2
         usage
         exit 1
+    fi
+    
+    # Check for conflicting options
+    if [[ -n "$target_version" && -n "$target_branch" ]]; then
+        echo "ERROR: Cannot specify both --version and --branch" >&2
+        exit 1
+    fi
+    
+    # Resolve branch to commit hash if --branch specified
+    if [[ -n "$target_branch" ]]; then
+        echo "→ Resolving branch '${target_branch}' to commit hash"
+        target_version=$(git rev-parse "origin/${target_branch}" 2>/dev/null || git rev-parse "${target_branch}" 2>/dev/null)
+        if [[ -z "$target_version" ]]; then
+            echo "ERROR: Cannot resolve branch: ${target_branch}" >&2
+            echo "Make sure the branch exists locally or on origin" >&2
+            exit 1
+        fi
+        echo "  Branch '${target_branch}' resolved to: ${target_version}"
     fi
     
     # Validate environment value

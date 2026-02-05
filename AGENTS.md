@@ -153,22 +153,31 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
 **For full deployment + testing:**
 1. Read `docs/deploy/deployment-testing.md` for complete instructions
 2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
-3. Execute deployment (config auto-loads if available):
+3. **IMPORTANT:** Determine what to deploy:
+   - **Current branch/commit:** Use `--version HEAD` or `--version $(git rev-parse HEAD)`
+   - **Specific commit:** Use `--version <commit-hash>`
+   - **Default (not recommended):** Omitting `--version` deploys whatever is checked out on the remote server (usually main)
+4. Execute deployment (config auto-loads if available):
    ```bash
-   # With .deploy.conf.staging, just specify environment:
-   ./deploy/scripts/deploy.sh staging
+   # Deploy current HEAD commit to staging (RECOMMENDED for feature branches):
+   ./deploy/scripts/deploy.sh staging --version HEAD
    
-   # Or explicitly specify remote (overrides config):
-   ./deploy/scripts/deploy.sh staging --remote deploy@server
+   # Deploy specific commit:
+   ./deploy/scripts/deploy.sh staging --version abc123
+   
+   # Deploy to remote server with current commit:
+   ./deploy/scripts/deploy.sh staging --remote deploy@server --version HEAD
    ```
-4. Wait 30-60 seconds for health stabilization
-5. Run automated tests (auto-uses NODE_DOMAIN from config):
+5. Wait 30-60 seconds for health stabilization
+6. Run automated tests (auto-uses NODE_DOMAIN from config):
    ```bash
    ./deploy/testing/smoke-tests.sh staging
    ```
-6. If automated tests pass, report success summary
-7. If issues found, run specific checks from deployment-testing.md checklist
-8. Report comprehensive results to user
+7. If automated tests pass, report success summary
+8. If issues found, run specific checks from deployment-testing.md checklist
+9. Report comprehensive results to user
+
+**CRITICAL:** When deploying feature branches, ALWAYS use `--version HEAD` or `--version $(git rev-parse HEAD)` to ensure you're deploying the current branch's code, not main.
 
 
 ### Deployment Documentation
