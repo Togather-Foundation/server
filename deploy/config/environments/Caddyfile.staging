@@ -37,9 +37,9 @@ staging.toronto.togather.foundation {
 	# and GF_SERVER_SERVE_FROM_SUB_PATH=true to handle URL rewriting
 	# SECURITY: Requires admin authentication via auth_token cookie
 	handle /grafana* {
-		# Matcher: Check for admin auth cookie
+		# Matcher: Check for admin auth cookie in Cookie header
 		@authenticated {
-			cookie auth_token *
+			header Cookie *auth_token*
 		}
 		
 		# Route: Authenticated users get access to Grafana
