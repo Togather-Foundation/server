@@ -398,9 +398,51 @@ searchInput.addEventListener('input', (e) => {
 
 ## Testing Considerations
 
+### Automated E2E Testing with Playwright
+
+**Run comprehensive E2E tests against the live admin UI:**
+
+```bash
+# One-time setup: Install Playwright browsers
+uvx --from playwright playwright install chromium
+
+# Start the development server
+make dev
+
+# In another terminal, run E2E tests
+uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
+```
+
+**What the E2E tests cover:**
+- Login flow (success and failure cases)
+- Dashboard loads and displays stats correctly
+- All admin pages render (events, duplicates, API keys)
+- Navigation between pages works
+- Logout functionality
+- JavaScript console errors are captured
+- Screenshots saved to `/tmp/admin_*.png` for debugging
+
+**Custom test password:**
+```bash
+ADMIN_PASSWORD=mypassword uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
+```
+
+**When to run E2E tests:**
+- After modifying any admin UI page
+- After changing JavaScript in `web/admin/static/js/`
+- After updating API endpoints used by admin UI
+- Before committing significant UI changes
+- When debugging console errors
+
+**Test artifacts:**
+- Test script: `tests/e2e/test_admin_ui_python.py`
+- Documentation: `tests/e2e/README.md`
+- Screenshots: `/tmp/admin_*.png` (generated on each run)
+
 ### Manual Testing Checklist
 
 When modifying admin UI:
+- [ ] Run Playwright E2E tests (see above)
 - [ ] Test with empty data (0 events)
 - [ ] Test with many items (pagination)
 - [ ] Test error states (network failure)

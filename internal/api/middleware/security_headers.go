@@ -35,9 +35,19 @@ func SecurityHeaders(requireHTTPS bool) func(http.Handler) http.Handler {
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 			// Content Security Policy: XSS defense
-			// All scripts and styles are in external files (no inline code)
-			// This prevents XSS attacks via injected inline scripts/styles
-			h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'")
+			// - default-src 'self': Only load resources from same origin
+			// - style-src 'self' 'unsafe-inline': Allow external stylesheets + inline styles
+			//   (unsafe-inline needed for display:none on modals/hidden elements)
+			// - script-src 'self': Only allow scripts from same origin (no inline scripts)
+			// - img-src 'self' data:: Allow same-origin images + data URIs
+			//   (data: needed for Tabler's inline SVG icons in CSS)
+			//
+			// Security considerations:
+			// - Inline styles ('unsafe-inline') pose minimal XSS risk since user content
+			//   is text-only (event descriptions, etc.) and never rendered as HTML attributes
+			// - Data URIs for images only allow framework icons, not user-uploaded content
+			// - Scripts remain strict (no 'unsafe-inline', no 'unsafe-eval')
+			h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:")
 
 			// HSTS: enforce HTTPS in production
 			// Only set on HTTPS connections to avoid browser warnings

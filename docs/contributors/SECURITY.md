@@ -85,7 +85,7 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 #### 5. Cross-Site Scripting (XSS)
 **Risk**: Medium  
 **Impact**: User session hijacking (admin UI), malicious script execution  
-**Mitigation**: Input sanitization with bluemonday, Content-Security-Policy headers (planned)
+**Mitigation**: Input sanitization with bluemonday, Content-Security-Policy headers (implemented)
 **Status**: ✅ Mitigated
 
 #### 6. Cross-Site Request Forgery (CSRF)
@@ -151,6 +151,18 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 - Type-safe query parameters
 
 ### HTTP Security
+
+**Content Security Policy (CSP)**:
+- `default-src 'self'`: Only load resources from same origin
+- `style-src 'self' 'unsafe-inline'`: Allow external stylesheets + inline styles for display toggles
+- `script-src 'self'`: Only allow scripts from same origin (no inline scripts, no eval)
+- `img-src 'self' data:`: Allow same-origin images + data URIs for framework SVG icons
+- **Security considerations**:
+  - Inline styles allowed for minimal display:none toggles on modals/hidden elements
+  - Data URIs restricted to images only (used by Tabler CSS for icon sprites)
+  - Scripts remain strict: no unsafe-inline, no unsafe-eval, no external domains
+  - User content never rendered as HTML attributes, minimizing inline style XSS risk
+- Set via SecurityHeaders middleware on all responses
 
 **Server Timeouts**:
 - `ReadTimeout`: 10s (prevents slow-read attacks)

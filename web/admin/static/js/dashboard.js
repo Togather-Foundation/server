@@ -43,9 +43,9 @@
     async function loadTotalCount() {
         const totalElement = document.getElementById('total-events');
         try {
-            // Fetch all events (with a reasonable limit)
+            // Fetch all events (with max allowed limit of 200)
             console.log('Loading total events...');
-            const data = await API.events.list({ limit: 1000 });
+            const data = await API.events.list({ limit: 200 });
             console.log('Total events response:', data);
             const count = data.items?.length || 0;
             totalElement.textContent = count;
