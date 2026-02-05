@@ -25,8 +25,8 @@ help:
 	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
 	@echo "  make test-v        - Run tests with verbose output"
 	@echo "  make test-race     - Run tests with race detector"
-	@echo "  make coverage      - Run tests with coverage report (enforces 80% threshold)"
-	@echo "  make coverage-check - Check if coverage meets 80% threshold"
+	@echo "  make coverage      - Run tests with coverage report (enforces 35% min threshold)"
+	@echo "  make coverage-check - Check if coverage meets 35% min threshold"
 	@echo "  make lint          - Run golangci-lint"
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
 	@echo "  make fmt           - Format all Go files"
@@ -135,7 +135,7 @@ coverage:
 	@echo "Coverage report generated: coverage.html"
 	@$(MAKE) coverage-check
 
-# Check coverage threshold (80% minimum)
+# Check coverage threshold 35% minimum)
 coverage-check:
 	@echo ""
 	@echo "Checking coverage threshold (35% minimum)..."

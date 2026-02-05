@@ -446,7 +446,7 @@ These are intentionally deferred for later iterations:
 - [ ] No JavaScript console errors
 - [ ] Mobile-responsive UI
 - [ ] WCAG 2.1 Level AA accessibility compliance
-- [ ] 80%+ test coverage for user service
+- [ ] 50%+ test coverage for user service
 - [ ] E2E tests cover critical user flows
 - [ ] CSP-compliant (no inline scripts)
 - [ ] Audit logs queryable and exportable
