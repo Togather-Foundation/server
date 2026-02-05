@@ -113,7 +113,7 @@ func TestUsersService_AcceptInvitation_InvalidToken(t *testing.T) {
 
 	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
 
-	err := svc.AcceptInvitation(env.Context, "invalid-token", "SecurePassword123!")
+	_, err := svc.AcceptInvitation(env.Context, "invalid-token", "SecurePassword123!")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, users.ErrInvalidToken))
 }

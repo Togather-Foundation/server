@@ -23,9 +23,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host    string
-	Port    int
-	BaseURL string
+	Host      string
+	Port      int
+	BaseURL   string
+	PublicURL string // Public-facing domain for invitation links (e.g., "toronto.togather.foundation")
 }
 
 type DatabaseConfig struct {
@@ -101,9 +102,10 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		Server: ServerConfig{
-			Host:    getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:    getEnvInt("SERVER_PORT", 8080),
-			BaseURL: getEnv("SERVER_BASE_URL", "http://localhost:8080"),
+			Host:      getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:      getEnvInt("SERVER_PORT", 8080),
+			BaseURL:   getEnv("SERVER_BASE_URL", "http://localhost:8080"),
+			PublicURL: getEnv("PUBLIC_URL", "localhost:8080"),
 		},
 		Database: DatabaseConfig{
 			URL:            getEnv("DATABASE_URL", ""),
