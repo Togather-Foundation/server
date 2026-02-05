@@ -366,7 +366,9 @@ dev:
 			sleep 1; \
 		fi; \
 	fi
-	@if which air > /dev/null; then \
+	@# Check for air in PATH and in GOPATH/bin
+	@export PATH="$$PATH:$$(go env GOPATH)/bin"; \
+	if which air > /dev/null 2>&1; then \
 		echo "Running with air (live reload)..."; \
 		air; \
 	else \
