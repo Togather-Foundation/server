@@ -1386,17 +1386,20 @@ switch_traffic() {
     # Verify traffic switch worked by checking actual version
     log "INFO" "Verifying traffic switch to ${target_slot} (version ${GIT_SHORT_COMMIT})..."
     
+    # Determine domain from NODE_DOMAIN or construct from env parameter
+    local domain="${NODE_DOMAIN:-${env}.toronto.togather.foundation}"
+    
     local max_attempts=10
     local attempt=1
     local sleep_duration=2
     
     while [[ $attempt -le $max_attempts ]]; do
         # Check via actual HTTPS endpoint (what users hit)
-        local live_version=$(curl -sf "https://${NODE_DOMAIN}/version" | jq -r '.git_commit // .version // empty' 2>/dev/null || echo "")
+        local live_version=$(curl -sf "https://${domain}/version" | jq -r '.git_commit // .version // empty' 2>/dev/null || echo "")
         
         if [[ "$live_version" == "$GIT_COMMIT" ]] || [[ "$live_version" == "$GIT_SHORT_COMMIT" ]]; then
             log "SUCCESS" "Traffic successfully switched to ${target_slot} slot (verified version: ${live_version})"
-            log "INFO" "Caddy is now routing https://${NODE_DOMAIN} to localhost:${target_port}"
+            log "INFO" "Caddy is now routing https://${domain} to localhost:${target_port}"
             return 0
         fi
         
