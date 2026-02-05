@@ -43,7 +43,10 @@
             
             const data = await API.apiKeys.list();
             
-            if (!data || data.length === 0) {
+            // Backend returns {items: [...]} envelope format
+            const keys = data.items || [];
+            
+            if (keys.length === 0) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="5" class="text-center text-muted py-4">
@@ -54,7 +57,7 @@
                 return;
             }
             
-            renderApiKeys(data);
+            renderApiKeys(keys);
         } catch (error) {
             console.error('Failed to load API keys:', error);
             tbody.innerHTML = `
