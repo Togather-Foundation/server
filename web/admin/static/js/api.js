@@ -57,6 +57,11 @@ const API = {
         pending: () => API.request('/api/v1/admin/events/pending')
     },
     
+    // Admin Stats API
+    stats: {
+        get: () => API.request('/api/v1/admin/stats')
+    },
+    
     // API Keys
     apiKeys: {
         list: () => API.request('/api/v1/admin/api-keys'),
@@ -67,6 +72,11 @@ const API = {
         revoke: (id) => API.request(`/api/v1/admin/api-keys/${id}`, {
             method: 'DELETE'
         })
+    },
+    
+    // Duplicates
+    duplicates: {
+        list: () => API.request('/api/v1/admin/duplicates')
     },
     
     // Federation Nodes

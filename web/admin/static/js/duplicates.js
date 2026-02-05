@@ -15,24 +15,7 @@ async function loadDuplicates() {
     showLoading();
     
     try {
-        const response = await fetch('/api/v1/admin/duplicates', {
-            credentials: 'include',
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            // If endpoint doesn't exist (404) or returns empty, show empty state
-            if (response.status === 404) {
-                console.log('Duplicates endpoint not yet implemented');
-                showEmptyState();
-                return;
-            }
-            throw new Error(`Failed to load duplicates: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
+        const data = await API.duplicates.list();
         
         // Handle different response formats
         if (data.items && Array.isArray(data.items)) {
@@ -227,22 +210,7 @@ async function confirmMerge() {
             throw new Error('Could not extract event IDs');
         }
         
-        const response = await fetch('/api/v1/admin/events/merge', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                primary_id: primaryId,
-                duplicate_id: duplicateId
-            })
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || `Merge failed: ${response.statusText}`);
-        }
+        await API.events.merge(primaryId, duplicateId);
         
         // Success - close modal and move to next pair
         closeMergeModal();
