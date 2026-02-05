@@ -180,6 +180,38 @@ function setupLogout() {
     }
 }
 
+// Render loading state for table
+function renderLoadingState(tbody, colSpan) {
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="${colSpan}" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="text-muted mt-2">Loading...</div>
+            </td>
+        </tr>
+    `;
+}
+
+// Render empty state for table
+function renderEmptyState(tbody, message, colSpan) {
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="${colSpan}" class="text-center text-muted py-5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-lg mb-2" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <circle cx="12" cy="12" r="9"/>
+                    <line x1="9" y1="10" x2="9.01" y2="10"/>
+                    <line x1="15" y1="10" x2="15.01" y2="10"/>
+                    <path d="M9.5 15.25a3.5 3.5 0 0 1 5 0"/>
+                </svg>
+                <div>${escapeHtml(message)}</div>
+            </td>
+        </tr>
+    `;
+}
+
 // Auto-setup on page load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {

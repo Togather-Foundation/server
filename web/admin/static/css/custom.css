@@ -89,6 +89,32 @@
     margin-bottom: 0.5rem;
 }
 
+/* Event field display in duplicates comparison */
+.event-field {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+
+.event-field:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.event-field label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--tblr-muted);
+    margin-bottom: 0.25rem;
+}
+
+.event-field .value {
+    font-size: 0.9375rem;
+    word-wrap: break-word;
+}
+
 /* Responsive table helpers */
 @media (max-width: 768px) {
     /* Stack action buttons vertically on mobile */

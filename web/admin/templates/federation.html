@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federation Nodes - SEL Admin</title>
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
+    <link rel="stylesheet" href="/admin/static/css/custom.css">
+</head>
+<body>
+    {{ template "_header.html" . }}
+    
+    <!-- Page Content -->
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <h2 class="page-title">Federation Nodes</h2>
+                            <div class="text-muted mt-1">Manage trusted peer nodes for event federation</div>
+                        </div>
+                        <div class="col-auto ms-auto">
+                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#create-node-modal">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                Add Node
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Page body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Federation Nodes</h3>
+                            <div class="ms-auto">
+                                <button type="button" class="btn btn-icon" data-bs-toggle="collapse" data-bs-target="#filters-collapse" aria-expanded="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                        <path d="M5.5 5h13a1 1 0 0 1 .5 1.5l-5 5.5l0 7l-4 -3l0 -4l-5 -5.5a1 1 0 0 1 .5 -1.5"/>
+                                    </svg>
+                                    Filters
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Collapsible Filters -->
+                        <div class="collapse show" id="filters-collapse">
+                            <div class="card-body border-bottom">
+                                <div class="row g-3">
+                                    <!-- Status Filter -->
+                                    <div class="col-md-3">
+                                        <label class="form-label">Status</label>
+                                        <select class="form-select" id="status-filter">
+                                            <option value="">All Statuses</option>
+                                            <option value="active">Active</option>
+                                            <option value="pending">Pending</option>
+                                            <option value="paused">Paused</option>
+                                            <option value="blocked">Blocked</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Sync Enabled Filter -->
+                                    <div class="col-md-3">
+                                        <label class="form-label">Sync Status</label>
+                                        <select class="form-select" id="sync-filter">
+                                            <option value="">All</option>
+                                            <option value="true">Enabled</option>
+                                            <option value="false">Disabled</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Online Filter -->
+                                    <div class="col-md-3">
+                                        <label class="form-label">Online Status</label>
+                                        <select class="form-select" id="online-filter">
+                                            <option value="">All</option>
+                                            <option value="true">Online</option>
+                                            <option value="false">Offline</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Clear Filters -->
+                                    <div class="col-md-3 d-flex align-items-end">
+                                        <button type="button" class="btn btn-link" id="clear-filters">Clear Filters</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Nodes Table -->
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table">
+                                <thead>
+                                    <tr>
+                                        <th>Node Name</th>
+                                        <th>Domain</th>
+                                        <th>Status</th>
+                                        <th>Trust</th>
+                                        <th>Sync</th>
+                                        <th>Last Sync</th>
+                                        <th class="w-1">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="nodes-table">
+                                    <!-- Populated via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Create Node Modal -->
+    <div class="modal modal-blur fade" id="create-node-modal" tabindex="-1" style="display: none;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Federation Node</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="create-node-form">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label required">Node Name</label>
+                                <input type="text" class="form-control" name="node_name" required placeholder="Toronto Events Network">
+                                <small class="form-hint">A friendly name for this node</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label required">Node Domain</label>
+                                <input type="text" class="form-control" name="node_domain" required placeholder="toronto.events.ca">
+                                <small class="form-hint">Unique domain identifier</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label required">Base URL</label>
+                            <input type="url" class="form-control" name="base_url" required placeholder="https://toronto.events.ca">
+                            <small class="form-hint">Base URL for API endpoints</small>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">API Version</label>
+                                <input type="text" class="form-control" name="api_version" placeholder="v1" value="v1">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label required">Trust Level (1-10)</label>
+                                <input type="number" class="form-control" name="trust_level" min="1" max="10" value="5" required>
+                                <small class="form-hint">1=Low, 5=Medium, 10=Maximum</small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Geographic Scope</label>
+                                <input type="text" class="form-control" name="geographic_scope" placeholder="Toronto, ON, Canada">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label required">Federation Status</label>
+                                <select class="form-select" name="federation_status" required>
+                                    <option value="pending">Pending</option>
+                                    <option value="active" selected>Active</option>
+                                    <option value="paused">Paused</option>
+                                    <option value="blocked">Blocked</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label required">Sync Direction</label>
+                                <select class="form-select" name="sync_direction" required>
+                                    <option value="bidirectional" selected>Bidirectional</option>
+                                    <option value="pull_only">Pull Only</option>
+                                    <option value="push_only">Push Only</option>
+                                    <option value="disabled">Disabled</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Sync Enabled</label>
+                                <label class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" name="sync_enabled" checked>
+                                    <span class="form-check-label">Enable sync</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contact Name</label>
+                                <input type="text" class="form-control" name="contact_name" placeholder="Jane Doe">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contact Email</label>
+                                <input type="email" class="form-control" name="contact_email" placeholder="admin@toronto.events.ca">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            <textarea class="form-control" name="notes" rows="3" placeholder="Additional notes about this node..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create Node</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Node Modal -->
+    <div class="modal modal-blur fade" id="edit-node-modal" tabindex="-1" style="display: none;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Federation Node</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="edit-node-form">
+                    <input type="hidden" name="node_id" id="edit-node-id">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label required">Node Name</label>
+                                <input type="text" class="form-control" name="node_name" id="edit-node-name" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Node Domain</label>
+                                <input type="text" class="form-control" id="edit-node-domain" disabled>
+                                <small class="form-hint text-muted">Domain cannot be changed</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label required">Base URL</label>
+                            <input type="url" class="form-control" name="base_url" id="edit-base-url" required>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">API Version</label>
+                                <input type="text" class="form-control" name="api_version" id="edit-api-version">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label required">Trust Level (1-10)</label>
+                                <input type="number" class="form-control" name="trust_level" id="edit-trust-level" min="1" max="10" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Geographic Scope</label>
+                                <input type="text" class="form-control" name="geographic_scope" id="edit-geographic-scope">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label required">Federation Status</label>
+                                <select class="form-select" name="federation_status" id="edit-federation-status" required>
+                                    <option value="pending">Pending</option>
+                                    <option value="active">Active</option>
+                                    <option value="paused">Paused</option>
+                                    <option value="blocked">Blocked</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label required">Sync Direction</label>
+                                <select class="form-select" name="sync_direction" id="edit-sync-direction" required>
+                                    <option value="bidirectional">Bidirectional</option>
+                                    <option value="pull_only">Pull Only</option>
+                                    <option value="push_only">Push Only</option>
+                                    <option value="disabled">Disabled</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Sync Enabled</label>
+                                <label class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" name="sync_enabled" id="edit-sync-enabled">
+                                    <span class="form-check-label">Enable sync</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contact Name</label>
+                                <input type="text" class="form-control" name="contact_name" id="edit-contact-name">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contact Email</label>
+                                <input type="email" class="form-control" name="contact_email" id="edit-contact-email">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            <textarea class="form-control" name="notes" id="edit-notes" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Node</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div class="modal modal-blur fade" id="delete-modal" tabindex="-1" style="display: none;">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="modal-status bg-danger"></div>
+                <div class="modal-body text-center py-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon mb-2 text-danger icon-lg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M12 9v2m0 4v.01"/>
+                        <path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/>
+                    </svg>
+                    <h3>Delete Node?</h3>
+                    <div class="text-muted" id="delete-message">
+                        Are you sure you want to delete "<span id="delete-node-name"></span>"? This action cannot be undone.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <div class="w-100">
+                        <div class="row">
+                            <div class="col"><button type="button" class="btn w-100" data-bs-dismiss="modal">Cancel</button></div>
+                            <div class="col"><button type="button" class="btn btn-danger w-100" id="confirm-delete">Delete</button></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/federation.js"></script>
+</body>
+</html>

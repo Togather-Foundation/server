@@ -24,6 +24,40 @@
 
         // Setup form submission
         document.getElementById('event-form').addEventListener('submit', handleSubmit);
+        
+        // Setup event delegation for data-action buttons
+        setupEventListeners();
+    }
+    
+    function setupEventListeners() {
+        // Use event delegation for dynamically created buttons
+        document.addEventListener('click', (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            
+            const action = target.dataset.action;
+            
+            switch(action) {
+                case 'cancel':
+                    window.history.back();
+                    break;
+                case 'reload':
+                    window.location.reload();
+                    break;
+                case 'add-occurrence':
+                    window.addOccurrence();
+                    break;
+                case 'save-occurrence':
+                    window.saveOccurrence();
+                    break;
+                case 'edit-occurrence':
+                    window.editOccurrence(parseInt(target.dataset.index, 10));
+                    break;
+                case 'remove-occurrence':
+                    window.removeOccurrence(parseInt(target.dataset.index, 10));
+                    break;
+            }
+        });
     }
 
     async function loadEvent() {
@@ -138,7 +172,7 @@
                         </div>
                         <div class="col-auto">
                             <div class="btn-list">
-                                <button type="button" class="btn btn-sm btn-icon" onclick="editOccurrence(${index})" title="Edit">
+                                <button type="button" class="btn btn-sm btn-icon" data-action="edit-occurrence" data-index="${index}" title="Edit">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                         <path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1"/>
@@ -146,7 +180,7 @@
                                         <path d="M16 5l3 3"/>
                                     </svg>
                                 </button>
-                                <button type="button" class="btn btn-sm btn-icon btn-ghost-danger" onclick="removeOccurrence(${index})" title="Remove">
+                                <button type="button" class="btn btn-sm btn-icon btn-ghost-danger" data-action="remove-occurrence" data-index="${index}" title="Remove">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                         <line x1="4" y1="7" x2="20" y2="7"/>

@@ -27,6 +27,12 @@
      * Setup event listeners for filters and actions
      */
     function setupEventListeners() {
+        // Create event button
+        const createEventBtn = document.getElementById('create-event-btn');
+        if (createEventBtn) {
+            createEventBtn.addEventListener('click', createEvent);
+        }
+        
         // Search input with debounce
         const searchInput = document.getElementById('search-input');
         if (searchInput) {
@@ -169,7 +175,7 @@
                             <a href="/admin/events/${event.id}" class="btn btn-sm">
                                 Edit
                             </a>
-                            <button onclick="deleteEvent('${event.id}', '${escapeHtml(eventName).replace(/'/g, "&#39;")}')" class="btn btn-sm btn-ghost-danger">
+                            <button class="btn btn-sm btn-ghost-danger delete-event-btn" data-event-id="${event.id}" data-event-name="${escapeHtml(eventName)}">
                                 Delete
                             </button>
                         </div>
@@ -177,6 +183,16 @@
                 </tr>
             `;
         }).join('');
+        
+        // Wire up delete buttons with event delegation
+        const deleteButtons = tbody.querySelectorAll('.delete-event-btn');
+        deleteButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const eventId = btn.dataset.eventId;
+                const eventName = btn.dataset.eventName;
+                deleteEvent(eventId, eventName);
+            });
+        });
     }
     
     /**
@@ -197,7 +213,7 @@
         if (hasPrev) {
             html += `
                 <li class="page-item">
-                    <a class="page-link" href="#" onclick="goToPreviousPage(); return false;">
+                    <a class="page-link" href="#" data-action="prev">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                             <polyline points="15 6 9 12 15 18"/>
@@ -212,7 +228,7 @@
         if (hasNext) {
             html += `
                 <li class="page-item">
-                    <a class="page-link" href="#" onclick="goToNextPage('${nextCursor}'); return false;">
+                    <a class="page-link" href="#" data-action="next" data-cursor="${nextCursor}">
                         Next
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -224,6 +240,21 @@
         }
         
         pagination.innerHTML = html;
+        
+        // Wire up pagination event listeners
+        const paginationLinks = pagination.querySelectorAll('[data-action]');
+        paginationLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const action = link.dataset.action;
+                if (action === 'next') {
+                    const cursor = link.dataset.cursor;
+                    goToNextPage(cursor);
+                } else if (action === 'prev') {
+                    goToPreviousPage();
+                }
+            });
+        });
     }
     
     /**
@@ -245,27 +276,27 @@
      * Navigate to next page
      * @param {string} cursor - Next page cursor
      */
-    window.goToNextPage = function(cursor) {
+    function goToNextPage(cursor) {
         currentCursor = cursor;
         loadEvents();
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }
     
     /**
      * Navigate to previous page (reset cursor)
      */
-    window.goToPreviousPage = function() {
+    function goToPreviousPage() {
         currentCursor = null;
         loadEvents();
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }
     
     /**
      * Delete event with confirmation
      * @param {string} eventId - Event ULID
      * @param {string} eventName - Event name for confirmation message
      */
-    window.deleteEvent = function(eventId, eventName) {
+    function deleteEvent(eventId, eventName) {
         // Show confirmation modal
         const modal = document.getElementById('delete-modal');
         const eventNameSpan = document.getElementById('delete-event-name');
@@ -324,15 +355,30 @@
         // Show modal
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
-    };
+    }
     
     /**
      * Navigate to create event page
      */
-    window.createEvent = function() {
+    function createEvent() {
         // For now, redirect to edit page with 'new' as ID
         // Later, this can be implemented as a proper create endpoint
         window.location.href = '/admin/events/new';
-    };
+    }
+    
+    /**
+     * Get badge color for lifecycle state
+     * @param {string} state - Lifecycle state
+     * @returns {string} Bootstrap color class
+     */
+    function getStatusColor(state) {
+        const colors = {
+            'published': 'success',
+            'draft': 'secondary',
+            'pending': 'warning',
+            'cancelled': 'danger'
+        };
+        return colors[state] || 'secondary';
+    }
     
 })();

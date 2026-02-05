@@ -105,18 +105,15 @@ func (h *AdminHTMLHandler) ServeAPIKeys(w http.ResponseWriter, r *http.Request) 
 func (h *AdminHTMLHandler) ServeFederation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Template doesn't exist yet, return basic HTML
-	_, _ = w.Write([]byte(`<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Federation - SEL Admin</title>
-</head>
-<body>
-    <h1>Federation Node Management</h1>
-    <p>Coming soon...</p>
-</body>
-</html>`))
+	data := map[string]interface{}{
+		"Title":      "Federation Nodes - SEL Admin",
+		"ActivePage": "federation",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "federation.html", data); err != nil {
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
 }
 
 // AdminHTMLPlaceholder returns a basic handler for admin HTML routes.

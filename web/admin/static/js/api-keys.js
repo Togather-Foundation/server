@@ -21,6 +21,20 @@
         
         // Revoke confirmation
         document.getElementById('confirm-revoke').addEventListener('click', handleRevokeConfirm);
+        
+        // Event delegation for data-action buttons
+        document.addEventListener('click', (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            
+            const action = target.dataset.action;
+            
+            if (action === 'copy-new-key') {
+                window.copyNewKey();
+            } else if (action === 'revoke-key') {
+                window.revokeApiKey(target.dataset.keyId, target.dataset.keyName);
+            }
+        });
     }
     
     /**
@@ -97,7 +111,7 @@
                     </td>
                     <td>
                         <div class="btn-list flex-nowrap">
-                            <button class="btn btn-sm btn-ghost-danger" onclick="revokeApiKey('${key.id}', '${escapeHtml(key.name)}')">
+                            <button class="btn btn-sm btn-ghost-danger" data-action="revoke-key" data-key-id="${key.id}" data-key-name="${escapeHtml(key.name)}">
                                 Revoke
                             </button>
                         </div>

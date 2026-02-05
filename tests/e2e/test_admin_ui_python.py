@@ -143,7 +143,160 @@ def main():
                 print("   ✓ Screenshot: /tmp/admin_api_keys.png")
                 print(f"   Title: {page.title()}")
 
-                print("\n7. Testing Logout functionality...")
+                print("\n7. Testing Dark/Light Theme Toggle...")
+                # Navigate to dashboard where theme toggle is available
+                page.goto(f"{BASE_URL}/admin/dashboard")
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(1000)
+
+                # Check for theme toggle link (it's an <a> tag, not a button)
+                theme_toggle_count = page.locator(
+                    "#theme-toggle, #theme-toggle-light"
+                ).count()
+
+                if theme_toggle_count > 0:
+                    print(f"   Theme toggle found: {theme_toggle_count} instance(s)")
+
+                    # Find the visible toggle (one is hidden based on current theme)
+                    theme_toggle_btn = page.locator(
+                        "#theme-toggle:visible, #theme-toggle-light:visible"
+                    ).first
+
+                    # Get current theme from data-bs-theme attribute on <html> element
+                    initial_theme = page.evaluate(
+                        '() => document.documentElement.getAttribute("data-bs-theme") || "light"'
+                    )
+                    print(f"   Initial theme: {initial_theme}")
+
+                    # Take screenshot of initial theme
+                    page.screenshot(
+                        path=f"/tmp/admin_theme_{initial_theme}.png", full_page=True
+                    )
+                    print(f"   ✓ Screenshot: /tmp/admin_theme_{initial_theme}.png")
+
+                    # Click theme toggle
+                    theme_toggle_btn.click()
+                    page.wait_for_timeout(500)
+
+                    # Get new theme from data-bs-theme attribute
+                    new_theme = page.evaluate(
+                        '() => document.documentElement.getAttribute("data-bs-theme") || "light"'
+                    )
+                    print(f"   Theme after toggle: {new_theme}")
+
+                    # Take screenshot of new theme
+                    page.screenshot(
+                        path=f"/tmp/admin_theme_{new_theme}.png", full_page=True
+                    )
+                    print(f"   ✓ Screenshot: /tmp/admin_theme_{new_theme}.png")
+
+                    # Verify theme changed
+                    if initial_theme != new_theme:
+                        print("   ✓ Theme toggle working - theme changed")
+
+                        # Verify localStorage persistence
+                        stored_theme = page.evaluate(
+                            '() => localStorage.getItem("admin_theme")'
+                        )
+                        if stored_theme == new_theme:
+                            print("   ✓ Theme persisted to localStorage")
+                        else:
+                            print(
+                                f"   ⚠ Theme not persisted correctly (stored: {stored_theme}, expected: {new_theme})"
+                            )
+                    else:
+                        print("   ⚠ Theme did not change after clicking toggle button")
+                else:
+                    print("   ⚠ Theme toggle button not found")
+
+                print("\n8. Testing Federation Nodes page...")
+                page.goto(f"{BASE_URL}/admin/federation")
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(1000)
+
+                page.screenshot(path="/tmp/admin_federation.png", full_page=True)
+                print("   ✓ Screenshot: /tmp/admin_federation.png")
+                print(f"   Title: {page.title()}")
+                print(f"   URL: {page.url}")
+
+                # Check for federation page elements
+                federation_heading = page.locator(
+                    'h2:has-text("Federation"), h1:has-text("Federation")'
+                ).count()
+                if federation_heading > 0:
+                    print("   ✓ Federation heading found")
+
+                # Check for table structure
+                table_count = page.locator("table").count()
+                if table_count > 0:
+                    print(f"   ✓ Table found ({table_count} table(s))")
+
+                    # Check for table headers
+                    thead_count = page.locator("table thead").count()
+                    if thead_count > 0:
+                        print(f"   ✓ Table header found")
+
+                    # Count rows in table body
+                    tbody_rows = page.locator("table tbody tr").count()
+                    print(f"   Table rows: {tbody_rows}")
+                else:
+                    print("   ⚠ No table found on federation page")
+
+                print("\n9. Testing Stats Endpoint (Dashboard)...")
+                # Wait a bit to avoid rate limiting
+                page.wait_for_timeout(3000)
+
+                # Navigate back to dashboard
+                page.goto(f"{BASE_URL}/admin/dashboard")
+                page.wait_for_load_state("networkidle")
+
+                # Set up network request tracking
+                stats_api_called = {"value": False, "count": 0}
+                events_api_called = {"value": False, "count": 0}
+
+                def track_requests(route, request):
+                    url = request.url
+                    if "/api/v1/admin/stats" in url:
+                        stats_api_called["value"] = True
+                        stats_api_called["count"] += 1
+                        print(f"   ✓ Stats API called: {url}")
+                    elif "/api/v1/events" in url and "limit=1000" in url:
+                        events_api_called["value"] = True
+                        events_api_called["count"] += 1
+                        print(f"   ⚠ Events API called with large limit: {url}")
+                    route.continue_()
+
+                # Intercept network requests
+                page.route("**/api/**", track_requests)
+
+                # Reload the page to trigger API calls
+                page.reload()
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2000)
+
+                # Check results
+                if stats_api_called["value"]:
+                    print(
+                        f"   ✓ Dashboard uses /api/v1/admin/stats endpoint ({stats_api_called['count']} calls)"
+                    )
+                elif stats_api_called["count"] == 0:
+                    print(
+                        "   ⚠ Stats endpoint not called (may be rate limited or cached)"
+                    )
+
+                if events_api_called["value"]:
+                    print(
+                        f"   ⚠ Dashboard calls /api/v1/events with limit=1000 ({events_api_called['count']} times)"
+                    )
+                else:
+                    print(
+                        "   ✓ Dashboard does not load 1000 events (uses stats instead)"
+                    )
+
+                # Unroute to avoid interference with logout
+                page.unroute("**/api/**")
+
+                print("\n10. Testing Logout functionality...")
                 logout_count = page.locator(
                     'button:has-text("Logout"), a:has-text("Logout")'
                 ).count()

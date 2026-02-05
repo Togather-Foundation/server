@@ -51,7 +51,7 @@
                     
                     <!-- Navigation between duplicate pairs -->
                     <div id="navigation" class="d-flex justify-content-between align-items-center mb-3" style="display: none;">
-                        <button id="prev-btn" class="btn btn-secondary" onclick="navigatePrevious()">
+                        <button id="prev-btn" class="btn btn-secondary" data-action="navigate-prev">
                             <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                 <polyline points="15 6 9 12 15 18" />
@@ -59,7 +59,7 @@
                             Previous
                         </button>
                         <span id="pair-counter" class="text-muted">Pair 1 of 1</span>
-                        <button id="next-btn" class="btn btn-secondary" onclick="navigateNext()">
+                        <button id="next-btn" class="btn btn-secondary" data-action="navigate-next">
                             Next
                             <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -81,7 +81,7 @@
                                         <div id="event-a-content"></div>
                                     </div>
                                     <div class="card-footer">
-                                        <button class="btn btn-primary w-100" onclick="showMergeModal('a')">
+                                        <button class="btn btn-primary w-100" data-action="merge-keep-a">
                                             Keep Event A, Merge B
                                         </button>
                                     </div>
@@ -98,7 +98,7 @@
                                         <div id="event-b-content"></div>
                                     </div>
                                     <div class="card-footer">
-                                        <button class="btn btn-primary w-100" onclick="showMergeModal('b')">
+                                        <button class="btn btn-primary w-100" data-action="merge-keep-b">
                                             Keep Event B, Merge A
                                         </button>
                                     </div>
@@ -107,7 +107,7 @@
                         </div>
                         
                         <div class="d-flex justify-content-center mt-3">
-                            <button class="btn btn-outline-secondary" onclick="skipPair()">
+                            <button class="btn btn-outline-secondary" data-action="skip-pair">
                                 Skip This Pair
                             </button>
                         </div>
@@ -123,14 +123,14 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Confirm Merge</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMergeModal()"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div id="merge-message" class="text-muted"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn" data-bs-dismiss="modal" onclick="closeMergeModal()">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirm-merge-btn" onclick="confirmMerge()">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirm-merge-btn" data-action="confirm-merge">
                         Merge Events
                     </button>
                 </div>
