@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci lint-openapi vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
+.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -21,6 +21,7 @@ help:
 	@echo "  make lint          - Run golangci-lint"
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
 	@echo "  make lint-openapi  - Validate OpenAPI specification"
+	@echo "  make lint-yaml     - Validate YAML files (GitHub workflows, configs)"
 	@echo "  make vulncheck     - Run govulncheck vulnerability scan"
 	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
 	@echo "  make test-v        - Run tests with verbose output"
@@ -236,6 +237,31 @@ lint-openapi:
 		exit 1; \
 	fi
 
+# Validate YAML files (GitHub workflows, configs)
+lint-yaml:
+	@echo "Validating YAML files..."
+	@if command -v docker > /dev/null 2>&1; then \
+		EXIT_CODE=0; \
+		docker run --rm -v "$(PWD):/data" cytopia/yamllint:latest \
+			-c /data/.yamllint.yml \
+			-f parsable \
+			/data/.github/workflows/ \
+			/data/.yamllint.yml \
+			/data/deploy/docker/docker-compose.yml \
+			/data/deploy/docker/docker-compose.blue-green.yml || EXIT_CODE=$$?; \
+		if [ $$EXIT_CODE -eq 0 ]; then \
+			echo "✓ YAML validation passed"; \
+		elif [ $$EXIT_CODE -eq 1 ]; then \
+			echo "✗ YAML validation found errors"; \
+			exit 1; \
+		else \
+			echo "✓ YAML validation complete (warnings only)"; \
+		fi; \
+	else \
+		echo "WARNING: docker not found. Skipping YAML validation."; \
+		echo "Install docker to enable YAML validation."; \
+	fi
+
 # Run vulnerability scan (requires govulncheck)
 vulncheck:
 	@echo "Running govulncheck..."
@@ -264,6 +290,9 @@ docker-compose-lint:
 
 # Run full CI pipeline locally
 ci: sqlc-generate lint-ci vulncheck
+	@echo ""
+	@echo "==> Validating YAML files..."
+	@$(MAKE) lint-yaml
 	@echo ""
 	@echo "==> Checking code formatting..."
 	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
