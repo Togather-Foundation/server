@@ -13,19 +13,35 @@
         dateFrom: '',
         dateTo: ''
     };
+    let abortController = null; // For cancelling in-flight requests
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
     
     function init() {
-        // Extract user ID from URL path: /admin/users/{id}/activity
-        const pathParts = window.location.pathname.split('/');
-        const userIdIndex = pathParts.indexOf('users') + 1;
-        userId = pathParts[userIdIndex];
+        // Get user ID from template data (injected via window.USER_ID)
+        // This is more secure than parsing the URL pathname in JavaScript
+        userId = window.USER_ID;
         
         if (!userId) {
-            showToast('User ID not found in URL', 'error');
+            showToast('User ID not found', 'error');
             return;
+        }
+        
+        setupEventListeners();
+        loadUserInfo();
+        loadActivityStats();
+        loadActivity();
+    }
+
+
+
+
+
+
+
+
+
         }
         
         setupEventListeners();
@@ -152,17 +168,21 @@
     
     /**
      * Load activity statistics
+     * 
+     * NOTE: Backend endpoint for activity stats not yet implemented.
+     * The stats cards show placeholder "-" values until the backend
+     * provides /api/v1/admin/users/{id}/activity/stats endpoint.
+     * 
+     * Consider removing the stats cards entirely or showing a message
+     * like "Activity stats coming soon" until backend is ready.
      */
     async function loadActivityStats() {
-        // Note: This is a placeholder since the backend doesn't yet provide aggregated stats
-        // For now, we'll show zeros or "-" until the backend implements this
-        
         const totalLogins = document.getElementById('stat-total-logins');
         const eventsCreated = document.getElementById('stat-events-created');
         const eventsEdited = document.getElementById('stat-events-edited');
         const recentActivity = document.getElementById('stat-recent-activity');
         
-        // Set placeholder values
+        // Set placeholder values (backend endpoint doesn't exist yet)
         if (totalLogins) totalLogins.textContent = '-';
         if (eventsCreated) eventsCreated.textContent = '-';
         if (eventsEdited) eventsEdited.textContent = '-';
@@ -196,6 +216,12 @@
             </div>
         `;
         
+        // Cancel any in-flight request
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+        
         try {
             const params = {
                 limit: 50
@@ -207,7 +233,7 @@
             if (filters.dateTo) params.date_to = filters.dateTo;
             if (currentCursor) params.cursor = currentCursor;
             
-            const data = await API.users.getActivity(userId, params);
+            const data = await API.users.getActivity(userId, params, abortController.signal);
             
             if (data.items && data.items.length > 0) {
                 renderActivity(data.items);
@@ -219,10 +245,15 @@
                 updatePagination(null);
             }
         } catch (error) {
+            // Ignore abort errors (expected when cancelling requests)
+            if (error.name === 'AbortError') {
+                return;
+            }
+            
             console.error('Failed to load activity:', error);
             
-            // Show error or empty state (activity endpoint might return 404 if not yet implemented)
-            if (error.message && error.message.includes('404')) {
+            // Check for 404 status code instead of string matching
+            if (error.status === 404) {
                 renderEmptyActivity('Activity tracking is not yet available.');
             } else {
                 activityList.innerHTML = `
@@ -407,37 +438,6 @@
         if (type.includes('delete')) return 'danger';
         
         return 'secondary';
-    }
-    
-    /**
-     * Get badge color for status
-     * @param {string} status - User status
-     * @returns {string} Bootstrap color class
-     */
-    function getStatusColor(status) {
-        const normalized = status?.toLowerCase() || 'unknown';
-        const colors = {
-            'active': 'success',
-            'inactive': 'secondary',
-            'pending': 'warning',
-            'unknown': 'secondary'
-        };
-        return colors[normalized] || 'secondary';
-    }
-    
-    /**
-     * Get badge color for role
-     * @param {string} role - User role
-     * @returns {string} Bootstrap color class
-     */
-    function getRoleColor(role) {
-        const normalized = role?.toLowerCase() || 'viewer';
-        const colors = {
-            'admin': 'danger',
-            'editor': 'info',
-            'viewer': 'secondary'
-        };
-        return colors[normalized] || 'secondary';
     }
     
 })();

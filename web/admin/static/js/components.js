@@ -213,6 +213,37 @@ function renderEmptyState(tbody, message, colSpan) {
     `;
 }
 
+/**
+ * Get badge color for user status
+ * @param {string} status - User status
+ * @returns {string} Bootstrap color class
+ */
+function getStatusColor(status) {
+    const normalized = status?.toLowerCase() || 'unknown';
+    const colors = {
+        'active': 'success',
+        'inactive': 'secondary',
+        'pending': 'warning',
+        'unknown': 'secondary'
+    };
+    return colors[normalized] || 'secondary';
+}
+
+/**
+ * Get badge color for user role
+ * @param {string} role - User role
+ * @returns {string} Bootstrap color class
+ */
+function getRoleColor(role) {
+    const normalized = role?.toLowerCase() || 'viewer';
+    const colors = {
+        'admin': 'danger',
+        'editor': 'info',
+        'viewer': 'secondary'
+    };
+    return colors[normalized] || 'secondary';
+}
+
 // Auto-setup on page load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {

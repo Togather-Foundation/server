@@ -13,6 +13,7 @@
         role: ''
     };
     let currentUsers = [];
+    let abortController = null; // For cancelling in-flight requests
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
@@ -36,7 +37,18 @@
         const searchInput = document.getElementById('search-input');
         if (searchInput) {
             searchInput.addEventListener('input', debounce((e) => {
-                filters.search = e.target.value.trim();
+                const query = e.target.value.trim();
+                
+                // Sanitize input: remove null bytes, limit length
+                const sanitized = query.replace(/\0/g, '').substring(0, 100);
+                
+                // Warn for very short queries
+                if (sanitized.length > 0 && sanitized.length < 2) {
+                    // Don't search yet, but don't show error either (just wait)
+                    return;
+                }
+                
+                filters.search = sanitized;
                 currentCursor = null;
                 loadUsers();
             }, 300));
@@ -103,6 +115,12 @@
         const tbody = document.getElementById('users-table');
         renderLoadingState(tbody, 6);
         
+        // Cancel any in-flight request
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+        
         try {
             const params = {
                 limit: 50
@@ -114,7 +132,7 @@
             if (filters.role) params.role = filters.role;
             if (currentCursor) params.cursor = currentCursor;
             
-            const data = await API.users.list(params);
+            const data = await API.users.list(params, abortController.signal);
             
             if (data.items && data.items.length > 0) {
                 currentUsers = data.items;
@@ -127,6 +145,11 @@
                 updatePagination(null);
             }
         } catch (error) {
+            // Ignore abort errors (expected when cancelling requests)
+            if (error.name === 'AbortError') {
+                return;
+            }
+            
             console.error('Failed to load users:', error);
             showToast(error.message || 'Failed to load users', 'error');
             tbody.innerHTML = `
@@ -461,12 +484,13 @@
             'Delete User',
             `Are you sure you want to delete user "${username}"? This action cannot be undone.`,
             async () => {
+                const row = document.querySelector(`tr[data-user-id="${userId}"]`);
+                
                 try {
                     await API.users.delete(userId);
                     showToast('User deleted successfully', 'success');
                     
-                    // Remove row from table with animation
-                    const row = document.querySelector(`tr[data-user-id="${userId}"]`);
+                    // Only animate removal AFTER successful API response
                     if (row) {
                         row.style.opacity = '0';
                         row.style.transition = 'opacity 0.3s';
@@ -483,6 +507,11 @@
                 } catch (error) {
                     console.error('Failed to delete user:', error);
                     showToast(error.message || 'Failed to delete user', 'error');
+                    
+                    // If API failed, ensure row is still visible
+                    if (row) {
+                        row.style.opacity = '1';
+                    }
                 }
             }
         );
@@ -539,37 +568,6 @@
             console.error('Failed to resend invitation:', error);
             showToast(error.message || 'Failed to resend invitation', 'error');
         }
-    }
-    
-    /**
-     * Get badge color for status
-     * @param {string} status - User status
-     * @returns {string} Bootstrap color class
-     */
-    function getStatusColor(status) {
-        const normalized = status?.toLowerCase() || 'unknown';
-        const colors = {
-            'active': 'success',
-            'inactive': 'secondary',
-            'pending': 'warning',
-            'unknown': 'secondary'
-        };
-        return colors[normalized] || 'secondary';
-    }
-    
-    /**
-     * Get badge color for role
-     * @param {string} role - User role
-     * @returns {string} Bootstrap color class
-     */
-    function getRoleColor(role) {
-        const normalized = role?.toLowerCase() || 'viewer';
-        const colors = {
-            'admin': 'danger',
-            'editor': 'info',
-            'viewer': 'secondary'
-        };
-        return colors[normalized] || 'secondary';
     }
     
 })();

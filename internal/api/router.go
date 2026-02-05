@@ -132,7 +132,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Admin handlers
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates, cfg.Auth.JWTExpiry)
-	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment)
+	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment, slogLogger)
 
 	// Admin user management handlers
 	adminUsersHandler := handlers.NewAdminUsersHandler(userService, auditLogger, cfg.Environment)
