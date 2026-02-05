@@ -1383,34 +1383,42 @@ switch_traffic() {
         return 1
     fi
     
-    # Verify traffic switch worked
-    local verification_attempts=3
-    local verification_delay=2
+    # Verify traffic switch worked by checking actual version
+    log "INFO" "Verifying traffic switch to ${target_slot} (version ${GIT_SHORT_COMMIT})..."
     
-    for ((i=1; i<=verification_attempts; i++)); do
-        log "INFO" "Verifying traffic switch (attempt ${i}/${verification_attempts})..."
+    local max_attempts=10
+    local attempt=1
+    local sleep_duration=2
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        # Check via actual HTTPS endpoint (what users hit)
+        local live_version=$(curl -sf "https://${NODE_DOMAIN}/version" | jq -r '.git_commit // .version // empty' 2>/dev/null || echo "")
         
-        # Check via Caddy's public endpoint
-        local response=$(curl -s -H "Host: ${env}.toronto.togather.foundation" \
-                            http://localhost/health 2>/dev/null || echo "")
-        
-        if [[ -n "$response" ]]; then
-            log "SUCCESS" "Traffic successfully switched to ${target_slot} slot"
-            log "INFO" "Caddy is now routing to localhost:${target_port}"
+        if [[ "$live_version" == "$GIT_COMMIT" ]] || [[ "$live_version" == "$GIT_SHORT_COMMIT" ]]; then
+            log "SUCCESS" "Traffic successfully switched to ${target_slot} slot (verified version: ${live_version})"
+            log "INFO" "Caddy is now routing https://${NODE_DOMAIN} to localhost:${target_port}"
             return 0
         fi
         
-        if [[ $i -lt $verification_attempts ]]; then
-            log "WARN" "Verification failed, retrying in ${verification_delay}s..."
-            sleep $verification_delay
+        log "WARN" "Verification attempt ${attempt}/${max_attempts}: Version mismatch"
+        log "WARN" "  Expected: ${GIT_SHORT_COMMIT} (${GIT_COMMIT})"
+        log "WARN" "  Got: ${live_version:-<no response>}"
+        
+        if [[ $attempt -lt $max_attempts ]]; then
+            log "INFO" "Waiting ${sleep_duration}s for Caddy reload to propagate..."
+            sleep $sleep_duration
         fi
+        
+        ((attempt++))
     done
     
-    log "WARN" "Could not verify traffic switch through Caddy"
-    log "WARN" "Deployment successful but traffic routing unverified"
-    log "INFO" "Manual verification: curl -I https://${env}.toronto.togather.foundation/health"
-    
-    return 0  # Non-fatal - deployment succeeded
+    # Verification failed - rollback
+    log "ERROR" "Traffic switch verification FAILED after ${max_attempts} attempts"
+    log "ERROR" "HTTPS endpoint still serving wrong version"
+    log "ERROR" "Rolling back Caddyfile to prevent user-facing issues"
+    sudo cp "${backup_file}" "${caddyfile}"
+    sudo systemctl reload caddy
+    return 1
 }
 
 # ============================================================================
