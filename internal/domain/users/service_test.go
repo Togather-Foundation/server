@@ -75,7 +75,7 @@ func TestValidatePassword_Valid(t *testing.T) {
 		"C0mplex!P@ssw0rd",                // Complex
 		strings.Repeat("Aa1!", 3),         // 12 chars minimum
 		"Aa1!" + strings.Repeat("x", 120), // 124 chars (within max)
-		"Tr0ub4dorTr0ub4dor&333",                     // Classic example
+		"Tr0ub4dorTr0ub4dor&333",          // Classic example
 		"correcthorsebatterystaple1A!",    // Long passphrase
 	}
 
@@ -672,6 +672,48 @@ func TestUpdateUser_ValidationIntegration(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "invalid parameters") {
 				t.Errorf("expected 'invalid parameters' error, got %v", err)
+			}
+		})
+	}
+}
+
+// TestUUIDEquals tests the uuidEquals helper function
+func TestUUIDEquals(t *testing.T) {
+	// Create sample UUIDs
+	uuid1 := pgtype.UUID{
+		Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		Valid: true,
+	}
+
+	uuid2 := pgtype.UUID{
+		Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		Valid: true,
+	}
+
+	uuid3 := pgtype.UUID{
+		Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 99},
+		Valid: true,
+	}
+
+	invalid := pgtype.UUID{Valid: false}
+
+	tests := []struct {
+		name     string
+		a        pgtype.UUID
+		b        pgtype.UUID
+		expected bool
+	}{
+		{"same uuid", uuid1, uuid2, true},
+		{"different uuid", uuid1, uuid3, false},
+		{"one invalid", uuid1, invalid, false},
+		{"both invalid", invalid, invalid, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := uuidEquals(tt.a, tt.b)
+			if result != tt.expected {
+				t.Errorf("uuidEquals() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
