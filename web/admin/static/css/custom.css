@@ -47,27 +47,44 @@
     color: white;
 }
 
-/* Badge text readability improvements for dark mode */
-[data-bs-theme="dark"] .badge.bg-secondary {
-    background-color: #6c757d !important; /* Lighter gray in dark mode */
+/* Badge text readability improvements - darker backgrounds with white text */
+/* Make all status badges darker so white text is always readable */
+
+.badge.bg-success {
+    background-color: #2d7d3e !important; /* Darker green */
     color: #ffffff !important;
 }
 
-[data-bs-theme="dark"] .badge.bg-success {
-    color: #ffffff !important;
-}
-
-/* Ensure badges with light backgrounds use dark text in both themes */
 .badge.bg-warning {
-    color: #000000 !important; /* Always dark text on yellow background */
+    background-color: #d68500 !important; /* Darker orange/amber instead of bright yellow */
+    color: #ffffff !important;
 }
 
 .badge.bg-secondary {
-    color: #000000 !important; /* Dark text on gray badge in light mode */
+    background-color: #495057 !important; /* Darker gray */
+    color: #ffffff !important;
+}
+
+.badge.bg-danger {
+    background-color: #c92a2a !important; /* Darker red */
+    color: #ffffff !important;
+}
+
+/* Dark mode adjustments - slightly lighter for contrast */
+[data-bs-theme="dark"] .badge.bg-success {
+    background-color: #37a349 !important; /* Slightly lighter green in dark mode */
+}
+
+[data-bs-theme="dark"] .badge.bg-warning {
+    background-color: #f59f00 !important; /* Slightly lighter amber in dark mode */
 }
 
 [data-bs-theme="dark"] .badge.bg-secondary {
-    color: #ffffff !important; /* White text on gray badge in dark mode */
+    background-color: #6c757d !important; /* Medium gray in dark mode */
+}
+
+[data-bs-theme="dark"] .badge.bg-danger {
+    background-color: #e03131 !important; /* Slightly lighter red in dark mode */
 }
 
 /* Loading skeleton for tables */
