@@ -194,6 +194,9 @@ curl -I https://<domain>/health | grep -i x-togather-slot
 
 # Check deployment state
 jq '.current_deployment.active_slot' /opt/togather/src/deploy/config/deployment-state.json
+
+# Verify which version is actually live via HTTPS
+curl -s https://<domain>/version | jq -r '.git_commit'
 ```
 
 **Resolution:**
@@ -215,6 +218,31 @@ jq '.current_deployment.active_slot' /opt/togather/src/deploy/config/deployment-
    # Update Caddyfile to point to the target slot (8081 or 8082)
    sudo nano /etc/caddy/Caddyfile
    sudo systemctl reload caddy
+   
+   # Verify traffic actually switched (important!)
+   curl -s https://<domain>/version | jq -r '.git_commit'
+   ```
+
+3. **Verification failed (wrong version served)**
+   ```
+   [WARN] Verification attempt 1/10: Version mismatch
+   [WARN]   Expected: abc123f
+   [WARN]   Got: xyz789e
+   ```
+   
+   **Root Cause:** Caddy reload succeeded but traffic not actually switched yet.
+   
+   **Fix (as of commit ba90b4e):** The deployment script now:
+   - Checks actual HTTPS endpoint users hit (not just localhost)
+   - Validates git_commit matches expected version
+   - Retries up to 10 times with 2s delay for Caddy reload to propagate
+   - Auto-rollback Caddyfile on persistent failure
+   
+   **If using older deploy.sh:** Manually reload Caddy again:
+   ```bash
+   sudo systemctl reload caddy
+   sleep 3
+   curl -s https://<domain>/version | jq -r '.git_commit'
    ```
 
 ---
