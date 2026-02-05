@@ -33,17 +33,19 @@ staging.toronto.togather.foundation {
 
 	# Grafana monitoring proxy (localhost-only access)
 	# Grafana runs on localhost:3000, only accessible via this proxy
+	# Grafana is configured with GF_SERVER_ROOT_URL including /grafana subpath
+	# and GF_SERVER_SERVE_FROM_SUB_PATH=true to handle URL rewriting
 	# TODO: Add proper authentication when admin system is ready
-	handle_path /grafana/* {
+	handle /grafana* {
 		# For now, allow all traffic to Grafana (internal staging only)
 		# In production, add IP restrictions or proper auth
 		reverse_proxy localhost:3000 {
-			# Health check
-			health_uri /api/health
+			# Health check (using Grafana API endpoint)
+			health_uri /grafana/api/health
 			health_interval 30s
 			health_timeout 5s
 			
-			# Preserve original request info
+			# Preserve original request info for Grafana
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}

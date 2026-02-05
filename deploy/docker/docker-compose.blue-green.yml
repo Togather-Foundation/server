@@ -324,8 +324,10 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       
       # Server settings
+      # For subpath deployment (/grafana), set ROOT_URL to include the subpath
+      # and enable SERVE_FROM_SUB_PATH to handle URL rewriting correctly
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
-      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GRAFANA_SERVE_FROM_SUB_PATH:-false}
       
       # Anonymous access (SECURITY: disabled by default)
       # Only enable if Grafana is localhost-only or you implement JWT auth
