@@ -144,6 +144,8 @@ File: `web/admin/static/css/custom.css`
 3. **Avoid !important** - Use specificity correctly instead
 4. **Use CSS variables** - For theme colors (Tabler provides these)
 5. **Keep specificity low** - Avoid deep nesting (`#id .class .class`)
+6. **Check color contrast** - Use Playwright to verify text/background combinations
+7. **Match theme classes** - Use `navbar-light` for light backgrounds, `navbar-dark` for dark backgrounds
 
 ## JavaScript Architecture
 
@@ -439,17 +441,27 @@ ADMIN_PASSWORD=mypassword uvx --from playwright --with playwright python tests/e
 - Documentation: `tests/e2e/README.md`
 - Screenshots: `/tmp/admin_*.png` (generated on each run)
 
+### Testing Best Practices
+
+**ALWAYS run E2E tests after UI changes** - The tests catch:
+- Console errors (JavaScript failures, API errors)
+- CSP violations (security policy issues)
+- Visual issues (can check colors programmatically)
+- Navigation/authentication flows
+
+**Check console errors summary** at end of test run - it reports all errors found.
+
 ### Manual Testing Checklist
 
 When modifying admin UI:
-- [ ] Run Playwright E2E tests (see above)
+- [ ] **Run Playwright E2E tests first** (catches most issues automatically)
+- [ ] Check console error summary from test output
 - [ ] Test with empty data (0 events)
 - [ ] Test with many items (pagination)
 - [ ] Test error states (network failure)
 - [ ] Test unauthorized access (expired token)
 - [ ] Test mobile viewport (responsive design)
 - [ ] Test keyboard navigation (accessibility)
-- [ ] Test browser console (no errors)
 
 ### Browser Testing
 
@@ -526,6 +538,19 @@ document.querySelector('#page > div.container > div.card > div.body > span.count
 
 // Good: Direct ID or data attribute
 document.getElementById('event-count');
+```
+
+### ❌ Don't Mix Dark/Light Theme Classes
+
+```html
+<!-- Bad: White text on white background (invisible!) -->
+<header class="navbar navbar-dark" style="background: white">
+
+<!-- Good: Dark text on white background -->
+<header class="navbar navbar-light" style="background: white">
+
+<!-- Good: White text on dark background -->
+<header class="navbar navbar-dark bg-dark">
 ```
 
 ## Refactoring Checklist
