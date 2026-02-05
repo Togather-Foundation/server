@@ -11,6 +11,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAllEvents = `-- name: CountAllEvents :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountAllEvents(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllEvents)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countEventsByLifecycleState = `-- name: CountEventsByLifecycleState :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE lifecycle_state = $1
+   AND deleted_at IS NULL
+`
+
+func (q *Queries) CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error) {
+	row := q.db.QueryRow(ctx, countEventsByLifecycleState, lifecycleState)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createEventTombstone = `-- name: CreateEventTombstone :exec
 INSERT INTO event_tombstones (event_id, event_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
 VALUES ($1, $2, $3, $4, $5, $6)

@@ -11,6 +11,8 @@ import (
 )
 
 type Querier interface {
+	CountAllEvents(ctx context.Context) (int64, error)
+	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
 	CreateBatchIngestionResult(ctx context.Context, arg CreateBatchIngestionResultParams) error
 	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error

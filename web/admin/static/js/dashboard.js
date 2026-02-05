@@ -11,53 +11,34 @@
     
     async function loadDashboardStats() {
         try {
-            // Fetch pending events count
-            await loadPendingCount();
+            // Fetch stats from efficient COUNT endpoint (server-m11c)
+            const stats = await API.stats.get();
             
-            // Fetch total events count
-            await loadTotalCount();
+            // Update pending count
+            const pendingElement = document.getElementById('pending-count');
+            pendingElement.textContent = stats.pending_count || 0;
+            
+            // Update total events count
+            const totalElement = document.getElementById('total-events');
+            totalElement.textContent = stats.total_count || 0;
+            
         } catch (err) {
             console.error('Failed to load dashboard stats:', err);
-            showToast('Failed to load dashboard statistics', 'error');
-        }
-    }
-    
-    async function loadPendingCount() {
-        const pendingElement = document.getElementById('pending-count');
-        try {
-            const data = await API.events.pending();
-            const count = data.items?.length || 0;
-            pendingElement.textContent = count;
-        } catch (err) {
-            console.error('Failed to load pending events:', err);
+            
+            // Show error state in UI
+            const pendingElement = document.getElementById('pending-count');
+            const totalElement = document.getElementById('total-events');
+            
             pendingElement.innerHTML = '<span class="text-danger" title="' + err.message + '">Error</span>';
-            // If unauthorized, might need to re-login
-            if (err.message && err.message.includes('authorization')) {
-                showToast('Session expired. Please log in again.', 'warning');
-                setTimeout(() => window.location.href = '/admin/login', 2000);
-            }
-            throw err;
-        }
-    }
-    
-    async function loadTotalCount() {
-        const totalElement = document.getElementById('total-events');
-        try {
-            // Fetch all events (with max allowed limit of 200)
-            console.log('Loading total events...');
-            const data = await API.events.list({ limit: 200 });
-            console.log('Total events response:', data);
-            const count = data.items?.length || 0;
-            totalElement.textContent = count;
-        } catch (err) {
-            console.error('Failed to load total events:', err);
             totalElement.innerHTML = '<span class="text-danger" title="' + err.message + '">Error</span>';
-            // If unauthorized, might need to re-login
+            
+            showToast('Failed to load dashboard statistics', 'error');
+            
+            // If unauthorized, redirect to login
             if (err.message && err.message.includes('authorization')) {
                 showToast('Session expired. Please log in again.', 'warning');
                 setTimeout(() => window.location.href = '/admin/login', 2000);
             }
-            throw err;
         }
     }
 })();

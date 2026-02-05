@@ -111,7 +111,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
 	adminService := events.NewAdminService(repo.Events(), requireHTTPS)
-	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
+	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
@@ -219,13 +219,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	jwtAuth := middleware.JWTAuth(jwtManager, cfg.Environment)
 	adminRateLimit := middleware.WithRateLimitTierHandler(middleware.TierAdmin)
 
+	// Admin stats endpoint for dashboard (server-m11c)
+	adminStats := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.GetStats))))
+	mux.Handle("GET /api/v1/admin/stats", adminStats)
+
 	adminPendingEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListPendingEvents))))
 	mux.Handle("/api/v1/admin/events/pending", adminPendingEvents)
 
 	adminListEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListEvents))))
-	mux.Handle("/api/v1/admin/events", methodMux(map[string]http.Handler{
-		http.MethodGet: adminListEvents,
-	}))
+	mux.Handle("GET /api/v1/admin/events", adminListEvents)
 
 	adminUpdateEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UpdateEvent))))
 	adminDeleteEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeleteEvent))))
@@ -235,29 +237,19 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}))
 
 	adminPublishEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.PublishEvent))))
-	mux.Handle("/api/v1/admin/events/{id}/publish", methodMux(map[string]http.Handler{
-		http.MethodPost: adminPublishEvent,
-	}))
+	mux.Handle("POST /api/v1/admin/events/{id}/publish", adminPublishEvent)
 
 	adminUnpublishEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UnpublishEvent))))
-	mux.Handle("/api/v1/admin/events/{id}/unpublish", methodMux(map[string]http.Handler{
-		http.MethodPost: adminUnpublishEvent,
-	}))
+	mux.Handle("POST /api/v1/admin/events/{id}/unpublish", adminUnpublishEvent)
 
 	adminMergeEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergeEvents))))
-	mux.Handle("/api/v1/admin/events/merge", methodMux(map[string]http.Handler{
-		http.MethodPost: adminMergeEvents,
-	}))
+	mux.Handle("POST /api/v1/admin/events/merge", adminMergeEvents)
 
 	adminListDuplicates := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListDuplicates))))
-	mux.Handle("/api/v1/admin/duplicates", methodMux(map[string]http.Handler{
-		http.MethodGet: adminListDuplicates,
-	}))
+	mux.Handle("GET /api/v1/admin/duplicates", adminListDuplicates)
 
 	adminDeletePlace := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeletePlace))))
-	mux.Handle("/api/v1/admin/places/{id}", methodMux(map[string]http.Handler{
-		http.MethodDelete: adminDeletePlace,
-	}))
+	mux.Handle("DELETE /api/v1/admin/places/{id}", adminDeletePlace)
 
 	adminDeleteOrganization := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeleteOrganization))))
 	mux.Handle("/api/v1/admin/organizations/{id}", methodMux(map[string]http.Handler{

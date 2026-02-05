@@ -148,3 +148,14 @@ SELECT t.id,
  WHERE e.ulid = $1
  ORDER BY t.deleted_at DESC
  LIMIT 1;
+
+-- name: CountEventsByLifecycleState :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE lifecycle_state = $1
+   AND deleted_at IS NULL;
+
+-- name: CountAllEvents :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE deleted_at IS NULL;

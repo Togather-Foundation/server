@@ -14,6 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/sanitize"
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/internal/validation"
 )
 
@@ -23,17 +24,19 @@ type AdminHandler struct {
 	Places        *places.Service
 	Organizations *organizations.Service
 	AuditLogger   *audit.Logger
+	Queries       postgres.Querier
 	Env           string
 	BaseURL       string
 }
 
-func NewAdminHandler(service *events.Service, adminService *events.AdminService, placeService *places.Service, orgService *organizations.Service, auditLogger *audit.Logger, env string, baseURL string) *AdminHandler {
+func NewAdminHandler(service *events.Service, adminService *events.AdminService, placeService *places.Service, orgService *organizations.Service, auditLogger *audit.Logger, queries postgres.Querier, env string, baseURL string) *AdminHandler {
 	return &AdminHandler{
 		Service:       service,
 		AdminService:  adminService,
 		Places:        placeService,
 		Organizations: orgService,
 		AuditLogger:   auditLogger,
+		Queries:       queries,
 		Env:           env,
 		BaseURL:       baseURL,
 	}
@@ -690,4 +693,43 @@ func buildEventURI(baseURL, ulid string) string {
 		return ""
 	}
 	return uri
+}
+
+// GetStats handles GET /api/v1/admin/stats
+// Returns event counts by lifecycle state for dashboard performance
+func (h *AdminHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Queries == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Get count of pending (draft) events
+	pendingCount, err := h.Queries.CountEventsByLifecycleState(r.Context(), "draft")
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Get count of published events
+	publishedCount, err := h.Queries.CountEventsByLifecycleState(r.Context(), "published")
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Get total count of all events (excluding deleted)
+	totalCount, err := h.Queries.CountAllEvents(r.Context())
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Build response payload
+	stats := map[string]int64{
+		"pending_count":   pendingCount,
+		"published_count": publishedCount,
+		"total_count":     totalCount,
+	}
+
+	writeJSON(w, http.StatusOK, stats, contentTypeFromRequest(r))
 }
