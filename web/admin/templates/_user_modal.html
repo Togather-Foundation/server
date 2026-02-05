@@ -12,9 +12,9 @@
                     
                     <div class="mb-3">
                         <label class="form-label required">Username</label>
-                        <input type="text" class="form-control" id="user-username" name="username" placeholder="john.doe" required>
+                        <input type="text" class="form-control" id="user-username" name="username" placeholder="johndoe123" required pattern="[a-zA-Z0-9]+" minlength="3" maxlength="50" title="Username must contain only letters and numbers (3-50 characters)">
                         <div class="invalid-feedback" id="username-error"></div>
-                        <small class="form-hint">Lowercase letters, numbers, dots, and underscores only</small>
+                        <small class="form-hint">Letters and numbers only (3-50 characters)</small>
                     </div>
                     
                     <div class="mb-3">
