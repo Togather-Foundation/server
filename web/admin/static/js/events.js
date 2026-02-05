@@ -168,7 +168,7 @@
                     </td>
                     <td class="text-muted">${startDate}</td>
                     <td>
-                        <span class="badge bg-${statusColor}">${escapeHtml(lifecycleState)}</span>
+                        <span class="badge bg-${statusColor} ${getStatusTextColor(lifecycleState)}">${escapeHtml(lifecycleState)}</span>
                     </td>
                     <td>
                         <div class="btn-list flex-nowrap">
@@ -379,6 +379,17 @@
             'cancelled': 'danger'
         };
         return colors[state] || 'secondary';
+    }
+    
+    /**
+     * Get text color class for status badge (ensures readability in both themes)
+     * @param {string} state - Lifecycle state
+     * @returns {string} Text color class
+     */
+    function getStatusTextColor(state) {
+        // States with light backgrounds need dark text in both themes
+        const needsDarkText = ['pending']; // warning badge has yellow/light background
+        return needsDarkText.includes(state) ? 'text-dark' : '';
     }
     
 })();
