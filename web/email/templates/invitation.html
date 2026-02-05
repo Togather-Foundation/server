@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Welcome to Togather</title>
+    <style>
+        /* Reset styles */
+        body, table, td, a { 
+            -webkit-text-size-adjust: 100%; 
+            -ms-text-size-adjust: 100%; 
+        }
+        table, td { 
+            mso-table-lspace: 0pt; 
+            mso-table-rspace: 0pt; 
+        }
+        img { 
+            -ms-interpolation-mode: bicubic; 
+            border: 0; 
+            height: auto; 
+            line-height: 100%; 
+            outline: none; 
+            text-decoration: none; 
+        }
+        
+        /* Base styles */
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100% !important;
+            height: 100% !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1d2129;
+            background-color: #f6f8fb;
+        }
+        
+        /* Container */
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #206bc4 0%, #1a5aa8 100%);
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #ffffff;
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+        
+        .header p {
+            margin: 8px 0 0;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+        }
+        
+        /* Content */
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .content p {
+            margin: 0 0 16px;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #3c4858;
+        }
+        
+        .content p.lead {
+            font-size: 16px;
+            color: #1d2129;
+            font-weight: 500;
+        }
+        
+        /* Button */
+        .button-container {
+            text-align: center;
+            margin: 32px 0;
+        }
+        
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            background-color: #206bc4;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            box-shadow: 0 2px 8px rgba(32, 107, 196, 0.3);
+            transition: background-color 0.2s ease;
+        }
+        
+        .button:hover {
+            background-color: #1a5aa8;
+        }
+        
+        /* Info box */
+        .info-box {
+            background-color: #f6f8fb;
+            border-left: 4px solid #206bc4;
+            padding: 16px 20px;
+            margin: 24px 0;
+            border-radius: 4px;
+        }
+        
+        .info-box p {
+            margin: 0;
+            font-size: 14px;
+            color: #3c4858;
+        }
+        
+        .info-box strong {
+            color: #1d2129;
+        }
+        
+        /* Footer */
+        .footer {
+            padding: 30px;
+            text-align: center;
+            border-top: 1px solid #e9ecef;
+            background-color: #f6f8fb;
+        }
+        
+        .footer p {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: #6c757d;
+            line-height: 1.5;
+        }
+        
+        .footer a {
+            color: #206bc4;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Divider */
+        .divider {
+            height: 1px;
+            background-color: #e9ecef;
+            margin: 32px 0;
+        }
+        
+        /* Responsive */
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                width: 100% !important;
+            }
+            
+            .content {
+                padding: 30px 20px !important;
+            }
+            
+            .header {
+                padding: 30px 20px !important;
+            }
+            
+            .header h1 {
+                font-size: 24px !important;
+            }
+            
+            .button {
+                padding: 12px 24px !important;
+                font-size: 15px !important;
+                display: block !important;
+                width: 100% !important;
+                box-sizing: border-box;
+            }
+            
+            .footer {
+                padding: 20px !important;
+            }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            .email-container {
+                background-color: #ffffff !important;
+            }
+            
+            .content p {
+                color: #3c4858 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <table role="presentation" style="width: 100%; border-collapse: collapse; border: 0; border-spacing: 0; background: #f6f8fb;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                
+                <!-- Email Container -->
+                <table role="presentation" class="email-container" style="border-collapse: collapse; border: 0; border-spacing: 0; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td class="header">
+                            <h1>Welcome to Togather</h1>
+                            <p>Shared Events Library</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td class="content">
+                            <p class="lead">You've been invited to join Togather!</p>
+                            
+                            <p>{{.InvitedBy}} has created an account for you on the Togather Shared Events Library platform. To get started, please click the button below to set your password and activate your account.</p>
+                            
+                            <!-- Call to Action Button -->
+                            <div class="button-container">
+                                <a href="{{.InviteLink}}" class="button">Set Up Your Account</a>
+                            </div>
+                            
+                            <!-- Info Box -->
+                            <div class="info-box">
+                                <p><strong>Important:</strong> This invitation link will expire in <strong>7 days</strong>. Please complete your account setup before the link expires.</p>
+                            </div>
+                            
+                            <div class="divider"></div>
+                            
+                            <p style="font-size: 14px; color: #6c757d;">If the button above doesn't work, you can copy and paste this link into your browser:</p>
+                            <p style="font-size: 13px; word-break: break-all; color: #206bc4;">{{.InviteLink}}</p>
+                            
+                            <div class="divider"></div>
+                            
+                            <p style="font-size: 14px; color: #6c757d; margin-bottom: 0;">If you didn't expect this invitation or believe you received this email in error, you can safely ignore it. No account will be created until you click the link above and set a password.</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td class="footer">
+                            <p>This is an automated message from Togather.</p>
+                            <p>Togather Shared Events Library &copy; 2025</p>
+                            <p><a href="https://togather.foundation">togather.foundation</a></p>
+                        </td>
+                    </tr>
+                    
+                </table>
+                
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

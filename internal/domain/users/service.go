@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unicode"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -157,6 +159,10 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 		IsActive:     false, // Inactive until invitation is accepted
 	})
 	if err != nil {
+		// Convert database constraint errors to domain errors
+		if domainErr := convertDBError(err); domainErr != err {
+			return postgres.User{}, domainErr
+		}
 		return postgres.User{}, fmt.Errorf("failed to create user: %w", err)
 	}
 
@@ -724,6 +730,23 @@ func generateSecureToken() (string, error) {
 func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return base64.URLEncoding.EncodeToString(hash[:])
+}
+
+// convertDBError converts database constraint errors to domain-specific errors
+func convertDBError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		// PostgreSQL error code 23505 = unique_violation
+		if pgErr.Code == "23505" {
+			if strings.Contains(pgErr.ConstraintName, "email") {
+				return ErrEmailTaken
+			}
+			if strings.Contains(pgErr.ConstraintName, "username") {
+				return ErrUsernameTaken
+			}
+		}
+	}
+	return err
 }
 
 // uuidToString converts a pgtype.UUID to a string, returning empty string if invalid

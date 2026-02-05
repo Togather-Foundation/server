@@ -263,7 +263,7 @@ func TestNewService_Success(t *testing.T) {
 	}
 
 	if svc == nil {
-		t.Error("Expected non-nil service")
+		t.Fatal("Expected non-nil service")
 	}
 
 	if svc.config.From != cfg.From {

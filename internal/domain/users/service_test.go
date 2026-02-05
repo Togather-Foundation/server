@@ -718,3 +718,189 @@ func TestUUIDEquals(t *testing.T) {
 		})
 	}
 }
+
+// TestNewService tests the service constructor
+func TestNewService(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		wantErr bool
+	}{
+		{
+			name:    "valid service creation",
+			baseURL: "http://localhost:8080",
+			wantErr: false,
+		},
+		{
+			name:    "empty baseURL is valid",
+			baseURL: "",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zerolog.Nop()
+			svc := NewService(nil, nil, nil, tt.baseURL, logger)
+
+			if svc == nil {
+				t.Error("NewService() returned nil")
+				return
+			}
+			if svc.baseURL != tt.baseURL {
+				t.Errorf("NewService() baseURL = %v, want %v", svc.baseURL, tt.baseURL)
+			}
+			if svc.validator == nil {
+				t.Error("NewService() validator is nil")
+			}
+		})
+	}
+}
+
+// TestHashToken tests the token hashing function
+func TestHashToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{
+			name:  "hash simple token",
+			token: "abc123",
+		},
+		{
+			name:  "hash base64 token",
+			token: "dGVzdC10b2tlbi0xMjM0NTY3ODkw",
+		},
+		{
+			name:  "hash empty token",
+			token: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash1 := hashToken(tt.token)
+			hash2 := hashToken(tt.token)
+
+			// Same token should produce same hash (deterministic)
+			if hash1 != hash2 {
+				t.Errorf("hashToken() not deterministic: %s != %s", hash1, hash2)
+			}
+
+			// Hash should not be empty
+			if hash1 == "" {
+				t.Error("hashToken() returned empty hash")
+			}
+
+			// Hash should be different from input
+			if hash1 == tt.token {
+				t.Error("hashToken() returned input token (not hashed)")
+			}
+		})
+	}
+
+	// Different tokens should produce different hashes
+	t.Run("different tokens produce different hashes", func(t *testing.T) {
+		token1 := "token1"
+		token2 := "token2"
+		hash1 := hashToken(token1)
+		hash2 := hashToken(token2)
+
+		if hash1 == hash2 {
+			t.Error("hashToken() produced same hash for different tokens")
+		}
+	})
+}
+
+// TestConvertDBError tests database error conversion
+func TestConvertDBError(t *testing.T) {
+	// Import the pgconn package for creating test errors
+	tests := []struct {
+		name     string
+		err      error
+		expected error
+	}{
+		{
+			name:     "non-postgres error",
+			err:      errors.New("some other error"),
+			expected: errors.New("some other error"),
+		},
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertDBError(tt.err)
+			if result == nil && tt.expected == nil {
+				return
+			}
+			if result == nil || tt.expected == nil {
+				t.Errorf("convertDBError() = %v, want %v", result, tt.expected)
+				return
+			}
+			if result.Error() != tt.expected.Error() {
+				t.Errorf("convertDBError() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestUUIDToString tests the UUID to string conversion function
+func TestUUIDToString_Function(t *testing.T) {
+	tests := []struct {
+		name string
+		id   pgtype.UUID
+		want string
+	}{
+		{
+			name: "valid UUID",
+			id: pgtype.UUID{
+				Bytes: [16]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
+				Valid: true,
+			},
+			want: "01234567-89ab-cdef-0123-456789abcdef",
+		},
+		{
+			name: "zero UUID",
+			id: pgtype.UUID{
+				Bytes: [16]byte{},
+				Valid: true,
+			},
+			want: "00000000-0000-0000-0000-000000000000",
+		},
+		{
+			name: "invalid UUID",
+			id: pgtype.UUID{
+				Valid: false,
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := uuidToString(tt.id)
+			if got != tt.want {
+				t.Errorf("uuidToString() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// NOTE: Comprehensive integration tests for service methods exist in tests/integration/users_service_test.go
+// Those tests cover:
+// - CreateUserAndInvite (success, email taken, username taken)
+// - AcceptInvitation (invalid token, success scenarios)
+// - UpdateUser (success, not found)
+// - DeactivateUser, ActivateUser, DeleteUser (success)
+// - ListUsers (with filters)
+// - GetUser (success)
+// - ResendInvitation (user already active)
+//
+// The integration tests use real PostgreSQL via testcontainers and verify end-to-end functionality.
+// They are in a separate package but provide comprehensive coverage of all service methods with
+// real database transactions, constraints, and edge cases.

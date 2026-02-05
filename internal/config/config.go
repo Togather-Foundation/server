@@ -18,6 +18,7 @@ type Config struct {
 	AdminBootstrap AdminBootstrapConfig
 	Jobs           JobsConfig
 	Logging        LoggingConfig
+	Email          EmailConfig
 	Environment    string
 }
 
@@ -68,6 +69,16 @@ type LoggingConfig struct {
 type CORSConfig struct {
 	AllowAllOrigins bool     // Development mode: allow all origins
 	AllowedOrigins  []string // Production mode: whitelist of allowed origins
+}
+
+// EmailConfig holds email service configuration for Gmail SMTP
+type EmailConfig struct {
+	Enabled      bool   // Enable/disable email sending (useful for dev/test)
+	From         string // From email address (e.g., "noreply@togather.foundation")
+	SMTPHost     string // SMTP server hostname (default: "smtp.gmail.com")
+	SMTPPort     int    // SMTP server port (default: 587 for TLS)
+	SMTPUser     string // SMTP username (Gmail address)
+	SMTPPassword string // Gmail App Password (NOT regular Gmail password - see https://support.google.com/accounts/answer/185833)
 }
 
 func Load() (Config, error) {
@@ -125,6 +136,14 @@ func Load() (Config, error) {
 		Logging: LoggingConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
 			Format: getEnv("LOG_FORMAT", "json"),
+		},
+		Email: EmailConfig{
+			Enabled:      getEnvBool("EMAIL_ENABLED", false),
+			From:         getEnv("EMAIL_FROM", "noreply@togather.foundation"),
+			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
+			SMTPPort:     getEnvInt("SMTP_PORT", 587),
+			SMTPUser:     getEnv("SMTP_USER", ""),
+			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
@@ -198,6 +217,18 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}
