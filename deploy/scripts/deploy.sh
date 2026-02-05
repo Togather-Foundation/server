@@ -1274,6 +1274,18 @@ deploy_to_slot() {
     fi
     
     log "SUCCESS" "Deployed to ${slot} slot"
+    
+    # Ensure monitoring services are running (grafana, prometheus)
+    # These are in the 'monitoring' profile and won't start unless explicitly requested
+    log "INFO" "Ensuring monitoring services are available..."
+    if ${COMPOSE_CMD} -f "${compose_file}" --profile monitoring up -d grafana prometheus 2>/dev/null; then
+        log "SUCCESS" "Monitoring services started (Grafana, Prometheus)"
+    else
+        log "WARN" "Failed to start monitoring services (non-fatal)"
+        log "WARN" "Monitoring may not be available in admin UI"
+        log "WARN" "To start manually: cd ${DOCKER_DIR} && docker compose --profile monitoring up -d"
+    fi
+    
     return 0
 }
 
