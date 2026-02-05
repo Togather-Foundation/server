@@ -249,6 +249,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodPost: adminMergeEvents,
 	}))
 
+	adminListDuplicates := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListDuplicates))))
+	mux.Handle("/api/v1/admin/duplicates", methodMux(map[string]http.Handler{
+		http.MethodGet: adminListDuplicates,
+	}))
+
 	adminDeletePlace := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeletePlace))))
 	mux.Handle("/api/v1/admin/places/{id}", methodMux(map[string]http.Handler{
 		http.MethodDelete: adminDeletePlace,

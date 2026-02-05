@@ -386,6 +386,24 @@ func (h *AdminHandler) MergeEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "merged"}, contentTypeFromRequest(r))
 }
 
+// ListDuplicates handles GET /api/v1/admin/duplicates
+// Returns pairs of potentially duplicate events for admin review
+func (h *AdminHandler) ListDuplicates(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Service == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// TODO: Implement duplicate detection algorithm
+	// For now, return empty list to fix the JSON parsing error
+	// Future implementation should:
+	// 1. Query events with same dedup_hash
+	// 2. Use fuzzy matching for similar names/dates/locations
+	// 3. Return confidence scores for each pair
+
+	writeJSON(w, http.StatusOK, listResponse{Items: []map[string]any{}, NextCursor: ""}, contentTypeFromRequest(r))
+}
+
 // DeleteEvent handles DELETE /api/v1/admin/events/{id}
 // Soft-deletes an event and generates a tombstone
 func (h *AdminHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
