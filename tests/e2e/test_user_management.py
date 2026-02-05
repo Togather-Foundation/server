@@ -25,7 +25,9 @@ import string
 from playwright.sync_api import Page, expect
 
 # Configuration
-BASE_URL = "http://localhost:8080"
+BASE_URL = os.getenv(
+    "BASE_URL", "http://localhost:8080"
+)  # Can override with BASE_URL env var
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "XXKokg60kd8hLXgq")
 
@@ -53,21 +55,18 @@ def console_errors():
 
 
 @pytest.fixture(scope="function")
-def page(page: Page, console_errors):
-    """Configure page with console error tracking"""
+def admin_login(page: Page, console_errors):
+    """Login as admin before test and setup console error tracking"""
 
+    # Setup console error tracking
     def handle_console(msg):
         if msg.type == "error":
             console_errors.append(msg.text)
             print(f"   [Console Error] {msg.text}")
 
     page.on("console", handle_console)
-    return page
 
-
-@pytest.fixture(scope="function")
-def admin_login(page: Page):
-    """Login as admin before test"""
+    # Login
     print("\n   Logging in as admin...")
     page.goto(f"{BASE_URL}/admin/login")
     page.fill("#username", ADMIN_USERNAME)
