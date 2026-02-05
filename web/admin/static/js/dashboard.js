@@ -29,7 +29,13 @@
             const count = data.items?.length || 0;
             pendingElement.textContent = count;
         } catch (err) {
-            pendingElement.innerHTML = '<span class="text-danger">Error</span>';
+            console.error('Failed to load pending events:', err);
+            pendingElement.innerHTML = '<span class="text-danger" title="' + err.message + '">Error</span>';
+            // If unauthorized, might need to re-login
+            if (err.message && err.message.includes('authorization')) {
+                showToast('Session expired. Please log in again.', 'warning');
+                setTimeout(() => window.location.href = '/admin/login', 2000);
+            }
             throw err;
         }
     }
@@ -38,11 +44,19 @@
         const totalElement = document.getElementById('total-events');
         try {
             // Fetch all events (with a reasonable limit)
+            console.log('Loading total events...');
             const data = await API.events.list({ limit: 1000 });
+            console.log('Total events response:', data);
             const count = data.items?.length || 0;
             totalElement.textContent = count;
         } catch (err) {
-            totalElement.innerHTML = '<span class="text-danger">Error</span>';
+            console.error('Failed to load total events:', err);
+            totalElement.innerHTML = '<span class="text-danger" title="' + err.message + '">Error</span>';
+            // If unauthorized, might need to re-login
+            if (err.message && err.message.includes('authorization')) {
+                showToast('Session expired. Please log in again.', 'warning');
+                setTimeout(() => window.location.href = '/admin/login', 2000);
+            }
             throw err;
         }
     }

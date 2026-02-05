@@ -4,13 +4,18 @@
 const API = {
     // Base request method
     async request(url, options = {}) {
+        // Get JWT token from localStorage
+        const token = localStorage.getItem('admin_token');
+        
         const response = await fetch(url, {
             ...options,
             headers: {
                 'Content-Type': 'application/json',
+                // Send Bearer token for API authentication
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
                 ...options.headers
             },
-            credentials: 'include' // Include cookies for auth
+            credentials: 'include' // Include cookies for HTML page auth
         });
         
         if (!response.ok) {

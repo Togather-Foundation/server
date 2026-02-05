@@ -30,6 +30,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (response.ok) {
+                // Store JWT token in localStorage for API calls
+                if (data.token) {
+                    localStorage.setItem('admin_token', data.token);
+                }
+                
                 // Login successful - redirect to dashboard
                 window.location.href = '/admin/dashboard';
             } else {

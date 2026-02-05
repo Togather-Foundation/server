@@ -112,3 +112,33 @@ function debounce(func, wait) {
         timeout = setTimeout(later, wait);
     };
 }
+
+// Logout handler - call this on page load to setup logout button
+function setupLogout() {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                // Call logout endpoint
+                await fetch('/api/v1/admin/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
+            // Clear localStorage regardless of API success
+            localStorage.removeItem('admin_token');
+            // Redirect to login
+            window.location.href = '/admin/login';
+        });
+    }
+}
+
+// Auto-setup logout on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupLogout);
+} else {
+    setupLogout();
+}
