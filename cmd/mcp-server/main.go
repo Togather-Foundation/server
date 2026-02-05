@@ -73,6 +73,7 @@ func run() error {
 
 	// Initialize domain services
 	eventsService := events.NewService(repo.Events())
+	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 
@@ -85,8 +86,10 @@ func run() error {
 			Version: cfg.MCP.Version,
 		},
 		eventsService,
+		ingestService,
 		placesService,
 		orgService,
+		cfg.Base.Server.BaseURL,
 	)
 
 	log.Info().

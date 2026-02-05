@@ -6,6 +6,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/mcp/tools"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
@@ -15,8 +16,10 @@ import (
 type Server struct {
 	mcp           *mcpserver.MCPServer
 	eventsService *events.Service
+	ingestService *events.IngestService
 	placesService *places.Service
 	orgService    *organizations.Service
+	baseURL       string
 }
 
 // Config holds configuration for the MCP server.
@@ -40,8 +43,10 @@ type Config struct {
 func NewServer(
 	cfg Config,
 	eventsService *events.Service,
+	ingestService *events.IngestService,
 	placesService *places.Service,
 	orgService *organizations.Service,
+	baseURL string,
 ) *Server {
 	// Initialize MCP server with full capabilities
 	mcpServer := mcpserver.NewMCPServer(
@@ -57,8 +62,10 @@ func NewServer(
 	srv := &Server{
 		mcp:           mcpServer,
 		eventsService: eventsService,
+		ingestService: ingestService,
 		placesService: placesService,
 		orgService:    orgService,
+		baseURL:       baseURL,
 	}
 
 	// Register tools, resources, and prompts
@@ -78,8 +85,19 @@ func (s *Server) MCPServer() *mcpserver.MCPServer {
 // registerTools registers all MCP tools for events, places, and organizations.
 // Tools are operations that can be executed by the MCP client.
 func (s *Server) registerTools() {
-	// Tool registration will be implemented in subsequent beads:
-	// - server-ncc3: Event query tools (list, get, search)
+	// Register event tools (server-gau4, server-wako)
+	eventTools := tools.NewEventTools(s.eventsService, s.ingestService, s.baseURL)
+
+	// list_events tool - query events with filters and pagination
+	s.mcp.AddTool(eventTools.ListEventsTool(), eventTools.ListEventsHandler)
+
+	// get_event tool - retrieve a specific event by ULID
+	s.mcp.AddTool(eventTools.GetEventTool(), eventTools.GetEventHandler)
+
+	// create_event tool - create new events
+	s.mcp.AddTool(eventTools.CreateEventTool(), eventTools.CreateEventHandler)
+
+	// Place and organization tools will be implemented in subsequent beads:
 	// - server-ppp3: Place query tools (list, get, search)
 	// - server-ooo3: Organization query tools (list, get, search)
 }
