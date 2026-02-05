@@ -10,6 +10,12 @@
 <body>
     {{ template "_header.html" . }}
     
+    <!-- Inject user ID from template data for JavaScript to use -->
+    <script>
+        // User ID injected from server-side template to avoid parsing URL in JS
+        window.USER_ID = '{{ .UserID }}';
+    </script>
+    
     <!-- Page Content -->
     <div class="page">
         <div class="page-wrapper">

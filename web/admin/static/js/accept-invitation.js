@@ -20,11 +20,14 @@
             return;
         }
         
-        // Verify token (by calling the accept endpoint with GET would show info, but we don't have that)
-        // Instead, we'll just show the form immediately and handle validation on submit
-        showForm();
-        
-        setupEventListeners();
+        // Show loading state while "verifying" token
+        // Note: We don't have a backend endpoint to pre-verify tokens, so we show
+        // the form after a brief delay to give the user feedback that something is happening.
+        // The actual token validation happens on form submission.
+        setTimeout(() => {
+            showForm();
+            setupEventListeners();
+        }, 500);
     }
     
     /**
@@ -132,18 +135,24 @@
         // Update UI
         strengthBar.style.width = strength + '%';
         
-        if (strength < 25) {
-            strengthBar.className = 'progress-bar bg-danger';
-            strengthText.textContent = 'Password strength: Weak (needs: ' + feedback.join(', ') + ')';
-        } else if (strength < 75) {
-            strengthBar.className = 'progress-bar bg-warning';
-            strengthText.textContent = 'Password strength: Fair (needs: ' + feedback.join(', ') + ')';
-        } else if (strength < 100) {
-            strengthBar.className = 'progress-bar bg-info';
-            strengthText.textContent = 'Password strength: Good (needs: ' + feedback.join(', ') + ')';
+        // Only show "Strong" when password meets ALL requirements (100%)
+        // Show missing criteria at all strength levels for clarity
+        if (strength < 100) {
+            // Determine color based on how many requirements are met
+            if (strength < 25) {
+                strengthBar.className = 'progress-bar bg-danger';
+                strengthText.textContent = 'Password strength: Weak - needs: ' + feedback.join(', ');
+            } else if (strength < 75) {
+                strengthBar.className = 'progress-bar bg-warning';
+                strengthText.textContent = 'Password strength: Fair - missing: ' + feedback.join(', ');
+            } else {
+                strengthBar.className = 'progress-bar bg-info';
+                strengthText.textContent = 'Password strength: Almost there - missing: ' + feedback.join(', ');
+            }
         } else {
+            // All requirements met
             strengthBar.className = 'progress-bar bg-success';
-            strengthText.textContent = 'Password strength: Strong ✓';
+            strengthText.textContent = 'Password strength: Strong ✓ All requirements met';
         }
     }
     
@@ -171,6 +180,17 @@
      * Validate password requirements
      * @param {string} password - Password to validate
      * @returns {Object} Validation result
+     * 
+     * IMPORTANT: These requirements MUST match backend validation in:
+     * internal/domain/users/service.go:validatePassword()
+     * 
+     * Backend requirements (NIST SP 800-63B guidelines):
+     * - Minimum 12 characters (ErrPasswordTooShort)
+     * - Maximum 128 characters (ErrPasswordTooLong)
+     * - At least one uppercase letter
+     * - At least one lowercase letter
+     * - At least one number
+     * - At least one special character (punctuation or symbol)
      */
     function validatePassword(password) {
         const errors = [];
@@ -240,6 +260,9 @@
         setLoading(submitBtn, true);
         
         try {
+            // SECURITY NOTE: No CSRF token required for this endpoint.
+            // The invitation token itself serves as proof of authorization (single-use, time-limited).
+            // This is a public endpoint that doesn't rely on session cookies for authentication.
             const response = await fetch('/api/v1/accept-invitation', {
                 method: 'POST',
                 headers: {

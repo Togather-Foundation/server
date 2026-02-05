@@ -165,6 +165,10 @@
     /**
      * Render users into table
      * @param {Array} users - Array of user objects
+     * 
+     * SECURITY: All user-controlled data (username, email) is escaped with escapeHtml()
+     * before being inserted into HTML attributes and content to prevent XSS attacks.
+     * User IDs (UUIDs from backend) are trusted as they're server-generated.
      */
     function renderUsers(users) {
         const tbody = document.getElementById('users-table');
