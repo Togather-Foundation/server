@@ -116,6 +116,58 @@ func (h *AdminHTMLHandler) ServeFederation(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ServeUsersList renders the users list page
+func (h *AdminHTMLHandler) ServeUsersList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Users - SEL Admin",
+		"ActivePage": "users",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "users_list.html", data); err != nil {
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// ServeUserActivity renders the user activity page
+func (h *AdminHTMLHandler) ServeUserActivity(w http.ResponseWriter, r *http.Request) {
+	// Extract user ID from path parameter
+	userID := r.PathValue("id")
+	if userID == "" {
+		http.Error(w, "User ID required", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "User Activity - SEL Admin",
+		"ActivePage": "users",
+		"UserID":     userID,
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "user_activity.html", data); err != nil {
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// ServeAcceptInvitation renders the public invitation acceptance page
+func (h *AdminHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title": "Accept Invitation - SEL Admin",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "accept_invitation.html", data); err != nil {
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
 // AdminHTMLPlaceholder returns a basic handler for admin HTML routes.
 // Deprecated: Use AdminHTMLHandler methods instead
 func AdminHTMLPlaceholder(_ string) http.HandlerFunc {

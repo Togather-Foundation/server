@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users - SEL Admin</title>
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
+</head>
+<body>
+    {{ template "_header.html" . }}
+    
+    <!-- Page Content -->
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page Header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <h2 class="page-title">Users</h2>
+                        </div>
+                        <div class="col-auto ms-auto d-print-none">
+                            <button type="button" class="btn btn-primary" id="create-user-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                Invite User
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Page Body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    <div class="card">
+                        <!-- Filter Bar -->
+                        <div class="card-header">
+                            <h3 class="card-title">User List</h3>
+                            <div class="ms-auto">
+                                <button type="button" class="btn" data-bs-toggle="collapse" data-bs-target="#filters-collapse" aria-expanded="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                        <path d="M5.5 5h13a1 1 0 0 1 .5 1.5l-5 5.5l0 7l-4 -3l0 -4l-5 -5.5a1 1 0 0 1 .5 -1.5"/>
+                                    </svg>
+                                    Filters
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Collapsible Filters -->
+                        <div class="collapse show" id="filters-collapse">
+                            <div class="card-body border-bottom">
+                                <div class="row g-3">
+                                    <!-- Search -->
+                                    <div class="col-md-4">
+                                        <label class="form-label">Search</label>
+                                        <input type="text" class="form-control" id="search-input" placeholder="Search by username or email...">
+                                    </div>
+                                    
+                                    <!-- Status Filter -->
+                                    <div class="col-md-3">
+                                        <label class="form-label">Status</label>
+                                        <select class="form-select" id="status-filter">
+                                            <option value="">All Statuses</option>
+                                            <option value="active">Active</option>
+                                            <option value="inactive">Inactive</option>
+                                            <option value="pending">Pending</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Role Filter -->
+                                    <div class="col-md-3">
+                                        <label class="form-label">Role</label>
+                                        <select class="form-select" id="role-filter">
+                                            <option value="">All Roles</option>
+                                            <option value="admin">Admin</option>
+                                            <option value="editor">Editor</option>
+                                            <option value="viewer">Viewer</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Clear Filters -->
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button type="button" class="btn btn-link" id="clear-filters">Clear</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Users Table -->
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Last Login</th>
+                                        <th>Created</th>
+                                        <th class="w-1">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="users-table">
+                                    <!-- Populated via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination Footer -->
+                        <div class="card-footer d-flex align-items-center">
+                            <p class="m-0 text-muted">
+                                <span id="showing-text">Loading...</span>
+                            </p>
+                            <ul class="pagination m-0 ms-auto" id="pagination">
+                                <!-- Pagination controls populated via JavaScript -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/users.js"></script>
+</body>
+</html>

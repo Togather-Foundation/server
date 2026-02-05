@@ -94,5 +94,46 @@ const API = {
         delete: (id) => API.request(`/api/v1/admin/federation/nodes/${id}`, {
             method: 'DELETE'
         })
+    },
+    
+    // Users API
+    users: {
+        list: (params = {}) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/admin/users?${query}`);
+        },
+        
+        get: (id) => API.request(`/api/v1/admin/users/${id}`),
+        
+        create: (data) => API.request('/api/v1/admin/users', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        
+        update: (id, data) => API.request(`/api/v1/admin/users/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        }),
+        
+        delete: (id) => API.request(`/api/v1/admin/users/${id}`, {
+            method: 'DELETE'
+        }),
+        
+        activate: (id) => API.request(`/api/v1/admin/users/${id}/activate`, {
+            method: 'POST'
+        }),
+        
+        deactivate: (id) => API.request(`/api/v1/admin/users/${id}/deactivate`, {
+            method: 'POST'
+        }),
+        
+        resendInvitation: (id) => API.request(`/api/v1/admin/users/${id}/resend-invitation`, {
+            method: 'POST'
+        }),
+        
+        getActivity: (id, params = {}) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/admin/users/${id}/activity?${query}`);
+        }
     }
 };

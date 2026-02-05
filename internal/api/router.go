@@ -381,6 +381,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/duplicates", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDuplicates))))
 	mux.Handle("/admin/api-keys", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeAPIKeys))))
 	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
+	mux.Handle("/admin/users", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUsersList))))
+	mux.Handle("/admin/users/{id}/activity", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUserActivity))))
 
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -391,6 +393,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Login page doesn't need CSRF (no auth required, no state-changing action on GET)
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
+
+	// Public invitation acceptance page (NO AUTH)
+	mux.Handle("/accept-invitation", http.HandlerFunc(adminHTMLHandler.ServeAcceptInvitation))
 
 	// Serve admin static files (CSS, JS, images)
 	// The embed.FS contains admin/static/..., so we need to create a sub-filesystem
