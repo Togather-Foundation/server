@@ -14,6 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -40,6 +41,7 @@ const (
 
 // Service handles user management operations
 type Service struct {
+	db          *pgxpool.Pool
 	queries     *postgres.Queries
 	emailSvc    *email.Service
 	auditLogger *audit.Logger
@@ -49,14 +51,15 @@ type Service struct {
 
 // NewService creates a new user service instance
 func NewService(
-	queries *postgres.Queries,
+	db *pgxpool.Pool,
 	emailSvc *email.Service,
 	auditLogger *audit.Logger,
 	baseURL string,
 	logger zerolog.Logger,
 ) *Service {
 	return &Service{
-		queries:     queries,
+		db:          db,
+		queries:     postgres.New(db),
 		emailSvc:    emailSvc,
 		auditLogger: auditLogger,
 		baseURL:     baseURL,
@@ -110,9 +113,21 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 		return postgres.User{}, fmt.Errorf("failed to check username: %w", err)
 	}
 
+	// Begin transaction for atomic user + invitation creation
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return postgres.User{}, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx) // Auto-rollback on error (ignore error - commit may have succeeded)
+	}()
+
+	// Create queries with transaction
+	qtx := s.queries.WithTx(tx)
+
 	// Create user in inactive state with empty password hash
 	// User will set password when accepting invitation
-	userRow, err := s.queries.CreateUser(ctx, postgres.CreateUserParams{
+	userRow, err := qtx.CreateUser(ctx, postgres.CreateUserParams{
 		Username:     params.Username,
 		Email:        params.Email,
 		PasswordHash: "", // Empty until invitation is accepted
@@ -138,7 +153,7 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 		Valid: true,
 	}
 
-	_, err = s.queries.CreateUserInvitation(ctx, postgres.CreateUserInvitationParams{
+	_, err = qtx.CreateUserInvitation(ctx, postgres.CreateUserInvitationParams{
 		UserID:    userRow.ID,
 		TokenHash: tokenHash,
 		Email:     params.Email,
@@ -147,6 +162,12 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 	})
 	if err != nil {
 		return postgres.User{}, fmt.Errorf("failed to create invitation: %w", err)
+	}
+
+	// Commit transaction before sending email
+	// Email failure should not rollback the database changes
+	if err := tx.Commit(ctx); err != nil {
+		return postgres.User{}, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	// Generate invitation link
@@ -165,10 +186,10 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 		invitedBy = "Administrator"
 	}
 
-	// Send invitation email
+	// Send invitation email after commit (idempotent, can retry via ResendInvitation)
 	if err := s.emailSvc.SendInvitation(params.Email, inviteLink, invitedBy); err != nil {
 		s.logger.Error().Err(err).Str("email", params.Email).Msg("failed to send invitation email")
-		// Don't fail the operation if email sending fails
+		// User + invitation exist, admin can resend via ResendInvitation
 	}
 
 	// Audit log
@@ -221,24 +242,41 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, password string) 
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	// Begin transaction for atomic password update + activation + invitation marking
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx) // Auto-rollback on error (ignore error - commit may have succeeded)
+	}()
+
+	// Create queries with transaction
+	qtx := s.queries.WithTx(tx)
+
 	// Update user with password and activate
-	if err := s.queries.UpdateUserPassword(ctx, postgres.UpdateUserPasswordParams{
+	if err := qtx.UpdateUserPassword(ctx, postgres.UpdateUserPasswordParams{
 		ID:           invitation.UserID,
 		PasswordHash: string(hashedPassword),
 	}); err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
-	if err := s.queries.ActivateUser(ctx, invitation.UserID); err != nil {
+	if err := qtx.ActivateUser(ctx, invitation.UserID); err != nil {
 		return fmt.Errorf("failed to activate user: %w", err)
 	}
 
 	// Mark invitation as accepted
-	if err := s.queries.MarkInvitationAccepted(ctx, invitation.ID); err != nil {
+	if err := qtx.MarkInvitationAccepted(ctx, invitation.ID); err != nil {
 		return fmt.Errorf("failed to mark invitation as accepted: %w", err)
 	}
 
-	// Get user for audit log
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Get user for audit log (after successful commit)
 	user, err := s.queries.GetUserByID(ctx, invitation.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
