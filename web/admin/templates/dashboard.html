@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - SEL Admin</title>
+    {{ template "_head_meta.html" . }}
     <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
     <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
 </head>
@@ -56,6 +57,84 @@
                                         </div>
                                     </div>
                                     <a href="/admin/events" class="text-muted">View all</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Monitoring Links -->
+                    <div class="row row-deck row-cards mt-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3 class="card-title">Monitoring & Metrics</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-dashboard me-2" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                                    <circle cx="12" cy="13" r="2" />
+                                                    <line x1="13.45" y1="11.55" x2="15.5" y2="9.5" />
+                                                    <path d="M6.4 20a9 9 0 1 1 11.2 0z" />
+                                                </svg>
+                                                <div>
+                                                    <a href="/grafana/" target="_blank" class="text-decoration-none" id="grafana-link">
+                                                        <strong>Grafana Dashboards</strong>
+                                                    </a>
+                                                    <div class="text-muted small">View real-time metrics and system health</div>
+                                                    <div id="grafana-status" class="mt-1">
+                                                        <span class="badge bg-secondary">Checking...</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-chart-line me-2" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                                    <line x1="4" y1="19" x2="20" y2="19" />
+                                                    <polyline points="4 15 8 9 12 11 16 6 20 10" />
+                                                </svg>
+                                                <div>
+                                                    <strong class="text-muted">Prometheus Metrics</strong>
+                                                    <div class="text-muted small">Query raw metrics (localhost:9090 - not exposed)</div>
+                                                    <div id="prometheus-status" class="mt-1">
+                                                        <span class="badge bg-secondary">Localhost Only</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Embedded Grafana Dashboard -->
+                                    <div class="mt-4" id="grafana-embed-container" style="display: none;">
+                                        <hr>
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h4 class="mb-0">System Overview</h4>
+                                            <a href="/grafana/" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                Open in Grafana
+                                            </a>
+                                        </div>
+                                        <div class="ratio ratio-16x9" style="max-height: 600px;">
+                                            <iframe 
+                                                id="grafana-iframe"
+                                                src="/grafana/d/togather-overview?orgId=1&refresh=30s&kiosk=tv"
+                                                frameborder="0"
+                                                style="border: 1px solid #ddd; border-radius: 4px;">
+                                            </iframe>
+                                        </div>
+                                        <div class="text-muted small mt-2">
+                                            <strong>Note:</strong> Dashboard auto-refreshes every 30 seconds. 
+                                            Grafana is secured via admin authentication - only logged-in admins can access metrics.
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="text-muted small mt-2" id="monitoring-help">
+                                        <strong>Note:</strong> Monitoring services must be enabled with <code>--profile monitoring</code> flag. 
+                                        If links show as unavailable, the monitoring stack may not be running.
+                                    </div>
                                 </div>
                             </div>
                         </div>

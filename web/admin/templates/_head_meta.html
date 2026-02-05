@@ -1,0 +1,23 @@
+<!-- Favicon and App Icons -->
+<link rel="apple-touch-icon" sizes="180x180" href="/admin/static/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/admin/static/icons/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/admin/static/icons/favicon-16x16.png">
+<link rel="manifest" href="/admin/static/icons/site.webmanifest">
+
+<!-- Open Graph / Social Media Meta Tags -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ if .OGTitle }}{{ .OGTitle }}{{ else }}SEL Admin - Togather Foundation{{ end }}">
+<meta property="og:description" content="{{ if .OGDescription }}{{ .OGDescription }}{{ else }}Community-owned infrastructure for event discovery. Shared Events Library admin interface.{{ end }}">
+<meta property="og:image" content="{{ if .OGImage }}{{ .OGImage }}{{ else }}/admin/static/icons/togather_social_preview_v1.jpg{{ end }}">
+<meta property="og:url" content="{{ if .OGUrl }}{{ .OGUrl }}{{ else }}https://togather.foundation/{{ end }}">
+
+<!-- Twitter Card Meta Tags -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ if .OGTitle }}{{ .OGTitle }}{{ else }}SEL Admin - Togather Foundation{{ end }}">
+<meta name="twitter:description" content="{{ if .OGDescription }}{{ .OGDescription }}{{ else }}Community-owned infrastructure for event discovery. Shared Events Library admin interface.{{ end }}">
+<meta name="twitter:image" content="{{ if .OGImage }}{{ .OGImage }}{{ else }}/admin/static/icons/togather_social_preview_v1.jpg{{ end }}">
+<meta name="twitter:url" content="{{ if .OGUrl }}{{ .OGUrl }}{{ else }}https://togather.foundation/{{ end }}">
+
+<!-- General Meta Tags -->
+<meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Community-owned infrastructure for event discovery. Shared Events Library admin interface.{{ end }}">
+<meta name="theme-color" content="#ffffff">

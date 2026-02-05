@@ -31,6 +31,34 @@ staging.toronto.togather.foundation {
 	}
 	respond @metrics_block "Forbidden" 403
 
+	# Grafana monitoring proxy (authenticated access only)
+	# Grafana runs on localhost:3000, only accessible via this proxy
+	handle_path /grafana/* {
+		# Check for admin authentication cookie
+		# NOTE: Update cookie name to match your admin session cookie
+		@authenticated {
+			cookie admin_session *
+		}
+		
+		handle @authenticated {
+			reverse_proxy localhost:3000 {
+				# Health check
+				health_uri /api/health
+				health_interval 30s
+				health_timeout 5s
+				
+				# Preserve original request info
+				header_up Host {host}
+				header_up X-Real-IP {remote_host}
+				header_up X-Forwarded-For {remote_host}
+				header_up X-Forwarded-Proto {scheme}
+			}
+		}
+		
+		# Return 401 if not authenticated
+		respond "Unauthorized: Admin access required" 401
+	}
+
 	# Reverse proxy to active slot
 	# Current: Blue slot (port 8081)
 	# To switch to green: Change to localhost:8082
