@@ -118,7 +118,6 @@
         
         tbody.innerHTML = nodes.map(node => {
             const statusColor = getStatusColor(node.federation_status || 'pending');
-            const statusTextColor = getStatusTextColor(node.federation_status || 'pending');
             const trustBadge = getTrustBadge(node.trust_level || 5);
             const syncStatus = node.sync_enabled ? 'Enabled' : 'Disabled';
             const syncColor = node.sync_enabled ? 'success' : 'secondary';
@@ -142,7 +141,7 @@
                         <div class="mt-1">${onlineIndicator}</div>
                     </td>
                     <td>
-                        <span class="badge bg-${statusColor} ${statusTextColor}">${escapeHtml(node.federation_status || 'pending')}</span>
+                        <span class="badge bg-${statusColor}">${escapeHtml(node.federation_status || 'pending')}</span>
                     </td>
                     <td>
                         ${trustBadge}
@@ -183,17 +182,6 @@
     }
     
     /**
-     * Get text color class for status badge (ensures readability in both themes)
-     * @param {string} status - Federation status
-     * @returns {string} Text color class
-     */
-    function getStatusTextColor(status) {
-        // States with light backgrounds need dark text in both themes
-        const needsDarkText = ['pending']; // warning badge has yellow/light background
-        return needsDarkText.includes(status) ? 'text-dark' : '';
-    }
-    
-    /**
      * Get trust level badge
      * @param {number} trustLevel - Trust level (1-10)
      * @returns {string} HTML badge
@@ -201,7 +189,6 @@
     function getTrustBadge(trustLevel) {
         let color = 'secondary';
         let label = 'Unknown';
-        let textClass = ''; // For readability in both themes
         
         if (trustLevel >= 1 && trustLevel <= 3) {
             color = 'danger';
@@ -209,7 +196,6 @@
         } else if (trustLevel >= 4 && trustLevel <= 6) {
             color = 'warning';
             label = `Medium (${trustLevel})`;
-            textClass = 'text-dark'; // Yellow background needs dark text
         } else if (trustLevel >= 7 && trustLevel <= 9) {
             color = 'success';
             label = `High (${trustLevel})`;
@@ -218,7 +204,7 @@
             label = 'Maximum (10)';
         }
         
-        return `<span class="badge bg-${color} ${textClass}">${label}</span>`;
+        return `<span class="badge bg-${color}">${label}</span>`;
     }
     
     /**

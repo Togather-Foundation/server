@@ -47,6 +47,29 @@
     color: white;
 }
 
+/* Badge text readability improvements for dark mode */
+[data-bs-theme="dark"] .badge.bg-secondary {
+    background-color: #6c757d !important; /* Lighter gray in dark mode */
+    color: #ffffff !important;
+}
+
+[data-bs-theme="dark"] .badge.bg-success {
+    color: #ffffff !important;
+}
+
+/* Ensure badges with light backgrounds use dark text in both themes */
+.badge.bg-warning {
+    color: #000000 !important; /* Always dark text on yellow background */
+}
+
+.badge.bg-secondary {
+    color: #000000 !important; /* Dark text on gray badge in light mode */
+}
+
+[data-bs-theme="dark"] .badge.bg-secondary {
+    color: #ffffff !important; /* White text on gray badge in dark mode */
+}
+
 /* Loading skeleton for tables */
 .skeleton-row .skeleton-line {
     height: 16px;
