@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
+.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -22,6 +22,7 @@ help:
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
 	@echo "  make lint-openapi  - Validate OpenAPI specification"
 	@echo "  make lint-yaml     - Validate YAML files (GitHub workflows, configs)"
+	@echo "  make lint-js       - Validate JavaScript syntax (web/admin/static/js)"
 	@echo "  make vulncheck     - Run govulncheck vulnerability scan"
 	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
 	@echo "  make test-v        - Run tests with verbose output"
@@ -262,6 +263,34 @@ lint-yaml:
 		echo "Install docker to enable YAML validation."; \
 	fi
 
+# Validate JavaScript syntax (requires esbuild)
+lint-js:
+	@echo "Validating JavaScript files..."
+	@ESBUILD=""; \
+	if command -v esbuild > /dev/null 2>&1; then \
+		ESBUILD=esbuild; \
+	elif [ -f $(HOME)/go/bin/esbuild ]; then \
+		ESBUILD=$(HOME)/go/bin/esbuild; \
+	elif [ -f $(GOPATH)/bin/esbuild ]; then \
+		ESBUILD=$(GOPATH)/bin/esbuild; \
+	else \
+		echo "esbuild not found. Install with: go install github.com/evanw/esbuild/cmd/esbuild@latest"; \
+		exit 1; \
+	fi; \
+	EXIT_CODE=0; \
+	for file in $$(find web/admin/static/js -name "*.js" -not -name "*.min.js"); do \
+		echo "  Checking $$file..."; \
+		if ! $$ESBUILD $$file --bundle --outfile=/dev/null --log-level=error 2>&1; then \
+			EXIT_CODE=1; \
+		fi; \
+	done; \
+	if [ $$EXIT_CODE -eq 0 ]; then \
+		echo "✓ JavaScript validation passed"; \
+	else \
+		echo "✗ JavaScript validation found errors"; \
+		exit 1; \
+	fi
+
 # Run vulnerability scan (requires govulncheck)
 vulncheck:
 	@echo "Running govulncheck..."
@@ -293,6 +322,9 @@ ci: sqlc-generate lint-ci vulncheck
 	@echo ""
 	@echo "==> Validating YAML files..."
 	@$(MAKE) lint-yaml
+	@echo ""
+	@echo "==> Validating JavaScript files..."
+	@$(MAKE) lint-js
 	@echo ""
 	@echo "==> Checking code formatting..."
 	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
@@ -486,6 +518,8 @@ install-tools:
 	@go install golang.org/x/vuln/cmd/govulncheck@latest
 	@echo "Installing vacuum (OpenAPI linter)..."
 	@go install github.com/daveshanley/vacuum@latest
+	@echo "Installing esbuild (JavaScript bundler/linter)..."
+	@go install github.com/evanw/esbuild/cmd/esbuild@latest
 	@echo ""
 	@echo "==> Installing golang-migrate (pre-built binary with database drivers)..."
 	@if [ "$$(uname -m)" = "x86_64" ]; then \
