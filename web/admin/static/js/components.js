@@ -110,16 +110,17 @@ function escapeHtml(text) {
 }
 
 // Date formatting
-function formatDate(dateString) {
+function formatDate(dateString, options = null) {
     if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    const defaultOptions = {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit'
-    });
+    };
+    return date.toLocaleDateString('en-US', options || defaultOptions);
 }
 
 // Copy to clipboard
