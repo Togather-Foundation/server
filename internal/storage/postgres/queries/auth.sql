@@ -117,15 +117,15 @@ WHERE id = $1;
 SELECT id, username, email, role, is_active, created_at, last_login_at
 FROM users
 WHERE 
-  ($1::boolean IS NULL OR is_active = $1) AND
-  ($2::text IS NULL OR role = $2) AND
+  (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active')) AND
+  (sqlc.narg('role')::text IS NULL OR role = sqlc.narg('role')) AND
   deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $4;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CountUsers :one
 SELECT COUNT(*) FROM users
 WHERE 
-  ($1::boolean IS NULL OR is_active = $1) AND
-  ($2::text IS NULL OR role = $2) AND
+  (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active')) AND
+  (sqlc.narg('role')::text IS NULL OR role = sqlc.narg('role')) AND
   deleted_at IS NULL;

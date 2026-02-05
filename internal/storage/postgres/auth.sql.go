@@ -31,12 +31,12 @@ WHERE
 `
 
 type CountUsersParams struct {
-	Column1 bool   `json:"column_1"`
-	Column2 string `json:"column_2"`
+	IsActive pgtype.Bool `json:"is_active"`
+	Role     pgtype.Text `json:"role"`
 }
 
 func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUsers, arg.Column1, arg.Column2)
+	row := q.db.QueryRow(ctx, countUsers, arg.IsActive, arg.Role)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -528,14 +528,14 @@ WHERE
   ($2::text IS NULL OR role = $2) AND
   deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListUsersWithFiltersParams struct {
-	Column1 bool   `json:"column_1"`
-	Column2 string `json:"column_2"`
-	Limit   int32  `json:"limit"`
-	Offset  int32  `json:"offset"`
+	IsActive pgtype.Bool `json:"is_active"`
+	Role     pgtype.Text `json:"role"`
+	Offset   int32       `json:"offset"`
+	Limit    int32       `json:"limit"`
 }
 
 type ListUsersWithFiltersRow struct {
@@ -550,10 +550,10 @@ type ListUsersWithFiltersRow struct {
 
 func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error) {
 	rows, err := q.db.Query(ctx, listUsersWithFilters,
-		arg.Column1,
-		arg.Column2,
-		arg.Limit,
+		arg.IsActive,
+		arg.Role,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

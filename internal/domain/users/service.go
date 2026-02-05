@@ -551,10 +551,10 @@ func (s *Service) ListUsers(ctx context.Context, filters ListUsersFilters) ([]po
 	// Get total count
 	countParams := postgres.CountUsersParams{}
 	if filters.IsActive != nil {
-		countParams.Column1 = *filters.IsActive
+		countParams.IsActive = pgtype.Bool{Bool: *filters.IsActive, Valid: true}
 	}
 	if filters.Role != nil {
-		countParams.Column2 = *filters.Role
+		countParams.Role = pgtype.Text{String: *filters.Role, Valid: true}
 	}
 
 	totalCount, err := s.queries.CountUsers(ctx, countParams)
@@ -568,10 +568,10 @@ func (s *Service) ListUsers(ctx context.Context, filters ListUsersFilters) ([]po
 		Offset: filters.Offset,
 	}
 	if filters.IsActive != nil {
-		listParams.Column1 = *filters.IsActive
+		listParams.IsActive = pgtype.Bool{Bool: *filters.IsActive, Valid: true}
 	}
 	if filters.Role != nil {
-		listParams.Column2 = *filters.Role
+		listParams.Role = pgtype.Text{String: *filters.Role, Valid: true}
 	}
 
 	users, err := s.queries.ListUsersWithFilters(ctx, listParams)
