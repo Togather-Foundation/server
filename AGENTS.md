@@ -268,6 +268,76 @@ This project uses Specification Driven Development:
 
 ### Database and Migrations
 
+**IMPORTANT: Always use `make` targets for migrations, NOT direct `migrate` commands!**
+
+The `migrate` binary is in `$GOPATH/bin` which may not be in your PATH. The Makefile handles this automatically.
+
+**Running Migrations:**
+
+```bash
+# ✅ CORRECT: Use make target (handles PATH and DATABASE_URL)
+make migrate-up
+
+# ✅ Check migration status
+make migrate-version
+
+# ✅ Rollback one migration
+make migrate-down
+
+# ❌ WRONG: Direct migrate command (may fail with "command not found")
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
+```
+
+**The Makefile automatically:**
+- Checks for `migrate` in `./migrate`, `$PATH`, `$HOME/go/bin/migrate`, and `$GOPATH/bin/migrate`
+- Reads `DATABASE_URL` from `.env` (sourced automatically)
+- Provides helpful error messages if migrate is missing
+
+**If migrations fail with "migrate: command not found":**
+
+```bash
+# Install golang-migrate
+make install-tools
+
+# Or manually:
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Verify installation
+ls -la $(go env GOPATH)/bin/migrate
+
+# Then retry
+make migrate-up
+```
+
+**Common Migration Tasks:**
+
+```bash
+# Check current migration version
+make migrate-version
+
+# Run all pending migrations
+make migrate-up
+
+# Rollback last migration (use carefully!)
+make migrate-down
+
+# Create new migration (manual - no make target)
+migrate create -ext sql -dir internal/storage/postgres/migrations -seq my_migration_name
+```
+
+**Quick Database Column Addition (Development Only):**
+
+If you need to quickly add a column during development and migrations are failing:
+
+```bash
+# Option 1: Run migration through make
+make migrate-up
+
+# Option 2: Direct SQL (if make fails and you need to unblock testing)
+source .env && psql "$DATABASE_URL" -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;"
+```
+
+**Schema Best Practices:**
 - Use migrations for schema changes; keep them backwards compatible.
 - Prefer parameterized queries; avoid string concatenation for SQL.
 - Keep JSONB payloads intact for provenance; store normalized fields for queries.
