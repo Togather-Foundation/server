@@ -100,13 +100,16 @@ make coverage
 # Run linter (requires golangci-lint)
 make lint
 
+# Validate JavaScript syntax (requires esbuild)
+make lint-js
+
 # Format all Go files
 make fmt
 
 # Clean build artifacts
 make clean
 
-# Install development tools (golangci-lint, air)
+# Install development tools (golangci-lint, esbuild, air)
 make install-tools
 ```
 
