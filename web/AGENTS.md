@@ -455,19 +455,92 @@ searchInput.addEventListener('input', (e) => {
 });
 ```
 
+## Development Server
+
+### Starting the Server
+
+**Use `make dev` for development with live reload:**
+```bash
+make dev
+```
+
+This will:
+- Check for existing processes on port 8080 and stop them
+- Start the server using `air` (live reload) if installed
+- Fall back to `go run ./cmd/server` if `air` not found
+- Watch for file changes and auto-rebuild (`.go`, `.html`, `.css`, `.js` files)
+
+**Install air for live reload (one-time setup):**
+```bash
+make install-tools  # Installs air, golangci-lint, sqlc, etc.
+```
+
+### Multi-Agent Coordination
+
+**IMPORTANT: When multiple AI agents work in parallel:**
+
+1. **Only ONE agent should start the server**
+2. **Other agents should check if server is running before starting**
+3. **Share the same server instance**
+
+```bash
+# Check if server is already running
+if lsof -ti:8080 > /dev/null 2>&1; then
+    echo "✓ Server already running on port 8080"
+    # Continue with testing/verification
+else
+    echo "Starting server..."
+    make dev &
+    sleep 5  # Wait for server to start
+fi
+```
+
+**Why this matters:**
+- `make dev` automatically kills existing servers on port 8080
+- If Agent A starts the server, then Agent B runs `make dev`, it will kill Agent A's server
+- With `air`, all agents see changes automatically (no restart needed)
+- One server instance is sufficient for all parallel work
+
+### Verifying Server is Running
+
+```bash
+# Check process
+ps aux | grep -E "(air|go run)" | grep -v grep
+
+# Check port
+lsof -ti:8080
+
+# Check health (returns 401, but that's expected without auth)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/healthz
+```
+
 ## Testing Considerations
 
 ### MANDATORY Error Verification Workflow
 
 **🚨 CRITICAL: Before claiming any UI work is "fixed" or "complete", you MUST:**
 
-1. **Run the actual server locally:**
+1. **Check if server is already running (important for parallel agents):**
    ```bash
+   # Check if port 8080 is in use
+   lsof -ti:8080 > /dev/null 2>&1 && echo "Server already running" || echo "Server not running"
+   
+   # If server is NOT running, start it:
    make dev
+   
+   # If server IS running, skip to step 2 (use existing server)
+   # IMPORTANT: Multiple agents should share one server instance
    ```
+
+2. **Why check first?**
+   - `make dev` kills any existing server on port 8080
+   - If parallel agents both run `make dev`, they'll fight over the port
+   - One shared server instance is sufficient for all agents
+   - Air provides live reload, so code changes are picked up automatically
 
 2. **Run E2E tests to capture console errors:**
    ```bash
+   # The server must be running first (see step 1)
    uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
    ```
 
@@ -542,10 +615,15 @@ searchInput.addEventListener('input', (e) => {
 # One-time setup: Install Playwright browsers
 uvx --from playwright playwright install chromium
 
-# Start the development server
-make dev
+# IMPORTANT: Ensure server is running FIRST
+# Check if already running (for parallel agents):
+if ! lsof -ti:8080 > /dev/null 2>&1; then
+    echo "Starting development server..."
+    make dev &
+    sleep 8  # Wait for server startup
+fi
 
-# In another terminal, run E2E tests
+# Now run E2E tests (in another terminal or after backgrounding server)
 uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
 ```
 
