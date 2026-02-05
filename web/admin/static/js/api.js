@@ -16,6 +16,58 @@
 // The `title` field provides a generic category of error (e.g., "Validation Error", "Not Found").
 
 const API = {
+    // Retry configuration
+    retryConfig: {
+        maxAttempts: 3,      // Total attempts (initial + 2 retries)
+        delays: [1000, 2000] // Exponential backoff delays in ms
+    },
+    
+    /**
+     * Retry wrapper with exponential backoff
+     * @param {Function} fn - Async function to retry
+     * @param {Object} options - Retry options
+     * @param {Function} onRetry - Callback called before each retry (attempt, maxAttempts, delay)
+     * @returns {Promise} - Result of fn
+     */
+    async retryWithBackoff(fn, options = {}, onRetry = null) {
+        const maxAttempts = options.maxAttempts || this.retryConfig.maxAttempts;
+        const delays = options.delays || this.retryConfig.delays;
+        
+        let lastError;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await fn();
+            } catch (error) {
+                lastError = error;
+                
+                // Don't retry on client errors (4xx except 408 Request Timeout and 429 Rate Limited)
+                if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+                    throw error;
+                }
+                
+                // Don't retry if this was the last attempt
+                if (attempt >= maxAttempts) {
+                    throw error;
+                }
+                
+                // Calculate delay for this retry (use last delay if we exceed array)
+                const delayIndex = attempt - 1;
+                const delay = delays[delayIndex] || delays[delays.length - 1];
+                
+                // Notify caller about retry
+                if (onRetry) {
+                    onRetry(attempt, maxAttempts, delay);
+                }
+                
+                // Wait before retrying
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+        
+        // Should never reach here, but throw last error just in case
+        throw lastError;
+    },
+    
     // Base request method
     async request(url, options = {}) {
         // Get JWT token from localStorage
@@ -61,6 +113,22 @@ const API = {
         }
         
         return response.json();
+    },
+    
+    /**
+     * Request with automatic retry logic
+     * @param {string} url - Request URL
+     * @param {Object} options - Fetch options
+     * @param {Object} retryOptions - Retry configuration (maxAttempts, delays)
+     * @param {Function} onRetry - Callback for retry notifications
+     * @returns {Promise} - Response data
+     */
+    async requestWithRetry(url, options = {}, retryOptions = {}, onRetry = null) {
+        return this.retryWithBackoff(
+            () => this.request(url, options),
+            retryOptions,
+            onRetry
+        );
     },
     
     // Events API
@@ -151,17 +219,26 @@ const API = {
             method: 'DELETE'
         }),
         
-        activate: (id) => API.request(`/api/v1/admin/users/${id}/activate`, {
-            method: 'POST'
-        }),
+        activate: (id, onRetry) => API.requestWithRetry(
+            `/api/v1/admin/users/${id}/activate`, 
+            { method: 'POST' },
+            {},
+            onRetry
+        ),
         
-        deactivate: (id) => API.request(`/api/v1/admin/users/${id}/deactivate`, {
-            method: 'POST'
-        }),
+        deactivate: (id, onRetry) => API.requestWithRetry(
+            `/api/v1/admin/users/${id}/deactivate`, 
+            { method: 'POST' },
+            {},
+            onRetry
+        ),
         
-        resendInvitation: (id) => API.request(`/api/v1/admin/users/${id}/resend-invitation`, {
-            method: 'POST'
-        }),
+        resendInvitation: (id, onRetry) => API.requestWithRetry(
+            `/api/v1/admin/users/${id}/resend-invitation`, 
+            { method: 'POST' },
+            {},
+            onRetry
+        ),
         
         getActivity: (id, params = {}, signal = null) => {
             const query = new URLSearchParams(params);

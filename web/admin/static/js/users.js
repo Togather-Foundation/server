@@ -416,6 +416,26 @@
     }
     
     /**
+     * Validate username format
+     * @param {string} username - Username to validate
+     * @returns {string|null} - Error message if invalid, null if valid
+     */
+    function validateUsername(username) {
+        // Match backend validation: alphanum (letters and numbers only), 3-50 chars
+        if (!username || username.length < 3) {
+            return 'Username must be at least 3 characters';
+        }
+        if (username.length > 50) {
+            return 'Username must not exceed 50 characters';
+        }
+        const pattern = /^[a-zA-Z0-9]+$/;
+        if (!pattern.test(username)) {
+            return 'Username must contain only letters and numbers';
+        }
+        return null;
+    }
+    
+    /**
      * Handle user form submission
      */
     async function handleUserSubmit() {
@@ -432,6 +452,20 @@
         const username = document.getElementById('user-username').value.trim();
         const email = document.getElementById('user-email').value.trim();
         const role = document.getElementById('user-role').value;
+        
+        // Client-side username validation
+        const usernameError = validateUsername(username);
+        if (usernameError) {
+            const usernameInput = document.getElementById('user-username');
+            const usernameErrorDiv = document.getElementById('username-error');
+            
+            usernameInput.classList.add('is-invalid');
+            usernameErrorDiv.textContent = usernameError;
+            form.classList.add('was-validated');
+            
+            showToast(usernameError, 'error');
+            return;
+        }
         
         const data = { username, email, role };
         
@@ -527,13 +561,41 @@
      * @param {string} username - Username for confirmation
      */
     async function activateUser(userId, username) {
+        let retryToastId = null;
+        
         try {
-            await API.users.activate(userId);
+            await API.users.activate(userId, (attempt, maxAttempts, delay) => {
+                // Show "Retrying..." toast on subsequent attempts
+                const message = `Network error. Retrying... (${attempt}/${maxAttempts - 1})`;
+                if (!retryToastId) {
+                    retryToastId = `retry-${Date.now()}`;
+                }
+                showToast(message, 'warning', retryToastId);
+            });
+            
+            // Clear retry toast on success
+            if (retryToastId) {
+                const toast = document.querySelector(`[data-toast-id="${retryToastId}"]`);
+                if (toast) toast.remove();
+            }
+            
             showToast(`User "${username}" activated successfully`, 'success');
             loadUsers();
         } catch (error) {
             console.error('Failed to activate user:', error);
-            showToast(error.message || 'Failed to activate user', 'error');
+            
+            // Clear retry toast on final failure
+            if (retryToastId) {
+                const toast = document.querySelector(`[data-toast-id="${retryToastId}"]`);
+                if (toast) toast.remove();
+            }
+            
+            // Show final error with connection hint
+            const message = error.message || 'Failed to activate user';
+            const hint = error.status >= 500 || !error.status 
+                ? ' Check your connection and try again.' 
+                : '';
+            showToast(message + hint, 'error');
         }
     }
     
@@ -547,13 +609,41 @@
             'Deactivate User',
             `Are you sure you want to deactivate user "${username}"? They will not be able to log in until reactivated.`,
             async () => {
+                let retryToastId = null;
+                
                 try {
-                    await API.users.deactivate(userId);
+                    await API.users.deactivate(userId, (attempt, maxAttempts, delay) => {
+                        // Show "Retrying..." toast on subsequent attempts
+                        const message = `Network error. Retrying... (${attempt}/${maxAttempts - 1})`;
+                        if (!retryToastId) {
+                            retryToastId = `retry-${Date.now()}`;
+                        }
+                        showToast(message, 'warning', retryToastId);
+                    });
+                    
+                    // Clear retry toast on success
+                    if (retryToastId) {
+                        const toast = document.querySelector(`[data-toast-id="${retryToastId}"]`);
+                        if (toast) toast.remove();
+                    }
+                    
                     showToast(`User "${username}" deactivated successfully`, 'success');
                     loadUsers();
                 } catch (error) {
                     console.error('Failed to deactivate user:', error);
-                    showToast(error.message || 'Failed to deactivate user', 'error');
+                    
+                    // Clear retry toast on final failure
+                    if (retryToastId) {
+                        const toast = document.querySelector(`[data-toast-id="${retryToastId}"]`);
+                        if (toast) toast.remove();
+                    }
+                    
+                    // Show final error with connection hint
+                    const message = error.message || 'Failed to deactivate user';
+                    const hint = error.status >= 500 || !error.status 
+                        ? ' Check your connection and try again.' 
+                        : '';
+                    showToast(message + hint, 'error');
                 }
             }
         );
@@ -565,12 +655,40 @@
      * @param {string} username - Username
      */
     async function resendInvitation(userId, username) {
+        let retryToastId = null;
+        
         try {
-            await API.users.resendInvitation(userId);
+            await API.users.resendInvitation(userId, (attempt, maxAttempts, delay) => {
+                // Show "Retrying..." toast on subsequent attempts
+                const message = `Network error. Retrying... (${attempt}/${maxAttempts - 1})`;
+                if (!retryToastId) {
+                    retryToastId = `retry-${Date.now()}`;
+                }
+                showToast(message, 'warning', retryToastId);
+            });
+            
+            // Clear retry toast on success
+            if (retryToastId) {
+                const toast = document.querySelector(`[data-toast-id="${retryToastId}"]`);
+                if (toast) toast.remove();
+            }
+            
             showToast(`Invitation resent to "${username}"`, 'success');
         } catch (error) {
             console.error('Failed to resend invitation:', error);
-            showToast(error.message || 'Failed to resend invitation', 'error');
+            
+            // Clear retry toast on final failure
+            if (retryToastId) {
+                const toast = document.querySelector(`[data-toast-id="${retryToastId}"]`);
+                if (toast) toast.remove();
+            }
+            
+            // Show final error with connection hint
+            const message = error.message || 'Failed to resend invitation';
+            const hint = error.status >= 500 || !error.status 
+                ? ' Check your connection and try again.' 
+                : '';
+            showToast(message + hint, 'error');
         }
     }
     
