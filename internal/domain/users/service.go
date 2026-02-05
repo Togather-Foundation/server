@@ -291,10 +291,11 @@ func validatePassword(password string) error {
 }
 
 // AcceptInvitation validates an invitation token, sets the user's password, and activates the account
-func (s *Service) AcceptInvitation(ctx context.Context, token, password string) error {
+// Returns the activated user on success
+func (s *Service) AcceptInvitation(ctx context.Context, token, password string) (postgres.GetUserByIDRow, error) {
 	// Validate password strength
 	if err := validatePassword(password); err != nil {
-		return fmt.Errorf("invalid password: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("invalid password: %w", err)
 	}
 
 	// Hash the token to lookup the invitation
@@ -304,26 +305,26 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, password string) 
 	invitation, err := s.queries.GetUserInvitationByTokenHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
+			return postgres.GetUserByIDRow{}, ErrInvalidToken
 		}
-		return fmt.Errorf("failed to get invitation: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to get invitation: %w", err)
 	}
 
 	// Check if invitation has already been accepted
 	if invitation.AcceptedAt.Valid {
-		return ErrInvalidToken
+		return postgres.GetUserByIDRow{}, ErrInvalidToken
 	}
 
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	// Begin transaction for atomic password update + activation + invitation marking
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx) // Auto-rollback on error (ignore error - commit may have succeeded)
@@ -337,27 +338,27 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, password string) 
 		ID:           invitation.UserID,
 		PasswordHash: string(hashedPassword),
 	}); err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to update password: %w", err)
 	}
 
 	if err := qtx.ActivateUser(ctx, invitation.UserID); err != nil {
-		return fmt.Errorf("failed to activate user: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to activate user: %w", err)
 	}
 
 	// Mark invitation as accepted
 	if err := qtx.MarkInvitationAccepted(ctx, invitation.ID); err != nil {
-		return fmt.Errorf("failed to mark invitation as accepted: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to mark invitation as accepted: %w", err)
 	}
 
 	// Commit transaction
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	// Get user for audit log (after successful commit)
+	// Get user for audit log and return (after successful commit)
 	user, err := s.queries.GetUserByID(ctx, invitation.UserID)
 	if err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
+		return postgres.GetUserByIDRow{}, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	// Audit log
@@ -372,7 +373,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, password string) 
 		},
 	)
 
-	return nil
+	return user, nil
 }
 
 // UpdateUser updates user details
