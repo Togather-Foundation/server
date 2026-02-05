@@ -1,6 +1,7 @@
 package users
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -8,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode"
 
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,6 +29,9 @@ var (
 	ErrUserAlreadyActive = errors.New("user is already active")
 	ErrEmailTaken        = errors.New("email is already taken")
 	ErrUsernameTaken     = errors.New("username is already taken")
+	ErrPasswordTooShort  = errors.New("password must be at least 12 characters")
+	ErrPasswordTooLong   = errors.New("password must not exceed 128 characters")
+	ErrPasswordTooWeak   = errors.New("password must contain uppercase, lowercase, number, and special character")
 )
 
 const (
@@ -47,6 +53,7 @@ type Service struct {
 	auditLogger *audit.Logger
 	baseURL     string
 	logger      zerolog.Logger
+	validator   *validator.Validate
 }
 
 // NewService creates a new user service instance
@@ -64,22 +71,23 @@ func NewService(
 		auditLogger: auditLogger,
 		baseURL:     baseURL,
 		logger:      logger.With().Str("component", "users").Logger(),
+		validator:   validator.New(),
 	}
 }
 
 // CreateUserParams contains parameters for creating a new user
 type CreateUserParams struct {
-	Username  string
-	Email     string
-	Role      string
+	Username  string      `validate:"required,alphanum,min=3,max=50"`
+	Email     string      `validate:"required,email,max=255"`
+	Role      string      `validate:"omitempty,oneof=admin editor viewer"`
 	CreatedBy pgtype.UUID // Admin who is creating the user
 }
 
 // UpdateUserParams contains parameters for updating a user
 type UpdateUserParams struct {
-	Username string
-	Email    string
-	Role     string
+	Username string `validate:"required,alphanum,min=3,max=50"`
+	Email    string `validate:"required,email,max=255"`
+	Role     string `validate:"required,oneof=admin editor viewer"`
 }
 
 // ListUsersFilters contains filters for listing users
@@ -90,11 +98,25 @@ type ListUsersFilters struct {
 	Offset   int32
 }
 
+// uuidEquals compares two pgtype.UUID values for equality.
+// Returns true if both are valid and have identical bytes.
+func uuidEquals(a, b pgtype.UUID) bool {
+	if !a.Valid || !b.Valid {
+		return false
+	}
+	return bytes.Equal(a.Bytes[:], b.Bytes[:])
+}
+
 // CreateUserAndInvite creates a new inactive user and sends an invitation email
 func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserParams) (postgres.User, error) {
 	// Set default role if not provided
 	if params.Role == "" {
 		params.Role = DefaultRole
+	}
+
+	// Validate inputs
+	if err := s.validator.Struct(params); err != nil {
+		return postgres.User{}, fmt.Errorf("invalid parameters: %w", err)
 	}
 
 	// Check if email is already taken
@@ -217,8 +239,58 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 	}, nil
 }
 
+// validatePassword enforces password strength requirements:
+// - Minimum 12 characters
+// - Maximum 128 characters
+// - Must contain at least one uppercase letter
+// - Must contain at least one lowercase letter
+// - Must contain at least one number
+// - Must contain at least one special character (punctuation or symbol)
+//
+// These requirements follow NIST SP 800-63B guidelines for user-chosen secrets.
+func validatePassword(password string) error {
+	// Check length
+	if len(password) < 12 {
+		return ErrPasswordTooShort
+	}
+	if len(password) > 128 {
+		return ErrPasswordTooLong
+	}
+
+	var (
+		hasUpper   bool
+		hasLower   bool
+		hasNumber  bool
+		hasSpecial bool
+	)
+
+	for _, char := range password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsNumber(char):
+			hasNumber = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
+		}
+	}
+
+	if !hasUpper || !hasLower || !hasNumber || !hasSpecial {
+		return ErrPasswordTooWeak
+	}
+
+	return nil
+}
+
 // AcceptInvitation validates an invitation token, sets the user's password, and activates the account
 func (s *Service) AcceptInvitation(ctx context.Context, token, password string) error {
+	// Validate password strength
+	if err := validatePassword(password); err != nil {
+		return fmt.Errorf("invalid password: %w", err)
+	}
+
 	// Hash the token to lookup the invitation
 	tokenHash := hashToken(token)
 
@@ -299,6 +371,11 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, password string) 
 
 // UpdateUser updates user details
 func (s *Service) UpdateUser(ctx context.Context, id pgtype.UUID, params UpdateUserParams, updatedBy string) error {
+	// Validate inputs
+	if err := s.validator.Struct(params); err != nil {
+		return fmt.Errorf("invalid parameters: %w", err)
+	}
+
 	// Get existing user
 	existingUser, err := s.queries.GetUserByID(ctx, id)
 	if err != nil {
@@ -311,7 +388,7 @@ func (s *Service) UpdateUser(ctx context.Context, id pgtype.UUID, params UpdateU
 	// Check if email is taken by another user
 	if params.Email != existingUser.Email {
 		userWithEmail, err := s.queries.GetUserByEmail(ctx, params.Email)
-		if err == nil && userWithEmail.ID.Valid && userWithEmail.ID.Bytes != id.Bytes {
+		if err == nil && userWithEmail.ID.Valid && !uuidEquals(userWithEmail.ID, id) {
 			return ErrEmailTaken
 		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("failed to check email: %w", err)
@@ -321,7 +398,7 @@ func (s *Service) UpdateUser(ctx context.Context, id pgtype.UUID, params UpdateU
 	// Check if username is taken by another user
 	if params.Username != existingUser.Username {
 		userWithUsername, err := s.queries.GetUserByUsername(ctx, params.Username)
-		if err == nil && userWithUsername.ID.Valid && userWithUsername.ID.Bytes != id.Bytes {
+		if err == nil && userWithUsername.ID.Valid && !uuidEquals(userWithUsername.ID, id) {
 			return ErrUsernameTaken
 		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("failed to check username: %w", err)
