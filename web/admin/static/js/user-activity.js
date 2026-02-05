@@ -33,22 +33,6 @@
         loadActivityStats();
         loadActivity();
     }
-
-
-
-
-
-
-
-
-
-        }
-        
-        setupEventListeners();
-        loadUserInfo();
-        loadActivityStats();
-        loadActivity();
-    }
     
     /**
      * Setup event listeners
