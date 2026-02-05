@@ -9,6 +9,23 @@
     --sel-draft: var(--tblr-secondary);
 }
 
+/* Theme toggle visibility */
+.hide-theme-dark {
+    display: inline-flex; /* Show moon icon in light mode */
+}
+
+.hide-theme-light {
+    display: none; /* Hide sun icon in light mode */
+}
+
+[data-bs-theme="dark"] .hide-theme-dark {
+    display: none; /* Hide moon icon in dark mode */
+}
+
+[data-bs-theme="dark"] .hide-theme-light {
+    display: inline-flex; /* Show sun icon in dark mode */
+}
+
 /* Status badges for lifecycle states */
 .badge-published {
     background-color: var(--sel-published);

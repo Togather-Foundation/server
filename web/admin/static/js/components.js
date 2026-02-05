@@ -1,6 +1,50 @@
 // SEL Admin Reusable Components
 // Common UI components and utilities
 
+// Theme Management
+function initTheme() {
+    // Load theme from localStorage or default to light
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    applyTheme(savedTheme);
+}
+
+function applyTheme(theme) {
+    // Apply theme to document
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    
+    // Save to localStorage
+    localStorage.setItem('admin_theme', theme);
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-bs-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    applyTheme(newTheme);
+}
+
+function setupThemeToggle() {
+    // Initialize theme on page load
+    initTheme();
+    
+    // Setup toggle buttons
+    const darkToggle = document.getElementById('theme-toggle');
+    const lightToggle = document.getElementById('theme-toggle-light');
+    
+    if (darkToggle) {
+        darkToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleTheme();
+        });
+    }
+    
+    if (lightToggle) {
+        lightToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleTheme();
+        });
+    }
+}
+
 // Toast notifications
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
@@ -136,9 +180,13 @@ function setupLogout() {
     }
 }
 
-// Auto-setup logout on page load
+// Auto-setup on page load
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupLogout);
+    document.addEventListener('DOMContentLoaded', () => {
+        setupThemeToggle();
+        setupLogout();
+    });
 } else {
+    setupThemeToggle();
     setupLogout();
 }
