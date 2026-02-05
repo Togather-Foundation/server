@@ -1,3 +1,21 @@
+// Package users provides user account management functionality including user creation,
+// invitation flows, account activation, and user lifecycle operations. All operations
+// are audit logged and support email notifications for important events like invitations.
+//
+// The package follows an invitation-based signup flow where users are created in an
+// inactive state and must accept an email invitation to set their password and activate
+// their account. This ensures email ownership verification before account activation.
+//
+// Core operations include:
+//   - CreateUserAndInvite: Creates inactive user and sends email invitation
+//   - AcceptInvitation: Validates token, sets password, and activates account
+//   - UpdateUser: Updates user profile information
+//   - DeactivateUser/ActivateUser: Manages user account status
+//   - DeleteUser: Soft deletes user accounts
+//   - ListUsers: Retrieves paginated user lists with filtering
+//   - ResendInvitation: Regenerates and resends invitation emails
+//
+// All operations that modify user state emit audit log events for security tracking.
 package users
 
 import (
@@ -24,16 +42,33 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Error types for user domain operations
+// Domain-specific errors for user operations. These errors are returned
+// by Service methods to indicate specific failure conditions that callers
+// can check and handle appropriately.
 var (
-	ErrUserNotFound      = errors.New("user not found")
-	ErrInvalidToken      = errors.New("invalid or expired invitation token")
+	// ErrUserNotFound is returned when a user lookup by ID fails to find a matching user.
+	ErrUserNotFound = errors.New("user not found")
+
+	// ErrInvalidToken is returned when an invitation token is invalid, expired, or already used.
+	ErrInvalidToken = errors.New("invalid or expired invitation token")
+
+	// ErrUserAlreadyActive is returned when attempting to send an invitation to an already active user.
 	ErrUserAlreadyActive = errors.New("user is already active")
-	ErrEmailTaken        = errors.New("email is already taken")
-	ErrUsernameTaken     = errors.New("username is already taken")
-	ErrPasswordTooShort  = errors.New("password must be at least 12 characters")
-	ErrPasswordTooLong   = errors.New("password must not exceed 128 characters")
-	ErrPasswordTooWeak   = errors.New("password must contain uppercase, lowercase, number, and special character")
+
+	// ErrEmailTaken is returned when attempting to create or update a user with an email that already exists.
+	ErrEmailTaken = errors.New("email is already taken")
+
+	// ErrUsernameTaken is returned when attempting to create or update a user with a username that already exists.
+	ErrUsernameTaken = errors.New("username is already taken")
+
+	// ErrPasswordTooShort is returned when a password is less than 12 characters.
+	ErrPasswordTooShort = errors.New("password must be at least 12 characters")
+
+	// ErrPasswordTooLong is returned when a password exceeds 128 characters.
+	ErrPasswordTooLong = errors.New("password must not exceed 128 characters")
+
+	// ErrPasswordTooWeak is returned when a password doesn't meet complexity requirements.
+	ErrPasswordTooWeak = errors.New("password must contain uppercase, lowercase, number, and special character")
 )
 
 const (
@@ -47,7 +82,17 @@ const (
 	BcryptCost = 12
 )
 
-// Service handles user management operations
+// Service handles user account management operations including creation, invitation flows,
+// activation, updates, and lifecycle management. All operations are audit logged and
+// support email notifications for invitation events.
+//
+// The service enforces an invitation-based signup flow where users are created in an
+// inactive state and must accept an email invitation to set their password and activate.
+// This ensures email ownership verification before granting access.
+//
+// All password operations use bcrypt hashing with a cost factor of 12. Passwords must
+// meet NIST SP 800-63B requirements: minimum 12 characters with uppercase, lowercase,
+// number, and special character.
 type Service struct {
 	db          *pgxpool.Pool
 	queries     *postgres.Queries
@@ -58,7 +103,16 @@ type Service struct {
 	validator   *validator.Validate
 }
 
-// NewService creates a new user service instance
+// NewService creates and initializes a new user service instance with all required dependencies.
+//
+// Parameters:
+//   - db: PostgreSQL connection pool for database operations
+//   - emailSvc: Service for sending invitation and notification emails
+//   - auditLogger: Logger for recording all user management operations
+//   - baseURL: Base URL for the application, used to construct invitation links
+//   - logger: Structured logger for service-level logging
+//
+// Returns a fully initialized Service ready to handle user management operations.
 func NewService(
 	db *pgxpool.Pool,
 	emailSvc *email.Service,
@@ -77,27 +131,49 @@ func NewService(
 	}
 }
 
-// CreateUserParams contains parameters for creating a new user
+// CreateUserParams contains all required and optional parameters for creating a new user account.
+// All fields are validated before user creation using struct tags.
 type CreateUserParams struct {
-	Username  string      `validate:"required,alphanum,min=3,max=50"`
-	Email     string      `validate:"required,email,max=255"`
-	Role      string      `validate:"omitempty,oneof=admin editor viewer"`
+	// Username is the unique username for the user (3-50 alphanumeric characters, required).
+	Username string `validate:"required,alphanum,min=3,max=50"`
+
+	// Email is the unique email address for the user (valid email format, max 255 chars, required).
+	Email string `validate:"required,email,max=255"`
+
+	// Role is the user's role (admin, editor, or viewer). Defaults to "viewer" if not specified.
+	Role string `validate:"omitempty,oneof=admin editor viewer"`
+
+	// CreatedBy is the UUID of the admin creating this user (optional, for audit logging).
 	CreatedBy pgtype.UUID // Admin who is creating the user
 }
 
-// UpdateUserParams contains parameters for updating a user
+// UpdateUserParams contains parameters for updating an existing user's information.
+// All fields are required and validated before the update operation.
 type UpdateUserParams struct {
+	// Username is the new username (3-50 alphanumeric characters, required).
 	Username string `validate:"required,alphanum,min=3,max=50"`
-	Email    string `validate:"required,email,max=255"`
-	Role     string `validate:"required,oneof=admin editor viewer"`
+
+	// Email is the new email address (valid email format, max 255 chars, required).
+	Email string `validate:"required,email,max=255"`
+
+	// Role is the new role (admin, editor, or viewer, required).
+	Role string `validate:"required,oneof=admin editor viewer"`
 }
 
-// ListUsersFilters contains filters for listing users
+// ListUsersFilters contains optional filters for querying the user list.
+// All filter fields are optional - nil values mean no filtering on that field.
 type ListUsersFilters struct {
+	// IsActive filters by account active status. Nil means no filtering.
 	IsActive *bool
-	Role     *string
-	Limit    int32
-	Offset   int32
+
+	// Role filters by user role (admin, editor, viewer). Nil means no filtering.
+	Role *string
+
+	// Limit is the maximum number of users to return (defaults to 50 if <= 0).
+	Limit int32
+
+	// Offset is the number of users to skip for pagination (defaults to 0).
+	Offset int32
 }
 
 // uuidEquals compares two pgtype.UUID values for equality.
@@ -109,7 +185,28 @@ func uuidEquals(a, b pgtype.UUID) bool {
 	return bytes.Equal(a.Bytes[:], b.Bytes[:])
 }
 
-// CreateUserAndInvite creates a new inactive user and sends an invitation email
+// CreateUserAndInvite creates a new user account in an inactive state and sends an email
+// invitation with a secure token. The user must accept the invitation and set a password
+// to activate their account.
+//
+// The operation is atomic: user creation and invitation record are created in a single
+// transaction. Email sending happens after the transaction commits, so email failures
+// do not rollback the database changes. Admins can resend invitations using ResendInvitation.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - params: User creation parameters (username, email, role, createdBy)
+//
+// Returns the created user record or an error. Possible errors:
+//   - ErrEmailTaken: Email already exists in the system
+//   - ErrUsernameTaken: Username already exists in the system
+//   - Validation errors: Invalid username, email format, or role
+//
+// Side effects:
+//   - Creates user record in database (inactive, no password)
+//   - Creates invitation record with hashed token (expires in 7 days)
+//   - Sends invitation email with acceptance link
+//   - Emits "user.created" audit log event
 func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserParams) (postgres.User, error) {
 	// Set default role if not provided
 	if params.Role == "" {
@@ -290,8 +387,30 @@ func validatePassword(password string) error {
 	return nil
 }
 
-// AcceptInvitation validates an invitation token, sets the user's password, and activates the account
-// Returns the activated user on success
+// AcceptInvitation validates an invitation token, sets the user's password using bcrypt,
+// and activates the user account. The operation is atomic: password update, activation,
+// and invitation acceptance marking all occur in a single transaction.
+//
+// The token is validated against its SHA-256 hash stored in the database. Tokens are
+// single-use and expire after 7 days. The password must meet NIST SP 800-63B requirements:
+//   - Minimum 12 characters
+//   - Maximum 128 characters
+//   - Contains uppercase, lowercase, number, and special character
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - token: The plaintext invitation token from the email link
+//   - password: The user's chosen password (validated for strength)
+//
+// Returns the activated user record or an error. Possible errors:
+//   - ErrInvalidToken: Token doesn't exist, expired, or already used
+//   - ErrPasswordTooShort/TooLong/TooWeak: Password doesn't meet requirements
+//
+// Side effects:
+//   - Updates user password (bcrypt hashed with cost 12)
+//   - Sets user.is_active to true
+//   - Marks invitation as accepted with timestamp
+//   - Emits "user.invitation_accepted" audit log event
 func (s *Service) AcceptInvitation(ctx context.Context, token, password string) (postgres.GetUserByIDRow, error) {
 	// Validate password strength
 	if err := validatePassword(password); err != nil {
@@ -376,7 +495,28 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, password string) 
 	return user, nil
 }
 
-// UpdateUser updates user details
+// UpdateUser updates a user's profile information (username, email, role).
+// The user's active status is preserved and cannot be changed through this method.
+// Use ActivateUser or DeactivateUser to change account status.
+//
+// Email and username uniqueness is enforced - returns an error if the new values
+// conflict with another user's data (excluding the user being updated).
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - id: UUID of the user to update
+//   - params: New values for username, email, and role
+//   - updatedBy: Username of the admin performing the update (for audit logging)
+//
+// Returns nil on success or an error. Possible errors:
+//   - ErrUserNotFound: User with the given ID doesn't exist
+//   - ErrEmailTaken: New email is already used by another user
+//   - ErrUsernameTaken: New username is already used by another user
+//   - Validation errors: Invalid username, email format, or role
+//
+// Side effects:
+//   - Updates user record in database
+//   - Emits "user.updated" audit log event
 func (s *Service) UpdateUser(ctx context.Context, id pgtype.UUID, params UpdateUserParams, updatedBy string) error {
 	// Validate inputs
 	if err := s.validator.Struct(params); err != nil {
@@ -440,7 +580,20 @@ func (s *Service) UpdateUser(ctx context.Context, id pgtype.UUID, params UpdateU
 	return nil
 }
 
-// DeactivateUser deactivates a user account
+// DeactivateUser sets a user's is_active flag to false, preventing login.
+// The user's data remains in the database and can be reactivated using ActivateUser.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - id: UUID of the user to deactivate
+//   - deactivatedBy: Username of the admin performing the deactivation (for audit logging)
+//
+// Returns nil on success or an error. Possible errors:
+//   - ErrUserNotFound: User with the given ID doesn't exist
+//
+// Side effects:
+//   - Sets user.is_active to false in database
+//   - Emits "user.deactivated" audit log event
 func (s *Service) DeactivateUser(ctx context.Context, id pgtype.UUID, deactivatedBy string) error {
 	// Check if user exists
 	user, err := s.queries.GetUserByID(ctx, id)
@@ -477,7 +630,21 @@ func (s *Service) DeactivateUser(ctx context.Context, id pgtype.UUID, deactivate
 	return nil
 }
 
-// ActivateUser reactivates a user account
+// ActivateUser sets a user's is_active flag to true, allowing login.
+// This is typically used to reactivate a previously deactivated account.
+// For new users accepting invitations, use AcceptInvitation instead.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - id: UUID of the user to activate
+//   - activatedBy: Username of the admin performing the activation (for audit logging)
+//
+// Returns nil on success or an error. Possible errors:
+//   - ErrUserNotFound: User with the given ID doesn't exist
+//
+// Side effects:
+//   - Sets user.is_active to true in database
+//   - Emits "user.activated" audit log event
 func (s *Service) ActivateUser(ctx context.Context, id pgtype.UUID, activatedBy string) error {
 	// Check if user exists
 	user, err := s.queries.GetUserByID(ctx, id)
@@ -509,7 +676,22 @@ func (s *Service) ActivateUser(ctx context.Context, id pgtype.UUID, activatedBy 
 	return nil
 }
 
-// DeleteUser soft deletes a user account
+// DeleteUser performs a soft delete of a user account by setting the deleted_at timestamp.
+// The user's data remains in the database for audit and referential integrity purposes.
+// Soft-deleted users are excluded from normal queries but remain accessible for historical records.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - id: UUID of the user to delete
+//   - deletedBy: Username of the admin performing the deletion (for audit logging)
+//
+// Returns nil on success or an error. Possible errors:
+//   - ErrUserNotFound: User with the given ID doesn't exist
+//
+// Side effects:
+//   - Sets user.deleted_at timestamp in database
+//   - User is excluded from standard queries
+//   - Emits "user.deleted" audit log event
 func (s *Service) DeleteUser(ctx context.Context, id pgtype.UUID, deletedBy string) error {
 	// Check if user exists
 	user, err := s.queries.GetUserByID(ctx, id)
@@ -541,7 +723,29 @@ func (s *Service) DeleteUser(ctx context.Context, id pgtype.UUID, deletedBy stri
 	return nil
 }
 
-// ListUsers returns a list of users with optional filtering
+// ListUsers retrieves a paginated list of users with optional filtering by active status
+// and role. Returns both the user list and the total count matching the filters.
+//
+// Default pagination limit is 50 users if not specified. All filter fields are optional.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - filters: Optional filters for is_active, role, limit, and offset
+//
+// Returns:
+//   - User list matching the filters
+//   - Total count of users matching the filters (for pagination)
+//   - Error if the query fails
+//
+// Example:
+//
+//	filters := ListUsersFilters{
+//	    IsActive: boolPtr(true),
+//	    Role: stringPtr("admin"),
+//	    Limit: 20,
+//	    Offset: 40,
+//	}
+//	users, total, err := svc.ListUsers(ctx, filters)
 func (s *Service) ListUsers(ctx context.Context, filters ListUsersFilters) ([]postgres.ListUsersWithFiltersRow, int64, error) {
 	// Set default pagination if not provided
 	if filters.Limit <= 0 {
@@ -582,7 +786,14 @@ func (s *Service) ListUsers(ctx context.Context, filters ListUsersFilters) ([]po
 	return users, totalCount, nil
 }
 
-// GetUser retrieves a single user by ID
+// GetUser retrieves a single user by their UUID.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - id: UUID of the user to retrieve
+//
+// Returns the user record or an error. Possible errors:
+//   - ErrUserNotFound: User with the given ID doesn't exist
 func (s *Service) GetUser(ctx context.Context, id pgtype.UUID) (postgres.GetUserByIDRow, error) {
 	user, err := s.queries.GetUserByID(ctx, id)
 	if err != nil {
@@ -595,7 +806,26 @@ func (s *Service) GetUser(ctx context.Context, id pgtype.UUID) (postgres.GetUser
 	return user, nil
 }
 
-// ResendInvitation resends an invitation email to a user
+// ResendInvitation generates a new invitation token and resends the invitation email
+// to an inactive user. This is used when the original invitation email was not received
+// or the token has expired.
+//
+// A new token is always generated for security (original tokens are not stored in plaintext).
+// The invitation expiration is reset to 7 days from now.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - userID: UUID of the user to resend invitation to
+//   - resentBy: Username of the admin resending the invitation (for audit logging)
+//
+// Returns nil on success or an error. Possible errors:
+//   - ErrUserNotFound: User with the given ID doesn't exist
+//   - ErrUserAlreadyActive: Cannot resend invitation to an active user
+//
+// Side effects:
+//   - Creates new invitation record with fresh token and expiration
+//   - Sends invitation email with new acceptance link
+//   - Emits "user.invitation_resent" audit log event
 func (s *Service) ResendInvitation(ctx context.Context, userID pgtype.UUID, resentBy string) error {
 	// Get user
 	user, err := s.queries.GetUserByID(ctx, userID)
