@@ -205,6 +205,27 @@ func TestUsersService_DeactivateUser_Success(t *testing.T) {
 	require.False(t, dbUser.IsActive)
 }
 
+// TestUsersService_DeactivateUser_AlreadyInactive tests deactivating an already inactive user
+func TestUsersService_DeactivateUser_AlreadyInactive(t *testing.T) {
+	env := setupTestEnv(t)
+	emailSvc, auditLogger := setupUserServiceDeps(t)
+
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+
+	// Create user (starts inactive)
+	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Role:     "viewer",
+	})
+	require.NoError(t, err)
+
+	// Try to deactivate already inactive user
+	err = svc.DeactivateUser(env.Context, user.ID, "admin")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, users.ErrUserAlreadyInactive))
+}
+
 // TestUsersService_ActivateUser_Success tests user activation
 func TestUsersService_ActivateUser_Success(t *testing.T) {
 	env := setupTestEnv(t)

@@ -55,6 +55,9 @@ var (
 	// ErrUserAlreadyActive is returned when attempting to send an invitation to an already active user.
 	ErrUserAlreadyActive = errors.New("user is already active")
 
+	// ErrUserAlreadyInactive is returned when attempting to deactivate a user who is already inactive.
+	ErrUserAlreadyInactive = errors.New("user is already inactive")
+
 	// ErrEmailTaken is returned when attempting to create or update a user with an email that already exists.
 	ErrEmailTaken = errors.New("email is already taken")
 
@@ -606,7 +609,7 @@ func (s *Service) DeactivateUser(ctx context.Context, id pgtype.UUID, deactivate
 
 	// Check if already inactive
 	if !user.IsActive {
-		return ErrUserAlreadyActive // Reusing this error, could create ErrUserAlreadyInactive
+		return ErrUserAlreadyInactive
 	}
 
 	// Deactivate user

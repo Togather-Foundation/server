@@ -454,7 +454,14 @@ Returns the updated user object with `is_active = false`.
 
 #### Error Responses
 
-- **400 Bad Request**: Invalid UUID format
+- **400 Bad Request**: Invalid UUID format or user is already inactive
+  ```json
+  {
+    "type": "https://sel.events/problems/validation-error",
+    "title": "User is already inactive",
+    "status": 400
+  }
+  ```
 - **404 Not Found**: User does not exist
 
 #### Example
@@ -800,12 +807,240 @@ All endpoints support JSON format only:
 
 ---
 
+## Troubleshooting API Requests
+
+This section covers common issues when working with the Admin Users API.
+
+### Authentication Issues
+
+#### 401 Unauthorized - Missing Token
+
+**Problem:**
+```json
+{
+  "type": "https://sel.events/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Missing or invalid authentication token"
+}
+```
+
+**Causes:**
+- No `Authorization` header provided
+- Token is malformed or corrupted
+
+**Solutions:**
+1. Include `Authorization: Bearer <token>` header in all admin requests
+2. Verify token is not expired (default: 24 hours)
+3. Get a fresh token by logging in again
+
+#### 403 Forbidden - Insufficient Permissions
+
+**Problem:**
+```json
+{
+  "type": "https://sel.events/problems/forbidden",
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "Admin role required"
+}
+```
+
+**Cause:** User does not have `admin` role
+
+**Solution:** Only users with `role=admin` can access these endpoints. Contact your system administrator to request admin access.
+
+### Validation Errors
+
+#### 400 Bad Request - Invalid Email
+
+**Problem:**
+```json
+{
+  "type": "https://sel.events/problems/validation-error",
+  "title": "Invalid Request",
+  "status": 400,
+  "detail": "Email is required"
+}
+```
+
+**Common Causes:**
+- Missing required field (`email`, `username`, or `role`)
+- Invalid email format
+- Username too short (<3 chars) or too long (>50 chars)
+- Username contains non-alphanumeric characters
+
+**Solutions:**
+1. Verify all required fields are present
+2. Check email format: `user@domain.com`
+3. Username: 3-50 alphanumeric characters only
+4. Role must be one of: `admin`, `editor`, `viewer`
+
+#### 409 Conflict - Email/Username Already Taken
+
+**Problem:**
+```json
+{
+  "type": "https://sel.events/problems/conflict",
+  "title": "Email already taken",
+  "status": 409
+}
+```
+
+**Cause:** Another user already has this email or username
+
+**Solutions:**
+1. List existing users: `GET /api/v1/admin/users?email=...`
+2. Choose a different email/username
+3. Update existing user instead of creating new one
+4. Check if user was soft-deleted (requires database query)
+
+### Invitation Issues
+
+#### Cannot Resend Invitation - User Already Active
+
+**Problem:**
+```json
+{
+  "type": "https://sel.events/problems/validation-error",
+  "title": "User is already active",
+  "status": 400
+}
+```
+
+**Cause:** Attempting to resend invitation to a user who has already accepted
+
+**Solution:** User has already set their password. If they need a new password, use the password reset feature (planned).
+
+#### Invitation Email Not Sent
+
+**Problem:** User created successfully but didn't receive invitation email
+
+**Common Causes:**
+1. Email service disabled (`EMAIL_ENABLED=false`)
+2. SMTP configuration incorrect
+3. Email went to spam
+4. Network/firewall issues
+
+**Solutions:**
+1. Check server logs for email errors:
+   ```bash
+   grep "invitation email" /path/to/server.log
+   ```
+2. Verify `EMAIL_ENABLED=true` in `.env`
+3. Test SMTP connection (see [Email Setup Guide](../admin/email-setup.md))
+4. Resend invitation: `POST /api/v1/admin/users/{id}/resend-invitation`
+
+### Rate Limiting
+
+#### 429 Too Many Requests
+
+**Problem:**
+```
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1612345678
+```
+
+**Cause:** Exceeded 100 requests per minute for admin endpoints
+
+**Solutions:**
+1. Wait until `X-RateLimit-Reset` timestamp
+2. Implement exponential backoff in your client
+3. Batch operations where possible
+4. Contact admin to increase rate limits if needed
+
+### Network Errors
+
+#### Connection Timeout
+
+**Problem:** Request times out with no response
+
+**Possible Causes:**
+1. Server is down
+2. Network connectivity issues
+3. Firewall blocking requests
+4. Database connection issues
+
+**Solutions:**
+1. Check server health: `curl https://api.sel.events/health`
+2. Verify network connectivity
+3. Check firewall rules (ports 80/443)
+4. Review server logs for database errors
+
+#### SSL Certificate Error
+
+**Problem:** SSL verification failed
+
+**Cause:** Invalid or self-signed certificate
+
+**Solutions:**
+1. **Production:** Use valid SSL certificate (Let's Encrypt, etc.)
+2. **Development only:** Disable SSL verification in your HTTP client
+3. Verify certificate chain: `openssl s_client -connect api.sel.events:443`
+
+### Common Patterns
+
+#### List Users with Pagination
+
+```bash
+# First page
+curl -X GET "https://api.sel.events/api/v1/admin/users?limit=50&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Next page (use next_cursor from response)
+curl -X GET "https://api.sel.events/api/v1/admin/users?limit=50&offset=50" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+#### Bulk User Operations
+
+To perform bulk operations (create/update/delete multiple users):
+
+1. **Use parallel requests** (respect rate limits)
+2. **Handle partial failures** gracefully
+3. **Log all operations** for audit trail
+4. **Implement retry logic** for transient errors
+
+**Example (pseudocode):**
+```javascript
+const users = [/* list of users to create */];
+const results = await Promise.allSettled(
+  users.map(user => createUser(user))
+);
+
+// Check for failures
+results.forEach((result, index) => {
+  if (result.status === 'rejected') {
+    console.error(`Failed to create user ${index}:`, result.reason);
+  }
+});
+```
+
+#### Check User Status Before Operations
+
+Before deactivating, activating, or resending invitations, check user status:
+
+```bash
+# Get user details
+curl -X GET https://api.sel.events/api/v1/admin/users/{id} \
+  -H "Authorization: Bearer $TOKEN"
+
+# Check response
+# - is_active: true = active, false = inactive or pending invitation
+# - last_login_at: null = never logged in (pending invitation)
+```
+
+---
+
 ## Related Documentation
 
-- [User Administration UI Guide](/docs/admin-ui-guide.md)
-- [User Administration Plan](/docs/admin/user-administration-plan.md)
-- [SEL Interoperability Profile](/docs/togather_SEL_Interoperability_Profile_v0.1.md)
-- [Authentication & Authorization Design](/docs/togather_SEL_server_architecture_design_v1.md#authentication--authorization)
+- [User Management Guide](../admin/user-management.md) - Admin guide for managing users via UI
+- [Email Setup Guide](../admin/email-setup.md) - Configure SMTP for invitation emails
+- [User Administration Plan](../admin/user-administration-plan.md) - Technical implementation details
+- [SEL Interoperability Profile](../togather_SEL_Interoperability_Profile_v0.1.md) - SEL specification
+- [Authentication & Authorization Design](../togather_SEL_server_architecture_design_v1.md#authentication--authorization)
 
 ---
 
@@ -814,3 +1049,4 @@ All endpoints support JSON format only:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2024-02-05 | Initial API documentation |
+| 1.1 | 2026-02-05 | Added troubleshooting section |
