@@ -606,6 +606,13 @@ The user management interface allows administrators to manage admin user account
 - Activity logging and audit trails
 - Soft delete support
 
+**📚 Comprehensive Documentation:**
+- **[User Management Guide](admin/user-management.md)** - Complete guide for administrators
+- **[Email Setup Guide](admin/email-setup.md)** - Configure SMTP for invitations
+- **[Admin Users API Reference](api/admin-users.md)** - API endpoint documentation
+
+This section provides a quick overview of the UI. For detailed workflows, troubleshooting, and best practices, see the comprehensive guides above.
+
 **Screenshot:** `web/admin/static/images/users-list.png`
 
 ---
