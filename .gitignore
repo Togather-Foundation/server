@@ -124,4 +124,7 @@ events.json
 
 # Auto-generated web files (generated during Docker build)
 web/robots.txt
-web/sitemap.xmltests/e2e/__pycache__/
+web/sitemap.xml
+
+# Python cache
+tests/e2e/__pycache__/
