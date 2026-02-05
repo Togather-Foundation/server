@@ -284,6 +284,63 @@ setupLogout(); // Called automatically by components.js
 
 ## Security Considerations
 
+### Content Security Policy (CSP) Compliance
+
+**Our CSP policy: `script-src 'self'` - Only external scripts from same origin allowed**
+
+**🚨 NEVER use inline scripts or event handlers:**
+
+```html
+<!-- ❌ BAD: Inline script block (CSP violation) -->
+<script>
+  console.log('This will be blocked by CSP!');
+</script>
+
+<!-- ❌ BAD: Inline event handler (CSP violation) -->
+<button onclick="doSomething()">Click me</button>
+<img onerror="handleError()" src="...">
+
+<!-- ✅ GOOD: External script -->
+<script src="/admin/static/js/my-script.js"></script>
+
+<!-- ✅ GOOD: Event delegation in external JS -->
+<button data-action="do-something">Click me</button>
+```
+
+**Event Delegation Pattern (CSP-compliant):**
+
+```javascript
+// In external JS file (e.g., events.js)
+document.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    
+    const action = target.dataset.action;
+    if (action === 'do-something') {
+        doSomething();
+    }
+});
+```
+
+**How to verify CSP compliance:**
+
+```bash
+# Check for inline event handlers (should return nothing)
+grep -rn "onclick=\|onerror=\|onload=\|onchange=\|onsubmit=" web/admin/templates/
+
+# Check for inline script blocks (should only show <script src=...>)
+grep -rn "<script[^>]*>[^<]" web/admin/templates/
+
+# Run E2E tests - they capture CSP violations
+uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
+```
+
+**If you see CSP errors in console:**
+1. Find the offending inline script/handler
+2. Move the code to an external `.js` file
+3. Use `data-action` attributes + event delegation for event handlers
+4. Re-run E2E tests to verify fix
+
 ### XSS Prevention
 
 **Always escape user input before inserting into DOM:**
@@ -400,6 +457,83 @@ searchInput.addEventListener('input', (e) => {
 
 ## Testing Considerations
 
+### MANDATORY Error Verification Workflow
+
+**🚨 CRITICAL: Before claiming any UI work is "fixed" or "complete", you MUST:**
+
+1. **Run the actual server locally:**
+   ```bash
+   make dev
+   ```
+
+2. **Run E2E tests to capture console errors:**
+   ```bash
+   uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
+   ```
+
+3. **Manually verify in browser (if E2E tests pass but user reports errors):**
+   ```bash
+   # Open each admin page in browser and check DevTools Console:
+   open http://localhost:8080/admin/login
+   open http://localhost:8080/admin/dashboard
+   open http://localhost:8080/admin/events
+   open http://localhost:8080/admin/duplicates
+   open http://localhost:8080/admin/api-keys
+   open http://localhost:8080/admin/federation
+   # Check F12 > Console tab for errors on EACH page
+   ```
+
+4. **Check for specific error types:**
+   - ❌ `ReferenceError: X is not defined` - Missing function/variable
+   - ❌ `Content-Security-Policy` violations - Inline scripts/handlers
+   - ❌ `Uncaught (in promise)` - Unhandled async errors
+   - ❌ Network errors (404, 401, 500, etc.)
+   - ❌ React/framework warnings (shouldn't exist in vanilla JS project)
+
+5. **Document what you actually verified:**
+   ```
+   ✅ Ran E2E tests - 0 console errors found
+   ✅ Manually loaded /admin/events - no console errors
+   ✅ Tested feature X - works as expected
+   ```
+
+**❌ NEVER say "fixed" or "no errors found" based on:**
+- Just reading the code without running it
+- Assuming tests passed because build succeeded
+- Previous test results (always re-run after changes)
+- Grep/search results without runtime verification
+
+**✅ Tools to help verify errors:**
+
+1. **Automated Console Error Detection:**
+   ```python
+   # The E2E test already captures console errors:
+   # See tests/e2e/test_admin_ui_python.py
+   console_errors = []
+   page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+   ```
+
+2. **Manual Browser Inspection:**
+   ```bash
+   # Use playwright to open browser with DevTools
+   PWDEBUG=1 python tests/e2e/test_admin_ui_python.py
+   ```
+
+3. **Check All Script Loading:**
+   ```bash
+   # Verify components.js loads before page-specific JS
+   grep -A 10 "<script src=" web/admin/templates/_footer.html
+   ```
+
+4. **Search for CSP Violations:**
+   ```bash
+   # Find inline event handlers
+   grep -rn "onclick=\|onerror=\|onload=" web/admin/templates/
+   
+   # Find inline scripts (should only return <script src=...>)
+   grep -rn "<script[^>]*>[^<]" web/admin/templates/
+   ```
+
 ### Automated E2E Testing with Playwright
 
 **Run comprehensive E2E tests against the live admin UI:**
@@ -418,10 +552,11 @@ uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
 **What the E2E tests cover:**
 - Login flow (success and failure cases)
 - Dashboard loads and displays stats correctly
-- All admin pages render (events, duplicates, API keys)
+- All admin pages render (events, duplicates, API keys, federation)
 - Navigation between pages works
 - Logout functionality
 - JavaScript console errors are captured
+- CSP violations are detected
 - Screenshots saved to `/tmp/admin_*.png` for debugging
 
 **Custom test password:**
@@ -430,11 +565,12 @@ ADMIN_PASSWORD=mypassword uvx --from playwright --with playwright python tests/e
 ```
 
 **When to run E2E tests:**
-- After modifying any admin UI page
-- After changing JavaScript in `web/admin/static/js/`
-- After updating API endpoints used by admin UI
-- Before committing significant UI changes
-- When debugging console errors
+- **ALWAYS** after modifying any admin UI page
+- **ALWAYS** after changing JavaScript in `web/admin/static/js/`
+- **ALWAYS** after updating API endpoints used by admin UI
+- **ALWAYS** before committing significant UI changes
+- **ALWAYS** when debugging console errors
+- **ALWAYS** before claiming work is "complete" or "fixed"
 
 **Test artifacts:**
 - Test script: `tests/e2e/test_admin_ui_python.py`
@@ -450,6 +586,11 @@ ADMIN_PASSWORD=mypassword uvx --from playwright --with playwright python tests/e
 - Navigation/authentication flows
 
 **Check console errors summary** at end of test run - it reports all errors found.
+
+**If user reports errors after you claimed "no errors":**
+- You failed to run the actual tests
+- You must re-verify with the server running
+- Document the actual verification steps you took
 
 ### Manual Testing Checklist
 
