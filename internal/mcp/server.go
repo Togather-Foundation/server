@@ -120,6 +120,12 @@ func (s *Server) registerTools() {
 
 	// create_organization tool - create new organizations
 	s.mcp.AddTool(organizationTools.CreateOrganizationTool(), organizationTools.CreateOrganizationHandler)
+
+	// Register search tools (server-rupi)
+	searchTools := tools.NewSearchTools(s.eventsService, s.placesService, s.orgService, s.baseURL)
+
+	// search tool - query events, places, and organizations
+	s.mcp.AddTool(searchTools.SearchTool(), searchTools.SearchHandler)
 }
 
 // registerResources registers all MCP resources for events, places, and organizations.
