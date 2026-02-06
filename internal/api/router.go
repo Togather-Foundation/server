@@ -179,6 +179,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Health check endpoints (T011)
 	healthChecker := handlers.NewHealthChecker(pool, riverClient, version, gitCommit)
 
+	// Stats endpoint for public server statistics (server-71ua)
+	statsHandler := handlers.NewStatsHandler(queries, version, gitCommit, time.Now(), cfg.Environment)
+
 	mux := http.NewServeMux()
 	// Landing page at web root (server-4i67)
 	mux.Handle("/", web.IndexHandler())
@@ -188,6 +191,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/healthz", handlers.Healthz())    // Legacy liveness check
 	mux.Handle("/readyz", healthChecker.Readyz()) // Readiness check with dependency verification
 	mux.Handle("/version", VersionHandler(version, gitCommit, buildDate))
+	mux.Handle("/api/v1/stats", http.HandlerFunc(statsHandler.GetStats)) // Public server statistics (server-71ua)
 	mux.Handle("/api/v1/openapi.json", OpenAPIHandler())
 	mux.Handle("/api/v1/openapi.yaml", OpenAPIYAMLHandler()) // YAML format (server-v7yn)
 	mux.Handle("/api/docs/", web.APIDocsHandler())           // Scalar API documentation UI (server-6lnc)
