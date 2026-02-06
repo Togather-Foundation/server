@@ -189,6 +189,12 @@
      */
     async function loadActivity() {
         const activityList = document.getElementById('activity-list');
+        const showingText = document.getElementById('showing-text');
+        
+        // Announce loading for screen readers
+        if (showingText) {
+            showingText.textContent = 'Loading activity...';
+        }
         
         // Show loading state
         activityList.innerHTML = `
@@ -382,6 +388,7 @@
     
     /**
      * Update showing text
+     * Also announces to screen readers via aria-live region
      * @param {number} count - Number of items shown
      */
     function updateShowingText(count) {
@@ -391,7 +398,8 @@
         if (count === 0) {
             showingText.textContent = 'No activity';
         } else {
-            showingText.textContent = `Showing ${count} events`;
+            // Announce loaded count for screen readers
+            showingText.textContent = `Loaded ${count} ${count === 1 ? 'event' : 'events'}`;
         }
     }
     

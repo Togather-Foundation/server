@@ -113,6 +113,13 @@
      */
     async function loadUsers() {
         const tbody = document.getElementById('users-table');
+        const showingText = document.getElementById('showing-text');
+        
+        // Announce loading for screen readers
+        if (showingText) {
+            showingText.textContent = 'Loading users...';
+        }
+        
         renderLoadingState(tbody, 6);
         
         // Cancel any in-flight request
@@ -329,6 +336,7 @@
     
     /**
      * Update showing text (e.g., "Showing 1-20 of 50")
+     * Also announces to screen readers via aria-live region
      * @param {number} count - Number of items shown
      */
     function updateShowingText(count) {
@@ -338,7 +346,8 @@
         if (count === 0) {
             showingText.textContent = 'No users found';
         } else {
-            showingText.textContent = `Showing ${count} users`;
+            // Announce loaded count for screen readers
+            showingText.textContent = `Loaded ${count} ${count === 1 ? 'user' : 'users'}`;
         }
     }
     
