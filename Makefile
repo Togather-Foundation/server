@@ -83,7 +83,7 @@ LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VE
            -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=$(BUILD_DATE)'
 
 # Build the server
-build:
+build: webfiles
 	@echo "Building server..."
 	@mkdir -p bin
 	@go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
