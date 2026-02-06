@@ -405,6 +405,16 @@
     
     /**
      * Get icon SVG for activity type
+     * 
+     * NOTE: This function is intentionally kept local to user-activity.js rather than
+     * being extracted to components.js because:
+     * 1. Activity timelines are specific to the user activity page
+     * 2. No other pages currently display activity events or need activity icons
+     * 3. The icon mapping logic is tightly coupled to backend event_type values specific
+     *    to user activity tracking (login, logout, create, update, delete)
+     * 4. If activity timelines are needed elsewhere in the future, this function can be
+     *    extracted to components.js at that time (DRY when actually repeated, not preemptively)
+     * 
      * @param {string} eventType - Activity event type
      * @returns {string} SVG icon HTML
      */
@@ -429,6 +439,15 @@
     
     /**
      * Get color for activity type
+     * 
+     * NOTE: This function is intentionally kept local to user-activity.js rather than
+     * being extracted to components.js because:
+     * 1. Activity timelines are specific to the user activity page
+     * 2. Color mappings are tightly coupled to the activity icon mapping above
+     * 3. No other pages currently need activity-specific color coding
+     * 4. Keeping related functions together improves maintainability
+     * 5. Can be extracted to components.js if reuse is needed in the future
+     * 
      * @param {string} eventType - Activity event type
      * @returns {string} Bootstrap color name
      */
