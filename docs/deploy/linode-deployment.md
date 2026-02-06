@@ -73,7 +73,7 @@ cd deploy/scripts
 ./provision-remote.sh root@192.46.222.199 1.25.0
 
 # Or with custom deploy username
-./provision-remote.sh root@192.46.222.199 1.24.12 togather
+./provision-remote.sh root@192.46.222.199 1.24.13 togather
 
 # Or using SSH config alias
 ./provision-remote.sh togather-root
@@ -118,12 +118,12 @@ GO_VERSION=1.25.0 sudo ./provision-server.sh
 DEPLOY_USER=togather sudo ./provision-server.sh
 
 # Skip SSH hardening prompt (for automation)
-SKIP_SSH_HARDEN=true GO_VERSION=1.24.12 sudo ./provision-server.sh
+SKIP_SSH_HARDEN=true GO_VERSION=1.24.13 sudo ./provision-server.sh
 ```
 
 **This script will:**
 - Update system packages
-- Install Docker, Docker Compose, and Go (configurable version, default: 1.24.12)
+- Install Docker, Docker Compose, and Go (configurable version, default: 1.24.13)
 - Create a 'deploy' user with sudo access (configurable username)
 - Configure firewall (UFW) - allow SSH, HTTP, HTTPS
 - Set up fail2ban for SSH protection
@@ -213,8 +213,8 @@ docker compose version  # Should show Docker Compose version 2.x+
 #### 5. Install Go (if building from source)
 
 ```bash
-# Download and install Go 1.24.12
-GO_VERSION="1.24.12"
+# Download and install Go 1.24.13
+GO_VERSION="1.24.13"
 wget "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
 sudo rm -rf /usr/local/go
 sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
@@ -225,7 +225,7 @@ echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc
 source ~/.bashrc
 
 # Verify
-go version  # Should show: go version go1.24.12 linux/amd64
+go version  # Should show: go version go1.24.13 linux/amd64
 ```
 
 </details>
