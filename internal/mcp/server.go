@@ -6,6 +6,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/mcp/prompts"
 	"github.com/Togather-Foundation/server/internal/mcp/resources"
 	"github.com/Togather-Foundation/server/internal/mcp/tools"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -189,8 +190,11 @@ func (s *Server) registerResources() {
 // registerPrompts registers all MCP prompts for SEL workflows.
 // Prompts provide contextual assistance for working with SEL data.
 func (s *Server) registerPrompts() {
-	// Prompt registration will be implemented in subsequent beads:
-	// - server-uuu3: SEL workflow prompts (event creation, validation, federation)
+	promptTemplates := prompts.NewPromptTemplates()
+
+	s.mcp.AddPrompt(promptTemplates.CreateEventFromTextPrompt(), promptTemplates.CreateEventFromTextHandler)
+	s.mcp.AddPrompt(promptTemplates.FindVenuePrompt(), promptTemplates.FindVenueHandler)
+	s.mcp.AddPrompt(promptTemplates.DuplicateCheckPrompt(), promptTemplates.DuplicateCheckHandler)
 }
 
 // Shutdown gracefully shuts down the MCP server and cleans up resources.
