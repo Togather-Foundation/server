@@ -59,6 +59,7 @@ func (r *ContextResources) ReadHandler(filePath, uri string) func(context.Contex
 }
 
 func (r *ContextResources) loadFile(path string) (string, error) {
+	// First check with read lock
 	r.mu.RLock()
 	if cached, ok := r.cache[path]; ok {
 		r.mu.RUnlock()
@@ -66,15 +67,21 @@ func (r *ContextResources) loadFile(path string) (string, error) {
 	}
 	r.mu.RUnlock()
 
+	// Acquire write lock for modification
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine may have written)
+	if cached, ok := r.cache[path]; ok {
+		return cached, nil
+	}
+
+	// Safe to write now - we hold the write lock
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read context %s: %w", path, err)
 	}
-
-	r.mu.Lock()
 	r.cache[path] = string(content)
-	r.mu.Unlock()
-
 	return string(content), nil
 }
 
