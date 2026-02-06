@@ -96,7 +96,8 @@ func (t *OrganizationTools) OrganizationsHandler(ctx context.Context, request mc
 	return t.listOrganizations(ctx, args.Query, args.Limit, args.Cursor)
 }
 
-// getOrganizationByID retrieves a single organization by ULID
+// getOrganizationByID retrieves a single organization by ULID.
+// Returns tombstone data if the organization is deleted.
 func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) (*mcp.CallToolResult, error) {
 	if err := ids.ValidateULID(id); err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
@@ -157,7 +158,8 @@ func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) 
 	return toolResultJSON(payload)
 }
 
-// listOrganizations retrieves a list of organizations with filters
+// listOrganizations retrieves a list of organizations with optional filters and pagination.
+// Supports filtering by query text matching name or legal name.
 func (t *OrganizationTools) listOrganizations(ctx context.Context, query string, limit int, cursor string) (*mcp.CallToolResult, error) {
 
 	const maxListLimit = 200
@@ -174,9 +176,7 @@ func (t *OrganizationTools) listOrganizations(ctx context.Context, query string,
 	if strings.TrimSpace(query) != "" {
 		values.Set("q", strings.TrimSpace(query))
 	}
-	if limit > 0 {
-		values.Set("limit", strconv.Itoa(limit))
-	}
+	values.Set("limit", strconv.Itoa(limit))
 	if strings.TrimSpace(cursor) != "" {
 		values.Set("after", strings.TrimSpace(cursor))
 	}

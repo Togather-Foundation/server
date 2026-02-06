@@ -124,7 +124,8 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 	return t.listEvents(ctx, args.Query, args.StartDate, args.EndDate, args.Location, args.City, args.Region, args.Limit, args.Cursor)
 }
 
-// getEventByID retrieves a single event by ULID
+// getEventByID retrieves a single event by ULID.
+// Returns tombstone data if the event is deleted.
 func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallToolResult, error) {
 	// Validate ULID format
 	if err := ids.ValidateULID(id); err != nil {
@@ -204,7 +205,8 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 	return resultJSON, nil
 }
 
-// listEvents retrieves a list of events with filters
+// listEvents retrieves a list of events with optional filters and pagination.
+// Supports filtering by query text, date range, and location parameters.
 func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, location, city, region string, limit int, cursor string) (*mcp.CallToolResult, error) {
 	const maxListLimit = 200
 
@@ -237,9 +239,7 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 	if regionValue != "" {
 		values.Set("region", regionValue)
 	}
-	if limit > 0 {
-		values.Set("limit", strconv.Itoa(limit))
-	}
+	values.Set("limit", strconv.Itoa(limit))
 	if strings.TrimSpace(cursor) != "" {
 		values.Set("after", strings.TrimSpace(cursor))
 	}
