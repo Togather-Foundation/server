@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/federation"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +37,7 @@ func TestChangeFeedRepositoryListEventChanges(t *testing.T) {
 	require.NoError(t, err)
 
 	rows, err := repo.ListEventChanges(ctx, federation.ListEventChangesParams{
-		AfterSequence: 0,
+		AfterSequence: pgtype.Int8{}, // Null value for "from beginning"
 		Limit:         10,
 	})
 	require.NoError(t, err)

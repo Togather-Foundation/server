@@ -356,7 +356,11 @@ func TestRepoRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(originalDir)
+	defer func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Errorf("failed to restore directory: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name    string
