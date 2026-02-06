@@ -231,6 +231,11 @@ func (t *EventTools) GetEventHandler(ctx context.Context, request mcp.CallToolRe
 		return mcp.NewToolResultErrorFromErr("failed to get event", err), nil
 	}
 
+	// Add nil check before accessing event fields
+	if event == nil {
+		return mcp.NewToolResultErrorf("event not found: %s", args.ID), nil
+	}
+
 	if strings.EqualFold(event.LifecycleState, "deleted") {
 		if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, args.ID); tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
