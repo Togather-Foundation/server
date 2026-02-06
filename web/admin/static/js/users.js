@@ -274,6 +274,31 @@
     
     /**
      * Update pagination controls
+     * 
+     * CURSOR-BASED PAGINATION PATTERN:
+     * This implementation uses cursor-based pagination (next_cursor from API) which provides
+     * efficient pagination for large datasets but has specific behavior constraints:
+     * 
+     * - FORWARD navigation: Uses cursor tokens from API (goToNextPage with cursor)
+     * - BACKWARD navigation: Limited to "return to first page" (goToPreviousPage resets cursor to null)
+     * - No page numbers: Cannot jump to arbitrary pages (e.g., "go to page 5")
+     * - No true "Previous": Clicking Prev always goes to page 1, not the actual previous page
+     * 
+     * Example flow:
+     *   Page 1 (cursor=null) → Next → Page 2 (cursor=abc123) → Next → Page 3 (cursor=def456)
+     *   If user clicks "Prev" on Page 3, they go to Page 1, NOT Page 2
+     * 
+     * WHY THIS DESIGN:
+     * - Cursor pagination is stateless and doesn't require server to track page history
+     * - Works reliably with dynamic data (insertions/deletions don't shift page boundaries)
+     * - Scales efficiently to millions of records without offset/limit performance issues
+     * 
+     * ALTERNATIVE (if true bidirectional pagination needed):
+     * - Implement client-side page history stack to track visited cursors
+     * - Store: [{cursor: null, page: 1}, {cursor: 'abc123', page: 2}, ...]
+     * - goToPreviousPage() would pop from stack instead of resetting to null
+     * - Trade-off: More complex state management, memory usage for long navigation sessions
+     * 
      * @param {string|null} nextCursor - Next page cursor or null if no more pages
      */
     function updatePagination(nextCursor) {
@@ -380,7 +405,17 @@
     }
     
     /**
-     * Navigate to previous page (reset cursor)
+     * Navigate to previous page (reset cursor to null = first page)
+     * 
+     * IMPORTANT: This does NOT go to the actual previous page in the sequence!
+     * Due to cursor-based pagination, we can only navigate forward with cursors.
+     * This function resets to the first page (cursor=null), regardless of which
+     * page the user is currently on.
+     * 
+     * Example: User on page 5 clicks "Prev" → goes to page 1 (not page 4)
+     * 
+     * See updatePagination() docs for full explanation and alternatives.
+     * 
      * @param {HTMLElement} button - Clicked pagination button
      */
     function goToPreviousPage(button) {
