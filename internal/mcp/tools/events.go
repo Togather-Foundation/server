@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -115,7 +117,7 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 
 	// If id is provided, get single event
 	if strings.TrimSpace(args.ID) != "" {
-		return t.getEventByID(ctx, args.ID)
+		return t.getEventByID(ctx, strings.TrimSpace(args.ID))
 	}
 
 	// Otherwise, list events with filters
@@ -133,7 +135,12 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 	event, err := t.eventsService.GetByULID(ctx, id)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
-			if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id); tombErr == nil && tombstone != nil {
+			tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
+			if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
+				// Log tombstone fetch error for diagnostics (don't fail the request)
+				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for event %s: %v\n", id, tombErr)
+			}
+			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 				if payloadErr != nil {
 					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
@@ -155,7 +162,12 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 	}
 
 	if strings.EqualFold(event.LifecycleState, "deleted") {
-		if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id); tombErr == nil && tombstone != nil {
+		tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
+		if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
+			// Log tombstone fetch error for diagnostics (don't fail the request)
+			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted event %s: %v\n", id, tombErr)
+		}
+		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 			if payloadErr != nil {
 				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil

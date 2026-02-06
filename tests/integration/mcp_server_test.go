@@ -567,6 +567,21 @@ func TestMCPGetEvent(t *testing.T) {
 		require.True(t, ok)
 		require.Contains(t, textContent.Text, "not found")
 	})
+
+	t.Run("whitespace_only_id_lists_events", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "events",
+				Arguments: map[string]any{
+					"id": "   ",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.NotNil(t, payload["items"], "whitespace-only id should list events")
+	})
 }
 
 // TestMCPListPlaces tests the list_places tool.
@@ -691,6 +706,21 @@ func TestMCPGetPlace(t *testing.T) {
 		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
 		require.True(t, ok)
 		require.Contains(t, textContent.Text, "not found")
+	})
+
+	t.Run("whitespace_only_id_lists_places", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "places",
+				Arguments: map[string]any{
+					"id": "   ",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.NotNil(t, payload["items"], "whitespace-only id should list places")
 	})
 }
 
@@ -856,6 +886,21 @@ func TestMCPGetOrganization(t *testing.T) {
 		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
 		require.True(t, ok)
 		require.Contains(t, textContent.Text, "not found")
+	})
+
+	t.Run("whitespace_only_id_lists_organizations", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "organizations",
+				Arguments: map[string]any{
+					"id": "   ",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.NotNil(t, payload["items"], "whitespace-only id should list organizations")
 	})
 }
 
