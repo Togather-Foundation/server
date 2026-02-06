@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/rs/zerolog"
@@ -24,8 +25,9 @@ type Service struct {
 
 // InvitationData holds data for rendering the invitation email template
 type InvitationData struct {
-	InvitedBy  string // Name/email of the admin who sent the invitation
-	InviteLink string // Full URL to accept the invitation
+	InvitedBy   string // Name/email of the admin who sent the invitation
+	InviteLink  string // Full URL to accept the invitation
+	CurrentYear int    // Current year for copyright notice
 }
 
 // NewService creates a new email service instance
@@ -76,8 +78,9 @@ func (s *Service) SendInvitation(to, inviteLink, invitedBy string) error {
 
 	// Render the invitation template
 	data := InvitationData{
-		InvitedBy:  invitedBy,
-		InviteLink: inviteLink,
+		InvitedBy:   invitedBy,
+		InviteLink:  inviteLink,
+		CurrentYear: time.Now().Year(),
 	}
 	htmlBody, err := s.renderTemplate("invitation.html", data)
 	if err != nil {
