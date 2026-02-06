@@ -162,11 +162,15 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	// Format date range (handle null values)
 	var oldestDate, newestDate string
-	if dateRange.OldestEventDate.Valid {
-		oldestDate = dateRange.OldestEventDate.Time.Format(time.RFC3339)
+	if dateRange.OldestEventDate != nil {
+		if t, ok := dateRange.OldestEventDate.(time.Time); ok {
+			oldestDate = t.Format(time.RFC3339)
+		}
 	}
-	if dateRange.NewestEventDate.Valid {
-		newestDate = dateRange.NewestEventDate.Time.Format(time.RFC3339)
+	if dateRange.NewestEventDate != nil {
+		if t, ok := dateRange.NewestEventDate.(time.Time); ok {
+			newestDate = t.Format(time.RFC3339)
+		}
 	}
 
 	// Build response

@@ -55,7 +55,7 @@ func (q *Queries) CountEventsCreatedSince(ctx context.Context, createdAt pgtype.
 const countPastEvents = `-- name: CountPastEvents :one
 SELECT COUNT(*)::bigint AS count
   FROM events
- WHERE start_date <= NOW()
+ WHERE (payload->>'startDate')::timestamptz <= NOW()
    AND deleted_at IS NULL
 `
 
@@ -69,7 +69,7 @@ func (q *Queries) CountPastEvents(ctx context.Context) (int64, error) {
 const countUpcomingEvents = `-- name: CountUpcomingEvents :one
 SELECT COUNT(*)::bigint AS count
   FROM events
- WHERE start_date > NOW()
+ WHERE (payload->>'startDate')::timestamptz > NOW()
    AND deleted_at IS NULL
 `
 
@@ -194,15 +194,15 @@ func (q *Queries) GetEventByULID(ctx context.Context, ulid string) ([]GetEventBy
 }
 
 const getEventDateRange = `-- name: GetEventDateRange :one
-SELECT MIN(start_date)::timestamptz AS oldest_event_date,
-       MAX(start_date)::timestamptz AS newest_event_date
+SELECT MIN((payload->>'startDate')::timestamptz) AS oldest_event_date,
+       MAX((payload->>'startDate')::timestamptz) AS newest_event_date
   FROM events
  WHERE deleted_at IS NULL
 `
 
 type GetEventDateRangeRow struct {
-	OldestEventDate pgtype.Timestamptz `json:"oldest_event_date"`
-	NewestEventDate pgtype.Timestamptz `json:"newest_event_date"`
+	OldestEventDate interface{} `json:"oldest_event_date"`
+	NewestEventDate interface{} `json:"newest_event_date"`
 }
 
 func (q *Queries) GetEventDateRange(ctx context.Context) (GetEventDateRangeRow, error) {

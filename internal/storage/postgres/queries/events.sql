@@ -119,17 +119,17 @@ SELECT COUNT(*)::bigint AS count
 -- name: CountUpcomingEvents :one
 SELECT COUNT(*)::bigint AS count
   FROM events
- WHERE start_date > NOW()
+ WHERE (payload->>'startDate')::timestamptz > NOW()
    AND deleted_at IS NULL;
 
 -- name: CountPastEvents :one
 SELECT COUNT(*)::bigint AS count
   FROM events
- WHERE start_date <= NOW()
+ WHERE (payload->>'startDate')::timestamptz <= NOW()
    AND deleted_at IS NULL;
 
 -- name: GetEventDateRange :one
-SELECT MIN(start_date)::timestamptz AS oldest_event_date,
-       MAX(start_date)::timestamptz AS newest_event_date
+SELECT MIN((payload->>'startDate')::timestamptz) AS oldest_event_date,
+       MAX((payload->>'startDate')::timestamptz) AS newest_event_date
   FROM events
  WHERE deleted_at IS NULL;
