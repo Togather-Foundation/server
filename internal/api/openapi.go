@@ -12,6 +12,12 @@ import (
 
 const openAPISourcePath = "specs/001-sel-backend/contracts/openapi.yaml"
 
+// maxParentTraversal is the maximum number of parent directories to traverse
+// when searching for go.mod to determine the repository root. This prevents
+// infinite loops in case the filesystem structure is unusual (e.g., symlinks,
+// containers) while still allowing reasonable project nesting depth.
+const maxParentTraversal = 10
+
 var (
 	openAPIJSON    []byte
 	openAPIJSONErr error
@@ -103,7 +109,7 @@ func repoRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < maxParentTraversal; i++ {
 		if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
 			return cwd, nil
 		}

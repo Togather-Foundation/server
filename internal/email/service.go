@@ -169,9 +169,11 @@ func (s *Service) send(to, subject, htmlBody string) error {
 	}
 	defer func() { _ = client.Close() }()
 
-	// Start TLS handshake
+	// Start TLS handshake with explicit security settings
 	tlsConfig := &tls.Config{
-		ServerName: s.config.SMTPHost,
+		ServerName:         s.config.SMTPHost,
+		InsecureSkipVerify: false,            // Explicit: always verify certificates
+		MinVersion:         tls.VersionTLS12, // Require TLS 1.2 or higher
 	}
 	if err := client.StartTLS(tlsConfig); err != nil {
 		return fmt.Errorf("failed to start TLS: %w", err)
