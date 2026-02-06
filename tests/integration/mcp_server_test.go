@@ -399,3 +399,666 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, resp3.StatusCode, "Request 3 should be rate limited")
 	require.NotEmpty(t, resp3.Header.Get("Retry-After"), "Should include Retry-After header")
 }
+
+// TestMCPCreateEvent tests the create_event tool with success and error cases.
+func TestMCPCreateEvent(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		eventPayload := map[string]any{
+			"@type":     "Event",
+			"name":      "Test Concert",
+			"startDate": "2026-12-01T19:00:00Z",
+			"location": map[string]any{
+				"@type": "VirtualLocation",
+				"name":  "Online Event",
+				"url":   "https://example.com/event",
+			},
+		}
+
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_event",
+				Arguments: map[string]any{
+					"event": eventPayload,
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Check if it's an error response first
+		textContent, isText := mcpTypes.AsTextContent(result.Content[0])
+		if isText && (strings.Contains(textContent.Text, "error") || strings.Contains(textContent.Text, "Error") || strings.Contains(textContent.Text, "failed")) {
+			t.Fatalf("Create event failed: %s", textContent.Text)
+		}
+
+		payload := decodeToolText(t, result)
+		require.NotEmpty(t, payload["id"], "should return event ID")
+
+		// Handle both boolean and pointer boolean types
+		isDup := payload["is_duplicate"]
+		if isDup != nil {
+			switch v := isDup.(type) {
+			case bool:
+				require.False(t, v, "should not be duplicate")
+			default:
+				t.Logf("is_duplicate type: %T, value: %v", isDup, isDup)
+			}
+		}
+	})
+
+	t.Run("missing_event_param", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name:      "create_event",
+				Arguments: map[string]any{},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "event parameter is required")
+	})
+
+	t.Run("invalid_event_payload", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_event",
+				Arguments: map[string]any{
+					"event": "not-a-json-object",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "invalid")
+	})
+}
+
+// TestMCPGetEvent tests the get_event tool with success and error cases.
+func TestMCPGetEvent(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create a test event first
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	ingestService := eventsIngestService(t, repo, env)
+	eventInput := events.EventInput{
+		Name:      "Test Event for Get",
+		StartDate: "2026-12-15T18:00:00Z",
+		VirtualLocation: &events.VirtualLocationInput{
+			URL: "https://example.com/test-event",
+		},
+	}
+	result, err := ingestService.Ingest(ctx, eventInput)
+	require.NoError(t, err)
+	eventID := result.Event.ULID
+
+	t.Run("success", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_event",
+				Arguments: map[string]any{
+					"id": eventID,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.Equal(t, "Event", payload["@type"])
+		require.Equal(t, "Test Event for Get", payload["name"])
+	})
+
+	t.Run("missing_id_param", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name:      "get_event",
+				Arguments: map[string]any{},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "id parameter is required")
+	})
+
+	t.Run("invalid_ulid", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_event",
+				Arguments: map[string]any{
+					"id": "invalid-ulid",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "invalid ULID")
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_event",
+				Arguments: map[string]any{
+					"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "not found")
+	})
+}
+
+// TestMCPListPlaces tests the list_places tool.
+func TestMCPListPlaces(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create test places
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	placesService := places.NewService(repo.Places())
+	lat1, lon1 := 43.65, -79.38
+	_, err = placesService.Create(ctx, places.CreateParams{
+		Name:            "Test Venue",
+		AddressLocality: "Toronto",
+		Latitude:        &lat1,
+		Longitude:       &lon1,
+	})
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name:      "list_places",
+				Arguments: map[string]any{},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.Contains(t, payload, "items")
+		items := payload["items"].([]any)
+		require.Greater(t, len(items), 0)
+	})
+
+	t.Run("with_query", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "list_places",
+				Arguments: map[string]any{
+					"query": "Test Venue",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		items := payload["items"].([]any)
+		require.Greater(t, len(items), 0)
+	})
+
+	t.Run("with_limit", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "list_places",
+				Arguments: map[string]any{
+					"limit": 1,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		items := payload["items"].([]any)
+		require.LessOrEqual(t, len(items), 1)
+	})
+}
+
+// TestMCPGetPlace tests the get_place tool.
+func TestMCPGetPlace(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create a test place
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	placesService := places.NewService(repo.Places())
+	lat, lon := 43.65, -79.38
+	place, err := placesService.Create(ctx, places.CreateParams{
+		Name:            "Get Test Place",
+		AddressLocality: "Toronto",
+		Latitude:        &lat,
+		Longitude:       &lon,
+	})
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_place",
+				Arguments: map[string]any{
+					"id": place.ULID,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.Equal(t, "Place", payload["@type"])
+		require.Equal(t, "Get Test Place", payload["name"])
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_place",
+				Arguments: map[string]any{
+					"id": "01KGSV7H8ZDDGC0HRAE8SSDK4Z",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "not found")
+	})
+}
+
+// TestMCPCreatePlace tests the create_place tool.
+func TestMCPCreatePlace(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		placePayload := map[string]any{
+			"@type": "Place",
+			"name":  "New Test Venue",
+			"address": map[string]any{
+				"addressLocality": "Toronto",
+				"addressCountry":  "CA",
+			},
+			"geo": map[string]any{
+				"latitude":  43.65,
+				"longitude": -79.38,
+			},
+		}
+
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_place",
+				Arguments: map[string]any{
+					"place": placePayload,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.NotEmpty(t, payload["id"])
+		placeData := payload["place"].(map[string]any)
+		require.Equal(t, "New Test Venue", placeData["name"])
+	})
+
+	t.Run("missing_name", func(t *testing.T) {
+		placePayload := map[string]any{
+			"@type": "Place",
+			"address": map[string]any{
+				"addressLocality": "Toronto",
+			},
+		}
+
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_place",
+				Arguments: map[string]any{
+					"place": placePayload,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "name is required")
+	})
+}
+
+// TestMCPListOrganizations tests the list_organizations tool.
+func TestMCPListOrganizations(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create test organization
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	orgService := organizations.NewService(repo.Organizations())
+	_, err = orgService.Create(ctx, organizations.CreateParams{
+		Name:      "Test Org",
+		LegalName: "Test Organization Inc.",
+	})
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name:      "list_organizations",
+				Arguments: map[string]any{},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.Contains(t, payload, "items")
+		items := payload["items"].([]any)
+		require.Greater(t, len(items), 0)
+	})
+
+	t.Run("with_query", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "list_organizations",
+				Arguments: map[string]any{
+					"query": "Test Org",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		items := payload["items"].([]any)
+		require.Greater(t, len(items), 0)
+	})
+}
+
+// TestMCPGetOrganization tests the get_organization tool.
+func TestMCPGetOrganization(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create a test organization
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	orgService := organizations.NewService(repo.Organizations())
+	org, err := orgService.Create(ctx, organizations.CreateParams{
+		Name:      "Get Test Org",
+		LegalName: "Get Test Organization Ltd.",
+	})
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_organization",
+				Arguments: map[string]any{
+					"id": org.ULID,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.Equal(t, "Organization", payload["@type"])
+		require.Equal(t, "Get Test Org", payload["name"])
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_organization",
+				Arguments: map[string]any{
+					"id": "01KGSV7H8Z62JFXE9CGKX3WRAG",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "not found")
+	})
+}
+
+// TestMCPCreateOrganization tests the create_organization tool.
+func TestMCPCreateOrganization(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		orgPayload := map[string]any{
+			"@type":     "Organization",
+			"name":      "New Test Company",
+			"legalName": "New Test Company LLC",
+			"url":       "https://example.com",
+		}
+
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_organization",
+				Arguments: map[string]any{
+					"organization": orgPayload,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.NotEmpty(t, payload["id"])
+		orgData := payload["organization"].(map[string]any)
+		require.Equal(t, "New Test Company", orgData["name"])
+	})
+
+	t.Run("missing_name", func(t *testing.T) {
+		orgPayload := map[string]any{
+			"@type": "Organization",
+			"url":   "https://example.com",
+		}
+
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_organization",
+				Arguments: map[string]any{
+					"organization": orgPayload,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "name is required")
+	})
+}
+
+// TestMCPSearch tests the cross-entity search tool.
+func TestMCPSearch(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create test data
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	ingestService := eventsIngestService(t, repo, env)
+	_, err = ingestService.Ingest(ctx, events.EventInput{
+		Name:      "Music Festival",
+		StartDate: "2026-06-01T12:00:00Z",
+		VirtualLocation: &events.VirtualLocationInput{
+			URL: "https://example.com/music-festival",
+		},
+	})
+	require.NoError(t, err)
+
+	placesService := places.NewService(repo.Places())
+	lat, lon := 43.65, -79.38
+	_, err = placesService.Create(ctx, places.CreateParams{
+		Name:            "Music Hall",
+		AddressLocality: "Toronto",
+		Latitude:        &lat,
+		Longitude:       &lon,
+	})
+	require.NoError(t, err)
+
+	orgService := organizations.NewService(repo.Organizations())
+	_, err = orgService.Create(ctx, organizations.CreateParams{
+		Name: "Music Society",
+	})
+	require.NoError(t, err)
+
+	t.Run("success_all_types", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "search",
+				Arguments: map[string]any{
+					"query": "Music",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		require.Contains(t, payload, "items")
+		require.Contains(t, payload, "count")
+		items := payload["items"].([]any)
+		require.Greater(t, len(items), 0)
+	})
+
+	t.Run("success_specific_types", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "search",
+				Arguments: map[string]any{
+					"query": "Music",
+					"types": []string{"event", "place"},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		payload := decodeToolText(t, result)
+		items := payload["items"].([]any)
+		require.Greater(t, len(items), 0)
+	})
+
+	t.Run("missing_query", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name:      "search",
+				Arguments: map[string]any{},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "query parameter is required")
+	})
+
+	t.Run("invalid_types", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "search",
+				Arguments: map[string]any{
+					"query": "test",
+					"types": []string{"invalid_type"},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "unsupported type")
+	})
+}
+
+// setupMCPClient creates and initializes an MCP client for testing.
+func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
+	t.Helper()
+
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	eventsService := events.NewService(repo.Events())
+	ingestService := eventsIngestService(t, repo, env)
+	placesService := places.NewService(repo.Places())
+	orgService := organizations.NewService(repo.Organizations())
+
+	mcpServer := mcp.NewServer(
+		mcp.Config{
+			Name:      "Test MCP Server",
+			Version:   "test",
+			Transport: "inprocess",
+		},
+		eventsService,
+		ingestService,
+		placesService,
+		orgService,
+		env.Config.Server.BaseURL,
+	)
+
+	cli, err := client.NewInProcessClient(mcpServer.MCPServer())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = cli.Initialize(ctx, mcpTypes.InitializeRequest{
+		Params: mcpTypes.InitializeParams{
+			ProtocolVersion: "2024-11-05",
+			Capabilities:    mcpTypes.ClientCapabilities{},
+			ClientInfo: mcpTypes.Implementation{
+				Name:    "mcp-test-client",
+				Version: "1.0.0",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	return cli
+}
