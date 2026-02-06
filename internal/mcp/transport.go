@@ -8,6 +8,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/rs/zerolog/log"
 )
@@ -95,7 +98,7 @@ func LoadTransportConfig() (*TransportConfig, error) {
 // ServeStdio starts the MCP server using stdio transport.
 // This is the default transport, suitable for Claude Desktop and CLI tools.
 // The server reads requests from stdin and writes responses to stdout.
-func ServeStdio(ctx context.Context, mcpServer *server.MCPServer) error {
+func ServeStdio(ctx context.Context, mcpServer *server.MCPServer, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
 	log.Info().Msg("Starting MCP server with stdio transport")
 
 	// ServeStdio blocks until the server shuts down
@@ -109,7 +112,7 @@ func ServeStdio(ctx context.Context, mcpServer *server.MCPServer) error {
 // ServeSSE starts the MCP server using Server-Sent Events transport.
 // This transport is suitable for web applications and browser-based clients.
 // The server listens on the configured host and port.
-func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig) error {
+func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	log.Info().
 		Str("transport", "sse").
@@ -117,11 +120,12 @@ func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportCo
 		Msg("Starting MCP server with SSE transport")
 
 	sseServer := server.NewSSEServer(mcpServer)
+	wrapped := wrapMCPHandler(sseServer, authStore, rateLimitCfg)
 
 	// Create HTTP server with SSE handler
 	httpServer := &http.Server{
 		Addr:    addr,
-		Handler: sseServer,
+		Handler: wrapped,
 	}
 
 	// Start server in goroutine
@@ -151,7 +155,7 @@ func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportCo
 // ServeHTTP starts the MCP server using Streamable HTTP transport.
 // This is the production-grade transport, suitable for scalable web deployments.
 // The server listens on the configured host and port.
-func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig) error {
+func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	log.Info().
 		Str("transport", "http").
@@ -159,11 +163,12 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 		Msg("Starting MCP server with Streamable HTTP transport")
 
 	httpTransport := server.NewStreamableHTTPServer(mcpServer)
+	wrapped := wrapMCPHandler(httpTransport, authStore, rateLimitCfg)
 
 	// Create HTTP server with streamable HTTP handler
 	httpServer := &http.Server{
 		Addr:    addr,
-		Handler: httpTransport,
+		Handler: wrapped,
 	}
 
 	// Start server in goroutine
@@ -192,15 +197,32 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 
 // Serve starts the MCP server with the configured transport.
 // This is the main entry point for serving MCP requests.
-func Serve(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig) error {
+func Serve(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
 	switch cfg.Type {
 	case TransportStdio:
-		return ServeStdio(ctx, mcpServer)
+		return ServeStdio(ctx, mcpServer, authStore, rateLimitCfg)
 	case TransportSSE:
-		return ServeSSE(ctx, mcpServer, cfg)
+		return ServeSSE(ctx, mcpServer, cfg, authStore, rateLimitCfg)
 	case TransportHTTP:
-		return ServeHTTP(ctx, mcpServer, cfg)
+		return ServeHTTP(ctx, mcpServer, cfg, authStore, rateLimitCfg)
 	default:
 		return fmt.Errorf("unsupported transport type: %s", cfg.Type)
 	}
+}
+
+func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) http.Handler {
+	if handler == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+	}
+
+	wrapped := handler
+	if authStore != nil {
+		wrapped = middleware.AgentAuth(authStore)(wrapped)
+	}
+
+	wrapped = middleware.WithRateLimitTierHandler(middleware.TierAgent)(wrapped)
+	wrapped = middleware.RateLimit(rateLimitCfg)(wrapped)
+	return wrapped
 }

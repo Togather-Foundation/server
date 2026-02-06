@@ -108,7 +108,7 @@ func run() error {
 	// Start server in goroutine
 	serverErr := make(chan error, 1)
 	go func() {
-		if err := mcp.Serve(ctx, mcpServer.MCPServer(), cfg.Transport); err != nil {
+		if err := mcp.Serve(ctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit); err != nil {
 			serverErr <- err
 		}
 		close(serverErr)
