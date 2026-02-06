@@ -17,6 +17,9 @@ func TestParseFiltersDefaults(t *testing.T) {
 	require.Empty(t, pagination.After)
 	require.Empty(t, filters.City)
 	require.Empty(t, filters.Query)
+	require.Nil(t, filters.NearLat)
+	require.Nil(t, filters.NearLon)
+	require.Equal(t, 0.0, filters.RadiusMeters)
 }
 
 func TestParseFiltersTrimsFields(t *testing.T) {
@@ -31,6 +34,29 @@ func TestParseFiltersTrimsFields(t *testing.T) {
 	require.Equal(t, "Austin", filters.City)
 	require.Equal(t, "live music", filters.Query)
 	require.Equal(t, "cursor", pagination.After)
+}
+
+func TestParseFiltersGeoInvalid(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near", "near_lat, near_lon, and radius are required together")
+}
+
+func TestParseFiltersGeoSuccess(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+	values.Set("radius", "5000")
+
+	filters, _, err := ParseFilters(values)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.NearLat)
+	require.NotNil(t, filters.NearLon)
+	require.Equal(t, 5000.0, filters.RadiusMeters)
 }
 
 func TestParseFiltersLimitValidation(t *testing.T) {
