@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/auth"
@@ -38,6 +39,14 @@ const (
 
 	// DefaultPort is used when PORT is not set for HTTP/SSE transports.
 	DefaultPort = 8080
+
+	// GracefulShutdownTimeout is the maximum time to wait for graceful shutdown.
+	// Allows in-flight requests to complete before forcing shutdown.
+	GracefulShutdownTimeout = 30 * time.Second
+
+	// ForceShutdownTimeout is the additional time to wait before giving up.
+	// After this timeout, the server will forcefully close connections.
+	ForceShutdownTimeout = 5 * time.Second
 )
 
 // TransportConfig holds configuration for MCP transport selection.
@@ -159,9 +168,13 @@ func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportCo
 	select {
 	case <-ctx.Done():
 		log.Info().Msg("Shutting down SSE server")
-		if err := httpServer.Shutdown(context.Background()); err != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), GracefulShutdownTimeout)
+		defer shutdownCancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("error during graceful shutdown of SSE server")
 			return fmt.Errorf("SSE server shutdown error: %w", err)
 		}
+		log.Info().Msg("SSE server shutdown complete")
 		return nil
 	case err := <-errCh:
 		return err
@@ -205,9 +218,13 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 	select {
 	case <-ctx.Done():
 		log.Info().Msg("Shutting down HTTP server")
-		if err := httpServer.Shutdown(context.Background()); err != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), GracefulShutdownTimeout)
+		defer shutdownCancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("error during graceful shutdown of HTTP server")
 			return fmt.Errorf("HTTP server shutdown error: %w", err)
 		}
+		log.Info().Msg("HTTP server shutdown complete")
 		return nil
 	case err := <-errCh:
 		return err
