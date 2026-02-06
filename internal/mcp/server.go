@@ -13,8 +13,27 @@ import (
 )
 
 // Server wraps the MCP server with Togather domain services.
-// It provides access to events, places, and organizations through
-// MCP tools, resources, and prompts.
+//
+// Server provides access to events, places, and organizations through
+// MCP tools, resources, and prompts. It integrates with Togather's domain
+// layer and exposes SEL data through the Model Context Protocol.
+//
+// The server is created with NewServer and exposes three capability types:
+//
+//   - Tools: Operations like list_events, create_place, search
+//   - Resources: JSON-LD contexts, OpenAPI schemas, server metadata
+//   - Prompts: Contextual assistance for SEL workflows
+//
+// Use MCPServer() to obtain the underlying MCP server for transport handlers.
+// The server supports graceful shutdown via Shutdown(ctx).
+//
+// Example:
+//
+//	srv := mcp.NewServer(cfg, eventsService, ingestService, placesService, orgService, baseURL)
+//	defer srv.Shutdown(context.Background())
+//
+//	// Serve with configured transport
+//	err := mcp.Serve(ctx, srv.MCPServer(), transportCfg, authStore, rateLimitCfg)
 type Server struct {
 	mcp           *mcpserver.MCPServer
 	eventsService *events.Service
@@ -25,13 +44,43 @@ type Server struct {
 	name          string
 	version       string
 	transport     string
+	contextDir    string // Directory containing JSON-LD context files
+	openAPIPath   string // Path to OpenAPI specification YAML file
 }
 
 // Config holds configuration for the MCP server.
+//
+// Config specifies the server name, version, and transport type used for
+// server identification and resource generation. The Name and Version appear
+// in server metadata resources, while Transport is stored for informational
+// purposes (actual transport selection happens via LoadTransportConfig).
+//
+// Example:
+//
+//	cfg := mcp.Config{
+//	    Name:        "Togather MCP Server",
+//	    Version:     "1.0.0",
+//	    Transport:   "stdio", // or "sse", "http"
+//	    ContextDir:  "contexts",
+//	    OpenAPIPath: "specs/001-sel-backend/contracts/openapi.yaml",
+//	}
 type Config struct {
-	Name      string
-	Version   string
+	// Name is the human-readable server name (e.g., "Togather MCP Server").
+	Name string
+
+	// Version is the semantic version of the server (e.g., "1.0.0").
+	Version string
+
+	// Transport indicates the transport type ("stdio", "sse", "http").
+	// This is informational; actual transport selection uses LoadTransportConfig.
 	Transport string
+
+	// ContextDir is the directory containing JSON-LD context files (default: "contexts").
+	ContextDir string
+
+	// OpenAPIPath is the path to the OpenAPI specification YAML file
+	// (default: "specs/001-sel-backend/contracts/openapi.yaml").
+	OpenAPIPath string
 }
 
 // NewServer creates a new MCP server with the given services.
@@ -75,6 +124,8 @@ func NewServer(
 		name:          cfg.Name,
 		version:       cfg.Version,
 		transport:     cfg.Transport,
+		contextDir:    cfg.ContextDir,
+		openAPIPath:   cfg.OpenAPIPath,
 	}
 
 	// Register tools, resources, and prompts
