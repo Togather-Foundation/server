@@ -356,13 +356,25 @@
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const action = link.dataset.action;
+                
+                // Disable all pagination buttons during load
+                paginationLinks.forEach(l => l.classList.add('disabled'));
+                
+                // Show loading spinner in clicked button
+                setLoading(link, true);
+                
                 if (action === 'next') {
                     currentCursor = link.dataset.cursor;
-                    loadActivity();
                 } else if (action === 'prev') {
                     currentCursor = null;
-                    loadActivity();
                 }
+                
+                loadActivity().finally(() => {
+                    // Re-enable pagination buttons after load
+                    paginationLinks.forEach(l => l.classList.remove('disabled'));
+                    setLoading(link, false);
+                });
+                
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             });
         });

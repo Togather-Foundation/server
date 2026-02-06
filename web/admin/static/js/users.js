@@ -319,9 +319,9 @@
                 const action = link.dataset.action;
                 if (action === 'next') {
                     const cursor = link.dataset.cursor;
-                    goToNextPage(cursor);
+                    goToNextPage(cursor, link);
                 } else if (action === 'prev') {
-                    goToPreviousPage();
+                    goToPreviousPage(link);
                 }
             });
         });
@@ -345,19 +345,55 @@
     /**
      * Navigate to next page
      * @param {string} cursor - Next page cursor
+     * @param {HTMLElement} button - Clicked pagination button
      */
-    function goToNextPage(cursor) {
+    function goToNextPage(cursor, button) {
         currentCursor = cursor;
-        loadUsers();
+        
+        // Disable all pagination buttons during load
+        const paginationLinks = document.querySelectorAll('#pagination .page-link');
+        paginationLinks.forEach(link => link.classList.add('disabled'));
+        
+        // Show loading spinner in clicked button
+        if (button) {
+            setLoading(button, true);
+        }
+        
+        loadUsers().finally(() => {
+            // Re-enable pagination buttons after load
+            paginationLinks.forEach(link => link.classList.remove('disabled'));
+            if (button) {
+                setLoading(button, false);
+            }
+        });
+        
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     
     /**
      * Navigate to previous page (reset cursor)
+     * @param {HTMLElement} button - Clicked pagination button
      */
-    function goToPreviousPage() {
+    function goToPreviousPage(button) {
         currentCursor = null;
-        loadUsers();
+        
+        // Disable all pagination buttons during load
+        const paginationLinks = document.querySelectorAll('#pagination .page-link');
+        paginationLinks.forEach(link => link.classList.add('disabled'));
+        
+        // Show loading spinner in clicked button
+        if (button) {
+            setLoading(button, true);
+        }
+        
+        loadUsers().finally(() => {
+            // Re-enable pagination buttons after load
+            paginationLinks.forEach(link => link.classList.remove('disabled'));
+            if (button) {
+                setLoading(button, false);
+            }
+        });
+        
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     
