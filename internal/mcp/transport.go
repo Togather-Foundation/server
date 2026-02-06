@@ -226,3 +226,13 @@ func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitC
 	wrapped = middleware.RateLimit(rateLimitCfg)(wrapped)
 	return wrapped
 }
+
+// WrapHandler exposes the MCP middleware wrapper for embedding in existing routers.
+func WrapHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) http.Handler {
+	return wrapMCPHandler(handler, authStore, rateLimitCfg)
+}
+
+// NewStreamableHTTPHandler creates a streamable HTTP MCP handler for embedding.
+func NewStreamableHTTPHandler(mcpServer *server.MCPServer) http.Handler {
+	return server.NewStreamableHTTPServer(mcpServer)
+}
