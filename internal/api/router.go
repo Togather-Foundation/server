@@ -108,11 +108,16 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		SMTPPort:     cfg.Email.SMTPPort,
 		SMTPUser:     cfg.Email.SMTPUser,
 		SMTPPassword: cfg.Email.SMTPPassword,
+		TemplatesDir: cfg.Email.TemplatesDir,
 	}
 
-	// Find repo root for template directory
-	repoRoot := findRepoRoot()
-	templateDir := filepath.Join(repoRoot, "web/email/templates")
+	// Resolve template directory path (config may be relative, make it absolute if needed)
+	templateDir := cfg.Email.TemplatesDir
+	if !filepath.IsAbs(templateDir) {
+		// If relative path, resolve from repo root
+		repoRoot := findRepoRoot()
+		templateDir = filepath.Join(repoRoot, templateDir)
+	}
 
 	emailService, err := email.NewService(emailConfig, templateDir, logger)
 	if err != nil {
