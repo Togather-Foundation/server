@@ -295,14 +295,17 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 	wg.Wait()
 	close(errors)
 
-	// Check for errors
+	// Collect errors (some expected due to race conditions, but file should remain valid)
 	var errorList []error
 	for err := range errors {
 		errorList = append(errorList, err)
 	}
+	if len(errorList) > 0 {
+		t.Logf("Concurrent access produced %d errors (expected due to file-level races)", len(errorList))
+	}
 
-	// Some errors might occur due to race conditions, but SaveState uses atomic writes
-	// so corruption should not happen. Verify file is still valid JSON.
+	// SaveState uses atomic writes, so corruption should not happen despite races.
+	// Verify file is still valid JSON.
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		t.Fatalf("failed to read state file after concurrent access: %v", err)
