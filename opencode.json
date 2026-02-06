@@ -10,6 +10,15 @@
         "-y",
         "@upstash/context7-mcp@latest"
       ]
+    },
+    "togather": {
+      "type": "remote",
+      "enabled": true,
+      "url": "https://staging.toronto.togather.foundation/mcp",
+      "headers": {
+        "Authorization": "Bearer {env:TOGATHER_MCP_API_KEY}"
+      },
+      "oauth": false
     }
   }
 }

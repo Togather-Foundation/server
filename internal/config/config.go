@@ -18,13 +18,15 @@ type Config struct {
 	AdminBootstrap AdminBootstrapConfig
 	Jobs           JobsConfig
 	Logging        LoggingConfig
+	Email          EmailConfig
 	Environment    string
 }
 
 type ServerConfig struct {
-	Host    string
-	Port    int
-	BaseURL string
+	Host      string
+	Port      int
+	BaseURL   string
+	PublicURL string // Public-facing domain for invitation links (e.g., "toronto.togather.foundation")
 }
 
 type DatabaseConfig struct {
@@ -70,6 +72,17 @@ type CORSConfig struct {
 	AllowedOrigins  []string // Production mode: whitelist of allowed origins
 }
 
+// EmailConfig holds email service configuration for Gmail SMTP
+type EmailConfig struct {
+	Enabled      bool   // Enable/disable email sending (useful for dev/test)
+	From         string // From email address (e.g., "noreply@togather.foundation")
+	SMTPHost     string // SMTP server hostname (default: "smtp.gmail.com")
+	SMTPPort     int    // SMTP server port (default: 587 for TLS)
+	SMTPUser     string // SMTP username (Gmail address)
+	SMTPPassword string // Gmail App Password (NOT regular Gmail password - see https://support.google.com/accounts/answer/185833)
+	TemplatesDir string // Path to email templates directory (default: "web/email/templates")
+}
+
 func Load() (Config, error) {
 	// Try to load .env files if DATABASE_URL not already set
 	if os.Getenv("DATABASE_URL") == "" {
@@ -90,9 +103,10 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		Server: ServerConfig{
-			Host:    getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:    getEnvInt("SERVER_PORT", 8080),
-			BaseURL: getEnv("SERVER_BASE_URL", "http://localhost:8080"),
+			Host:      getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:      getEnvInt("SERVER_PORT", 8080),
+			BaseURL:   getEnv("SERVER_BASE_URL", "http://localhost:8080"),
+			PublicURL: getEnv("PUBLIC_URL", "localhost:8080"),
 		},
 		Database: DatabaseConfig{
 			URL:            getEnv("DATABASE_URL", ""),
@@ -125,6 +139,15 @@ func Load() (Config, error) {
 		Logging: LoggingConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
 			Format: getEnv("LOG_FORMAT", "json"),
+		},
+		Email: EmailConfig{
+			Enabled:      getEnvBool("EMAIL_ENABLED", false),
+			From:         getEnv("EMAIL_FROM", "noreply@togather.foundation"),
+			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
+			SMTPPort:     getEnvInt("SMTP_PORT", 587),
+			SMTPUser:     getEnv("SMTP_USER", ""),
+			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
@@ -198,6 +221,18 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}

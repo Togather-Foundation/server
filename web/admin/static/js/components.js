@@ -46,7 +46,7 @@ function setupThemeToggle() {
 }
 
 // Toast notifications
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', toastId = null) {
     const container = document.getElementById('toast-container');
     if (!container) {
         console.error('Toast container not found');
@@ -60,9 +60,33 @@ function showToast(message, type = 'success') {
         info: 'bg-info'
     };
     
+    // If toastId provided, try to update existing toast
+    if (toastId) {
+        const existingToast = container.querySelector(`[data-toast-id="${toastId}"]`);
+        if (existingToast) {
+            const bodyElement = existingToast.querySelector('.toast-body');
+            if (bodyElement) {
+                bodyElement.textContent = message;
+            }
+            // Update type/color
+            const headerElement = existingToast.querySelector('.toast-header .badge');
+            if (headerElement) {
+                headerElement.className = `badge ${colors[type]} me-2`;
+            }
+            const titleElement = existingToast.querySelector('.toast-header strong');
+            if (titleElement) {
+                titleElement.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            }
+            return toastId;
+        }
+    }
+    
     const toast = document.createElement('div');
     toast.className = 'toast show';
     toast.setAttribute('role', 'alert');
+    if (toastId) {
+        toast.setAttribute('data-toast-id', toastId);
+    }
     toast.innerHTML = `
         <div class="toast-header">
             <span class="badge ${colors[type]} me-2"></span>
@@ -74,11 +98,15 @@ function showToast(message, type = 'success') {
     
     container.appendChild(toast);
     
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-    }, 5000);
+    // Auto-remove after 5 seconds (unless it's a retry toast)
+    if (!toastId) {
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 5000);
+    }
+    
+    return toastId;
 }
 
 // Confirmation modal
@@ -211,6 +239,37 @@ function renderEmptyState(tbody, message, colSpan) {
             </td>
         </tr>
     `;
+}
+
+/**
+ * Get badge color for user status
+ * @param {string} status - User status
+ * @returns {string} Bootstrap color class
+ */
+function getStatusColor(status) {
+    const normalized = status?.toLowerCase() || 'unknown';
+    const colors = {
+        'active': 'success',
+        'inactive': 'secondary',
+        'pending': 'warning',
+        'unknown': 'secondary'
+    };
+    return colors[normalized] || 'secondary';
+}
+
+/**
+ * Get badge color for user role
+ * @param {string} role - User role
+ * @returns {string} Bootstrap color class
+ */
+function getRoleColor(role) {
+    const normalized = role?.toLowerCase() || 'viewer';
+    const colors = {
+        'admin': 'danger',
+        'editor': 'info',
+        'viewer': 'secondary'
+    };
+    return colors[normalized] || 'secondary';
 }
 
 // Auto-setup on page load

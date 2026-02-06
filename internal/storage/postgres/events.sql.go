@@ -65,6 +65,7 @@ func (q *Queries) CreateEventTombstone(ctx context.Context, arg CreateEventTombs
 }
 
 const getEventByULID = `-- name: GetEventByULID :many
+
 SELECT e.id,
        e.ulid,
        e.name,
@@ -110,6 +111,7 @@ type GetEventByULIDRow struct {
 	VirtualUrl     pgtype.Text        `json:"virtual_url"`
 }
 
+// SQLc queries for events domain.
 func (q *Queries) GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error) {
 	rows, err := q.db.Query(ctx, getEventByULID, ulid)
 	if err != nil {

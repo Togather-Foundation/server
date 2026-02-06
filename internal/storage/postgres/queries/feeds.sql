@@ -22,11 +22,11 @@ SELECT ec.id,
       FROM event_sources
      GROUP BY event_id
   ) es ON es.event_id = ec.event_id
- WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
-   AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
-   AND ($3 = '' OR ec.action = $3)
+ WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
+   AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
+   AND (sqlc.narg('action')::text = '' OR ec.action = sqlc.narg('action')::text)
  ORDER BY ec.sequence_number ASC
- LIMIT $4;
+ LIMIT sqlc.arg('limit');
 
 -- name: GetEventChangeByID :one
 SELECT ec.id,
@@ -69,9 +69,9 @@ SELECT et.id,
        et.superseded_by_uri,
        et.payload
   FROM event_tombstones et
- WHERE ($1::timestamptz IS NULL OR et.deleted_at >= $1::timestamptz)
+ WHERE (sqlc.narg('after_timestamp')::timestamptz IS NULL OR et.deleted_at >= sqlc.narg('after_timestamp')::timestamptz)
  ORDER BY et.deleted_at ASC
- LIMIT $2;
+ LIMIT sqlc.arg('limit');
 
 -- name: GetEventTombstoneByURI :one
 SELECT et.id,

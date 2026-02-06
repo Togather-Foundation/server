@@ -22,16 +22,22 @@ func NewChangeFeedRepository(queries *Queries) *ChangeFeedRepository {
 func (r *ChangeFeedRepository) ListEventChanges(ctx context.Context, arg federation.ListEventChangesParams) ([]federation.ListEventChangesRow, error) {
 	// Convert domain params to SQLc params
 	sqlcParams := ListEventChangesParams{
-		Column1: arg.AfterSequence,
-		Column2: arg.Since,
-		Limit:   arg.Limit,
+		Limit: arg.Limit,
 	}
 
-	// Set action filter - SQLc expects interface{} for Column3
+	// Set AfterSequence if provided (nullable parameter)
+	if arg.AfterSequence > 0 {
+		sqlcParams.AfterSequence.Int64 = arg.AfterSequence
+		sqlcParams.AfterSequence.Valid = true
+	}
+
+	// Set timestamp filter if provided
+	sqlcParams.AfterTimestamp = arg.Since
+
+	// Set action filter (nullable text - empty string means no filter)
 	if arg.Action != "" {
-		sqlcParams.Column3 = arg.Action
-	} else {
-		sqlcParams.Column3 = ""
+		sqlcParams.Action.String = arg.Action
+		sqlcParams.Action.Valid = true
 	}
 
 	// Execute query

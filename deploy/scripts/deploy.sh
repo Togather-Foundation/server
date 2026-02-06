@@ -1274,6 +1274,18 @@ deploy_to_slot() {
     fi
     
     log "SUCCESS" "Deployed to ${slot} slot"
+    
+    # Ensure monitoring services are running (grafana, prometheus)
+    # These are in the 'monitoring' profile and won't start unless explicitly requested
+    log "INFO" "Ensuring monitoring services are available..."
+    if ${COMPOSE_CMD} -f "${compose_file}" --profile monitoring up -d grafana prometheus 2>/dev/null; then
+        log "SUCCESS" "Monitoring services started (Grafana, Prometheus)"
+    else
+        log "WARN" "Failed to start monitoring services (non-fatal)"
+        log "WARN" "Monitoring may not be available in admin UI"
+        log "WARN" "To start manually: cd ${DOCKER_DIR} && docker compose --profile monitoring up -d"
+    fi
+    
     return 0
 }
 
@@ -1340,8 +1352,8 @@ switch_traffic() {
         return 0  # Non-fatal
     fi
     
-    # Determine current active port
-    local current_port=$(grep -oP 'reverse_proxy\s+localhost:\K\d+' "${caddyfile}" | head -1)
+    # Determine current active port (from blue-green managed section only)
+    local current_port=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'reverse_proxy\s+localhost:\K\d+' | head -1)
     log "INFO" "Current active port: ${current_port}"
     log "INFO" "Target port: ${target_port}"
     
@@ -1351,15 +1363,22 @@ switch_traffic() {
         return 0
     fi
     
+    # Verify markers exist before attempting replacement
+    if ! grep -q "# BLUE_GREEN_SLOT_START" "${caddyfile}" || ! grep -q "# BLUE_GREEN_SLOT_END" "${caddyfile}"; then
+        log "ERROR" "Caddyfile missing BLUE_GREEN_SLOT markers - cannot update automatically"
+        log "ERROR" "Please add markers around the main reverse_proxy block"
+        return 1
+    fi
+    
     # Create backup of Caddyfile
     local backup_file="${caddyfile}.backup.$(date +%Y%m%d_%H%M%S)"
     sudo cp "${caddyfile}" "${backup_file}"
     log "INFO" "Created Caddyfile backup: ${backup_file}"
     
-    # Update Caddyfile with new port and slot name
+    # Update Caddyfile with new port and slot name (only within marked section)
     log "INFO" "Updating Caddyfile to point to localhost:${target_port} (${target_slot})"
-    sudo sed -i "s/reverse_proxy localhost:[0-9]\\+/reverse_proxy localhost:${target_port}/" "${caddyfile}"
-    sudo sed -i "s/header_down X-Togather-Slot \"[^\"]*\"/header_down X-Togather-Slot \"${target_slot}\"/" "${caddyfile}"
+    sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/reverse_proxy localhost:[0-9]\+/reverse_proxy localhost:'"${target_port}"'/' "${caddyfile}"
+    sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/header_down X-Togather-Slot "[^"]*"/header_down X-Togather-Slot "'"${target_slot}"'"/' "${caddyfile}"
     
     # Validate Caddyfile syntax
     if ! sudo caddy validate --config "${caddyfile}" &> /dev/null; then
@@ -1790,17 +1809,24 @@ Arguments:
 Options:
   --remote USER@HOST  Deploy to remote server via SSH
   --version COMMIT    Deploy specific git commit/tag (default: current HEAD)
+  --branch BRANCH     Deploy latest commit from specified branch (resolves to commit hash)
   --dry-run           Validate configuration without deploying
   --skip-migrations   Skip database migration execution (use with caution)
   --force             Force deployment even if lock exists or validations fail
   --help              Show this help message
 
 Examples:
-  # Deploy current commit to production (local)
-  ./deploy/scripts/deploy.sh production
+  # Deploy current HEAD commit (RECOMMENDED for feature branches)
+  ./deploy/scripts/deploy.sh staging --version HEAD
 
-  # Deploy to remote staging server
-  ./deploy/scripts/deploy.sh staging --remote deploy@staging.example.com
+  # Deploy current commit to production (local)
+  ./deploy/scripts/deploy.sh production --version $(git rev-parse HEAD)
+
+  # Deploy latest commit from feature branch
+  ./deploy/scripts/deploy.sh staging --branch feature/user-administration
+
+  # Deploy to remote staging server with current HEAD
+  ./deploy/scripts/deploy.sh staging --remote deploy@staging.example.com --version HEAD
 
   # Deploy specific version to remote production
   ./deploy/scripts/deploy.sh production --remote deploy@prod.example.com --version v1.2.3
@@ -1820,6 +1846,7 @@ main() {
     local environment=""
     local remote_host=""
     local target_version=""
+    local target_branch=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1854,6 +1881,14 @@ main() {
                 target_version="$2"
                 shift 2
                 ;;
+            --branch)
+                if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+                    echo "ERROR: --branch requires branch name argument" >&2
+                    exit 1
+                fi
+                target_branch="$2"
+                shift 2
+                ;;
             --help)
                 usage
                 exit 0
@@ -1877,6 +1912,24 @@ main() {
         echo "" >&2
         usage
         exit 1
+    fi
+    
+    # Check for conflicting options
+    if [[ -n "$target_version" && -n "$target_branch" ]]; then
+        echo "ERROR: Cannot specify both --version and --branch" >&2
+        exit 1
+    fi
+    
+    # Resolve branch to commit hash if --branch specified
+    if [[ -n "$target_branch" ]]; then
+        echo "→ Resolving branch '${target_branch}' to commit hash"
+        target_version=$(git rev-parse "origin/${target_branch}" 2>/dev/null || git rev-parse "${target_branch}" 2>/dev/null)
+        if [[ -z "$target_version" ]]; then
+            echo "ERROR: Cannot resolve branch: ${target_branch}" >&2
+            echo "Make sure the branch exists locally or on origin" >&2
+            exit 1
+        fi
+        echo "  Branch '${target_branch}' resolved to: ${target_version}"
     fi
     
     # Validate environment value

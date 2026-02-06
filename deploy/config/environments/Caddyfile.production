@@ -31,6 +31,7 @@ toronto.togather.foundation {
 	}
 	respond @metrics_block "Forbidden" 403
 
+	# BLUE_GREEN_SLOT_START - Managed by deployment script (do not remove this marker)
 	# Reverse proxy to active slot
 	# Current: Blue slot (port 8081)
 	# To switch to green: Change to localhost:8082
@@ -51,6 +52,7 @@ toronto.togather.foundation {
 		# Update this when switching slots: "blue" or "green"
 		header_down X-Togather-Slot "blue"
 	}
+	# BLUE_GREEN_SLOT_END - Managed by deployment script (do not remove this marker)
 	
 	# Compression
 	encode gzip

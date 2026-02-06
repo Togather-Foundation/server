@@ -38,7 +38,7 @@ services:
   app:
     deploy:
       replicas: 0
-  
+
   # ============================================================================
   # Blue Slot - First Application Instance
   # ============================================================================
@@ -48,16 +48,16 @@ services:
     extends:
       file: docker-compose.yml
       service: app
-    
+
     # Override container name for blue slot
     container_name: togather-server-blue
-    
+
     # Override port mapping to avoid conflicts
     # Blue slot exposed on host port 8081
     # NOTE: This completely replaces the ports from base service
     ports:
       - "8081:8080"
-    
+
     # Add slot identifier to environment
     environment:
       # All environment variables from base app service are inherited
@@ -67,20 +67,20 @@ services:
       SERVER_PORT: "8080"
       # Force database connection to use Docker network hostname
       DATABASE_URL: "postgresql://togather:${POSTGRES_PASSWORD}@togather-db:5432/togather?sslmode=disable"
-      
+
       # Override container name in logs
       CONTAINER_NAME: togather-server-blue
-      
+
       # Mark this slot as active (set to "true" for active, "false" for inactive)
       # Change this when switching active slots during deployment
       ACTIVE_SLOT: "${BLUE_ACTIVE_SLOT:-true}"
-    
+
     # Blue and green share the same database
     # Database is NOT duplicated - schema is forward-compatible during deployment
     depends_on:
       togather-db:
         condition: service_healthy
-    
+
     # Explicitly declare network connection
     # Docker Compose extends doesn't always inherit network configuration
     networks:
@@ -90,7 +90,7 @@ services:
     labels:
       com.togather.deployment.slot: blue
       com.togather.deployment.strategy: blue-green
-    
+
     # Health check inherited from base app service
     # Deployment script will use this to verify blue slot is ready
 
@@ -102,16 +102,16 @@ services:
     extends:
       file: docker-compose.yml
       service: app
-    
+
     # Override container name for green slot
     container_name: togather-server-green
-    
+
     # Override port mapping to avoid conflicts
     # Green slot exposed on host port 8082
     # NOTE: This completely replaces the ports from base service
     ports:
       - "8082:8080"
-    
+
     # Add slot identifier to environment
     environment:
       # All environment variables from base app service are inherited
@@ -121,19 +121,19 @@ services:
       SERVER_PORT: "8080"
       # Force database connection to use Docker network hostname
       DATABASE_URL: "postgresql://togather:${POSTGRES_PASSWORD}@togather-db:5432/togather?sslmode=disable"
-      
+
       # Override container name in logs
       CONTAINER_NAME: togather-server-green
-      
+
       # Mark this slot as active (set to "true" for active, "false" for inactive)
       # Change this when switching active slots during deployment
       ACTIVE_SLOT: "${GREEN_ACTIVE_SLOT:-false}"
-    
+
     # Blue and green share the same database
     depends_on:
       togather-db:
         condition: service_healthy
-    
+
     # Explicitly declare network connection
     # Docker Compose extends doesn't always inherit network configuration
     networks:
@@ -143,7 +143,7 @@ services:
     labels:
       com.togather.deployment.slot: green
       com.togather.deployment.strategy: blue-green
-    
+
     # Health check inherited from base app service
 
   # ============================================================================
@@ -179,16 +179,16 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: togather-proxy
-    
+
     # Public-facing port
     # All client traffic comes through this port
     ports:
       - "${PROXY_PORT:-80}:80"
-    
+
     # Network connectivity
     networks:
       - togather-net
-    
+
     # Mount Caddy configuration
     # Configuration file specifies which slot receives traffic
     volumes:
@@ -198,7 +198,7 @@ services:
       # Caddy data directory for certificates and state
       - caddy-data:/data
       - caddy-config:/config
-    
+
     # Proxy depends on both slots being available
     # This ensures slots are running before proxy starts
     depends_on:
@@ -206,7 +206,7 @@ services:
         condition: service_healthy
       togather-green:
         condition: service_healthy
-    
+
     # Health check for proxy itself
     healthcheck:
       # Check that Caddy is responding and can reach upstream
@@ -215,15 +215,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    
+
     # Restart policy
     restart: unless-stopped
-    
+
     # Labels for management
     labels:
       com.togather.deployment.role: proxy
       com.togather.deployment.strategy: blue-green
-    
+
     # Resource limits (proxy is lightweight)
     deploy:
       resources:
@@ -237,16 +237,16 @@ services:
   # ============================================================================
   # Monitoring Services (Optional - controlled by ENABLE_MONITORING env var)
   # ============================================================================
-  
+
   # Prometheus - Metrics Collection and Storage
   prometheus:
     image: prom/prometheus:v3.5.1
     container_name: togather-prometheus
-    
+
     # Only start if monitoring is enabled
     profiles:
       - monitoring
-    
+
     # Command-line arguments
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -256,22 +256,22 @@ services:
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
-    
+
     # Ports (9090 internal only, can be exposed for debugging)
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
-    
+
     # Networks
     networks:
       - togather-net
-    
+
     # Mount configuration and data volumes
     volumes:
       # Prometheus configuration
       - ../config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       # Persistent metrics storage
       - prometheus-data:/prometheus
-    
+
     # Health check
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1"]
@@ -279,15 +279,15 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    
+
     # Restart policy
     restart: unless-stopped
-    
+
     # Labels
     labels:
       com.togather.service: monitoring
       com.togather.component: prometheus
-    
+
     # Resource limits
     deploy:
       resources:
@@ -297,44 +297,65 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-  
+
   # Grafana - Metrics Visualization and Dashboards
   grafana:
     image: grafana/grafana:12.3.2
     container_name: togather-grafana
-    
+
     # Only start if monitoring is enabled
     profiles:
       - monitoring
-    
+
     # Ports (3000 exposed for web UI access)
+    # SECURITY: Bind to localhost only by default to prevent external access
+    # For external access, set GRAFANA_PORT=3000 (without 127.0.0.1 prefix)
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
-    
+      - "${GRAFANA_PORT:-127.0.0.1:3000}:3000"
+
     # Networks
     networks:
       - togather-net
-    
+
     # Environment variables
     environment:
       # Admin credentials
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      
+
       # Server settings
+      # For subpath deployment (/grafana), set ROOT_URL to include the subpath
+      # and enable SERVE_FROM_SUB_PATH to handle URL rewriting correctly
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
-      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
-      
-      # Anonymous access (disabled by default)
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GRAFANA_SERVE_FROM_SUB_PATH:-false}
+
+      # Anonymous access (SECURITY: disabled by default)
+      # Only enable if Grafana is localhost-only or you implement JWT auth
+      # See docs/deploy/grafana-security.md for security implications
       GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
-      
+      GF_AUTH_ANONYMOUS_ORG_NAME: ${GRAFANA_ANONYMOUS_ORG_NAME:-Main Org.}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: ${GRAFANA_ANONYMOUS_ORG_ROLE:-Viewer}
+
+      # Allow iframe embedding (required for embedding in admin UI)
+      # Safe to enable as long as anonymous access is disabled
+      GF_SECURITY_ALLOW_EMBEDDING: ${GRAFANA_ALLOW_EMBEDDING:-true}
+
+      # JWT Authentication (SECURITY: recommended for embedded dashboards)
+      # Requires backend JWT generation - see docs/deploy/grafana-security.md
+      GF_AUTH_JWT_ENABLED: ${GRAFANA_JWT_ENABLED:-false}
+      GF_AUTH_JWT_HEADER_NAME: ${GRAFANA_JWT_HEADER_NAME:-X-JWT-Assertion}
+      GF_AUTH_JWT_URL_LOGIN: ${GRAFANA_JWT_URL_LOGIN:-false}
+      GF_AUTH_JWT_USERNAME_CLAIM: ${GRAFANA_JWT_USERNAME_CLAIM:-sub}
+      GF_AUTH_JWT_EMAIL_CLAIM: ${GRAFANA_JWT_EMAIL_CLAIM:-email}
+      GF_AUTH_JWT_AUTO_SIGN_UP: ${GRAFANA_JWT_AUTO_SIGN_UP:-true}
+
       # Datasource provisioning
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
-      
+
       # Disable telemetry
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-    
+
     # Mount configuration and data volumes
     volumes:
       # Datasource provisioning
@@ -343,12 +364,12 @@ services:
       - ../config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       # Persistent Grafana data (users, settings, etc.)
       - grafana-data:/var/lib/grafana
-    
+
     # Depends on Prometheus being available
     depends_on:
       prometheus:
         condition: service_healthy
-    
+
     # Health check
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
@@ -356,15 +377,15 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    
+
     # Restart policy
     restart: unless-stopped
-    
+
     # Labels
     labels:
       com.togather.service: monitoring
       com.togather.component: grafana
-    
+
     # Resource limits
     deploy:
       resources:
@@ -386,21 +407,21 @@ volumes:
     labels:
       com.togather.service: proxy
       com.togather.component: caddy
-  
+
   # Caddy config directory
   caddy-config:
     driver: local
     labels:
       com.togather.service: proxy
       com.togather.component: caddy
-  
+
   # Prometheus persistent storage for metrics
   prometheus-data:
     driver: local
     labels:
       com.togather.service: monitoring
       com.togather.component: prometheus
-  
+
   # Grafana persistent storage for dashboards and settings
   grafana-data:
     driver: local

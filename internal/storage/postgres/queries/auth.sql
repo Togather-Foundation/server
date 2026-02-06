@@ -71,3 +71,61 @@ ORDER BY created_at DESC;
 UPDATE api_keys
 SET is_active = false
 WHERE id = $1;
+
+-- User Invitation Queries
+
+-- name: CreateUserInvitation :one
+INSERT INTO user_invitations (user_id, token_hash, email, expires_at, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, token_hash, email, expires_at, created_at;
+
+-- name: GetUserInvitationByTokenHash :one
+SELECT id, user_id, token_hash, email, expires_at, accepted_at, created_by, created_at
+FROM user_invitations
+WHERE token_hash = $1 AND expires_at > now() AND accepted_at IS NULL
+LIMIT 1;
+
+-- name: MarkInvitationAccepted :exec
+UPDATE user_invitations
+SET accepted_at = now()
+WHERE id = $1;
+
+-- name: ListPendingInvitationsForUser :many
+SELECT id, token_hash, email, expires_at, created_at
+FROM user_invitations
+WHERE user_id = $1 AND accepted_at IS NULL AND expires_at > now()
+ORDER BY created_at DESC;
+
+-- User Management Queries
+
+-- name: DeactivateUser :exec
+UPDATE users
+SET is_active = false
+WHERE id = $1;
+
+-- name: ActivateUser :exec
+UPDATE users
+SET is_active = true
+WHERE id = $1;
+
+-- name: DeleteUser :exec
+UPDATE users
+SET deleted_at = now()
+WHERE id = $1;
+
+-- name: ListUsersWithFilters :many
+SELECT id, username, email, role, is_active, created_at, last_login_at
+FROM users
+WHERE 
+  (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active')) AND
+  (sqlc.narg('role')::text IS NULL OR role = sqlc.narg('role')) AND
+  deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountUsers :one
+SELECT COUNT(*) FROM users
+WHERE 
+  (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active')) AND
+  (sqlc.narg('role')::text IS NULL OR role = sqlc.narg('role')) AND
+  deleted_at IS NULL;

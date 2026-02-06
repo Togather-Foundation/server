@@ -1,0 +1,54 @@
+<!-- User Create/Edit Modal -->
+<div class="modal modal-blur fade" id="user-modal" tabindex="-1" style="display: none;">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="user-modal-title">Create User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="user-form" novalidate>
+                    <input type="hidden" id="user-id" name="id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label required">Username</label>
+                        <input type="text" class="form-control" id="user-username" name="username" placeholder="johndoe123" required pattern="[a-zA-Z0-9]+" minlength="3" maxlength="50" title="Username must contain only letters and numbers (3-50 characters)">
+                        <div class="invalid-feedback" id="username-error"></div>
+                        <small class="form-hint">Letters and numbers only (3-50 characters)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label required">Email</label>
+                        <input type="email" class="form-control" id="user-email" name="email" placeholder="john.doe@example.com" required>
+                        <div class="invalid-feedback" id="email-error"></div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label required">Role</label>
+                        <select class="form-select" id="user-role" name="role" required>
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <small class="form-hint">
+                            <strong>Viewer:</strong> Read-only access<br>
+                            <strong>Editor:</strong> Can create and edit content<br>
+                            <strong>Admin:</strong> Full system access
+                        </small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="user-submit-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Create User
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

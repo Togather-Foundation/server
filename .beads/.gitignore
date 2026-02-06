@@ -36,12 +36,12 @@ beads.right.meta.json
 # These files are machine-specific and should not be shared across clones
 .sync.lock
 sync_base.jsonl
-
-# export state (local-only, per-machine)
 export-state/
 
-# Deamon logs
-daemon*.log.gz
+# Process semaphore slot files (runtime concurrency limiting)
+sem/
+
+daemon-*.log.gz
 
 # NOTE: Do NOT add negation patterns (e.g., !issues.jsonl) here.
 # They would override fork protection in .git/info/exclude, allowing

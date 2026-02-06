@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Activity - SEL Admin</title>
+    {{ template "_head_meta.html" . }}
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
+</head>
+<body>
+    {{ template "_header.html" . }}
+    
+    <!-- Inject user ID from template data for JavaScript to use -->
+    <script>
+        // User ID injected from server-side template to avoid parsing URL in JS
+        window.USER_ID = '{{ .UserID }}';
+    </script>
+    
+    <!-- Page Content -->
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page Header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <div class="page-pretitle">
+                                <a href="/admin/users" class="text-muted">← Back to Users</a>
+                            </div>
+                            <h2 class="page-title">User Activity</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Page Body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    <!-- User Info Card -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col-auto">
+                                    <span class="avatar avatar-lg" id="user-avatar">?</span>
+                                </div>
+                                <div class="col">
+                                    <div class="h3 mb-1" id="user-name">Loading...</div>
+                                    <div class="text-muted" id="user-email"></div>
+                                    <div class="mt-2">
+                                        <span class="badge me-1" id="user-role-badge"></span>
+                                        <span class="badge" id="user-status-badge"></span>
+                                    </div>
+                                </div>
+                                <div class="col-auto">
+                                    <div class="text-end">
+                                        <div class="text-muted">Last Login</div>
+                                        <div class="h4 mb-0" id="user-last-login">Never</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Activity Summary Stats -->
+                    <div class="row row-cards mb-3">
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="subheader">Total Logins</div>
+                                    <div class="h1 mb-0" id="stat-total-logins">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="subheader">Events Created</div>
+                                    <div class="h1 mb-0" id="stat-events-created">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="subheader">Events Edited</div>
+                                    <div class="h1 mb-0" id="stat-events-edited">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="subheader">Last 7 Days</div>
+                                    <div class="h1 mb-0" id="stat-recent-activity">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Activity Timeline -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Activity Timeline</h3>
+                            <div class="ms-auto">
+                                <button type="button" class="btn btn-sm" data-bs-toggle="collapse" data-bs-target="#filters-collapse" aria-expanded="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                        <path d="M5.5 5h13a1 1 0 0 1 .5 1.5l-5 5.5l0 7l-4 -3l0 -4l-5 -5.5a1 1 0 0 1 .5 -1.5"/>
+                                    </svg>
+                                    Filters
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Collapsible Filters -->
+                        <div class="collapse" id="filters-collapse">
+                            <div class="card-body border-bottom">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Event Type</label>
+                                        <select class="form-select" id="event-type-filter">
+                                            <option value="">All Events</option>
+                                            <option value="login">Login</option>
+                                            <option value="logout">Logout</option>
+                                            <option value="event.create">Event Created</option>
+                                            <option value="event.update">Event Updated</option>
+                                            <option value="event.delete">Event Deleted</option>
+                                            <option value="user.update">Profile Updated</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div class="col-md-3">
+                                        <label class="form-label">Date From</label>
+                                        <input type="date" class="form-control" id="date-from-filter">
+                                    </div>
+                                    
+                                    <div class="col-md-3">
+                                        <label class="form-label">Date To</label>
+                                        <input type="date" class="form-control" id="date-to-filter">
+                                    </div>
+                                    
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button type="button" class="btn btn-link" id="clear-filters">Clear</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Activity List -->
+                        <div class="list-group list-group-flush" id="activity-list">
+                            <!-- Populated via JavaScript -->
+                        </div>
+                        
+                        <!-- Pagination Footer -->
+                        <div class="card-footer d-flex align-items-center">
+                            <p class="m-0 text-muted">
+                                <span id="showing-text" role="status" aria-live="polite" aria-atomic="true">Loading...</span>
+                            </p>
+                            <ul class="pagination m-0 ms-auto" id="pagination">
+                                <!-- Pagination controls populated via JavaScript -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/user-activity.js"></script>
+</body>
+</html>

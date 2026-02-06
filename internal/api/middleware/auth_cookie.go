@@ -51,6 +51,11 @@ func contextWithAdminClaims(ctx context.Context, claims *auth.Claims) context.Co
 	return context.WithValue(ctx, adminClaimsKey, claims)
 }
 
+// ContextWithAdminClaims adds admin claims to a context (exported for testing)
+func ContextWithAdminClaims(ctx context.Context, claims *auth.Claims) context.Context {
+	return contextWithAdminClaims(ctx, claims)
+}
+
 func AdminClaims(r *http.Request) *auth.Claims {
 	if r == nil {
 		return nil

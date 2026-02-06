@@ -607,6 +607,58 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/healthz
    grep -rn "<script[^>]*>[^<]" web/admin/templates/
    ```
 
+### Admin Authentication for Local Testing
+
+**IMPORTANT: The admin credentials are in `.env`, NOT hardcoded!**
+
+```bash
+# Check .env file for current admin credentials
+grep "ADMIN_" .env
+
+# Typical output:
+# ADMIN_USERNAME=admin
+# ADMIN_PASSWORD=XXKokg60kd8hLXgq  # <-- Use THIS password, not "admin"!
+# ADMIN_EMAIL=ryan.kelln@gmail.com
+```
+
+**Common mistake:** Using `admin/admin` for testing will result in **401 Unauthorized** errors.
+
+**When writing Playwright tests:**
+
+```python
+# ✅ CORRECT: Read password from environment
+import os
+admin_password = os.getenv('ADMIN_PASSWORD', 'XXKokg60kd8hLXgq')
+page.fill('#password', admin_password)
+
+# ❌ WRONG: Hardcoded "admin" password
+page.fill('#password', 'admin')  # This will fail!
+```
+
+**Authentication Flow:**
+1. Login form submits to `/api/v1/admin/login`
+2. Server validates credentials and returns JWT token in response body
+3. Server also sets `auth_token` HttpOnly cookie for HTML page auth
+4. JavaScript stores token in `localStorage` for API calls
+5. HTML pages use cookie auth (via `AdminAuthCookie` middleware)
+6. API calls use Bearer token from localStorage (via `Authorization` header)
+
+**Debugging auth issues:**
+```python
+# Check if login succeeded
+response_status = page.evaluate('(await fetch("/api/v1/admin/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({username: "admin", password: "XXKokg60kd8hLXgq"})})).status')
+# Should be 200, not 401
+
+# Check cookies after login
+cookies = context.cookies()
+auth_cookie = [c for c in cookies if c['name'] == 'auth_token']
+# Should have auth_token cookie with httpOnly=True
+
+# Check localStorage
+storage = page.evaluate('() => ({ ...localStorage })')
+# Should have 'admin_token' key
+```
+
 ### Automated E2E Testing with Playwright
 
 **Run comprehensive E2E tests against the live admin UI:**
@@ -624,6 +676,7 @@ if ! lsof -ti:8080 > /dev/null 2>&1; then
 fi
 
 # Now run E2E tests (in another terminal or after backgrounding server)
+# The test automatically reads ADMIN_PASSWORD from .env
 uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
 ```
 
@@ -637,8 +690,9 @@ uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
 - CSP violations are detected
 - Screenshots saved to `/tmp/admin_*.png` for debugging
 
-**Custom test password:**
+**Override admin password for tests:**
 ```bash
+# Use custom password (if .env has different credentials)
 ADMIN_PASSWORD=mypassword uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
 ```
 

@@ -112,7 +112,7 @@ curl http://localhost:8080/api/v1/openapi.json
 
 ### Test-Driven Development (TDD)
 
-This project follows a strict TDD approach with 80%+ coverage target (unit + integration + E2E).
+This project follows a strict TDD approach with 50%+ coverage target (unit + integration + E2E).
 
 **TDD Cycle:**
 
@@ -398,7 +398,6 @@ Run `make coverage` to generate detailed coverage report:
 
 ```bash
 make coverage
-# Current coverage: ~79.4% (exceeds 80% target for unit tests)
 # Note: Integration tests excluded from coverage calculation
 ```
 

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Retry Logic Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .log { border: 1px solid #ccc; padding: 10px; margin: 10px 0; max-height: 400px; overflow-y: auto; }
+        .log-entry { padding: 5px; border-bottom: 1px solid #eee; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        button { padding: 10px 20px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>API Retry Logic Test</h1>
+    
+    <div>
+        <h2>Test Scenarios</h2>
+        <button onclick="testSuccessFirstAttempt()">✓ Success (1st attempt)</button>
+        <button onclick="testSuccessSecondAttempt()">✓ Success (2nd attempt)</button>
+        <button onclick="testSuccessThirdAttempt()">✓ Success (3rd attempt)</button>
+        <button onclick="testNetworkFailure()">✗ Network Failure (all attempts)</button>
+        <button onclick="testServerError()">✗ Server Error (500)</button>
+        <button onclick="testClientError()">✗ Client Error (400, no retry)</button>
+    </div>
+    
+    <h3>Log:</h3>
+    <div id="log" class="log"></div>
+    
+    <script>
+        // Minimal retry implementation for testing
+        const TestAPI = {
+            retryConfig: { maxAttempts: 3, delays: [1000, 2000] },
+            
+            async retryWithBackoff(fn, options = {}, onRetry = null) {
+                const maxAttempts = options.maxAttempts || this.retryConfig.maxAttempts;
+                const delays = options.delays || this.retryConfig.delays;
+                
+                let lastError;
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    try {
+                        log(`Attempt ${attempt}/${maxAttempts}...`, 'info');
+                        return await fn();
+                    } catch (error) {
+                        lastError = error;
+                        log(`Attempt ${attempt} failed: ${error.message}`, 'error');
+                        
+                        // Don't retry on client errors (4xx except 408, 429)
+                        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+                            log('Client error - not retrying', 'error');
+                            throw error;
+                        }
+                        
+                        if (attempt >= maxAttempts) {
+                            log('Max attempts reached', 'error');
+                            throw error;
+                        }
+                        
+                        const delayIndex = attempt - 1;
+                        const delay = delays[delayIndex] || delays[delays.length - 1];
+                        
+                        if (onRetry) {
+                            onRetry(attempt, maxAttempts, delay);
+                        }
+                        
+                        log(`Waiting ${delay}ms before retry...`, 'warning');
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+                
+                throw lastError;
+            }
+        };
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // Test scenarios
+        let attemptCount = 0;
+        
+        async function testSuccessFirstAttempt() {
+            clearLog();
+            log('=== Test: Success on 1st attempt ===', 'info');
+            attemptCount = 0;
+            
+            try {
+                await TestAPI.retryWithBackoff(
+                    async () => {
+                        attemptCount++;
+                        return { success: true };
+                    },
+                    {},
+                    (attempt, max, delay) => {
+                        log(`Retry callback: attempt ${attempt}/${max - 1}, delay ${delay}ms`, 'warning');
+                    }
+                );
+                log('✓ SUCCESS - Completed on first attempt', 'success');
+            } catch (err) {
+                log(`✗ FAILED: ${err.message}`, 'error');
+            }
+        }
+        
+        async function testSuccessSecondAttempt() {
+            clearLog();
+            log('=== Test: Success on 2nd attempt ===', 'info');
+            attemptCount = 0;
+            
+            try {
+                await TestAPI.retryWithBackoff(
+                    async () => {
+                        attemptCount++;
+                        if (attemptCount === 1) {
+                            const err = new Error('Network error');
+                            throw err;
+                        }
+                        return { success: true };
+                    },
+                    {},
+                    (attempt, max, delay) => {
+                        log(`Retry callback: attempt ${attempt}/${max - 1}, delay ${delay}ms`, 'warning');
+                    }
+                );
+                log('✓ SUCCESS - Completed on second attempt', 'success');
+            } catch (err) {
+                log(`✗ FAILED: ${err.message}`, 'error');
+            }
+        }
+        
+        async function testSuccessThirdAttempt() {
+            clearLog();
+            log('=== Test: Success on 3rd attempt ===', 'info');
+            attemptCount = 0;
+            
+            try {
+                await TestAPI.retryWithBackoff(
+                    async () => {
+                        attemptCount++;
+                        if (attemptCount <= 2) {
+                            const err = new Error('Network error');
+                            throw err;
+                        }
+                        return { success: true };
+                    },
+                    {},
+                    (attempt, max, delay) => {
+                        log(`Retry callback: attempt ${attempt}/${max - 1}, delay ${delay}ms`, 'warning');
+                    }
+                );
+                log('✓ SUCCESS - Completed on third attempt', 'success');
+            } catch (err) {
+                log(`✗ FAILED: ${err.message}`, 'error');
+            }
+        }
+        
+        async function testNetworkFailure() {
+            clearLog();
+            log('=== Test: Network failure (all attempts fail) ===', 'info');
+            attemptCount = 0;
+            
+            try {
+                await TestAPI.retryWithBackoff(
+                    async () => {
+                        attemptCount++;
+                        const err = new Error('Network connection failed');
+                        throw err;
+                    },
+                    {},
+                    (attempt, max, delay) => {
+                        log(`Retry callback: attempt ${attempt}/${max - 1}, delay ${delay}ms`, 'warning');
+                    }
+                );
+                log('✗ Unexpected success', 'error');
+            } catch (err) {
+                log(`✓ EXPECTED FAILURE: ${err.message}`, 'success');
+                log('Check your connection and try again.', 'info');
+            }
+        }
+        
+        async function testServerError() {
+            clearLog();
+            log('=== Test: Server error (500, should retry) ===', 'info');
+            attemptCount = 0;
+            
+            try {
+                await TestAPI.retryWithBackoff(
+                    async () => {
+                        attemptCount++;
+                        const err = new Error('Internal Server Error');
+                        err.status = 500;
+                        throw err;
+                    },
+                    {},
+                    (attempt, max, delay) => {
+                        log(`Retry callback: attempt ${attempt}/${max - 1}, delay ${delay}ms`, 'warning');
+                    }
+                );
+                log('✗ Unexpected success', 'error');
+            } catch (err) {
+                log(`✓ EXPECTED FAILURE after retries: ${err.message}`, 'success');
+            }
+        }
+        
+        async function testClientError() {
+            clearLog();
+            log('=== Test: Client error (400, should NOT retry) ===', 'info');
+            attemptCount = 0;
+            
+            try {
+                await TestAPI.retryWithBackoff(
+                    async () => {
+                        attemptCount++;
+                        const err = new Error('Bad Request');
+                        err.status = 400;
+                        throw err;
+                    },
+                    {},
+                    (attempt, max, delay) => {
+                        log(`Retry callback: attempt ${attempt}/${max - 1}, delay ${delay}ms`, 'warning');
+                    }
+                );
+                log('✗ Unexpected success', 'error');
+            } catch (err) {
+                log(`✓ EXPECTED FAILURE (no retry): ${err.message}`, 'success');
+                log(`Total attempts made: ${attemptCount} (should be 1)`, 'info');
+            }
+        }
+        
+        // Auto-run first test on load
+        window.addEventListener('load', () => {
+            log('Ready to test retry logic', 'info');
+        });
+    </script>
+</body>
+</html>

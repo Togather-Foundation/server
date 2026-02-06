@@ -11,6 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateUser = `-- name: ActivateUser :exec
+UPDATE users
+SET is_active = true
+WHERE id = $1
+`
+
+func (q *Queries) ActivateUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, activateUser, id)
+	return err
+}
+
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*) FROM users
+WHERE 
+  ($1::boolean IS NULL OR is_active = $1) AND
+  ($2::text IS NULL OR role = $2) AND
+  deleted_at IS NULL
+`
+
+type CountUsersParams struct {
+	IsActive pgtype.Bool `json:"is_active"`
+	Role     pgtype.Text `json:"role"`
+}
+
+func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsers, arg.IsActive, arg.Role)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAPIKey = `-- name: CreateAPIKey :one
 INSERT INTO api_keys (prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -109,6 +140,49 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const createUserInvitation = `-- name: CreateUserInvitation :one
+
+INSERT INTO user_invitations (user_id, token_hash, email, expires_at, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, token_hash, email, expires_at, created_at
+`
+
+type CreateUserInvitationParams struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	Email     string             `json:"email"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+}
+
+type CreateUserInvitationRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TokenHash string             `json:"token_hash"`
+	Email     string             `json:"email"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// User Invitation Queries
+func (q *Queries) CreateUserInvitation(ctx context.Context, arg CreateUserInvitationParams) (CreateUserInvitationRow, error) {
+	row := q.db.QueryRow(ctx, createUserInvitation,
+		arg.UserID,
+		arg.TokenHash,
+		arg.Email,
+		arg.ExpiresAt,
+		arg.CreatedBy,
+	)
+	var i CreateUserInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deactivateAPIKey = `-- name: DeactivateAPIKey :exec
 UPDATE api_keys
 SET is_active = false
@@ -117,6 +191,30 @@ WHERE id = $1
 
 func (q *Queries) DeactivateAPIKey(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deactivateAPIKey, id)
+	return err
+}
+
+const deactivateUser = `-- name: DeactivateUser :exec
+
+UPDATE users
+SET is_active = false
+WHERE id = $1
+`
+
+// User Management Queries
+func (q *Queries) DeactivateUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deactivateUser, id)
+	return err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+UPDATE users
+SET deleted_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
 }
 
@@ -168,10 +266,21 @@ WHERE email = $1 AND is_active = true
 LIMIT 1
 `
 
+type GetUserByEmailRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Username     string             `json:"username"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	Role         string             `json:"role"`
+	IsActive     bool               `json:"is_active"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+}
+
 // SQLc queries for authentication.
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
-	var i User
+	var i GetUserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -192,9 +301,20 @@ WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
+type GetUserByIDRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Username     string             `json:"username"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	Role         string             `json:"role"`
+	IsActive     bool               `json:"is_active"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i User
+	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -215,9 +335,20 @@ WHERE username = $1 AND is_active = true
 LIMIT 1
 `
 
-func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
+type GetUserByUsernameRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Username     string             `json:"username"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	Role         string             `json:"role"`
+	IsActive     bool               `json:"is_active"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getUserByUsername, username)
-	var i User
+	var i GetUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -227,6 +358,29 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+	)
+	return i, err
+}
+
+const getUserInvitationByTokenHash = `-- name: GetUserInvitationByTokenHash :one
+SELECT id, user_id, token_hash, email, expires_at, accepted_at, created_by, created_at
+FROM user_invitations
+WHERE token_hash = $1 AND expires_at > now() AND accepted_at IS NULL
+LIMIT 1
+`
+
+func (q *Queries) GetUserInvitationByTokenHash(ctx context.Context, tokenHash string) (UserInvitation, error) {
+	row := q.db.QueryRow(ctx, getUserInvitationByTokenHash, tokenHash)
+	var i UserInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -281,6 +435,47 @@ func (q *Queries) ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error) {
 	return items, nil
 }
 
+const listPendingInvitationsForUser = `-- name: ListPendingInvitationsForUser :many
+SELECT id, token_hash, email, expires_at, created_at
+FROM user_invitations
+WHERE user_id = $1 AND accepted_at IS NULL AND expires_at > now()
+ORDER BY created_at DESC
+`
+
+type ListPendingInvitationsForUserRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TokenHash string             `json:"token_hash"`
+	Email     string             `json:"email"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listPendingInvitationsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPendingInvitationsForUserRow{}
+	for rows.Next() {
+		var i ListPendingInvitationsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TokenHash,
+			&i.Email,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, email, role, is_active, created_at, last_login_at
 FROM users
@@ -323,6 +518,78 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUsersWithFilters = `-- name: ListUsersWithFilters :many
+SELECT id, username, email, role, is_active, created_at, last_login_at
+FROM users
+WHERE 
+  ($1::boolean IS NULL OR is_active = $1) AND
+  ($2::text IS NULL OR role = $2) AND
+  deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListUsersWithFiltersParams struct {
+	IsActive pgtype.Bool `json:"is_active"`
+	Role     pgtype.Text `json:"role"`
+	Offset   int32       `json:"offset"`
+	Limit    int32       `json:"limit"`
+}
+
+type ListUsersWithFiltersRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Username    string             `json:"username"`
+	Email       string             `json:"email"`
+	Role        string             `json:"role"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
+}
+
+func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error) {
+	rows, err := q.db.Query(ctx, listUsersWithFilters,
+		arg.IsActive,
+		arg.Role,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersWithFiltersRow{}
+	for rows.Next() {
+		var i ListUsersWithFiltersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.Role,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.LastLoginAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markInvitationAccepted = `-- name: MarkInvitationAccepted :exec
+UPDATE user_invitations
+SET accepted_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markInvitationAccepted, id)
+	return err
 }
 
 const updateAPIKeyLastUsed = `-- name: UpdateAPIKeyLastUsed :exec

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accept Invitation - SEL Admin</title>
+    {{ template "_head_meta.html" . }}
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
+    <link rel="stylesheet" href="/admin/static/css/admin.css">
+</head>
+<body class="d-flex flex-column">
+    <div class="page page-center">
+        <div class="container container-tight py-4">
+            <div class="text-center mb-4">
+                <a href="/" class="navbar-brand navbar-brand-autodark">
+                    <h1>SEL Admin</h1>
+                </a>
+            </div>
+            <div class="card card-md">
+                <div class="card-body">
+                    <h2 class="h2 text-center mb-4">Accept Invitation</h2>
+                    
+                    <!-- Loading State -->
+                    <div id="loading-state" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Verifying invitation...</span>
+                        </div>
+                        <div class="text-muted mt-2">Verifying your invitation...</div>
+                    </div>
+                    
+                    <!-- Error State -->
+                    <div id="error-state" class="alert alert-danger" style="display: none;">
+                        <h4 class="alert-title">Invalid or Expired Invitation</h4>
+                        <div class="text-muted" id="error-message"></div>
+                    </div>
+                    
+                    <!-- Success State -->
+                    <div id="success-state" style="display: none;">
+                        <div class="alert alert-success mb-4">
+                            <h4 class="alert-title">Account Activated!</h4>
+                            <div class="text-muted">Your password has been set successfully. You can now log in.</div>
+                        </div>
+                        <div class="form-footer">
+                            <a href="/admin/login" class="btn btn-primary w-100">Go to Login</a>
+                        </div>
+                    </div>
+                    
+                    <!-- Form State -->
+                    <form id="accept-invitation-form" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label required">Password</label>
+                            <input type="password" class="form-control" id="password" placeholder="Enter your password" required autocomplete="new-password">
+                            <small class="form-hint">
+                                Must be at least 12 characters with uppercase, lowercase, number, and special character
+                            </small>
+                            <div class="invalid-feedback" id="password-error"></div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label required">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirm-password" placeholder="Confirm your password" required autocomplete="new-password">
+                            <div class="invalid-feedback" id="confirm-password-error"></div>
+                        </div>
+                        
+                        <!-- Password Strength Indicator -->
+                        <div class="mb-3">
+                            <div class="progress" style="height: 4px;">
+                                <div class="progress-bar" id="password-strength" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <small class="text-muted" id="password-strength-text">Password strength: None</small>
+                        </div>
+                        
+                        <div class="form-footer">
+                            <button type="submit" class="btn btn-primary w-100" id="submit-btn">
+                                Set Password & Activate Account
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="text-center text-muted mt-3">
+                Need help? Contact your administrator
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toast-container" class="position-fixed top-0 end-0 p-3" style="z-index: 11"></div>
+    
+    <script src="/admin/static/js/tabler.min.js?v=1.4.0"></script>
+    <script src="/admin/static/js/accept-invitation.js"></script>
+</body>
+</html>

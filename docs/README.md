@@ -55,6 +55,20 @@ fetch('https://sel.togather.events/api/v1/events', {
 
 ---
 
+### 🔧 I'm administering a SEL node
+
+**You're operating a SEL server, managing users, or configuring deployment.**
+
+**Start here:** [admin-ui-guide.md](admin-ui-guide.md)
+
+**Quick links:**
+- [User Management Guide](admin/user-management.md) - Create & manage user accounts
+- [Email Setup Guide](admin/email-setup.md) - Configure SMTP for invitations
+- [Admin Users API](api/admin-users.md) - API endpoint reference
+- [Deployment Guide](deploy/quickstart.md) - Production deployment
+
+---
+
 ### 🌐 I'm building a SEL-compatible node
 
 **You're implementing your own SEL server or federating with the network.**
@@ -108,6 +122,10 @@ These resources are useful for everyone:
 | Category | Document | Status | Last Updated |
 |----------|----------|--------|--------------|
 | **Universal** | Glossary | Living | 2026-01-26 |
+| **Admin** | User Management Guide | Living | 2026-02-05 |
+| **Admin** | Email Setup Guide | Living | 2026-02-05 |
+| **Admin** | Admin UI Guide | Living | 2026-01-27 |
+| **Admin** | Admin Users API | Living | 2026-02-05 |
 | **Integration** | API Guide | Living | 2026-01-27 |
 | **Integration** | Authentication | Living | 2026-01-27 |
 | **Integration** | Scrapers Guide | Living | 2026-01-27 |

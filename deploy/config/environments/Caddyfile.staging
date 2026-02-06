@@ -31,6 +31,38 @@ staging.toronto.togather.foundation {
 	}
 	respond @metrics_block "Forbidden" 403
 
+	# Grafana monitoring proxy (admin-only access)
+	# Grafana runs on localhost:3000, only accessible via this proxy
+	# Grafana is configured with GF_SERVER_ROOT_URL including /grafana subpath
+	# and GF_SERVER_SERVE_FROM_SUB_PATH=true to handle URL rewriting
+	# SECURITY: Requires admin authentication via auth_token cookie
+	handle /grafana* {
+		# Matcher: Check for admin auth cookie in Cookie header
+		@authenticated {
+			header Cookie *auth_token*
+		}
+		
+		# Route: Authenticated users get access to Grafana
+		handle @authenticated {
+			reverse_proxy localhost:3000 {
+				# Health check (using Grafana API endpoint)
+				health_uri /grafana/api/health
+				health_interval 30s
+				health_timeout 5s
+				
+				# Preserve original request info for Grafana
+				header_up Host {host}
+				header_up X-Real-IP {remote_host}
+				header_up X-Forwarded-For {remote_host}
+				header_up X-Forwarded-Proto {scheme}
+			}
+		}
+		
+		# Route: Unauthenticated users get 401
+		respond "Unauthorized: Admin access required" 401
+	}
+
+	# BLUE_GREEN_SLOT_START - Managed by deployment script (do not remove this marker)
 	# Reverse proxy to active slot
 	# Current: Blue slot (port 8081)
 	# To switch to green: Change to localhost:8082
@@ -51,6 +83,7 @@ staging.toronto.togather.foundation {
 		# Update this when switching slots: "blue" or "green"
 		header_down X-Togather-Slot "blue"
 	}
+	# BLUE_GREEN_SLOT_END - Managed by deployment script (do not remove this marker)
 	
 	# Compression
 	encode gzip

@@ -290,3 +290,46 @@
 .table-responsive::-webkit-scrollbar-thumb:hover {
     background: var(--tblr-muted);
 }
+
+/* Enhanced keyboard focus styles for accessibility */
+/* Use :focus-visible to only show focus ring for keyboard navigation, not mouse clicks */
+button:focus-visible,
+.btn:focus-visible,
+a.btn:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--tblr-primary);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(6, 111, 209, 0.2);
+}
+
+/* Dark mode focus styles */
+[data-bs-theme="dark"] button:focus-visible,
+[data-bs-theme="dark"] .btn:focus-visible,
+[data-bs-theme="dark"] a.btn:focus-visible,
+[data-bs-theme="dark"] input:focus-visible,
+[data-bs-theme="dark"] select:focus-visible,
+[data-bs-theme="dark"] textarea:focus-visible {
+    outline-color: var(--tblr-primary);
+    box-shadow: 0 0 0 4px rgba(66, 153, 225, 0.3);
+}
+
+/* Ensure danger buttons have distinct focus */
+.btn-danger:focus-visible,
+.btn-ghost-danger:focus-visible {
+    outline-color: var(--tblr-danger);
+    box-shadow: 0 0 0 4px rgba(214, 57, 57, 0.2);
+}
+
+/* Success buttons focus */
+.btn-success:focus-visible {
+    outline-color: var(--tblr-success);
+    box-shadow: 0 0 0 4px rgba(47, 179, 68, 0.2);
+}
+
+/* Warning buttons focus */
+.btn-warning:focus-visible {
+    outline-color: var(--tblr-warning);
+    box-shadow: 0 0 0 4px rgba(245, 159, 0, 0.2);
+}

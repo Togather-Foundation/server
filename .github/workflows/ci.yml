@@ -8,7 +8,7 @@ on:
   workflow_dispatch:  # Manual trigger for running full test suite
 
 env:
-  GO_VERSION: "1.24.12"
+  GO_VERSION: "1.24.13"
   COVERAGE_THRESHOLD: 35
 
 jobs:
@@ -206,11 +206,11 @@ jobs:
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
 
       - name: Upload coverage to Codecov
-         uses: codecov/codecov-action@v4
-         with:
-           files: ./coverage-integration.out
-           flags: integration
-           fail_ci_if_error: false
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-integration.out
+          flags: integration
+          fail_ci_if_error: false
 
   # Batch integration tests (with River workers)
   test-integration-batch:

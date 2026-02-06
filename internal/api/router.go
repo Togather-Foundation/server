@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -21,6 +22,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	"github.com/Togather-Foundation/server/internal/domain/users"
+	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/metrics"
@@ -97,6 +100,34 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create audit logger for admin operations
 	auditLogger := audit.NewLoggerWithZerolog(logger)
 
+	// Initialize email service
+	emailConfig := config.EmailConfig{
+		Enabled:      cfg.Email.Enabled,
+		From:         cfg.Email.From,
+		SMTPHost:     cfg.Email.SMTPHost,
+		SMTPPort:     cfg.Email.SMTPPort,
+		SMTPUser:     cfg.Email.SMTPUser,
+		SMTPPassword: cfg.Email.SMTPPassword,
+		TemplatesDir: cfg.Email.TemplatesDir,
+	}
+
+	// Resolve template directory path (config may be relative, make it absolute if needed)
+	templateDir := cfg.Email.TemplatesDir
+	if !filepath.IsAbs(templateDir) {
+		// If relative path, resolve from repo root
+		repoRoot := findRepoRoot()
+		templateDir = filepath.Join(repoRoot, templateDir)
+	}
+
+	emailService, err := email.NewService(emailConfig, templateDir, logger)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to initialize email service, user invitations will not be sent")
+	}
+
+	// Initialize user service
+	baseURL := fmt.Sprintf("https://%s", cfg.Server.PublicURL) // For invitation links
+	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger)
+
 	// Load admin templates
 	templates, err := loadAdminTemplates()
 	if err != nil {
@@ -106,7 +137,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Admin handlers
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates, cfg.Auth.JWTExpiry)
-	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment)
+	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment, slogLogger)
+
+	// Admin user management handlers
+	adminUsersHandler := handlers.NewAdminUsersHandler(userService, auditLogger, cfg.Environment)
+	invitationsHandler := handlers.NewInvitationsHandler(userService, auditLogger, cfg.Environment)
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
@@ -269,6 +304,35 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodDelete: adminRevokeAPIKey,
 	}))
 
+	// Admin user management (user administration system)
+	adminCreateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.CreateUser))))
+	adminListUsers := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.ListUsers))))
+	adminGetUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.GetUser))))
+	adminUpdateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.UpdateUser))))
+	adminDeleteUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.DeleteUser))))
+	adminActivateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.ActivateUser))))
+	adminDeactivateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.DeactivateUser))))
+	adminResendInvitation := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.ResendInvitation))))
+	adminGetUserActivity := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.GetUserActivity))))
+
+	mux.Handle("/api/v1/admin/users", methodMux(map[string]http.Handler{
+		http.MethodPost: adminCreateUser,
+		http.MethodGet:  adminListUsers,
+	}))
+	mux.Handle("/api/v1/admin/users/{id}", methodMux(map[string]http.Handler{
+		http.MethodGet:    adminGetUser,
+		http.MethodPut:    adminUpdateUser,
+		http.MethodDelete: adminDeleteUser,
+	}))
+	mux.Handle("POST /api/v1/admin/users/{id}/activate", adminActivateUser)
+	mux.Handle("POST /api/v1/admin/users/{id}/deactivate", adminDeactivateUser)
+	mux.Handle("POST /api/v1/admin/users/{id}/resend-invitation", adminResendInvitation)
+	mux.Handle("GET /api/v1/admin/users/{id}/activity", adminGetUserActivity)
+
+	// Public invitation acceptance endpoint (NO AUTH)
+	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
+	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
+
 	// Admin federation node management (T081b)
 	adminCreateNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.CreateNode))))
 	adminListNodes := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.ListNodes))))
@@ -322,6 +386,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/duplicates", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDuplicates))))
 	mux.Handle("/admin/api-keys", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeAPIKeys))))
 	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
+	mux.Handle("/admin/users", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUsersList))))
+	mux.Handle("/admin/users/{id}/activity", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUserActivity))))
 
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +398,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Login page doesn't need CSRF (no auth required, no state-changing action on GET)
 	mux.Handle("/admin/login", http.HandlerFunc(adminAuthHandler.LoginPage))
+
+	// Public invitation acceptance page (NO AUTH)
+	mux.Handle("/accept-invitation", http.HandlerFunc(adminHTMLHandler.ServeAcceptInvitation))
 
 	// Serve admin static files (CSS, JS, images)
 	// The embed.FS contains admin/static/..., so we need to create a sub-filesystem
@@ -469,4 +538,25 @@ func loadAdminTemplates() (*template.Template, error) {
 	}
 
 	return nil, os.ErrNotExist
+}
+
+// findRepoRoot locates the repository root by looking for go.mod
+func findRepoRoot() string {
+	// Try working directory first
+	if wd, err := os.Getwd(); err == nil {
+		dir := wd
+		for i := 0; i < maxRouterRetries; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	// Fallback: return current directory
+	return "."
 }

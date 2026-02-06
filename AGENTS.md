@@ -100,13 +100,16 @@ make coverage
 # Run linter (requires golangci-lint)
 make lint
 
+# Validate JavaScript syntax (requires esbuild)
+make lint-js
+
 # Format all Go files
 make fmt
 
 # Clean build artifacts
 make clean
 
-# Install development tools (golangci-lint, air)
+# Install development tools (golangci-lint, esbuild, air)
 make install-tools
 ```
 
@@ -153,22 +156,31 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
 **For full deployment + testing:**
 1. Read `docs/deploy/deployment-testing.md` for complete instructions
 2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
-3. Execute deployment (config auto-loads if available):
+3. **IMPORTANT:** Determine what to deploy:
+   - **Current branch/commit:** Use `--version HEAD` or `--version $(git rev-parse HEAD)`
+   - **Specific commit:** Use `--version <commit-hash>`
+   - **Default (not recommended):** Omitting `--version` deploys whatever is checked out on the remote server (usually main)
+4. Execute deployment (config auto-loads if available):
    ```bash
-   # With .deploy.conf.staging, just specify environment:
-   ./deploy/scripts/deploy.sh staging
+   # Deploy current HEAD commit to staging (RECOMMENDED for feature branches):
+   ./deploy/scripts/deploy.sh staging --version HEAD
    
-   # Or explicitly specify remote (overrides config):
-   ./deploy/scripts/deploy.sh staging --remote deploy@server
+   # Deploy specific commit:
+   ./deploy/scripts/deploy.sh staging --version abc123
+   
+   # Deploy to remote server with current commit:
+   ./deploy/scripts/deploy.sh staging --remote deploy@server --version HEAD
    ```
-4. Wait 30-60 seconds for health stabilization
-5. Run automated tests (auto-uses NODE_DOMAIN from config):
+5. Wait 30-60 seconds for health stabilization
+6. Run automated tests (auto-uses NODE_DOMAIN from config):
    ```bash
    ./deploy/testing/smoke-tests.sh staging
    ```
-6. If automated tests pass, report success summary
-7. If issues found, run specific checks from deployment-testing.md checklist
-8. Report comprehensive results to user
+7. If automated tests pass, report success summary
+8. If issues found, run specific checks from deployment-testing.md checklist
+9. Report comprehensive results to user
+
+**CRITICAL:** When deploying feature branches, ALWAYS use `--version HEAD` or `--version $(git rev-parse HEAD)` to ensure you're deploying the current branch's code, not main.
 
 
 ### Deployment Documentation
@@ -259,6 +271,76 @@ This project uses Specification Driven Development:
 
 ### Database and Migrations
 
+**IMPORTANT: Always use `make` targets for migrations, NOT direct `migrate` commands!**
+
+The `migrate` binary is in `$GOPATH/bin` which may not be in your PATH. The Makefile handles this automatically.
+
+**Running Migrations:**
+
+```bash
+# ✅ CORRECT: Use make target (handles PATH and DATABASE_URL)
+make migrate-up
+
+# ✅ Check migration status
+make migrate-version
+
+# ✅ Rollback one migration
+make migrate-down
+
+# ❌ WRONG: Direct migrate command (may fail with "command not found")
+migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
+```
+
+**The Makefile automatically:**
+- Checks for `migrate` in `./migrate`, `$PATH`, `$HOME/go/bin/migrate`, and `$GOPATH/bin/migrate`
+- Reads `DATABASE_URL` from `.env` (sourced automatically)
+- Provides helpful error messages if migrate is missing
+
+**If migrations fail with "migrate: command not found":**
+
+```bash
+# Install golang-migrate
+make install-tools
+
+# Or manually:
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Verify installation
+ls -la $(go env GOPATH)/bin/migrate
+
+# Then retry
+make migrate-up
+```
+
+**Common Migration Tasks:**
+
+```bash
+# Check current migration version
+make migrate-version
+
+# Run all pending migrations
+make migrate-up
+
+# Rollback last migration (use carefully!)
+make migrate-down
+
+# Create new migration (manual - no make target)
+migrate create -ext sql -dir internal/storage/postgres/migrations -seq my_migration_name
+```
+
+**Quick Database Column Addition (Development Only):**
+
+If you need to quickly add a column during development and migrations are failing:
+
+```bash
+# Option 1: Run migration through make
+make migrate-up
+
+# Option 2: Direct SQL (if make fails and you need to unblock testing)
+source .env && psql "$DATABASE_URL" -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;"
+```
+
+**Schema Best Practices:**
 - Use migrations for schema changes; keep them backwards compatible.
 - Prefer parameterized queries; avoid string concatenation for SQL.
 - Keep JSONB payloads intact for provenance; store normalized fields for queries.
@@ -336,7 +418,7 @@ Usage notes:
 ## Active Technologies
 - Go 1.25+ + Docker Compose v2 (orchestration)
 - PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions, golang-migrate (migrations) with volume persistence, pg_dump snapshots to filesystem or S3-compatible storage
-- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI)
+- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL - see [internal/storage/postgres/README.md](internal/storage/postgres/README.md) for nullable parameter patterns), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI)
 - CLI Commands (`server` binary):
   - `server snapshot` - Database backup management (create, list, cleanup with retention policy)
   - `server healthcheck` - Health monitoring with blue-green slot support, watch mode, multiple output formats

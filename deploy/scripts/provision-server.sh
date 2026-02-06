@@ -7,7 +7,7 @@
 #   Remote: curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/togather/main/deploy/scripts/provision-server.sh | bash
 #
 # Environment variables:
-#   GO_VERSION - Go version to install (default: 1.24.12)
+#   GO_VERSION - Go version to install (default: 1.24.13)
 #   DEPLOY_USER - Username for deployment (default: deploy)
 #   ENVIRONMENT - Application environment: development, staging, production (default: staging)
 #   SKIP_SSH_HARDEN - Skip SSH hardening prompt (default: false)
@@ -21,7 +21,7 @@ set -euo pipefail
 
 # Configuration (can be overridden via environment)
 # Default Go version matches go.mod toolchain requirement
-GO_VERSION="${GO_VERSION:-1.24.12}"
+GO_VERSION="${GO_VERSION:-1.24.13}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 APP_ENVIRONMENT="${ENVIRONMENT:-staging}"
 SKIP_SSH_HARDEN="${SKIP_SSH_HARDEN:-false}"

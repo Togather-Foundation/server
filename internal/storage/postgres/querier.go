@@ -11,8 +11,10 @@ import (
 )
 
 type Querier interface {
+	ActivateUser(ctx context.Context, id pgtype.UUID) error
 	CountAllEvents(ctx context.Context) (int64, error)
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
+	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
 	CreateBatchIngestionResult(ctx context.Context, arg CreateBatchIngestionResultParams) error
 	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error
@@ -22,8 +24,13 @@ type Querier interface {
 	CreateOrganizationTombstone(ctx context.Context, arg CreateOrganizationTombstoneParams) error
 	CreatePlaceTombstone(ctx context.Context, arg CreatePlaceTombstoneParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
+	// User Invitation Queries
+	CreateUserInvitation(ctx context.Context, arg CreateUserInvitationParams) (CreateUserInvitationRow, error)
 	DeactivateAPIKey(ctx context.Context, id pgtype.UUID) error
+	// User Management Queries
+	DeactivateUser(ctx context.Context, id pgtype.UUID) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
 	// Gets complete provenance history for a field, including superseded records
 	GetAllFieldProvenanceHistory(ctx context.Context, arg GetAllFieldProvenanceHistoryParams) ([]GetAllFieldProvenanceHistoryRow, error)
@@ -34,6 +41,7 @@ type Querier interface {
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
 	// Federation Sync Queries
 	GetEventByFederationURI(ctx context.Context, federationUri pgtype.Text) (Event, error)
+	// SQLc queries for events domain.
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
 	GetEventChangeByID(ctx context.Context, id pgtype.UUID) (GetEventChangeByIDRow, error)
 	// SQLc queries for provenance tracking.
@@ -60,9 +68,10 @@ type Querier interface {
 	// Gets all sources that contributed to an event (deduplicated)
 	GetSourcesByEventID(ctx context.Context, eventID pgtype.UUID) ([]GetSourcesByEventIDRow, error)
 	// SQLc queries for authentication.
-	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
-	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
+	GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error)
+	GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error)
+	GetUserInvitationByTokenHash(ctx context.Context, tokenHash string) (UserInvitation, error)
 	// Records a source's contribution to an event with source and received timestamps (FR-029)
 	InsertEventSource(ctx context.Context, arg InsertEventSourceParams) (EventSource, error)
 	// Records field-level provenance with source timestamp
@@ -75,9 +84,12 @@ type Querier interface {
 	ListFederationNodes(ctx context.Context, arg ListFederationNodesParams) ([]FederationNode, error)
 	// SQLc queries for organizations domain.
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error)
+	ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error)
 	// SQLc queries for places domain.
 	ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
+	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
+	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error

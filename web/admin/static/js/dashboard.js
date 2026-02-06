@@ -7,6 +7,7 @@
     
     function init() {
         loadDashboardStats();
+        checkMonitoringServices();
     }
     
     async function loadDashboardStats() {
@@ -41,4 +42,71 @@
             }
         }
     }
+    
+    async function checkMonitoringServices() {
+        // Check if monitoring elements exist on the page
+        const grafanaLink = document.getElementById('grafana-link');
+        
+        if (!grafanaLink) {
+            return; // Monitoring section not present
+        }
+        
+        const grafanaStatus = document.getElementById('grafana-status');
+        
+        // Check Grafana availability
+        const grafanaAvailable = await checkGrafana(grafanaStatus);
+        
+        // Show embedded Grafana dashboard if available
+        if (grafanaAvailable) {
+            const embedContainer = document.getElementById('grafana-embed-container');
+            const monitoringHelp = document.getElementById('monitoring-help');
+            if (embedContainer) {
+                embedContainer.style.display = 'block';
+                if (monitoringHelp) {
+                    monitoringHelp.style.display = 'none';
+                }
+            }
+        }
+    }
+    
+    async function checkGrafana(statusElement) {
+        try {
+            // Check Grafana API health endpoint (requires auth)
+            // Since we're authenticated as admin, this should succeed
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            
+            const response = await fetch('/grafana/api/health', {
+                method: 'GET',
+                credentials: 'same-origin', // Include cookies for auth
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            // Check if we got a valid response
+            if (response.ok) {
+                // Grafana is available and we're authenticated
+                statusElement.innerHTML = '<span class="badge bg-success">Available</span>';
+                return true;
+            } else if (response.status === 401) {
+                // Not authenticated to Grafana (shouldn't happen for logged-in admin)
+                statusElement.innerHTML = '<span class="badge bg-warning">Auth Required</span>';
+                return false;
+            } else {
+                // Other error
+                statusElement.innerHTML = '<span class="badge bg-danger">Error</span>';
+                return false;
+            }
+        } catch (err) {
+            // Service is not reachable
+            if (err.name === 'AbortError') {
+                statusElement.innerHTML = '<span class="badge bg-warning">Timeout</span>';
+            } else {
+                statusElement.innerHTML = '<span class="badge bg-danger">Unavailable</span>';
+            }
+            return false;
+        }
+    }
 })();
+
