@@ -380,6 +380,20 @@
         form.reset();
         form.classList.remove('was-validated');
         
+        // Clear validation classes and data attributes
+        const usernameInput = document.getElementById('user-username');
+        const emailInput = document.getElementById('user-email');
+        if (usernameInput) {
+            usernameInput.classList.remove('is-invalid', 'is-valid');
+            delete usernameInput.dataset.validationSetup;
+        }
+        if (emailInput) {
+            emailInput.classList.remove('is-invalid', 'is-valid');
+            delete emailInput.dataset.validationSetup;
+        }
+        document.getElementById('username-error').textContent = '';
+        document.getElementById('email-error').textContent = '';
+        
         if (user) {
             // Edit mode
             title.textContent = 'Edit User';
@@ -413,6 +427,52 @@
         // Show modal
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
+        
+        // Setup real-time validation for username input (if not already set up)
+        if (usernameInput && !usernameInput.dataset.validationSetup) {
+            usernameInput.dataset.validationSetup = 'true';
+            usernameInput.addEventListener('input', function() {
+                const username = this.value.trim();
+                const error = validateUsername(username);
+                const errorDiv = document.getElementById('username-error');
+                
+                if (error && username.length > 0) {
+                    this.classList.add('is-invalid');
+                    this.classList.remove('is-valid');
+                    errorDiv.textContent = error;
+                } else if (username.length > 0) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                    errorDiv.textContent = '';
+                } else {
+                    this.classList.remove('is-invalid', 'is-valid');
+                    errorDiv.textContent = '';
+                }
+            });
+        }
+        
+        // Setup real-time validation for email input (if not already set up)
+        if (emailInput && !emailInput.dataset.validationSetup) {
+            emailInput.dataset.validationSetup = 'true';
+            emailInput.addEventListener('input', function() {
+                const email = this.value.trim();
+                const error = validateEmail(email);
+                const errorDiv = document.getElementById('email-error');
+                
+                if (error && email.length > 0) {
+                    this.classList.add('is-invalid');
+                    this.classList.remove('is-valid');
+                    errorDiv.textContent = error;
+                } else if (email.length > 0) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                    errorDiv.textContent = '';
+                } else {
+                    this.classList.remove('is-invalid', 'is-valid');
+                    errorDiv.textContent = '';
+                }
+            });
+        }
     }
     
     /**
@@ -436,17 +496,41 @@
     }
     
     /**
+     * Validate email format
+     * @param {string} email - Email to validate
+     * @returns {string|null} - Error message if invalid, null if valid
+     */
+    function validateEmail(email) {
+        if (!email || email.trim() === '') {
+            return 'Email is required';
+        }
+        
+        // Basic email format validation (more strict than HTML5's type="email")
+        // Matches: user@domain.tld (allows subdomains, hyphens, underscores)
+        const pattern = /^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!pattern.test(email)) {
+            return 'Please enter a valid email address (e.g., user@example.com)';
+        }
+        
+        // Check for common mistakes
+        if (email.includes('..') || email.startsWith('.') || email.endsWith('.')) {
+            return 'Email cannot have consecutive dots or start/end with a dot';
+        }
+        
+        if (email.length > 254) {
+            return 'Email address is too long (max 254 characters)';
+        }
+        
+        return null;
+    }
+    
+    /**
      * Handle user form submission
      */
     async function handleUserSubmit() {
         const form = document.getElementById('user-form');
         const submitBtn = document.getElementById('user-submit-btn');
         const modal = document.getElementById('user-modal');
-        
-        if (!form.checkValidity()) {
-            form.classList.add('was-validated');
-            return;
-        }
         
         const userId = document.getElementById('user-id').value;
         const username = document.getElementById('user-username').value.trim();
@@ -464,6 +548,20 @@
             form.classList.add('was-validated');
             
             showToast(usernameError, 'error');
+            return;
+        }
+        
+        // Client-side email validation
+        const emailError = validateEmail(email);
+        if (emailError) {
+            const emailInput = document.getElementById('user-email');
+            const emailErrorDiv = document.getElementById('email-error');
+            
+            emailInput.classList.add('is-invalid');
+            emailErrorDiv.textContent = emailError;
+            form.classList.add('was-validated');
+            
+            showToast(emailError, 'error');
             return;
         }
         
