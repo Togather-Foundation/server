@@ -353,21 +353,3 @@ func (r *OrganizationRepository) queryer() organizationQueryer {
 	}
 	return r.pool
 }
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-func nullableString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}

@@ -411,17 +411,6 @@ func (r *PlaceRepository) queryer() placeQueryer {
 	return r.pool
 }
 
-func nullableString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
 func numericFromFloat64Ptr(value *float64) pgtype.Numeric {
 	if value == nil {
 		return pgtype.Numeric{}
