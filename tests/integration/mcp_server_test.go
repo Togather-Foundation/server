@@ -63,7 +63,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 
 	result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 		Params: mcpTypes.CallToolParams{
-			Name:      "list_events",
+			Name:      "events",
 			Arguments: map[string]any{},
 		},
 	})
@@ -422,7 +422,7 @@ func TestMCPCreateEvent(t *testing.T) {
 
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_event",
+				Name: "add_event",
 				Arguments: map[string]any{
 					"event": eventPayload,
 				},
@@ -455,7 +455,7 @@ func TestMCPCreateEvent(t *testing.T) {
 	t.Run("missing_event_param", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name:      "create_event",
+				Name:      "add_event",
 				Arguments: map[string]any{},
 			},
 		})
@@ -469,7 +469,7 @@ func TestMCPCreateEvent(t *testing.T) {
 	t.Run("invalid_event_payload", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_event",
+				Name: "add_event",
 				Arguments: map[string]any{
 					"event": "not-a-json-object",
 				},
@@ -510,7 +510,7 @@ func TestMCPGetEvent(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_event",
+				Name: "events",
 				Arguments: map[string]any{
 					"id": eventID,
 				},
@@ -523,24 +523,23 @@ func TestMCPGetEvent(t *testing.T) {
 		require.Equal(t, "Test Event for Get", payload["name"])
 	})
 
-	t.Run("missing_id_param", func(t *testing.T) {
+	t.Run("no_id_param_lists_events", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name:      "get_event",
+				Name:      "events",
 				Arguments: map[string]any{},
 			},
 		})
 		require.NoError(t, err)
 
-		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
-		require.True(t, ok)
-		require.Contains(t, textContent.Text, "id parameter is required")
+		payload := decodeToolText(t, result)
+		require.NotNil(t, payload["items"])
 	})
 
 	t.Run("invalid_ulid", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_event",
+				Name: "events",
 				Arguments: map[string]any{
 					"id": "invalid-ulid",
 				},
@@ -556,7 +555,7 @@ func TestMCPGetEvent(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_event",
+				Name: "events",
 				Arguments: map[string]any{
 					"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ",
 				},
@@ -595,7 +594,7 @@ func TestMCPListPlaces(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name:      "list_places",
+				Name:      "places",
 				Arguments: map[string]any{},
 			},
 		})
@@ -610,7 +609,7 @@ func TestMCPListPlaces(t *testing.T) {
 	t.Run("with_query", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "list_places",
+				Name: "places",
 				Arguments: map[string]any{
 					"query": "Test Venue",
 				},
@@ -626,7 +625,7 @@ func TestMCPListPlaces(t *testing.T) {
 	t.Run("with_limit", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "list_places",
+				Name: "places",
 				Arguments: map[string]any{
 					"limit": 1,
 				},
@@ -665,7 +664,7 @@ func TestMCPGetPlace(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_place",
+				Name: "places",
 				Arguments: map[string]any{
 					"id": place.ULID,
 				},
@@ -681,7 +680,7 @@ func TestMCPGetPlace(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_place",
+				Name: "places",
 				Arguments: map[string]any{
 					"id": "01KGSV7H8ZDDGC0HRAE8SSDK4Z",
 				},
@@ -719,7 +718,7 @@ func TestMCPCreatePlace(t *testing.T) {
 
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_place",
+				Name: "add_place",
 				Arguments: map[string]any{
 					"place": placePayload,
 				},
@@ -743,7 +742,7 @@ func TestMCPCreatePlace(t *testing.T) {
 
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_place",
+				Name: "add_place",
 				Arguments: map[string]any{
 					"place": placePayload,
 				},
@@ -779,7 +778,7 @@ func TestMCPListOrganizations(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name:      "list_organizations",
+				Name:      "organizations",
 				Arguments: map[string]any{},
 			},
 		})
@@ -794,7 +793,7 @@ func TestMCPListOrganizations(t *testing.T) {
 	t.Run("with_query", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "list_organizations",
+				Name: "organizations",
 				Arguments: map[string]any{
 					"query": "Test Org",
 				},
@@ -830,7 +829,7 @@ func TestMCPGetOrganization(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_organization",
+				Name: "organizations",
 				Arguments: map[string]any{
 					"id": org.ULID,
 				},
@@ -846,7 +845,7 @@ func TestMCPGetOrganization(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_organization",
+				Name: "organizations",
 				Arguments: map[string]any{
 					"id": "01KGSV7H8Z62JFXE9CGKX3WRAG",
 				},
@@ -878,7 +877,7 @@ func TestMCPCreateOrganization(t *testing.T) {
 
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_organization",
+				Name: "add_organization",
 				Arguments: map[string]any{
 					"organization": orgPayload,
 				},
@@ -900,7 +899,7 @@ func TestMCPCreateOrganization(t *testing.T) {
 
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_organization",
+				Name: "add_organization",
 				Arguments: map[string]any{
 					"organization": orgPayload,
 				},
@@ -1239,10 +1238,10 @@ func TestMCPToolValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Test get_event with invalid ULID
-	t.Run("get_event_invalid_ulid", func(t *testing.T) {
+	t.Run("events_invalid_ulid", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "get_event",
+				Name: "events",
 				Arguments: map[string]any{
 					"id": "not-a-valid-ulid",
 				},
@@ -1256,10 +1255,10 @@ func TestMCPToolValidation(t *testing.T) {
 	})
 
 	// Test list_events with invalid date format
-	t.Run("list_events_invalid_date", func(t *testing.T) {
+	t.Run("events_invalid_date", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "list_events",
+				Name: "events",
 				Arguments: map[string]any{
 					"start_date": "not-a-date",
 				},
@@ -1276,7 +1275,7 @@ func TestMCPToolValidation(t *testing.T) {
 	t.Run("create_event_missing_fields", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "create_event",
+				Name: "add_event",
 				Arguments: map[string]any{
 					"event": map[string]any{
 						"description": "Event without required fields",
@@ -1318,10 +1317,10 @@ func TestMCPPagination(t *testing.T) {
 	}
 
 	// Test list_events pagination
-	t.Run("list_events_pagination", func(t *testing.T) {
+	t.Run("events_pagination", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
-				Name: "list_events",
+				Name: "events",
 				Arguments: map[string]any{
 					"limit": 2,
 				},

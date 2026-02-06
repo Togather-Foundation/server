@@ -28,14 +28,19 @@ func NewOrganizationTools(orgService *organizations.Service, baseURL string) *Or
 	}
 }
 
-// ListOrganizationsTool returns the MCP tool definition for listing organizations.
-func (t *OrganizationTools) ListOrganizationsTool() mcp.Tool {
+// OrganizationsTool returns the MCP tool definition for listing or getting organizations.
+// If id parameter is provided, returns a single organization. Otherwise, returns a list of organizations.
+func (t *OrganizationTools) OrganizationsTool() mcp.Tool {
 	return mcp.Tool{
-		Name:        "list_organizations",
-		Description: "List organizations with optional filters for query and pagination. Returns a JSON array of organizations matching the criteria.",
+		Name:        "organizations",
+		Description: "List organizations with optional filters, or get a specific organization by ULID. If 'id' is provided, returns a single JSON-LD formatted organization. Otherwise, returns a JSON array of organizations matching the filter criteria.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional ULID of a specific organization to retrieve. If provided, other parameters are ignored.",
+				},
 				"query": map[string]interface{}{
 					"type":        "string",
 					"description": "Search query to filter organizations by name or legal name",
@@ -54,15 +59,15 @@ func (t *OrganizationTools) ListOrganizationsTool() mcp.Tool {
 	}
 }
 
-// ListOrganizationsHandler handles the list_organizations tool call.
-func (t *OrganizationTools) ListOrganizationsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// OrganizationsHandler handles the organizations tool call.
+// If id is provided, delegates to get organization logic. Otherwise, delegates to list organizations logic.
+func (t *OrganizationTools) OrganizationsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if t == nil || t.orgService == nil {
 		return mcp.NewToolResultError("organizations service not configured"), nil
 	}
 
-	const maxListLimit = 200
-
 	args := struct {
+		ID     string `json:"id"`
 		Query  string `json:"query"`
 		Limit  int    `json:"limit"`
 		Cursor string `json:"cursor"`
@@ -80,23 +85,83 @@ func (t *OrganizationTools) ListOrganizationsHandler(ctx context.Context, reques
 		}
 	}
 
-	// Enforce limit caps
-	if args.Limit <= 0 {
-		args.Limit = 50
+	// If id is provided, get single organization
+	if strings.TrimSpace(args.ID) != "" {
+		return t.getOrganizationByID(ctx, args.ID)
 	}
-	if args.Limit > maxListLimit {
-		args.Limit = maxListLimit
+
+	// Otherwise, list organizations with filters
+	return t.listOrganizations(ctx, args.Query, args.Limit, args.Cursor)
+}
+
+// getOrganizationByID retrieves a single organization by ULID
+func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) (*mcp.CallToolResult, error) {
+	if err := ids.ValidateULID(id); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
+	}
+
+	org, err := t.orgService.GetByULID(ctx, id)
+	if err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
+				if payloadErr != nil {
+					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
+				}
+				return toolResultJSON(payload)
+			}
+			return mcp.NewToolResultErrorf("organization not found: %s", id), nil
+		}
+		return mcp.NewToolResultErrorFromErr("failed to get organization", err), nil
+	}
+
+	if strings.EqualFold(org.Lifecycle, "deleted") {
+		if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
+			if payloadErr != nil {
+				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
+			}
+			return toolResultJSON(payload)
+		}
+
+		payload := map[string]any{
+			"@context":      defaultContext(),
+			"@type":         "Organization",
+			"sel:tombstone": true,
+			"sel:deletedAt": time.Now().Format(time.RFC3339),
+		}
+		if uri := buildOrganizationURI(t.baseURL, org.ULID); uri != "" {
+			payload["@id"] = uri
+		}
+		return toolResultJSON(payload)
+	}
+
+	payload := buildOrganizationPayload(org, t.baseURL)
+	return toolResultJSON(payload)
+}
+
+// listOrganizations retrieves a list of organizations with filters
+func (t *OrganizationTools) listOrganizations(ctx context.Context, query string, limit int, cursor string) (*mcp.CallToolResult, error) {
+
+	const maxListLimit = 200
+
+	// Enforce limit caps
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
 	}
 
 	values := url.Values{}
-	if strings.TrimSpace(args.Query) != "" {
-		values.Set("q", strings.TrimSpace(args.Query))
+	if strings.TrimSpace(query) != "" {
+		values.Set("q", strings.TrimSpace(query))
 	}
-	if args.Limit > 0 {
-		values.Set("limit", strconv.Itoa(args.Limit))
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
 	}
-	if strings.TrimSpace(args.Cursor) != "" {
-		values.Set("after", strings.TrimSpace(args.Cursor))
+	if strings.TrimSpace(cursor) != "" {
+		values.Set("after", strings.TrimSpace(cursor))
 	}
 
 	filters, pagination, err := organizations.ParseFilters(values)
@@ -122,96 +187,10 @@ func (t *OrganizationTools) ListOrganizationsHandler(ctx context.Context, reques
 	return toolResultJSON(response)
 }
 
-// GetOrganizationTool returns the MCP tool definition for getting a single organization by ID.
-func (t *OrganizationTools) GetOrganizationTool() mcp.Tool {
+// AddOrganizationTool returns the MCP tool definition for creating an organization.
+func (t *OrganizationTools) AddOrganizationTool() mcp.Tool {
 	return mcp.Tool{
-		Name:        "get_organization",
-		Description: "Get detailed information about a specific organization by its ULID. Returns a JSON-LD formatted organization object.",
-		InputSchema: mcp.ToolInputSchema{
-			Type: "object",
-			Properties: map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The ULID of the organization to retrieve",
-				},
-			},
-			Required: []string{"id"},
-		},
-	}
-}
-
-// GetOrganizationHandler handles the get_organization tool call.
-func (t *OrganizationTools) GetOrganizationHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if t == nil || t.orgService == nil {
-		return mcp.NewToolResultError("organizations service not configured"), nil
-	}
-
-	args := struct {
-		ID string `json:"id"`
-	}{}
-
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-	}
-
-	if strings.TrimSpace(args.ID) == "" {
-		return mcp.NewToolResultError("id parameter is required"), nil
-	}
-
-	if err := ids.ValidateULID(args.ID); err != nil {
-		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
-	}
-
-	org, err := t.orgService.GetByULID(ctx, args.ID)
-	if err != nil {
-		if errors.Is(err, organizations.ErrNotFound) {
-			if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, args.ID); tombErr == nil && tombstone != nil {
-				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
-				if payloadErr != nil {
-					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
-				}
-				return toolResultJSON(payload)
-			}
-			return mcp.NewToolResultErrorf("organization not found: %s", args.ID), nil
-		}
-		return mcp.NewToolResultErrorFromErr("failed to get organization", err), nil
-	}
-
-	if strings.EqualFold(org.Lifecycle, "deleted") {
-		if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, args.ID); tombErr == nil && tombstone != nil {
-			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
-			if payloadErr != nil {
-				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
-			}
-			return toolResultJSON(payload)
-		}
-
-		payload := map[string]any{
-			"@context":      defaultContext(),
-			"@type":         "Organization",
-			"sel:tombstone": true,
-			"sel:deletedAt": time.Now().Format(time.RFC3339),
-		}
-		if uri := buildOrganizationURI(t.baseURL, org.ULID); uri != "" {
-			payload["@id"] = uri
-		}
-		return toolResultJSON(payload)
-	}
-
-	payload := buildOrganizationPayload(org, t.baseURL)
-	return toolResultJSON(payload)
-}
-
-// CreateOrganizationTool returns the MCP tool definition for creating an organization.
-func (t *OrganizationTools) CreateOrganizationTool() mcp.Tool {
-	return mcp.Tool{
-		Name:        "create_organization",
+		Name:        "add_organization",
 		Description: "Create a new organization. Accepts a JSON-LD organization object and returns the created organization with its assigned ID.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
@@ -226,8 +205,8 @@ func (t *OrganizationTools) CreateOrganizationTool() mcp.Tool {
 	}
 }
 
-// CreateOrganizationHandler handles the create_organization tool call.
-func (t *OrganizationTools) CreateOrganizationHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// AddOrganizationHandler handles the add_organization tool call.
+func (t *OrganizationTools) AddOrganizationHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if t == nil || t.orgService == nil {
 		return mcp.NewToolResultError("organizations service not configured"), nil
 	}

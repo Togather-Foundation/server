@@ -29,14 +29,19 @@ func NewPlaceTools(placesService *places.Service, baseURL string) *PlaceTools {
 	}
 }
 
-// ListPlacesTool returns the MCP tool definition for listing places.
-func (t *PlaceTools) ListPlacesTool() mcp.Tool {
+// PlacesTool returns the MCP tool definition for listing or getting places.
+// If id parameter is provided, returns a single place. Otherwise, returns a list of places.
+func (t *PlaceTools) PlacesTool() mcp.Tool {
 	return mcp.Tool{
-		Name:        "list_places",
-		Description: "List places with optional filters for query, proximity, and pagination. Returns a JSON array of places matching the criteria.",
+		Name:        "places",
+		Description: "List places with optional filters, or get a specific place by ULID. If 'id' is provided, returns a single JSON-LD formatted place. Otherwise, returns a JSON array of places matching the filter criteria.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional ULID of a specific place to retrieve. If provided, other parameters are ignored.",
+				},
 				"query": map[string]interface{}{
 					"type":        "string",
 					"description": "Search query to filter places by name or description",
@@ -67,15 +72,15 @@ func (t *PlaceTools) ListPlacesTool() mcp.Tool {
 	}
 }
 
-// ListPlacesHandler handles the list_places tool call.
-func (t *PlaceTools) ListPlacesHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// PlacesHandler handles the places tool call.
+// If id is provided, delegates to get place logic. Otherwise, delegates to list places logic.
+func (t *PlaceTools) PlacesHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if t == nil || t.placesService == nil {
 		return mcp.NewToolResultError("places service not configured"), nil
 	}
 
-	const maxListLimit = 200
-
 	args := struct {
+		ID      string   `json:"id"`
 		Query   string   `json:"query"`
 		NearLat *float64 `json:"near_lat"`
 		NearLon *float64 `json:"near_lon"`
@@ -96,32 +101,92 @@ func (t *PlaceTools) ListPlacesHandler(ctx context.Context, request mcp.CallTool
 		}
 	}
 
-	// Enforce limit caps
-	if args.Limit <= 0 {
-		args.Limit = 50
+	// If id is provided, get single place
+	if strings.TrimSpace(args.ID) != "" {
+		return t.getPlaceByID(ctx, args.ID)
 	}
-	if args.Limit > maxListLimit {
-		args.Limit = maxListLimit
+
+	// Otherwise, list places with filters
+	return t.listPlaces(ctx, args.Query, args.NearLat, args.NearLon, args.Radius, args.Limit, args.Cursor)
+}
+
+// getPlaceByID retrieves a single place by ULID
+func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallToolResult, error) {
+	if err := ids.ValidateULID(id); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
+	}
+
+	place, err := t.placesService.GetByULID(ctx, id)
+	if err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
+				if payloadErr != nil {
+					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
+				}
+				return toolResultJSON(payload)
+			}
+			return mcp.NewToolResultErrorf("place not found: %s", id), nil
+		}
+		return mcp.NewToolResultErrorFromErr("failed to get place", err), nil
+	}
+
+	if strings.EqualFold(place.Lifecycle, "deleted") {
+		if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
+			if payloadErr != nil {
+				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
+			}
+			return toolResultJSON(payload)
+		}
+
+		payload := map[string]any{
+			"@context":      defaultContext(),
+			"@type":         "Place",
+			"sel:tombstone": true,
+			"sel:deletedAt": time.Now().Format(time.RFC3339),
+		}
+		if uri := buildPlaceURI(t.baseURL, place.ULID); uri != "" {
+			payload["@id"] = uri
+		}
+		return toolResultJSON(payload)
+	}
+
+	payload := buildPlacePayload(place, t.baseURL)
+	return toolResultJSON(payload)
+}
+
+// listPlaces retrieves a list of places with filters
+func (t *PlaceTools) listPlaces(ctx context.Context, query string, nearLat, nearLon, radius *float64, limit int, cursor string) (*mcp.CallToolResult, error) {
+
+	const maxListLimit = 200
+
+	// Enforce limit caps
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
 	}
 
 	values := url.Values{}
-	if strings.TrimSpace(args.Query) != "" {
-		values.Set("q", strings.TrimSpace(args.Query))
+	if strings.TrimSpace(query) != "" {
+		values.Set("q", strings.TrimSpace(query))
 	}
-	if args.NearLat != nil {
-		values.Set("near_lat", strconv.FormatFloat(*args.NearLat, 'f', -1, 64))
+	if nearLat != nil {
+		values.Set("near_lat", strconv.FormatFloat(*nearLat, 'f', -1, 64))
 	}
-	if args.NearLon != nil {
-		values.Set("near_lon", strconv.FormatFloat(*args.NearLon, 'f', -1, 64))
+	if nearLon != nil {
+		values.Set("near_lon", strconv.FormatFloat(*nearLon, 'f', -1, 64))
 	}
-	if args.Radius != nil {
-		values.Set("radius", strconv.FormatFloat(*args.Radius, 'f', -1, 64))
+	if radius != nil {
+		values.Set("radius", strconv.FormatFloat(*radius, 'f', -1, 64))
 	}
-	if args.Limit > 0 {
-		values.Set("limit", strconv.Itoa(args.Limit))
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
 	}
-	if strings.TrimSpace(args.Cursor) != "" {
-		values.Set("after", strings.TrimSpace(args.Cursor))
+	if strings.TrimSpace(cursor) != "" {
+		values.Set("after", strings.TrimSpace(cursor))
 	}
 
 	filters, pagination, err := places.ParseFilters(values)
@@ -147,96 +212,10 @@ func (t *PlaceTools) ListPlacesHandler(ctx context.Context, request mcp.CallTool
 	return toolResultJSON(response)
 }
 
-// GetPlaceTool returns the MCP tool definition for getting a single place by ID.
-func (t *PlaceTools) GetPlaceTool() mcp.Tool {
+// AddPlaceTool returns the MCP tool definition for creating a place.
+func (t *PlaceTools) AddPlaceTool() mcp.Tool {
 	return mcp.Tool{
-		Name:        "get_place",
-		Description: "Get detailed information about a specific place by its ULID. Returns a JSON-LD formatted place object.",
-		InputSchema: mcp.ToolInputSchema{
-			Type: "object",
-			Properties: map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The ULID of the place to retrieve",
-				},
-			},
-			Required: []string{"id"},
-		},
-	}
-}
-
-// GetPlaceHandler handles the get_place tool call.
-func (t *PlaceTools) GetPlaceHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if t == nil || t.placesService == nil {
-		return mcp.NewToolResultError("places service not configured"), nil
-	}
-
-	args := struct {
-		ID string `json:"id"`
-	}{}
-
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-	}
-
-	if strings.TrimSpace(args.ID) == "" {
-		return mcp.NewToolResultError("id parameter is required"), nil
-	}
-
-	if err := ids.ValidateULID(args.ID); err != nil {
-		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
-	}
-
-	place, err := t.placesService.GetByULID(ctx, args.ID)
-	if err != nil {
-		if errors.Is(err, places.ErrNotFound) {
-			if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, args.ID); tombErr == nil && tombstone != nil {
-				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
-				if payloadErr != nil {
-					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
-				}
-				return toolResultJSON(payload)
-			}
-			return mcp.NewToolResultErrorf("place not found: %s", args.ID), nil
-		}
-		return mcp.NewToolResultErrorFromErr("failed to get place", err), nil
-	}
-
-	if strings.EqualFold(place.Lifecycle, "deleted") {
-		if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, args.ID); tombErr == nil && tombstone != nil {
-			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
-			if payloadErr != nil {
-				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
-			}
-			return toolResultJSON(payload)
-		}
-
-		payload := map[string]any{
-			"@context":      defaultContext(),
-			"@type":         "Place",
-			"sel:tombstone": true,
-			"sel:deletedAt": time.Now().Format(time.RFC3339),
-		}
-		if uri := buildPlaceURI(t.baseURL, place.ULID); uri != "" {
-			payload["@id"] = uri
-		}
-		return toolResultJSON(payload)
-	}
-
-	payload := buildPlacePayload(place, t.baseURL)
-	return toolResultJSON(payload)
-}
-
-// CreatePlaceTool returns the MCP tool definition for creating a place.
-func (t *PlaceTools) CreatePlaceTool() mcp.Tool {
-	return mcp.Tool{
-		Name:        "create_place",
+		Name:        "add_place",
 		Description: "Create a new place. Accepts a JSON-LD place object and returns the created place with its assigned ID.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
@@ -251,8 +230,8 @@ func (t *PlaceTools) CreatePlaceTool() mcp.Tool {
 	}
 }
 
-// CreatePlaceHandler handles the create_place tool call.
-func (t *PlaceTools) CreatePlaceHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// AddPlaceHandler handles the add_place tool call.
+func (t *PlaceTools) AddPlaceHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if t == nil || t.placesService == nil {
 		return mcp.NewToolResultError("places service not configured"), nil
 	}
