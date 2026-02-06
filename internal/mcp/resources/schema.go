@@ -17,7 +17,6 @@ const (
 	schemaMIMEType     = "application/json"
 	openAPIResource    = "schema://openapi"
 	serverInfoResource = "info://server"
-	openAPISourcePath  = "specs/001-sel-backend/contracts/openapi.yaml"
 )
 
 type ServerCapabilities struct {
@@ -35,6 +34,8 @@ type ServerInfo struct {
 }
 
 type SchemaResources struct {
+	openAPIPath string // Path to OpenAPI YAML file
+
 	openAPIOnce sync.Once
 	openAPIJSON string
 	openAPIErr  error
@@ -44,8 +45,15 @@ type SchemaResources struct {
 	infoErr  error
 }
 
-func NewSchemaResources() *SchemaResources {
-	return &SchemaResources{}
+// NewSchemaResources creates a new schema resources handler.
+// openAPIPath specifies where to find the OpenAPI YAML file.
+func NewSchemaResources(openAPIPath string) *SchemaResources {
+	if openAPIPath == "" {
+		openAPIPath = "specs/001-sel-backend/contracts/openapi.yaml" // Default fallback
+	}
+	return &SchemaResources{
+		openAPIPath: openAPIPath,
+	}
 }
 
 func (r *SchemaResources) OpenAPIResource() mcp.Resource {
@@ -112,9 +120,11 @@ func (r *SchemaResources) InfoReadHandler(info ServerInfo) func(context.Context,
 
 func (r *SchemaResources) loadOpenAPI() (string, error) {
 	r.openAPIOnce.Do(func() {
-		data, err := os.ReadFile(openAPISourcePath)
+		// Try configured path first
+		data, err := os.ReadFile(r.openAPIPath)
 		if err != nil {
-			data, err = os.ReadFile(resolveOpenAPIPath())
+			// Fallback: try resolving from repository root
+			data, err = os.ReadFile(r.resolveOpenAPIPath())
 			if err != nil {
 				r.openAPIErr = err
 				return
@@ -136,6 +146,14 @@ func (r *SchemaResources) loadOpenAPI() (string, error) {
 	return r.openAPIJSON, nil
 }
 
+func (r *SchemaResources) resolveOpenAPIPath() string {
+	root, err := repoRoot()
+	if err != nil {
+		return r.openAPIPath
+	}
+	return filepath.Join(root, r.openAPIPath)
+}
+
 func (r *SchemaResources) loadInfo(info ServerInfo) (string, error) {
 	r.infoOnce.Do(func() {
 		data, err := json.Marshal(info)
@@ -151,14 +169,6 @@ func (r *SchemaResources) loadInfo(info ServerInfo) (string, error) {
 	}
 
 	return r.infoJSON, nil
-}
-
-func resolveOpenAPIPath() string {
-	root, err := repoRoot()
-	if err != nil {
-		return openAPISourcePath
-	}
-	return filepath.Join(root, openAPISourcePath)
 }
 
 func repoRoot() (string, error) {

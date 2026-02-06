@@ -23,16 +23,20 @@ type MCPConfig struct {
 	Transport *mcp.TransportConfig
 }
 
-// MCPServerConfig holds MCP server metadata.
+// MCPServerConfig holds MCP server metadata and resource paths.
 type MCPServerConfig struct {
-	Name    string
-	Version string
+	Name        string
+	Version     string
+	ContextDir  string // Directory containing JSON-LD context files
+	OpenAPIPath string // Path to OpenAPI specification YAML file
 }
 
 // LoadConfig loads configuration from environment variables.
 // MCP-specific environment variables:
 //   - MCP_SERVER_NAME: Server name for MCP identification (default: "Togather SEL MCP Server")
 //   - MCP_SERVER_VERSION: Server version (default: "1.0.0")
+//   - MCP_CONTEXT_DIR: Directory containing JSON-LD context files (default: "contexts")
+//   - MCP_OPENAPI_PATH: Path to OpenAPI specification YAML file (default: "specs/001-sel-backend/contracts/openapi.yaml")
 //   - MCP_TRANSPORT: Transport type - "stdio", "sse", or "http" (default: "stdio")
 //   - PORT: HTTP port for SSE/HTTP transports (default: 8080)
 //   - HOST: Bind address for SSE/HTTP transports (default: "0.0.0.0")
@@ -51,10 +55,12 @@ func LoadConfig() (*MCPConfig, error) {
 		return nil, fmt.Errorf("failed to load transport config: %w", err)
 	}
 
-	// MCP server metadata
+	// MCP server metadata and resource paths
 	mcpConfig := MCPServerConfig{
-		Name:    getEnv("MCP_SERVER_NAME", "Togather SEL MCP Server"),
-		Version: getEnv("MCP_SERVER_VERSION", "1.0.0"),
+		Name:        getEnv("MCP_SERVER_NAME", "Togather SEL MCP Server"),
+		Version:     getEnv("MCP_SERVER_VERSION", "1.0.0"),
+		ContextDir:  getEnv("MCP_CONTEXT_DIR", "contexts"),
+		OpenAPIPath: getEnv("MCP_OPENAPI_PATH", "specs/001-sel-backend/contracts/openapi.yaml"),
 	}
 
 	return &MCPConfig{
