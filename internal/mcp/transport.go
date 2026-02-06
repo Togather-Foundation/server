@@ -133,7 +133,10 @@ func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportCo
 		Msg("Starting MCP server with SSE transport")
 
 	sseServer := server.NewSSEServer(mcpServer)
-	wrapped := wrapMCPHandler(sseServer, authStore, rateLimitCfg)
+	wrapped, err := wrapMCPHandler(sseServer, authStore, rateLimitCfg)
+	if err != nil {
+		return fmt.Errorf("failed to wrap SSE handler: %w", err)
+	}
 
 	// Create HTTP server with SSE handler
 	httpServer := &http.Server{
@@ -176,7 +179,10 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 		Msg("Starting MCP server with Streamable HTTP transport")
 
 	httpTransport := server.NewStreamableHTTPServer(mcpServer)
-	wrapped := wrapMCPHandler(httpTransport, authStore, rateLimitCfg)
+	wrapped, err := wrapMCPHandler(httpTransport, authStore, rateLimitCfg)
+	if err != nil {
+		return fmt.Errorf("failed to wrap HTTP handler: %w", err)
+	}
 
 	// Create HTTP server with streamable HTTP handler
 	httpServer := &http.Server{
@@ -223,11 +229,9 @@ func Serve(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfi
 	}
 }
 
-func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) http.Handler {
+func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) (http.Handler, error) {
 	if handler == nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		})
+		return nil, fmt.Errorf("handler cannot be nil")
 	}
 
 	wrapped := handler
@@ -237,11 +241,12 @@ func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitC
 
 	wrapped = middleware.WithRateLimitTierHandler(middleware.TierAgent)(wrapped)
 	wrapped = middleware.RateLimit(rateLimitCfg)(wrapped)
-	return wrapped
+	return wrapped, nil
 }
 
 // WrapHandler exposes the MCP middleware wrapper for embedding in existing routers.
-func WrapHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) http.Handler {
+// Returns an error if the handler is nil.
+func WrapHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) (http.Handler, error) {
 	return wrapMCPHandler(handler, authStore, rateLimitCfg)
 }
 
