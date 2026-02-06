@@ -97,8 +97,19 @@ func (s *Server) registerTools() {
 	// create_event tool - create new events
 	s.mcp.AddTool(eventTools.CreateEventTool(), eventTools.CreateEventHandler)
 
-	// Place and organization tools will be implemented in subsequent beads:
-	// - server-ppp3: Place query tools (list, get, search)
+	// Register place tools (server-9185, server-g8q5)
+	placeTools := tools.NewPlaceTools(s.placesService, s.baseURL)
+
+	// list_places tool - query places with filters and pagination
+	s.mcp.AddTool(placeTools.ListPlacesTool(), placeTools.ListPlacesHandler)
+
+	// get_place tool - retrieve a specific place by ULID
+	s.mcp.AddTool(placeTools.GetPlaceTool(), placeTools.GetPlaceHandler)
+
+	// create_place tool - create new places
+	s.mcp.AddTool(placeTools.CreatePlaceTool(), placeTools.CreatePlaceHandler)
+
+	// Organization tools will be implemented in subsequent beads:
 	// - server-ooo3: Organization query tools (list, get, search)
 }
 

@@ -98,7 +98,11 @@ func (t *EventTools) ListEventsHandler(ctx context.Context, request mcp.CallTool
 	}
 
 	if request.Params.Arguments != nil {
-		if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
+		data, err := json.Marshal(request.Params.Arguments)
+		if err != nil {
+			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
+		}
+		if err := json.Unmarshal(data, &args); err != nil {
 			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 		}
 	}
@@ -189,7 +193,11 @@ func (t *EventTools) GetEventHandler(ctx context.Context, request mcp.CallToolRe
 	}{}
 
 	if request.Params.Arguments != nil {
-		if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
+		data, err := json.Marshal(request.Params.Arguments)
+		if err != nil {
+			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
+		}
+		if err := json.Unmarshal(data, &args); err != nil {
 			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 		}
 	}
@@ -290,7 +298,11 @@ func (t *EventTools) CreateEventHandler(ctx context.Context, request mcp.CallToo
 	}{}
 
 	if request.Params.Arguments != nil {
-		if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
+		data, err := json.Marshal(request.Params.Arguments)
+		if err != nil {
+			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
+		}
+		if err := json.Unmarshal(data, &args); err != nil {
 			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 		}
 	}

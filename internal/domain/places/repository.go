@@ -9,21 +9,42 @@ import (
 var ErrNotFound = errors.New("place not found")
 
 type Place struct {
-	ID          string
-	ULID        string
-	Name        string
-	Description string
-	City        string
-	Region      string
-	Country     string
-	Lifecycle   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            string
+	ULID          string
+	Name          string
+	Description   string
+	StreetAddress string
+	City          string
+	Region        string
+	PostalCode    string
+	Country       string
+	Latitude      *float64
+	Longitude     *float64
+	Lifecycle     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type CreateParams struct {
+	ULID            string
+	Name            string
+	Description     string
+	StreetAddress   string
+	AddressLocality string
+	AddressRegion   string
+	PostalCode      string
+	AddressCountry  string
+	Latitude        *float64
+	Longitude       *float64
+	FederationURI   *string
 }
 
 type Filters struct {
-	City  string
-	Query string
+	City         string
+	Query        string
+	NearLat      *float64
+	NearLon      *float64
+	RadiusMeters float64
 }
 
 type Pagination struct {
@@ -39,6 +60,7 @@ type ListResult struct {
 type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Place, error)
+	Create(ctx context.Context, params CreateParams) (*Place, error)
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)
