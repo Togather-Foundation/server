@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -22,15 +23,16 @@ type OrganizationRepository struct {
 }
 
 type organizationRow struct {
-	ID        string
-	ULID      string
-	Name      string
-	LegalName *string
-	URL       *string
-	DeletedAt pgtype.Timestamptz
-	Reason    pgtype.Text
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID          string
+	ULID        string
+	Name        string
+	LegalName   *string
+	Description *string
+	URL         *string
+	DeletedAt   pgtype.Timestamptz
+	Reason      pgtype.Text
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }
 
 func (r *OrganizationRepository) List(ctx context.Context, filters organizations.Filters, paginationArgs organizations.Pagination) (organizations.ListResult, error) {
@@ -56,12 +58,12 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 	}
 
 	rows, err := queryer.Query(ctx, `
-SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.url, o.created_at, o.updated_at
   FROM organizations o
  WHERE ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
-   AND (
-     $2::timestamptz IS NULL OR
-     o.created_at > $2::timestamptz OR
+    AND (
+      $2::timestamptz IS NULL OR
+      o.created_at > $2::timestamptz OR
      (o.created_at = $2::timestamptz AND o.ulid > $3)
    )
  ORDER BY o.created_at ASC, o.ulid ASC
@@ -85,6 +87,7 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
 			&row.ULID,
 			&row.Name,
 			&row.LegalName,
+			&row.Description,
 			&row.URL,
 			&row.CreatedAt,
 			&row.UpdatedAt,
@@ -92,13 +95,14 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
 			return organizations.ListResult{}, fmt.Errorf("scan organizations: %w", err)
 		}
 		org := organizations.Organization{
-			ID:        row.ID,
-			ULID:      row.ULID,
-			Name:      row.Name,
-			LegalName: derefString(row.LegalName),
-			URL:       derefString(row.URL),
-			CreatedAt: time.Time{},
-			UpdatedAt: time.Time{},
+			ID:          row.ID,
+			ULID:        row.ULID,
+			Name:        row.Name,
+			LegalName:   derefString(row.LegalName),
+			Description: derefString(row.Description),
+			URL:         derefString(row.URL),
+			CreatedAt:   time.Time{},
+			UpdatedAt:   time.Time{},
 		}
 		if row.CreatedAt.Valid {
 			org.CreatedAt = row.CreatedAt.Time
@@ -126,7 +130,7 @@ func (r *OrganizationRepository) GetByULID(ctx context.Context, ulid string) (*o
 	queryer := r.queryer()
 
 	row := queryer.QueryRow(ctx, `
-SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reason, o.created_at, o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.url, o.deleted_at, o.deletion_reason, o.created_at, o.updated_at
   FROM organizations o
  WHERE o.ulid = $1
 `, ulid)
@@ -137,6 +141,7 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reaso
 		&data.ULID,
 		&data.Name,
 		&data.LegalName,
+		&data.Description,
 		&data.URL,
 		&data.DeletedAt,
 		&data.Reason,
@@ -150,14 +155,15 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reaso
 	}
 
 	org := &organizations.Organization{
-		ID:        data.ID,
-		ULID:      data.ULID,
-		Name:      data.Name,
-		LegalName: derefString(data.LegalName),
-		URL:       derefString(data.URL),
-		Lifecycle: "",
-		CreatedAt: time.Time{},
-		UpdatedAt: time.Time{},
+		ID:          data.ID,
+		ULID:        data.ULID,
+		Name:        data.Name,
+		LegalName:   derefString(data.LegalName),
+		Description: derefString(data.Description),
+		URL:         derefString(data.URL),
+		Lifecycle:   "",
+		CreatedAt:   time.Time{},
+		UpdatedAt:   time.Time{},
 	}
 	if data.CreatedAt.Valid {
 		org.CreatedAt = data.CreatedAt.Time
@@ -168,6 +174,93 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reaso
 	if data.DeletedAt.Valid {
 		org.Lifecycle = "deleted"
 	}
+	return org, nil
+}
+
+func (r *OrganizationRepository) Create(ctx context.Context, params organizations.CreateParams) (*organizations.Organization, error) {
+	queryer := r.queryer()
+
+	ulidValue := strings.TrimSpace(params.ULID)
+	if ulidValue == "" {
+		value, err := ids.NewULID()
+		if err != nil {
+			return nil, fmt.Errorf("generate organization ulid: %w", err)
+		}
+		ulidValue = value
+	}
+
+	row := queryer.QueryRow(ctx, `
+INSERT INTO organizations (
+  ulid,
+  name,
+  legal_name,
+  description,
+  url,
+  street_address,
+  address_locality,
+  address_region,
+  postal_code,
+  address_country,
+  federation_uri
+) VALUES (
+  $1,
+  $2,
+  NULLIF($3, ''),
+  NULLIF($4, ''),
+  NULLIF($5, ''),
+  NULLIF($6, ''),
+  NULLIF($7, ''),
+  NULLIF($8, ''),
+  NULLIF($9, ''),
+  NULLIF($10, ''),
+  $11
+)
+RETURNING id, ulid, name, legal_name, description, url, created_at, updated_at
+`,
+		ulidValue,
+		strings.TrimSpace(params.Name),
+		strings.TrimSpace(params.LegalName),
+		strings.TrimSpace(params.Description),
+		strings.TrimSpace(params.URL),
+		strings.TrimSpace(params.StreetAddress),
+		strings.TrimSpace(params.AddressLocality),
+		strings.TrimSpace(params.AddressRegion),
+		strings.TrimSpace(params.PostalCode),
+		strings.TrimSpace(params.AddressCountry),
+		nullableString(params.FederationURI),
+	)
+
+	var data organizationRow
+	if err := row.Scan(
+		&data.ID,
+		&data.ULID,
+		&data.Name,
+		&data.LegalName,
+		&data.Description,
+		&data.URL,
+		&data.CreatedAt,
+		&data.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("create organization: %w", err)
+	}
+
+	org := &organizations.Organization{
+		ID:          data.ID,
+		ULID:        data.ULID,
+		Name:        data.Name,
+		LegalName:   derefString(data.LegalName),
+		Description: derefString(data.Description),
+		URL:         derefString(data.URL),
+		CreatedAt:   time.Time{},
+		UpdatedAt:   time.Time{},
+	}
+	if data.CreatedAt.Valid {
+		org.CreatedAt = data.CreatedAt.Time
+	}
+	if data.UpdatedAt.Valid {
+		org.UpdatedAt = data.UpdatedAt.Time
+	}
+
 	return org, nil
 }
 
@@ -259,4 +352,22 @@ func (r *OrganizationRepository) queryer() organizationQueryer {
 		return r.tx
 	}
 	return r.pool
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func nullableString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
