@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -87,7 +89,7 @@ func (t *OrganizationTools) OrganizationsHandler(ctx context.Context, request mc
 
 	// If id is provided, get single organization
 	if strings.TrimSpace(args.ID) != "" {
-		return t.getOrganizationByID(ctx, args.ID)
+		return t.getOrganizationByID(ctx, strings.TrimSpace(args.ID))
 	}
 
 	// Otherwise, list organizations with filters
@@ -103,7 +105,12 @@ func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) 
 	org, err := t.orgService.GetByULID(ctx, id)
 	if err != nil {
 		if errors.Is(err, organizations.ErrNotFound) {
-			if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+			tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id)
+			if tombErr != nil && !errors.Is(tombErr, organizations.ErrNotFound) {
+				// Log tombstone fetch error for diagnostics (don't fail the request)
+				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for organization %s: %v\n", id, tombErr)
+			}
+			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 				if payloadErr != nil {
 					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
@@ -121,7 +128,12 @@ func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) 
 	}
 
 	if strings.EqualFold(org.Lifecycle, "deleted") {
-		if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+		tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id)
+		if tombErr != nil && !errors.Is(tombErr, organizations.ErrNotFound) {
+			// Log tombstone fetch error for diagnostics (don't fail the request)
+			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted organization %s: %v\n", id, tombErr)
+		}
+		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 			if payloadErr != nil {
 				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil

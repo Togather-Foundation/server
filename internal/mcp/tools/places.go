@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -103,7 +104,7 @@ func (t *PlaceTools) PlacesHandler(ctx context.Context, request mcp.CallToolRequ
 
 	// If id is provided, get single place
 	if strings.TrimSpace(args.ID) != "" {
-		return t.getPlaceByID(ctx, args.ID)
+		return t.getPlaceByID(ctx, strings.TrimSpace(args.ID))
 	}
 
 	// Otherwise, list places with filters
@@ -119,7 +120,12 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 	place, err := t.placesService.GetByULID(ctx, id)
 	if err != nil {
 		if errors.Is(err, places.ErrNotFound) {
-			if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+			tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id)
+			if tombErr != nil && !errors.Is(tombErr, places.ErrNotFound) {
+				// Log tombstone fetch error for diagnostics (don't fail the request)
+				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for place %s: %v\n", id, tombErr)
+			}
+			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 				if payloadErr != nil {
 					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
@@ -137,7 +143,12 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 	}
 
 	if strings.EqualFold(place.Lifecycle, "deleted") {
-		if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
+		tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id)
+		if tombErr != nil && !errors.Is(tombErr, places.ErrNotFound) {
+			// Log tombstone fetch error for diagnostics (don't fail the request)
+			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted place %s: %v\n", id, tombErr)
+		}
+		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 			if payloadErr != nil {
 				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
