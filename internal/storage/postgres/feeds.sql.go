@@ -153,10 +153,10 @@ SELECT ec.id,
 `
 
 type ListEventChangesParams struct {
-	Column1 int64              `json:"column_1"`
-	Column2 pgtype.Timestamptz `json:"column_2"`
-	Column3 interface{}        `json:"column_3"`
-	Limit   int32              `json:"limit"`
+	AfterSequence pgtype.Int8        `json:"after_sequence"`
+	After         pgtype.Timestamptz `json:"after"`
+	Action        interface{}        `json:"action"`
+	Limit         int32              `json:"limit"`
 }
 
 type ListEventChangesRow struct {
@@ -178,9 +178,9 @@ type ListEventChangesRow struct {
 // SQLc queries for change feeds.
 func (q *Queries) ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error) {
 	rows, err := q.db.Query(ctx, listEventChanges,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
+		arg.AfterSequence,
+		arg.After,
+		arg.Action,
 		arg.Limit,
 	)
 	if err != nil {
@@ -230,12 +230,12 @@ SELECT et.id,
 `
 
 type ListEventTombstonesParams struct {
-	Column1 pgtype.Timestamptz `json:"column_1"`
-	Limit   int32              `json:"limit"`
+	After pgtype.Timestamptz `json:"after"`
+	Limit int32              `json:"limit"`
 }
 
 func (q *Queries) ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error) {
-	rows, err := q.db.Query(ctx, listEventTombstones, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listEventTombstones, arg.After, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

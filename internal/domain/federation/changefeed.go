@@ -27,7 +27,7 @@ type ChangeFeedRepository interface {
 
 // ListEventChangesParams holds parameters for querying event changes.
 type ListEventChangesParams struct {
-	AfterSequence int64
+	AfterSequence pgtype.Int8
 	Since         pgtype.Timestamptz
 	Action        string
 	Limit         int32
@@ -152,9 +152,16 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 
 	// Build query parameters
 	queryParams := ListEventChangesParams{
-		AfterSequence: afterSeq,
-		Limit:         int32(params.Limit + 1), // Fetch one extra to check if there are more results
-		Action:        params.Action,
+		Limit:  int32(params.Limit + 1), // Fetch one extra to check if there are more results
+		Action: params.Action,
+	}
+
+	// Set sequence filter only if provided (non-zero cursor)
+	if afterSeq > 0 {
+		queryParams.AfterSequence = pgtype.Int8{
+			Int64: afterSeq,
+			Valid: true,
+		}
 	}
 
 	// Set timestamp filter
