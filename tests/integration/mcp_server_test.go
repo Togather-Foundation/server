@@ -1033,9 +1033,11 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 
 	mcpServer := mcp.NewServer(
 		mcp.Config{
-			Name:      "Test MCP Server",
-			Version:   "test",
-			Transport: "inprocess",
+			Name:        "Test MCP Server",
+			Version:     "test",
+			Transport:   "inprocess",
+			ContextDir:  "../../contexts",
+			OpenAPIPath: "../../specs/001-sel-backend/contracts/openapi.yaml",
 		},
 		eventsService,
 		ingestService,
@@ -1061,4 +1063,334 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 	require.NoError(t, err)
 
 	return cli
+}
+
+// TestMCPPrompts verifies that all MCP prompts are available and return proper responses
+func TestMCPPrompts(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Test create_event_from_text prompt
+	t.Run("create_event_from_text", func(t *testing.T) {
+		result, err := cli.GetPrompt(ctx, mcpTypes.GetPromptRequest{
+			Params: mcpTypes.GetPromptParams{
+				Name: "create_event_from_text",
+				Arguments: map[string]string{
+					"description":      "Community meetup at the library tomorrow at 7pm",
+					"default_timezone": "America/Toronto",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Messages)
+
+		msg := result.Messages[0]
+		textContent, ok := mcpTypes.AsTextContent(msg.Content)
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "Convert the following event description")
+		require.Contains(t, textContent.Text, "America/Toronto")
+	})
+
+	// Test find_venue prompt
+	t.Run("find_venue", func(t *testing.T) {
+		result, err := cli.GetPrompt(ctx, mcpTypes.GetPromptRequest{
+			Params: mcpTypes.GetPromptParams{
+				Name: "find_venue",
+				Arguments: map[string]string{
+					"requirements": "wheelchair accessible, AV equipment",
+					"location":     "downtown Toronto",
+					"capacity":     "50",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Messages)
+
+		msg := result.Messages[0]
+		textContent, ok := mcpTypes.AsTextContent(msg.Content)
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "Find a venue")
+		require.Contains(t, textContent.Text, "wheelchair accessible")
+		require.Contains(t, textContent.Text, "downtown Toronto")
+	})
+
+	// Test duplicate_check prompt
+	t.Run("duplicate_check", func(t *testing.T) {
+		result, err := cli.GetPrompt(ctx, mcpTypes.GetPromptRequest{
+			Params: mcpTypes.GetPromptParams{
+				Name: "duplicate_check",
+				Arguments: map[string]string{
+					"event_description": "Tech Talk: Introduction to Go",
+					"date":              "2026-02-15",
+					"location":          "Toronto Tech Hub",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Messages)
+
+		msg := result.Messages[0]
+		textContent, ok := mcpTypes.AsTextContent(msg.Content)
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "potential duplicate events")
+		require.Contains(t, textContent.Text, "Tech Talk")
+		require.Contains(t, textContent.Text, "2026-02-15")
+	})
+
+	// Test list prompts
+	t.Run("list_prompts", func(t *testing.T) {
+		result, err := cli.ListPrompts(ctx, mcpTypes.ListPromptsRequest{})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Prompts, 3, "Should have exactly 3 prompts")
+
+		promptNames := make(map[string]bool)
+		for _, prompt := range result.Prompts {
+			promptNames[prompt.Name] = true
+		}
+		require.True(t, promptNames["create_event_from_text"])
+		require.True(t, promptNames["find_venue"])
+		require.True(t, promptNames["duplicate_check"])
+	})
+}
+
+// TestMCPResourcesComplete verifies that all MCP resources are available and readable
+func TestMCPResourcesComplete(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Test list resources
+	t.Run("list_resources", func(t *testing.T) {
+		result, err := cli.ListResources(ctx, mcpTypes.ListResourcesRequest{})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Resources, 5, "Should have exactly 5 resources")
+
+		resourceURIs := make(map[string]bool)
+		for _, resource := range result.Resources {
+			resourceURIs[resource.URI] = true
+		}
+		require.True(t, resourceURIs["context://sel-event"], "Should have SEL event context")
+		require.True(t, resourceURIs["context://sel-place"], "Should have SEL place context")
+		require.True(t, resourceURIs["context://sel-organization"], "Should have SEL organization context")
+		require.True(t, resourceURIs["schema://openapi"], "Should have OpenAPI schema")
+		require.True(t, resourceURIs["info://server"], "Should have server info")
+	})
+
+	// Test read SEL event context
+	t.Run("sel_event_context", func(t *testing.T) {
+		result, err := cli.ReadResource(ctx, mcpTypes.ReadResourceRequest{
+			Params: mcpTypes.ReadResourceParams{
+				URI: "context://sel-event",
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Contents)
+
+		content := result.Contents[0]
+		textContent, ok := mcpTypes.AsTextResourceContents(content)
+		require.True(t, ok, "Content should be text resource type, got: %T", content)
+		require.Contains(t, textContent.Text, "@context")
+	})
+
+	// Test read server info
+	t.Run("server_info", func(t *testing.T) {
+		result, err := cli.ReadResource(ctx, mcpTypes.ReadResourceRequest{
+			Params: mcpTypes.ReadResourceParams{
+				URI: "info://server",
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.Contents)
+
+		content := result.Contents[0]
+		textContent, ok := mcpTypes.AsTextResourceContents(content)
+		require.True(t, ok, "Content should be text resource type, got: %T", content)
+
+		var info map[string]any
+		err = json.Unmarshal([]byte(textContent.Text), &info)
+		require.NoError(t, err)
+		require.Equal(t, "Test MCP Server", info["name"])
+		require.Equal(t, "test", info["version"])
+		capabilities := info["capabilities"].(map[string]any)
+		require.True(t, capabilities["tools"].(bool))
+		require.True(t, capabilities["resources"].(bool))
+		require.True(t, capabilities["prompts"].(bool))
+	})
+}
+
+// TestMCPToolValidation verifies that tools validate their arguments properly
+func TestMCPToolValidation(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Test get_event with invalid ULID
+	t.Run("get_event_invalid_ulid", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "get_event",
+				Arguments: map[string]any{
+					"id": "not-a-valid-ulid",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "invalid")
+	})
+
+	// Test list_events with invalid date format
+	t.Run("list_events_invalid_date", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "list_events",
+				Arguments: map[string]any{
+					"start_date": "not-a-date",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "invalid")
+	})
+
+	// Test create_event with missing required fields
+	t.Run("create_event_missing_fields", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "create_event",
+				Arguments: map[string]any{
+					"event": map[string]any{
+						"description": "Event without required fields",
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "required")
+	})
+}
+
+// TestMCPPagination verifies that pagination works correctly across list tools
+func TestMCPPagination(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Create test data
+	repo, err := postgres.NewRepository(env.Pool)
+	require.NoError(t, err)
+
+	// Create multiple events for pagination testing
+	ingestService := eventsIngestService(t, repo, env)
+	for i := 0; i < 5; i++ {
+		_, err := ingestService.Ingest(ctx, events.EventInput{
+			Name:      "Pagination Test Event",
+			StartDate: "2026-06-01T12:00:00Z",
+			VirtualLocation: &events.VirtualLocationInput{
+				URL: "https://example.com/event",
+			},
+		})
+		require.NoError(t, err)
+	}
+
+	// Test list_events pagination
+	t.Run("list_events_pagination", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "list_events",
+				Arguments: map[string]any{
+					"limit": 2,
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		payload := decodeToolText(t, result)
+		items, ok := payload["items"].([]any)
+		require.True(t, ok, "Response should have items array")
+		require.LessOrEqual(t, len(items), 2, "Should respect limit")
+	})
+}
+
+// TestMCPErrorHandling verifies that errors are handled correctly across all tools
+func TestMCPErrorHandling(t *testing.T) {
+	env := setupTestEnv(t)
+	cli := setupMCPClient(t, env)
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	// Test calling non-existent tool
+	t.Run("nonexistent_tool", func(t *testing.T) {
+		_, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name:      "nonexistent_tool",
+				Arguments: map[string]any{},
+			},
+		})
+		require.Error(t, err, "Should error when calling non-existent tool")
+	})
+
+	// Test search with empty query
+	t.Run("search_empty_query", func(t *testing.T) {
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "search",
+				Arguments: map[string]any{
+					"query": "",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, textContent.Text, "required")
+	})
+
+	// Test reading non-existent resource
+	t.Run("nonexistent_resource", func(t *testing.T) {
+		_, err := cli.ReadResource(ctx, mcpTypes.ReadResourceRequest{
+			Params: mcpTypes.ReadResourceParams{
+				URI: "context://nonexistent",
+			},
+		})
+		require.Error(t, err, "Should error when reading non-existent resource")
+	})
+
+	// Test getting non-existent prompt
+	t.Run("nonexistent_prompt", func(t *testing.T) {
+		_, err := cli.GetPrompt(ctx, mcpTypes.GetPromptRequest{
+			Params: mcpTypes.GetPromptParams{
+				Name:      "nonexistent_prompt",
+				Arguments: map[string]string{},
+			},
+		})
+		require.Error(t, err, "Should error when getting non-existent prompt")
+	})
 }
