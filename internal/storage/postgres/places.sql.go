@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAllPlaces = `-- name: CountAllPlaces :one
+SELECT COUNT(*) FROM places WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountAllPlaces(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllPlaces)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createPlaceTombstone = `-- name: CreatePlaceTombstone :exec
 INSERT INTO place_tombstones (place_id, place_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
 VALUES ($1, $2, $3, $4, $5, $6)

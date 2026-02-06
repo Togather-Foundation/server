@@ -7,6 +7,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // StatsHandler provides server statistics for monitoring and landing page widgets
@@ -38,10 +39,24 @@ type StatsResponse struct {
 	Uptime    int64  `json:"uptime_seconds"`
 	Slot      string `json:"slot,omitempty"`
 
-	// Event statistics
-	TotalEvents     int64 `json:"total_events"`
+	// Entity counts
+	TotalEvents        int64 `json:"total_events"`
+	TotalPlaces        int64 `json:"total_places"`
+	TotalOrganizations int64 `json:"total_organizations"`
+	TotalSources       int64 `json:"total_sources"`
+	TotalUsers         int64 `json:"total_users"`
+
+	// Event lifecycle breakdown
 	PublishedEvents int64 `json:"published_events"`
 	PendingEvents   int64 `json:"pending_events"`
+
+	// Time-based event metrics
+	EventsLast7Days  int64  `json:"events_created_last_7_days"`
+	EventsLast30Days int64  `json:"events_created_last_30_days"`
+	UpcomingEvents   int64  `json:"upcoming_events"`
+	PastEvents       int64  `json:"past_events"`
+	OldestEventDate  string `json:"oldest_event_date,omitempty"`
+	NewestEventDate  string `json:"newest_event_date,omitempty"`
 
 	// Timestamp
 	Timestamp string `json:"timestamp"`
@@ -58,13 +73,38 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Get event counts
-	totalCount, err := h.queries.CountAllEvents(ctx)
+	// Get entity counts (exclude soft-deleted records)
+	totalEvents, err := h.queries.CountAllEvents(ctx)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
 		return
 	}
 
+	totalPlaces, err := h.queries.CountAllPlaces(ctx)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	totalOrgs, err := h.queries.CountAllOrganizations(ctx)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	totalSources, err := h.queries.CountAllSources(ctx)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	totalUsers, err := h.queries.CountAllUsers(ctx)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	// Get event lifecycle breakdown
 	publishedCount, err := h.queries.CountEventsByLifecycleState(ctx, "published")
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
@@ -72,6 +112,40 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pendingCount, err := h.queries.CountEventsByLifecycleState(ctx, "draft")
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	// Get time-based event metrics
+	sevenDaysAgo := pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, -7), Valid: true}
+	eventsLast7Days, err := h.queries.CountEventsCreatedSince(ctx, sevenDaysAgo)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	thirtyDaysAgo := pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, -30), Valid: true}
+	eventsLast30Days, err := h.queries.CountEventsCreatedSince(ctx, thirtyDaysAgo)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	upcomingEvents, err := h.queries.CountUpcomingEvents(ctx)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	pastEvents, err := h.queries.CountPastEvents(ctx)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
+		return
+	}
+
+	// Get event date range
+	dateRange, err := h.queries.GetEventDateRange(ctx)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to retrieve statistics", err, h.env)
 		return
@@ -86,17 +160,43 @@ func (h *StatsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	// Calculate uptime
 	uptime := int64(time.Since(h.startTime).Seconds())
 
+	// Format date range (handle null values)
+	var oldestDate, newestDate string
+	if dateRange.OldestEventDate.Valid {
+		oldestDate = dateRange.OldestEventDate.Time.Format(time.RFC3339)
+	}
+	if dateRange.NewestEventDate.Valid {
+		newestDate = dateRange.NewestEventDate.Time.Format(time.RFC3339)
+	}
+
 	// Build response
 	stats := StatsResponse{
-		Status:          "healthy",
-		Version:         h.version,
-		GitCommit:       h.gitCommit,
-		Uptime:          uptime,
-		Slot:            slot,
-		TotalEvents:     totalCount,
+		Status:    "healthy",
+		Version:   h.version,
+		GitCommit: h.gitCommit,
+		Uptime:    uptime,
+		Slot:      slot,
+
+		// Entity counts
+		TotalEvents:        totalEvents,
+		TotalPlaces:        totalPlaces,
+		TotalOrganizations: totalOrgs,
+		TotalSources:       totalSources,
+		TotalUsers:         totalUsers,
+
+		// Event lifecycle
 		PublishedEvents: publishedCount,
 		PendingEvents:   pendingCount,
-		Timestamp:       time.Now().UTC().Format(time.RFC3339),
+
+		// Time-based metrics
+		EventsLast7Days:  eventsLast7Days,
+		EventsLast30Days: eventsLast30Days,
+		UpcomingEvents:   upcomingEvents,
+		PastEvents:       pastEvents,
+		OldestEventDate:  oldestDate,
+		NewestEventDate:  newestDate,
+
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
 	// Set cache headers for reasonable caching (5 minutes)

@@ -38,6 +38,48 @@ func (q *Queries) CountEventsByLifecycleState(ctx context.Context, lifecycleStat
 	return count, err
 }
 
+const countEventsCreatedSince = `-- name: CountEventsCreatedSince :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE created_at >= $1
+   AND deleted_at IS NULL
+`
+
+func (q *Queries) CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
+	row := q.db.QueryRow(ctx, countEventsCreatedSince, createdAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPastEvents = `-- name: CountPastEvents :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE start_date <= NOW()
+   AND deleted_at IS NULL
+`
+
+func (q *Queries) CountPastEvents(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countPastEvents)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUpcomingEvents = `-- name: CountUpcomingEvents :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE start_date > NOW()
+   AND deleted_at IS NULL
+`
+
+func (q *Queries) CountUpcomingEvents(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUpcomingEvents)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createEventTombstone = `-- name: CreateEventTombstone :exec
 INSERT INTO event_tombstones (event_id, event_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -149,6 +191,25 @@ func (q *Queries) GetEventByULID(ctx context.Context, ulid string) ([]GetEventBy
 		return nil, err
 	}
 	return items, nil
+}
+
+const getEventDateRange = `-- name: GetEventDateRange :one
+SELECT MIN(start_date)::timestamptz AS oldest_event_date,
+       MAX(start_date)::timestamptz AS newest_event_date
+  FROM events
+ WHERE deleted_at IS NULL
+`
+
+type GetEventDateRangeRow struct {
+	OldestEventDate pgtype.Timestamptz `json:"oldest_event_date"`
+	NewestEventDate pgtype.Timestamptz `json:"newest_event_date"`
+}
+
+func (q *Queries) GetEventDateRange(ctx context.Context) (GetEventDateRangeRow, error) {
+	row := q.db.QueryRow(ctx, getEventDateRange)
+	var i GetEventDateRangeRow
+	err := row.Scan(&i.OldestEventDate, &i.NewestEventDate)
+	return i, err
 }
 
 const getEventTombstoneByEventID = `-- name: GetEventTombstoneByEventID :one

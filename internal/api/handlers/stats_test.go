@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // mockStatsQuerier implements postgres.Querier for testing stats
@@ -40,6 +41,42 @@ func (m *mockStatsQuerier) CountEventsByLifecycleState(ctx context.Context, stat
 	default:
 		return 0, nil
 	}
+}
+
+// New methods for enhanced stats
+func (m *mockStatsQuerier) CountAllPlaces(ctx context.Context) (int64, error) {
+	return 10, nil
+}
+
+func (m *mockStatsQuerier) CountAllOrganizations(ctx context.Context) (int64, error) {
+	return 5, nil
+}
+
+func (m *mockStatsQuerier) CountAllSources(ctx context.Context) (int64, error) {
+	return 3, nil
+}
+
+func (m *mockStatsQuerier) CountAllUsers(ctx context.Context) (int64, error) {
+	return 2, nil
+}
+
+func (m *mockStatsQuerier) CountEventsCreatedSince(ctx context.Context, since pgtype.Timestamptz) (int64, error) {
+	return 50, nil
+}
+
+func (m *mockStatsQuerier) CountUpcomingEvents(ctx context.Context) (int64, error) {
+	return 100, nil
+}
+
+func (m *mockStatsQuerier) CountPastEvents(ctx context.Context) (int64, error) {
+	return 900, nil
+}
+
+func (m *mockStatsQuerier) GetEventDateRange(ctx context.Context) (postgres.GetEventDateRangeRow, error) {
+	return postgres.GetEventDateRangeRow{
+		OldestEventDate: pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, -365), Valid: true},
+		NewestEventDate: pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, 30), Valid: true},
+	}, nil
 }
 
 func TestStatsHandler_GetStats(t *testing.T) {

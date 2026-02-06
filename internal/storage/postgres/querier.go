@@ -13,7 +13,15 @@ import (
 type Querier interface {
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
 	CountAllEvents(ctx context.Context) (int64, error)
+	CountAllOrganizations(ctx context.Context) (int64, error)
+	CountAllPlaces(ctx context.Context) (int64, error)
+	// SQLc queries for sources registry.
+	CountAllSources(ctx context.Context) (int64, error)
+	CountAllUsers(ctx context.Context) (int64, error)
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
+	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
+	CountPastEvents(ctx context.Context) (int64, error)
+	CountUpcomingEvents(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
 	CreateBatchIngestionResult(ctx context.Context, arg CreateBatchIngestionResultParams) error
@@ -44,6 +52,7 @@ type Querier interface {
 	// SQLc queries for events domain.
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
 	GetEventChangeByID(ctx context.Context, id pgtype.UUID) (GetEventChangeByIDRow, error)
+	GetEventDateRange(ctx context.Context) (GetEventDateRangeRow, error)
 	// SQLc queries for provenance tracking.
 	// Retrieves all sources for a given event with source metadata and timestamps (FR-029)
 	GetEventSources(ctx context.Context, eventID pgtype.UUID) ([]GetEventSourcesRow, error)

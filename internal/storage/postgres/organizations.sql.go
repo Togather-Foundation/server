@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAllOrganizations = `-- name: CountAllOrganizations :one
+SELECT COUNT(*) FROM organizations WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountAllOrganizations(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllOrganizations)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrganizationTombstone = `-- name: CreateOrganizationTombstone :exec
 INSERT INTO organization_tombstones (organization_id, organization_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
 VALUES ($1, $2, $3, $4, $5, $6)

@@ -61,3 +61,6 @@ SELECT t.id,
  WHERE p.ulid = $1
  ORDER BY t.deleted_at DESC
  LIMIT 1;
+
+-- name: CountAllPlaces :one
+SELECT COUNT(*) FROM places WHERE deleted_at IS NULL;

@@ -129,3 +129,6 @@ WHERE
   (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active')) AND
   (sqlc.narg('role')::text IS NULL OR role = sqlc.narg('role')) AND
   deleted_at IS NULL;
+
+-- name: CountAllUsers :one
+SELECT COUNT(*) FROM users WHERE deleted_at IS NULL;

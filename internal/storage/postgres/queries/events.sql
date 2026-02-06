@@ -109,3 +109,27 @@ SELECT COUNT(*)::bigint AS count
 SELECT COUNT(*)::bigint AS count
   FROM events
  WHERE deleted_at IS NULL;
+
+-- name: CountEventsCreatedSince :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE created_at >= $1
+   AND deleted_at IS NULL;
+
+-- name: CountUpcomingEvents :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE start_date > NOW()
+   AND deleted_at IS NULL;
+
+-- name: CountPastEvents :one
+SELECT COUNT(*)::bigint AS count
+  FROM events
+ WHERE start_date <= NOW()
+   AND deleted_at IS NULL;
+
+-- name: GetEventDateRange :one
+SELECT MIN(start_date)::timestamptz AS oldest_event_date,
+       MAX(start_date)::timestamptz AS newest_event_date
+  FROM events
+ WHERE deleted_at IS NULL;

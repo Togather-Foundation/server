@@ -56,3 +56,6 @@ SELECT t.id,
  WHERE o.ulid = $1
  ORDER BY t.deleted_at DESC
  LIMIT 1;
+
+-- name: CountAllOrganizations :one
+SELECT COUNT(*) FROM organizations WHERE deleted_at IS NULL;
