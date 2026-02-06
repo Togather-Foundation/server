@@ -191,8 +191,8 @@ func (s *Server) registerTools() {
 // registerResources registers all MCP resources for events, places, and organizations.
 // Resources are data sources that can be read and subscribed to.
 func (s *Server) registerResources() {
-	contextResources := resources.NewContextResources()
-	contextPath := resources.ContextPath("sel/v0.1.jsonld")
+	contextResources := resources.NewContextResources(s.contextDir)
+	contextPath := contextResources.ContextPath("sel/v0.1.jsonld")
 
 	contextDefinitions := []struct {
 		Name        string
@@ -221,7 +221,7 @@ func (s *Server) registerResources() {
 		s.mcp.AddResource(resource, contextResources.ReadHandler(contextPath, contextDef.URI))
 	}
 
-	schemaResources := resources.NewSchemaResources()
+	schemaResources := resources.NewSchemaResources(s.openAPIPath)
 	serverInfo := resources.ServerInfo{
 		Name:    s.name,
 		Version: s.version,

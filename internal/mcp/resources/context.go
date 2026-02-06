@@ -11,19 +11,25 @@ import (
 )
 
 const (
-	contextMIMEType  = "application/ld+json"
-	contextResource  = "context://%s"
-	contextDirectory = "contexts"
+	contextMIMEType = "application/ld+json"
+	contextResource = "context://%s"
 )
 
 type ContextResources struct {
-	mu    sync.RWMutex
-	cache map[string]string
+	mu      sync.RWMutex
+	cache   map[string]string
+	baseDir string // Base directory for context files
 }
 
-func NewContextResources() *ContextResources {
+// NewContextResources creates a new context resources handler.
+// baseDir specifies where to find JSON-LD context files.
+func NewContextResources(baseDir string) *ContextResources {
+	if baseDir == "" {
+		baseDir = "contexts" // Default fallback
+	}
 	return &ContextResources{
-		cache: make(map[string]string),
+		cache:   make(map[string]string),
+		baseDir: baseDir,
 	}
 }
 
@@ -85,11 +91,14 @@ func (r *ContextResources) loadFile(path string) (string, error) {
 	return string(content), nil
 }
 
-func ContextPath(rel string) string {
+// ContextPath returns the full path to a context file.
+// If rel is absolute, returns it unchanged.
+// Otherwise joins it with the configured base directory.
+func (r *ContextResources) ContextPath(rel string) string {
 	if filepath.IsAbs(rel) {
 		return rel
 	}
-	return filepath.Join(contextDirectory, rel)
+	return filepath.Join(r.baseDir, rel)
 }
 
 func ContextURI(name string) string {
