@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -97,39 +99,30 @@ func run() error {
 		Str("transport", string(cfg.Transport.Type)).
 		Msg("MCP server created, starting transport")
 
-	// Setup graceful shutdown
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// Setup graceful shutdown with errgroup
+	g, gctx := errgroup.WithContext(ctx)
 
 	// Handle OS signals for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	// Start server in goroutine
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := mcp.Serve(ctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit); err != nil {
-			serverErr <- err
-		}
-		close(serverErr)
-	}()
+	// Start server in errgroup
+	g.Go(func() error {
+		return mcp.Serve(gctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit)
+	})
 
-	// Wait for shutdown signal or server error
+	// Wait for shutdown signal or context cancellation
 	select {
 	case sig := <-sigCh:
 		log.Info().Str("signal", sig.String()).Msg("Received shutdown signal")
-	case err := <-serverErr:
-		if err != nil {
-			return fmt.Errorf("server error: %w", err)
-		}
-		return nil
+	case <-gctx.Done():
+		log.Info().Msg("Context cancelled during startup")
 	}
 
 	// Initiate graceful shutdown
 	log.Info().Msg("Initiating graceful shutdown")
-	cancel() // Cancel context to stop server
 
-	// Wait for server to finish with timeout
+	// Create shutdown context with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
@@ -138,15 +131,10 @@ func run() error {
 		log.Warn().Err(err).Msg("MCP server shutdown error")
 	}
 
-	// Wait for server goroutine to exit or timeout
-	select {
-	case <-shutdownCtx.Done():
-		log.Warn().Msg("Shutdown timeout exceeded")
-		return fmt.Errorf("shutdown timeout exceeded")
-	case err := <-serverErr:
-		if err != nil {
-			log.Warn().Err(err).Msg("Server error during shutdown")
-		}
+	// Wait for errgroup to finish
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		log.Error().Err(err).Msg("Server error during shutdown")
+		return fmt.Errorf("server error: %w", err)
 	}
 
 	log.Info().Msg("Shutdown complete")
