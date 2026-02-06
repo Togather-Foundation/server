@@ -310,12 +310,16 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				cfg.Server.BaseURL,
 			)
 
-			mcpHandler := mcp.WrapHandler(
+			mcpHandler, err := mcp.WrapHandler(
 				mcp.NewStreamableHTTPHandler(mcpServer.MCPServer()),
 				repo.Auth().APIKeys(),
 				cfg.RateLimit,
 			)
-			mux.Handle("/mcp", mcpHandler)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to wrap MCP handler; MCP endpoint disabled")
+			} else {
+				mux.Handle("/mcp", mcpHandler)
+			}
 		}
 	}
 
