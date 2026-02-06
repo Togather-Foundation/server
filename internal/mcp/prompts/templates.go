@@ -107,17 +107,12 @@ func (p *PromptTemplates) DuplicateCheckHandler(_ context.Context, request mcp.G
 	}, nil
 }
 
-func getArgString(args map[string]any, key string) string {
+func getArgString(args map[string]string, key string) string {
 	if args == nil {
 		return ""
 	}
 	if value, ok := args[key]; ok {
-		switch v := value.(type) {
-		case string:
-			return v
-		case fmt.Stringer:
-			return v.String()
-		}
+		return value
 	}
 	return ""
 }
