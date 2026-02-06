@@ -111,7 +111,8 @@ func (t *PlaceTools) PlacesHandler(ctx context.Context, request mcp.CallToolRequ
 	return t.listPlaces(ctx, args.Query, args.NearLat, args.NearLon, args.Radius, args.Limit, args.Cursor)
 }
 
-// getPlaceByID retrieves a single place by ULID
+// getPlaceByID retrieves a single place by ULID.
+// Returns tombstone data if the place is deleted.
 func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallToolResult, error) {
 	if err := ids.ValidateULID(id); err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
@@ -172,7 +173,8 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 	return toolResultJSON(payload)
 }
 
-// listPlaces retrieves a list of places with filters
+// listPlaces retrieves a list of places with optional filters and pagination.
+// Supports filtering by query text, proximity search, and geographic radius.
 func (t *PlaceTools) listPlaces(ctx context.Context, query string, nearLat, nearLon, radius *float64, limit int, cursor string) (*mcp.CallToolResult, error) {
 
 	const maxListLimit = 200
@@ -198,9 +200,7 @@ func (t *PlaceTools) listPlaces(ctx context.Context, query string, nearLat, near
 	if radius != nil {
 		values.Set("radius", strconv.FormatFloat(*radius, 'f', -1, 64))
 	}
-	if limit > 0 {
-		values.Set("limit", strconv.Itoa(limit))
-	}
+	values.Set("limit", strconv.Itoa(limit))
 	if strings.TrimSpace(cursor) != "" {
 		values.Set("after", strings.TrimSpace(cursor))
 	}
