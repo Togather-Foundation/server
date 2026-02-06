@@ -21,12 +21,16 @@ type Server struct {
 	placesService *places.Service
 	orgService    *organizations.Service
 	baseURL       string
+	name          string
+	version       string
+	transport     string
 }
 
 // Config holds configuration for the MCP server.
 type Config struct {
-	Name    string
-	Version string
+	Name      string
+	Version   string
+	Transport string
 }
 
 // NewServer creates a new MCP server with the given services.
@@ -67,6 +71,9 @@ func NewServer(
 		placesService: placesService,
 		orgService:    orgService,
 		baseURL:       baseURL,
+		name:          cfg.Name,
+		version:       cfg.Version,
+		transport:     cfg.Transport,
 	}
 
 	// Register tools, resources, and prompts
@@ -161,6 +168,22 @@ func (s *Server) registerResources() {
 		resource := contextResources.Resource(contextDef.URI, contextDef.Name, contextDef.Description)
 		s.mcp.AddResource(resource, contextResources.ReadHandler(contextPath, contextDef.URI))
 	}
+
+	schemaResources := resources.NewSchemaResources()
+	serverInfo := resources.ServerInfo{
+		Name:    s.name,
+		Version: s.version,
+		BaseURL: s.baseURL,
+		Capabilities: resources.ServerCapabilities{
+			Tools:     true,
+			Resources: true,
+			Prompts:   true,
+		},
+		Transport: s.transport,
+	}
+
+	s.mcp.AddResource(schemaResources.OpenAPIResource(), schemaResources.OpenAPIReadHandler())
+	s.mcp.AddResource(schemaResources.InfoResource(), schemaResources.InfoReadHandler(serverInfo))
 }
 
 // registerPrompts registers all MCP prompts for SEL workflows.

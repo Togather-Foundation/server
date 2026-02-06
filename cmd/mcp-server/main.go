@@ -82,8 +82,9 @@ func run() error {
 	// Create MCP server
 	mcpServer := mcp.NewServer(
 		mcp.Config{
-			Name:    cfg.MCP.Name,
-			Version: cfg.MCP.Version,
+			Name:      cfg.MCP.Name,
+			Version:   cfg.MCP.Version,
+			Transport: string(cfg.Transport.Type),
 		},
 		eventsService,
 		ingestService,
