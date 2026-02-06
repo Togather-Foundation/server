@@ -26,6 +26,10 @@ func (s stubPlacesRepo) GetByULID(_ context.Context, ulid string) (*places.Place
 	return s.getFn(ulid)
 }
 
+func (s stubPlacesRepo) Create(_ context.Context, _ places.CreateParams) (*places.Place, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s stubPlacesRepo) SoftDelete(_ context.Context, _ string, _ string) error {
 	return errors.New("not implemented")
 }
