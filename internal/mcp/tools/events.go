@@ -30,14 +30,19 @@ func NewEventTools(eventsService *events.Service, ingestService *events.IngestSe
 	}
 }
 
-// ListEventsTool returns the MCP tool definition for listing events.
-func (t *EventTools) ListEventsTool() mcp.Tool {
+// EventsTool returns the MCP tool definition for listing or getting events.
+// If id parameter is provided, returns a single event. Otherwise, returns a list of events.
+func (t *EventTools) EventsTool() mcp.Tool {
 	return mcp.Tool{
-		Name:        "list_events",
-		Description: "List events with optional filters for query, date range, location, and pagination. Returns a JSON array of events matching the criteria.",
+		Name:        "events",
+		Description: "List events with optional filters, or get a specific event by ULID. If 'id' is provided, returns a single JSON-LD formatted event. Otherwise, returns a JSON array of events matching the filter criteria.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional ULID of a specific event to retrieve. If provided, other parameters are ignored.",
+				},
 				"query": map[string]interface{}{
 					"type":        "string",
 					"description": "Search query to filter events by name or description",
@@ -76,14 +81,16 @@ func (t *EventTools) ListEventsTool() mcp.Tool {
 	}
 }
 
-// ListEventsHandler handles the list_events tool call.
-func (t *EventTools) ListEventsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// EventsHandler handles the events tool call.
+// If id is provided, delegates to get event logic. Otherwise, delegates to list events logic.
+func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if t == nil || t.eventsService == nil {
 		return mcp.NewToolResultError("events service not configured"), nil
 	}
 
-	// Parse arguments
+	// Parse arguments - check for id first
 	args := struct {
+		ID        string `json:"id"`
 		Query     string `json:"query"`
 		StartDate string `json:"start_date"`
 		EndDate   string `json:"end_date"`
@@ -106,125 +113,27 @@ func (t *EventTools) ListEventsHandler(ctx context.Context, request mcp.CallTool
 		}
 	}
 
-	const maxListLimit = 200
-
-	// Enforce limit caps
-	if args.Limit <= 0 {
-		args.Limit = 50
-	}
-	if args.Limit > maxListLimit {
-		args.Limit = maxListLimit
+	// If id is provided, get single event
+	if strings.TrimSpace(args.ID) != "" {
+		return t.getEventByID(ctx, args.ID)
 	}
 
-	values := url.Values{}
-	if strings.TrimSpace(args.Query) != "" {
-		values.Set("q", strings.TrimSpace(args.Query))
-	}
-	if strings.TrimSpace(args.StartDate) != "" {
-		values.Set("startDate", strings.TrimSpace(args.StartDate))
-	}
-	if strings.TrimSpace(args.EndDate) != "" {
-		values.Set("endDate", strings.TrimSpace(args.EndDate))
-	}
-	city := strings.TrimSpace(args.City)
-	region := strings.TrimSpace(args.Region)
-	if city == "" && region == "" {
-		city = strings.TrimSpace(args.Location)
-	}
-	if city != "" {
-		values.Set("city", city)
-	}
-	if region != "" {
-		values.Set("region", region)
-	}
-	if args.Limit > 0 {
-		values.Set("limit", strconv.Itoa(args.Limit))
-	}
-	if strings.TrimSpace(args.Cursor) != "" {
-		values.Set("after", strings.TrimSpace(args.Cursor))
-	}
-
-	filters, pagination, err := events.ParseFilters(values)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
-	}
-
-	result, err := t.eventsService.List(ctx, filters, pagination)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to list events", err), nil
-	}
-
-	items := make([]map[string]any, 0, len(result.Events))
-	for _, event := range result.Events {
-		items = append(items, buildListItem(event, t.baseURL))
-	}
-
-	response := map[string]any{
-		"items":       items,
-		"next_cursor": result.NextCursor,
-	}
-
-	resultJSON, err := mcp.NewToolResultJSON(response)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
-	}
-
-	return resultJSON, nil
+	// Otherwise, list events with filters
+	return t.listEvents(ctx, args.Query, args.StartDate, args.EndDate, args.Location, args.City, args.Region, args.Limit, args.Cursor)
 }
 
-// GetEventTool returns the MCP tool definition for getting a single event by ID.
-func (t *EventTools) GetEventTool() mcp.Tool {
-	return mcp.Tool{
-		Name:        "get_event",
-		Description: "Get detailed information about a specific event by its ULID. Returns a JSON-LD formatted event object.",
-		InputSchema: mcp.ToolInputSchema{
-			Type: "object",
-			Properties: map[string]interface{}{
-				"id": map[string]interface{}{
-					"type":        "string",
-					"description": "The ULID of the event to retrieve",
-				},
-			},
-			Required: []string{"id"},
-		},
-	}
-}
-
-// GetEventHandler handles the get_event tool call.
-func (t *EventTools) GetEventHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if t == nil || t.eventsService == nil {
-		return mcp.NewToolResultError("events service not configured"), nil
-	}
-
-	// Parse arguments
-	args := struct {
-		ID string `json:"id"`
-	}{}
-
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-	}
-
-	if args.ID == "" {
-		return mcp.NewToolResultError("id parameter is required"), nil
-	}
-
+// getEventByID retrieves a single event by ULID
+func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallToolResult, error) {
 	// Validate ULID format
-	if err := ids.ValidateULID(args.ID); err != nil {
+	if err := ids.ValidateULID(id); err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid ULID format", err), nil
 	}
 
 	// Get event by ULID
-	event, err := t.eventsService.GetByULID(ctx, args.ID)
+	event, err := t.eventsService.GetByULID(ctx, id)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
-			if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, args.ID); tombErr == nil && tombstone != nil {
+			if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id); tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 				if payloadErr != nil {
 					return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
@@ -235,18 +144,18 @@ func (t *EventTools) GetEventHandler(ctx context.Context, request mcp.CallToolRe
 				}
 				return resultJSON, nil
 			}
-			return mcp.NewToolResultErrorf("event not found: %s", args.ID), nil
+			return mcp.NewToolResultErrorf("event not found: %s", id), nil
 		}
 		return mcp.NewToolResultErrorFromErr("failed to get event", err), nil
 	}
 
 	// Add nil check before accessing event fields
 	if event == nil {
-		return mcp.NewToolResultErrorf("event not found: %s", args.ID), nil
+		return mcp.NewToolResultErrorf("event not found: %s", id), nil
 	}
 
 	if strings.EqualFold(event.LifecycleState, "deleted") {
-		if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, args.ID); tombErr == nil && tombstone != nil {
+		if tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id); tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
 			if payloadErr != nil {
 				return mcp.NewToolResultErrorFromErr("failed to decode tombstone payload", payloadErr), nil
@@ -283,10 +192,78 @@ func (t *EventTools) GetEventHandler(ctx context.Context, request mcp.CallToolRe
 	return resultJSON, nil
 }
 
-// CreateEventTool returns the MCP tool definition for creating an event.
-func (t *EventTools) CreateEventTool() mcp.Tool {
+// listEvents retrieves a list of events with filters
+func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, location, city, region string, limit int, cursor string) (*mcp.CallToolResult, error) {
+	const maxListLimit = 200
+
+	// Enforce limit caps
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+
+	values := url.Values{}
+	if strings.TrimSpace(query) != "" {
+		values.Set("q", strings.TrimSpace(query))
+	}
+	if strings.TrimSpace(startDate) != "" {
+		values.Set("startDate", strings.TrimSpace(startDate))
+	}
+	if strings.TrimSpace(endDate) != "" {
+		values.Set("endDate", strings.TrimSpace(endDate))
+	}
+	cityValue := strings.TrimSpace(city)
+	regionValue := strings.TrimSpace(region)
+	if cityValue == "" && regionValue == "" {
+		cityValue = strings.TrimSpace(location)
+	}
+	if cityValue != "" {
+		values.Set("city", cityValue)
+	}
+	if regionValue != "" {
+		values.Set("region", regionValue)
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if strings.TrimSpace(cursor) != "" {
+		values.Set("after", strings.TrimSpace(cursor))
+	}
+
+	filters, pagination, err := events.ParseFilters(values)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
+	}
+
+	result, err := t.eventsService.List(ctx, filters, pagination)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("failed to list events", err), nil
+	}
+
+	items := make([]map[string]any, 0, len(result.Events))
+	for _, event := range result.Events {
+		items = append(items, buildListItem(event, t.baseURL))
+	}
+
+	response := map[string]any{
+		"items":       items,
+		"next_cursor": result.NextCursor,
+	}
+
+	resultJSON, err := mcp.NewToolResultJSON(response)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
+	}
+
+	return resultJSON, nil
+}
+
+// AddEventTool returns the MCP tool definition for creating an event.
+func (t *EventTools) AddEventTool() mcp.Tool {
 	return mcp.Tool{
-		Name:        "create_event",
+		Name:        "add_event",
 		Description: "Create a new event. Accepts a JSON-LD event object and returns the created event with its assigned ID.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
@@ -301,8 +278,8 @@ func (t *EventTools) CreateEventTool() mcp.Tool {
 	}
 }
 
-// CreateEventHandler handles the create_event tool call.
-func (t *EventTools) CreateEventHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// AddEventHandler handles the add_event tool call.
+func (t *EventTools) AddEventHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if t == nil || t.ingestService == nil {
 		return mcp.NewToolResultError("ingest service not configured"), nil
 	}

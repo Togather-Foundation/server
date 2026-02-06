@@ -69,18 +69,33 @@ Rate limiting uses the agent tier limits from `RateLimitConfig`.
 
 ## Tools
 
+The MCP server provides 6 tools for interacting with events, places, and organizations:
+
 | Tool | Description |
 |------|-------------|
-| `list_events` | List events with filters and pagination |
-| `get_event` | Get a single event by ULID |
-| `create_event` | Create an event from JSON-LD |
-| `list_places` | List places with filters and pagination |
-| `get_place` | Get a single place by ULID |
-| `create_place` | Create a place from JSON-LD |
-| `list_organizations` | List organizations with filters |
-| `get_organization` | Get a single organization by ULID |
-| `create_organization` | Create an organization from JSON-LD |
+| `events` | List events with filters and pagination, OR get a single event by ULID (if `id` parameter provided) |
+| `add_event` | Create an event from JSON-LD |
+| `places` | List places with filters and pagination, OR get a single place by ULID (if `id` parameter provided) |
+| `add_place` | Create a place from JSON-LD |
+| `organizations` | List organizations with filters, OR get a single organization by ULID (if `id` parameter provided) |
+| `add_organization` | Create an organization from JSON-LD |
 | `search` | Cross-entity search across events/places/orgs |
+
+### Unified List/Get Operations
+
+The `events`, `places`, and `organizations` tools accept an optional `id` parameter:
+- **With `id` parameter**: Returns a single entity (e.g., `{"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ"}`)
+- **Without `id` parameter**: Returns a list of entities matching filter criteria
+
+Examples:
+
+```javascript
+// List events
+{"query": "tech conference", "city": "Toronto", "limit": 10}
+
+// Get specific event by ULID
+{"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ"}
+```
 
 ## Resources
 

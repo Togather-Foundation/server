@@ -148,38 +148,29 @@ func (s *Server) registerTools() {
 	// Register event tools (server-gau4, server-wako)
 	eventTools := tools.NewEventTools(s.eventsService, s.ingestService, s.baseURL)
 
-	// list_events tool - query events with filters and pagination
-	s.mcp.AddTool(eventTools.ListEventsTool(), eventTools.ListEventsHandler)
+	// events tool - list events with filters OR get a specific event by ULID
+	s.mcp.AddTool(eventTools.EventsTool(), eventTools.EventsHandler)
 
-	// get_event tool - retrieve a specific event by ULID
-	s.mcp.AddTool(eventTools.GetEventTool(), eventTools.GetEventHandler)
-
-	// create_event tool - create new events
-	s.mcp.AddTool(eventTools.CreateEventTool(), eventTools.CreateEventHandler)
+	// add_event tool - create new events
+	s.mcp.AddTool(eventTools.AddEventTool(), eventTools.AddEventHandler)
 
 	// Register place tools (server-9185, server-g8q5)
 	placeTools := tools.NewPlaceTools(s.placesService, s.baseURL)
 
-	// list_places tool - query places with filters and pagination
-	s.mcp.AddTool(placeTools.ListPlacesTool(), placeTools.ListPlacesHandler)
+	// places tool - list places with filters OR get a specific place by ULID
+	s.mcp.AddTool(placeTools.PlacesTool(), placeTools.PlacesHandler)
 
-	// get_place tool - retrieve a specific place by ULID
-	s.mcp.AddTool(placeTools.GetPlaceTool(), placeTools.GetPlaceHandler)
-
-	// create_place tool - create new places
-	s.mcp.AddTool(placeTools.CreatePlaceTool(), placeTools.CreatePlaceHandler)
+	// add_place tool - create new places
+	s.mcp.AddTool(placeTools.AddPlaceTool(), placeTools.AddPlaceHandler)
 
 	// Register organization tools (server-slhh, server-5yr5)
 	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL)
 
-	// list_organizations tool - query organizations with filters and pagination
-	s.mcp.AddTool(organizationTools.ListOrganizationsTool(), organizationTools.ListOrganizationsHandler)
+	// organizations tool - list organizations with filters OR get a specific organization by ULID
+	s.mcp.AddTool(organizationTools.OrganizationsTool(), organizationTools.OrganizationsHandler)
 
-	// get_organization tool - retrieve a specific organization by ULID
-	s.mcp.AddTool(organizationTools.GetOrganizationTool(), organizationTools.GetOrganizationHandler)
-
-	// create_organization tool - create new organizations
-	s.mcp.AddTool(organizationTools.CreateOrganizationTool(), organizationTools.CreateOrganizationHandler)
+	// add_organization tool - create new organizations
+	s.mcp.AddTool(organizationTools.AddOrganizationTool(), organizationTools.AddOrganizationHandler)
 
 	// Register search tools (server-rupi)
 	searchTools := tools.NewSearchTools(s.eventsService, s.placesService, s.orgService, s.baseURL)
