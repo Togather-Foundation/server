@@ -261,17 +261,39 @@ func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Du
 func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	t.Helper()
 
-	key := ulid.Make().String() + "secret"
-	prefix := key[:8]
-	hash, err := auth.HashAPIKey(key)
-	require.NoError(t, err, "failed to hash API key")
+	// Generate a unique API key with retry logic to handle ULID prefix collisions
+	var key, prefix string
+	var hash string
+	var err error
 
-	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
-		prefix, hash, auth.HashVersionBcrypt, name,
-	)
-	require.NoError(t, err)
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		// Sleep to increase likelihood of unique ULID (millisecond precision)
+		if i > 0 {
+			time.Sleep(time.Duration(i*10) * time.Millisecond)
+		}
 
+		key = ulid.Make().String() + "secret"
+		prefix = key[:8]
+		hash, err = auth.HashAPIKey(key)
+		require.NoError(t, err, "failed to hash API key")
+
+		_, err = env.Pool.Exec(env.Context,
+			`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
+			prefix, hash, auth.HashVersionBcrypt, name,
+		)
+
+		if err == nil {
+			return key
+		}
+
+		// Only retry on unique constraint violation
+		if !strings.Contains(err.Error(), "duplicate key") {
+			require.NoError(t, err)
+		}
+	}
+
+	require.NoError(t, err, "failed to insert API key after %d retries", maxRetries)
 	return key
 }
 

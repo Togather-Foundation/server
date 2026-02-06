@@ -20,7 +20,7 @@
 #
 # Environment Variables:
 #   ENVIRONMENT       - Application environment: development, staging (default), production
-#   GO_VERSION        - Go version (default: 1.24.12)
+#   GO_VERSION        - Go version (default: 1.24.13)
 #   DEPLOY_USER       - Username for deployment (default: deploy)
 #   SKIP_SSH_HARDEN   - Skip SSH hardening (default: false, true for remote execution)
 
@@ -269,7 +269,7 @@ provision_remote() {
     shift
     
     local environment="staging"
-    local go_version="1.24.12"
+    local go_version="1.24.13"
     local deploy_user="deploy"
     local with_app=false
     local skip_ssh_harden="true"  # Default to true for remote execution
@@ -337,7 +337,7 @@ provision_remote() {
 set -euo pipefail
 
 # Configuration from environment variables
-GO_VERSION="${GO_VERSION:-1.24.12}"
+GO_VERSION="${GO_VERSION:-1.24.13}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 APP_ENVIRONMENT="${ENVIRONMENT:-staging}"
 SKIP_SSH_HARDEN="${SKIP_SSH_HARDEN:-false}"
@@ -795,7 +795,7 @@ REMOTE_SCRIPT
 # Provision local machine
 provision_local() {
     local environment="staging"
-    local go_version="1.24.12"
+    local go_version="1.24.13"
     local deploy_user="deploy"
     local with_app=false
     
@@ -851,7 +851,7 @@ provision_local() {
 # (Same provisioning script content as REMOTE_SCRIPT above)
 set -euo pipefail
 
-GO_VERSION="${GO_VERSION:-1.24.12}"
+GO_VERSION="${GO_VERSION:-1.24.13}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 APP_ENVIRONMENT="${ENVIRONMENT:-staging}"
 SKIP_SSH_HARDEN="${SKIP_SSH_HARDEN:-false}"
@@ -950,7 +950,7 @@ Examples:
 Arguments:
   hostname       SSH target (user@host or SSH config alias)
   ENVIRONMENT    development, staging (default), or production
-  GO_VERSION     Go version (default: 1.24.12)
+  GO_VERSION     Go version (default: 1.24.13)
   DEPLOY_USER    Deploy user name (default: deploy)
 EOF
         exit 0

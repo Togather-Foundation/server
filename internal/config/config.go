@@ -80,6 +80,7 @@ type EmailConfig struct {
 	SMTPPort     int    // SMTP server port (default: 587 for TLS)
 	SMTPUser     string // SMTP username (Gmail address)
 	SMTPPassword string // Gmail App Password (NOT regular Gmail password - see https://support.google.com/accounts/answer/185833)
+	TemplatesDir string // Path to email templates directory (default: "web/email/templates")
 }
 
 func Load() (Config, error) {
@@ -146,6 +147,7 @@ func Load() (Config, error) {
 			SMTPPort:     getEnvInt("SMTP_PORT", 587),
 			SMTPUser:     getEnv("SMTP_USER", ""),
 			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}

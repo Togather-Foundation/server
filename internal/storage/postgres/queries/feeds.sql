@@ -23,8 +23,8 @@ SELECT ec.id,
      GROUP BY event_id
   ) es ON es.event_id = ec.event_id
  WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
-   AND (sqlc.narg('after')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after')::timestamptz)
-   AND (sqlc.narg('action') = '' OR ec.action = sqlc.narg('action'))
+   AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
+   AND (sqlc.narg('action')::text = '' OR ec.action = sqlc.narg('action')::text)
  ORDER BY ec.sequence_number ASC
  LIMIT sqlc.arg('limit');
 
@@ -69,7 +69,7 @@ SELECT et.id,
        et.superseded_by_uri,
        et.payload
   FROM event_tombstones et
- WHERE (sqlc.narg('after')::timestamptz IS NULL OR et.deleted_at >= sqlc.narg('after')::timestamptz)
+ WHERE (sqlc.narg('after_timestamp')::timestamptz IS NULL OR et.deleted_at >= sqlc.narg('after_timestamp')::timestamptz)
  ORDER BY et.deleted_at ASC
  LIMIT sqlc.arg('limit');
 

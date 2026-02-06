@@ -113,6 +113,13 @@
      */
     async function loadUsers() {
         const tbody = document.getElementById('users-table');
+        const showingText = document.getElementById('showing-text');
+        
+        // Announce loading for screen readers
+        if (showingText) {
+            showingText.textContent = 'Loading users...';
+        }
+        
         renderLoadingState(tbody, 6);
         
         // Cancel any in-flight request
@@ -267,6 +274,31 @@
     
     /**
      * Update pagination controls
+     * 
+     * CURSOR-BASED PAGINATION PATTERN:
+     * This implementation uses cursor-based pagination (next_cursor from API) which provides
+     * efficient pagination for large datasets but has specific behavior constraints:
+     * 
+     * - FORWARD navigation: Uses cursor tokens from API (goToNextPage with cursor)
+     * - BACKWARD navigation: Limited to "return to first page" (goToPreviousPage resets cursor to null)
+     * - No page numbers: Cannot jump to arbitrary pages (e.g., "go to page 5")
+     * - No true "Previous": Clicking Prev always goes to page 1, not the actual previous page
+     * 
+     * Example flow:
+     *   Page 1 (cursor=null) → Next → Page 2 (cursor=abc123) → Next → Page 3 (cursor=def456)
+     *   If user clicks "Prev" on Page 3, they go to Page 1, NOT Page 2
+     * 
+     * WHY THIS DESIGN:
+     * - Cursor pagination is stateless and doesn't require server to track page history
+     * - Works reliably with dynamic data (insertions/deletions don't shift page boundaries)
+     * - Scales efficiently to millions of records without offset/limit performance issues
+     * 
+     * ALTERNATIVE (if true bidirectional pagination needed):
+     * - Implement client-side page history stack to track visited cursors
+     * - Store: [{cursor: null, page: 1}, {cursor: 'abc123', page: 2}, ...]
+     * - goToPreviousPage() would pop from stack instead of resetting to null
+     * - Trade-off: More complex state management, memory usage for long navigation sessions
+     * 
      * @param {string|null} nextCursor - Next page cursor or null if no more pages
      */
     function updatePagination(nextCursor) {
@@ -319,9 +351,9 @@
                 const action = link.dataset.action;
                 if (action === 'next') {
                     const cursor = link.dataset.cursor;
-                    goToNextPage(cursor);
+                    goToNextPage(cursor, link);
                 } else if (action === 'prev') {
-                    goToPreviousPage();
+                    goToPreviousPage(link);
                 }
             });
         });
@@ -329,6 +361,7 @@
     
     /**
      * Update showing text (e.g., "Showing 1-20 of 50")
+     * Also announces to screen readers via aria-live region
      * @param {number} count - Number of items shown
      */
     function updateShowingText(count) {
@@ -338,26 +371,73 @@
         if (count === 0) {
             showingText.textContent = 'No users found';
         } else {
-            showingText.textContent = `Showing ${count} users`;
+            // Announce loaded count for screen readers
+            showingText.textContent = `Loaded ${count} ${count === 1 ? 'user' : 'users'}`;
         }
     }
     
     /**
      * Navigate to next page
      * @param {string} cursor - Next page cursor
+     * @param {HTMLElement} button - Clicked pagination button
      */
-    function goToNextPage(cursor) {
+    function goToNextPage(cursor, button) {
         currentCursor = cursor;
-        loadUsers();
+        
+        // Disable all pagination buttons during load
+        const paginationLinks = document.querySelectorAll('#pagination .page-link');
+        paginationLinks.forEach(link => link.classList.add('disabled'));
+        
+        // Show loading spinner in clicked button
+        if (button) {
+            setLoading(button, true);
+        }
+        
+        loadUsers().finally(() => {
+            // Re-enable pagination buttons after load
+            paginationLinks.forEach(link => link.classList.remove('disabled'));
+            if (button) {
+                setLoading(button, false);
+            }
+        });
+        
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     
     /**
-     * Navigate to previous page (reset cursor)
+     * Navigate to previous page (reset cursor to null = first page)
+     * 
+     * IMPORTANT: This does NOT go to the actual previous page in the sequence!
+     * Due to cursor-based pagination, we can only navigate forward with cursors.
+     * This function resets to the first page (cursor=null), regardless of which
+     * page the user is currently on.
+     * 
+     * Example: User on page 5 clicks "Prev" → goes to page 1 (not page 4)
+     * 
+     * See updatePagination() docs for full explanation and alternatives.
+     * 
+     * @param {HTMLElement} button - Clicked pagination button
      */
-    function goToPreviousPage() {
+    function goToPreviousPage(button) {
         currentCursor = null;
-        loadUsers();
+        
+        // Disable all pagination buttons during load
+        const paginationLinks = document.querySelectorAll('#pagination .page-link');
+        paginationLinks.forEach(link => link.classList.add('disabled'));
+        
+        // Show loading spinner in clicked button
+        if (button) {
+            setLoading(button, true);
+        }
+        
+        loadUsers().finally(() => {
+            // Re-enable pagination buttons after load
+            paginationLinks.forEach(link => link.classList.remove('disabled'));
+            if (button) {
+                setLoading(button, false);
+            }
+        });
+        
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     
@@ -379,6 +459,20 @@
         // Reset form
         form.reset();
         form.classList.remove('was-validated');
+        
+        // Clear validation classes and data attributes
+        const usernameInput = document.getElementById('user-username');
+        const emailInput = document.getElementById('user-email');
+        if (usernameInput) {
+            usernameInput.classList.remove('is-invalid', 'is-valid');
+            delete usernameInput.dataset.validationSetup;
+        }
+        if (emailInput) {
+            emailInput.classList.remove('is-invalid', 'is-valid');
+            delete emailInput.dataset.validationSetup;
+        }
+        document.getElementById('username-error').textContent = '';
+        document.getElementById('email-error').textContent = '';
         
         if (user) {
             // Edit mode
@@ -413,6 +507,52 @@
         // Show modal
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
+        
+        // Setup real-time validation for username input (if not already set up)
+        if (usernameInput && !usernameInput.dataset.validationSetup) {
+            usernameInput.dataset.validationSetup = 'true';
+            usernameInput.addEventListener('input', function() {
+                const username = this.value.trim();
+                const error = validateUsername(username);
+                const errorDiv = document.getElementById('username-error');
+                
+                if (error && username.length > 0) {
+                    this.classList.add('is-invalid');
+                    this.classList.remove('is-valid');
+                    errorDiv.textContent = error;
+                } else if (username.length > 0) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                    errorDiv.textContent = '';
+                } else {
+                    this.classList.remove('is-invalid', 'is-valid');
+                    errorDiv.textContent = '';
+                }
+            });
+        }
+        
+        // Setup real-time validation for email input (if not already set up)
+        if (emailInput && !emailInput.dataset.validationSetup) {
+            emailInput.dataset.validationSetup = 'true';
+            emailInput.addEventListener('input', function() {
+                const email = this.value.trim();
+                const error = validateEmail(email);
+                const errorDiv = document.getElementById('email-error');
+                
+                if (error && email.length > 0) {
+                    this.classList.add('is-invalid');
+                    this.classList.remove('is-valid');
+                    errorDiv.textContent = error;
+                } else if (email.length > 0) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                    errorDiv.textContent = '';
+                } else {
+                    this.classList.remove('is-invalid', 'is-valid');
+                    errorDiv.textContent = '';
+                }
+            });
+        }
     }
     
     /**
@@ -436,17 +576,41 @@
     }
     
     /**
+     * Validate email format
+     * @param {string} email - Email to validate
+     * @returns {string|null} - Error message if invalid, null if valid
+     */
+    function validateEmail(email) {
+        if (!email || email.trim() === '') {
+            return 'Email is required';
+        }
+        
+        // Basic email format validation (more strict than HTML5's type="email")
+        // Matches: user@domain.tld (allows subdomains, hyphens, underscores)
+        const pattern = /^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!pattern.test(email)) {
+            return 'Please enter a valid email address (e.g., user@example.com)';
+        }
+        
+        // Check for common mistakes
+        if (email.includes('..') || email.startsWith('.') || email.endsWith('.')) {
+            return 'Email cannot have consecutive dots or start/end with a dot';
+        }
+        
+        if (email.length > 254) {
+            return 'Email address is too long (max 254 characters)';
+        }
+        
+        return null;
+    }
+    
+    /**
      * Handle user form submission
      */
     async function handleUserSubmit() {
         const form = document.getElementById('user-form');
         const submitBtn = document.getElementById('user-submit-btn');
         const modal = document.getElementById('user-modal');
-        
-        if (!form.checkValidity()) {
-            form.classList.add('was-validated');
-            return;
-        }
         
         const userId = document.getElementById('user-id').value;
         const username = document.getElementById('user-username').value.trim();
@@ -464,6 +628,20 @@
             form.classList.add('was-validated');
             
             showToast(usernameError, 'error');
+            return;
+        }
+        
+        // Client-side email validation
+        const emailError = validateEmail(email);
+        if (emailError) {
+            const emailInput = document.getElementById('user-email');
+            const emailErrorDiv = document.getElementById('email-error');
+            
+            emailInput.classList.add('is-invalid');
+            emailErrorDiv.textContent = emailError;
+            form.classList.add('was-validated');
+            
+            showToast(emailError, 'error');
             return;
         }
         

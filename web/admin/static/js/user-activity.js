@@ -189,6 +189,12 @@
      */
     async function loadActivity() {
         const activityList = document.getElementById('activity-list');
+        const showingText = document.getElementById('showing-text');
+        
+        // Announce loading for screen readers
+        if (showingText) {
+            showingText.textContent = 'Loading activity...';
+        }
         
         // Show loading state
         activityList.innerHTML = `
@@ -309,6 +315,38 @@
     
     /**
      * Update pagination controls
+     * 
+     * CURSOR-BASED PAGINATION PATTERN:
+     * This implementation uses cursor-based pagination (next_cursor from API) which provides
+     * efficient pagination for large datasets but has specific behavior constraints:
+     * 
+     * - FORWARD navigation: Uses cursor tokens from API (action='next' with data-cursor)
+     * - BACKWARD navigation: Limited to "return to first page" (action='prev' resets cursor to null)
+     * - No page numbers: Cannot jump to arbitrary pages (e.g., "go to page 5")
+     * - No true "Previous": Clicking Prev always goes to page 1, not the actual previous page
+     * 
+     * Example flow:
+     *   Page 1 (cursor=null) → Next → Page 2 (cursor=abc123) → Next → Page 3 (cursor=def456)
+     *   If user clicks "Prev" on Page 3, they go to Page 1, NOT Page 2
+     * 
+     * WHY THIS DESIGN:
+     * - Cursor pagination is stateless and doesn't require server to track page history
+     * - Works reliably with dynamic data (insertions/deletions don't shift page boundaries)
+     * - Scales efficiently to millions of records without offset/limit performance issues
+     * - Consistent with users.js pagination implementation
+     * 
+     * ALTERNATIVE (if true bidirectional pagination needed):
+     * - Implement client-side page history stack to track visited cursors
+     * - Store: [{cursor: null, page: 1}, {cursor: 'abc123', page: 2}, ...]
+     * - Prev action would pop from stack instead of resetting to null
+     * - Trade-off: More complex state management, memory usage for long navigation sessions
+     * 
+     * INLINE EVENT HANDLER PATTERN:
+     * Pagination click handlers are registered inline (lines 362-386) rather than using
+     * goToNextPage/goToPreviousPage functions like users.js. Both approaches are valid:
+     * - Inline: Simpler, fewer function calls, clear data flow
+     * - Separate functions: Better for testing, reusable if pagination called from multiple places
+     * 
      * @param {string|null} nextCursor - Next page cursor
      */
     function updatePagination(nextCursor) {
@@ -356,13 +394,25 @@
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const action = link.dataset.action;
+                
+                // Disable all pagination buttons during load
+                paginationLinks.forEach(l => l.classList.add('disabled'));
+                
+                // Show loading spinner in clicked button
+                setLoading(link, true);
+                
                 if (action === 'next') {
                     currentCursor = link.dataset.cursor;
-                    loadActivity();
                 } else if (action === 'prev') {
                     currentCursor = null;
-                    loadActivity();
                 }
+                
+                loadActivity().finally(() => {
+                    // Re-enable pagination buttons after load
+                    paginationLinks.forEach(l => l.classList.remove('disabled'));
+                    setLoading(link, false);
+                });
+                
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             });
         });
@@ -370,6 +420,7 @@
     
     /**
      * Update showing text
+     * Also announces to screen readers via aria-live region
      * @param {number} count - Number of items shown
      */
     function updateShowingText(count) {
@@ -379,12 +430,23 @@
         if (count === 0) {
             showingText.textContent = 'No activity';
         } else {
-            showingText.textContent = `Showing ${count} events`;
+            // Announce loaded count for screen readers
+            showingText.textContent = `Loaded ${count} ${count === 1 ? 'event' : 'events'}`;
         }
     }
     
     /**
      * Get icon SVG for activity type
+     * 
+     * NOTE: This function is intentionally kept local to user-activity.js rather than
+     * being extracted to components.js because:
+     * 1. Activity timelines are specific to the user activity page
+     * 2. No other pages currently display activity events or need activity icons
+     * 3. The icon mapping logic is tightly coupled to backend event_type values specific
+     *    to user activity tracking (login, logout, create, update, delete)
+     * 4. If activity timelines are needed elsewhere in the future, this function can be
+     *    extracted to components.js at that time (DRY when actually repeated, not preemptively)
+     * 
      * @param {string} eventType - Activity event type
      * @returns {string} SVG icon HTML
      */
@@ -409,6 +471,15 @@
     
     /**
      * Get color for activity type
+     * 
+     * NOTE: This function is intentionally kept local to user-activity.js rather than
+     * being extracted to components.js because:
+     * 1. Activity timelines are specific to the user activity page
+     * 2. Color mappings are tightly coupled to the activity icon mapping above
+     * 3. No other pages currently need activity-specific color coding
+     * 4. Keeping related functions together improves maintainability
+     * 5. Can be extracted to components.js if reuse is needed in the future
+     * 
      * @param {string} eventType - Activity event type
      * @returns {string} Bootstrap color name
      */

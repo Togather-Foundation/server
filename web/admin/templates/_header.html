@@ -24,7 +24,19 @@
                     </svg>
                 </a>
             </div>
-            <div class="nav-item dropdown">
+            <!-- Visible Logout Button -->
+            <div class="nav-item">
+                <a href="#" class="nav-link px-0" id="logout-btn" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2" />
+                        <path d="M9 12h12l-3 -3" />
+                        <path d="M18 15l3 -3" />
+                    </svg>
+                    <span class="d-none d-md-inline ms-1">Logout</span>
+                </a>
+            </div>
+            <div class="nav-item dropdown d-none">
                 <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown">
                     <span class="avatar avatar-sm">AD</span>
                     <div class="d-none d-xl-block ps-2">
@@ -32,7 +44,7 @@
                     </div>
                 </a>
                 <div class="dropdown-menu dropdown-menu-end">
-                    <a class="dropdown-item" href="#" id="logout-btn">Logout</a>
+                    <a class="dropdown-item" href="#" id="logout-btn-old">Logout</a>
                 </div>
             </div>
         </div>

@@ -41,6 +41,7 @@ type Querier interface {
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
 	// Federation Sync Queries
 	GetEventByFederationURI(ctx context.Context, federationUri pgtype.Text) (Event, error)
+	// SQLc queries for events domain.
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
 	GetEventChangeByID(ctx context.Context, id pgtype.UUID) (GetEventChangeByIDRow, error)
 	// SQLc queries for provenance tracking.

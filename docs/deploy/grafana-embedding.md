@@ -132,9 +132,51 @@ GRAFANA_ROOT_URL=http://localhost:3000
 GRAFANA_ANONYMOUS_ENABLED=true
 ```
 
-### Option 2: Public URL with Reverse Proxy
+### Option 2: Subpath Proxy (Recommended for Staging/Production)
 
-For production where Grafana is behind Caddy/Nginx:
+For production/staging where Grafana is proxied at `/grafana` subpath:
+
+```bash
+# .env file
+GRAFANA_ROOT_URL=https://staging.toronto.togather.foundation/grafana
+GRAFANA_SERVE_FROM_SUB_PATH=true
+GRAFANA_PORT=127.0.0.1:3000
+GRAFANA_ANONYMOUS_ENABLED=true
+```
+
+**Caddy configuration** (`Caddyfile.staging`):
+
+```caddy
+staging.toronto.togather.foundation {
+    # Grafana monitoring proxy at /grafana subpath
+    handle /grafana* {
+        reverse_proxy localhost:3000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    
+    # Main application
+    reverse_proxy localhost:8081
+}
+```
+
+**Update iframe in admin template:**
+
+```html
+<iframe src="/grafana/d/togather-overview?orgId=1&refresh=30s&kiosk=tv"></iframe>
+```
+
+This allows:
+- Direct access: `https://staging.toronto.togather.foundation/grafana`
+- Iframe embedding: Same-origin, relative path `/grafana`
+- Localhost-only binding: Grafana not directly exposed
+
+### Option 3: Separate Grafana Domain (Alternative)
+
+For production where Grafana needs its own subdomain:
 
 ```bash
 # .env file
@@ -159,7 +201,7 @@ grafana.staging.toronto.togather.foundation {
 
 This allows:
 - Direct access: `https://grafana.staging.toronto.togather.foundation`
-- Iframe embedding: from `staging.toronto.togather.foundation` domain
+- Iframe embedding: from `staging.toronto.togather.foundation` domain (requires CSP/X-Frame-Options)
 
 ## Troubleshooting
 

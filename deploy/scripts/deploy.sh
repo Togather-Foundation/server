@@ -1352,8 +1352,8 @@ switch_traffic() {
         return 0  # Non-fatal
     fi
     
-    # Determine current active port
-    local current_port=$(grep -oP 'reverse_proxy\s+localhost:\K\d+' "${caddyfile}" | head -1)
+    # Determine current active port (from blue-green managed section only)
+    local current_port=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'reverse_proxy\s+localhost:\K\d+' | head -1)
     log "INFO" "Current active port: ${current_port}"
     log "INFO" "Target port: ${target_port}"
     
@@ -1363,15 +1363,22 @@ switch_traffic() {
         return 0
     fi
     
+    # Verify markers exist before attempting replacement
+    if ! grep -q "# BLUE_GREEN_SLOT_START" "${caddyfile}" || ! grep -q "# BLUE_GREEN_SLOT_END" "${caddyfile}"; then
+        log "ERROR" "Caddyfile missing BLUE_GREEN_SLOT markers - cannot update automatically"
+        log "ERROR" "Please add markers around the main reverse_proxy block"
+        return 1
+    fi
+    
     # Create backup of Caddyfile
     local backup_file="${caddyfile}.backup.$(date +%Y%m%d_%H%M%S)"
     sudo cp "${caddyfile}" "${backup_file}"
     log "INFO" "Created Caddyfile backup: ${backup_file}"
     
-    # Update Caddyfile with new port and slot name
+    # Update Caddyfile with new port and slot name (only within marked section)
     log "INFO" "Updating Caddyfile to point to localhost:${target_port} (${target_slot})"
-    sudo sed -i "s/reverse_proxy localhost:[0-9]\\+/reverse_proxy localhost:${target_port}/" "${caddyfile}"
-    sudo sed -i "s/header_down X-Togather-Slot \"[^\"]*\"/header_down X-Togather-Slot \"${target_slot}\"/" "${caddyfile}"
+    sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/reverse_proxy localhost:[0-9]\+/reverse_proxy localhost:'"${target_port}"'/' "${caddyfile}"
+    sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/header_down X-Togather-Slot "[^"]*"/header_down X-Togather-Slot "'"${target_slot}"'"/' "${caddyfile}"
     
     # Validate Caddyfile syntax
     if ! sudo caddy validate --config "${caddyfile}" &> /dev/null; then

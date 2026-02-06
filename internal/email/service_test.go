@@ -1,10 +1,12 @@
 package email
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/rs/zerolog"
@@ -446,8 +448,9 @@ func TestRenderTemplate_Success(t *testing.T) {
 	svc := setupTestService(t)
 
 	data := InvitationData{
-		InviteLink: "https://example.com/invite?token=abc123",
-		InvitedBy:  "Admin User",
+		InviteLink:  "https://example.com/invite?token=abc123",
+		InvitedBy:   "Admin User",
+		CurrentYear: time.Now().Year(),
 	}
 
 	html, err := svc.renderTemplate("invitation.html", data)
@@ -472,6 +475,28 @@ func TestRenderTemplate_Success(t *testing.T) {
 
 	if !strings.Contains(html, "Accept Invitation") {
 		t.Error("Template missing call to action")
+	}
+
+	// Verify copyright year is rendered dynamically
+	expectedYear := fmt.Sprintf("&copy; %d", data.CurrentYear)
+	if !strings.Contains(html, expectedYear) {
+		// Try alternative formats (template might escape differently)
+		altYear := fmt.Sprintf("© %d", data.CurrentYear)
+		yearOnly := fmt.Sprintf("%d", data.CurrentYear)
+
+		// Debug: print what we find around "Togather"
+		idx := strings.Index(html, "Togather Shared Events Library")
+		if idx >= 0 {
+			endIdx := idx + 100
+			if endIdx > len(html) {
+				endIdx = len(html)
+			}
+			t.Logf("Found around 'Togather Shared Events Library': %q", html[idx:endIdx])
+		}
+
+		if !strings.Contains(html, altYear) && !strings.Contains(html, yearOnly) {
+			t.Errorf("Template missing copyright year, expected to find year %d", data.CurrentYear)
+		}
 	}
 }
 
@@ -536,8 +561,9 @@ func TestRenderTemplate_XSSEscaping(t *testing.T) {
 	for _, tc := range xssAttempts {
 		t.Run(tc.description, func(t *testing.T) {
 			data := InvitationData{
-				InviteLink: "https://example.com/invite",
-				InvitedBy:  tc.input,
+				InviteLink:  "https://example.com/invite",
+				InvitedBy:   tc.input,
+				CurrentYear: time.Now().Year(),
 			}
 
 			html, err := svc.renderTemplate("invitation.html", data)

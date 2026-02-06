@@ -147,16 +147,16 @@ SELECT ec.id,
   ) es ON es.event_id = ec.event_id
  WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
    AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
-   AND ($3 = '' OR ec.action = $3)
+   AND ($3::text = '' OR ec.action = $3::text)
  ORDER BY ec.sequence_number ASC
  LIMIT $4
 `
 
 type ListEventChangesParams struct {
-	AfterSequence pgtype.Int8        `json:"after_sequence"`
-	After         pgtype.Timestamptz `json:"after"`
-	Action        interface{}        `json:"action"`
-	Limit         int32              `json:"limit"`
+	AfterSequence  pgtype.Int8        `json:"after_sequence"`
+	AfterTimestamp pgtype.Timestamptz `json:"after_timestamp"`
+	Action         pgtype.Text        `json:"action"`
+	Limit          int32              `json:"limit"`
 }
 
 type ListEventChangesRow struct {
@@ -179,7 +179,7 @@ type ListEventChangesRow struct {
 func (q *Queries) ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error) {
 	rows, err := q.db.Query(ctx, listEventChanges,
 		arg.AfterSequence,
-		arg.After,
+		arg.AfterTimestamp,
 		arg.Action,
 		arg.Limit,
 	)
@@ -230,12 +230,12 @@ SELECT et.id,
 `
 
 type ListEventTombstonesParams struct {
-	After pgtype.Timestamptz `json:"after"`
-	Limit int32              `json:"limit"`
+	AfterTimestamp pgtype.Timestamptz `json:"after_timestamp"`
+	Limit          int32              `json:"limit"`
 }
 
 func (q *Queries) ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error) {
-	rows, err := q.db.Query(ctx, listEventTombstones, arg.After, arg.Limit)
+	rows, err := q.db.Query(ctx, listEventTombstones, arg.AfterTimestamp, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

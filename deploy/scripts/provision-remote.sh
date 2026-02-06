@@ -10,7 +10,7 @@
 #   ./provision-remote.sh togather-root staging
 #   ./provision-remote.sh togather-root production
 #   ./provision-remote.sh root@192.46.222.199 staging 1.25.0
-#   ./provision-remote.sh root@192.46.222.199 production 1.24.12 togather
+#   ./provision-remote.sh root@192.46.222.199 production 1.24.13 togather
 
 set -euo pipefail
 
@@ -35,7 +35,7 @@ if [[ $# -lt 1 ]]; then
     echo "Arguments:"
     echo "  hostname          - SSH target (user@host or SSH config alias)"
     echo "  ENVIRONMENT       - Application environment: development, staging (default), production"
-    echo "  GO_VERSION        - Go version (default: 1.24.12)"
+    echo "  GO_VERSION        - Go version (default: 1.24.13)"
     echo "  DEPLOY_USER       - Deploy user name (default: deploy)"
     echo "  SKIP_SSH_HARDEN   - Skip SSH hardening prompt (default: true)"
     echo ""
@@ -44,13 +44,13 @@ if [[ $# -lt 1 ]]; then
     echo "  $0 togather-root staging"
     echo "  $0 togather-root production"
     echo "  $0 root@192.46.222.199 staging 1.25.0"
-    echo "  $0 root@192.46.222.199 production 1.24.12 togather"
+    echo "  $0 root@192.46.222.199 production 1.24.13 togather"
     exit 1
 fi
 
 SSH_TARGET="$1"
 APP_ENVIRONMENT="${2:-staging}"
-GO_VERSION="${3:-1.24.12}"
+GO_VERSION="${3:-1.24.13}"
 DEPLOY_USER="${4:-deploy}"
 SKIP_SSH_HARDEN="${5:-true}"  # Default to true for remote execution
 
