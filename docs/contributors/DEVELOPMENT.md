@@ -12,6 +12,9 @@ The SEL server can be built using either Make or Go directly. Both methods produ
 # Recommended: Use Make (includes version metadata from git)
 make build
 
+# If you see a robots.txt embed error, generate web files first
+make webfiles
+
 # Alternative: Direct Go build (version shows as "dev")
 go build ./cmd/server
 
