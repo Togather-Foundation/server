@@ -115,6 +115,11 @@ func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) 
 		return mcp.NewToolResultErrorFromErr("failed to get organization", err), nil
 	}
 
+	// Defensive nil check (should not happen, but be safe)
+	if org == nil {
+		return mcp.NewToolResultErrorf("organization not found: %s", id), nil
+	}
+
 	if strings.EqualFold(org.Lifecycle, "deleted") {
 		if tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)

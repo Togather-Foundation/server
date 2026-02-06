@@ -131,6 +131,11 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 		return mcp.NewToolResultErrorFromErr("failed to get place", err), nil
 	}
 
+	// Defensive nil check (should not happen, but be safe)
+	if place == nil {
+		return mcp.NewToolResultErrorf("place not found: %s", id), nil
+	}
+
 	if strings.EqualFold(place.Lifecycle, "deleted") {
 		if tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id); tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
