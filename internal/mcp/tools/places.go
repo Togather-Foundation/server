@@ -292,16 +292,11 @@ func (t *PlaceTools) CreatePlaceHandler(ctx context.Context, request mcp.CallToo
 }
 
 func toolResultJSON(payload any) (*mcp.CallToolResult, error) {
-	data, err := json.Marshal(payload)
+	resultJSON, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
 	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			mcp.NewTextContent(string(data)),
-		},
-	}, nil
+	return resultJSON, nil
 }
 
 func buildPlaceListItem(place places.Place, baseURL string) map[string]any {
