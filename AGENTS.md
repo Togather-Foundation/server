@@ -418,7 +418,7 @@ Usage notes:
 ## Active Technologies
 - Go 1.25+ + Docker Compose v2 (orchestration)
 - PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions, golang-migrate (migrations) with volume persistence, pg_dump snapshots to filesystem or S3-compatible storage
-- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI)
+- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL - see [internal/storage/postgres/README.md](internal/storage/postgres/README.md) for nullable parameter patterns), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI)
 - CLI Commands (`server` binary):
   - `server snapshot` - Database backup management (create, list, cleanup with retention policy)
   - `server healthcheck` - Health monitoring with blue-green slot support, watch mode, multiple output formats
