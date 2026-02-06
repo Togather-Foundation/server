@@ -324,7 +324,7 @@ docker-compose-lint:
 	@echo "✓ docker-compose.blue-green.yml is valid"
 
 # Run full CI pipeline locally
-ci: sqlc-generate lint-ci vulncheck
+ci: sqlc-generate lint-ci vulncheck webfiles
 	@echo ""
 	@echo "==> Validating YAML files..."
 	@$(MAKE) lint-yaml
