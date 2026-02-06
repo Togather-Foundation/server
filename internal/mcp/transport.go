@@ -1,4 +1,54 @@
-// Package mcp provides MCP (Model Context Protocol) server configuration and transport support.
+// Package mcp provides MCP (Model Context Protocol) server implementation for Togather SEL.
+//
+// The MCP server exposes Togather's Shared Events Library through the Model Context Protocol,
+// allowing LLMs and AI agents to query events, places, and organizations. The server supports
+// three transport protocols optimized for different deployment scenarios:
+//
+//   - stdio: Standard input/output for Claude Desktop and CLI tools (default)
+//   - sse: Server-Sent Events for web applications and browser clients
+//   - http: Streamable HTTP for production deployments and scalable services
+//
+// # Creating an MCP Server
+//
+// Initialize the server with your domain services:
+//
+//	srv := mcp.NewServer(mcp.Config{
+//	    Name:      "Togather MCP Server",
+//	    Version:   "1.0.0",
+//	    Transport: "stdio",
+//	}, eventsService, ingestService, placesService, orgService, baseURL)
+//
+// # Transport Selection
+//
+// Configure the transport via environment variables:
+//
+//	export MCP_TRANSPORT=stdio  # or "sse", "http"
+//	export PORT=8080            # for SSE/HTTP transports
+//	export HOST=0.0.0.0         # bind address for SSE/HTTP
+//
+// Then serve with the configured transport:
+//
+//	cfg, err := mcp.LoadTransportConfig()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	err = mcp.Serve(ctx, srv.MCPServer(), cfg, authStore, rateLimitCfg)
+//
+// # MCP Capabilities
+//
+// The server exposes three MCP capability types:
+//
+//   - Tools: Execute operations (list_events, create_place, search, etc.)
+//   - Resources: Subscribe to data sources (JSON-LD contexts, OpenAPI schemas)
+//   - Prompts: Get contextual assistance for SEL workflows
+//
+// All capabilities support listChanged notifications for dynamic updates.
+//
+// # Security and Rate Limiting
+//
+// HTTP-based transports (SSE, HTTP) support API key authentication and rate limiting.
+// Configure these through the auth.APIKeyStore and config.RateLimitConfig parameters.
+// Stdio transport bypasses authentication as it runs in a trusted local process.
 package mcp
 
 import (
@@ -17,6 +67,16 @@ import (
 )
 
 // TransportType represents the available MCP transport protocols.
+//
+// Each transport is optimized for different deployment scenarios:
+//
+//   - stdio: Best for local development, Claude Desktop, and CLI tools
+//   - sse: Best for web applications and browser-based clients
+//   - http: Best for production deployments and scalable services
+//
+// The transport affects how the MCP protocol is delivered but does not change
+// the available tools, resources, or prompts. Choose based on your deployment
+// environment and client requirements.
 type TransportType string
 
 const (
@@ -50,6 +110,23 @@ const (
 )
 
 // TransportConfig holds configuration for MCP transport selection.
+//
+// TransportConfig is typically loaded from environment variables using
+// LoadTransportConfig() and passed to Serve() to start the MCP server.
+//
+// Environment variable mapping:
+//
+//   - MCP_TRANSPORT → Type ("stdio", "sse", or "http")
+//   - PORT → Port (default: 8080, ignored for stdio)
+//   - HOST → Host (default: "0.0.0.0", ignored for stdio)
+//
+// Example:
+//
+//	cfg, err := mcp.LoadTransportConfig()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	// cfg.Type is TransportStdio if MCP_TRANSPORT is unset
 type TransportConfig struct {
 	// Type specifies which transport to use (stdio, sse, http).
 	Type TransportType
@@ -232,7 +309,29 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 }
 
 // Serve starts the MCP server with the configured transport.
-// This is the main entry point for serving MCP requests.
+//
+// Serve is the main entry point for serving MCP requests. It automatically
+// selects the appropriate transport handler (stdio, SSE, or HTTP) based on
+// cfg.Type and blocks until ctx is cancelled or an error occurs.
+//
+// The authStore and rateLimitCfg parameters apply to HTTP-based transports
+// (SSE and HTTP). Stdio transport bypasses authentication as it runs in a
+// trusted local process.
+//
+// Example:
+//
+//	ctx, cancel := context.WithCancel(context.Background())
+//	defer cancel()
+//
+//	cfg, err := mcp.LoadTransportConfig()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	err = mcp.Serve(ctx, srv.MCPServer(), cfg, authStore, rateLimitCfg)
+//	if err != nil && err != context.Canceled {
+//	    log.Fatal(err)
+//	}
 func Serve(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
 	switch cfg.Type {
 	case TransportStdio:
@@ -262,12 +361,41 @@ func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitC
 }
 
 // WrapHandler exposes the MCP middleware wrapper for embedding in existing routers.
+//
+// WrapHandler wraps an MCP HTTP handler with authentication and rate limiting
+// middleware. This is useful for embedding MCP endpoints into existing HTTP
+// routers alongside other API endpoints.
+//
 // Returns an error if the handler is nil.
+//
+// Example:
+//
+//	mcpHandler := mcp.NewStreamableHTTPHandler(srv.MCPServer())
+//	wrapped, err := mcp.WrapHandler(mcpHandler, authStore, rateLimitCfg)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	router := http.NewServeMux()
+//	router.Handle("/mcp", wrapped)
+//	router.Handle("/api/v1/events", eventsHandler)
 func WrapHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) (http.Handler, error) {
 	return wrapMCPHandler(handler, authStore, rateLimitCfg)
 }
 
 // NewStreamableHTTPHandler creates a streamable HTTP MCP handler for embedding.
+//
+// NewStreamableHTTPHandler wraps an MCP server in the Streamable HTTP transport
+// protocol, suitable for production deployments. The returned handler can be
+// embedded in existing HTTP routers or wrapped with additional middleware.
+//
+// For authentication and rate limiting, use WrapHandler after creating the handler.
+//
+// Example:
+//
+//	mcpHandler := mcp.NewStreamableHTTPHandler(srv.MCPServer())
+//	wrapped, err := mcp.WrapHandler(mcpHandler, authStore, rateLimitCfg)
+//	router.Handle("/mcp", wrapped)
 func NewStreamableHTTPHandler(mcpServer *server.MCPServer) http.Handler {
 	return server.NewStreamableHTTPServer(mcpServer)
 }
