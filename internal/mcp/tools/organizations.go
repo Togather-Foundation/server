@@ -60,6 +60,8 @@ func (t *OrganizationTools) ListOrganizationsHandler(ctx context.Context, reques
 		return mcp.NewToolResultError("organizations service not configured"), nil
 	}
 
+	const maxListLimit = 200
+
 	args := struct {
 		Query  string `json:"query"`
 		Limit  int    `json:"limit"`
@@ -76,6 +78,14 @@ func (t *OrganizationTools) ListOrganizationsHandler(ctx context.Context, reques
 		if err := json.Unmarshal(data, &args); err != nil {
 			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 		}
+	}
+
+	// Enforce limit caps
+	if args.Limit <= 0 {
+		args.Limit = 50
+	}
+	if args.Limit > maxListLimit {
+		args.Limit = maxListLimit
 	}
 
 	values := url.Values{}

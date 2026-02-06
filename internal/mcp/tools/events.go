@@ -11,7 +11,6 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
-	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -105,6 +104,16 @@ func (t *EventTools) ListEventsHandler(ctx context.Context, request mcp.CallTool
 		if err := json.Unmarshal(data, &args); err != nil {
 			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 		}
+	}
+
+	const maxListLimit = 200
+
+	// Enforce limit caps
+	if args.Limit <= 0 {
+		args.Limit = 50
+	}
+	if args.Limit > maxListLimit {
+		args.Limit = maxListLimit
 	}
 
 	values := url.Values{}
@@ -441,18 +450,6 @@ func buildEventLocation(event events.Event, baseURL string) any {
 	return nil
 }
 
-func defaultContext() any {
-	ctxDoc, err := jsonld.LoadDefaultContext()
-	if err != nil {
-		// Return stable context URI as fallback (SEL compliant)
-		return "https://sel.togather.foundation/contexts/sel/v0.1.jsonld"
-	}
-	if ctx, ok := ctxDoc["@context"]; ok {
-		return ctx
-	}
-	return "https://sel.togather.foundation/contexts/sel/v0.1.jsonld"
-}
-
 func buildEventURI(baseURL, ulid string) string {
 	if baseURL == "" || ulid == "" {
 		return ""
@@ -462,17 +459,6 @@ func buildEventURI(baseURL, ulid string) string {
 		return ""
 	}
 	return uri
-}
-
-func decodeTombstonePayload(payload []byte) (map[string]any, error) {
-	if len(payload) == 0 {
-		return map[string]any{}, nil
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return nil, err
-	}
-	return decoded, nil
 }
 
 func addMCPProvenance(input events.EventInput, baseURL string) events.EventInput {

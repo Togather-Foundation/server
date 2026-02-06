@@ -73,6 +73,8 @@ func (t *PlaceTools) ListPlacesHandler(ctx context.Context, request mcp.CallTool
 		return mcp.NewToolResultError("places service not configured"), nil
 	}
 
+	const maxListLimit = 200
+
 	args := struct {
 		Query   string   `json:"query"`
 		NearLat *float64 `json:"near_lat"`
@@ -92,6 +94,14 @@ func (t *PlaceTools) ListPlacesHandler(ctx context.Context, request mcp.CallTool
 		if err := json.Unmarshal(data, &args); err != nil {
 			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 		}
+	}
+
+	// Enforce limit caps
+	if args.Limit <= 0 {
+		args.Limit = 50
+	}
+	if args.Limit > maxListLimit {
+		args.Limit = maxListLimit
 	}
 
 	values := url.Values{}
@@ -289,14 +299,6 @@ func (t *PlaceTools) CreatePlaceHandler(ctx context.Context, request mcp.CallToo
 	}
 
 	return toolResultJSON(response)
-}
-
-func toolResultJSON(payload any) (*mcp.CallToolResult, error) {
-	resultJSON, err := mcp.NewToolResultJSON(payload)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
-	}
-	return resultJSON, nil
 }
 
 func buildPlaceListItem(place places.Place, baseURL string) map[string]any {
