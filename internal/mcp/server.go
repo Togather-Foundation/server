@@ -6,6 +6,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/mcp/resources"
 	"github.com/Togather-Foundation/server/internal/mcp/tools"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
@@ -131,10 +132,35 @@ func (s *Server) registerTools() {
 // registerResources registers all MCP resources for events, places, and organizations.
 // Resources are data sources that can be read and subscribed to.
 func (s *Server) registerResources() {
-	// Resource registration will be implemented in subsequent beads:
-	// - server-rrr3: Event resources (individual events, feeds)
-	// - server-sss3: Place resources (individual places)
-	// - server-ttt3: Organization resources (individual organizations)
+	contextResources := resources.NewContextResources()
+	contextPath := resources.ContextPath("sel/v0.1.jsonld")
+
+	contextDefinitions := []struct {
+		Name        string
+		URI         string
+		Description string
+	}{
+		{
+			Name:        "SEL Event Context",
+			URI:         resources.ContextURI("sel-event"),
+			Description: "JSON-LD context for SEL event resources",
+		},
+		{
+			Name:        "SEL Place Context",
+			URI:         resources.ContextURI("sel-place"),
+			Description: "JSON-LD context for SEL place resources",
+		},
+		{
+			Name:        "SEL Organization Context",
+			URI:         resources.ContextURI("sel-organization"),
+			Description: "JSON-LD context for SEL organization resources",
+		},
+	}
+
+	for _, contextDef := range contextDefinitions {
+		resource := contextResources.Resource(contextDef.URI, contextDef.Name, contextDef.Description)
+		s.mcp.AddResource(resource, contextResources.ReadHandler(contextPath, contextDef.URI))
+	}
 }
 
 // registerPrompts registers all MCP prompts for SEL workflows.
