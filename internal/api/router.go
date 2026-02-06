@@ -28,6 +28,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
+	"github.com/Togather-Foundation/server/internal/mcp"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/web"
@@ -288,6 +289,35 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			EnableOpenMetrics: true, // Support OpenMetrics format
 		},
 	))
+
+	// MCP endpoint (optional, disabled by default)
+	if os.Getenv("MCP_HTTP_ENABLED") == "true" {
+		transportCfg, err := mcp.LoadTransportConfig()
+		if err != nil {
+			logger.Warn().Err(err).Msg("invalid MCP transport config; MCP endpoint disabled")
+		} else {
+			transportCfg.Type = mcp.TransportHTTP
+			mcpServer := mcp.NewServer(
+				mcp.Config{
+					Name:      "Togather SEL MCP Server",
+					Version:   version,
+					Transport: string(transportCfg.Type),
+				},
+				eventsService,
+				ingestService,
+				placesService,
+				orgService,
+				cfg.Server.BaseURL,
+			)
+
+			mcpHandler := mcp.WrapHandler(
+				mcp.NewStreamableHTTPHandler(mcpServer.MCPServer()),
+				repo.Auth().APIKeys(),
+				cfg.RateLimit,
+			)
+			mux.Handle("/mcp", mcpHandler)
+		}
+	}
 
 	// Middleware setup
 	apiKeyRepo := repo.Auth().APIKeys()
