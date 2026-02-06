@@ -439,12 +439,13 @@ func buildEventLocation(event events.Event, baseURL string) any {
 func defaultContext() any {
 	ctxDoc, err := jsonld.LoadDefaultContext()
 	if err != nil {
-		return nil
+		// Return stable context URI as fallback (SEL compliant)
+		return "https://sel.togather.foundation/contexts/sel/v0.1.jsonld"
 	}
 	if ctx, ok := ctxDoc["@context"]; ok {
 		return ctx
 	}
-	return nil
+	return "https://sel.togather.foundation/contexts/sel/v0.1.jsonld"
 }
 
 func buildEventURI(baseURL, ulid string) string {
