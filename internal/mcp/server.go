@@ -109,8 +109,17 @@ func (s *Server) registerTools() {
 	// create_place tool - create new places
 	s.mcp.AddTool(placeTools.CreatePlaceTool(), placeTools.CreatePlaceHandler)
 
-	// Organization tools will be implemented in subsequent beads:
-	// - server-ooo3: Organization query tools (list, get, search)
+	// Register organization tools (server-slhh, server-5yr5)
+	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL)
+
+	// list_organizations tool - query organizations with filters and pagination
+	s.mcp.AddTool(organizationTools.ListOrganizationsTool(), organizationTools.ListOrganizationsHandler)
+
+	// get_organization tool - retrieve a specific organization by ULID
+	s.mcp.AddTool(organizationTools.GetOrganizationTool(), organizationTools.GetOrganizationHandler)
+
+	// create_organization tool - create new organizations
+	s.mcp.AddTool(organizationTools.CreateOrganizationTool(), organizationTools.CreateOrganizationHandler)
 }
 
 // registerResources registers all MCP resources for events, places, and organizations.

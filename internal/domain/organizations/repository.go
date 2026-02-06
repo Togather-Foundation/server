@@ -30,6 +30,20 @@ type Organization struct {
 	UpdatedAt        time.Time
 }
 
+type CreateParams struct {
+	ULID            string
+	Name            string
+	LegalName       string
+	Description     string
+	URL             string
+	StreetAddress   string
+	AddressLocality string
+	AddressRegion   string
+	PostalCode      string
+	AddressCountry  string
+	FederationURI   *string
+}
+
 type Filters struct {
 	Query string
 }
@@ -47,6 +61,7 @@ type ListResult struct {
 type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Organization, error)
+	Create(ctx context.Context, params CreateParams) (*Organization, error)
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)
