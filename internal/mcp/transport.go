@@ -101,12 +101,25 @@ func LoadTransportConfig() (*TransportConfig, error) {
 func ServeStdio(ctx context.Context, mcpServer *server.MCPServer, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
 	log.Info().Msg("Starting MCP server with stdio transport")
 
-	// ServeStdio blocks until the server shuts down
-	if err := server.ServeStdio(mcpServer); err != nil {
-		return fmt.Errorf("stdio server error: %w", err)
-	}
+	// Run ServeStdio in goroutine to allow context cancellation
+	errCh := make(chan error, 1)
+	go func() {
+		if err := server.ServeStdio(mcpServer); err != nil {
+			errCh <- fmt.Errorf("stdio server error: %w", err)
+		}
+		close(errCh)
+	}()
 
-	return nil
+	log.Info().Msg("Stdio server started")
+
+	// Wait for context cancellation or server error
+	select {
+	case <-ctx.Done():
+		log.Info().Msg("Context cancelled, stdio server stopping")
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // ServeSSE starts the MCP server using Server-Sent Events transport.
