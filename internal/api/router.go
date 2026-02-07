@@ -90,8 +90,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			RiverClient: nil,
 		}
 	}
-	// Note: River workers are started with a shutdown-aware context in serve.go
-	// DO NOT call riverClient.Start() here - it's handled during server initialization
+	// Note: River workers are started in cmd/server/cmd/serve.go with proper lifecycle management
+	// DO NOT call riverClient.Start() here - it's handled during server initialization for proper graceful shutdown
 
 	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL)
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL)

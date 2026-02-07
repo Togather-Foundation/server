@@ -111,10 +111,36 @@ func runServer() error {
 	defer dbCollector.Stop()
 	logger.Info().Msg("database metrics collector started")
 
+	// Create router with River client
+	routerWithClient := api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate)
+
+	// Start River background job workers
+	// Workers process batch ingestion, deduplication, enrichment, and reconciliation jobs
+	riverCtx, riverCancel := context.WithCancel(context.Background())
+	defer riverCancel()
+
+	if routerWithClient.RiverClient != nil {
+		if err := routerWithClient.RiverClient.Start(riverCtx); err != nil {
+			return fmt.Errorf("river workers failed to start: %w", err)
+		}
+		logger.Info().Msg("river background job workers started")
+		defer func() {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer stopCancel()
+			if err := routerWithClient.RiverClient.Stop(stopCtx); err != nil {
+				logger.Error().Err(err).Msg("river workers shutdown error")
+			} else {
+				logger.Info().Msg("river workers stopped")
+			}
+		}()
+	} else {
+		logger.Warn().Msg("river client not initialized, batch processing will not work")
+	}
+
 	// Create HTTP server
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:           api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate).Handler,
+		Handler:           routerWithClient.Handler,
 		ReadTimeout:       10 * time.Second, // Total time to read request
 		WriteTimeout:      30 * time.Second, // Total time to write response
 		ReadHeaderTimeout: 5 * time.Second,  // Time to read headers
