@@ -290,16 +290,28 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// Store the dedup hash so future ingestions can find this event
 	params.DedupHash = dedupHash
 
-	event, err := s.repo.Create(ctx, params)
+	// Wrap event creation, occurrence creation, source recording, and review queue entry
+	// in a transaction to ensure atomicity. If any operation fails, all changes are rolled back.
+	txRepo, tx, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	event, err := txRepo.Create(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.createOccurrences(ctx, event, validated); err != nil {
+	if err := s.createOccurrencesWithRepo(ctx, txRepo, event, validated); err != nil {
 		return nil, err
 	}
 
-	if err := s.recordSource(ctx, event, validated, sourceID); err != nil {
+	if err := s.recordSourceWithRepo(ctx, txRepo, event, validated, sourceID); err != nil {
 		return nil, err
 	}
 
@@ -332,7 +344,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 
 		startTime, endTime := parseEventTimes(validated)
-		_, err = s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+		_, err = txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:           event.ID, // Use UUID, not ULID
 			OriginalPayload:   originalJSON,
 			NormalizedPayload: normalizedJSON,
@@ -349,15 +361,26 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 
 	if strings.TrimSpace(idempotencyKey) != "" {
-		if err := s.repo.UpdateIdempotencyKeyEvent(ctx, idempotencyKey, event.ID, event.ULID); err != nil {
+		if err := txRepo.UpdateIdempotencyKeyEvent(ctx, idempotencyKey, event.ID, event.ULID); err != nil {
 			return nil, err
 		}
+	}
+
+	// Commit transaction - all operations succeeded
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings}, nil
 }
 
+// createOccurrences creates occurrences using the default repository (backward compatibility)
 func (s *IngestService) createOccurrences(ctx context.Context, event *Event, input EventInput) error {
+	return s.createOccurrencesWithRepo(ctx, s.repo, event, input)
+}
+
+// createOccurrencesWithRepo creates occurrences using the provided repository (supports transactions)
+func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repository, event *Event, input EventInput) error {
 	if event == nil {
 		return fmt.Errorf("create occurrences: missing event")
 	}
@@ -384,7 +407,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 			VenueID:    venueID,
 			VirtualURL: virtual,
 		}
-		return s.repo.CreateOccurrence(ctx, occurrence)
+		return repo.CreateOccurrence(ctx, occurrence)
 	}
 
 	for _, occ := range input.Occurrences {
@@ -417,7 +440,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 			VenueID:    nullableString(occ.VenueID),
 			VirtualURL: nullableString(occ.VirtualURL),
 		}
-		if err := s.repo.CreateOccurrence(ctx, occurrence); err != nil {
+		if err := repo.CreateOccurrence(ctx, occurrence); err != nil {
 			return fmt.Errorf("create occurrence: %w", err)
 		}
 	}
@@ -425,7 +448,13 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 	return nil
 }
 
+// recordSource records the source using the default repository (backward compatibility)
 func (s *IngestService) recordSource(ctx context.Context, event *Event, input EventInput, sourceID string) error {
+	return s.recordSourceWithRepo(ctx, s.repo, event, input, sourceID)
+}
+
+// recordSourceWithRepo records the source using the provided repository (supports transactions)
+func (s *IngestService) recordSourceWithRepo(ctx context.Context, repo Repository, event *Event, input EventInput, sourceID string) error {
 	if input.Source == nil || input.Source.URL == "" || sourceID == "" {
 		return nil
 	}
@@ -438,14 +467,14 @@ func (s *IngestService) recordSource(ctx context.Context, event *Event, input Ev
 
 	params := EventSourceCreateParams{
 		EventID:       event.ID,
-		SourceID:      sourceID,
 		SourceURL:     input.Source.URL,
 		SourceEventID: input.Source.EventID,
+		SourceID:      sourceID,
 		Payload:       payload,
 		PayloadHash:   hex.EncodeToString(payloadHash[:]),
 	}
 
-	return s.repo.CreateSource(ctx, params)
+	return repo.CreateSource(ctx, params)
 }
 
 func primaryVenueKey(input EventInput) string {
