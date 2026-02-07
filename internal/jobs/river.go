@@ -19,6 +19,7 @@ const (
 	JobKindIdempotencyCleanup  = "idempotency_cleanup"
 	JobKindBatchIngestion      = "batch_ingestion"
 	JobKindBatchResultsCleanup = "batch_results_cleanup"
+	JobKindReviewQueueCleanup  = "review_queue_cleanup"
 )
 
 const (
@@ -105,12 +106,13 @@ func InsertOptsForKind(kind string) river.InsertOpts {
 }
 
 // NewClientConfig builds a River client configuration with retry policy.
-func NewClientConfig(workers *river.Workers, logger *slog.Logger, hooks []rivertype.Hook) *river.Config {
+func NewClientConfig(workers *river.Workers, logger *slog.Logger, hooks []rivertype.Hook, periodicJobs []*river.PeriodicJob) *river.Config {
 	policy := NewRetryPolicy()
 	config := &river.Config{
-		Workers:     workers,
-		RetryPolicy: policy,
-		MaxAttempts: policy.Default.MaxAttempts,
+		Workers:      workers,
+		RetryPolicy:  policy,
+		MaxAttempts:  policy.Default.MaxAttempts,
+		PeriodicJobs: periodicJobs,
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 10},
 		},
@@ -124,8 +126,42 @@ func NewClientConfig(workers *river.Workers, logger *slog.Logger, hooks []rivert
 }
 
 // NewClient creates a River client using pgx v5.
-func NewClient(pool *pgxpool.Pool, workers *river.Workers, logger *slog.Logger, hooks []rivertype.Hook) (*river.Client[pgx.Tx], error) {
-	return river.NewClient(riverpgxv5.New(pool), NewClientConfig(workers, logger, hooks))
+func NewClient(pool *pgxpool.Pool, workers *river.Workers, logger *slog.Logger, hooks []rivertype.Hook, periodicJobs []*river.PeriodicJob) (*river.Client[pgx.Tx], error) {
+	return river.NewClient(riverpgxv5.New(pool), NewClientConfig(workers, logger, hooks, periodicJobs))
+}
+
+// NewPeriodicJobs creates the default periodic job schedule.
+// Currently includes:
+// - Idempotency cleanup: daily at 2 AM UTC
+// - Batch results cleanup: daily at 3 AM UTC
+// - Review queue cleanup: daily at 4 AM UTC
+func NewPeriodicJobs() []*river.PeriodicJob {
+	return []*river.PeriodicJob{
+		// Idempotency key cleanup - daily at 2 AM UTC
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return IdempotencyCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		// Batch results cleanup - daily at 3 AM UTC
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return BatchResultsCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		// Review queue cleanup - daily at 4 AM UTC
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return ReviewQueueCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+	}
 }
 
 func (p *RetryPolicy) configFor(kind string) RetryConfig {

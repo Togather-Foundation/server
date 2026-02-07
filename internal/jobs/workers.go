@@ -350,7 +350,7 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, logger *slog.Logger, slot string) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, logger *slog.Logger, slot string) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -365,6 +365,12 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 		IngestService: ingestService,
 		Pool:          pool,
 		Logger:        logger,
+	})
+	river.AddWorker[ReviewQueueCleanupArgs](workers, ReviewQueueCleanupWorker{
+		Repo:   eventsRepo,
+		Pool:   pool,
+		Logger: logger,
+		Slot:   slot,
 	})
 	return workers
 }

@@ -116,6 +116,39 @@ func (s stubEventsRepo) BeginTx(_ context.Context) (events.Repository, events.Tx
 	return nil, nil, errors.New("not implemented")
 }
 
+// Review Queue methods
+func (s stubEventsRepo) FindReviewByDedup(_ context.Context, _ *string, _ *string, _ *string) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
+func (s stubEventsRepo) CreateReviewQueueEntry(_ context.Context, _ events.ReviewQueueCreateParams) (*events.ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s stubEventsRepo) UpdateReviewQueueEntry(_ context.Context, _ int, _ events.ReviewQueueUpdateParams) (*events.ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s stubEventsRepo) GetReviewQueueEntry(_ context.Context, _ int) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
+func (s stubEventsRepo) ListReviewQueue(_ context.Context, _ events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
+	return &events.ReviewQueueListResult{Entries: []events.ReviewQueueEntry{}, NextCursor: nil}, nil
+}
+
+func (s stubEventsRepo) ApproveReview(_ context.Context, _ int, _ string, _ *string) (*events.ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s stubEventsRepo) RejectReview(_ context.Context, _ int, _ string, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s stubEventsRepo) CleanupExpiredReviews(_ context.Context) error {
+	return nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

@@ -71,10 +71,23 @@ func TestValidateEventInput_InvalidStartDate(t *testing.T) {
 func TestValidateEventInput_EndBeforeStart(t *testing.T) {
 	input := validEventInput()
 	input.StartDate = "2026-02-01T12:00:00Z"
-	input.EndDate = "2026-02-01T10:00:00Z"
-	_, err := ValidateEventInput(input, "example.com")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "endDate")
+	input.EndDate = "2026-02-01T10:00:00Z" // 2 hours before start
+	// Changed behavior: this now returns a WARNING instead of an error
+	result, err := ValidateEventInputWithWarnings(input, "example.com", nil)
+	require.NoError(t, err, "Reversed dates should not cause validation error")
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Warnings, "Should have warning for reversed dates")
+
+	// Verify the warning details
+	// End hour is 10 (not early morning 0-4), so it needs review
+	found := false
+	for _, w := range result.Warnings {
+		if w.Field == "endDate" && w.Code == "reversed_dates_corrected_needs_review" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should have reversed_dates_corrected_needs_review warning")
 }
 
 func TestValidateEventInput_NoLocation(t *testing.T) {
@@ -475,19 +488,19 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "invalid occurrence - end before start",
+			name: "occurrence with reversed dates - generates warning not error",
 			input: EventInput{
 				Name:      "Test Event",
 				StartDate: "2026-02-01T10:00:00Z",
 				Occurrences: []OccurrenceInput{
 					{
 						StartDate: "2026-02-01T12:00:00Z",
-						EndDate:   "2026-02-01T10:00:00Z",
+						EndDate:   "2026-02-01T10:00:00Z", // Reversed - 2 hour gap at 10 AM
 					},
 				},
 				Location: &PlaceInput{Name: "Test Venue"},
 			},
-			wantErr: true,
+			wantErr: false, // Should generate warning, not error
 		},
 		{
 			name: "invalid occurrence - bad timezone",

@@ -3,9 +3,11 @@ package events
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // NormalizeEventInput trims and normalizes values for consistent storage and hashing.
+// Also auto-corrects common data quality issues like timezone errors.
 func NormalizeEventInput(input EventInput) EventInput {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
@@ -15,6 +17,11 @@ func NormalizeEventInput(input EventInput) EventInput {
 	input.Image = strings.TrimSpace(input.Image)
 	input.URL = strings.TrimSpace(input.URL)
 	input.License = strings.TrimSpace(input.License)
+
+	// Auto-correct timezone errors where endDate appears before startDate
+	// This typically happens with midnight-spanning events that were incorrectly
+	// converted from local time to UTC
+	input = correctEndDateTimezoneError(input)
 
 	input.Keywords = normalizeStringSlice(input.Keywords, true)
 	input.InLanguage = normalizeStringSlice(input.InLanguage, true)
@@ -89,9 +96,43 @@ func normalizeOccurrences(values []OccurrenceInput) []OccurrenceInput {
 		occ.Timezone = strings.TrimSpace(occ.Timezone)
 		occ.VenueID = strings.TrimSpace(occ.VenueID)
 		occ.VirtualURL = strings.TrimSpace(occ.VirtualURL)
+
+		// Apply timezone error correction to occurrence dates (same as top-level)
+		occ = correctOccurrenceEndDateTimezoneError(occ)
+
 		result = append(result, occ)
 	}
 	return result
+}
+
+// correctOccurrenceEndDateTimezoneError applies the same timezone correction logic
+// as correctEndDateTimezoneError but for individual occurrences.
+func correctOccurrenceEndDateTimezoneError(occ OccurrenceInput) OccurrenceInput {
+	if occ.EndDate == "" {
+		return occ
+	}
+
+	startTime, err := time.Parse(time.RFC3339, occ.StartDate)
+	if err != nil {
+		return occ // Invalid startDate, let validation handle it
+	}
+
+	endTime, err := time.Parse(time.RFC3339, occ.EndDate)
+	if err != nil {
+		return occ // Invalid endDate, let validation handle it
+	}
+
+	// Check if endDate is before startDate (the error condition)
+	if !endTime.Before(startTime) {
+		return occ // No correction needed
+	}
+
+	// Apply correction: add 24 hours to endDate
+	// Validation will add appropriate warnings based on confidence level
+	correctedEnd := endTime.Add(24 * time.Hour)
+	occ.EndDate = correctedEnd.Format(time.RFC3339)
+
+	return occ
 }
 
 func normalizeStringSlice(values []string, lower bool) []string {
@@ -118,4 +159,45 @@ func normalizeStringSlice(values []string, lower bool) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// correctEndDateTimezoneError detects and fixes common timezone conversion errors
+// where endDate appears chronologically before startDate.
+//
+// This typically occurs with midnight-spanning events that were incorrectly converted
+// from local time to UTC. For example:
+//   - Event: 11 PM - 2 AM local time (EST/EDT)
+//   - Incorrect conversion: 2025-03-31T23:00Z to 2025-03-31T02:00Z
+//   - Should be: 2025-03-31T23:00Z to 2025-04-01T02:00Z
+//
+// The correction ALWAYS applies 24h to endDate when endDate < startDate.
+// Validation adds warnings with different confidence levels:
+//   - High confidence (reversed_dates_timezone_likely): 0-4 AM, < 7h duration
+//   - Low confidence (reversed_dates_corrected_needs_review): All other cases
+func correctEndDateTimezoneError(input EventInput) EventInput {
+	if input.EndDate == "" {
+		return input // No endDate to correct
+	}
+
+	startTime, err := time.Parse(time.RFC3339, input.StartDate)
+	if err != nil {
+		return input // Invalid startDate, let validation handle it
+	}
+
+	endTime, err := time.Parse(time.RFC3339, input.EndDate)
+	if err != nil {
+		return input // Invalid endDate, let validation handle it
+	}
+
+	// Check if endDate is before startDate (the error condition)
+	if !endTime.Before(startTime) {
+		return input // No correction needed, dates are in correct order
+	}
+
+	// Apply correction: add 24 hours to endDate
+	// Validation will add appropriate warnings based on confidence level
+	correctedEnd := endTime.Add(24 * time.Hour)
+	input.EndDate = correctedEnd.Format(time.RFC3339)
+
+	return input
 }

@@ -12,6 +12,14 @@ import (
 
 type Querier interface {
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
+	// Mark review as approved
+	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
+	// Archive old approved/superseded reviews (90 day retention)
+	CleanupArchivedReviews(ctx context.Context) error
+	// Delete rejected reviews for past events (7 day grace period)
+	CleanupExpiredRejections(ctx context.Context) error
+	// Delete pending reviews for events that have already started (too late to review)
+	CleanupUnreviewedEvents(ctx context.Context) error
 	CountAllEvents(ctx context.Context) (int64, error)
 	CountAllOrganizations(ctx context.Context) (int64, error)
 	CountAllPlaces(ctx context.Context) (int64, error)
@@ -31,6 +39,8 @@ type Querier interface {
 	CreateFederationNode(ctx context.Context, arg CreateFederationNodeParams) (FederationNode, error)
 	CreateOrganizationTombstone(ctx context.Context, arg CreateOrganizationTombstoneParams) error
 	CreatePlaceTombstone(ctx context.Context, arg CreatePlaceTombstoneParams) error
+	// Create new review queue entry
+	CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQueueEntryParams) (EventReviewQueue, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	// User Invitation Queries
 	CreateUserInvitation(ctx context.Context, arg CreateUserInvitationParams) (CreateUserInvitationRow, error)
@@ -39,6 +49,10 @@ type Querier interface {
 	DeactivateUser(ctx context.Context, id pgtype.UUID) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
+	// SQLc queries for event_review_queue domain.
+	// See docs/architecture/event-review-workflow.md for complete design.
+	// Find existing review by deduplication keys (checks source_external_id or dedup_hash)
+	FindReviewByDedup(ctx context.Context, arg FindReviewByDedupParams) (FindReviewByDedupRow, error)
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
 	// Gets complete provenance history for a field, including superseded records
 	GetAllFieldProvenanceHistory(ctx context.Context, arg GetAllFieldProvenanceHistoryParams) ([]GetAllFieldProvenanceHistoryRow, error)
@@ -72,6 +86,8 @@ type Querier interface {
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
+	// Get single review by ID
+	GetReviewQueueEntry(ctx context.Context, id int32) (EventReviewQueue, error)
 	// Retrieves source metadata by ID
 	GetSourceByID(ctx context.Context, id pgtype.UUID) (GetSourceByIDRow, error)
 	// Gets all sources that contributed to an event (deduplicated)
@@ -96,10 +112,16 @@ type Querier interface {
 	ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error)
 	// SQLc queries for places domain.
 	ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error)
+	// List reviews with pagination and status filter
+	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]EventReviewQueue, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
 	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error
+	// Mark events as deleted before cleaning up their pending reviews
+	MarkUnreviewedEventsAsDeleted(ctx context.Context) error
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
+	// Mark review as rejected
+	RejectReview(ctx context.Context, arg RejectReviewParams) (EventReviewQueue, error)
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
@@ -111,6 +133,8 @@ type Querier interface {
 	UpdateFederationNodeHealth(ctx context.Context, arg UpdateFederationNodeHealthParams) error
 	UpdateFederationNodeSyncStatus(ctx context.Context, arg UpdateFederationNodeSyncStatusParams) error
 	UpdateLastLogin(ctx context.Context, id pgtype.UUID) error
+	// Update existing review entry (for resubmissions with same issues)
+	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)

@@ -109,6 +109,26 @@ type EventOccurrence struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EventReviewQueue struct {
+	ID                int32              `json:"id"`
+	EventID           pgtype.UUID        `json:"event_id"`
+	OriginalPayload   []byte             `json:"original_payload"`
+	NormalizedPayload []byte             `json:"normalized_payload"`
+	Warnings          []byte             `json:"warnings"`
+	SourceID          pgtype.Text        `json:"source_id"`
+	SourceExternalID  pgtype.Text        `json:"source_external_id"`
+	DedupHash         pgtype.Text        `json:"dedup_hash"`
+	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
+	Status            string             `json:"status"`
+	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes       pgtype.Text        `json:"review_notes"`
+	RejectionReason   pgtype.Text        `json:"rejection_reason"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type EventSeries struct {
 	ID               pgtype.UUID        `json:"id"`
 	Name             string             `json:"name"`

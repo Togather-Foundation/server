@@ -449,8 +449,3 @@ func TestNullableString(t *testing.T) {
 		})
 	}
 }
-
-// Helper function for tests
-func stringPtr(s string) *string {
-	return &s
-}

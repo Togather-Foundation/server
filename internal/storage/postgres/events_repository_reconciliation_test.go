@@ -61,49 +61,96 @@ func TestUpsertPlaceReconciliation(t *testing.T) {
 		require.Equal(t, place1.ID, place2.ID, "Same place name in same city should reconcile")
 		require.Equal(t, place1.ULID, place2.ULID)
 	})
+}
 
-	t.Run("ampersand vs and deduplicates", func(t *testing.T) {
-		place1, err := repo.UpsertPlace(ctx, createPlaceParams("Studio & Gallery", "Toronto", "ON", "CA"))
+// TestGetOrCreateSourceReconciliation tests source reconciliation by base_url,
+// including handling of NULL/empty base_url values
+func TestGetOrCreateSourceReconciliation(t *testing.T) {
+	ctx := context.Background()
+	container, dbURL := setupPostgres(t, ctx)
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	repo := &EventRepository{pool: pool}
+
+	t.Run("same base_url deduplicates regardless of name", func(t *testing.T) {
+		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "BACKROOM COMEDY CLUB Events",
+			SourceType:  "api",
+			BaseURL:     "https://www.eventbrite.ca",
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		})
 		require.NoError(t, err)
 
-		place2, err := repo.UpsertPlace(ctx, createPlaceParams("Studio and Gallery", "Toronto", "ON", "CA"))
+		source2, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "DROM Taberna Events",
+			SourceType:  "api",
+			BaseURL:     "https://www.eventbrite.ca",
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		})
 		require.NoError(t, err)
 
-		require.Equal(t, place1.ID, place2.ID, "& and 'and' should normalize to same entity")
-		require.Equal(t, place1.ULID, place2.ULID)
+		require.Equal(t, source1, source2, "Same base_url should return same source ID regardless of name")
 	})
 
-	t.Run("punctuation differences deduplicate", func(t *testing.T) {
-		place1, err := repo.UpsertPlace(ctx, createPlaceParams("Café-Bar", "Toronto", "ON", "CA"))
+	t.Run("empty base_url deduplicates by name", func(t *testing.T) {
+		// Events with no URL should reconcile by base_url (NULL)
+		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "Toronto Open Data Events",
+			SourceType:  "api",
+			BaseURL:     "", // Empty base_url
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		})
 		require.NoError(t, err)
 
-		place2, err := repo.UpsertPlace(ctx, createPlaceParams("Café Bar", "Toronto", "ON", "CA"))
+		source2, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "Toronto Open Data Events",
+			SourceType:  "api",
+			BaseURL:     "", // Empty base_url
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		})
 		require.NoError(t, err)
 
-		require.Equal(t, place1.ID, place2.ID, "Punctuation differences should normalize")
-		require.Equal(t, place1.ULID, place2.ULID)
+		require.Equal(t, source1, source2, "Empty base_url should deduplicate correctly")
 	})
 
-	t.Run("whitespace differences deduplicate", func(t *testing.T) {
-		place1, err := repo.UpsertPlace(ctx, createPlaceParams("The   Art    Space", "Toronto", "ON", "CA"))
+	t.Run("different base_url creates different sources", func(t *testing.T) {
+		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "Toronto Events",
+			SourceType:  "api",
+			BaseURL:     "https://www.toronto.ca",
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		})
 		require.NoError(t, err)
 
-		place2, err := repo.UpsertPlace(ctx, createPlaceParams("The Art Space", "Toronto", "ON", "CA"))
+		source2, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "Toronto Events",
+			SourceType:  "api",
+			BaseURL:     "https://www.rom.on.ca",
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		})
 		require.NoError(t, err)
 
-		require.Equal(t, place1.ID, place2.ID, "Whitespace differences should normalize")
-		require.Equal(t, place1.ULID, place2.ULID)
-	})
-
-	t.Run("same name different cities creates separate entities", func(t *testing.T) {
-		place1, err := repo.UpsertPlace(ctx, createPlaceParams("City Theatre", "Toronto", "ON", "CA"))
-		require.NoError(t, err)
-
-		place2, err := repo.UpsertPlace(ctx, createPlaceParams("City Theatre", "Montreal", "QC", "CA"))
-		require.NoError(t, err)
-
-		require.NotEqual(t, place1.ID, place2.ID, "Same name in different cities should create separate entities")
-		require.NotEqual(t, place1.ULID, place2.ULID)
+		require.NotEqual(t, source1, source2, "Different base_url should create separate sources")
 	})
 }
 

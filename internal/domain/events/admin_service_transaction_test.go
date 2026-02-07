@@ -228,6 +228,32 @@ func (m *mockTransactionalRepo) SoftDeleteEvent(ctx context.Context, ulid, reaso
 	return errors.New("not implemented")
 }
 
+// Review Queue methods
+func (m *mockTransactionalRepo) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) CleanupExpiredReviews(ctx context.Context) error {
+	return errors.New("not implemented")
+}
+
 // mockTxCommitter implements TxCommitter
 type mockTxCommitter struct {
 	repo *mockTransactionalRepo
