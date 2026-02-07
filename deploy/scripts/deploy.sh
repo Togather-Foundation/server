@@ -1537,7 +1537,8 @@ ensure_test_api_keys() {
             key_hash=$(htpasswd -nbB dummy "${full_key}" 2>/dev/null | cut -d: -f2)
         elif command -v python3 &> /dev/null; then
             # Fallback to Python's bcrypt module if available
-            key_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'${full_key}', bcrypt.gensalt(rounds=12)).decode('utf-8'))" 2>/dev/null || echo "")
+            # Use sys.stdout.write to avoid adding newline (print() adds \n)
+            key_hash=$(python3 -c "import sys, bcrypt; sys.stdout.write(bcrypt.hashpw(b'${full_key}', bcrypt.gensalt(rounds=12)).decode('utf-8'))" 2>/dev/null || echo "")
         else
             log "WARN" "Neither htpasswd nor python3 with bcrypt available, cannot hash API key"
             return 0
