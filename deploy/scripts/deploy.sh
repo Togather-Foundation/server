@@ -1529,13 +1529,31 @@ ensure_test_api_keys() {
             return 0
         fi
         
-        # Hash the full key with SHA256 (legacy method)
-        local key_hash=$(echo -n "${full_key}" | sha256sum | cut -d' ' -f1)
+        # Hash the full key with bcrypt (cost factor 12)
+        # Use htpasswd which is commonly available and uses bcrypt
+        local key_hash
+        if command -v htpasswd &> /dev/null; then
+            # htpasswd -nbB outputs "username:$2y$..." format, extract the hash part
+            key_hash=$(htpasswd -nbB dummy "${full_key}" 2>/dev/null | cut -d: -f2)
+        elif command -v python3 &> /dev/null; then
+            # Fallback to Python's bcrypt module if available
+            key_hash=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'${full_key}', bcrypt.gensalt(rounds=12)).decode('utf-8'))" 2>/dev/null || echo "")
+        else
+            log "WARN" "Neither htpasswd nor python3 with bcrypt available, cannot hash API key"
+            return 0
+        fi
+        
+        if [[ -z "$key_hash" ]]; then
+            log "WARN" "Failed to generate bcrypt hash for ${name}"
+            return 0
+        fi
         
         # Insert key into database
-        # Note: hash_version=1 indicates SHA256 (legacy), hash_version=2 is bcrypt
+        # Note: hash_version=2 indicates bcrypt (secure), hash_version=1 is SHA256 (legacy)
+        # Escape single quotes in hash for SQL
+        key_hash="${key_hash//\'/\'\'}"
         local sql="INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, rate_limit_tier, is_active)
-                   VALUES ('${prefix}', '${key_hash}', 1, '${name}', '${role}', '${role}', true)
+                   VALUES ('${prefix}', '${key_hash}', 2, '${name}', '${role}', '${role}', true)
                    ON CONFLICT (prefix) DO NOTHING;"
         
         if psql "${DATABASE_URL}" -c "${sql}" >/dev/null 2>&1; then
