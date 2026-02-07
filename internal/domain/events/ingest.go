@@ -87,6 +87,8 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 	validated := validationResult.Input
 	warnings := validationResult.Warnings
+	// Check if review is needed due to validation warnings OR metadata quality issues
+	needsReview := len(warnings) > 0 || needsReview(validated, nil)
 
 	var sourceID string
 	if validated.Source != nil && validated.Source.URL != "" {
@@ -126,22 +128,95 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}
 
+	// Check for existing review queue entry if this event needs review
+	if needsReview {
+		var externalID *string
+		if validated.Source != nil && validated.Source.EventID != "" {
+			externalID = &validated.Source.EventID
+		}
+		var dedupHashPtr *string
+		if dedupHash != "" {
+			dedupHashPtr = &dedupHash
+		}
+		var sourceIDPtr *string
+		if sourceID != "" {
+			sourceIDPtr = &sourceID
+		}
+
+		existingReview, err := s.repo.FindReviewByDedup(ctx, sourceIDPtr, externalID, dedupHashPtr)
+		if err != nil && err != ErrNotFound {
+			return nil, fmt.Errorf("check existing review: %w", err)
+		}
+
+		if existingReview != nil {
+			switch existingReview.Status {
+			case "rejected":
+				// Check if rejection is still valid (event hasn't passed yet)
+				if !isEventPast(existingReview.EventEndTime) {
+					if stillHasSameIssues(existingReview.Warnings, warnings) {
+						return nil, ErrPreviouslyRejected{
+							Reason:     stringOrEmpty(existingReview.RejectionReason),
+							ReviewedAt: timeOrZero(existingReview.ReviewedAt),
+							ReviewedBy: stringOrEmpty(existingReview.ReviewedBy),
+						}
+					}
+				}
+				// Event passed or different issues - allow resubmission (continue to create new event)
+
+			case "pending":
+				// Already in queue - check if fixed
+				if len(warnings) == 0 {
+					// Fixed! Approve and publish
+					_, err := s.repo.ApproveReview(ctx, existingReview.ID, "system", stringPtr("Auto-approved: resubmission with no warnings"))
+					if err != nil {
+						return nil, fmt.Errorf("approve review: %w", err)
+					}
+					// Update the event to published
+					updatedEvent, err := s.repo.UpdateEvent(ctx, existingReview.EventULID, UpdateEventParams{
+						LifecycleState: stringPtr("published"),
+					})
+					if err != nil {
+						return nil, fmt.Errorf("update event to published: %w", err)
+					}
+					return &IngestResult{Event: updatedEvent, NeedsReview: false, Warnings: nil}, nil
+				}
+				// Still has issues - update queue entry with new payloads
+				originalJSON, err := toJSON(input)
+				if err != nil {
+					return nil, fmt.Errorf("marshal original for update: %w", err)
+				}
+				normalizedJSON, err := toJSON(validated)
+				if err != nil {
+					return nil, fmt.Errorf("marshal normalized for update: %w", err)
+				}
+				warningsJSON, err := toJSON(warnings)
+				if err != nil {
+					return nil, fmt.Errorf("marshal warnings for update: %w", err)
+				}
+				_, err = s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+					OriginalPayload:   &originalJSON,
+					NormalizedPayload: &normalizedJSON,
+					Warnings:          &warningsJSON,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("update review queue entry: %w", err)
+				}
+				// Return the existing event
+				event, err := s.repo.GetByULID(ctx, existingReview.EventULID)
+				if err != nil {
+					return nil, fmt.Errorf("get event for pending update: %w", err)
+				}
+				return &IngestResult{Event: event, NeedsReview: true, Warnings: warnings}, nil
+			}
+		}
+	}
+
 	ulidValue, err := ids.NewULID()
 	if err != nil {
 		return nil, fmt.Errorf("generate ulid: %w", err)
 	}
 
-	// If we have warnings (especially reversed dates), flag for admin review
-	hasReversedDates := false
-	for _, w := range warnings {
-		// Check for reversed dates warnings (both timezone_likely and generic reversed_dates)
-		if w.Code == "reversed_dates_timezone_likely" || w.Code == "reversed_dates" {
-			hasReversedDates = true
-			break
-		}
-	}
-
-	needsReview := needsReview(validated, nil) || hasReversedDates || len(warnings) > 0
+	// Determine lifecycle state based on whether review is needed
 	lifecycleState := "published"
 	if needsReview {
 		lifecycleState = "pending_review"
@@ -226,6 +301,51 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 	if err := s.recordSource(ctx, event, validated, sourceID); err != nil {
 		return nil, err
+	}
+
+	// Create review queue entry if needed
+	if needsReview {
+		originalJSON, err := toJSON(input)
+		if err != nil {
+			return nil, fmt.Errorf("marshal original payload: %w", err)
+		}
+		normalizedJSON, err := toJSON(validated)
+		if err != nil {
+			return nil, fmt.Errorf("marshal normalized payload: %w", err)
+		}
+		warningsJSON, err := toJSON(warnings)
+		if err != nil {
+			return nil, fmt.Errorf("marshal warnings: %w", err)
+		}
+
+		var externalID *string
+		if validated.Source != nil && validated.Source.EventID != "" {
+			externalID = &validated.Source.EventID
+		}
+		var dedupHashPtr *string
+		if dedupHash != "" {
+			dedupHashPtr = &dedupHash
+		}
+		var sourceIDPtr *string
+		if sourceID != "" {
+			sourceIDPtr = &sourceID
+		}
+
+		startTime, endTime := parseEventTimes(validated)
+		_, err = s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+			EventID:           event.ID, // Use UUID, not ULID
+			OriginalPayload:   originalJSON,
+			NormalizedPayload: normalizedJSON,
+			Warnings:          warningsJSON,
+			SourceID:          sourceIDPtr,
+			SourceExternalID:  externalID,
+			DedupHash:         dedupHashPtr,
+			EventStartTime:    startTime,
+			EventEndTime:      endTime,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create review queue entry: %w", err)
+		}
 	}
 
 	if strings.TrimSpace(idempotencyKey) != "" {
@@ -495,4 +615,91 @@ func hashInput(input EventInput) (string, error) {
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// Helper functions for review queue workflow
+
+// stillHasSameIssues checks if the new warnings match the previously rejected warnings
+func stillHasSameIssues(oldWarningsJSON []byte, newWarnings []ValidationWarning) bool {
+	if len(oldWarningsJSON) == 0 {
+		return len(newWarnings) == 0
+	}
+
+	var oldWarnings []ValidationWarning
+	if err := json.Unmarshal(oldWarningsJSON, &oldWarnings); err != nil {
+		return false
+	}
+
+	// Build maps of warning codes for comparison
+	oldCodes := make(map[string]bool)
+	for _, w := range oldWarnings {
+		oldCodes[w.Code] = true
+	}
+	newCodes := make(map[string]bool)
+	for _, w := range newWarnings {
+		newCodes[w.Code] = true
+	}
+
+	// Check if the sets of warning codes match
+	if len(oldCodes) != len(newCodes) {
+		return false
+	}
+	for code := range oldCodes {
+		if !newCodes[code] {
+			return false
+		}
+	}
+	return true
+}
+
+// isEventPast checks if an event has already ended
+func isEventPast(endTime *time.Time) bool {
+	if endTime == nil {
+		return false
+	}
+	return endTime.Before(time.Now())
+}
+
+// toJSON marshals a value to JSON
+func toJSON(v any) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+// parseEventTimes extracts start and end times from validated event input
+func parseEventTimes(input EventInput) (time.Time, *time.Time) {
+	start, err := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
+	if err != nil {
+		start = time.Now() // fallback, should not happen after validation
+	}
+
+	var end *time.Time
+	if input.EndDate != "" {
+		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(input.EndDate))
+		if err == nil {
+			end = &parsed
+		}
+	}
+
+	return start, end
+}
+
+// stringOrEmpty safely extracts string from pointer or returns empty string
+func stringOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// timeOrZero safely extracts time from pointer or returns zero time
+func timeOrZero(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}
+
+// Helper functions shared with tests
+func stringPtr(s string) *string {
+	return &s
 }

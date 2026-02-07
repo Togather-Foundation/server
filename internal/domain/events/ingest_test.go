@@ -360,6 +360,55 @@ func (m *MockRepository) GetTombstoneByEventULID(ctx context.Context, eventULID 
 	return nil, ErrNotFound
 }
 
+// Review Queue methods
+func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error) {
+	// For tests, return nil (no existing review)
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+	// For tests, return a basic entry
+	return &ReviewQueueEntry{
+		ID:                1,
+		EventID:           params.EventID,
+		OriginalPayload:   params.OriginalPayload,
+		NormalizedPayload: params.NormalizedPayload,
+		Warnings:          params.Warnings,
+		SourceID:          params.SourceID,
+		SourceExternalID:  params.SourceExternalID,
+		DedupHash:         params.DedupHash,
+		EventStartTime:    params.EventStartTime,
+		EventEndTime:      params.EventEndTime,
+		Status:            "pending",
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}, nil
+}
+
+func (m *MockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error) {
+	return &ReviewQueueListResult{Entries: []ReviewQueueEntry{}, NextCursor: nil}, nil
+}
+
+func (m *MockRepository) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *MockRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
+	return nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil
