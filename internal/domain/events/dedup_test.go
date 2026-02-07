@@ -203,3 +203,51 @@ func TestBuildDedupHash(t *testing.T) {
 		}
 	})
 }
+
+// TestDedupHashCityScoped verifies that events with the same name and date
+// but in different cities get DIFFERENT hashes (because venues are city-specific)
+func TestDedupHashCityScoped(t *testing.T) {
+	t.Run("same event name and date, different cities = different hashes", func(t *testing.T) {
+		// "Jazz Night" at "Blue Note" in Toronto
+		torontoVenueID := "blue-note-toronto-ulid"
+		hashToronto := BuildDedupHash(DedupCandidate{
+			Name:      "Jazz Night",
+			VenueID:   torontoVenueID,
+			StartDate: "2024-03-01T20:00:00Z",
+		})
+
+		// "Jazz Night" at "Blue Note" in Montreal (different venue, same name)
+		montrealVenueID := "blue-note-montreal-ulid"
+		hashMontreal := BuildDedupHash(DedupCandidate{
+			Name:      "Jazz Night",
+			VenueID:   montrealVenueID,
+			StartDate: "2024-03-01T20:00:00Z",
+		})
+
+		// Should be DIFFERENT hashes (not duplicates across cities)
+		if hashToronto == hashMontreal {
+			t.Errorf("Same event in different cities should NOT deduplicate. Got same hash: %s", hashToronto)
+		}
+	})
+
+	t.Run("same event at same venue = same hash (dedupe within city)", func(t *testing.T) {
+		venueID := "studio-gallery-toronto-ulid"
+
+		hash1 := BuildDedupHash(DedupCandidate{
+			Name:      "Art Show",
+			VenueID:   venueID,
+			StartDate: "2024-03-01T18:00:00Z",
+		})
+
+		hash2 := BuildDedupHash(DedupCandidate{
+			Name:      "Art Show",
+			VenueID:   venueID,
+			StartDate: "2024-03-01T18:00:00Z",
+		})
+
+		// Should be SAME hash (deduplicates within city)
+		if hash1 != hash2 {
+			t.Errorf("Same event at same venue should deduplicate. Got different hashes: %s vs %s", hash1, hash2)
+		}
+	})
+}

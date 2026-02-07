@@ -773,7 +773,33 @@ UPDATE idempotency_keys
 func (r *EventRepository) UpsertPlace(ctx context.Context, params events.PlaceCreateParams) (*events.PlaceRecord, error) {
 	queryer := r.queryer()
 
-	// If federation_uri is present, upsert by federation_uri; otherwise by ulid
+	// Step 1: Check if an entity already exists by normalized name + location
+	// This enables reconciliation across different name variants (e.g., "DROM Taberna" vs "Drom Taberna", "Studio & Gallery" vs "Studio and Gallery")
+	// Uses normalize_name() function which handles: & <-> and, punctuation, whitespace, case
+	lookupRow := queryer.QueryRow(ctx, `
+SELECT id, ulid FROM places 
+WHERE normalized_name = normalize_name($1)
+  AND COALESCE(address_locality, '') = COALESCE($2, '')
+  AND COALESCE(address_region, '') = COALESCE($3, '')
+LIMIT 1
+`,
+		params.Name,
+		params.AddressLocality,
+		params.AddressRegion,
+	)
+
+	var existingRecord events.PlaceRecord
+	err := lookupRow.Scan(&existingRecord.ID, &existingRecord.ULID)
+	if err == nil {
+		// Found existing entity with same normalized name in same location - reuse it
+		return &existingRecord, nil
+	}
+	// If error is not "no rows", something went wrong
+	if err != pgx.ErrNoRows {
+		return nil, fmt.Errorf("lookup place by normalized name: %w", err)
+	}
+
+	// Step 2: No existing entity found - proceed with upsert by federation_uri or ulid
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `
@@ -825,7 +851,33 @@ RETURNING id, ulid
 func (r *EventRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	queryer := r.queryer()
 
-	// If federation_uri is present, upsert by federation_uri; otherwise by ulid
+	// Step 1: Check if an entity already exists by normalized name + location
+	// This enables reconciliation across different name variants (e.g., "City of Toronto" variants, "Studio & Co" vs "Studio and Co")
+	// Uses normalize_name() function which handles: & <-> and, punctuation, whitespace, case
+	lookupRow := queryer.QueryRow(ctx, `
+SELECT id, ulid FROM organizations 
+WHERE normalized_name = normalize_name($1)
+  AND COALESCE(address_locality, '') = COALESCE($2, '')
+  AND COALESCE(address_region, '') = COALESCE($3, '')
+LIMIT 1
+`,
+		params.Name,
+		params.AddressLocality,
+		params.AddressRegion,
+	)
+
+	var existingRecord events.OrganizationRecord
+	err := lookupRow.Scan(&existingRecord.ID, &existingRecord.ULID)
+	if err == nil {
+		// Found existing entity with same normalized name in same location - reuse it
+		return &existingRecord, nil
+	}
+	// If error is not "no rows", something went wrong
+	if err != pgx.ErrNoRows {
+		return nil, fmt.Errorf("lookup organization by normalized name: %w", err)
+	}
+
+	// Step 2: No existing entity found - proceed with upsert by federation_uri or ulid
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `

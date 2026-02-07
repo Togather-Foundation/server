@@ -232,6 +232,7 @@ type Organization struct {
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 	DeletionReason   pgtype.Text        `json:"deletion_reason"`
 	FederationUri    pgtype.Text        `json:"federation_uri"`
+	NormalizedName   pgtype.Text        `json:"normalized_name"`
 }
 
 type OrganizationTombstone struct {
@@ -271,6 +272,7 @@ type Place struct {
 	DeletedAt               pgtype.Timestamptz `json:"deleted_at"`
 	DeletionReason          pgtype.Text        `json:"deletion_reason"`
 	FederationUri           pgtype.Text        `json:"federation_uri"`
+	NormalizedName          pgtype.Text        `json:"normalized_name"`
 }
 
 type PlaceTombstone struct {
