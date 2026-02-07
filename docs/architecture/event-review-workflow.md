@@ -215,14 +215,20 @@ CREATE TABLE event_review_queue (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   
-  -- Constraints: only one pending review per unique event
-  CONSTRAINT unique_pending_source UNIQUE(source_id, source_external_id) 
-    WHERE status = 'pending',
-  CONSTRAINT unique_pending_dedup UNIQUE(dedup_hash) 
-    WHERE status = 'pending' AND dedup_hash IS NOT NULL
+  -- Foreign key to events table
+  CONSTRAINT fk_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 );
 
--- Indexes
+-- Partial unique indexes: only one pending review per unique event
+CREATE UNIQUE INDEX idx_review_queue_unique_pending_source 
+  ON event_review_queue(source_id, source_external_id) 
+  WHERE status = 'pending';
+
+CREATE UNIQUE INDEX idx_review_queue_unique_pending_dedup 
+  ON event_review_queue(dedup_hash) 
+  WHERE status = 'pending' AND dedup_hash IS NOT NULL;
+
+-- Other indexes
 CREATE INDEX idx_review_queue_status ON event_review_queue(status);
 CREATE INDEX idx_review_queue_expired_rejections ON event_review_queue(status, event_end_time) 
   WHERE status = 'rejected';
@@ -236,6 +242,19 @@ Events requiring review are stored with:
 lifecycle_state = 'pending_review'  -- (not 'published' or 'draft')
 -- All other fields contain CORRECTED data (post-normalization)
 ```
+
+**Note:** The `pending_review` state must be added to the existing `lifecycle_state` CHECK constraint:
+```sql
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_lifecycle_state_check;
+ALTER TABLE events ADD CONSTRAINT events_lifecycle_state_check 
+  CHECK (lifecycle_state IN ('draft', 'published', 'deleted', 'pending_review'));
+```
+
+This distinguishes:
+- `draft` = User-created, intentionally unpublished
+- `pending_review` = System-flagged for data quality review
+- `published` = Approved and live
+- `deleted` = Tombstoned
 
 ## Warning Codes
 
@@ -621,15 +640,8 @@ func CleanupExpiredReviews(ctx context.Context) error {
         )
     `)
     
-    // 2. Delete unreviewed events that have started
-    // (If not reviewed before event starts, too late - delete it)
-    db.Exec(`
-        DELETE FROM event_review_queue
-        WHERE status = 'pending'
-        AND event_start_time < NOW()
-    `)
-    
-    // Also mark the events as deleted
+    // 2. Mark unreviewed events as deleted BEFORE deleting queue entries
+    // (Must run UPDATE before DELETE so subquery returns rows)
     db.Exec(`
         UPDATE events SET lifecycle_state = 'deleted'
         WHERE id IN (
@@ -638,7 +650,15 @@ func CleanupExpiredReviews(ctx context.Context) error {
         )
     `)
     
-    // 3. Archive old approved/superseded reviews (90 day retention)
+    // 3. Delete unreviewed events that have started
+    // (If not reviewed before event starts, too late - delete it)
+    db.Exec(`
+        DELETE FROM event_review_queue
+        WHERE status = 'pending'
+        AND event_start_time < NOW()
+    `)
+    
+    // 4. Archive old approved/superseded reviews (90 day retention)
     db.Exec(`
         DELETE FROM event_review_queue
         WHERE status IN ('approved', 'superseded')
@@ -691,6 +711,55 @@ See related beads:
 - Cleanup background job
 - API handler response changes
 - Tests for all scenarios
+
+---
+
+## Known Issues & Implementation Notes
+
+### Critical Implementation Order
+
+**MUST FIX FIRST (srv-629):** Normalization currently fixes reversed dates BEFORE validation runs, causing validation to see already-correct dates and generate zero warnings. This means high-confidence auto-fixes bypass the review workflow entirely and publish directly as `lifecycle_state='published'`.
+
+**Fix:** Pass original input to `ValidateEventInputWithWarnings` so it can detect what was corrected by comparing original vs normalized. See srv-l02 for implementation plan.
+
+**Impact:** Until fixed, the review workflow is non-functional for high-confidence cases.
+
+---
+
+### Edge Cases & Limitations
+
+#### Concurrent Submission Race Conditions
+
+1. **Same event from different sources simultaneously:**
+   - Dedup by `source_external_id` is scoped to source
+   - Dedup by `dedup_hash` can catch cross-source duplicates
+   - But concurrent ingestion could create two pending reviews for the same real-world event
+   - **Mitigation:** Dedup hash check happens in transaction, should catch most cases
+
+2. **Admin approval vs source resubmission race:**
+   - Admin approves review while source simultaneously resubmits fix
+   - Both paths try to set `lifecycle_state='published'`
+   - **Mitigation:** Last write wins (both outcomes are correct)
+
+#### Occurrence-Only Events
+
+Events with ONLY `occurrences` array (no top-level `startDate`/`endDate`) are not handled by current normalization/validation:
+- `normalizeOccurrences()` doesn't apply timezone correction
+- `validateOccurrences()` hard-rejects reversed dates (doesn't generate warnings)
+- See srv-oad for fix
+
+#### End Hour Boundary
+
+Documentation says "0-4 AM" but code checks `endHour <= 4`, which covers 0:00-4:59:59 (nearly 5 hours). Minor discrepancy.
+
+#### Transaction Boundaries
+
+Event creation, occurrences, source creation, and review queue entry are separate DB operations. If a later step fails, earlier steps succeed, creating:
+- Orphan event in draft state
+- No review queue entry
+- No way to recover
+
+**Mitigation:** Wrap in transaction (future enhancement).
 
 ---
 
