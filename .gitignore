@@ -128,3 +128,4 @@ web/sitemap.xml
 
 # Python cache
 tests/e2e/__pycache__/
+failure-reports/

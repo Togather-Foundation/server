@@ -242,6 +242,7 @@ if [ ${#BATCH_IDS[@]} -gt 0 ]; then
     TOTAL_CREATED=0
     TOTAL_FAILED=0
     TOTAL_DUPLICATES=0
+    ALL_FAILURES=()
     
     for batch_id in "${BATCH_IDS[@]}"; do
         echo ""
@@ -261,10 +262,16 @@ if [ ${#BATCH_IDS[@]} -gt 0 ]; then
             TOTAL_FAILED=$((TOTAL_FAILED + FAILED))
             TOTAL_DUPLICATES=$((TOTAL_DUPLICATES + DUPLICATES))
             
-            # Show first few failures if any
+            # Collect failures for detailed report
             if [ "$FAILED" -gt 0 ]; then
                 echo "  Failed events:"
-                echo "$STATUS_RESPONSE" | jq -r '.results[] | select(.status == "failed") | "    - \(.name): \(.error)"' | head -5
+                echo "$STATUS_RESPONSE" | jq -r '.results[] | select(.status == "failed") | "    - \(.name // "Unnamed"): \(.error)"'
+                
+                # Store batch_id and failure indices for later detailed analysis
+                FAILURE_INDICES=$(echo "$STATUS_RESPONSE" | jq -r '.results[] | select(.status == "failed") | .index' | tr '\n' ',')
+                if [ -n "$FAILURE_INDICES" ]; then
+                    ALL_FAILURES+=("$batch_id:$FAILURE_INDICES")
+                fi
             fi
         else
             echo "  ⏳ Still processing..."
@@ -278,6 +285,68 @@ if [ ${#BATCH_IDS[@]} -gt 0 ]; then
     echo "Total events created: $TOTAL_CREATED"
     echo "Total events failed: $TOTAL_FAILED"
     echo "Total duplicates: $TOTAL_DUPLICATES"
+    
+    # Generate detailed failure report if there were failures
+    if [ "$TOTAL_FAILED" -gt 0 ]; then
+        echo ""
+        echo "========================================="
+        echo "Detailed Failure Analysis"
+        echo "========================================="
+        echo ""
+        echo "Generating failure report with full event details..."
+        echo ""
+        
+        FAILURE_COUNT=0
+        for failure_entry in "${ALL_FAILURES[@]}"; do
+            BATCH_ID=$(echo "$failure_entry" | cut -d: -f1)
+            INDICES=$(echo "$failure_entry" | cut -d: -f2 | tr ',' '\n')
+            
+            # Get batch results from API
+            STATUS_RESPONSE=$(curl -s "$API_URL/batch-status/$BATCH_ID")
+            
+            for idx in $INDICES; do
+                if [ -z "$idx" ]; then continue; fi
+                
+                FAILURE_COUNT=$((FAILURE_COUNT + 1))
+                
+                echo "----------------------------------------"
+                echo "Failure #$FAILURE_COUNT"
+                echo "----------------------------------------"
+                
+                # Extract failure details from batch results
+                FAILURE_DETAIL=$(echo "$STATUS_RESPONSE" | jq --argjson idx "$idx" '.results[] | select(.index == $idx and .status == "failed")')
+                
+                echo "Batch ID: $BATCH_ID"
+                echo "Index: $idx"
+                echo "Error: $(echo "$FAILURE_DETAIL" | jq -r '.error')"
+                
+                # Show event name if available in results
+                EVENT_NAME=$(echo "$FAILURE_DETAIL" | jq -r '.name // "N/A"')
+                if [ "$EVENT_NAME" != "N/A" ]; then
+                    echo "Event Name: $EVENT_NAME"
+                fi
+                
+                echo ""
+                echo "To see full event data, run:"
+                echo "  ssh $SSH_HOST 'cd /opt/togather && source .env.$ENVIRONMENT && psql \"\$DATABASE_URL\" -c \"SELECT args->'\"'\"'events'\"'\"'->$idx FROM river_job WHERE args->'\"'\"'batch_id'\"'\"' = '\"'\"'$BATCH_ID'\"'\"';\" | jq'"
+                echo ""
+            done
+        done
+        
+        echo "========================================="
+        echo ""
+        echo "To investigate failures further, you can:"
+        echo "1. Query the database directly:"
+        if [ "$ENVIRONMENT" = "staging" ]; then
+            echo "   ssh togather 'cd /opt/togather && source .env.staging && psql \"\$DATABASE_URL\" -c \"SELECT results FROM batch_ingestion_results WHERE batch_id IN ($(printf "'%s'," "${BATCH_IDS[@]}" | sed 's/,$//'));\"'"
+        else
+            echo "   psql \"\$DATABASE_URL\" -c \"SELECT results FROM batch_ingestion_results WHERE batch_id IN (...);\""
+        fi
+        echo ""
+        echo "2. Export failures to JSON for analysis:"
+        echo "   ./scripts/export-failures.sh $ENVIRONMENT \"${BATCH_IDS[@]}\""
+        echo ""
+    fi
     echo ""
 fi
 
