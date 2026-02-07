@@ -124,25 +124,13 @@ func correctOccurrenceEndDateTimezoneError(occ OccurrenceInput) OccurrenceInput 
 
 	// Check if endDate is before startDate (the error condition)
 	if !endTime.Before(startTime) {
-		return occ // No correction needed, dates are in correct order
+		return occ // No correction needed
 	}
 
-	endHour := endTime.Hour() // 0-23 in UTC
-
-	// Only auto-correct if end time is in early morning (0-4 AM)
-	// This strongly suggests a legitimate overnight event
-	if endHour <= 4 {
-		correctedEnd := endTime.Add(24 * time.Hour)
-
-		// Check if the corrected event duration is reasonable (< 7 hours)
-		// This filters out bad data while allowing typical overnight events
-		duration := correctedEnd.Sub(startTime)
-		if duration > 0 && duration < 7*time.Hour {
-			// Apply correction: add 24 hours to endDate
-			occ.EndDate = correctedEnd.Format(time.RFC3339)
-		}
-	}
-	// If conditions aren't met, leave as-is and let validation handle it
+	// Apply correction: add 24 hours to endDate
+	// Validation will add appropriate warnings based on confidence level
+	correctedEnd := endTime.Add(24 * time.Hour)
+	occ.EndDate = correctedEnd.Format(time.RFC3339)
 
 	return occ
 }
@@ -182,13 +170,10 @@ func normalizeStringSlice(values []string, lower bool) []string {
 //   - Incorrect conversion: 2025-03-31T23:00Z to 2025-03-31T02:00Z
 //   - Should be: 2025-03-31T23:00Z to 2025-04-01T02:00Z
 //
-// The correction applies when ALL conditions are met:
-//  1. endDate exists and is before startDate
-//  2. endDate hour is 0-4 (early morning, indicating likely overnight event)
-//  3. After adding 24h to endDate, the event duration is < 7 hours (reasonable overnight event)
-//
-// This heuristic targets genuine timezone errors while avoiding false positives
-// like accidentally swapped dates or bad data.
+// The correction ALWAYS applies 24h to endDate when endDate < startDate.
+// Validation adds warnings with different confidence levels:
+//   - High confidence (reversed_dates_timezone_likely): 0-4 AM, < 7h duration
+//   - Low confidence (reversed_dates_corrected_needs_review): All other cases
 func correctEndDateTimezoneError(input EventInput) EventInput {
 	if input.EndDate == "" {
 		return input // No endDate to correct
@@ -209,22 +194,10 @@ func correctEndDateTimezoneError(input EventInput) EventInput {
 		return input // No correction needed, dates are in correct order
 	}
 
-	endHour := endTime.Hour() // 0-23 in UTC
-
-	// Only auto-correct if end time is in early morning (0-4 AM)
-	// This strongly suggests a legitimate overnight event
-	if endHour <= 4 {
-		correctedEnd := endTime.Add(24 * time.Hour)
-
-		// Check if the corrected event duration is reasonable (< 7 hours)
-		// This filters out bad data while allowing typical overnight events
-		duration := correctedEnd.Sub(startTime)
-		if duration > 0 && duration < 7*time.Hour {
-			// Apply correction: add 24 hours to endDate
-			input.EndDate = correctedEnd.Format(time.RFC3339)
-		}
-	}
-	// If conditions aren't met, leave as-is and let validation handle it
+	// Apply correction: add 24 hours to endDate
+	// Validation will add appropriate warnings based on confidence level
+	correctedEnd := endTime.Add(24 * time.Hour)
+	input.EndDate = correctedEnd.Format(time.RFC3339)
 
 	return input
 }

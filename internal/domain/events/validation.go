@@ -135,19 +135,28 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 		return nil, ValidationError{Field: "description", Message: "too long"}
 	}
 
-	startTime, err := parseRFC3339("startDate", input.StartDate)
-	if err != nil {
-		return nil, err
+	// Validate top-level dates if provided (optional if occurrences exist)
+	var startTime *time.Time
+	var endTime *time.Time
+	var err error
+
+	if input.StartDate != "" {
+		startTime, err = parseRFC3339("startDate", input.StartDate)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	endTime, err := parseRFC3339Optional("endDate", input.EndDate)
-	if err != nil {
-		return nil, err
+	if input.EndDate != "" {
+		endTime, err = parseRFC3339Optional("endDate", input.EndDate)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Detect if normalization auto-corrected reversed dates
+	// Detect if normalization auto-corrected reversed dates (only relevant if top-level dates exist)
 	// This happens when original had reversed dates but normalized input has corrected dates
-	if original != nil && original.EndDate != "" && input.EndDate != "" && original.EndDate != input.EndDate {
+	if startTime != nil && original != nil && original.EndDate != "" && input.EndDate != "" && original.EndDate != input.EndDate {
 		// Parse original dates to check if they were reversed
 		origStart, origStartErr := time.Parse(time.RFC3339, strings.TrimSpace(original.StartDate))
 		origEnd, origEndErr := time.Parse(time.RFC3339, strings.TrimSpace(original.EndDate))
@@ -190,7 +199,7 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 	}
 
 	// Check for reversed dates - this triggers admin review instead of rejection
-	if endTime != nil && endTime.Before(*startTime) {
+	if startTime != nil && endTime != nil && endTime.Before(*startTime) {
 		gap := startTime.Sub(*endTime)
 		endHour := endTime.Hour() // 0-23 in UTC
 
