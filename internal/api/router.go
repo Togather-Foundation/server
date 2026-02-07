@@ -151,6 +151,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
 
+	// Create Admin Review Queue handler (srv-bjo)
+	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
+
 	// Create Federation handlers (T111)
 	changeFeedRepo := postgres.NewChangeFeedRepository(queries)
 	changeFeedService := federation.NewChangeFeedService(changeFeedRepo, logger, cfg.Server.BaseURL)
@@ -307,6 +310,19 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/api/v1/admin/api-keys/{id}", methodMux(map[string]http.Handler{
 		http.MethodDelete: adminRevokeAPIKey,
 	}))
+
+	// Admin review queue management (srv-bjo)
+	adminListReviews := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.ListReviewQueue))))
+	adminGetReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.GetReviewQueueEntry))))
+	adminApproveReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.ApproveReview))))
+	adminRejectReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.RejectReview))))
+	adminFixReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.FixReview))))
+
+	mux.Handle("GET /api/v1/admin/review-queue", adminListReviews)
+	mux.Handle("GET /api/v1/admin/review-queue/{id}", adminGetReview)
+	mux.Handle("POST /api/v1/admin/review-queue/{id}/approve", adminApproveReview)
+	mux.Handle("POST /api/v1/admin/review-queue/{id}/reject", adminRejectReview)
+	mux.Handle("POST /api/v1/admin/review-queue/{id}/fix", adminFixReview)
 
 	// Admin user management (user administration system)
 	adminCreateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.CreateUser))))
