@@ -157,3 +157,101 @@ func TestNormalizeOccurrences(t *testing.T) {
 	assert.Equal(t, "venue123", result[0].VenueID)
 	assert.Equal(t, "https://zoom.us/j/123", result[0].VirtualURL)
 }
+
+func TestCorrectEndDateTimezoneError(t *testing.T) {
+	t.Run("corrects midnight-spanning event with timezone error", func(t *testing.T) {
+		// Event should be 11 PM - 2 AM (3 hours), but endDate appears before startDate
+		input := EventInput{
+			Name:      "Monday Latin Nights",
+			StartDate: "2025-03-31T23:00:00Z", // 11 PM
+			EndDate:   "2025-03-31T06:00:00Z", // 6 AM (appears 17 hours before start!)
+		}
+
+		result := correctEndDateTimezoneError(input)
+
+		// Should add 24 hours to endDate, making it 2025-04-01T06:00:00Z
+		require.Equal(t, "2025-04-01T06:00:00Z", result.EndDate)
+	})
+
+	t.Run("corrects event spanning midnight", func(t *testing.T) {
+		// Event: 11:30 PM - 5 PM next day, but dates got scrambled
+		input := EventInput{
+			Name:      "Weston Farmers Market",
+			StartDate: "2025-06-08T00:30:00Z",
+			EndDate:   "2025-06-07T17:00:00Z", // Day before!
+		}
+
+		result := correctEndDateTimezoneError(input)
+
+		// Should add 24 hours
+		expected := "2025-06-08T17:00:00Z"
+		require.Equal(t, expected, result.EndDate)
+	})
+
+	t.Run("does not correct valid dates", func(t *testing.T) {
+		input := EventInput{
+			Name:      "Normal Event",
+			StartDate: "2025-06-08T10:00:00Z",
+			EndDate:   "2025-06-08T12:00:00Z",
+		}
+
+		result := correctEndDateTimezoneError(input)
+
+		require.Equal(t, input.EndDate, result.EndDate, "Should not modify valid dates")
+	})
+
+	t.Run("does not correct when endDate is missing", func(t *testing.T) {
+		input := EventInput{
+			Name:      "Single Date Event",
+			StartDate: "2025-06-08T10:00:00Z",
+			EndDate:   "",
+		}
+
+		result := correctEndDateTimezoneError(input)
+
+		require.Equal(t, "", result.EndDate)
+	})
+
+	t.Run("does not correct when adding 24h makes event too long", func(t *testing.T) {
+		// If endDate is way before startDate, don't auto-correct
+		// (might be genuinely bad data, not just timezone error)
+		input := EventInput{
+			Name:      "Suspicious Event",
+			StartDate: "2025-06-08T10:00:00Z",
+			EndDate:   "2025-06-06T10:00:00Z", // 2 days before
+		}
+
+		result := correctEndDateTimezoneError(input)
+
+		// Adding 24h would make it 2025-06-07T10:00:00Z, still before start
+		// So no correction should happen
+		require.Equal(t, input.EndDate, result.EndDate, "Should not correct large gaps")
+	})
+
+	t.Run("does not correct invalid date formats", func(t *testing.T) {
+		input := EventInput{
+			Name:      "Bad Format",
+			StartDate: "not-a-date",
+			EndDate:   "also-not-a-date",
+		}
+
+		result := correctEndDateTimezoneError(input)
+
+		require.Equal(t, input.EndDate, result.EndDate, "Should not panic or modify invalid dates")
+	})
+
+	t.Run("integrates with NormalizeEventInput", func(t *testing.T) {
+		// Test that the correction is applied during normalization
+		input := EventInput{
+			Name:      "  Monday Latin Nights  ",
+			StartDate: "2025-03-31T23:00:00Z",
+			EndDate:   "2025-03-31T06:00:00Z", // Before startDate
+		}
+
+		normalized := NormalizeEventInput(input)
+
+		// Should trim name AND correct endDate
+		require.Equal(t, "Monday Latin Nights", normalized.Name)
+		require.Equal(t, "2025-04-01T06:00:00Z", normalized.EndDate)
+	})
+}
