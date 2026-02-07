@@ -144,9 +144,13 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine HTTP status code
 	status := http.StatusCreated
 	if result != nil && result.IsDuplicate {
 		status = http.StatusConflict
+	} else if result != nil && result.NeedsReview {
+		// Event queued for admin review - return 202 Accepted
+		status = http.StatusAccepted
 	}
 
 	location := eventLocationPayload(input)
@@ -158,6 +162,22 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if location != nil {
 		payload["location"] = location
+	}
+
+	// Include lifecycle_state and warnings for events needing review
+	if result != nil && result.NeedsReview {
+		payload["lifecycle_state"] = "pending_review"
+		if len(result.Warnings) > 0 {
+			warnings := make([]map[string]any, len(result.Warnings))
+			for i, w := range result.Warnings {
+				warnings[i] = map[string]any{
+					"field":   w.Field,
+					"code":    w.Code,
+					"message": w.Message,
+				}
+			}
+			payload["warnings"] = warnings
+		}
 	}
 
 	writeJSON(w, status, payload, contentTypeFromRequest(r))

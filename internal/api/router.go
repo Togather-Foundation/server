@@ -75,14 +75,17 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	workers := jobs.NewWorkersWithPool(pool, ingestService, slogLogger, slot)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), slogLogger, slot)
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{
 		metrics.NewRiverMetricsHook(slot),
 	}
 
-	riverClient, err := jobs.NewClient(pool, workers, slogLogger, riverHooks)
+	// Configure periodic cleanup jobs (daily)
+	periodicJobs := jobs.NewPeriodicJobs()
+
+	riverClient, err := jobs.NewClient(pool, workers, slogLogger, riverHooks, periodicJobs)
 	if err != nil {
 		logger.Error().Err(err).Msg("river client init failed")
 		return &RouterWithClient{
