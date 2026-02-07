@@ -1472,112 +1472,6 @@ validate_health() {
     return 0
 }
 
-# ensure_test_api_keys - Creates test API keys if they don't exist
-# Ensures PERF_ADMIN_API_KEY and PERF_AGENT_API_KEY are available for testing
-# These keys are used by performance tests, smoke tests, and integration tests
-# Only creates keys if they're defined in .deploy.conf.{env} but missing from database
-# Args:
-#   $1 - environment (e.g., "production", "staging")
-# Returns:
-#   0 on success (keys exist or created), logs warnings on non-fatal errors
-# Side effects:
-#   - Inserts API keys directly into database with SHA256 hashing
-#   - Uses keys from PERF_ADMIN_API_KEY and PERF_AGENT_API_KEY env vars
-# Example:
-#   ensure_test_api_keys staging
-ensure_test_api_keys() {
-    local env="$1"
-    
-    # Skip if no test keys are configured
-    if [[ -z "${PERF_ADMIN_API_KEY:-}" ]] && [[ -z "${PERF_AGENT_API_KEY:-}" ]]; then
-        log "INFO" "No test API keys configured in .deploy.conf.${env}, skipping"
-        return 0
-    fi
-    
-    log "INFO" "Ensuring test API keys exist for testing"
-    
-    # Load environment to get DATABASE_URL
-    local env_file=""
-    
-    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
-        env_file="${CONFIG_DIR}/environments/.env.${env}"
-    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
-        env_file="${PROJECT_ROOT}/deploy/docker/.env"
-    elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
-        env_file="${PROJECT_ROOT}/.env"
-    else
-        log "WARN" "No environment configuration found, cannot ensure API keys"
-        return 0  # Non-fatal, testing can fail gracefully
-    fi
-    
-    source "${env_file}"
-    
-    # Helper function to create an API key with specific prefix and secret
-    create_api_key_with_prefix() {
-        local full_key="$1"  # e.g., "01KGJZ3V49SKAPRK99NTT5PF5Wsecret"
-        local role="$2"      # "agent" or "admin"
-        local name="$3"      # Human-readable name
-        
-        # Extract prefix (first 26 chars - ULID length)
-        local prefix="${full_key:0:26}"
-        
-        # Check if key already exists
-        local exists=$(psql "${DATABASE_URL}" -tAc "SELECT COUNT(*) FROM api_keys WHERE prefix = '${prefix}'" 2>/dev/null || echo "0")
-        
-        if [[ "$exists" != "0" ]]; then
-            log "INFO" "${name} already exists: ${prefix}"
-            return 0
-        fi
-        
-        # Hash the full key with bcrypt (cost factor 12)
-        # Use htpasswd which is commonly available and uses bcrypt
-        local key_hash
-        if command -v htpasswd &> /dev/null; then
-            # htpasswd -nbB outputs "username:$2y$..." format, extract the hash part
-            key_hash=$(htpasswd -nbB dummy "${full_key}" 2>/dev/null | cut -d: -f2)
-        elif command -v python3 &> /dev/null; then
-            # Fallback to Python's bcrypt module if available
-            # Use sys.stdout.write to avoid adding newline (print() adds \n)
-            key_hash=$(python3 -c "import sys, bcrypt; sys.stdout.write(bcrypt.hashpw(b'${full_key}', bcrypt.gensalt(rounds=12)).decode('utf-8'))" 2>/dev/null || echo "")
-        else
-            log "WARN" "Neither htpasswd nor python3 with bcrypt available, cannot hash API key"
-            return 0
-        fi
-        
-        if [[ -z "$key_hash" ]]; then
-            log "WARN" "Failed to generate bcrypt hash for ${name}"
-            return 0
-        fi
-        
-        # Insert key into database
-        # Note: hash_version=2 indicates bcrypt (secure), hash_version=1 is SHA256 (legacy)
-        # Escape single quotes in hash for SQL
-        key_hash="${key_hash//\'/\'\'}"
-        local sql="INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, rate_limit_tier, is_active)
-                   VALUES ('${prefix}', '${key_hash}', 2, '${name}', '${role}', '${role}', true)
-                   ON CONFLICT (prefix) DO NOTHING;"
-        
-        if psql "${DATABASE_URL}" -c "${sql}" >/dev/null 2>&1; then
-            log "SUCCESS" "Created ${name}: ${prefix}"
-        else
-            log "WARN" "Failed to create ${name} (non-fatal)"
-        fi
-    }
-    
-    # Create admin key if configured
-    if [[ -n "${PERF_ADMIN_API_KEY:-}" ]]; then
-        create_api_key_with_prefix "${PERF_ADMIN_API_KEY}" "admin" "Perf Test Admin Key"
-    fi
-    
-    # Create agent key if configured
-    if [[ -n "${PERF_AGENT_API_KEY:-}" ]]; then
-        create_api_key_with_prefix "${PERF_AGENT_API_KEY}" "agent" "Perf Test Agent Key"
-    fi
-    
-    log "SUCCESS" "Test API keys ensured"
-    return 0
-}
-
 # ============================================================================
 # STATE TRACKING FUNCTIONS (T022)
 # ============================================================================
@@ -1751,9 +1645,6 @@ deploy() {
     
     # T020: Validate health checks
     validate_health "$env" "$target_slot" || return 1
-    
-    # Ensure test API keys exist for testing (non-fatal)
-    ensure_test_api_keys "$env" || log "WARN" "Failed to ensure test API keys (non-fatal)"
     
     # T021: Switch traffic to new slot
     switch_traffic "$env" "$target_slot" || return 1
