@@ -27,6 +27,17 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
 }
 
+type ValidationWarning struct {
+	Field   string
+	Message string
+	Code    string // Machine-readable code (e.g., "reversed_dates", "suspicious_duration")
+}
+
+type ValidationResult struct {
+	Input    EventInput
+	Warnings []ValidationWarning
+}
+
 type EventInput struct {
 	ID                  string                `json:"@id,omitempty"`
 	Type                string                `json:"@type,omitempty"`
@@ -97,98 +108,129 @@ type OccurrenceInput struct {
 }
 
 func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error) {
+	result, err := ValidateEventInputWithWarnings(input, nodeDomain)
+	if err != nil {
+		return input, err
+	}
+	return result.Input, nil
+}
+
+// ValidateEventInputWithWarnings validates event input and returns warnings for suspicious data
+// that should trigger admin review rather than outright rejection.
+func ValidateEventInputWithWarnings(input EventInput, nodeDomain string) (*ValidationResult, error) {
+	var warnings []ValidationWarning
+
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
-		return input, ValidationError{Field: "name", Message: "required"}
+		return nil, ValidationError{Field: "name", Message: "required"}
 	}
 	if utf8.RuneCountInString(name) > maxNameLength {
-		return input, ValidationError{Field: "name", Message: "too long"}
+		return nil, ValidationError{Field: "name", Message: "too long"}
 	}
 
 	if utf8.RuneCountInString(strings.TrimSpace(input.Description)) > maxDescriptionLength {
-		return input, ValidationError{Field: "description", Message: "too long"}
+		return nil, ValidationError{Field: "description", Message: "too long"}
 	}
 
 	startTime, err := parseRFC3339("startDate", input.StartDate)
 	if err != nil {
-		return input, err
+		return nil, err
 	}
 
 	endTime, err := parseRFC3339Optional("endDate", input.EndDate)
 	if err != nil {
-		return input, err
+		return nil, err
 	}
+
+	// Check for reversed dates - this triggers admin review instead of rejection
 	if endTime != nil && endTime.Before(*startTime) {
-		return input, ValidationError{Field: "endDate", Message: "must be on or after startDate"}
+		gap := startTime.Sub(*endTime)
+
+		// If the gap is small (< 24h), it might be a timezone error that normalization should handle
+		// But if normalization didn't fix it, flag for review
+		if gap < 24*time.Hour {
+			warnings = append(warnings, ValidationWarning{
+				Field:   "endDate",
+				Message: fmt.Sprintf("endDate appears %v before startDate - possible timezone error or data entry mistake", gap),
+				Code:    "reversed_dates_small_gap",
+			})
+		} else {
+			// Large gap suggests data entry error (e.g., swapped dates)
+			warnings = append(warnings, ValidationWarning{
+				Field:   "endDate",
+				Message: fmt.Sprintf("endDate is %v before startDate - dates may be swapped", gap),
+				Code:    "reversed_dates_large_gap",
+			})
+		}
 	}
 
 	if _, err := parseRFC3339Optional("doorTime", input.DoorTime); err != nil {
-		return input, err
+		return nil, err
 	}
 
 	if input.Location == nil && input.VirtualLocation == nil {
-		return input, ValidationError{Field: "location", Message: "location or virtualLocation required"}
+		return nil, ValidationError{Field: "location", Message: "location or virtualLocation required"}
 	}
 	if input.Location != nil {
 		if err := validatePlaceInput(*input.Location, nodeDomain); err != nil {
-			return input, err
+			return nil, err
 		}
 	}
 	if input.VirtualLocation != nil {
 		if err := validateVirtualLocationInput(*input.VirtualLocation); err != nil {
-			return input, err
+			return nil, err
 		}
 	}
 	if input.Organizer != nil {
 		if err := validateOrganizationInput(*input.Organizer, nodeDomain); err != nil {
-			return input, err
+			return nil, err
 		}
 	}
 
 	if input.Image != "" {
 		if err := validateURL(input.Image); err != nil {
-			return input, ValidationError{Field: "image", Message: "invalid URI"}
+			return nil, ValidationError{Field: "image", Message: "invalid URI"}
 		}
 	}
 	if input.URL != "" {
 		if err := validateURL(input.URL); err != nil {
-			return input, ValidationError{Field: "url", Message: "invalid URI"}
+			return nil, ValidationError{Field: "url", Message: "invalid URI"}
 		}
 	}
 
 	if input.ID != "" {
 		if err := validateCanonicalURI(nodeDomain, "events", input.ID); err != nil {
-			return input, ValidationError{Field: "@id", Message: "invalid canonical URI"}
+			return nil, ValidationError{Field: "@id", Message: "invalid canonical URI"}
 		}
 	}
 
 	if input.License != "" && !isCC0License(input.License) {
-		return input, ValidationError{Field: "license", Message: "must be CC0"}
+		return nil, ValidationError{Field: "license", Message: "must be CC0"}
 	}
 
 	if len(input.SameAs) > 0 {
 		normalized, err := normalizeSameAs(nodeDomain, "events", input.SameAs)
 		if err != nil {
-			return input, fmt.Errorf("normalize sameAs: %w", err)
+			return nil, fmt.Errorf("normalize sameAs: %w", err)
 		}
 		input.SameAs = normalized
 	}
 
 	if input.Source != nil && input.Source.URL != "" {
 		if err := validateURL(input.Source.URL); err != nil {
-			return input, ValidationError{Field: "source.url", Message: "invalid URI"}
+			return nil, ValidationError{Field: "source.url", Message: "invalid URI"}
 		}
 		if strings.TrimSpace(input.Source.EventID) == "" {
-			return input, ValidationError{Field: "source.eventId", Message: "required"}
+			return nil, ValidationError{Field: "source.eventId", Message: "required"}
 		}
 	}
 
 	if err := validateOccurrences(input, nodeDomain); err != nil {
-		return input, err
+		return nil, err
 	}
 
 	input.Name = name
-	return input, nil
+	return &ValidationResult{Input: input, Warnings: warnings}, nil
 }
 
 func validateOccurrences(input EventInput, nodeDomain string) error {

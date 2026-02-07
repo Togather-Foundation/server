@@ -1,0 +1,280 @@
+package events
+
+import (
+	"testing"
+	"time"
+)
+
+func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           EventInput
+		wantErr         bool
+		wantWarningCode string
+	}{
+		{
+			name: "reversed dates - small gap (< 24h)",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T23:00:00Z",
+				EndDate:   "2025-04-01T20:00:00Z", // 3 hours before
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "reversed_dates_small_gap",
+		},
+		{
+			name: "reversed dates - large gap (>= 24h)",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-03T10:00:00Z",
+				EndDate:   "2025-04-01T10:00:00Z", // 2 days before
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "reversed_dates_large_gap",
+		},
+		{
+			name: "reversed dates - exactly at 24h boundary",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-02T10:00:00Z",
+				EndDate:   "2025-04-01T10:00:00Z", // exactly 24 hours
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "reversed_dates_large_gap",
+		},
+		{
+			name: "normal dates - no warning",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T10:00:00Z",
+				EndDate:   "2025-04-01T12:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "",
+		},
+		{
+			name: "no end date - no warning",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "",
+		},
+		{
+			name: "same start and end - no warning",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T10:00:00Z",
+				EndDate:   "2025-04-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "",
+		},
+		{
+			name: "reversed by 1 second - small gap warning",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T10:00:01Z",
+				EndDate:   "2025-04-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "reversed_dates_small_gap",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ValidateEventInputWithWarnings(tt.input, "https://test.com")
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateEventInputWithWarnings() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ValidateEventInputWithWarnings() unexpected error = %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("ValidateEventInputWithWarnings() returned nil result")
+				return
+			}
+
+			if tt.wantWarningCode == "" {
+				// Expect no warnings
+				if len(result.Warnings) > 0 {
+					t.Errorf("Expected no warnings, got %v", result.Warnings)
+				}
+			} else {
+				// Expect specific warning code
+				found := false
+				for _, w := range result.Warnings {
+					if w.Code == tt.wantWarningCode {
+						found = true
+						// Verify warning has required fields
+						if w.Field == "" {
+							t.Error("Warning missing Field")
+						}
+						if w.Message == "" {
+							t.Error("Warning missing Message")
+						}
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected warning code %q, got warnings: %v", tt.wantWarningCode, result.Warnings)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateEventInputWithWarnings_BackwardCompatibility(t *testing.T) {
+	// Verify ValidateEventInput() still works (backward compatibility)
+	input := EventInput{
+		Name:      "Test Event",
+		StartDate: time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+		Location:  &PlaceInput{Name: "Test Venue"},
+	}
+
+	validated, err := ValidateEventInput(input, "https://test.com")
+	if err != nil {
+		t.Errorf("ValidateEventInput() unexpected error = %v", err)
+	}
+
+	if validated.Name != input.Name {
+		t.Errorf("ValidateEventInput() Name = %v, want %v", validated.Name, input.Name)
+	}
+}
+
+func TestValidateEventInputWithWarnings_ErrorsStillRejected(t *testing.T) {
+	// Verify that actual validation ERRORS still cause rejection
+	tests := []struct {
+		name        string
+		input       EventInput
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "missing name - should error",
+			input: EventInput{
+				StartDate: "2025-04-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:     true,
+			errContains: "name",
+		},
+		{
+			name: "missing location - should error",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T10:00:00Z",
+			},
+			wantErr:     true,
+			errContains: "location",
+		},
+		{
+			name: "invalid startDate - should error",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "not-a-date",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:     true,
+			errContains: "startDate",
+		},
+		{
+			name: "reversed dates - should warn, not error",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-02T10:00:00Z",
+				EndDate:   "2025-04-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr: false, // Should NOT error, should warn
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ValidateEventInputWithWarnings(tt.input, "https://test.com")
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateEventInputWithWarnings() expected error, got nil")
+					return
+				}
+				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Errorf("ValidateEventInputWithWarnings() error = %v, want error containing %v", err, tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ValidateEventInputWithWarnings() unexpected error = %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("ValidateEventInputWithWarnings() returned nil result")
+			}
+		})
+	}
+}
+
+func TestValidationWarning_Structure(t *testing.T) {
+	// Test that ValidationWarning has correct structure
+	warning := ValidationWarning{
+		Field:   "endDate",
+		Message: "endDate is before startDate",
+		Code:    "reversed_dates_large_gap",
+	}
+
+	if warning.Field != "endDate" {
+		t.Errorf("ValidationWarning.Field = %v, want %v", warning.Field, "endDate")
+	}
+	if warning.Message == "" {
+		t.Error("ValidationWarning.Message should not be empty")
+	}
+	if warning.Code == "" {
+		t.Error("ValidationWarning.Code should not be empty")
+	}
+}
+
+func TestValidationResult_Structure(t *testing.T) {
+	// Test that ValidationResult has correct structure
+	input := EventInput{
+		Name:      "Test Event",
+		StartDate: "2025-04-01T10:00:00Z",
+		Location:  &PlaceInput{Name: "Test Venue"},
+	}
+
+	result := &ValidationResult{
+		Input: input,
+		Warnings: []ValidationWarning{
+			{
+				Field:   "test",
+				Message: "test message",
+				Code:    "test_code",
+			},
+		},
+	}
+
+	if result.Input.Name != input.Name {
+		t.Error("ValidationResult.Input not properly stored")
+	}
+	if len(result.Warnings) != 1 {
+		t.Errorf("ValidationResult.Warnings length = %v, want 1", len(result.Warnings))
+	}
+}

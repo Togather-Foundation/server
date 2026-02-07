@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -664,6 +665,327 @@ func TestIngestService_IngestWithIdempotency(t *testing.T) {
 
 			if result.IsDuplicate != tt.wantDup {
 				t.Errorf("IngestWithIdempotency() IsDuplicate = %v, want %v", result.IsDuplicate, tt.wantDup)
+			}
+		})
+	}
+}
+
+func TestIngestService_ReversedDates(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           EventInput
+		wantErr         bool
+		wantWarning     bool
+		wantWarningCode string
+		wantLifecycle   string
+		wantNeedsReview bool
+	}{
+		{
+			name: "reversed dates - small gap (17 hours) - auto-fixed by normalization",
+			input: EventInput{
+				Name:        "Monday Latin Nights with Latin Grooves and Dancing",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-03-31T23:00:00Z",
+				EndDate:     "2025-03-31T06:00:00Z", // 17 hours before start - normalization adds 24h
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "DROM Taberna"},
+			},
+			wantErr:         false,
+			wantWarning:     false, // Normalization fixes this before validation
+			wantLifecycle:   "published",
+			wantNeedsReview: false,
+		},
+		{
+			name: "reversed dates - large gap (25 hours) - cannot be auto-fixed",
+			input: EventInput{
+				Name:        "Test Event",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-03T10:00:00Z",
+				EndDate:     "2025-04-02T09:00:00Z", // 25 hours before (adding 24h doesn't help)
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarning:     true,
+			wantWarningCode: "reversed_dates_large_gap",
+			wantLifecycle:   "draft",
+			wantNeedsReview: true,
+		},
+		{
+			name: "correct dates - no warning",
+			input: EventInput{
+				Name:        "Normal Event",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-01T10:00:00Z",
+				EndDate:     "2025-04-01T12:00:00Z",
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarning:     false,
+			wantLifecycle:   "published",
+			wantNeedsReview: false,
+		},
+		{
+			name: "no end date - but missing description/image",
+			input: EventInput{
+				Name:      "Event without end time",
+				StartDate: "2025-04-01T10:00:00Z",
+				License:   "CC0-1.0",
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarning:     false,
+			wantLifecycle:   "draft", // Missing description/image triggers review
+			wantNeedsReview: true,
+		},
+		{
+			name: "reversed dates - exactly 24 hours - cannot be auto-fixed",
+			input: EventInput{
+				Name:        "Event at 24 hour boundary",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-02T10:00:00Z",
+				EndDate:     "2025-04-01T10:00:00Z", // exactly 24 hours before
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarning:     true,
+			wantWarningCode: "reversed_dates_large_gap",
+			wantLifecycle:   "draft",
+			wantNeedsReview: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := NewMockRepository()
+			service := NewIngestService(repo, "https://test.com")
+
+			result, err := service.Ingest(context.Background(), tt.input)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Ingest() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Ingest() unexpected error = %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("Ingest() returned nil result")
+				return
+			}
+
+			// Check warnings
+			if tt.wantWarning {
+				if len(result.Warnings) == 0 {
+					t.Errorf("Ingest() expected warnings, got none")
+					return
+				}
+				foundCode := false
+				for _, w := range result.Warnings {
+					if w.Code == tt.wantWarningCode {
+						foundCode = true
+						if w.Field != "endDate" {
+							t.Errorf("Warning field = %v, want %v", w.Field, "endDate")
+						}
+						break
+					}
+				}
+				if !foundCode {
+					t.Errorf("Ingest() expected warning code %v, got %v", tt.wantWarningCode, result.Warnings)
+				}
+			} else {
+				if len(result.Warnings) > 0 {
+					t.Errorf("Ingest() expected no warnings, got %v", result.Warnings)
+				}
+			}
+
+			// Check NeedsReview flag
+			if result.NeedsReview != tt.wantNeedsReview {
+				t.Errorf("Ingest() NeedsReview = %v, want %v", result.NeedsReview, tt.wantNeedsReview)
+			}
+
+			// Check lifecycle state
+			if result.Event.LifecycleState != tt.wantLifecycle {
+				t.Errorf("Ingest() LifecycleState = %v, want %v", result.Event.LifecycleState, tt.wantLifecycle)
+			}
+		})
+	}
+}
+
+func TestIngestService_PipelineOrder(t *testing.T) {
+	// This test verifies that normalization runs BEFORE validation
+	// Previously, validation rejected events before normalization could fix them
+	tests := []struct {
+		name           string
+		input          EventInput
+		wantErr        bool
+		wantNormalized bool
+		expectWarning  bool
+	}{
+		{
+			name: "normalization should run before validation",
+			input: EventInput{
+				Name:        "Event with whitespace",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "  2025-04-01T10:00:00Z  ", // Extra whitespace
+				EndDate:     "  2025-04-01T12:00:00Z  ",
+				License:     "  CC0-1.0  ",
+				Location:    &PlaceInput{Name: "  Test Venue  "},
+			},
+			wantErr:        false,
+			wantNormalized: true,
+			expectWarning:  false,
+		},
+		{
+			name: "normalization fixes timezone - no warning",
+			input: EventInput{
+				Name:        "Event that normalization CAN fix",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-03-31T23:00:00Z",
+				EndDate:     "2025-03-31T06:00:00Z", // Auto-fixed by adding 24h
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:        false,
+			wantNormalized: true,
+			expectWarning:  false, // Normalization fixes it completely
+		},
+		{
+			name: "normalization cannot fix large gap - should warn",
+			input: EventInput{
+				Name:        "Event with 25 hour reversed gap",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-03T10:00:00Z",
+				EndDate:     "2025-04-02T09:00:00Z", // 25 hours before (cannot be fixed)
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:        false,
+			wantNormalized: true,
+			expectWarning:  true, // Normalization runs but can't fix this case
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := NewMockRepository()
+			service := NewIngestService(repo, "https://test.com")
+
+			result, err := service.Ingest(context.Background(), tt.input)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Ingest() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Ingest() unexpected error = %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("Ingest() returned nil result")
+				return
+			}
+
+			// Verify normalization happened (check for trimmed whitespace in event name)
+			if tt.wantNormalized && result.Event != nil {
+				if result.Event.Name != strings.TrimSpace(tt.input.Name) {
+					t.Errorf("Normalization did not run - Name = %q, want trimmed version", result.Event.Name)
+				}
+			}
+
+			// Check if we got expected warnings
+			if tt.expectWarning && len(result.Warnings) == 0 {
+				t.Error("Expected warnings but got none")
+			}
+			if !tt.expectWarning && len(result.Warnings) > 0 {
+				t.Errorf("Expected no warnings but got %v", result.Warnings)
+			}
+		})
+	}
+}
+
+func TestIngestService_WarningsInDuplicateDetection(t *testing.T) {
+	// Test that warnings are returned even when duplicate is detected
+	tests := []struct {
+		name          string
+		input         EventInput
+		setupRepo     func(*MockRepository)
+		wantDuplicate bool
+		wantWarnings  bool
+	}{
+		{
+			name: "duplicate by source - warnings still returned for unfixable reversed dates",
+			input: EventInput{
+				Name:        "Test Event",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-03T10:00:00Z",
+				EndDate:     "2025-04-02T09:00:00Z", // 25 hours reversed - cannot be auto-fixed
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+				Source: &SourceInput{
+					URL:     "https://example.com/events/123",
+					EventID: "ext-123",
+					Name:    "Example Source",
+				},
+			},
+			setupRepo: func(m *MockRepository) {
+				ulid, _ := ids.NewULID()
+				existingEvent := &Event{
+					ID:   "existing-1",
+					ULID: ulid,
+					Name: "Existing Event",
+				}
+				m.AddExistingEvent("source-1", "ext-123", existingEvent)
+				m.sources["Example Source|https://example.com"] = "source-1"
+			},
+			wantDuplicate: true,
+			wantWarnings:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := NewMockRepository()
+			tt.setupRepo(repo)
+			service := NewIngestService(repo, "https://test.com")
+
+			result, err := service.Ingest(context.Background(), tt.input)
+
+			if err != nil {
+				t.Errorf("Ingest() unexpected error = %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("Ingest() returned nil result")
+				return
+			}
+
+			if result.IsDuplicate != tt.wantDuplicate {
+				t.Errorf("Ingest() IsDuplicate = %v, want %v", result.IsDuplicate, tt.wantDuplicate)
+			}
+
+			if tt.wantWarnings && len(result.Warnings) == 0 {
+				t.Error("Expected warnings even for duplicate, got none")
 			}
 		})
 	}

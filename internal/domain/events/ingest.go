@@ -17,6 +17,7 @@ type IngestResult struct {
 	Event       *Event
 	IsDuplicate bool
 	NeedsReview bool
+	Warnings    []ValidationWarning
 }
 
 type IngestService struct {
@@ -75,29 +76,34 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}
 
-	validated, err := ValidateEventInput(input, s.nodeDomain)
+	// FIX: Normalize FIRST, then validate
+	// This allows timezone corrections and other normalizations to run before validation
+	normalized := NormalizeEventInput(input)
+
+	validationResult, err := ValidateEventInputWithWarnings(normalized, s.nodeDomain)
 	if err != nil {
 		return nil, err
 	}
-	normalized := NormalizeEventInput(validated)
+	validated := validationResult.Input
+	warnings := validationResult.Warnings
 
 	var sourceID string
-	if normalized.Source != nil && normalized.Source.URL != "" {
+	if validated.Source != nil && validated.Source.URL != "" {
 		sourceID, err = s.repo.GetOrCreateSource(ctx, SourceLookupParams{
-			Name:        sourceName(normalized.Source, normalized.Name),
+			Name:        sourceName(validated.Source, validated.Name),
 			SourceType:  "api",
-			BaseURL:     sourceBaseURL(normalized.Source.URL),
-			LicenseURL:  licenseURL(sourceLicense(normalized)),
-			LicenseType: sourceLicenseType(normalized),
+			BaseURL:     sourceBaseURL(validated.Source.URL),
+			LicenseURL:  licenseURL(sourceLicense(validated)),
+			LicenseType: sourceLicenseType(validated),
 			TrustLevel:  5,
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		existing, err := s.repo.FindBySourceExternalID(ctx, sourceID, normalized.Source.EventID)
+		existing, err := s.repo.FindBySourceExternalID(ctx, sourceID, validated.Source.EventID)
 		if err == nil && existing != nil {
-			return &IngestResult{Event: existing, IsDuplicate: true}, nil
+			return &IngestResult{Event: existing, IsDuplicate: true, Warnings: warnings}, nil
 		}
 		if err != nil && err != ErrNotFound {
 			return nil, err
@@ -105,14 +111,14 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 
 	dedupHash := BuildDedupHash(DedupCandidate{
-		Name:      normalized.Name,
-		VenueID:   primaryVenueKey(normalized),
-		StartDate: normalized.StartDate,
+		Name:      validated.Name,
+		VenueID:   primaryVenueKey(validated),
+		StartDate: validated.StartDate,
 	})
 	if dedupHash != "" {
 		existing, err := s.repo.FindByDedupHash(ctx, dedupHash)
 		if err == nil && existing != nil {
-			return &IngestResult{Event: existing, IsDuplicate: true}, nil
+			return &IngestResult{Event: existing, IsDuplicate: true, Warnings: warnings}, nil
 		}
 		if err != nil && err != ErrNotFound {
 			return nil, err
@@ -124,30 +130,39 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		return nil, fmt.Errorf("generate ulid: %w", err)
 	}
 
-	needsReview := needsReview(normalized, nil)
+	// If we have warnings (especially reversed dates), flag for admin review
+	hasReversedDates := false
+	for _, w := range warnings {
+		if w.Code == "reversed_dates_small_gap" || w.Code == "reversed_dates_large_gap" {
+			hasReversedDates = true
+			break
+		}
+	}
+
+	needsReview := needsReview(validated, nil) || hasReversedDates || len(warnings) > 0
 	lifecycleState := "published"
 	if needsReview {
 		lifecycleState = "draft"
 	}
 	params := EventCreateParams{
 		ULID:           ulidValue,
-		Name:           normalized.Name,
-		Description:    normalized.Description,
+		Name:           validated.Name,
+		Description:    validated.Description,
 		LifecycleState: lifecycleState,
 		EventDomain:    "arts",
 		OrganizerID:    nil,
 		PrimaryVenueID: nil,
-		VirtualURL:     virtualURL(normalized),
-		ImageURL:       normalized.Image,
-		PublicURL:      normalized.URL,
-		Keywords:       normalized.Keywords,
-		LicenseURL:     licenseURL(normalized.License),
+		VirtualURL:     virtualURL(validated),
+		ImageURL:       validated.Image,
+		PublicURL:      validated.URL,
+		Keywords:       validated.Keywords,
+		LicenseURL:     licenseURL(validated.License),
 		LicenseStatus:  "cc0",
-		Confidence:     floatPtr(reviewConfidence(normalized, needsReview)),
+		Confidence:     floatPtr(reviewConfidence(validated, needsReview)),
 		OriginNodeID:   nil,
 	}
 
-	if normalized.Location != nil && normalized.Location.Name != "" {
+	if validated.Location != nil && validated.Location.Name != "" {
 		placeULID, err := ids.NewULID()
 		if err != nil {
 			return nil, fmt.Errorf("generate place ulid: %w", err)
@@ -155,10 +170,10 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		place, err := s.repo.UpsertPlace(ctx, PlaceCreateParams{
 			EntityCreateFields: EntityCreateFields{
 				ULID:            placeULID,
-				Name:            normalized.Location.Name,
-				AddressLocality: normalized.Location.AddressLocality,
-				AddressRegion:   normalized.Location.AddressRegion,
-				AddressCountry:  normalized.Location.AddressCountry,
+				Name:            validated.Location.Name,
+				AddressLocality: validated.Location.AddressLocality,
+				AddressRegion:   validated.Location.AddressRegion,
+				AddressCountry:  validated.Location.AddressCountry,
 			},
 		})
 		if err != nil {
@@ -167,7 +182,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		params.PrimaryVenueID = &place.ID
 	}
 
-	if normalized.Organizer != nil && normalized.Organizer.Name != "" {
+	if validated.Organizer != nil && validated.Organizer.Name != "" {
 		orgULID, err := ids.NewULID()
 		if err != nil {
 			return nil, fmt.Errorf("generate organizer ulid: %w", err)
@@ -175,15 +190,15 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		addressLocality := ""
 		addressRegion := ""
 		addressCountry := ""
-		if normalized.Location != nil {
-			addressLocality = normalized.Location.AddressLocality
-			addressRegion = normalized.Location.AddressRegion
-			addressCountry = normalized.Location.AddressCountry
+		if validated.Location != nil {
+			addressLocality = validated.Location.AddressLocality
+			addressRegion = validated.Location.AddressRegion
+			addressCountry = validated.Location.AddressCountry
 		}
 		org, err := s.repo.UpsertOrganization(ctx, OrganizationCreateParams{
 			EntityCreateFields: EntityCreateFields{
 				ULID:            orgULID,
-				Name:            normalized.Organizer.Name,
+				Name:            validated.Organizer.Name,
 				AddressLocality: addressLocality,
 				AddressRegion:   addressRegion,
 				AddressCountry:  addressCountry,
@@ -203,11 +218,11 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		return nil, err
 	}
 
-	if err := s.createOccurrences(ctx, event, normalized); err != nil {
+	if err := s.createOccurrences(ctx, event, validated); err != nil {
 		return nil, err
 	}
 
-	if err := s.recordSource(ctx, event, normalized, sourceID); err != nil {
+	if err := s.recordSource(ctx, event, validated, sourceID); err != nil {
 		return nil, err
 	}
 
@@ -217,7 +232,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}
 
-	return &IngestResult{Event: event, NeedsReview: needsReview}, nil
+	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings}, nil
 }
 
 func (s *IngestService) createOccurrences(ctx context.Context, event *Event, input EventInput) error {

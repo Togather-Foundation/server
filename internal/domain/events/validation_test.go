@@ -71,10 +71,22 @@ func TestValidateEventInput_InvalidStartDate(t *testing.T) {
 func TestValidateEventInput_EndBeforeStart(t *testing.T) {
 	input := validEventInput()
 	input.StartDate = "2026-02-01T12:00:00Z"
-	input.EndDate = "2026-02-01T10:00:00Z"
-	_, err := ValidateEventInput(input, "example.com")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "endDate")
+	input.EndDate = "2026-02-01T10:00:00Z" // 2 hours before start
+	// Changed behavior: this now returns a WARNING instead of an error
+	result, err := ValidateEventInputWithWarnings(input, "example.com")
+	require.NoError(t, err, "Reversed dates should not cause validation error")
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Warnings, "Should have warning for reversed dates")
+
+	// Verify the warning details
+	found := false
+	for _, w := range result.Warnings {
+		if w.Field == "endDate" && w.Code == "reversed_dates_small_gap" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should have reversed_dates_small_gap warning")
 }
 
 func TestValidateEventInput_NoLocation(t *testing.T) {
