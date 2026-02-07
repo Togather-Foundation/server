@@ -1529,13 +1529,13 @@ ensure_test_api_keys() {
             return 0
         fi
         
-        # Hash the full key with SHA256
+        # Hash the full key with SHA256 (legacy method)
         local key_hash=$(echo -n "${full_key}" | sha256sum | cut -d' ' -f1)
         
         # Insert key into database
-        # Note: hash_version=2 indicates SHA256 (per SEL API spec)
+        # Note: hash_version=1 indicates SHA256 (legacy), hash_version=2 is bcrypt
         local sql="INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, rate_limit_tier, is_active)
-                   VALUES ('${prefix}', '${key_hash}', 2, '${name}', '${role}', '${role}', true)
+                   VALUES ('${prefix}', '${key_hash}', 1, '${name}', '${role}', '${role}', true)
                    ON CONFLICT (prefix) DO NOTHING;"
         
         if psql "${DATABASE_URL}" -c "${sql}" >/dev/null 2>&1; then

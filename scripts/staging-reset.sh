@@ -9,6 +9,7 @@
 # Usage:
 #   ./scripts/staging-reset.sh              # Preserve sources (default)
 #   ./scripts/staging-reset.sh --wipe-all   # Also wipe sources (fully clean)
+#   ./scripts/staging-reset.sh --yes        # Skip confirmation prompt
 #
 # CAUTION: This will delete ALL events, places, organizations, and related data!
 
@@ -19,9 +20,22 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Parse arguments
 WIPE_SOURCES=false
-if [ "$1" = "--wipe-all" ]; then
-    WIPE_SOURCES=true
-fi
+AUTO_CONFIRM=false
+for arg in "$@"; do
+    case "$arg" in
+        --wipe-all)
+            WIPE_SOURCES=true
+            ;;
+        --yes|-y)
+            AUTO_CONFIRM=true
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: $0 [--wipe-all] [--yes]"
+            exit 1
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -46,11 +60,13 @@ else
 fi
 echo
 
-# Confirm with user
-read -p "This will DELETE all event data from staging. Continue? (yes/NO): " confirm
-if [ "$confirm" != "yes" ]; then
-    echo "Aborted."
-    exit 0
+# Confirm with user (unless --yes flag provided)
+if [ "$AUTO_CONFIRM" = false ]; then
+    read -p "This will DELETE all event data from staging. Continue? (yes/NO): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "Aborted."
+        exit 0
+    fi
 fi
 
 echo -e "${YELLOW}Connecting to staging server...${NC}"
