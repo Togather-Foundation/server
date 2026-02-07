@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -126,6 +127,19 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Conflict", err, h.Env)
 			return
 		}
+
+		// Check if event was previously rejected
+		var rejErr events.ErrPreviouslyRejected
+		if errors.As(err, &rejErr) {
+			problem.Write(w, r, http.StatusBadRequest,
+				"https://sel.events/problems/previously-rejected",
+				"Previously Rejected",
+				fmt.Errorf("This event was reviewed on %s and rejected: %s",
+					rejErr.ReviewedAt.Format(time.RFC3339), rejErr.Reason),
+				h.Env)
+			return
+		}
+
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
 	}
