@@ -1,18 +1,27 @@
 #!/bin/bash
-# staging-reset.sh - Reset staging database event data (preserves users)
+# staging-reset.sh - Reset staging database event data (preserves users, API keys, sources)
 #
-# This script wipes all event-related data from staging database but preserves
-# users, invitations, and authentication data. Useful for clean testing.
+# This script wipes all event-related data from staging database but preserves:
+# - Users and invitations
+# - API keys (access credentials)
+# - Sources (data source configurations like API endpoints, trust levels)
 #
 # Usage:
-#   ./scripts/staging-reset.sh
+#   ./scripts/staging-reset.sh              # Preserve sources (default)
+#   ./scripts/staging-reset.sh --wipe-all   # Also wipe sources (fully clean)
 #
-# CAUTION: This will delete ALL events, places, organizations, sources, and related data!
+# CAUTION: This will delete ALL events, places, organizations, and related data!
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Parse arguments
+WIPE_SOURCES=false
+if [ "$1" = "--wipe-all" ]; then
+    WIPE_SOURCES=true
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,6 +39,11 @@ source "$PROJECT_ROOT/.deploy.conf.staging"
 
 echo -e "${YELLOW}=== Staging Database Reset ===${NC}"
 echo "Target: $SSH_HOST ($NODE_DOMAIN)"
+if [ "$WIPE_SOURCES" = true ]; then
+    echo "Mode: Full wipe (including sources)"
+else
+    echo "Mode: Preserve sources (default)"
+fi
 echo
 
 # Confirm with user
@@ -42,60 +56,99 @@ fi
 echo -e "${YELLOW}Connecting to staging server...${NC}"
 
 # Run reset SQL on staging
-ssh "$SSH_HOST" << 'ENDSSH'
+ssh "$SSH_HOST" << ENDSSH
 set -e
 
 # Source env for DATABASE_URL
 cd /opt/togather
 source .env
 
+# Pass the WIPE_SOURCES flag to the remote script
+WIPE_SOURCES=$WIPE_SOURCES
+
 echo "Checking current data counts..."
-psql "$DATABASE_URL" -c "
+psql "\$DATABASE_URL" -c "
   SELECT 
     (SELECT COUNT(*) FROM events) as events,
     (SELECT COUNT(*) FROM places) as places,
     (SELECT COUNT(*) FROM organizations) as organizations,
     (SELECT COUNT(*) FROM sources) as sources,
+    (SELECT COUNT(*) FROM api_keys) as api_keys,
     (SELECT COUNT(*) FROM users) as users;
 "
 
 echo
 echo "Truncating event-related tables..."
 
-psql "$DATABASE_URL" << 'EOSQL'
+if [ "\$WIPE_SOURCES" = "true" ]; then
+    echo "Mode: Wiping sources and API keys"
+    psql "\$DATABASE_URL" << 'EOSQL'
 BEGIN;
 
--- Truncate all event-related tables
--- CASCADE will handle foreign key dependencies
+-- Full wipe mode: Delete everything except users
 TRUNCATE TABLE 
-  events,
+  event_occurrences,
+  event_series,
+  field_provenance,
+  event_changes,
   event_sources,
+  idempotency_keys,
+  events,
   places,
   organizations,
-  sources
+  sources,
+  api_keys
 RESTART IDENTITY CASCADE;
 
--- Note: This cascades to:
--- - event_series
--- - event_occurrences  
--- - field_provenance
--- - event_changes
--- - api_keys (event-specific)
--- - idempotency_keys
+-- Only users and invitations are preserved
 
 COMMIT;
 
-SELECT 'Event data wiped successfully!' as status;
+SELECT 'Full wipe complete! Only users and invitations preserved.' as status;
 EOSQL
+else
+    echo "Mode: Preserving sources and API keys"
+    psql "\$DATABASE_URL" << 'EOSQL'
+BEGIN;
+
+-- Preserve sources and API keys - only wipe event data
+-- Step 1: Break the link between api_keys and sources (api_keys.source_id can reference sources)
+UPDATE api_keys SET source_id = NULL WHERE source_id IS NOT NULL;
+
+-- Step 2: Truncate event data tables in dependency order
+TRUNCATE TABLE 
+  event_occurrences,
+  event_series,
+  field_provenance,
+  event_changes,
+  event_sources,     -- Links between events and sources (delete this)
+  idempotency_keys,
+  events,
+  places,
+  organizations
+RESTART IDENTITY;
+
+-- Preserved:
+-- ✓ sources (data source configurations - API endpoints, trust levels, etc.)
+-- ✓ api_keys (access credentials)
+-- ✓ users (user accounts)
+-- ✓ user_invitations (invitations)
+
+COMMIT;
+
+SELECT 'Event data wiped! Users, API keys, and sources preserved.' as status;
+EOSQL
+fi
 
 echo
 echo "Data counts after reset:"
-psql "$DATABASE_URL" -c "
+psql "\$DATABASE_URL" -c "
   SELECT 
     (SELECT COUNT(*) FROM events) as events,
     (SELECT COUNT(*) FROM places) as places,
     (SELECT COUNT(*) FROM organizations) as organizations,
     (SELECT COUNT(*) FROM sources) as sources,
+    (SELECT COUNT(*) FROM api_keys) as api_keys,
     (SELECT COUNT(*) FROM users) as users;
 "
 
@@ -104,8 +157,18 @@ ENDSSH
 echo
 echo -e "${GREEN}✓ Staging database reset complete${NC}"
 echo
-echo "Users and invitations preserved."
-echo "Events, places, organizations, and sources deleted."
+if [ "$WIPE_SOURCES" = true ]; then
+    echo "Full wipe mode:"
+    echo "  ✓ Users and invitations preserved"
+    echo "  ✗ API keys deleted"
+    echo "  ✗ Sources deleted"
+else
+    echo "Partial wipe mode:"
+    echo "  ✓ Users and invitations preserved"
+    echo "  ✓ API keys preserved"
+    echo "  ✓ Sources preserved"
+fi
+echo "  ✗ Events, places, organizations deleted"
 echo
 echo "Next steps:"
 echo "  1. Deploy your branch: ./deploy/scripts/deploy.sh staging --version HEAD"
