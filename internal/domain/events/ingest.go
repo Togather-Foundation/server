@@ -133,7 +133,8 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// If we have warnings (especially reversed dates), flag for admin review
 	hasReversedDates := false
 	for _, w := range warnings {
-		if w.Code == "reversed_dates_small_gap" || w.Code == "reversed_dates_large_gap" {
+		// Check for reversed dates warnings (both timezone_likely and generic reversed_dates)
+		if w.Code == "reversed_dates_timezone_likely" || w.Code == "reversed_dates" {
 			hasReversedDates = true
 			break
 		}

@@ -13,18 +13,29 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 		wantWarningCode string
 	}{
 		{
-			name: "reversed dates - small gap (< 24h)",
+			name: "reversed dates - small gap, early morning end (likely timezone)",
 			input: EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T23:00:00Z",
-				EndDate:   "2025-04-01T20:00:00Z", // 3 hours before
+				StartDate: "2025-04-01T23:00:00Z", // 11 PM
+				EndDate:   "2025-04-01T02:00:00Z", // 2 AM (early morning 0-4)
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates_small_gap",
+			wantWarningCode: "reversed_dates_timezone_likely",
 		},
 		{
-			name: "reversed dates - large gap (>= 24h)",
+			name: "reversed dates - afternoon end (needs review)",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T22:00:00Z",
+				EndDate:   "2025-04-01T14:00:00Z", // 2 PM (not early morning)
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "reversed_dates",
+		},
+		{
+			name: "reversed dates - large gap (needs review)",
 			input: EventInput{
 				Name:      "Test Event",
 				StartDate: "2025-04-03T10:00:00Z",
@@ -32,10 +43,10 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates_large_gap",
+			wantWarningCode: "reversed_dates",
 		},
 		{
-			name: "reversed dates - exactly at 24h boundary",
+			name: "reversed dates - exactly at 24h boundary (needs review)",
 			input: EventInput{
 				Name:      "Test Event",
 				StartDate: "2025-04-02T10:00:00Z",
@@ -43,7 +54,7 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates_large_gap",
+			wantWarningCode: "reversed_dates",
 		},
 		{
 			name: "normal dates - no warning",
@@ -78,15 +89,26 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 			wantWarningCode: "",
 		},
 		{
-			name: "reversed by 1 second - small gap warning",
+			name: "reversed with early morning end and reasonable duration - timezone likely",
 			input: EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T10:00:01Z",
-				EndDate:   "2025-04-01T10:00:00Z",
+				StartDate: "2025-04-01T22:00:00Z", // 10 PM
+				EndDate:   "2025-04-01T03:00:00Z", // 3 AM (early morning, would be 5h duration)
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates_small_gap",
+			wantWarningCode: "reversed_dates_timezone_likely",
+		},
+		{
+			name: "reversed by 1 hour at noon - needs review",
+			input: EventInput{
+				Name:      "Test Event",
+				StartDate: "2025-04-01T13:00:00Z", // 1 PM
+				EndDate:   "2025-04-01T12:00:00Z", // noon (not early morning)
+				Location:  &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarningCode: "reversed_dates",
 		},
 	}
 
@@ -238,7 +260,7 @@ func TestValidationWarning_Structure(t *testing.T) {
 	warning := ValidationWarning{
 		Field:   "endDate",
 		Message: "endDate is before startDate",
-		Code:    "reversed_dates_large_gap",
+		Code:    "reversed_dates",
 	}
 
 	if warning.Field != "endDate" {

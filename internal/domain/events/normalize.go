@@ -133,16 +133,16 @@ func normalizeStringSlice(values []string, lower bool) []string {
 // This typically occurs with midnight-spanning events that were incorrectly converted
 // from local time to UTC. For example:
 //   - Event: 11 PM - 2 AM local time (EST/EDT)
-//   - Incorrect conversion: 2025-03-31T23:00Z to 2025-03-31T06:00Z
-//   - Should be: 2025-03-31T23:00Z to 2025-04-01T06:00Z
+//   - Incorrect conversion: 2025-03-31T23:00Z to 2025-03-31T02:00Z
+//   - Should be: 2025-03-31T23:00Z to 2025-04-01T02:00Z
 //
-// The correction applies when:
+// The correction applies when ALL conditions are met:
 //  1. endDate exists and is before startDate
-//  2. endDate + 24 hours is after startDate
-//  3. The gap is less than 24 hours (indicating likely midnight-span)
+//  2. endDate hour is 0-4 (early morning, indicating likely overnight event)
+//  3. After adding 24h to endDate, the event duration is < 7 hours (reasonable overnight event)
 //
-// This preserves data while making it valid, with the assumption that events
-// are more likely to be incorrectly converted than to genuinely end before they start.
+// This heuristic targets genuine timezone errors while avoiding false positives
+// like accidentally swapped dates or bad data.
 func correctEndDateTimezoneError(input EventInput) EventInput {
 	if input.EndDate == "" {
 		return input // No endDate to correct
@@ -163,15 +163,22 @@ func correctEndDateTimezoneError(input EventInput) EventInput {
 		return input // No correction needed, dates are in correct order
 	}
 
-	// Check if adding 24 hours would make it valid
-	// This catches midnight-spanning events with timezone errors
-	correctedEnd := endTime.Add(24 * time.Hour)
-	if correctedEnd.After(startTime) && correctedEnd.Sub(startTime) < 24*time.Hour {
-		// Apply correction: add 24 hours to endDate
-		input.EndDate = correctedEnd.Format(time.RFC3339)
+	endHour := endTime.Hour() // 0-23 in UTC
+
+	// Only auto-correct if end time is in early morning (0-4 AM)
+	// This strongly suggests a legitimate overnight event
+	if endHour <= 4 {
+		correctedEnd := endTime.Add(24 * time.Hour)
+
+		// Check if the corrected event duration is reasonable (< 7 hours)
+		// This filters out bad data while allowing typical overnight events
+		duration := correctedEnd.Sub(startTime)
+		if duration > 0 && duration < 7*time.Hour {
+			// Apply correction: add 24 hours to endDate
+			input.EndDate = correctedEnd.Format(time.RFC3339)
+		}
 	}
-	// If adding 24h doesn't help or makes it too far in future,
-	// leave it as-is and let validation reject it
+	// If conditions aren't met, leave as-is and let validation handle it
 
 	return input
 }

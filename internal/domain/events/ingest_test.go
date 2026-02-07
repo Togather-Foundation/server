@@ -681,20 +681,53 @@ func TestIngestService_ReversedDates(t *testing.T) {
 		wantNeedsReview bool
 	}{
 		{
-			name: "reversed dates - small gap (17 hours) - auto-fixed by normalization",
+			name: "reversed dates - ending at 2 AM (early morning) - auto-fixed by normalization",
 			input: EventInput{
 				Name:        "Monday Latin Nights with Latin Grooves and Dancing",
 				Description: "Test description",
 				Image:       "https://example.com/image.jpg",
-				StartDate:   "2025-03-31T23:00:00Z",
-				EndDate:     "2025-03-31T06:00:00Z", // 17 hours before start - normalization adds 24h
+				StartDate:   "2025-03-31T23:00:00Z", // 11 PM
+				EndDate:     "2025-03-31T02:00:00Z", // 2 AM (early morning, within 0-4 range)
 				License:     "CC0-1.0",
 				Location:    &PlaceInput{Name: "DROM Taberna"},
 			},
 			wantErr:         false,
-			wantWarning:     false, // Normalization fixes this before validation
+			wantWarning:     false, // Auto-fixed: early morning end (0-4) AND corrected duration < 7h
 			wantLifecycle:   "published",
 			wantNeedsReview: false,
+		},
+		{
+			name: "reversed dates - ending at 4 AM (early morning) - auto-fixed",
+			input: EventInput{
+				Name:        "Late Night Event",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-01T22:00:00Z", // 10 PM
+				EndDate:     "2025-04-01T04:00:00Z", // 4 AM (early morning, boundary of 0-4)
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarning:     false, // Auto-fixed: early morning end AND corrected duration (6h) < 7h
+			wantLifecycle:   "published",
+			wantNeedsReview: false,
+		},
+		{
+			name: "reversed dates - afternoon end (2 PM) - NOT auto-fixed",
+			input: EventInput{
+				Name:        "Suspicious Event",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-01T22:00:00Z",
+				EndDate:     "2025-04-01T14:00:00Z", // 2 PM (not early morning)
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:         false,
+			wantWarning:     true,
+			wantWarningCode: "reversed_dates", // NOT early morning → needs review
+			wantLifecycle:   "draft",
+			wantNeedsReview: true,
 		},
 		{
 			name: "reversed dates - large gap (25 hours) - cannot be auto-fixed",
@@ -703,13 +736,13 @@ func TestIngestService_ReversedDates(t *testing.T) {
 				Description: "Test description",
 				Image:       "https://example.com/image.jpg",
 				StartDate:   "2025-04-03T10:00:00Z",
-				EndDate:     "2025-04-02T09:00:00Z", // 25 hours before (adding 24h doesn't help)
+				EndDate:     "2025-04-02T09:00:00Z", // 25 hours before
 				License:     "CC0-1.0",
 				Location:    &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates_large_gap",
+			wantWarningCode: "reversed_dates", // Needs review
 			wantLifecycle:   "draft",
 			wantNeedsReview: true,
 		},
@@ -755,7 +788,7 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			},
 			wantErr:         false,
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates_large_gap",
+			wantWarningCode: "reversed_dates", // Needs review
 			wantLifecycle:   "draft",
 			wantNeedsReview: true,
 		},
@@ -849,19 +882,34 @@ func TestIngestService_PipelineOrder(t *testing.T) {
 			expectWarning:  false,
 		},
 		{
-			name: "normalization fixes timezone - no warning",
+			name: "normalization fixes timezone with early morning end - no warning",
 			input: EventInput{
 				Name:        "Event that normalization CAN fix",
 				Description: "Test description",
 				Image:       "https://example.com/image.jpg",
 				StartDate:   "2025-03-31T23:00:00Z",
-				EndDate:     "2025-03-31T06:00:00Z", // Auto-fixed by adding 24h
+				EndDate:     "2025-03-31T02:00:00Z", // 2 AM - auto-fixed (early morning 0-4, duration 3h)
 				License:     "CC0-1.0",
 				Location:    &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:        false,
 			wantNormalized: true,
 			expectWarning:  false, // Normalization fixes it completely
+		},
+		{
+			name: "normalization cannot fix afternoon end - should warn",
+			input: EventInput{
+				Name:        "Event with afternoon end time",
+				Description: "Test description",
+				Image:       "https://example.com/image.jpg",
+				StartDate:   "2025-04-01T22:00:00Z",
+				EndDate:     "2025-04-01T14:00:00Z", // 2 PM - NOT early morning
+				License:     "CC0-1.0",
+				Location:    &PlaceInput{Name: "Test Venue"},
+			},
+			wantErr:        false,
+			wantNormalized: true,
+			expectWarning:  true, // Not auto-fixed (end not early morning)
 		},
 		{
 			name: "normalization cannot fix large gap - should warn",
@@ -932,13 +980,13 @@ func TestIngestService_WarningsInDuplicateDetection(t *testing.T) {
 		wantWarnings  bool
 	}{
 		{
-			name: "duplicate by source - warnings still returned for unfixable reversed dates",
+			name: "duplicate by source - warnings still returned for ambiguous reversed dates",
 			input: EventInput{
 				Name:        "Test Event",
 				Description: "Test description",
 				Image:       "https://example.com/image.jpg",
-				StartDate:   "2025-04-03T10:00:00Z",
-				EndDate:     "2025-04-02T09:00:00Z", // 25 hours reversed - cannot be auto-fixed
+				StartDate:   "2025-04-01T22:00:00Z",
+				EndDate:     "2025-04-01T14:00:00Z", // 8h reversed, afternoon end (ambiguous)
 				License:     "CC0-1.0",
 				Location:    &PlaceInput{Name: "Test Venue"},
 				Source: &SourceInput{

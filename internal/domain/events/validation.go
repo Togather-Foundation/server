@@ -145,21 +145,37 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string) (*Valid
 	// Check for reversed dates - this triggers admin review instead of rejection
 	if endTime != nil && endTime.Before(*startTime) {
 		gap := startTime.Sub(*endTime)
+		endHour := endTime.Hour() // 0-23 in UTC
 
-		// If the gap is small (< 24h), it might be a timezone error that normalization should handle
-		// But if normalization didn't fix it, flag for review
-		if gap < 24*time.Hour {
-			warnings = append(warnings, ValidationWarning{
-				Field:   "endDate",
-				Message: fmt.Sprintf("endDate appears %v before startDate - possible timezone error or data entry mistake", gap),
-				Code:    "reversed_dates_small_gap",
-			})
+		// Two categories: timezone_likely (auto-fixed) or needs review
+		if endHour <= 4 {
+			// Early morning end suggests overnight event
+			// Check if corrected event (adding 24h) would be reasonable duration
+			correctedEnd := endTime.Add(24 * time.Hour)
+			correctedDuration := correctedEnd.Sub(*startTime)
+
+			if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+				// Very likely a timezone error on an overnight event
+				// (normalization should have fixed this, but if not, flag it)
+				warnings = append(warnings, ValidationWarning{
+					Field:   "endDate",
+					Message: fmt.Sprintf("endDate is %v before startDate and ends at %02d:00 - likely timezone conversion error", gap, endHour),
+					Code:    "reversed_dates_timezone_likely",
+				})
+			} else {
+				// Early morning but corrected duration is unreasonable - needs review
+				warnings = append(warnings, ValidationWarning{
+					Field:   "endDate",
+					Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+					Code:    "reversed_dates",
+				})
+			}
 		} else {
-			// Large gap suggests data entry error (e.g., swapped dates)
+			// Not early morning - needs review
 			warnings = append(warnings, ValidationWarning{
 				Field:   "endDate",
-				Message: fmt.Sprintf("endDate is %v before startDate - dates may be swapped", gap),
-				Code:    "reversed_dates_large_gap",
+				Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+				Code:    "reversed_dates",
 			})
 		}
 	}
