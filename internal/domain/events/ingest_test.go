@@ -692,9 +692,10 @@ func TestIngestService_ReversedDates(t *testing.T) {
 				Location:    &PlaceInput{Name: "DROM Taberna"},
 			},
 			wantErr:         false,
-			wantWarning:     false, // Auto-fixed: early morning end (0-4) AND corrected duration < 7h
-			wantLifecycle:   "published",
-			wantNeedsReview: false,
+			wantWarning:     true, // Auto-fixed but still needs review per design doc
+			wantWarningCode: "reversed_dates_timezone_likely",
+			wantLifecycle:   "pending_review", // Changed from "published" - per design doc
+			wantNeedsReview: true,             // Changed from false - per design doc
 		},
 		{
 			name: "reversed dates - ending at 4 AM (early morning) - auto-fixed",
@@ -708,9 +709,10 @@ func TestIngestService_ReversedDates(t *testing.T) {
 				Location:    &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarning:     false, // Auto-fixed: early morning end AND corrected duration (6h) < 7h
-			wantLifecycle:   "published",
-			wantNeedsReview: false,
+			wantWarning:     true, // Auto-fixed but still needs review per design doc
+			wantWarningCode: "reversed_dates_timezone_likely",
+			wantLifecycle:   "pending_review", // Changed from "published" - per design doc
+			wantNeedsReview: true,             // Changed from false - per design doc
 		},
 		{
 			name: "reversed dates - afternoon end (2 PM) - NOT auto-fixed",
@@ -725,8 +727,8 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			},
 			wantErr:         false,
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates", // NOT early morning → needs review
-			wantLifecycle:   "draft",
+			wantWarningCode: "reversed_dates", // NOT early morning → generic reversed_dates warning
+			wantLifecycle:   "pending_review", // Changed from "draft" - per design doc
 			wantNeedsReview: true,
 		},
 		{
@@ -743,7 +745,7 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			wantErr:         false,
 			wantWarning:     true,
 			wantWarningCode: "reversed_dates", // Needs review
-			wantLifecycle:   "draft",
+			wantLifecycle:   "pending_review", // Changed from "draft" - per design doc
 			wantNeedsReview: true,
 		},
 		{
@@ -772,7 +774,7 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			},
 			wantErr:         false,
 			wantWarning:     false,
-			wantLifecycle:   "draft", // Missing description/image triggers review
+			wantLifecycle:   "pending_review", // Changed from "draft" - missing description/image triggers review
 			wantNeedsReview: true,
 		},
 		{
@@ -789,7 +791,7 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			wantErr:         false,
 			wantWarning:     true,
 			wantWarningCode: "reversed_dates", // Needs review
-			wantLifecycle:   "draft",
+			wantLifecycle:   "pending_review", // Changed from "draft" - per design doc
 			wantNeedsReview: true,
 		},
 	}
@@ -882,7 +884,7 @@ func TestIngestService_PipelineOrder(t *testing.T) {
 			expectWarning:  false,
 		},
 		{
-			name: "normalization fixes timezone with early morning end - no warning",
+			name: "normalization fixes timezone with early morning end - generates warning for review",
 			input: EventInput{
 				Name:        "Event that normalization CAN fix",
 				Description: "Test description",
@@ -894,7 +896,7 @@ func TestIngestService_PipelineOrder(t *testing.T) {
 			},
 			wantErr:        false,
 			wantNormalized: true,
-			expectWarning:  false, // Normalization fixes it completely
+			expectWarning:  true, // Changed: per design doc, auto-corrected dates ALWAYS generate warnings
 		},
 		{
 			name: "normalization cannot fix afternoon end - should warn",

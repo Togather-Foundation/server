@@ -80,7 +80,8 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// This allows timezone corrections and other normalizations to run before validation
 	normalized := NormalizeEventInput(input)
 
-	validationResult, err := ValidateEventInputWithWarnings(normalized, s.nodeDomain)
+	// Pass original input so validation can detect auto-corrections
+	validationResult, err := ValidateEventInputWithWarnings(normalized, s.nodeDomain, &input)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +144,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	needsReview := needsReview(validated, nil) || hasReversedDates || len(warnings) > 0
 	lifecycleState := "published"
 	if needsReview {
-		lifecycleState = "draft"
+		lifecycleState = "pending_review"
 	}
 	params := EventCreateParams{
 		ULID:           ulidValue,

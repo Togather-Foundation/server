@@ -363,5 +363,8 @@ func TestCorrectEndDateTimezoneError_Integration(t *testing.T) {
 		// Should trim name AND correct endDate
 		require.Equal(t, "Monday Latin Nights", normalized.Name)
 		require.Equal(t, "2025-04-01T02:00:00Z", normalized.EndDate) // Corrected to next day
+
+		// NOTE: When passed to ValidateEventInputWithWarnings with the original input,
+		// this will now generate a "reversed_dates_timezone_likely" warning
 	})
 }

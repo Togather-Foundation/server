@@ -108,7 +108,7 @@ type OccurrenceInput struct {
 }
 
 func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error) {
-	result, err := ValidateEventInputWithWarnings(input, nodeDomain)
+	result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil)
 	if err != nil {
 		return input, err
 	}
@@ -117,7 +117,10 @@ func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error)
 
 // ValidateEventInputWithWarnings validates event input and returns warnings for suspicious data
 // that should trigger admin review rather than outright rejection.
-func ValidateEventInputWithWarnings(input EventInput, nodeDomain string) (*ValidationResult, error) {
+//
+// If original is provided (non-nil), it compares original dates with normalized dates to detect
+// auto-corrections (like correctEndDateTimezoneError) and generates appropriate warnings.
+func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, original *EventInput) (*ValidationResult, error) {
 	var warnings []ValidationWarning
 
 	name := strings.TrimSpace(input.Name)
@@ -140,6 +143,50 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string) (*Valid
 	endTime, err := parseRFC3339Optional("endDate", input.EndDate)
 	if err != nil {
 		return nil, err
+	}
+
+	// Detect if normalization auto-corrected reversed dates
+	// This happens when original had reversed dates but normalized input has corrected dates
+	if original != nil && original.EndDate != "" && input.EndDate != "" && original.EndDate != input.EndDate {
+		// Parse original dates to check if they were reversed
+		origStart, origStartErr := time.Parse(time.RFC3339, strings.TrimSpace(original.StartDate))
+		origEnd, origEndErr := time.Parse(time.RFC3339, strings.TrimSpace(original.EndDate))
+
+		if origStartErr == nil && origEndErr == nil && origEnd.Before(origStart) {
+			// Original dates were reversed, normalization corrected them
+			// Generate appropriate warning based on the pattern
+			gap := origStart.Sub(origEnd)
+			origEndHour := origEnd.Hour() // 0-23 in UTC
+
+			// Check if this matches the timezone error pattern:
+			// - Early morning end (0-4 AM)
+			// - Corrected duration < 7h
+			if origEndHour <= 4 && endTime != nil {
+				correctedDuration := endTime.Sub(*startTime)
+				if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+					// High-confidence timezone error correction
+					warnings = append(warnings, ValidationWarning{
+						Field:   "endDate",
+						Message: fmt.Sprintf("endDate was %v before startDate (ending at %02d:00) - auto-corrected as likely timezone error", gap, origEndHour),
+						Code:    "reversed_dates_timezone_likely",
+					})
+				} else {
+					// Early morning but unreasonable duration - needs review
+					warnings = append(warnings, ValidationWarning{
+						Field:   "endDate",
+						Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+						Code:    "reversed_dates_corrected_needs_review",
+					})
+				}
+			} else {
+				// Not early morning - needs review
+				warnings = append(warnings, ValidationWarning{
+					Field:   "endDate",
+					Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+					Code:    "reversed_dates_corrected_needs_review",
+				})
+			}
+		}
 	}
 
 	// Check for reversed dates - this triggers admin review instead of rejection
