@@ -232,7 +232,6 @@ func TestReversedDatesRegressions_srv_oad_OccurrenceReversedDates(t *testing.T) 
 // FIX: Now uses exact codes from design doc:
 // - "reversed_dates_timezone_likely" for high-confidence corrections
 // - "reversed_dates_corrected_needs_review" for corrections needing review
-// - "reversed_dates" for uncorrected reversed dates
 func TestReversedDatesRegressions_srv_67i_WarningCodeConsistency(t *testing.T) {
 	nodeDomain := "https://test.com"
 
@@ -265,15 +264,15 @@ func TestReversedDatesRegressions_srv_67i_WarningCodeConsistency(t *testing.T) {
 			description:     "Must use 'reversed_dates_corrected_needs_review' for non-high-confidence",
 		},
 		{
-			name: "reversed_dates for uncorrected (validation path)",
+			name: "corrected_needs_review for non-early-morning (uncorrected validation path)",
 			input: events.EventInput{
 				Name:      "Test Event",
 				StartDate: "2025-04-01T13:00:00Z", // 1 PM
 				EndDate:   "2025-04-01T12:00:00Z", // noon (reversed, not corrected by normalize)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
-			wantWarningCode: "reversed_dates",
-			description:     "Use 'reversed_dates' for non-early-morning uncorrected",
+			wantWarningCode: "reversed_dates_corrected_needs_review",
+			description:     "Use 'reversed_dates_corrected_needs_review' for non-early-morning uncorrected per design doc",
 		},
 	}
 
@@ -372,8 +371,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates", // NOT timezone_likely
-			description:     "Hour 5 is NOT early morning, should use generic reversed_dates",
+			wantWarningCode: "reversed_dates_corrected_needs_review", // NOT timezone_likely
+			description:     "Hour 5 is NOT early morning, should use corrected_needs_review",
 		},
 		{
 			name: "duration boundary: 6h 59m - under 7h threshold",

@@ -7,8 +7,9 @@ IMPORTANT:
 - The server and code are under active early development and are not yet deployed to production.
 - Use Beads (`bd`) for task discovery + progress tracking (NOT markdown TODO lists).
 - Use Spec Kit artifacts as the source of intent: constitution → spec → plan → tasks.
-- Use context7 to look up docs for external libs.
+- Use `context7` to look up docs for external libs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- When stuck on a difficult problem (cryptic errors, multiple failed approaches, architectural uncertainty), escalate to `@diagnose` - a subagent that provides expert diagnostic analysis. Use it via the Task tool with `subagent_type: "diagnose"`.
 
 
 ## Issue Tracking

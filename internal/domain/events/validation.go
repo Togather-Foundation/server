@@ -214,7 +214,7 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 				warnings = append(warnings, ValidationWarning{
 					Field:   "endDate",
 					Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
-					Code:    "reversed_dates",
+					Code:    "reversed_dates_corrected_needs_review",
 				})
 			}
 		} else {
@@ -222,7 +222,7 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 			warnings = append(warnings, ValidationWarning{
 				Field:   "endDate",
 				Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
-				Code:    "reversed_dates",
+				Code:    "reversed_dates_corrected_needs_review",
 			})
 		}
 	}

@@ -727,8 +727,8 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			},
 			wantErr:         false,
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates", // NOT early morning → generic reversed_dates warning
-			wantLifecycle:   "pending_review", // Changed from "draft" - per design doc
+			wantWarningCode: "reversed_dates_corrected_needs_review", // NOT early morning → corrected_needs_review warning
+			wantLifecycle:   "pending_review",                        // Changed from "draft" - per design doc
 			wantNeedsReview: true,
 		},
 		{
@@ -744,8 +744,8 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			},
 			wantErr:         false,
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates", // Needs review
-			wantLifecycle:   "pending_review", // Changed from "draft" - per design doc
+			wantWarningCode: "reversed_dates_corrected_needs_review", // Needs review
+			wantLifecycle:   "pending_review",                        // Changed from "draft" - per design doc
 			wantNeedsReview: true,
 		},
 		{
@@ -790,8 +790,8 @@ func TestIngestService_ReversedDates(t *testing.T) {
 			},
 			wantErr:         false,
 			wantWarning:     true,
-			wantWarningCode: "reversed_dates", // Needs review
-			wantLifecycle:   "pending_review", // Changed from "draft" - per design doc
+			wantWarningCode: "reversed_dates_corrected_needs_review", // Needs review
+			wantLifecycle:   "pending_review",                        // Changed from "draft" - per design doc
 			wantNeedsReview: true,
 		},
 	}

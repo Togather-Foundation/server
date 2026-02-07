@@ -82,12 +82,12 @@ func TestValidateEventInput_EndBeforeStart(t *testing.T) {
 	// End hour is 10 (not early morning 0-4), so it needs review
 	found := false
 	for _, w := range result.Warnings {
-		if w.Field == "endDate" && w.Code == "reversed_dates" {
+		if w.Field == "endDate" && w.Code == "reversed_dates_corrected_needs_review" {
 			found = true
 			break
 		}
 	}
-	assert.True(t, found, "Should have reversed_dates warning")
+	assert.True(t, found, "Should have reversed_dates_corrected_needs_review warning")
 }
 
 func TestValidateEventInput_NoLocation(t *testing.T) {

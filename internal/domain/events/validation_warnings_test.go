@@ -33,7 +33,7 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates",
+			wantWarningCode: "reversed_dates_corrected_needs_review",
 		},
 		{
 			name: "reversed dates - large gap (needs review)",
@@ -44,7 +44,7 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates",
+			wantWarningCode: "reversed_dates_corrected_needs_review",
 		},
 		{
 			name: "reversed dates - exactly at 24h boundary (needs review)",
@@ -55,7 +55,7 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates",
+			wantWarningCode: "reversed_dates_corrected_needs_review",
 		},
 		{
 			name: "normal dates - no warning",
@@ -109,7 +109,7 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
 			wantErr:         false,
-			wantWarningCode: "reversed_dates",
+			wantWarningCode: "reversed_dates_corrected_needs_review",
 		},
 	}
 
@@ -243,7 +243,7 @@ func TestValidateEventInputWithWarnings_DetectNormalizationCorrections(t *testin
 				EndDate:   "2025-04-01T02:00:00Z", // Reversed but no original to compare
 				Location:  &PlaceInput{Name: "Test Venue"},
 			},
-			wantWarningCode: "reversed_dates", // Still generates warning for reversed dates in input
+			wantWarningCode: "reversed_dates_corrected_needs_review", // Still generates warning for reversed dates in input
 		},
 	}
 
