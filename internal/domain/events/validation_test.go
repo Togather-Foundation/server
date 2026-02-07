@@ -488,19 +488,19 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "invalid occurrence - end before start",
+			name: "occurrence with reversed dates - generates warning not error",
 			input: EventInput{
 				Name:      "Test Event",
 				StartDate: "2026-02-01T10:00:00Z",
 				Occurrences: []OccurrenceInput{
 					{
 						StartDate: "2026-02-01T12:00:00Z",
-						EndDate:   "2026-02-01T10:00:00Z",
+						EndDate:   "2026-02-01T10:00:00Z", // Reversed - 2 hour gap at 10 AM
 					},
 				},
 				Location: &PlaceInput{Name: "Test Venue"},
 			},
-			wantErr: true,
+			wantErr: false, // Should generate warning, not error
 		},
 		{
 			name: "invalid occurrence - bad timezone",

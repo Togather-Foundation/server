@@ -96,9 +96,55 @@ func normalizeOccurrences(values []OccurrenceInput) []OccurrenceInput {
 		occ.Timezone = strings.TrimSpace(occ.Timezone)
 		occ.VenueID = strings.TrimSpace(occ.VenueID)
 		occ.VirtualURL = strings.TrimSpace(occ.VirtualURL)
+
+		// Apply timezone error correction to occurrence dates (same as top-level)
+		occ = correctOccurrenceEndDateTimezoneError(occ)
+
 		result = append(result, occ)
 	}
 	return result
+}
+
+// correctOccurrenceEndDateTimezoneError applies the same timezone correction logic
+// as correctEndDateTimezoneError but for individual occurrences.
+func correctOccurrenceEndDateTimezoneError(occ OccurrenceInput) OccurrenceInput {
+	if occ.EndDate == "" {
+		return occ
+	}
+
+	startTime, err := time.Parse(time.RFC3339, occ.StartDate)
+	if err != nil {
+		return occ // Invalid startDate, let validation handle it
+	}
+
+	endTime, err := time.Parse(time.RFC3339, occ.EndDate)
+	if err != nil {
+		return occ // Invalid endDate, let validation handle it
+	}
+
+	// Check if endDate is before startDate (the error condition)
+	if !endTime.Before(startTime) {
+		return occ // No correction needed, dates are in correct order
+	}
+
+	endHour := endTime.Hour() // 0-23 in UTC
+
+	// Only auto-correct if end time is in early morning (0-4 AM)
+	// This strongly suggests a legitimate overnight event
+	if endHour <= 4 {
+		correctedEnd := endTime.Add(24 * time.Hour)
+
+		// Check if the corrected event duration is reasonable (< 7 hours)
+		// This filters out bad data while allowing typical overnight events
+		duration := correctedEnd.Sub(startTime)
+		if duration > 0 && duration < 7*time.Hour {
+			// Apply correction: add 24 hours to endDate
+			occ.EndDate = correctedEnd.Format(time.RFC3339)
+		}
+	}
+	// If conditions aren't met, leave as-is and let validation handle it
+
+	return occ
 }
 
 func normalizeStringSlice(values []string, lower bool) []string {

@@ -288,56 +288,131 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 		}
 	}
 
-	if err := validateOccurrences(input, nodeDomain); err != nil {
+	occurrenceWarnings, err := validateOccurrences(input, nodeDomain, original)
+	if err != nil {
 		return nil, err
 	}
+	warnings = append(warnings, occurrenceWarnings...)
 
 	input.Name = name
 	return &ValidationResult{Input: input, Warnings: warnings}, nil
 }
 
-func validateOccurrences(input EventInput, nodeDomain string) error {
+func validateOccurrences(input EventInput, nodeDomain string, original *EventInput) ([]ValidationWarning, error) {
+	var warnings []ValidationWarning
+
 	if len(input.Occurrences) == 0 {
 		if input.StartDate == "" {
-			return ValidationError{Field: "occurrences", Message: "required"}
+			return nil, ValidationError{Field: "occurrences", Message: "required"}
 		}
-		return nil
+		return nil, nil
 	}
 
 	for i, occ := range input.Occurrences {
 		fieldPrefix := fmt.Sprintf("occurrences[%d]", i)
 		startTime, err := parseRFC3339(fieldPrefix+".startDate", occ.StartDate)
 		if err != nil {
-			return fmt.Errorf("parse occurrence start date: %w", err)
+			return nil, fmt.Errorf("parse occurrence start date: %w", err)
 		}
 		endTime, err := parseRFC3339Optional(fieldPrefix+".endDate", occ.EndDate)
 		if err != nil {
-			return fmt.Errorf("parse occurrence end date: %w", err)
+			return nil, fmt.Errorf("parse occurrence end date: %w", err)
 		}
+
+		// Detect if normalization auto-corrected this occurrence's reversed dates
+		if original != nil && i < len(original.Occurrences) {
+			origOcc := original.Occurrences[i]
+			if origOcc.EndDate != "" && occ.EndDate != "" && origOcc.EndDate != occ.EndDate {
+				// Parse original occurrence dates to check if they were reversed
+				origStart, origStartErr := time.Parse(time.RFC3339, strings.TrimSpace(origOcc.StartDate))
+				origEnd, origEndErr := time.Parse(time.RFC3339, strings.TrimSpace(origOcc.EndDate))
+
+				if origStartErr == nil && origEndErr == nil && origEnd.Before(origStart) {
+					// Original dates were reversed, normalization corrected them
+					gap := origStart.Sub(origEnd)
+					origEndHour := origEnd.Hour()
+
+					if origEndHour <= 4 && endTime != nil {
+						correctedDuration := endTime.Sub(*startTime)
+						if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+							// High-confidence timezone error correction
+							warnings = append(warnings, ValidationWarning{
+								Field:   fieldPrefix + ".endDate",
+								Message: fmt.Sprintf("endDate was %v before startDate (ending at %02d:00) - auto-corrected as likely timezone error", gap, origEndHour),
+								Code:    "reversed_dates_timezone_likely",
+							})
+						} else {
+							// Early morning but unreasonable duration - needs review
+							warnings = append(warnings, ValidationWarning{
+								Field:   fieldPrefix + ".endDate",
+								Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+								Code:    "reversed_dates_corrected_needs_review",
+							})
+						}
+					} else {
+						// Not early morning - needs review
+						warnings = append(warnings, ValidationWarning{
+							Field:   fieldPrefix + ".endDate",
+							Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+							Code:    "reversed_dates_corrected_needs_review",
+						})
+					}
+				}
+			}
+		}
+
+		// Check for reversed dates that weren't corrected - generate warnings instead of errors
 		if endTime != nil && endTime.Before(*startTime) {
-			return ValidationError{Field: fieldPrefix + ".endDate", Message: "must be on or after startDate"}
+			gap := startTime.Sub(*endTime)
+			endHour := endTime.Hour()
+
+			if endHour <= 4 {
+				correctedEnd := endTime.Add(24 * time.Hour)
+				correctedDuration := correctedEnd.Sub(*startTime)
+
+				if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+					warnings = append(warnings, ValidationWarning{
+						Field:   fieldPrefix + ".endDate",
+						Message: fmt.Sprintf("endDate is %v before startDate and ends at %02d:00 - likely timezone conversion error", gap, endHour),
+						Code:    "reversed_dates_timezone_likely",
+					})
+				} else {
+					warnings = append(warnings, ValidationWarning{
+						Field:   fieldPrefix + ".endDate",
+						Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+						Code:    "reversed_dates_corrected_needs_review",
+					})
+				}
+			} else {
+				warnings = append(warnings, ValidationWarning{
+					Field:   fieldPrefix + ".endDate",
+					Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+					Code:    "reversed_dates_corrected_needs_review",
+				})
+			}
 		}
+
 		if _, err := parseRFC3339Optional(fieldPrefix+".doorTime", occ.DoorTime); err != nil {
-			return fmt.Errorf("parse occurrence door time: %w", err)
+			return nil, fmt.Errorf("parse occurrence door time: %w", err)
 		}
 		if occ.Timezone != "" {
 			if _, err := time.LoadLocation(strings.TrimSpace(occ.Timezone)); err != nil {
-				return ValidationError{Field: fieldPrefix + ".timezone", Message: "invalid timezone"}
+				return nil, ValidationError{Field: fieldPrefix + ".timezone", Message: "invalid timezone"}
 			}
 		}
 		if occ.VirtualURL != "" {
 			if err := validateURL(occ.VirtualURL); err != nil {
-				return ValidationError{Field: fieldPrefix + ".virtualUrl", Message: "invalid URI"}
+				return nil, ValidationError{Field: fieldPrefix + ".virtualUrl", Message: "invalid URI"}
 			}
 		}
 		if occ.VenueID != "" {
 			if err := validateCanonicalURI(nodeDomain, "places", occ.VenueID); err != nil {
-				return ValidationError{Field: fieldPrefix + ".venueId", Message: "invalid canonical URI"}
+				return nil, ValidationError{Field: fieldPrefix + ".venueId", Message: "invalid canonical URI"}
 			}
 		}
 	}
 
-	return nil
+	return warnings, nil
 }
 
 func validatePlaceInput(place PlaceInput, nodeDomain string) error {
