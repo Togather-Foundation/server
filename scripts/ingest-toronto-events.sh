@@ -69,6 +69,8 @@ echo "Transforming events to SEL format..."
 # Transform schema.org -> EventInput format
 TRANSFORMED=$(echo "$EVENTS_JSON" | jq -c --argjson maxEvents "$MAX_EVENTS" '
   if $maxEvents > 0 then .[0:$maxEvents] else . end |
+  # Filter out events without required fields
+  map(select(.name != null and .url != null and .startDate != null)) |
   map({
     name: .name,
     description: .description,
@@ -105,7 +107,7 @@ TRANSFORMED=$(echo "$EVENTS_JSON" | jq -c --argjson maxEvents "$MAX_EVENTS" '
       end
     ),
     organizer: (
-      if .organizer then
+      if .organizer and (.organizer.name // "") != "" then
         {
           name: .organizer.name,
           url: .organizer.url
@@ -128,8 +130,25 @@ TRANSFORMED=$(echo "$EVENTS_JSON" | jq -c --argjson maxEvents "$MAX_EVENTS" '
     ),
     source: {
       url: .url,
-      eventId: (.url | sub(".*[/=]"; "")),
-      name: "Toronto Open Data",
+      eventId: (
+        (.url // "") | 
+        if test("\\?") then 
+          # Extract from query params or path
+          (match("(?:tickets-|events?[-/])([0-9a-zA-Z]+)") | .captures[0].string) // 
+          (match("[?&]e=([^&]+)") | .captures[0].string) // 
+          (match("[?&]id=([^&]+)") | .captures[0].string) //
+          (sub(".*[/=]"; ""))
+        else 
+          # Use last path segment
+          (split("/") | .[-1] | select(. != ""))
+        end
+      ),
+      name: (
+        # Use organizer name or venue name for unique source identification
+        ((.organizer.name // .location.name // "Toronto Open Data") + " Events") | 
+        # If still empty, use a fallback
+        if . == " Events" then "Toronto Open Data Events" else . end
+      ),
       license: "https://creativecommons.org/publicdomain/zero/1.0/"
     }
   })

@@ -670,7 +670,7 @@ func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.S
 	row := queryer.QueryRow(ctx, `
 SELECT id
   FROM sources
- WHERE base_url = $1
+ WHERE base_url IS NOT DISTINCT FROM NULLIF($1, '')
  LIMIT 1
 `, strings.TrimSpace(params.BaseURL))
 
