@@ -207,6 +207,27 @@ func (h *AdminHTMLHandler) ServeUserActivity(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// ServeReviewQueue renders the review queue page
+func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Request) {
+	h.Logger.Info("admin HTML request",
+		slog.String("page", "review-queue"),
+		slog.String("method", r.Method),
+		slog.String("remote_addr", r.RemoteAddr))
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Review Queue - SEL Admin",
+		"ActivePage": "review-queue",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "review_queue.html", data); err != nil {
+		h.Logger.Error("template error", slog.String("template", "review_queue.html"), slog.Any("error", err))
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
 // ServeAcceptInvitation renders the public invitation acceptance page
 func (h *AdminHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	h.Logger.Info("admin HTML request",

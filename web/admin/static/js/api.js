@@ -244,5 +244,30 @@ const API = {
             const query = new URLSearchParams(params);
             return API.request(`/api/v1/admin/users/${id}/activity?${query}`, { signal });
         }
+    },
+    
+    // Review Queue API
+    reviewQueue: {
+        list: (params = {}) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/admin/review-queue?${query}`);
+        },
+        
+        get: (id) => API.request(`/api/v1/admin/review-queue/${id}`),
+        
+        approve: (id, data = {}) => API.request(`/api/v1/admin/review-queue/${id}/approve`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        
+        reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        
+        fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        })
     }
 };

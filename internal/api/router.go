@@ -407,6 +407,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/events", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeEventsList))))
 	mux.Handle("/admin/events/{id}", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeEventEdit))))
 	mux.Handle("/admin/duplicates", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDuplicates))))
+	mux.Handle("/admin/review-queue", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeReviewQueue))))
 	mux.Handle("/admin/api-keys", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeAPIKeys))))
 	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
 	mux.Handle("/admin/users", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUsersList))))
