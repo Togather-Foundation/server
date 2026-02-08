@@ -1,8 +1,11 @@
 package contracts_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
@@ -18,6 +21,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type testEnv struct {
@@ -193,4 +197,47 @@ func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	require.NoError(t, err)
 
 	return key
+}
+
+func insertAdminUser(t *testing.T, env *testEnv, username, password, email, role string) {
+	t.Helper()
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	require.NoError(t, err, "failed to hash password")
+
+	_, err = env.Pool.Exec(env.Context,
+		`INSERT INTO users (username, email, password_hash, role, is_active) VALUES ($1, $2, $3, $4, $5)`,
+		username, email, string(hashedPassword), role, true,
+	)
+	require.NoError(t, err, "failed to insert admin user")
+}
+
+func adminLogin(t *testing.T, env *testEnv, username, password string) string {
+	t.Helper()
+
+	loginPayload := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	body, err := json.Marshal(loginPayload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/admin/login", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode, "login failed")
+
+	var loginResp map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&loginResp))
+	token, ok := loginResp["token"].(string)
+	require.True(t, ok, "expected token in response")
+	require.NotEmpty(t, token, "expected non-empty token")
+
+	return token
 }
