@@ -89,10 +89,15 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 		status = &defaultStatus
 	}
 
-	limitStr := r.URL.Query().Get("limit")
+	// Parse and validate limit parameter (default: 50, min: 1, max: 100)
 	limit := 50
+	limitStr := r.URL.Query().Get("limit")
 	if limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil || parsedLimit < 1 || parsedLimit > 100 {
+			// Invalid limit: use default
+			limit = 50
+		} else {
 			limit = parsedLimit
 		}
 	}
