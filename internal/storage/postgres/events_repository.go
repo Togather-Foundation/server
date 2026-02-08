@@ -670,7 +670,7 @@ func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.S
 	row := queryer.QueryRow(ctx, `
 SELECT id
   FROM sources
- WHERE base_url = $1
+ WHERE base_url IS NOT DISTINCT FROM NULLIF($1, '')
  LIMIT 1
 `, strings.TrimSpace(params.BaseURL))
 
@@ -1174,4 +1174,307 @@ func (r *EventRepository) GetTombstoneByEventULID(ctx context.Context, eventULID
 	}
 
 	return tombstone, nil
+}
+
+// FindReviewByDedup finds an existing review by deduplication keys
+func (r *EventRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	params := FindReviewByDedupParams{}
+	if sourceID != nil {
+		params.SourceID = pgtype.Text{String: *sourceID, Valid: true}
+	}
+	if externalID != nil {
+		params.SourceExternalID = pgtype.Text{String: *externalID, Valid: true}
+	}
+	if dedupHash != nil {
+		params.DedupHash = pgtype.Text{String: *dedupHash, Valid: true}
+	}
+
+	row, err := queries.FindReviewByDedup(ctx, params)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("find review by dedup: %w", err)
+	}
+
+	return convertFindReviewByDedupRow(row), nil
+}
+
+// convertFindReviewByDedupRow converts SQLc-generated FindReviewByDedupRow to domain ReviewQueueEntry
+func convertFindReviewByDedupRow(row FindReviewByDedupRow) *events.ReviewQueueEntry {
+	entry := &events.ReviewQueueEntry{
+		ID:                int(row.ID),
+		EventID:           row.EventID.String(),
+		EventULID:         row.EventUlid,
+		OriginalPayload:   row.OriginalPayload,
+		NormalizedPayload: row.NormalizedPayload,
+		Warnings:          row.Warnings,
+		EventStartTime:    row.EventStartTime.Time,
+		Status:            row.Status,
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
+	}
+
+	if row.SourceID.Valid {
+		entry.SourceID = &row.SourceID.String
+	}
+	if row.SourceExternalID.Valid {
+		entry.SourceExternalID = &row.SourceExternalID.String
+	}
+	if row.DedupHash.Valid {
+		entry.DedupHash = &row.DedupHash.String
+	}
+	if row.EventEndTime.Valid {
+		entry.EventEndTime = &row.EventEndTime.Time
+	}
+	if row.ReviewedBy.Valid {
+		entry.ReviewedBy = &row.ReviewedBy.String
+	}
+	if row.ReviewedAt.Valid {
+		entry.ReviewedAt = &row.ReviewedAt.Time
+	}
+	if row.ReviewNotes.Valid {
+		entry.ReviewNotes = &row.ReviewNotes.String
+	}
+	if row.RejectionReason.Valid {
+		entry.RejectionReason = &row.RejectionReason.String
+	}
+
+	return entry
+}
+
+// CreateReviewQueueEntry creates a new review queue entry
+func (r *EventRepository) CreateReviewQueueEntry(ctx context.Context, params events.ReviewQueueCreateParams) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	var eventIDUUID pgtype.UUID
+	if err := eventIDUUID.Scan(params.EventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	createParams := CreateReviewQueueEntryParams{
+		EventID:           eventIDUUID,
+		OriginalPayload:   params.OriginalPayload,
+		NormalizedPayload: params.NormalizedPayload,
+		Warnings:          params.Warnings,
+		EventStartTime:    pgtype.Timestamptz{Time: params.EventStartTime, Valid: true},
+	}
+
+	if params.SourceID != nil {
+		createParams.SourceID = pgtype.Text{String: *params.SourceID, Valid: true}
+	}
+	if params.SourceExternalID != nil {
+		createParams.SourceExternalID = pgtype.Text{String: *params.SourceExternalID, Valid: true}
+	}
+	if params.DedupHash != nil {
+		createParams.DedupHash = pgtype.Text{String: *params.DedupHash, Valid: true}
+	}
+	if params.EventEndTime != nil {
+		createParams.EventEndTime = pgtype.Timestamptz{Time: *params.EventEndTime, Valid: true}
+	}
+
+	row, err := queries.CreateReviewQueueEntry(ctx, createParams)
+	if err != nil {
+		return nil, fmt.Errorf("create review queue entry: %w", err)
+	}
+
+	return convertReviewQueueRow(row), nil
+}
+
+// UpdateReviewQueueEntry updates an existing review queue entry
+func (r *EventRepository) UpdateReviewQueueEntry(ctx context.Context, id int, params events.ReviewQueueUpdateParams) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	updateParams := UpdateReviewQueueEntryParams{
+		ID: int32(id),
+	}
+
+	if params.OriginalPayload != nil {
+		updateParams.OriginalPayload = *params.OriginalPayload
+	}
+	if params.NormalizedPayload != nil {
+		updateParams.NormalizedPayload = *params.NormalizedPayload
+	}
+	if params.Warnings != nil {
+		updateParams.Warnings = *params.Warnings
+	}
+
+	row, err := queries.UpdateReviewQueueEntry(ctx, updateParams)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("update review queue entry: %w", err)
+	}
+
+	return convertReviewQueueRow(row), nil
+}
+
+// GetReviewQueueEntry retrieves a single review queue entry by ID
+func (r *EventRepository) GetReviewQueueEntry(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetReviewQueueEntry(ctx, int32(id))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get review queue entry: %w", err)
+	}
+
+	return convertReviewQueueRow(row), nil
+}
+
+// ListReviewQueue lists review queue entries with filters and pagination
+func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
+	queries := Queries{db: r.queryer()}
+
+	params := ListReviewQueueParams{
+		Limit: int32(filters.Limit),
+	}
+
+	if filters.Status != nil {
+		params.Status = pgtype.Text{String: *filters.Status, Valid: true}
+	}
+	if filters.NextCursor != nil {
+		params.AfterID = pgtype.Int4{Int32: int32(*filters.NextCursor), Valid: true}
+	}
+
+	rows, err := queries.ListReviewQueue(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list review queue: %w", err)
+	}
+
+	entries := make([]events.ReviewQueueEntry, 0, len(rows))
+	var nextCursor *int
+	for i, row := range rows {
+		entries = append(entries, *convertReviewQueueRow(row))
+		// Set next cursor to the ID of the last item
+		if i == len(rows)-1 {
+			cursor := int(row.ID)
+			nextCursor = &cursor
+		}
+	}
+
+	return &events.ReviewQueueListResult{
+		Entries:    entries,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+// ApproveReview marks a review as approved
+func (r *EventRepository) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	params := ApproveReviewParams{
+		ID:         int32(id),
+		ReviewedBy: pgtype.Text{String: reviewedBy, Valid: true},
+	}
+
+	if notes != nil {
+		params.Notes = pgtype.Text{String: *notes, Valid: true}
+	}
+
+	row, err := queries.ApproveReview(ctx, params)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("approve review: %w", err)
+	}
+
+	return convertReviewQueueRow(row), nil
+}
+
+// RejectReview marks a review as rejected
+func (r *EventRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	params := RejectReviewParams{
+		ID:         int32(id),
+		ReviewedBy: pgtype.Text{String: reviewedBy, Valid: true},
+		Reason:     pgtype.Text{String: reason, Valid: true},
+	}
+
+	row, err := queries.RejectReview(ctx, params)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("reject review: %w", err)
+	}
+
+	return convertReviewQueueRow(row), nil
+}
+
+// CleanupExpiredReviews runs all cleanup operations for the review queue
+func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
+	queries := Queries{db: r.queryer()}
+
+	// First mark unreviewed events as deleted
+	if err := queries.MarkUnreviewedEventsAsDeleted(ctx); err != nil {
+		return fmt.Errorf("mark unreviewed events as deleted: %w", err)
+	}
+
+	// Delete expired rejections
+	if err := queries.CleanupExpiredRejections(ctx); err != nil {
+		return fmt.Errorf("cleanup expired rejections: %w", err)
+	}
+
+	// Delete unreviewed events
+	if err := queries.CleanupUnreviewedEvents(ctx); err != nil {
+		return fmt.Errorf("cleanup unreviewed events: %w", err)
+	}
+
+	// Archive old approved/superseded reviews
+	if err := queries.CleanupArchivedReviews(ctx); err != nil {
+		return fmt.Errorf("cleanup archived reviews: %w", err)
+	}
+
+	return nil
+}
+
+// convertReviewQueueRow converts a SQLc EventReviewQueue row to a domain ReviewQueueEntry
+func convertReviewQueueRow(row EventReviewQueue) *events.ReviewQueueEntry {
+	entry := &events.ReviewQueueEntry{
+		ID:                int(row.ID),
+		EventID:           row.EventID.String(),
+		EventULID:         "", // Not available in standard queries (only in FindReviewByDedup)
+		OriginalPayload:   row.OriginalPayload,
+		NormalizedPayload: row.NormalizedPayload,
+		Warnings:          row.Warnings,
+		EventStartTime:    row.EventStartTime.Time,
+		Status:            row.Status,
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
+	}
+
+	if row.SourceID.Valid {
+		entry.SourceID = &row.SourceID.String
+	}
+	if row.SourceExternalID.Valid {
+		entry.SourceExternalID = &row.SourceExternalID.String
+	}
+	if row.DedupHash.Valid {
+		entry.DedupHash = &row.DedupHash.String
+	}
+	if row.EventEndTime.Valid {
+		entry.EventEndTime = &row.EventEndTime.Time
+	}
+	if row.ReviewedBy.Valid {
+		entry.ReviewedBy = &row.ReviewedBy.String
+	}
+	if row.ReviewedAt.Valid {
+		entry.ReviewedAt = &row.ReviewedAt.Time
+	}
+	if row.ReviewNotes.Valid {
+		entry.ReviewNotes = &row.ReviewNotes.String
+	}
+	if row.RejectionReason.Valid {
+		entry.RejectionReason = &row.RejectionReason.String
+	}
+
+	return entry
 }

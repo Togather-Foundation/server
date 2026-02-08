@@ -1,0 +1,4954 @@
+{
+  "events": [
+    {
+      "name": "Magic: The Gathering Tournament",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-03-31T11:00:00-04:00",
+      "endDate": "2026-03-31T13:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/828.jpg",
+      "url": "https://example.com/events/52652",
+      "keywords": [
+        "games",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/25967",
+        "eventId": "evt-7815",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "History Masterclass",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-02-20T06:00:00-05:00",
+      "endDate": "2026-02-20T09:00:00-05:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/610.jpg",
+      "url": "https://example.com/events/39629",
+      "keywords": [
+        "lecture",
+        "learning",
+        "education"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/65102",
+        "eventId": "evt-80115",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Game Jam: Strategy",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-04-13T08:00:00-04:00",
+      "endDate": "2026-04-13T11:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/991.jpg",
+      "url": "https://example.com/events/23072",
+      "keywords": [
+        "fun",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/41392",
+        "eventId": "evt-9109",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Panel Discussion: Economics",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-03-03T10:00:00-05:00",
+      "endDate": "2026-03-03T11:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/87.jpg",
+      "url": "https://example.com/events/58880",
+      "keywords": [
+        "workshop",
+        "toronto",
+        "learning"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/99987",
+        "eventId": "evt-46870",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Neighborhood Mixer",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-03-14T10:00:00-04:00",
+      "endDate": "2026-03-14T14:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/507.jpg",
+      "url": "https://example.com/events/81463",
+      "keywords": [
+        "social",
+        "networking",
+        "toronto",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/46198",
+        "eventId": "evt-66631",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "The Velvet Echo Live at Centre for Social Innovation",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-03-26T14:00:00-04:00",
+      "endDate": "2026-03-26T17:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/419.jpg",
+      "url": "https://example.com/events/15179",
+      "keywords": [
+        "concert",
+        "toronto",
+        "performance"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/65031",
+        "eventId": "evt-6639",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Newcomers Mixer",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-03-31T07:00:00-04:00",
+      "endDate": "2026-03-31T09:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/581.jpg",
+      "url": "https://example.com/events/42614",
+      "keywords": [
+        "toronto",
+        "gathering",
+        "networking",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/8529",
+        "eventId": "evt-91814",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Artist Talk: Urban Perspectives",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-02-27T13:00:00-05:00",
+      "endDate": "2026-02-27T16:00:00-05:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/567.jpg",
+      "url": "https://example.com/events/66031",
+      "keywords": [
+        "creative",
+        "art",
+        "gallery",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/51176",
+        "eventId": "evt-19483",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Sarah Chen Album Release Party",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-03-09T12:00:00-04:00",
+      "endDate": "2026-03-09T14:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/469.jpg",
+      "url": "https://example.com/events/89937",
+      "keywords": [
+        "music",
+        "toronto",
+        "performance"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/91953",
+        "eventId": "evt-3413",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Networking Night: Young Professionals",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-03-26T12:00:00-04:00",
+      "endDate": "2026-03-26T14:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/132.jpg",
+      "url": "https://example.com/events/73617",
+      "keywords": [
+        "networking",
+        "social",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/69942",
+        "eventId": "evt-84560",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Board Game Night: D\u0026D",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-03-06T10:00:00-05:00",
+      "endDate": "2026-03-06T12:00:00-05:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/401.jpg",
+      "url": "https://example.com/events/81601",
+      "keywords": [
+        "board games",
+        "fun",
+        "games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/42983",
+        "eventId": "evt-85897",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Creative Workshop: Contemporary Voices",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-02-21T10:00:00-05:00",
+      "endDate": "2026-02-21T13:00:00-05:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/556.jpg",
+      "url": "https://example.com/events/44447",
+      "keywords": [
+        "exhibition",
+        "creative",
+        "toronto",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/54600",
+        "eventId": "evt-55302",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Creative Workshop: Found Objects",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-03-17T11:00:00-04:00",
+      "endDate": "2026-03-17T12:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/958.jpg",
+      "url": "https://example.com/events/33348",
+      "keywords": [
+        "toronto",
+        "creative",
+        "exhibition",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/45312",
+        "eventId": "evt-21590",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Workshop: Introduction to Economics",
+      "description": "Panel discussion featuring experts in the field. Audience questions encouraged.",
+      "startDate": "2026-04-02T10:00:00-04:00",
+      "endDate": "2026-04-02T11:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/560.jpg",
+      "url": "https://example.com/events/80340",
+      "keywords": [
+        "learning",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/58083",
+        "eventId": "evt-78908",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Community Gathering: West End",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-03-14T07:00:00-04:00",
+      "endDate": "2026-03-14T10:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/716.jpg",
+      "url": "https://example.com/events/44897",
+      "keywords": [
+        "gathering",
+        "community",
+        "toronto",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/75959",
+        "eventId": "evt-37660",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Open Source Meetup",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-03-18T12:00:00-04:00",
+      "endDate": "2026-03-18T13:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/485.jpg",
+      "url": "https://example.com/events/34859",
+      "keywords": [
+        "toronto",
+        "software",
+        "tech",
+        "programming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/37473",
+        "eventId": "evt-38036",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "RPG Night: Cooperative",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-02-16T08:00:00-05:00",
+      "endDate": "2026-02-16T12:00:00-05:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/235.jpg",
+      "url": "https://example.com/events/81420",
+      "keywords": [
+        "games",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/19867",
+        "eventId": "evt-50557",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Cooperative Tournament",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-02-22T13:00:00-05:00",
+      "endDate": "2026-02-22T17:00:00-05:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/489.jpg",
+      "url": "https://example.com/events/5964",
+      "keywords": [
+        "board games",
+        "toronto",
+        "gaming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/16620",
+        "eventId": "evt-9889",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Book Club: Neighborhood",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-03-07T12:00:00-05:00",
+      "endDate": "2026-03-07T16:00:00-05:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/580.jpg",
+      "url": "https://example.com/events/24801",
+      "keywords": [
+        "networking",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/77319",
+        "eventId": "evt-6113",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "RPG Night: Cooperative",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-02-17T06:00:00-05:00",
+      "endDate": "2026-02-17T07:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/864.jpg",
+      "url": "https://example.com/events/85739",
+      "keywords": [
+        "fun",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/62780",
+        "eventId": "evt-74239",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Demo Day: AI/ML",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-02-22T14:00:00-05:00",
+      "endDate": "2026-02-22T17:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/80.jpg",
+      "url": "https://example.com/events/64186",
+      "keywords": [
+        "software",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/59306",
+        "eventId": "evt-80794",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Jazz Night: Sarah Chen Quartet",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-02-27T11:00:00-05:00",
+      "endDate": "2026-02-27T12:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/9.jpg",
+      "url": "https://example.com/events/89570",
+      "keywords": [
+        "performance",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/92053",
+        "eventId": "evt-55224",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Lecture: Psychology",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-04-13T06:00:00-04:00",
+      "endDate": "2026-04-13T08:00:00-04:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/515.jpg",
+      "url": "https://example.com/events/88554",
+      "keywords": [
+        "education",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/4646",
+        "eventId": "evt-4777",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Learning Circle: Psychology",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-03-25T15:00:00-04:00",
+      "endDate": "2026-03-25T16:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/308.jpg",
+      "url": "https://example.com/events/87077",
+      "keywords": [
+        "lecture",
+        "education",
+        "toronto",
+        "learning"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/16997",
+        "eventId": "evt-59935",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "History Salon",
+      "description": "Panel discussion featuring experts in the field. Audience questions encouraged.",
+      "startDate": "2026-04-11T13:00:00-04:00",
+      "endDate": "2026-04-11T16:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/728.jpg",
+      "url": "https://example.com/events/34924",
+      "keywords": [
+        "lecture",
+        "toronto",
+        "learning",
+        "workshop"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/40210",
+        "eventId": "evt-43598",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "RPG Night: D\u0026D",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-04-11T09:00:00-04:00",
+      "endDate": "2026-04-11T13:00:00-04:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/440.jpg",
+      "url": "https://example.com/events/78929",
+      "keywords": [
+        "games",
+        "board games",
+        "toronto",
+        "gaming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/32197",
+        "eventId": "evt-41478",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Sarah Chen \u0026 Friends",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-03-29T09:00:00-04:00",
+      "endDate": "2026-03-29T12:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/275.jpg",
+      "url": "https://example.com/events/44725",
+      "keywords": [
+        "music",
+        "performance"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/66162",
+        "eventId": "evt-18094",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Synth Sunday with Moonlight Syndicate",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-04-11T13:00:00-04:00",
+      "endDate": "2026-04-11T14:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/85.jpg",
+      "url": "https://example.com/events/68024",
+      "keywords": [
+        "toronto",
+        "music"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/4156",
+        "eventId": "evt-30008",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Book Club: Newcomers",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-03-11T06:00:00-04:00",
+      "endDate": "2026-03-11T09:00:00-04:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/424.jpg",
+      "url": "https://example.com/events/5170",
+      "keywords": [
+        "social",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/98947",
+        "eventId": "evt-96628",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Euro Games Tournament",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-03-25T07:00:00-04:00",
+      "endDate": "2026-03-25T09:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/521.jpg",
+      "url": "https://example.com/events/51077",
+      "keywords": [
+        "fun",
+        "board games",
+        "games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/56116",
+        "eventId": "evt-93317",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Artist Talk: Found Objects",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-03-14T14:00:00-04:00",
+      "endDate": "2026-03-14T15:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/525.jpg",
+      "url": "https://example.com/events/27768",
+      "keywords": [
+        "toronto",
+        "art",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/4938",
+        "eventId": "evt-1756",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Game Jam: Magic: The Gathering",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-03-09T12:00:00-04:00",
+      "endDate": "2026-03-09T14:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/277.jpg",
+      "url": "https://example.com/events/20279",
+      "keywords": [
+        "board games",
+        "toronto",
+        "fun"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/61448",
+        "eventId": "evt-30200",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Science Salon",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-03-07T12:00:00-05:00",
+      "endDate": "2026-03-07T16:00:00-05:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/134.jpg",
+      "url": "https://example.com/events/11063",
+      "keywords": [
+        "workshop",
+        "learning",
+        "lecture",
+        "education"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/43194",
+        "eventId": "evt-35520",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Data Engineering Workshop",
+      "description": "Join us for an evening of demos, discussions, and debugging. Share your projects and learn from others.",
+      "startDate": "2026-02-18T11:00:00-05:00",
+      "endDate": "2026-02-18T12:00:00-05:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/352.jpg",
+      "url": "https://example.com/events/98368",
+      "keywords": [
+        "toronto",
+        "meetup",
+        "programming",
+        "software"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/6350",
+        "eventId": "evt-76753",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Found Objects Art Walk",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-04-07T14:00:00-04:00",
+      "endDate": "2026-04-07T18:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/842.jpg",
+      "url": "https://example.com/events/31527",
+      "keywords": [
+        "exhibition",
+        "art",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/89480",
+        "eventId": "evt-46563",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Book Club: Young Professionals",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-02-16T06:00:00-05:00",
+      "endDate": "2026-02-16T10:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/755.jpg",
+      "url": "https://example.com/events/60616",
+      "keywords": [
+        "social",
+        "gathering",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/73123",
+        "eventId": "evt-48366",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Networking Night: Young Professionals",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-03-18T07:00:00-04:00",
+      "endDate": "2026-03-18T10:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/821.jpg",
+      "url": "https://example.com/events/33805",
+      "keywords": [
+        "gathering",
+        "community",
+        "toronto",
+        "networking"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/11015",
+        "eventId": "evt-2863",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Trivia: Magic: The Gathering Edition",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-03-28T06:00:00-04:00",
+      "endDate": "2026-03-28T10:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/262.jpg",
+      "url": "https://example.com/events/76013",
+      "keywords": [
+        "toronto",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/63870",
+        "eventId": "evt-46204",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Synth Sunday with DJ Nomad",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-03-23T09:00:00-04:00",
+      "endDate": "2026-03-23T12:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/656.jpg",
+      "url": "https://example.com/events/59561",
+      "keywords": [
+        "toronto",
+        "live"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/39745",
+        "eventId": "evt-8425",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Book Club: Young Professionals",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-04-02T12:00:00-04:00",
+      "endDate": "2026-04-02T15:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/728.jpg",
+      "url": "https://example.com/events/35107",
+      "keywords": [
+        "gathering",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/6764",
+        "eventId": "evt-17103",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Trivia: D\u0026D Edition",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-03-11T08:00:00-04:00",
+      "endDate": "2026-03-11T09:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/738.jpg",
+      "url": "https://example.com/events/57297",
+      "keywords": [
+        "games",
+        "board games",
+        "fun"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/23436",
+        "eventId": "evt-19334",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Settlers of Catan Tournament",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-03-03T14:00:00-05:00",
+      "endDate": "2026-03-03T15:00:00-05:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/755.jpg",
+      "url": "https://example.com/events/26838",
+      "keywords": [
+        "toronto",
+        "gaming",
+        "fun"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/79562",
+        "eventId": "evt-38421",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Ambient Drift Live at Dovercourt House",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-03-31T07:00:00-04:00",
+      "endDate": "2026-03-31T08:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/530.jpg",
+      "url": "https://example.com/events/57766",
+      "keywords": [
+        "live",
+        "concert"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/63935",
+        "eventId": "evt-33392",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Learning Circle: Economics",
+      "description": "Panel discussion featuring experts in the field. Audience questions encouraged.",
+      "startDate": "2026-03-01T12:00:00-05:00",
+      "endDate": "2026-03-01T14:00:00-05:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/671.jpg",
+      "url": "https://example.com/events/87360",
+      "keywords": [
+        "education",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/53561",
+        "eventId": "evt-23216",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Young Professionals Social",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-04-03T06:00:00-04:00",
+      "endDate": "2026-04-03T07:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/239.jpg",
+      "url": "https://example.com/events/32347",
+      "keywords": [
+        "community",
+        "networking",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/34321",
+        "eventId": "evt-56667",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Young Professionals Social",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-02-26T12:00:00-05:00",
+      "endDate": "2026-02-26T15:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/32.jpg",
+      "url": "https://example.com/events/26347",
+      "keywords": [
+        "toronto",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/27982",
+        "eventId": "evt-85603",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Open Source User Group",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-02-21T07:00:00-05:00",
+      "endDate": "2026-02-21T11:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/165.jpg",
+      "url": "https://example.com/events/12721",
+      "keywords": [
+        "tech",
+        "toronto",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/7886",
+        "eventId": "evt-67420",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Settlers of Catan Tournament",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-03-15T07:00:00-04:00",
+      "endDate": "2026-03-15T08:00:00-04:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/135.jpg",
+      "url": "https://example.com/events/50041",
+      "keywords": [
+        "games",
+        "fun",
+        "gaming",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/11042",
+        "eventId": "evt-47096",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Board Game Night: Euro Games",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-04-08T11:00:00-04:00",
+      "endDate": "2026-04-08T13:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/407.jpg",
+      "url": "https://example.com/events/21976",
+      "keywords": [
+        "fun",
+        "games",
+        "toronto",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/40288",
+        "eventId": "evt-21381",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "DJ Nomad Live at Snakes and Lattes",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-02-28T09:00:00-05:00",
+      "endDate": "2026-02-28T10:00:00-05:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/200.jpg",
+      "url": "https://example.com/events/82407",
+      "keywords": [
+        "toronto",
+        "music",
+        "live",
+        "performance"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/79526",
+        "eventId": "evt-50186",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Networking Night: Young Professionals",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-03-22T14:00:00-04:00",
+      "endDate": "2026-03-22T15:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/903.jpg",
+      "url": "https://example.com/events/8626",
+      "keywords": [
+        "community",
+        "networking",
+        "social",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/48257",
+        "eventId": "evt-18488",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Open Mic Night",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-04-11T14:00:00-04:00",
+      "endDate": "2026-04-11T18:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/646.jpg",
+      "url": "https://example.com/events/79664",
+      "keywords": [
+        "performance",
+        "live"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/61538",
+        "eventId": "evt-6740",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Artist Talk: Contemporary Voices",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-03-25T14:00:00-04:00",
+      "endDate": "2026-03-25T16:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/704.jpg",
+      "url": "https://example.com/events/66399",
+      "keywords": [
+        "creative",
+        "art"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/39654",
+        "eventId": "evt-80517",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Synth Sunday with Moonlight Syndicate",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-02-26T11:00:00-05:00",
+      "endDate": "2026-02-26T13:00:00-05:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/80.jpg",
+      "url": "https://example.com/events/21127",
+      "keywords": [
+        "music",
+        "live",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/37653",
+        "eventId": "evt-6928",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "RPG Night: D\u0026D",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-02-27T11:00:00-05:00",
+      "endDate": "2026-02-27T13:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/418.jpg",
+      "url": "https://example.com/events/87866",
+      "keywords": [
+        "board games",
+        "fun",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/9597",
+        "eventId": "evt-49479",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "LGBTQ+ Potluck",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-02-26T08:00:00-05:00",
+      "endDate": "2026-02-26T09:00:00-05:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/541.jpg",
+      "url": "https://example.com/events/11816",
+      "keywords": [
+        "networking",
+        "social",
+        "community",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/28546",
+        "eventId": "evt-18922",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Urban Perspectives Art Walk",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-02-17T13:00:00-05:00",
+      "endDate": "2026-02-17T15:00:00-05:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/89.jpg",
+      "url": "https://example.com/events/30025",
+      "keywords": [
+        "toronto",
+        "gallery",
+        "art",
+        "creative"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/52407",
+        "eventId": "evt-16445",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Contemporary Voices Art Walk",
+      "description": "Opening reception for our newest exhibition. Light refreshments served. Free admission.",
+      "startDate": "2026-02-26T08:00:00-05:00",
+      "endDate": "2026-02-26T11:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/270.jpg",
+      "url": "https://example.com/events/14449",
+      "keywords": [
+        "art",
+        "exhibition",
+        "creative",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/70006",
+        "eventId": "evt-70124",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Tech Talk: Cloud Native",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-03-20T09:00:00-04:00",
+      "endDate": "2026-03-20T11:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/149.jpg",
+      "url": "https://example.com/events/84300",
+      "keywords": [
+        "meetup",
+        "software",
+        "toronto",
+        "tech"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/48531",
+        "eventId": "evt-30165",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "AI/ML Workshop",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-03-09T06:00:00-04:00",
+      "endDate": "2026-03-09T10:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/56.jpg",
+      "url": "https://example.com/events/10340",
+      "keywords": [
+        "tech",
+        "software",
+        "programming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/73301",
+        "eventId": "evt-71429",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "The Velvet Echo Live at The Tranzac",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-03-29T12:00:00-04:00",
+      "endDate": "2026-03-29T14:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/679.jpg",
+      "url": "https://example.com/events/86607",
+      "keywords": [
+        "live",
+        "concert",
+        "toronto",
+        "music"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/18572",
+        "eventId": "evt-36682",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Panel Discussion: Economics",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-02-26T07:00:00-05:00",
+      "endDate": "2026-02-26T10:00:00-05:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/364.jpg",
+      "url": "https://example.com/events/19099",
+      "keywords": [
+        "learning",
+        "lecture",
+        "workshop"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/33292",
+        "eventId": "evt-86466",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Web3 Meetup",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-02-18T07:00:00-05:00",
+      "endDate": "2026-02-18T11:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/702.jpg",
+      "url": "https://example.com/events/76638",
+      "keywords": [
+        "toronto",
+        "software",
+        "programming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/8191",
+        "eventId": "evt-23466",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Lecture: Psychology",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-04-16T08:00:00-04:00",
+      "endDate": "2026-04-16T11:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/587.jpg",
+      "url": "https://example.com/events/74614",
+      "keywords": [
+        "education",
+        "lecture",
+        "workshop"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/54454",
+        "eventId": "evt-7216",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Night Owl Album Release Party",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-04-07T13:00:00-04:00",
+      "endDate": "2026-04-07T14:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/686.jpg",
+      "url": "https://example.com/events/61063",
+      "keywords": [
+        "performance",
+        "concert",
+        "toronto",
+        "music"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/85407",
+        "eventId": "evt-17744",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Literature Salon",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-04-01T06:00:00-04:00",
+      "endDate": "2026-04-01T09:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/258.jpg",
+      "url": "https://example.com/events/13305",
+      "keywords": [
+        "learning",
+        "education",
+        "toronto",
+        "workshop"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/10159",
+        "eventId": "evt-33179",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Cloud Native Workshop",
+      "description": "Join us for an evening of demos, discussions, and debugging. Share your projects and learn from others.",
+      "startDate": "2026-02-20T07:00:00-05:00",
+      "endDate": "2026-02-20T09:00:00-05:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/113.jpg",
+      "url": "https://example.com/events/22114",
+      "keywords": [
+        "software",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/82083",
+        "eventId": "evt-96078",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Book Club: Newcomers",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-02-17T14:00:00-05:00",
+      "endDate": "2026-02-17T15:00:00-05:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/108.jpg",
+      "url": "https://example.com/events/8942",
+      "keywords": [
+        "community",
+        "toronto",
+        "networking",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/50512",
+        "eventId": "evt-29874",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Science Salon",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-02-21T11:00:00-05:00",
+      "endDate": "2026-02-21T12:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/314.jpg",
+      "url": "https://example.com/events/38278",
+      "keywords": [
+        "learning",
+        "toronto",
+        "workshop",
+        "education"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/52467",
+        "eventId": "evt-52804",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Lecture: Literature",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-03-19T07:00:00-04:00",
+      "endDate": "2026-03-19T10:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/367.jpg",
+      "url": "https://example.com/events/64071",
+      "keywords": [
+        "lecture",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/16856",
+        "eventId": "evt-15829",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "The Velvet Echo Album Release Party",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-03-26T09:00:00-04:00",
+      "endDate": "2026-03-26T10:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/165.jpg",
+      "url": "https://example.com/events/515",
+      "keywords": [
+        "music",
+        "performance",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/55685",
+        "eventId": "evt-19062",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Artist Talk: Contemporary Voices",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-02-26T10:00:00-05:00",
+      "endDate": "2026-02-26T11:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/26.jpg",
+      "url": "https://example.com/events/14845",
+      "keywords": [
+        "creative",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/37524",
+        "eventId": "evt-60498",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Lecture: Psychology",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-02-16T13:00:00-05:00",
+      "endDate": "2026-02-16T17:00:00-05:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/691.jpg",
+      "url": "https://example.com/events/99453",
+      "keywords": [
+        "education",
+        "lecture",
+        "learning"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/50188",
+        "eventId": "evt-56316",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "RPG Night: Settlers of Catan",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-04-07T13:00:00-04:00",
+      "endDate": "2026-04-07T17:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/926.jpg",
+      "url": "https://example.com/events/28978",
+      "keywords": [
+        "games",
+        "gaming",
+        "toronto",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/17663",
+        "eventId": "evt-93540",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Go Workshop",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-02-21T11:00:00-05:00",
+      "endDate": "2026-02-21T12:00:00-05:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/942.jpg",
+      "url": "https://example.com/events/7668",
+      "keywords": [
+        "software",
+        "tech"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/12698",
+        "eventId": "evt-50813",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Demo Day: Open Source",
+      "description": "Join us for an evening of demos, discussions, and debugging. Share your projects and learn from others.",
+      "startDate": "2026-03-25T10:00:00-04:00",
+      "endDate": "2026-03-25T13:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/194.jpg",
+      "url": "https://example.com/events/29555",
+      "keywords": [
+        "tech",
+        "toronto",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/93386",
+        "eventId": "evt-39931",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Jazz Night: The Velvet Echo Quartet",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-03-03T05:00:00-05:00",
+      "endDate": "2026-03-03T08:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/206.jpg",
+      "url": "https://example.com/events/55134",
+      "keywords": [
+        "concert",
+        "toronto",
+        "performance",
+        "live"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/14128",
+        "eventId": "evt-20206",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "LGBTQ+ Social",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-03-31T08:00:00-04:00",
+      "endDate": "2026-03-31T10:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/482.jpg",
+      "url": "https://example.com/events/10114",
+      "keywords": [
+        "social",
+        "gathering",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/23107",
+        "eventId": "evt-60055",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Game Jam: Magic: The Gathering",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-03-19T11:00:00-04:00",
+      "endDate": "2026-03-19T15:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/296.jpg",
+      "url": "https://example.com/events/26851",
+      "keywords": [
+        "gaming",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/89010",
+        "eventId": "evt-649",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Web3 User Group",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-03-04T06:00:00-05:00",
+      "endDate": "2026-03-04T10:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/324.jpg",
+      "url": "https://example.com/events/24833",
+      "keywords": [
+        "programming",
+        "tech"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/33846",
+        "eventId": "evt-74300",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Trivia: D\u0026D Edition",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-04-05T06:00:00-04:00",
+      "endDate": "2026-04-05T07:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/537.jpg",
+      "url": "https://example.com/events/86666",
+      "keywords": [
+        "fun",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/20678",
+        "eventId": "evt-16807",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Creative Workshop: Urban Perspectives",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-03-20T07:00:00-04:00",
+      "endDate": "2026-03-20T10:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/447.jpg",
+      "url": "https://example.com/events/50766",
+      "keywords": [
+        "art",
+        "toronto",
+        "exhibition",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/63983",
+        "eventId": "evt-12208",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "RPG Night: Settlers of Catan",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-02-16T07:00:00-05:00",
+      "endDate": "2026-02-16T08:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/468.jpg",
+      "url": "https://example.com/events/16161",
+      "keywords": [
+        "fun",
+        "gaming",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/31109",
+        "eventId": "evt-8789",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Web3 Meetup",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-02-21T10:00:00-05:00",
+      "endDate": "2026-02-21T13:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/897.jpg",
+      "url": "https://example.com/events/46899",
+      "keywords": [
+        "software",
+        "programming",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/18037",
+        "eventId": "evt-95769",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Collective Digital Horizons Show",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-03-20T10:00:00-04:00",
+      "endDate": "2026-03-20T12:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/852.jpg",
+      "url": "https://example.com/events/32489",
+      "keywords": [
+        "art",
+        "gallery",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/92861",
+        "eventId": "evt-61352",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Artist Talk: Found Objects",
+      "description": "Opening reception for our newest exhibition. Light refreshments served. Free admission.",
+      "startDate": "2026-02-19T07:00:00-05:00",
+      "endDate": "2026-02-19T09:00:00-05:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/177.jpg",
+      "url": "https://example.com/events/9189",
+      "keywords": [
+        "gallery",
+        "creative"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/55448",
+        "eventId": "evt-36913",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "History Masterclass",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-03-28T13:00:00-04:00",
+      "endDate": "2026-03-28T16:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/137.jpg",
+      "url": "https://example.com/events/31725",
+      "keywords": [
+        "toronto",
+        "education",
+        "learning"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/67459",
+        "eventId": "evt-43235",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Web3 User Group",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-03-31T08:00:00-04:00",
+      "endDate": "2026-03-31T10:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/843.jpg",
+      "url": "https://example.com/events/40571",
+      "keywords": [
+        "software",
+        "toronto",
+        "meetup",
+        "programming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/97940",
+        "eventId": "evt-84827",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Young Professionals Mixer",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-03-31T07:00:00-04:00",
+      "endDate": "2026-03-31T11:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/912.jpg",
+      "url": "https://example.com/events/1043",
+      "keywords": [
+        "toronto",
+        "gathering"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/43011",
+        "eventId": "evt-36553",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Learning Circle: Economics",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-02-21T14:00:00-05:00",
+      "endDate": "2026-02-21T16:00:00-05:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/820.jpg",
+      "url": "https://example.com/events/85778",
+      "keywords": [
+        "workshop",
+        "learning"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/31960",
+        "eventId": "evt-85981",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Game Jam: Magic: The Gathering",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-03-18T12:00:00-04:00",
+      "endDate": "2026-03-18T16:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/201.jpg",
+      "url": "https://example.com/events/2139",
+      "keywords": [
+        "toronto",
+        "fun",
+        "gaming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/15451",
+        "eventId": "evt-3963",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Contemporary Voices Art Walk",
+      "description": "Opening reception for our newest exhibition. Light refreshments served. Free admission.",
+      "startDate": "2026-03-30T14:00:00-04:00",
+      "endDate": "2026-03-30T18:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/552.jpg",
+      "url": "https://example.com/events/96571",
+      "keywords": [
+        "exhibition",
+        "toronto",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/68954",
+        "eventId": "evt-61513",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Book Club: Creative",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-04-16T11:00:00-04:00",
+      "endDate": "2026-04-16T15:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/411.jpg",
+      "url": "https://example.com/events/61374",
+      "keywords": [
+        "networking",
+        "gathering",
+        "toronto",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/28293",
+        "eventId": "evt-40948",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Cooperative Tournament",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-03-08T10:00:00-04:00",
+      "endDate": "2026-03-08T12:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/462.jpg",
+      "url": "https://example.com/events/48184",
+      "keywords": [
+        "toronto",
+        "board games",
+        "gaming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/6132",
+        "eventId": "evt-65008",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Urban Perspectives: New Works Exhibition",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-03-06T12:00:00-05:00",
+      "endDate": "2026-03-06T16:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/765.jpg",
+      "url": "https://example.com/events/30707",
+      "keywords": [
+        "exhibition",
+        "creative",
+        "art"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/37618",
+        "eventId": "evt-74590",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Artist Talk: Digital Horizons",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-04-11T06:00:00-04:00",
+      "endDate": "2026-04-11T08:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/846.jpg",
+      "url": "https://example.com/events/40583",
+      "keywords": [
+        "gallery",
+        "creative",
+        "exhibition",
+        "art"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/79933",
+        "eventId": "evt-86247",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Rust Meetup",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-04-04T09:00:00-04:00",
+      "endDate": "2026-04-04T10:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/922.jpg",
+      "url": "https://example.com/events/98623",
+      "keywords": [
+        "programming",
+        "software"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/72312",
+        "eventId": "evt-77182",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Game Jam: Cooperative",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-04-04T10:00:00-04:00",
+      "endDate": "2026-04-04T13:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/81.jpg",
+      "url": "https://example.com/events/65049",
+      "keywords": [
+        "gaming",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/1719",
+        "eventId": "evt-7460",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Game Jam: D\u0026D",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-04-07T06:00:00-04:00",
+      "endDate": "2026-04-07T09:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/891.jpg",
+      "url": "https://example.com/events/15526",
+      "keywords": [
+        "gaming",
+        "board games",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/35210",
+        "eventId": "evt-97590",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Game Jam: Magic: The Gathering",
+      "description": "Competitive tournament with prizes! Registration required. Spectators welcome.",
+      "startDate": "2026-04-07T11:00:00-04:00",
+      "endDate": "2026-04-07T12:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/42.jpg",
+      "url": "https://example.com/events/49710",
+      "keywords": [
+        "board games",
+        "games",
+        "fun"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/23700",
+        "eventId": "evt-58576",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Panel Discussion: History",
+      "description": "Intensive workshop for those looking to deepen their understanding. Materials included in registration.",
+      "startDate": "2026-03-18T06:00:00-04:00",
+      "endDate": "2026-03-18T09:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/224.jpg",
+      "url": "https://example.com/events/82972",
+      "keywords": [
+        "lecture",
+        "education",
+        "workshop"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/15793",
+        "eventId": "evt-16390",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Newcomers Potluck",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-03-17T06:00:00-04:00",
+      "endDate": "2026-03-17T08:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/371.jpg",
+      "url": "https://example.com/events/9722",
+      "keywords": [
+        "toronto",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/61735",
+        "eventId": "evt-63388",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Textile Dreams: New Works Exhibition",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-02-22T07:00:00-05:00",
+      "endDate": "2026-02-22T11:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/556.jpg",
+      "url": "https://example.com/events/51743",
+      "keywords": [
+        "toronto",
+        "exhibition",
+        "art"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/77086",
+        "eventId": "evt-48518",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Artist Talk: Light \u0026 Shadow",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-03-06T11:00:00-05:00",
+      "endDate": "2026-03-06T13:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/453.jpg",
+      "url": "https://example.com/events/99436",
+      "keywords": [
+        "creative",
+        "toronto",
+        "art"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/34133",
+        "eventId": "evt-12360",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "D\u0026D Tournament",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-03-30T11:00:00-04:00",
+      "endDate": "2026-03-30T15:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/266.jpg",
+      "url": "https://example.com/events/14677",
+      "keywords": [
+        "toronto",
+        "games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/75631",
+        "eventId": "evt-35422",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Newcomers Potluck",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-04-04T07:00:00-04:00",
+      "endDate": "2026-04-04T10:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/170.jpg",
+      "url": "https://example.com/events/49132",
+      "keywords": [
+        "community",
+        "networking",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/73738",
+        "eventId": "evt-54100",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Learning Circle: Literature",
+      "description": "Panel discussion featuring experts in the field. Audience questions encouraged.",
+      "startDate": "2026-04-16T13:00:00-04:00",
+      "endDate": "2026-04-16T16:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/503.jpg",
+      "url": "https://example.com/events/32741",
+      "keywords": [
+        "workshop",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/59698",
+        "eventId": "evt-17836",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Strategy Tournament",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-04-03T14:00:00-04:00",
+      "endDate": "2026-04-03T16:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/842.jpg",
+      "url": "https://example.com/events/20686",
+      "keywords": [
+        "board games",
+        "fun"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/71372",
+        "eventId": "evt-86982",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Young Professionals Potluck",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-03-14T08:00:00-04:00",
+      "endDate": "2026-03-14T11:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/595.jpg",
+      "url": "https://example.com/events/15519",
+      "keywords": [
+        "gathering",
+        "community",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/914",
+        "eventId": "evt-31315",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Book Club: Neighborhood",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-02-27T13:00:00-05:00",
+      "endDate": "2026-02-27T16:00:00-05:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/872.jpg",
+      "url": "https://example.com/events/22731",
+      "keywords": [
+        "community",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/32690",
+        "eventId": "evt-36524",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Collective Found Objects Show",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-03-29T11:00:00-04:00",
+      "endDate": "2026-03-29T14:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/355.jpg",
+      "url": "https://example.com/events/79176",
+      "keywords": [
+        "gallery",
+        "creative",
+        "exhibition"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/42671",
+        "eventId": "evt-34088",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Lecture: History",
+      "description": "Panel discussion featuring experts in the field. Audience questions encouraged.",
+      "startDate": "2026-03-30T15:00:00-04:00",
+      "endDate": "2026-03-30T19:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/340.jpg",
+      "url": "https://example.com/events/84073",
+      "keywords": [
+        "learning",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/48799",
+        "eventId": "evt-17799",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Found Objects Art Walk",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-03-15T14:00:00-04:00",
+      "endDate": "2026-03-15T15:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/364.jpg",
+      "url": "https://example.com/events/7349",
+      "keywords": [
+        "toronto",
+        "art",
+        "gallery",
+        "creative"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/62621",
+        "eventId": "evt-73548",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Open Source User Group",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-02-28T09:00:00-05:00",
+      "endDate": "2026-02-28T12:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/389.jpg",
+      "url": "https://example.com/events/89734",
+      "keywords": [
+        "software",
+        "toronto",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/55742",
+        "eventId": "evt-36531",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Gallery Opening: Found Objects",
+      "description": "Opening reception for our newest exhibition. Light refreshments served. Free admission.",
+      "startDate": "2026-03-06T13:00:00-05:00",
+      "endDate": "2026-03-06T16:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/411.jpg",
+      "url": "https://example.com/events/98319",
+      "keywords": [
+        "creative",
+        "art",
+        "toronto",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/59552",
+        "eventId": "evt-92813",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Newcomers Potluck",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-03-27T09:00:00-04:00",
+      "endDate": "2026-03-27T10:00:00-04:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/402.jpg",
+      "url": "https://example.com/events/60505",
+      "keywords": [
+        "community",
+        "networking"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/45340",
+        "eventId": "evt-1704",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Open Mic Night",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-02-17T10:00:00-05:00",
+      "endDate": "2026-02-17T14:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/811.jpg",
+      "url": "https://example.com/events/13081",
+      "keywords": [
+        "live",
+        "concert"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/65329",
+        "eventId": "evt-64398",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Psychology Masterclass",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-03-07T12:00:00-05:00",
+      "endDate": "2026-03-07T15:00:00-05:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/63.jpg",
+      "url": "https://example.com/events/36262",
+      "keywords": [
+        "lecture",
+        "workshop",
+        "learning"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://exclaim.ca/events/76016",
+        "eventId": "evt-94693",
+        "name": "Exclaim"
+      }
+    },
+    {
+      "name": "Trivia: D\u0026D Edition",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-04-15T13:00:00-04:00",
+      "endDate": "2026-04-15T16:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/303.jpg",
+      "url": "https://example.com/events/9918",
+      "keywords": [
+        "board games",
+        "toronto",
+        "fun",
+        "gaming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/78853",
+        "eventId": "evt-64782",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Tech Talk: Open Source",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-04-10T12:00:00-04:00",
+      "endDate": "2026-04-10T15:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/767.jpg",
+      "url": "https://example.com/events/63012",
+      "keywords": [
+        "toronto",
+        "programming",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/34481",
+        "eventId": "evt-12744",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Workshop: Introduction to History",
+      "description": "Panel discussion featuring experts in the field. Audience questions encouraged.",
+      "startDate": "2026-03-06T12:00:00-05:00",
+      "endDate": "2026-03-06T13:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/122.jpg",
+      "url": "https://example.com/events/65118",
+      "keywords": [
+        "learning",
+        "workshop"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/9763",
+        "eventId": "evt-49117",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Open Mic Night",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-03-07T05:00:00-05:00",
+      "endDate": "2026-03-07T08:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/927.jpg",
+      "url": "https://example.com/events/5693",
+      "keywords": [
+        "music",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/55089",
+        "eventId": "evt-5049",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Science Salon",
+      "description": "An engaging lecture exploring fascinating topics. Q\u0026A to follow. Free admission, donations welcome.",
+      "startDate": "2026-03-07T08:00:00-05:00",
+      "endDate": "2026-03-07T10:00:00-05:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/208.jpg",
+      "url": "https://example.com/events/41027",
+      "keywords": [
+        "learning",
+        "lecture",
+        "workshop",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/61081",
+        "eventId": "evt-18548",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Gallery Opening: Contemporary Voices",
+      "description": "Join local artists for a creative workshop. All materials provided. Suitable for all skill levels.",
+      "startDate": "2026-03-09T15:00:00-04:00",
+      "endDate": "2026-03-09T18:00:00-04:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/9.jpg",
+      "url": "https://example.com/events/98980",
+      "keywords": [
+        "creative",
+        "gallery",
+        "toronto",
+        "exhibition"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/22843",
+        "eventId": "evt-99269",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Book Club: Creative",
+      "description": "A casual gathering for community members to connect. Snacks provided. All welcome!",
+      "startDate": "2026-03-26T13:00:00-04:00",
+      "endDate": "2026-03-26T14:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/618.jpg",
+      "url": "https://example.com/events/94359",
+      "keywords": [
+        "toronto",
+        "networking"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/74971",
+        "eventId": "evt-19373",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Urban Perspectives: New Works Exhibition",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-02-28T05:00:00-05:00",
+      "endDate": "2026-02-28T06:00:00-05:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Epic Llama Events",
+        "url": "https://lu.ma/epicllama"
+      },
+      "image": "https://images.example.com/events/98.jpg",
+      "url": "https://example.com/events/95470",
+      "keywords": [
+        "creative",
+        "toronto",
+        "art"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/3502",
+        "eventId": "evt-54663",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Jazz Night: Night Owl Quartet",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-03-28T10:00:00-04:00",
+      "endDate": "2026-03-28T12:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/664.jpg",
+      "url": "https://example.com/events/51021",
+      "keywords": [
+        "live",
+        "performance",
+        "toronto",
+        "concert"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/64485",
+        "eventId": "evt-75372",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Hack Night: AI/ML",
+      "description": "Join us for an evening of demos, discussions, and debugging. Share your projects and learn from others.",
+      "startDate": "2026-03-19T08:00:00-04:00",
+      "endDate": "2026-03-19T12:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/338.jpg",
+      "url": "https://example.com/events/91485",
+      "keywords": [
+        "programming",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/33167",
+        "eventId": "evt-85166",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Synth Sunday with Night Owl",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-03-11T06:00:00-04:00",
+      "endDate": "2026-03-11T10:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/686.jpg",
+      "url": "https://example.com/events/44780",
+      "keywords": [
+        "concert",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/68906",
+        "eventId": "evt-86178",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Book Club: Neighborhood",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-04-09T12:00:00-04:00",
+      "endDate": "2026-04-09T13:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/354.jpg",
+      "url": "https://example.com/events/35898",
+      "keywords": [
+        "toronto",
+        "gathering",
+        "social"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/30951",
+        "eventId": "evt-76102",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Jazz Night: The Velvet Echo Quartet",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-03-29T10:00:00-04:00",
+      "endDate": "2026-03-29T14:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/349.jpg",
+      "url": "https://example.com/events/71997",
+      "keywords": [
+        "music",
+        "toronto",
+        "performance",
+        "live"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/6868",
+        "eventId": "evt-13995",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Sarah Chen Live at Centre for Social Innovation",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-02-26T08:00:00-05:00",
+      "endDate": "2026-02-26T12:00:00-05:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/60.jpg",
+      "url": "https://example.com/events/5379",
+      "keywords": [
+        "live",
+        "performance"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/22227",
+        "eventId": "evt-25529",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Tech Talk: Data Engineering",
+      "description": "Join us for an evening of demos, discussions, and debugging. Share your projects and learn from others.",
+      "startDate": "2026-03-02T05:00:00-05:00",
+      "endDate": "2026-03-02T07:00:00-05:00",
+      "location": {
+        "name": "Snakes and Lattes",
+        "streetAddress": "600 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6G 1K4",
+        "addressCountry": "CA",
+        "latitude": 43.6644,
+        "longitude": -79.4156
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/786.jpg",
+      "url": "https://example.com/events/18193",
+      "keywords": [
+        "programming",
+        "tech",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/13300",
+        "eventId": "evt-89480",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Creative Workshop: Found Objects",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-03-21T09:00:00-04:00",
+      "endDate": "2026-03-21T12:00:00-04:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/582.jpg",
+      "url": "https://example.com/events/13155",
+      "keywords": [
+        "creative",
+        "toronto",
+        "gallery",
+        "exhibition"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/83039",
+        "eventId": "evt-17993",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Night Owl Live at The Baby G",
+      "description": "Experience the sounds of Toronto's vibrant music scene. Reserved seating available.",
+      "startDate": "2026-03-02T14:00:00-05:00",
+      "endDate": "2026-03-02T16:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/357.jpg",
+      "url": "https://example.com/events/23460",
+      "keywords": [
+        "concert",
+        "live",
+        "music",
+        "toronto"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/96772",
+        "eventId": "evt-72969",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Moonlight Syndicate Album Release Party",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-03-06T13:00:00-05:00",
+      "endDate": "2026-03-06T14:00:00-05:00",
+      "location": {
+        "name": "The Tranzac",
+        "streetAddress": "292 Brunswick Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5S 2M7",
+        "addressCountry": "CA",
+        "latitude": 43.6638,
+        "longitude": -79.4077
+      },
+      "organizer": {
+        "name": "Less Wrong Toronto",
+        "url": "https://meetup.com/less-wrong-toronto"
+      },
+      "image": "https://images.example.com/events/382.jpg",
+      "url": "https://example.com/events/82353",
+      "keywords": [
+        "performance",
+        "toronto",
+        "concert"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/31156",
+        "eventId": "evt-18682",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Web3 Workshop",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-04-13T08:00:00-04:00",
+      "endDate": "2026-04-13T12:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/773.jpg",
+      "url": "https://example.com/events/43969",
+      "keywords": [
+        "software",
+        "tech",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/91883",
+        "eventId": "evt-91379",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Sarah Chen Album Release Party",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-02-28T07:00:00-05:00",
+      "endDate": "2026-02-28T09:00:00-05:00",
+      "location": {
+        "name": "Bampot Tea House",
+        "streetAddress": "1267 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N7",
+        "addressCountry": "CA",
+        "latitude": 43.661,
+        "longitude": -79.4463
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/782.jpg",
+      "url": "https://example.com/events/50946",
+      "keywords": [
+        "music",
+        "performance"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/71146",
+        "eventId": "evt-40537",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Board Game Night: Magic: The Gathering",
+      "description": "Weekly game night at our favorite local venue. Bring your own games or play ours. All skill levels.",
+      "startDate": "2026-03-23T06:00:00-04:00",
+      "endDate": "2026-03-23T07:00:00-04:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/793.jpg",
+      "url": "https://example.com/events/18776",
+      "keywords": [
+        "toronto",
+        "fun",
+        "board games"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/11666",
+        "eventId": "evt-99599",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Game Jam: Strategy",
+      "description": "Learn to play new games in a friendly environment. Snacks available. Newcomers encouraged!",
+      "startDate": "2026-03-23T12:00:00-04:00",
+      "endDate": "2026-03-23T15:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "Book Club for Humans",
+        "url": "https://meetup.com/bookclubforhumans"
+      },
+      "image": "https://images.example.com/events/799.jpg",
+      "url": "https://example.com/events/72325",
+      "keywords": [
+        "board games",
+        "games",
+        "gaming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/92303",
+        "eventId": "evt-61626",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Demo Day: Web3",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-04-03T10:00:00-04:00",
+      "endDate": "2026-04-03T12:00:00-04:00",
+      "location": {
+        "name": "Centre for Social Innovation",
+        "streetAddress": "192 Spadina Ave",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M5T 2C2",
+        "addressCountry": "CA",
+        "latitude": 43.6496,
+        "longitude": -79.3961
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/17.jpg",
+      "url": "https://example.com/events/9112",
+      "keywords": [
+        "toronto",
+        "programming",
+        "meetup",
+        "software"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.eventbrite.ca/events/36470",
+        "eventId": "evt-45171",
+        "name": "Eventbrite"
+      }
+    },
+    {
+      "name": "Night Owl Album Release Party",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-03-15T15:00:00-04:00",
+      "endDate": "2026-03-15T16:00:00-04:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Toronto Society",
+        "url": "https://lu.ma/torontosociety"
+      },
+      "image": "https://images.example.com/events/763.jpg",
+      "url": "https://example.com/events/50930",
+      "keywords": [
+        "toronto",
+        "music"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.showpass.com/events/91174",
+        "eventId": "evt-18216",
+        "name": "Showpass"
+      }
+    },
+    {
+      "name": "Neighborhood Social",
+      "description": "Community potluck and social. Bring a dish to share. Family friendly.",
+      "startDate": "2026-02-17T08:00:00-05:00",
+      "endDate": "2026-02-17T11:00:00-05:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "Creative Club Pauza",
+        "url": "https://eventbrite.ca/creativeclubpauza"
+      },
+      "image": "https://images.example.com/events/194.jpg",
+      "url": "https://example.com/events/2364",
+      "keywords": [
+        "social",
+        "community",
+        "toronto",
+        "networking"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/55743",
+        "eventId": "evt-20737",
+        "name": "BlogTO"
+      }
+    },
+    {
+      "name": "Demo Day: Rust",
+      "description": "Join us for an evening of demos, discussions, and debugging. Share your projects and learn from others.",
+      "startDate": "2026-04-03T07:00:00-04:00",
+      "endDate": "2026-04-03T11:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/92.jpg",
+      "url": "https://example.com/events/92982",
+      "keywords": [
+        "toronto",
+        "software",
+        "tech",
+        "meetup"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://example.com/events/55060",
+        "eventId": "evt-2995",
+        "name": "Squarespace"
+      }
+    },
+    {
+      "name": "Go User Group",
+      "description": "Monthly meetup for developers and tech enthusiasts. Lightning talks followed by networking. Pizza provided!",
+      "startDate": "2026-02-22T08:00:00-05:00",
+      "endDate": "2026-02-22T11:00:00-05:00",
+      "location": {
+        "name": "Dovercourt House",
+        "streetAddress": "805 Dovercourt Rd",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 2X4",
+        "addressCountry": "CA",
+        "latitude": 43.66,
+        "longitude": -79.4298
+      },
+      "organizer": {
+        "name": "Trampoline Hall",
+        "url": "https://lu.ma/trampolinehall"
+      },
+      "image": "https://images.example.com/events/96.jpg",
+      "url": "https://example.com/events/52854",
+      "keywords": [
+        "toronto",
+        "software",
+        "tech",
+        "programming"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.meetup.com/events/62543",
+        "eventId": "evt-27333",
+        "name": "Meetup"
+      }
+    },
+    {
+      "name": "Collective Found Objects Show",
+      "description": "An exhibition exploring contemporary themes through mixed media. Artist talk at 6pm followed by reception.",
+      "startDate": "2026-04-16T09:00:00-04:00",
+      "endDate": "2026-04-16T12:00:00-04:00",
+      "location": {
+        "name": "The Baby G",
+        "streetAddress": "1608 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6K 1T8",
+        "addressCountry": "CA",
+        "latitude": 43.6489,
+        "longitude": -79.4361
+      },
+      "organizer": {
+        "name": "Fuckup Nights Toronto",
+        "url": "https://fuckupnights.com/toronto"
+      },
+      "image": "https://images.example.com/events/329.jpg",
+      "url": "https://example.com/events/60150",
+      "keywords": [
+        "exhibition",
+        "creative",
+        "toronto",
+        "gallery"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/25774",
+        "eventId": "evt-67027",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Open Mic Night",
+      "description": "Join us for an evening of live music featuring local artists. Doors open at 7pm, music starts at 8pm. All ages welcome.",
+      "startDate": "2026-04-08T07:00:00-04:00",
+      "endDate": "2026-04-08T11:00:00-04:00",
+      "location": {
+        "name": "InterAccess",
+        "streetAddress": "950 Dupont St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1Z2",
+        "addressCountry": "CA",
+        "latitude": 43.6683,
+        "longitude": -79.4356
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/429.jpg",
+      "url": "https://example.com/events/59748",
+      "keywords": [
+        "music",
+        "toronto",
+        "live"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/62318",
+        "eventId": "evt-68624",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Data Engineering Meetup",
+      "description": "Hands-on workshop covering the latest tools and techniques. Bring your laptop. Beginners welcome.",
+      "startDate": "2026-04-12T07:00:00-04:00",
+      "endDate": "2026-04-12T11:00:00-04:00",
+      "location": {
+        "name": "Burdock Music Hall",
+        "streetAddress": "1184 Bloor St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6H 1N2",
+        "addressCountry": "CA",
+        "latitude": 43.6607,
+        "longitude": -79.4431
+      },
+      "organizer": {
+        "name": "Toronto Arts Foundation",
+        "url": "https://torontoarts.org"
+      },
+      "image": "https://images.example.com/events/602.jpg",
+      "url": "https://example.com/events/71443",
+      "keywords": [
+        "toronto",
+        "meetup",
+        "programming",
+        "software"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://calendar.google.com/events/44892",
+        "eventId": "evt-50047",
+        "name": "Google Calendar"
+      }
+    },
+    {
+      "name": "Synth Sunday with Brass Collective",
+      "description": "A night of incredible performances in an intimate setting. Cash bar available. Support local music!",
+      "startDate": "2026-04-06T15:00:00-04:00",
+      "endDate": "2026-04-06T17:00:00-04:00",
+      "location": {
+        "name": "Glad Day Bookshop",
+        "streetAddress": "499 Church St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M4Y 2C6",
+        "addressCountry": "CA",
+        "latitude": 43.6653,
+        "longitude": -79.381
+      },
+      "organizer": {
+        "name": "Radical Aliveness Toronto",
+        "url": "https://eventbrite.ca/radicalaliveness"
+      },
+      "image": "https://images.example.com/events/609.jpg",
+      "url": "https://example.com/events/99221",
+      "keywords": [
+        "toronto",
+        "music",
+        "live",
+        "concert"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://lu.ma/events/7162",
+        "eventId": "evt-34469",
+        "name": "Lu.ma"
+      }
+    },
+    {
+      "name": "Community Gathering: West End",
+      "description": "Monthly mixer for professionals and creatives. Cash bar. Come make new friends!",
+      "startDate": "2026-04-01T13:00:00-04:00",
+      "endDate": "2026-04-01T16:00:00-04:00",
+      "location": {
+        "name": "The Garrison",
+        "streetAddress": "1197 Dundas St W",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "postalCode": "M6J 1X3",
+        "addressCountry": "CA",
+        "latitude": 43.6493,
+        "longitude": -79.4235
+      },
+      "organizer": {
+        "name": "HTML in the Park",
+        "url": "https://lu.ma/htmlinthepark"
+      },
+      "image": "https://images.example.com/events/899.jpg",
+      "url": "https://example.com/events/31315",
+      "keywords": [
+        "social",
+        "community",
+        "networking"
+      ],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": {
+        "url": "https://www.blogto.com/events/23379",
+        "eventId": "evt-4132",
+        "name": "BlogTO"
+      }
+    }
+  ]
+}

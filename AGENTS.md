@@ -4,38 +4,85 @@ This repository is for the Togather server, a Shared Events Library (SEL) backen
 
 IMPORTANT:
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
-- The server and code are under active early development and are not yet deployed to production.
+- Staging is deployed; production is not yet live.
 - Use Beads (`bd`) for task discovery + progress tracking (NOT markdown TODO lists).
-- Use Spec Kit artifacts as the source of intent: constitution → spec → plan → tasks.
-- Use context7 to look up docs for external libs.
+- Use Spec Kit artifacts as the source of intent: constitution → spec → tasks.
+- Use the `context7` MCP server to look up documentation for external libraries.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- When stuck on a difficult problem (cryptic errors, multiple failed approaches, architectural uncertainty), escalate to `@diagnose` — a subagent that provides expert diagnostic analysis. Use it via the Task tool with `subagent_type: "diagnose"`.
+
+
+## Active Technologies
+
+- Go 1.24+ with Docker Compose v2 (orchestration)
+- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions; golang-migrate (migrations); volume persistence; pg_dump snapshots to filesystem or S3-compatible storage
+- net/http with Go 1.22+ ServeMux (path params via `r.PathValue()`, method-prefixed patterns), SQLc (type-safe SQL — see [internal/storage/postgres/README.md](internal/storage/postgres/README.md) for nullable parameter patterns), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI), rs/zerolog (structured logging)
+
+### CLI Commands (`server` binary)
+
+- `server serve` — Start the HTTP server
+- `server setup` — Interactive first-time setup
+- `server ingest` — Ingest events from a JSON file
+- `server events` — Query events from the SEL server
+- `server generate` — Generate test events from fixtures
+- `server snapshot` — Database backup management (create, list, cleanup with retention policy)
+- `server healthcheck` — Health monitoring with blue-green slot support, watch mode, multiple output formats
+- `server deploy` — Manage deployments and rollbacks
+- `server cleanup` — Clean up deployment artifacts (Docker images, snapshots, logs)
+- `server api-key` — API key management (create, list, revoke)
+- `server webfiles` — Generate robots.txt and sitemap.xml for deployment
+- `server version` — Print version information
+
+
+## Repo Layout
+
+```
+cmd/                  — Server binary entrypoint
+internal/api/         — HTTP routing, handlers, middleware, content negotiation
+internal/domain/      — Core domain logic by feature (events, places, organizations,
+                        federation, users, ids, provenance)
+internal/storage/postgres/ — SQLc queries, repositories, migrations
+internal/auth/        — Authentication (JWT, API keys)
+internal/config/      — Configuration and logging setup
+internal/jobs/        — River background job workers
+internal/jsonld/      — JSON-LD processing
+internal/validation/  — Input validation
+web/                  — Frontend/web assets
+tests/                — Integration, contract, e2e, performance tests
+deploy/               — Deployment scripts, Docker, Caddy config, monitoring
+docs/                 — SEL specification, deployment, and architecture documentation
+specs/                — Spec Kit artifacts (source of intent)
+contexts/ and shapes/ — JSON-LD contexts and SHACL shapes
+Makefile              — Common build/test/lint targets
+```
 
 
 ## Issue Tracking
 
-This project uses **bd (beads)** for issue tracking.
+Use **bd (beads)** for issue tracking.
 Run `bd prime` for workflow context, or install hooks (`bd hooks install`) for auto-injection.
 
 **Quick reference:**
-- `bd ready` - Find unblocked work
-- `bd create "Title" --type task --priority 2` - Create issue
-- `bd update <id> --status in_progress` - Claim work
-- `bd close <id>` - Complete work
-- `bd sync` - Sync with git (run at session end)
+- `bd ready` — Find unblocked work
+- `bd create "Title" --type task --priority 2` — Create issue
+- `bd update <id> --status in_progress` — Claim work
+- `bd close <id>` — Complete work
+- `bd sync` — Sync with git (run at session end)
 
 For full workflow details: `bd prime`
 
 
 ## Workflow (do this every coding or documentation task)
+
 1) Pick work:
    - `bd list --status ready` (or equivalent) and choose ONE task.
 2) Bind to the spec:
-   - Ensure the bead description links to the relevant spec/plan section.
+   - Ensure the bead description links to the relevant spec section.
 3) Claim bead:
    - `bd update <id> --status in_progress` at start.
 4) Implement:
    - Small commits, tests where appropriate, keep diffs reviewable.
-   - **IMPORTANT: Run `make ci` before pushing to catch CI failures locally**
+   - Run `make ci` before pushing to catch CI failures locally.
 5) Update bead:
    - `bd update <id> --status closed --close-reason "<what changed + why>"` when done.
 6) Sync Beads state:
@@ -43,74 +90,122 @@ For full workflow details: `bd prime`
 7) Never merge `beads-sync` into main.
 
 
-## Landing the Plane (Session Completion)
+## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**CRITICAL: Work is NOT complete until `git push` succeeds.** Never stop before pushing — that leaves work stranded locally. Never say "ready to push when you are" — YOU must push.
 
-**MANDATORY WORKFLOW:**
+**Mandatory steps:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds: `make ci`
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. **File issues for remaining work** — Create beads for anything needing follow-up
+2. **Run quality gates** (if code changed) — `make ci`
+3. **Update issue status** — Close finished work, update in-progress items
+4. **Push to remote:**
    ```bash
    git pull --rebase
    bd sync
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **Clean up** — Clear stashes, prune remote branches
+6. **Verify** — All changes committed AND pushed
+7. **Hand off** — Provide context for next session
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+
+## Local Development
+
+### First-Time Setup
+
+```bash
+make setup           # Interactive setup (RECOMMENDED)
+# Or non-interactive:
+make setup-docker    # Docker-based setup
+```
+
+This creates `.env` from `.env.example` and initializes the database. You can also run `make db-init` to set up the database independently.
+
+### Running the Server
+
+```bash
+make run             # Build and run (kills existing first)
+make dev             # Live reload with air (requires air from install-tools)
+make stop            # Stop running server processes
+```
+
+### Docker Development
+
+```bash
+make docker-db       # Start database only (port 5433)
+make docker-up       # Start database and server in Docker
+make docker-down     # Stop all Docker containers
+make docker-logs     # View Docker container logs
+make docker-rebuild  # Rebuild and restart containers
+make docker-clean    # Stop containers and remove volumes
+```
+
+### Database Access
+
+```bash
+source .env && psql "$DATABASE_URL"
+```
+
+### Code Generation
+
+After modifying SQL queries in `internal/storage/postgres/queries/`:
+```bash
+make sqlc            # Regenerate SQLc code
+```
+
 
 ## Build, Lint, Test Commands
 
-The project uses a `Makefile` for common build tasks. Use `make help` to see all available targets.
-
-**CRITICAL: Before pushing changes, run `make ci` to verify all checks pass locally.**
+Use the Makefile for common build tasks. Run `make help` for all available targets.
 
 ```bash
-# Run full CI pipeline locally (RECOMMENDED before pushing)
+# Full CI pipeline locally (run before pushing)
 make ci
 
-# Run tests exactly as CI does (race detector, verbose)
-make test-ci
-
-# Run linter exactly as CI does (with timeout)
-make lint-ci
-
-# Build the server
+# Build
 make build
 
-# Run all tests
-make test
+# Tests
+make test            # Run all tests
+make test-ci         # Tests exactly as CI does (race detector, verbose)
+make test-race       # Tests with race detector
+make test-v          # Tests with verbose output
+make coverage        # Tests with coverage report (enforces 35% min threshold)
 
-# Run tests with race detector
-make test-race
+# Linting
+make lint            # Run golangci-lint
+make lint-ci         # Lint exactly as CI does (5m timeout)
+make lint-js         # Validate JavaScript syntax
+make lint-openapi    # Validate OpenAPI specification
+make lint-yaml       # Validate YAML files (GitHub workflows, configs)
+make vulncheck       # Run govulncheck vulnerability scan
 
-# Generate coverage report
-make coverage
+# Formatting
+make fmt             # Format all Go files
 
-# Run linter (requires golangci-lint)
-make lint
+# Contract and shape validation
+make test-contracts  # Run contract tests (requires pyshacl)
+make validate-shapes # Validate SHACL shapes against sample data
 
-# Validate JavaScript syntax (requires esbuild)
-make lint-js
+# Code generation
+make sqlc            # Generate SQLc code from SQL queries
 
-# Format all Go files
-make fmt
+# Migrations
+make migrate-up      # Run database migrations
+make migrate-down    # Roll back one migration
+make migrate-river   # Run River job queue migrations
 
-# Clean build artifacts
-make clean
+# Remote testing
+make test-local           # Run all tests on local server
+make test-staging         # Run all tests on staging server
+make test-staging-smoke   # Run smoke tests on staging
+make test-production-smoke # Run smoke tests on production (read-only)
 
-# Install development tools (golangci-lint, esbuild, air)
-make install-tools
+# Utilities
+make install-tools   # Install development tools (golangci-lint, esbuild, air)
+make clean           # Remove build artifacts
 ```
 
 Standard Go commands also work:
@@ -122,98 +217,16 @@ gofmt -w path/to/file.go
 ```
 
 
-## Deployment and Testing
-
-When the user asks to deploy (to local/staging/production), follow the comprehensive deployment testing process. 
-Ask which environment to deploy to if not specified, and create a subagent to complete the task.
-
-DO NOT create a bead to track this task!
-
-### Deployment Configuration
-
-**IMPORTANT:** Each environment has a `.deploy.conf.{environment}` file (gitignored) that contains:
-- `NODE_DOMAIN` - The FQDN for this environment (e.g., `staging.toronto.togather.foundation`)
-- `SSH_HOST` - SSH hostname/alias for deployment (e.g., `togather`)
-- `SSH_USER` - SSH username (e.g., `deploy`)
-- `CITY`, `REGION` - Geographic identifiers
-- Other deployment settings
-
-**Before deploying, check if `.deploy.conf.{environment}` exists:**
-```bash
-# Read staging config
-if [ -f .deploy.conf.staging ]; then
-    source .deploy.conf.staging
-    echo "Deploying to: $NODE_DOMAIN via $SSH_HOST"
-fi
-```
-
-**DO NOT guess or hallucinate domain names or SSH hosts** - always read from `.deploy.conf.*` files.
-
-See `docs/deploy/deploy-conf.md` for complete documentation.
-
-### Deployment Workflow
-
-**For full deployment + testing:**
-1. Read `docs/deploy/deployment-testing.md` for complete instructions
-2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
-3. **IMPORTANT:** Determine what to deploy:
-   - **Current branch/commit:** Use `--version HEAD` or `--version $(git rev-parse HEAD)`
-   - **Specific commit:** Use `--version <commit-hash>`
-   - **Default (not recommended):** Omitting `--version` deploys whatever is checked out on the remote server (usually main)
-4. Execute deployment (config auto-loads if available):
-   ```bash
-   # Deploy current HEAD commit to staging (RECOMMENDED for feature branches):
-   ./deploy/scripts/deploy.sh staging --version HEAD
-   
-   # Deploy specific commit:
-   ./deploy/scripts/deploy.sh staging --version abc123
-   
-   # Deploy to remote server with current commit:
-   ./deploy/scripts/deploy.sh staging --remote deploy@server --version HEAD
-   ```
-5. Wait 30-60 seconds for health stabilization
-6. Run automated tests (auto-uses NODE_DOMAIN from config):
-   ```bash
-   ./deploy/testing/smoke-tests.sh staging
-   ```
-7. If automated tests pass, report success summary
-8. If issues found, run specific checks from deployment-testing.md checklist
-9. Report comprehensive results to user
-
-**CRITICAL:** When deploying feature branches, ALWAYS use `--version HEAD` or `--version $(git rev-parse HEAD)` to ensure you're deploying the current branch's code, not main.
-
-
-### Deployment Documentation
-
-- **Deployment Config:** `docs/deploy/deploy-conf.md` - Per-environment .deploy.conf files
-- **Complete Testing Checklist:** `docs/deploy/deployment-testing.md`
-- **Quick Start Guide:** `docs/deploy/quickstart.md`
-- **Remote Deployment:** `docs/deploy/remote-deployment.md`
-- **Troubleshooting:** `docs/deploy/troubleshooting.md`
-- **Caddy Architecture:** `deploy/CADDY-ARCHITECTURE.md`
-
-
-## Repo Layout (quick map)
-
-- `internal/api/` - HTTP routing, handlers, middleware, content negotiation helpers
-- `internal/domain/` - Core domain logic by feature (`events`, `places`, `organizations`, `federation`)
-- `internal/storage/postgres/` - SQLc queries, repositories, migrations
-- `tests/integration/` - End-to-end integration tests and helpers
-- `docs/` - SEL and deployment documentation and profiles
-- `plan/` and `specs/` - Spec Kit artifacts (source of intent)
-- `contexts/` and `shapes/` - JSON-LD contexts and SHACL shapes
-- `Makefile` - Common build/test/lint targets
-
 ## Code Style and Architecture Guidelines
 
 Use idiomatic Go, consistent with SEL docs in `docs/`.
 
 This project uses Specification Driven Development:
 
-**Observability Over Opacity**: Everything must be inspectable through CLI interfaces
-**Simplicity Over Cleverness**: Start simple, add complexity only when proven necessary
-**Integration Over Isolation**: Test with real dependencies in real environments
-**Modularity Over Monoliths**: Every feature is a reusable library with clear boundaries
+- **Observability Over Opacity**: Everything must be inspectable through CLI interfaces
+- **Simplicity Over Cleverness**: Start simple, add complexity only when proven necessary
+- **Integration Over Isolation**: Test with real dependencies in real environments
+- **Modularity Over Monoliths**: Every feature is a reusable library with clear boundaries
 
 
 ### Packages and Structure
@@ -258,7 +271,7 @@ This project uses Specification Driven Development:
 
 ### Logging and Observability
 
-- Prefer structured logging (zap/logrus/zerolog) once selected.
+- Use zerolog (`github.com/rs/zerolog`) for structured logging.
 - Log request IDs, correlation IDs, and core identifiers (event ULID, source URI).
 - Avoid logging sensitive material (tokens, credentials, full payloads).
 
@@ -269,78 +282,34 @@ This project uses Specification Driven Development:
 - Avoid goroutine leaks; ensure each goroutine has a clear lifecycle.
 - Mutexes are used for protecting shared state, otherwise use channels.
 
+
 ### Database and Migrations
 
 **IMPORTANT: Always use `make` targets for migrations, NOT direct `migrate` commands!**
 
-The `migrate` binary is in `$GOPATH/bin` which may not be in your PATH. The Makefile handles this automatically.
-
-**Running Migrations:**
+The `migrate` binary is in `$GOPATH/bin` which may not be in your PATH. The Makefile handles path resolution automatically.
 
 ```bash
-# ✅ CORRECT: Use make target (handles PATH and DATABASE_URL)
-make migrate-up
-
-# ✅ Check migration status
-make migrate-version
-
-# ✅ Rollback one migration
-make migrate-down
-
-# ❌ WRONG: Direct migrate command (may fail with "command not found")
-migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" up
+make migrate-up      # Run all pending migrations
+make migrate-down    # Roll back one migration (use carefully!)
+make migrate-river   # Run River job queue migrations
 ```
 
-**The Makefile automatically:**
-- Checks for `migrate` in `./migrate`, `$PATH`, `$HOME/go/bin/migrate`, and `$GOPATH/bin/migrate`
-- Reads `DATABASE_URL` from `.env` (sourced automatically)
-- Provides helpful error messages if migrate is missing
+`DATABASE_URL` must be in your environment. Run `source .env` first if needed.
 
 **If migrations fail with "migrate: command not found":**
-
 ```bash
-# Install golang-migrate
 make install-tools
-
 # Or manually:
 go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-
-# Verify installation
-ls -la $(go env GOPATH)/bin/migrate
-
-# Then retry
-make migrate-up
 ```
 
-**Common Migration Tasks:**
-
+**Creating new migrations:**
 ```bash
-# Check current migration version
-make migrate-version
-
-# Run all pending migrations
-make migrate-up
-
-# Rollback last migration (use carefully!)
-make migrate-down
-
-# Create new migration (manual - no make target)
 migrate create -ext sql -dir internal/storage/postgres/migrations -seq my_migration_name
 ```
 
-**Quick Database Column Addition (Development Only):**
-
-If you need to quickly add a column during development and migrations are failing:
-
-```bash
-# Option 1: Run migration through make
-make migrate-up
-
-# Option 2: Direct SQL (if make fails and you need to unblock testing)
-source .env && psql "$DATABASE_URL" -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;"
-```
-
-**Schema Best Practices:**
+**Schema best practices:**
 - Use migrations for schema changes; keep them backwards compatible.
 - Prefer parameterized queries; avoid string concatenation for SQL.
 - Keep JSONB payloads intact for provenance; store normalized fields for queries.
@@ -362,6 +331,74 @@ source .env && psql "$DATABASE_URL" -c "ALTER TABLE users ADD COLUMN IF NOT EXIS
 
 - Update `docs/` when behavior changes to profiles/schemas.
 - Keep schema and context artifacts (`contexts/`, `shapes/`) in sync with code changes.
+
+
+## Deployment and Testing
+
+When the user asks to deploy (to local/staging/production), follow the comprehensive deployment testing process.
+Ask which environment to deploy to if not specified, and create a subagent to complete the task.
+
+DO NOT create a bead to track deployment tasks!
+
+### Deployment Configuration
+
+**IMPORTANT:** Each environment has a `.deploy.conf.{environment}` file (gitignored) that contains:
+- `NODE_DOMAIN` — The FQDN for this environment (e.g., `staging.toronto.togather.foundation`)
+- `SSH_HOST` — SSH hostname/alias for deployment (e.g., `togather`)
+- `SSH_USER` — SSH username (e.g., `deploy`)
+- `CITY`, `REGION` — Geographic identifiers
+- Other deployment settings
+
+**Before deploying, check if `.deploy.conf.{environment}` exists:**
+```bash
+if [ -f .deploy.conf.staging ]; then
+    source .deploy.conf.staging
+    echo "Deploying to: $NODE_DOMAIN via $SSH_HOST"
+fi
+```
+
+**DO NOT guess or hallucinate domain names or SSH hosts** — always read from `.deploy.conf.*` files.
+
+See `docs/deploy/deploy-conf.md` for complete documentation.
+
+### Deployment Workflow
+
+**For full deployment + testing:**
+1. Read `docs/deploy/deployment-testing.md` for complete instructions
+2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
+3. **IMPORTANT:** Determine what to deploy:
+   - **Current branch/commit:** Use `--version HEAD` or `--version $(git rev-parse HEAD)`
+   - **Specific commit:** Use `--version <commit-hash>`
+   - **Default (not recommended):** Omitting `--version` deploys whatever is checked out on the remote server (usually main)
+4. Execute deployment (config auto-loads if available):
+   ```bash
+   # Deploy current HEAD commit to staging (RECOMMENDED for feature branches):
+   ./deploy/scripts/deploy.sh staging --version HEAD
+
+   # Deploy specific commit:
+   ./deploy/scripts/deploy.sh staging --version abc123
+
+   # Deploy to remote server with current commit:
+   ./deploy/scripts/deploy.sh staging --remote deploy@server --version HEAD
+   ```
+5. Run automated tests (health wait is handled automatically by `wait-for-health.sh`):
+   ```bash
+   ./deploy/scripts/test-remote.sh staging all
+   ```
+6. If automated tests pass, report success summary
+7. If issues found, run specific checks from deployment-testing.md checklist
+8. Report comprehensive results to user
+
+**CRITICAL:** When deploying feature branches, ALWAYS use `--version HEAD` or `--version $(git rev-parse HEAD)` to ensure you're deploying the current branch's code, not main.
+
+### Deployment Documentation
+
+- **Deployment Config:** `docs/deploy/deploy-conf.md` — Per-environment .deploy.conf files
+- **Complete Testing Checklist:** `docs/deploy/deployment-testing.md`
+- **Quick Start Guide:** `docs/deploy/quickstart.md`
+- **Remote Deployment:** `docs/deploy/remote-deployment.md`
+- **Troubleshooting:** `docs/deploy/troubleshooting.md`
+- **Caddy Architecture:** `deploy/CADDY-ARCHITECTURE.md`
 
 
 <skills_system priority="1">
@@ -414,11 +451,3 @@ Usage notes:
 <!-- SKILLS_TABLE_END -->
 
 </skills_system>
-
-## Active Technologies
-- Go 1.25+ + Docker Compose v2 (orchestration)
-- PostgreSQL 16+ with PostGIS, pgvector, pg_trgm extensions, golang-migrate (migrations) with volume persistence, pg_dump snapshots to filesystem or S3-compatible storage
-- Huma (HTTP/OpenAPI 3.1), SQLc (type-safe SQL - see [internal/storage/postgres/README.md](internal/storage/postgres/README.md) for nullable parameter patterns), River (transactional job queue), piprate/json-gold (JSON-LD), oklog/ulid/v2, golang-jwt/jwt/v5, go-playground/validator/v10, spf13/cobra (CLI)
-- CLI Commands (`server` binary):
-  - `server snapshot` - Database backup management (create, list, cleanup with retention policy)
-  - `server healthcheck` - Health monitoring with blue-green slot support, watch mode, multiple output formats

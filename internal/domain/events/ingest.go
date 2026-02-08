@@ -17,6 +17,7 @@ type IngestResult struct {
 	Event       *Event
 	IsDuplicate bool
 	NeedsReview bool
+	Warnings    []ValidationWarning
 }
 
 type IngestService struct {
@@ -75,29 +76,37 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}
 
-	validated, err := ValidateEventInput(input, s.nodeDomain)
+	// FIX: Normalize FIRST, then validate
+	// This allows timezone corrections and other normalizations to run before validation
+	normalized := NormalizeEventInput(input)
+
+	// Pass original input so validation can detect auto-corrections
+	validationResult, err := ValidateEventInputWithWarnings(normalized, s.nodeDomain, &input)
 	if err != nil {
 		return nil, err
 	}
-	normalized := NormalizeEventInput(validated)
+	validated := validationResult.Input
+	warnings := validationResult.Warnings
+	// Check if review is needed due to validation warnings OR metadata quality issues
+	needsReview := len(warnings) > 0 || needsReview(validated, nil)
 
 	var sourceID string
-	if normalized.Source != nil && normalized.Source.URL != "" {
+	if validated.Source != nil && validated.Source.URL != "" {
 		sourceID, err = s.repo.GetOrCreateSource(ctx, SourceLookupParams{
-			Name:        sourceName(normalized.Source, normalized.Name),
+			Name:        sourceName(validated.Source, validated.Name),
 			SourceType:  "api",
-			BaseURL:     sourceBaseURL(normalized.Source.URL),
-			LicenseURL:  licenseURL(sourceLicense(normalized)),
-			LicenseType: sourceLicenseType(normalized),
+			BaseURL:     sourceBaseURL(validated.Source.URL),
+			LicenseURL:  licenseURL(sourceLicense(validated)),
+			LicenseType: sourceLicenseType(validated),
 			TrustLevel:  5,
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		existing, err := s.repo.FindBySourceExternalID(ctx, sourceID, normalized.Source.EventID)
+		existing, err := s.repo.FindBySourceExternalID(ctx, sourceID, validated.Source.EventID)
 		if err == nil && existing != nil {
-			return &IngestResult{Event: existing, IsDuplicate: true}, nil
+			return &IngestResult{Event: existing, IsDuplicate: true, Warnings: warnings}, nil
 		}
 		if err != nil && err != ErrNotFound {
 			return nil, err
@@ -105,17 +114,100 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 
 	dedupHash := BuildDedupHash(DedupCandidate{
-		Name:      normalized.Name,
-		VenueID:   primaryVenueKey(normalized),
-		StartDate: normalized.StartDate,
+		Name:      validated.Name,
+		VenueID:   primaryVenueKey(validated),
+		StartDate: validated.StartDate,
 	})
 	if dedupHash != "" {
 		existing, err := s.repo.FindByDedupHash(ctx, dedupHash)
 		if err == nil && existing != nil {
-			return &IngestResult{Event: existing, IsDuplicate: true}, nil
+			return &IngestResult{Event: existing, IsDuplicate: true, Warnings: warnings}, nil
 		}
 		if err != nil && err != ErrNotFound {
 			return nil, err
+		}
+	}
+
+	// Check for existing review queue entry if this event needs review
+	if needsReview {
+		var externalID *string
+		if validated.Source != nil && validated.Source.EventID != "" {
+			externalID = &validated.Source.EventID
+		}
+		var dedupHashPtr *string
+		if dedupHash != "" {
+			dedupHashPtr = &dedupHash
+		}
+		var sourceIDPtr *string
+		if sourceID != "" {
+			sourceIDPtr = &sourceID
+		}
+
+		existingReview, err := s.repo.FindReviewByDedup(ctx, sourceIDPtr, externalID, dedupHashPtr)
+		if err != nil && err != ErrNotFound {
+			return nil, fmt.Errorf("check existing review: %w", err)
+		}
+
+		if existingReview != nil {
+			switch existingReview.Status {
+			case "rejected":
+				// Check if rejection is still valid (event hasn't passed yet)
+				if !isEventPast(existingReview.EventEndTime) {
+					if stillHasSameIssues(existingReview.Warnings, warnings) {
+						return nil, ErrPreviouslyRejected{
+							Reason:     stringOrEmpty(existingReview.RejectionReason),
+							ReviewedAt: timeOrZero(existingReview.ReviewedAt),
+							ReviewedBy: stringOrEmpty(existingReview.ReviewedBy),
+						}
+					}
+				}
+				// Event passed or different issues - allow resubmission (continue to create new event)
+
+			case "pending":
+				// Already in queue - check if fixed
+				if len(warnings) == 0 {
+					// Fixed! Approve and publish
+					_, err := s.repo.ApproveReview(ctx, existingReview.ID, "system", stringPtr("Auto-approved: resubmission with no warnings"))
+					if err != nil {
+						return nil, fmt.Errorf("approve review: %w", err)
+					}
+					// Update the event to published
+					updatedEvent, err := s.repo.UpdateEvent(ctx, existingReview.EventULID, UpdateEventParams{
+						LifecycleState: stringPtr("published"),
+					})
+					if err != nil {
+						return nil, fmt.Errorf("update event to published: %w", err)
+					}
+					return &IngestResult{Event: updatedEvent, NeedsReview: false, Warnings: nil}, nil
+				}
+				// Still has issues - update queue entry with new payloads
+				originalJSON, err := toJSON(input)
+				if err != nil {
+					return nil, fmt.Errorf("marshal original for update: %w", err)
+				}
+				normalizedJSON, err := toJSON(validated)
+				if err != nil {
+					return nil, fmt.Errorf("marshal normalized for update: %w", err)
+				}
+				warningsJSON, err := toJSON(warnings)
+				if err != nil {
+					return nil, fmt.Errorf("marshal warnings for update: %w", err)
+				}
+				_, err = s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+					OriginalPayload:   &originalJSON,
+					NormalizedPayload: &normalizedJSON,
+					Warnings:          &warningsJSON,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("update review queue entry: %w", err)
+				}
+				// Return the existing event
+				event, err := s.repo.GetByULID(ctx, existingReview.EventULID)
+				if err != nil {
+					return nil, fmt.Errorf("get event for pending update: %w", err)
+				}
+				return &IngestResult{Event: event, NeedsReview: true, Warnings: warnings}, nil
+			}
 		}
 	}
 
@@ -124,30 +216,30 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		return nil, fmt.Errorf("generate ulid: %w", err)
 	}
 
-	needsReview := needsReview(normalized, nil)
+	// Determine lifecycle state based on whether review is needed
 	lifecycleState := "published"
 	if needsReview {
-		lifecycleState = "draft"
+		lifecycleState = "pending_review"
 	}
 	params := EventCreateParams{
 		ULID:           ulidValue,
-		Name:           normalized.Name,
-		Description:    normalized.Description,
+		Name:           validated.Name,
+		Description:    validated.Description,
 		LifecycleState: lifecycleState,
 		EventDomain:    "arts",
 		OrganizerID:    nil,
 		PrimaryVenueID: nil,
-		VirtualURL:     virtualURL(normalized),
-		ImageURL:       normalized.Image,
-		PublicURL:      normalized.URL,
-		Keywords:       normalized.Keywords,
-		LicenseURL:     licenseURL(normalized.License),
+		VirtualURL:     virtualURL(validated),
+		ImageURL:       validated.Image,
+		PublicURL:      validated.URL,
+		Keywords:       validated.Keywords,
+		LicenseURL:     licenseURL(validated.License),
 		LicenseStatus:  "cc0",
-		Confidence:     floatPtr(reviewConfidence(normalized, needsReview)),
+		Confidence:     floatPtr(reviewConfidence(validated, needsReview)),
 		OriginNodeID:   nil,
 	}
 
-	if normalized.Location != nil && normalized.Location.Name != "" {
+	if validated.Location != nil && validated.Location.Name != "" {
 		placeULID, err := ids.NewULID()
 		if err != nil {
 			return nil, fmt.Errorf("generate place ulid: %w", err)
@@ -155,10 +247,10 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		place, err := s.repo.UpsertPlace(ctx, PlaceCreateParams{
 			EntityCreateFields: EntityCreateFields{
 				ULID:            placeULID,
-				Name:            normalized.Location.Name,
-				AddressLocality: normalized.Location.AddressLocality,
-				AddressRegion:   normalized.Location.AddressRegion,
-				AddressCountry:  normalized.Location.AddressCountry,
+				Name:            validated.Location.Name,
+				AddressLocality: validated.Location.AddressLocality,
+				AddressRegion:   validated.Location.AddressRegion,
+				AddressCountry:  validated.Location.AddressCountry,
 			},
 		})
 		if err != nil {
@@ -167,7 +259,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		params.PrimaryVenueID = &place.ID
 	}
 
-	if normalized.Organizer != nil && normalized.Organizer.Name != "" {
+	if validated.Organizer != nil && validated.Organizer.Name != "" {
 		orgULID, err := ids.NewULID()
 		if err != nil {
 			return nil, fmt.Errorf("generate organizer ulid: %w", err)
@@ -175,15 +267,15 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		addressLocality := ""
 		addressRegion := ""
 		addressCountry := ""
-		if normalized.Location != nil {
-			addressLocality = normalized.Location.AddressLocality
-			addressRegion = normalized.Location.AddressRegion
-			addressCountry = normalized.Location.AddressCountry
+		if validated.Location != nil {
+			addressLocality = validated.Location.AddressLocality
+			addressRegion = validated.Location.AddressRegion
+			addressCountry = validated.Location.AddressCountry
 		}
 		org, err := s.repo.UpsertOrganization(ctx, OrganizationCreateParams{
 			EntityCreateFields: EntityCreateFields{
 				ULID:            orgULID,
-				Name:            normalized.Organizer.Name,
+				Name:            validated.Organizer.Name,
 				AddressLocality: addressLocality,
 				AddressRegion:   addressRegion,
 				AddressCountry:  addressCountry,
@@ -198,29 +290,92 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// Store the dedup hash so future ingestions can find this event
 	params.DedupHash = dedupHash
 
-	event, err := s.repo.Create(ctx, params)
+	// Wrap event creation, occurrence creation, source recording, and review queue entry
+	// in a transaction to ensure atomicity. If any operation fails, all changes are rolled back.
+	txRepo, tx, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	event, err := txRepo.Create(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.createOccurrences(ctx, event, normalized); err != nil {
+	if err := s.createOccurrencesWithRepo(ctx, txRepo, event, validated); err != nil {
 		return nil, err
 	}
 
-	if err := s.recordSource(ctx, event, normalized, sourceID); err != nil {
+	if err := s.recordSourceWithRepo(ctx, txRepo, event, validated, sourceID); err != nil {
 		return nil, err
+	}
+
+	// Create review queue entry if needed
+	if needsReview {
+		originalJSON, err := toJSON(input)
+		if err != nil {
+			return nil, fmt.Errorf("marshal original payload: %w", err)
+		}
+		normalizedJSON, err := toJSON(validated)
+		if err != nil {
+			return nil, fmt.Errorf("marshal normalized payload: %w", err)
+		}
+		warningsJSON, err := toJSON(warnings)
+		if err != nil {
+			return nil, fmt.Errorf("marshal warnings: %w", err)
+		}
+
+		var externalID *string
+		if validated.Source != nil && validated.Source.EventID != "" {
+			externalID = &validated.Source.EventID
+		}
+		var dedupHashPtr *string
+		if dedupHash != "" {
+			dedupHashPtr = &dedupHash
+		}
+		var sourceIDPtr *string
+		if sourceID != "" {
+			sourceIDPtr = &sourceID
+		}
+
+		startTime, endTime := parseEventTimes(validated)
+		_, err = txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+			EventID:           event.ID, // Use UUID, not ULID
+			OriginalPayload:   originalJSON,
+			NormalizedPayload: normalizedJSON,
+			Warnings:          warningsJSON,
+			SourceID:          sourceIDPtr,
+			SourceExternalID:  externalID,
+			DedupHash:         dedupHashPtr,
+			EventStartTime:    startTime,
+			EventEndTime:      endTime,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create review queue entry: %w", err)
+		}
 	}
 
 	if strings.TrimSpace(idempotencyKey) != "" {
-		if err := s.repo.UpdateIdempotencyKeyEvent(ctx, idempotencyKey, event.ID, event.ULID); err != nil {
+		if err := txRepo.UpdateIdempotencyKeyEvent(ctx, idempotencyKey, event.ID, event.ULID); err != nil {
 			return nil, err
 		}
 	}
 
-	return &IngestResult{Event: event, NeedsReview: needsReview}, nil
+	// Commit transaction - all operations succeeded
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings}, nil
 }
 
-func (s *IngestService) createOccurrences(ctx context.Context, event *Event, input EventInput) error {
+// createOccurrencesWithRepo creates occurrences using the provided repository (supports transactions)
+func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repository, event *Event, input EventInput) error {
 	if event == nil {
 		return fmt.Errorf("create occurrences: missing event")
 	}
@@ -247,7 +402,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 			VenueID:    venueID,
 			VirtualURL: virtual,
 		}
-		return s.repo.CreateOccurrence(ctx, occurrence)
+		return repo.CreateOccurrence(ctx, occurrence)
 	}
 
 	for _, occ := range input.Occurrences {
@@ -280,7 +435,7 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 			VenueID:    nullableString(occ.VenueID),
 			VirtualURL: nullableString(occ.VirtualURL),
 		}
-		if err := s.repo.CreateOccurrence(ctx, occurrence); err != nil {
+		if err := repo.CreateOccurrence(ctx, occurrence); err != nil {
 			return fmt.Errorf("create occurrence: %w", err)
 		}
 	}
@@ -288,7 +443,8 @@ func (s *IngestService) createOccurrences(ctx context.Context, event *Event, inp
 	return nil
 }
 
-func (s *IngestService) recordSource(ctx context.Context, event *Event, input EventInput, sourceID string) error {
+// recordSourceWithRepo records the source using the provided repository (supports transactions)
+func (s *IngestService) recordSourceWithRepo(ctx context.Context, repo Repository, event *Event, input EventInput, sourceID string) error {
 	if input.Source == nil || input.Source.URL == "" || sourceID == "" {
 		return nil
 	}
@@ -301,14 +457,14 @@ func (s *IngestService) recordSource(ctx context.Context, event *Event, input Ev
 
 	params := EventSourceCreateParams{
 		EventID:       event.ID,
-		SourceID:      sourceID,
 		SourceURL:     input.Source.URL,
 		SourceEventID: input.Source.EventID,
+		SourceID:      sourceID,
 		Payload:       payload,
 		PayloadHash:   hex.EncodeToString(payloadHash[:]),
 	}
 
-	return s.repo.CreateSource(ctx, params)
+	return repo.CreateSource(ctx, params)
 }
 
 func primaryVenueKey(input EventInput) string {
@@ -478,4 +634,91 @@ func hashInput(input EventInput) (string, error) {
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// Helper functions for review queue workflow
+
+// stillHasSameIssues checks if the new warnings match the previously rejected warnings
+func stillHasSameIssues(oldWarningsJSON []byte, newWarnings []ValidationWarning) bool {
+	if len(oldWarningsJSON) == 0 {
+		return len(newWarnings) == 0
+	}
+
+	var oldWarnings []ValidationWarning
+	if err := json.Unmarshal(oldWarningsJSON, &oldWarnings); err != nil {
+		return false
+	}
+
+	// Build maps of warning codes for comparison
+	oldCodes := make(map[string]bool)
+	for _, w := range oldWarnings {
+		oldCodes[w.Code] = true
+	}
+	newCodes := make(map[string]bool)
+	for _, w := range newWarnings {
+		newCodes[w.Code] = true
+	}
+
+	// Check if the sets of warning codes match
+	if len(oldCodes) != len(newCodes) {
+		return false
+	}
+	for code := range oldCodes {
+		if !newCodes[code] {
+			return false
+		}
+	}
+	return true
+}
+
+// isEventPast checks if an event has already ended
+func isEventPast(endTime *time.Time) bool {
+	if endTime == nil {
+		return false
+	}
+	return endTime.Before(time.Now())
+}
+
+// toJSON marshals a value to JSON
+func toJSON(v any) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+// parseEventTimes extracts start and end times from validated event input
+func parseEventTimes(input EventInput) (time.Time, *time.Time) {
+	start, err := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
+	if err != nil {
+		start = time.Now() // fallback, should not happen after validation
+	}
+
+	var end *time.Time
+	if input.EndDate != "" {
+		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(input.EndDate))
+		if err == nil {
+			end = &parsed
+		}
+	}
+
+	return start, end
+}
+
+// stringOrEmpty safely extracts string from pointer or returns empty string
+func stringOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// timeOrZero safely extracts time from pointer or returns zero time
+func timeOrZero(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}
+
+// Helper functions shared with tests
+func stringPtr(s string) *string {
+	return &s
 }

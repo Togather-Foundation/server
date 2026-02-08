@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -126,13 +127,30 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Conflict", err, h.Env)
 			return
 		}
+
+		// Check if event was previously rejected
+		var rejErr events.ErrPreviouslyRejected
+		if errors.As(err, &rejErr) {
+			problem.Write(w, r, http.StatusBadRequest,
+				"https://sel.events/problems/previously-rejected",
+				"Previously Rejected",
+				fmt.Errorf("This event was reviewed on %s and rejected: %s",
+					rejErr.ReviewedAt.Format(time.RFC3339), rejErr.Reason),
+				h.Env)
+			return
+		}
+
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
 	}
 
+	// Determine HTTP status code
 	status := http.StatusCreated
 	if result != nil && result.IsDuplicate {
 		status = http.StatusConflict
+	} else if result != nil && result.NeedsReview {
+		// Event queued for admin review - return 202 Accepted
+		status = http.StatusAccepted
 	}
 
 	location := eventLocationPayload(input)
@@ -144,6 +162,22 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if location != nil {
 		payload["location"] = location
+	}
+
+	// Include lifecycle_state and warnings for events needing review
+	if result != nil && result.NeedsReview {
+		payload["lifecycle_state"] = "pending_review"
+		if len(result.Warnings) > 0 {
+			warnings := make([]map[string]any, len(result.Warnings))
+			for i, w := range result.Warnings {
+				warnings[i] = map[string]any{
+					"field":   w.Field,
+					"code":    w.Code,
+					"message": w.Message,
+				}
+			}
+			payload["warnings"] = warnings
+		}
 	}
 
 	writeJSON(w, status, payload, contentTypeFromRequest(r))

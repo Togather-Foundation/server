@@ -153,6 +153,16 @@ type Repository interface {
 	GetTombstoneByEventID(ctx context.Context, eventID string) (*Tombstone, error)
 	GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error)
 
+	// Review Queue operations
+	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)
+	CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
+	UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
+	GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
+	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
+	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
+	CleanupExpiredReviews(ctx context.Context) error
+
 	// Transaction support
 	BeginTx(ctx context.Context) (Repository, TxCommitter, error)
 }
@@ -210,4 +220,59 @@ type OrganizationCreateParams struct {
 type OrganizationRecord struct {
 	ID   string
 	ULID string
+}
+
+// ReviewQueueEntry represents an event in the review queue
+type ReviewQueueEntry struct {
+	ID                int
+	EventID           string // UUID (events.id)
+	EventULID         string // ULID (events.ulid) - populated via JOIN
+	OriginalPayload   []byte
+	NormalizedPayload []byte
+	Warnings          []byte
+	SourceID          *string
+	SourceExternalID  *string
+	DedupHash         *string
+	EventStartTime    time.Time
+	EventEndTime      *time.Time
+	Status            string
+	ReviewedBy        *string
+	ReviewedAt        *time.Time
+	ReviewNotes       *string
+	RejectionReason   *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// ReviewQueueCreateParams contains data for creating a review queue entry
+type ReviewQueueCreateParams struct {
+	EventID           string
+	OriginalPayload   []byte
+	NormalizedPayload []byte
+	Warnings          []byte
+	SourceID          *string
+	SourceExternalID  *string
+	DedupHash         *string
+	EventStartTime    time.Time
+	EventEndTime      *time.Time
+}
+
+// ReviewQueueUpdateParams contains data for updating a review queue entry
+type ReviewQueueUpdateParams struct {
+	OriginalPayload   *[]byte
+	NormalizedPayload *[]byte
+	Warnings          *[]byte
+}
+
+// ReviewQueueFilters contains filters for listing review queue entries
+type ReviewQueueFilters struct {
+	Status     *string
+	Limit      int
+	NextCursor *int
+}
+
+// ReviewQueueListResult contains paginated review queue results
+type ReviewQueueListResult struct {
+	Entries    []ReviewQueueEntry
+	NextCursor *int
 }

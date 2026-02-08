@@ -27,6 +27,17 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
 }
 
+type ValidationWarning struct {
+	Field   string
+	Message string
+	Code    string // Machine-readable code (e.g., "reversed_dates", "suspicious_duration")
+}
+
+type ValidationResult struct {
+	Input    EventInput
+	Warnings []ValidationWarning
+}
+
 type EventInput struct {
 	ID                  string                `json:"@id,omitempty"`
 	Type                string                `json:"@type,omitempty"`
@@ -97,142 +108,320 @@ type OccurrenceInput struct {
 }
 
 func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error) {
+	result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil)
+	if err != nil {
+		return input, err
+	}
+	return result.Input, nil
+}
+
+// ValidateEventInputWithWarnings validates event input and returns warnings for suspicious data
+// that should trigger admin review rather than outright rejection.
+//
+// If original is provided (non-nil), it compares original dates with normalized dates to detect
+// auto-corrections (like correctEndDateTimezoneError) and generates appropriate warnings.
+func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, original *EventInput) (*ValidationResult, error) {
+	var warnings []ValidationWarning
+
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
-		return input, ValidationError{Field: "name", Message: "required"}
+		return nil, ValidationError{Field: "name", Message: "required"}
 	}
 	if utf8.RuneCountInString(name) > maxNameLength {
-		return input, ValidationError{Field: "name", Message: "too long"}
+		return nil, ValidationError{Field: "name", Message: "too long"}
 	}
 
 	if utf8.RuneCountInString(strings.TrimSpace(input.Description)) > maxDescriptionLength {
-		return input, ValidationError{Field: "description", Message: "too long"}
+		return nil, ValidationError{Field: "description", Message: "too long"}
 	}
 
-	startTime, err := parseRFC3339("startDate", input.StartDate)
-	if err != nil {
-		return input, err
+	// Validate top-level dates if provided (optional if occurrences exist)
+	var startTime *time.Time
+	var endTime *time.Time
+	var err error
+
+	if input.StartDate != "" {
+		startTime, err = parseRFC3339("startDate", input.StartDate)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	endTime, err := parseRFC3339Optional("endDate", input.EndDate)
-	if err != nil {
-		return input, err
+	if input.EndDate != "" {
+		endTime, err = parseRFC3339Optional("endDate", input.EndDate)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if endTime != nil && endTime.Before(*startTime) {
-		return input, ValidationError{Field: "endDate", Message: "must be on or after startDate"}
+
+	// Detect if normalization auto-corrected reversed dates (only relevant if top-level dates exist)
+	// This happens when original had reversed dates but normalized input has corrected dates
+	if startTime != nil && original != nil && original.EndDate != "" && input.EndDate != "" && original.EndDate != input.EndDate {
+		// Parse original dates to check if they were reversed
+		origStart, origStartErr := time.Parse(time.RFC3339, strings.TrimSpace(original.StartDate))
+		origEnd, origEndErr := time.Parse(time.RFC3339, strings.TrimSpace(original.EndDate))
+
+		if origStartErr == nil && origEndErr == nil && origEnd.Before(origStart) {
+			// Original dates were reversed, normalization corrected them
+			// Generate appropriate warning based on the pattern
+			gap := origStart.Sub(origEnd)
+			origEndHour := origEnd.Hour() // 0-23 in UTC
+
+			// Check if this matches the timezone error pattern:
+			// - Early morning end (0-4 AM)
+			// - Corrected duration < 7h
+			if origEndHour <= 4 && endTime != nil {
+				correctedDuration := endTime.Sub(*startTime)
+				if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+					// High-confidence timezone error correction
+					warnings = append(warnings, ValidationWarning{
+						Field:   "endDate",
+						Message: fmt.Sprintf("endDate was %v before startDate (ending at %02d:00) - auto-corrected as likely timezone error", gap, origEndHour),
+						Code:    "reversed_dates_timezone_likely",
+					})
+				} else {
+					// Early morning but unreasonable duration - needs review
+					warnings = append(warnings, ValidationWarning{
+						Field:   "endDate",
+						Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+						Code:    "reversed_dates_corrected_needs_review",
+					})
+				}
+			} else {
+				// Not early morning - needs review
+				warnings = append(warnings, ValidationWarning{
+					Field:   "endDate",
+					Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+					Code:    "reversed_dates_corrected_needs_review",
+				})
+			}
+		}
+	}
+
+	// Check for reversed dates - this triggers admin review instead of rejection
+	if startTime != nil && endTime != nil && endTime.Before(*startTime) {
+		gap := startTime.Sub(*endTime)
+		endHour := endTime.Hour() // 0-23 in UTC
+
+		// Two categories: timezone_likely (auto-fixed) or needs review
+		if endHour <= 4 {
+			// Early morning end suggests overnight event
+			// Check if corrected event (adding 24h) would be reasonable duration
+			correctedEnd := endTime.Add(24 * time.Hour)
+			correctedDuration := correctedEnd.Sub(*startTime)
+
+			if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+				// Very likely a timezone error on an overnight event
+				// (normalization should have fixed this, but if not, flag it)
+				warnings = append(warnings, ValidationWarning{
+					Field:   "endDate",
+					Message: fmt.Sprintf("endDate is %v before startDate and ends at %02d:00 - likely timezone conversion error", gap, endHour),
+					Code:    "reversed_dates_timezone_likely",
+				})
+			} else {
+				// Early morning but corrected duration is unreasonable - needs review
+				warnings = append(warnings, ValidationWarning{
+					Field:   "endDate",
+					Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+					Code:    "reversed_dates_corrected_needs_review",
+				})
+			}
+		} else {
+			// Not early morning - needs review
+			warnings = append(warnings, ValidationWarning{
+				Field:   "endDate",
+				Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+				Code:    "reversed_dates_corrected_needs_review",
+			})
+		}
 	}
 
 	if _, err := parseRFC3339Optional("doorTime", input.DoorTime); err != nil {
-		return input, err
+		return nil, err
 	}
 
 	if input.Location == nil && input.VirtualLocation == nil {
-		return input, ValidationError{Field: "location", Message: "location or virtualLocation required"}
+		return nil, ValidationError{Field: "location", Message: "location or virtualLocation required"}
 	}
 	if input.Location != nil {
 		if err := validatePlaceInput(*input.Location, nodeDomain); err != nil {
-			return input, err
+			return nil, err
 		}
 	}
 	if input.VirtualLocation != nil {
 		if err := validateVirtualLocationInput(*input.VirtualLocation); err != nil {
-			return input, err
+			return nil, err
 		}
 	}
 	if input.Organizer != nil {
 		if err := validateOrganizationInput(*input.Organizer, nodeDomain); err != nil {
-			return input, err
+			return nil, err
 		}
 	}
 
 	if input.Image != "" {
 		if err := validateURL(input.Image); err != nil {
-			return input, ValidationError{Field: "image", Message: "invalid URI"}
+			return nil, ValidationError{Field: "image", Message: "invalid URI"}
 		}
 	}
 	if input.URL != "" {
 		if err := validateURL(input.URL); err != nil {
-			return input, ValidationError{Field: "url", Message: "invalid URI"}
+			return nil, ValidationError{Field: "url", Message: "invalid URI"}
 		}
 	}
 
 	if input.ID != "" {
 		if err := validateCanonicalURI(nodeDomain, "events", input.ID); err != nil {
-			return input, ValidationError{Field: "@id", Message: "invalid canonical URI"}
+			return nil, ValidationError{Field: "@id", Message: "invalid canonical URI"}
 		}
 	}
 
 	if input.License != "" && !isCC0License(input.License) {
-		return input, ValidationError{Field: "license", Message: "must be CC0"}
+		return nil, ValidationError{Field: "license", Message: "must be CC0"}
 	}
 
 	if len(input.SameAs) > 0 {
 		normalized, err := normalizeSameAs(nodeDomain, "events", input.SameAs)
 		if err != nil {
-			return input, fmt.Errorf("normalize sameAs: %w", err)
+			return nil, fmt.Errorf("normalize sameAs: %w", err)
 		}
 		input.SameAs = normalized
 	}
 
 	if input.Source != nil && input.Source.URL != "" {
 		if err := validateURL(input.Source.URL); err != nil {
-			return input, ValidationError{Field: "source.url", Message: "invalid URI"}
+			return nil, ValidationError{Field: "source.url", Message: "invalid URI"}
 		}
 		if strings.TrimSpace(input.Source.EventID) == "" {
-			return input, ValidationError{Field: "source.eventId", Message: "required"}
+			return nil, ValidationError{Field: "source.eventId", Message: "required"}
 		}
 	}
 
-	if err := validateOccurrences(input, nodeDomain); err != nil {
-		return input, err
+	occurrenceWarnings, err := validateOccurrences(input, nodeDomain, original)
+	if err != nil {
+		return nil, err
 	}
+	warnings = append(warnings, occurrenceWarnings...)
 
 	input.Name = name
-	return input, nil
+	return &ValidationResult{Input: input, Warnings: warnings}, nil
 }
 
-func validateOccurrences(input EventInput, nodeDomain string) error {
+func validateOccurrences(input EventInput, nodeDomain string, original *EventInput) ([]ValidationWarning, error) {
+	var warnings []ValidationWarning
+
 	if len(input.Occurrences) == 0 {
 		if input.StartDate == "" {
-			return ValidationError{Field: "occurrences", Message: "required"}
+			return nil, ValidationError{Field: "occurrences", Message: "required"}
 		}
-		return nil
+		return nil, nil
 	}
 
 	for i, occ := range input.Occurrences {
 		fieldPrefix := fmt.Sprintf("occurrences[%d]", i)
 		startTime, err := parseRFC3339(fieldPrefix+".startDate", occ.StartDate)
 		if err != nil {
-			return fmt.Errorf("parse occurrence start date: %w", err)
+			return nil, fmt.Errorf("parse occurrence start date: %w", err)
 		}
 		endTime, err := parseRFC3339Optional(fieldPrefix+".endDate", occ.EndDate)
 		if err != nil {
-			return fmt.Errorf("parse occurrence end date: %w", err)
+			return nil, fmt.Errorf("parse occurrence end date: %w", err)
 		}
+
+		// Detect if normalization auto-corrected this occurrence's reversed dates
+		if original != nil && i < len(original.Occurrences) {
+			origOcc := original.Occurrences[i]
+			if origOcc.EndDate != "" && occ.EndDate != "" && origOcc.EndDate != occ.EndDate {
+				// Parse original occurrence dates to check if they were reversed
+				origStart, origStartErr := time.Parse(time.RFC3339, strings.TrimSpace(origOcc.StartDate))
+				origEnd, origEndErr := time.Parse(time.RFC3339, strings.TrimSpace(origOcc.EndDate))
+
+				if origStartErr == nil && origEndErr == nil && origEnd.Before(origStart) {
+					// Original dates were reversed, normalization corrected them
+					gap := origStart.Sub(origEnd)
+					origEndHour := origEnd.Hour()
+
+					if origEndHour <= 4 && endTime != nil {
+						correctedDuration := endTime.Sub(*startTime)
+						if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+							// High-confidence timezone error correction
+							warnings = append(warnings, ValidationWarning{
+								Field:   fieldPrefix + ".endDate",
+								Message: fmt.Sprintf("endDate was %v before startDate (ending at %02d:00) - auto-corrected as likely timezone error", gap, origEndHour),
+								Code:    "reversed_dates_timezone_likely",
+							})
+						} else {
+							// Early morning but unreasonable duration - needs review
+							warnings = append(warnings, ValidationWarning{
+								Field:   fieldPrefix + ".endDate",
+								Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+								Code:    "reversed_dates_corrected_needs_review",
+							})
+						}
+					} else {
+						// Not early morning - needs review
+						warnings = append(warnings, ValidationWarning{
+							Field:   fieldPrefix + ".endDate",
+							Message: fmt.Sprintf("endDate was %v before startDate - auto-corrected but needs review", gap),
+							Code:    "reversed_dates_corrected_needs_review",
+						})
+					}
+				}
+			}
+		}
+
+		// Check for reversed dates that weren't corrected - generate warnings instead of errors
 		if endTime != nil && endTime.Before(*startTime) {
-			return ValidationError{Field: fieldPrefix + ".endDate", Message: "must be on or after startDate"}
+			gap := startTime.Sub(*endTime)
+			endHour := endTime.Hour()
+
+			if endHour <= 4 {
+				correctedEnd := endTime.Add(24 * time.Hour)
+				correctedDuration := correctedEnd.Sub(*startTime)
+
+				if correctedDuration > 0 && correctedDuration < 7*time.Hour {
+					warnings = append(warnings, ValidationWarning{
+						Field:   fieldPrefix + ".endDate",
+						Message: fmt.Sprintf("endDate is %v before startDate and ends at %02d:00 - likely timezone conversion error", gap, endHour),
+						Code:    "reversed_dates_timezone_likely",
+					})
+				} else {
+					warnings = append(warnings, ValidationWarning{
+						Field:   fieldPrefix + ".endDate",
+						Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+						Code:    "reversed_dates_corrected_needs_review",
+					})
+				}
+			} else {
+				warnings = append(warnings, ValidationWarning{
+					Field:   fieldPrefix + ".endDate",
+					Message: fmt.Sprintf("endDate is %v before startDate - needs review", gap),
+					Code:    "reversed_dates_corrected_needs_review",
+				})
+			}
 		}
+
 		if _, err := parseRFC3339Optional(fieldPrefix+".doorTime", occ.DoorTime); err != nil {
-			return fmt.Errorf("parse occurrence door time: %w", err)
+			return nil, fmt.Errorf("parse occurrence door time: %w", err)
 		}
 		if occ.Timezone != "" {
 			if _, err := time.LoadLocation(strings.TrimSpace(occ.Timezone)); err != nil {
-				return ValidationError{Field: fieldPrefix + ".timezone", Message: "invalid timezone"}
+				return nil, ValidationError{Field: fieldPrefix + ".timezone", Message: "invalid timezone"}
 			}
 		}
 		if occ.VirtualURL != "" {
 			if err := validateURL(occ.VirtualURL); err != nil {
-				return ValidationError{Field: fieldPrefix + ".virtualUrl", Message: "invalid URI"}
+				return nil, ValidationError{Field: fieldPrefix + ".virtualUrl", Message: "invalid URI"}
 			}
 		}
 		if occ.VenueID != "" {
 			if err := validateCanonicalURI(nodeDomain, "places", occ.VenueID); err != nil {
-				return ValidationError{Field: fieldPrefix + ".venueId", Message: "invalid canonical URI"}
+				return nil, ValidationError{Field: fieldPrefix + ".venueId", Message: "invalid canonical URI"}
 			}
 		}
 	}
 
-	return nil
+	return warnings, nil
 }
 
 func validatePlaceInput(place PlaceInput, nodeDomain string) error {
