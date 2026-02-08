@@ -3,11 +3,13 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,6 +30,41 @@ func assertJSONEqual(t *testing.T, expected, actual []byte, msgAndArgs ...interf
 	return assert.Equal(t, expectedData, actualData, msgAndArgs...)
 }
 
+// reviewQueueTestEvent creates a unique event suitable for review queue testing.
+// Each call creates a new event with a unique ULID, avoiding duplicate key violations
+// on the event_review_queue.event_id unique constraint.
+func reviewQueueTestEvent(t *testing.T, ctx context.Context, repo *EventRepository, place seededEntity) (eventID string, startTime time.Time) {
+	t.Helper()
+
+	eventULID := ulid.Make().String()
+	startTime = time.Date(2025, 3, 31, 23, 0, 0, 0, time.UTC)
+
+	eventParams := events.EventCreateParams{
+		ULID:           eventULID,
+		Name:           fmt.Sprintf("Test Event %s", eventULID[:8]),
+		Description:    "Test event for review queue",
+		LifecycleState: "pending_review",
+		EventDomain:    "arts",
+		PrimaryVenueID: &place.ID,
+		LicenseURL:     "https://creativecommons.org/publicdomain/zero/1.0/",
+		LicenseStatus:  "cc0",
+	}
+	event, err := repo.Create(ctx, eventParams)
+	require.NoError(t, err)
+	require.NotNil(t, event)
+
+	occParams := events.OccurrenceCreateParams{
+		EventID:   event.ID,
+		StartTime: startTime,
+		VenueID:   &place.ID,
+		Timezone:  "America/Toronto",
+	}
+	err = repo.CreateOccurrence(ctx, occParams)
+	require.NoError(t, err)
+
+	return event.ID, startTime
+}
+
 func TestEventRepository_ReviewQueue(t *testing.T) {
 	ctx := context.Background()
 	container, dbURL := setupPostgres(t, ctx)
@@ -43,37 +80,10 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 
 	repo := &EventRepository{pool: pool}
 
-	// Create test venue first
+	// Create test venue (shared across subtests)
 	place := insertPlace(t, ctx, pool, "Test Venue", "Toronto", "ON")
 
-	// Create a test event first (needed for foreign key)
-	eventParams := events.EventCreateParams{
-		ULID:           "01HQRS7T8G0000000000000001",
-		Name:           "Test Event",
-		Description:    "Test event for review queue",
-		LifecycleState: "pending_review",
-		EventDomain:    "arts",
-		PrimaryVenueID: &place.ID,
-		LicenseURL:     "https://creativecommons.org/publicdomain/zero/1.0/",
-		LicenseStatus:  "cc0",
-	}
-	event, err := repo.Create(ctx, eventParams)
-	require.NoError(t, err)
-	require.NotNil(t, event)
-	eventID := event.ID // Use the actual event ID from database
-
-	// Add an occurrence (required by event_location_required constraint)
-	startTime := time.Date(2025, 3, 31, 23, 0, 0, 0, time.UTC)
-	occParams := events.OccurrenceCreateParams{
-		EventID:   eventID,
-		StartTime: startTime,
-		VenueID:   &place.ID,
-		Timezone:  "America/Toronto",
-	}
-	err = repo.CreateOccurrence(ctx, occParams)
-	require.NoError(t, err)
-
-	// Test data
+	// Shared test data templates
 	originalPayload, _ := json.Marshal(map[string]interface{}{
 		"name":      "Test Event",
 		"startDate": "2025-03-31T23:00:00Z",
@@ -100,6 +110,8 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	endTime := time.Date(2025, 4, 1, 2, 0, 0, 0, time.UTC)
 
 	t.Run("CreateReviewQueueEntry", func(t *testing.T) {
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
@@ -130,7 +142,8 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("GetReviewQueueEntry", func(t *testing.T) {
-		// Create an entry first
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
@@ -157,14 +170,18 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("FindReviewByDedup_BySourceID", func(t *testing.T) {
-		// Create an entry
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
+		findSourceID := "find-source-" + ulid.Make().String()[:8]
+		findExternalID := "find-ext-" + ulid.Make().String()[:8]
+
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
 			NormalizedPayload: normalizedPayload,
 			Warnings:          warnings,
-			SourceID:          &sourceID,
-			SourceExternalID:  &externalID,
+			SourceID:          &findSourceID,
+			SourceExternalID:  &findExternalID,
 			EventStartTime:    startTime,
 		}
 
@@ -172,14 +189,15 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 		require.NoError(t, err)
 
 		// Find by source ID
-		entry, err := repo.FindReviewByDedup(ctx, &sourceID, &externalID, nil)
+		entry, err := repo.FindReviewByDedup(ctx, &findSourceID, &findExternalID, nil)
 		require.NoError(t, err)
 		assert.Equal(t, created.ID, entry.ID)
 	})
 
 	t.Run("FindReviewByDedup_ByDedupHash", func(t *testing.T) {
-		// Create an entry
-		uniqueHash := "unique-hash-456"
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
+		uniqueHash := "unique-hash-" + ulid.Make().String()[:8]
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
@@ -206,7 +224,8 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("UpdateReviewQueueEntry", func(t *testing.T) {
-		// Create an entry
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
@@ -237,14 +256,15 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("ListReviewQueue", func(t *testing.T) {
-		// Create multiple entries
+		// Create 3 entries, each with a unique event
 		for i := 0; i < 3; i++ {
+			eid, st := reviewQueueTestEvent(t, ctx, repo, place)
 			params := events.ReviewQueueCreateParams{
-				EventID:           eventID,
+				EventID:           eid,
 				OriginalPayload:   originalPayload,
 				NormalizedPayload: normalizedPayload,
 				Warnings:          warnings,
-				EventStartTime:    startTime,
+				EventStartTime:    st,
 			}
 
 			_, err := repo.CreateReviewQueueEntry(ctx, params)
@@ -255,7 +275,7 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 		status := "pending"
 		filters := events.ReviewQueueFilters{
 			Status: &status,
-			Limit:  10,
+			Limit:  100,
 		}
 
 		result, err := repo.ListReviewQueue(ctx, filters)
@@ -264,7 +284,8 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("ApproveReview", func(t *testing.T) {
-		// Create an entry
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
@@ -288,7 +309,8 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("RejectReview", func(t *testing.T) {
-		// Create an entry
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,
@@ -312,6 +334,8 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	})
 
 	t.Run("CleanupExpiredReviews", func(t *testing.T) {
+		eventID, _ := reviewQueueTestEvent(t, ctx, repo, place)
+
 		// Create a rejected review for a past event
 		pastStart := time.Now().Add(-10 * 24 * time.Hour)
 		pastEnd := time.Now().Add(-9 * 24 * time.Hour)
@@ -358,40 +382,14 @@ func TestEventRepository_ReviewQueue_Pagination(t *testing.T) {
 
 	repo := &EventRepository{pool: pool}
 
-	// Create test venue first
+	// Create test venue
 	place := insertPlace(t, ctx, pool, "Test Venue 2", "Toronto", "ON")
 
-	// Create a test event
-	eventParams := events.EventCreateParams{
-		ULID:           "01HQRS7T8G0000000000000002",
-		Name:           "Test Event for Pagination",
-		Description:    "Test event",
-		LifecycleState: "pending_review",
-		EventDomain:    "arts",
-		PrimaryVenueID: &place.ID,
-		LicenseURL:     "https://creativecommons.org/publicdomain/zero/1.0/",
-		LicenseStatus:  "cc0",
-	}
-	event, err := repo.Create(ctx, eventParams)
-	require.NoError(t, err)
-	eventID := event.ID // Use the actual event ID from database
-
-	// Add an occurrence (required by event_location_required constraint)
-	occStartTime := time.Now()
-	occParams := events.OccurrenceCreateParams{
-		EventID:   eventID,
-		StartTime: occStartTime,
-		VenueID:   &place.ID,
-		Timezone:  "America/Toronto",
-	}
-	err = repo.CreateOccurrence(ctx, occParams)
-	require.NoError(t, err)
-
-	// Create 5 review entries
+	// Create 5 review entries, each with a unique event
 	originalPayload, _ := json.Marshal(map[string]interface{}{"test": "data"})
-	startTime := time.Now()
 
 	for i := 0; i < 5; i++ {
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
 		params := events.ReviewQueueCreateParams{
 			EventID:           eventID,
 			OriginalPayload:   originalPayload,

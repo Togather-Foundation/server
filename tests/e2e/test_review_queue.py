@@ -18,14 +18,10 @@ Tests:
 
 import sys
 import os
+import re
+import subprocess
+from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
-
-# Import test fixtures
-sys.path.insert(0, os.path.dirname(__file__))
-from fixtures.review_queue_fixture import (
-    setup_review_queue_fixtures,
-    cleanup_review_queue_fixtures,
-)
 
 
 # Configuration
@@ -446,14 +442,15 @@ def test_reject_modal_requires_reason(page, fixture_data):
     # Try to confirm without entering reason
     confirm_btn = modal.locator("#confirm-reject-btn")
     confirm_btn.click()
-    page.wait_for_timeout(500)
 
-    # Verify validation error appears
-    reason_textarea = modal.locator("#reject-reason")
-    expect(reason_textarea).to_have_class("form-control is-invalid")
-
+    # Wait for validation to trigger - the error message should appear
     error_div = modal.locator("#reject-reason-error")
-    expect(error_div).to_have_text("Reason is required")
+    expect(error_div).to_have_text("Reason is required", timeout=3000)
+
+    # Also verify the textarea has the is-invalid class (using attribute check)
+    reason_textarea = modal.locator("#reject-reason")
+    class_attr = reason_textarea.get_attribute("class")
+    assert "is-invalid" in class_attr, f"Expected is-invalid class, got: {class_attr}"
 
     # Close modal
     close_btn = modal.locator(".btn-close")
@@ -623,19 +620,95 @@ def test_unauthenticated_access_redirects(page):
         print("  ✓ Unauthenticated access correctly redirected")
 
 
+def setup_fixtures_via_bash():
+    """Setup test fixtures using bash script and Go commands"""
+    script_dir = Path(__file__).parent
+    setup_script = script_dir / "setup_fixtures.sh"
+
+    if not setup_script.exists():
+        raise FileNotFoundError(f"Setup script not found: {setup_script}")
+
+    print("\n" + "=" * 60)
+    print("Setting up Review Queue Test Fixtures (via Go)")
+    print("=" * 60 + "\n")
+
+    try:
+        # Run setup script with 5 fixtures
+        result = subprocess.run(
+            [str(setup_script), "5"],
+            cwd=script_dir.parent.parent,  # Project root
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            print(f"✗ Setup script failed with exit code {result.returncode}")
+            print(f"STDOUT:\n{result.stdout}")
+            print(f"STDERR:\n{result.stderr}")
+            raise RuntimeError("Setup script failed")
+
+        print(result.stdout)
+        print("✓ Fixtures setup completed via bash script\n")
+        return True
+
+    except subprocess.TimeoutExpired:
+        print("✗ Setup script timed out after 30 seconds")
+        raise
+    except Exception as e:
+        print(f"✗ Failed to setup fixtures: {e}")
+        raise
+
+
+def cleanup_fixtures_via_bash():
+    """Cleanup test fixtures using bash script"""
+    script_dir = Path(__file__).parent
+    cleanup_script = script_dir / "cleanup_fixtures.sh"
+
+    if not cleanup_script.exists():
+        print(f"⚠ Cleanup script not found: {cleanup_script}")
+        return
+
+    print("\n" + "=" * 60)
+    print("Cleaning up Review Queue Test Fixtures")
+    print("=" * 60 + "\n")
+
+    try:
+        result = subprocess.run(
+            [str(cleanup_script)],
+            cwd=script_dir.parent.parent,  # Project root
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            print(f"⚠ Cleanup script failed with exit code {result.returncode}")
+            print(f"STDERR:\n{result.stderr}")
+        else:
+            print(result.stdout)
+            print("✓ Fixtures cleanup completed\n")
+
+    except subprocess.TimeoutExpired:
+        print("⚠ Cleanup script timed out after 30 seconds")
+    except Exception as e:
+        print(f"⚠ Failed to cleanup fixtures: {e}")
+
+
 def run_all_tests():
     """Run all E2E tests for review queue"""
     print("\n" + "=" * 60)
     print("Running Review Queue E2E Tests (Playwright)")
     print("=" * 60 + "\n")
 
-    # Setup test fixtures
-    fixture_data = None
+    # Setup test fixtures using bash script
+    fixture_data = True  # We have fixtures if setup succeeds
     try:
-        fixture_data = setup_review_queue_fixtures()
+        setup_fixtures_via_bash()
     except Exception as e:
         print(f"✗ Failed to setup fixtures: {e}")
         print("⚠ Continuing tests without fixtures (some may skip)")
+        fixture_data = None
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -711,7 +784,7 @@ def run_all_tests():
             # Cleanup fixtures
             if fixture_data:
                 try:
-                    cleanup_review_queue_fixtures(fixture_data)
+                    cleanup_fixtures_via_bash()
                 except Exception as e:
                     print(f"⚠ Warning: Failed to cleanup fixtures: {e}")
 

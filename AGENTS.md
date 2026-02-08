@@ -225,6 +225,10 @@ make test-race       # Tests with race detector
 make test-v          # Tests with verbose output
 make coverage        # Tests with coverage report (enforces 35% min threshold)
 
+# E2E / Playwright Tests (requires running server + uvx)
+make e2e             # Run all Python E2E tests (pytest + standalone)
+make e2e-pytest      # Run only pytest-based E2E tests
+
 # Linting
 make lint            # Run golangci-lint
 make lint-ci         # Lint exactly as CI does (5m timeout)
@@ -377,6 +381,7 @@ migrate create -ext sql -dir internal/storage/postgres/migrations -seq my_migrat
 - Use test factories for event/place/org fixtures.
 - Include JSON-LD validation tests against `shapes/*.ttl` where relevant.
 - Keep unit tests deterministic; isolate external dependencies with fakes.
+- **Browser E2E tests**: See [`tests/e2e/AGENTS.md`](tests/e2e/AGENTS.md) for writing and running Playwright tests against the admin UI. Use `make e2e` to run all browser tests (requires running server + `uvx`).
 
 ### Documentation
 

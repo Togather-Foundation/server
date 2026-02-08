@@ -564,3 +564,185 @@ func (g *Generator) randomMeetingCode() string {
 	}
 	return string(code)
 }
+
+// EventInputReversedDates generates an event with end date before start date (timezone issue).
+// This simulates a common data quality issue where late-night events (e.g., 11pm-2am)
+// have the end time on the same calendar day as the start, causing the end to appear
+// before the start when parsed as the same day.
+func (g *Generator) EventInputReversedDates() events.EventInput {
+	venue := g.randomVenue()
+	category := g.randomCategory()
+	organizer := g.randomOrganizer()
+	source := g.randomSource()
+
+	// Create a late-night event: 11pm start
+	startTime := g.randomFutureTime()
+	startTime = time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 23, 0, 0, 0, startTime.Location())
+
+	// End time at 2am on same date (which is actually wrong - should be next day)
+	endTime := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 2, 0, 0, 0, startTime.Location())
+
+	return events.EventInput{
+		Name:        g.generateTitle(category) + " (Late Night)",
+		Description: g.generateDescription(category) + " Event runs past midnight.",
+		StartDate:   startTime.Format(time.RFC3339),
+		EndDate:     endTime.Format(time.RFC3339), // This will be before startDate!
+		Location: &events.PlaceInput{
+			Name:            venue.Name,
+			StreetAddress:   venue.StreetAddress,
+			AddressLocality: venue.AddressLocality,
+			AddressRegion:   venue.AddressRegion,
+			AddressCountry:  venue.AddressCountry,
+			PostalCode:      venue.PostalCode,
+			Latitude:        venue.Latitude,
+			Longitude:       venue.Longitude,
+		},
+		Organizer: &events.OrganizationInput{
+			Name: organizer.Name,
+			URL:  organizer.URL,
+		},
+		Source: &events.SourceInput{
+			URL:     fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
+			EventID: fmt.Sprintf("evt-reversed-%d", g.rng.Intn(100000)),
+			Name:    source.Name,
+		},
+		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
+		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Keywords: g.randomKeywords(category),
+		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+}
+
+// EventInputMissingVenue generates an event with no venue location (only virtual or missing).
+// This tests handling of events that lack physical location data.
+func (g *Generator) EventInputMissingVenue() events.EventInput {
+	category := g.randomCategory()
+	startTime := g.randomFutureTime()
+	endTime := startTime.Add(time.Duration(g.rng.Intn(2)+1) * time.Hour)
+	organizer := g.randomOrganizer()
+	source := g.randomSource()
+
+	return events.EventInput{
+		Name:        g.generateTitle(category) + " (Online)",
+		Description: g.generateDescription(category),
+		StartDate:   startTime.Format(time.RFC3339),
+		EndDate:     endTime.Format(time.RFC3339),
+		// No Location field at all - should trigger review
+		VirtualLocation: &events.VirtualLocationInput{
+			Type: "VirtualLocation",
+			URL:  fmt.Sprintf("https://zoom.us/j/%d", g.rng.Intn(10000000000)),
+			Name: "Zoom Meeting",
+		},
+		Organizer: &events.OrganizationInput{
+			Name: organizer.Name,
+			URL:  organizer.URL,
+		},
+		Source: &events.SourceInput{
+			URL:     fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
+			EventID: fmt.Sprintf("evt-novenue-%d", g.rng.Intn(100000)),
+			Name:    source.Name,
+		},
+		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
+		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Keywords: g.randomKeywords(category),
+		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+}
+
+// EventInputLikelyDuplicate generates an event similar to another (for duplicate warnings).
+// Uses recognizable patterns in name and timing to simulate duplicate detection scenarios.
+func (g *Generator) EventInputLikelyDuplicate() events.EventInput {
+	venue := g.randomVenue()
+	startTime := g.randomFutureTime()
+	endTime := startTime.Add(2 * time.Hour)
+	organizer := g.randomOrganizer()
+	source := g.randomSource()
+
+	// Use a highly recognizable event name pattern that suggests duplication
+	eventName := "Weekly Community Meetup at " + venue.Name
+
+	return events.EventInput{
+		Name:        eventName,
+		Description: "Regular weekly community gathering. Bring your friends!",
+		StartDate:   startTime.Format(time.RFC3339),
+		EndDate:     endTime.Format(time.RFC3339),
+		Location: &events.PlaceInput{
+			Name:            venue.Name,
+			StreetAddress:   venue.StreetAddress,
+			AddressLocality: venue.AddressLocality,
+			AddressRegion:   venue.AddressRegion,
+			AddressCountry:  venue.AddressCountry,
+			PostalCode:      venue.PostalCode,
+			Latitude:        venue.Latitude,
+			Longitude:       venue.Longitude,
+		},
+		Organizer: &events.OrganizationInput{
+			Name: organizer.Name,
+			URL:  organizer.URL,
+		},
+		Source: &events.SourceInput{
+			URL:     fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
+			EventID: fmt.Sprintf("evt-dupe-%d", g.rng.Intn(100000)),
+			Name:    source.Name,
+		},
+		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
+		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Keywords: []string{"community", "meetup", "weekly", "toronto"},
+		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+}
+
+// EventInputMultipleWarnings generates an event with several data quality issues.
+// This simulates real-world scraper data with multiple fixable problems.
+func (g *Generator) EventInputMultipleWarnings() events.EventInput {
+	venue := g.randomVenue()
+	category := g.randomCategory()
+	source := g.randomSource()
+
+	startTime := g.randomFutureTime()
+
+	return events.EventInput{
+		Name: g.generateTitle(category),
+		// Missing: Description (should trigger review)
+		StartDate: startTime.Format("2006-01-02"), // Date only, no time (should trigger warning)
+		// Missing: EndDate (should be inferred)
+		Location: &events.PlaceInput{
+			Name: venue.Name,
+			// Missing: detailed address fields (partial location data)
+			AddressLocality: venue.AddressLocality,
+			AddressRegion:   venue.AddressRegion,
+		},
+		// Missing: Organizer
+		Source: &events.SourceInput{
+			URL:     fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
+			EventID: fmt.Sprintf("evt-multi-%d", g.rng.Intn(100000)),
+			Name:    source.Name,
+		},
+		// Missing: Image (should trigger review)
+		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Keywords: g.randomKeywords(category),
+		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+}
+
+// BatchReviewQueueInputs generates multiple review-triggering events with varied scenarios.
+// This is useful for populating a review queue with diverse test data.
+func (g *Generator) BatchReviewQueueInputs(count int) []events.EventInput {
+	inputs := make([]events.EventInput, count)
+
+	for i := 0; i < count; i++ {
+		// Rotate through different warning scenarios
+		switch i % 4 {
+		case 0:
+			inputs[i] = g.EventInputReversedDates()
+		case 1:
+			inputs[i] = g.EventInputMissingVenue()
+		case 2:
+			inputs[i] = g.EventInputLikelyDuplicate()
+		case 3:
+			inputs[i] = g.EventInputMultipleWarnings()
+		}
+	}
+
+	return inputs
+}
