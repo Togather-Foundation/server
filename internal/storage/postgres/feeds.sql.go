@@ -145,9 +145,9 @@ SELECT ec.id,
       FROM event_sources
      GROUP BY event_id
   ) es ON es.event_id = ec.event_id
- WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
-   AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
-   AND ($3::text = '' OR ec.action = $3::text)
+  WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
+    AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
+    AND ($3::text IS NULL OR ec.action = $3::text)
  ORDER BY ec.sequence_number ASC
  LIMIT $4
 `

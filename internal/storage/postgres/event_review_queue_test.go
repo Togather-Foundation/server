@@ -12,6 +12,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// assertJSONEqual compares two JSON byte slices semantically, ignoring formatting differences.
+// PostgreSQL JSONB normalization adds spaces after colons, so we need semantic comparison.
+func assertJSONEqual(t *testing.T, expected, actual []byte, msgAndArgs ...interface{}) bool {
+	t.Helper()
+	var expectedData, actualData interface{}
+	if err := json.Unmarshal(expected, &expectedData); err != nil {
+		t.Errorf("Failed to unmarshal expected JSON: %v", err)
+		return false
+	}
+	if err := json.Unmarshal(actual, &actualData); err != nil {
+		t.Errorf("Failed to unmarshal actual JSON: %v", err)
+		return false
+	}
+	return assert.Equal(t, expectedData, actualData, msgAndArgs...)
+}
+
 func TestEventRepository_ReviewQueue(t *testing.T) {
 	ctx := context.Background()
 	container, dbURL := setupPostgres(t, ctx)
@@ -102,9 +118,9 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 
 		assert.Greater(t, entry.ID, 0)
 		assert.Equal(t, eventID, entry.EventID)
-		assert.Equal(t, originalPayload, entry.OriginalPayload)
-		assert.Equal(t, normalizedPayload, entry.NormalizedPayload)
-		assert.Equal(t, warnings, entry.Warnings)
+		assertJSONEqual(t, originalPayload, entry.OriginalPayload, "OriginalPayload should match")
+		assertJSONEqual(t, normalizedPayload, entry.NormalizedPayload, "NormalizedPayload should match")
+		assertJSONEqual(t, warnings, entry.Warnings, "Warnings should match")
 		assert.Equal(t, &sourceID, entry.SourceID)
 		assert.Equal(t, &externalID, entry.SourceExternalID)
 		assert.Equal(t, &dedupHash, entry.DedupHash)
@@ -217,7 +233,7 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 
 		updated, err := repo.UpdateReviewQueueEntry(ctx, created.ID, updateParams)
 		require.NoError(t, err)
-		assert.Equal(t, newWarnings, updated.Warnings)
+		assertJSONEqual(t, newWarnings, updated.Warnings, "Updated warnings should match")
 	})
 
 	t.Run("ListReviewQueue", func(t *testing.T) {

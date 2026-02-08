@@ -22,9 +22,9 @@ SELECT ec.id,
       FROM event_sources
      GROUP BY event_id
   ) es ON es.event_id = ec.event_id
- WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
-   AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
-   AND (sqlc.narg('action')::text = '' OR ec.action = sqlc.narg('action')::text)
+  WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
+    AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
+    AND (sqlc.narg('action')::text IS NULL OR ec.action = sqlc.narg('action')::text)
  ORDER BY ec.sequence_number ASC
  LIMIT sqlc.arg('limit');
 
