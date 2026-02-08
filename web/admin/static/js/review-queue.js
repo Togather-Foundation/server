@@ -14,6 +14,10 @@
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
     
+    /**
+     * Initialize the review queue page
+     * Sets up event listeners and loads initial entries
+     */
     function init() {
         setupEventListeners();
         loadEntries();
@@ -76,7 +80,8 @@
     }
     
     /**
-     * Filter by status tab
+     * Filter entries by review status
+     * @param {string} status - Status to filter by ('pending', 'approved', 'rejected', 'all')
      */
     function filterByStatus(status) {
         currentFilter = status;
@@ -96,6 +101,9 @@
     
     /**
      * Load review queue entries from API
+     * Fetches entries based on current filter and cursor, handles pagination
+     * @async
+     * @throws {Error} If API request fails
      */
     async function loadEntries() {
         showLoading();
@@ -141,7 +149,8 @@
     }
     
     /**
-     * Render entries into table
+     * Render entries into table rows
+     * Creates HTML table rows for each entry with event name, start time, warnings, and actions
      */
     function renderTable() {
         const tbody = document.getElementById('review-queue-table');
@@ -180,6 +189,10 @@
     
     /**
      * Expand detail view for an entry
+     * Fetches full entry details from API and displays in expandable row below entry
+     * @async
+     * @param {string} id - Review queue entry ID
+     * @throws {Error} If API request fails
      */
     async function expandDetail(id) {
         // Collapse any currently expanded detail
@@ -223,6 +236,14 @@
     
     /**
      * Render detail card content
+     * Displays warnings, changes, original vs normalized data comparison, and action buttons
+     * @param {string} id - Review queue entry ID
+     * @param {Object} detail - Entry detail object from API
+     * @param {Array} detail.warnings - Array of warning objects
+     * @param {Array} detail.changes - Array of change objects with field, original, corrected, reason
+     * @param {Object} detail.original - Original event data
+     * @param {Object} detail.normalized - Normalized event data
+     * @param {string} detail.status - Review status ('pending', 'approved', 'rejected')
      */
     function renderDetailCard(id, detail) {
         const detailRow = document.getElementById(`detail-${id}`);
@@ -320,7 +341,11 @@
     }
     
     /**
-     * Render event data fields
+     * Render event data fields for comparison view
+     * @param {Object} data - Event data object containing name, startDate, endDate, location
+     * @param {Array} changes - Array of change objects to highlight differences
+     * @param {string} type - Type of data ('original' or 'normalized') for highlighting
+     * @returns {string} HTML string of formatted event fields
      */
     function renderEventData(data, changes, type) {
         const fields = [
@@ -355,6 +380,7 @@
     
     /**
      * Collapse detail view
+     * Removes the expanded detail row and resets expandedId state
      */
     function collapseDetail() {
         if (!expandedId) return;
@@ -368,7 +394,11 @@
     }
     
     /**
-     * Approve entry
+     * Approve a review queue entry
+     * Sends approval to API and removes entry from list if filtering by pending
+     * @async
+     * @param {string} id - Review queue entry ID
+     * @throws {Error} If API request fails
      */
     async function approve(id) {
         const button = document.querySelector(`[data-action="approve"][data-id="${id}"]`);
@@ -395,7 +425,9 @@
     }
     
     /**
-     * Show reject modal
+     * Show reject modal dialog
+     * Opens Bootstrap modal for entering rejection reason
+     * @param {string} id - Review queue entry ID to reject
      */
     function showRejectModal(id) {
         const modal = document.getElementById('reject-modal');
@@ -420,6 +452,9 @@
     
     /**
      * Confirm reject action
+     * Validates rejection reason, sends rejection to API, and removes entry from list
+     * @async
+     * @throws {Error} If API request fails
      */
     async function confirmReject() {
         const modal = document.getElementById('reject-modal');
@@ -470,6 +505,8 @@
     
     /**
      * Show fix dates form
+     * Displays inline form for correcting event start/end dates with current values pre-filled
+     * @param {string} id - Review queue entry ID
      */
     function showFixForm(id) {
         const entry = entries.find(e => e.id === parseInt(id));
@@ -516,6 +553,7 @@
     
     /**
      * Hide fix dates form
+     * Removes inline fix form and restores action buttons
      */
     function hideFixForm() {
         if (!expandedId) return;
@@ -534,7 +572,11 @@
     }
     
     /**
-     * Apply fix dates
+     * Apply date corrections
+     * Validates and submits corrected start/end dates to API
+     * @async
+     * @param {string} id - Review queue entry ID
+     * @throws {Error} If validation fails or API request fails
      */
     async function applyFix(id) {
         const startInput = document.getElementById(`fix-start-${id}`);
@@ -587,6 +629,8 @@
     
     /**
      * Remove entry from list after action
+     * Removes entry from state array and DOM, updates UI accordingly
+     * @param {string|number} id - Review queue entry ID
      */
     function removeEntryFromList(id) {
         const entryId = parseInt(id);
@@ -616,6 +660,8 @@
     
     /**
      * Update pending count badge
+     * Updates the visual badge showing number of pending review items
+     * @param {number} count - Number of pending entries
      */
     function updatePendingCount(count) {
         const badge = document.getElementById('pending-count');
@@ -626,6 +672,8 @@
     
     /**
      * Update pagination controls
+     * Shows or hides "Next" button based on presence of next cursor
+     * @param {string|null} nextCursor - Cursor for next page, or null if no more pages
      */
     function updatePagination(nextCursor) {
         const pagination = document.getElementById('pagination');
@@ -650,6 +698,8 @@
     
     /**
      * Navigate to next page
+     * Loads next page of entries using provided cursor and scrolls to top
+     * @param {string} nextCursor - Cursor token for next page
      */
     function goToNextPage(nextCursor) {
         cursor = nextCursor;
@@ -659,6 +709,8 @@
     
     /**
      * Update showing text
+     * Updates the text showing how many items are currently displayed
+     * @param {number} count - Number of items currently shown
      */
     function updateShowingText(count) {
         const showingText = document.getElementById('showing-text');
@@ -668,7 +720,8 @@
     }
     
     /**
-     * UI State Management
+     * Show loading state
+     * Displays loading spinner and hides empty state and table
      */
     function showLoading() {
         document.getElementById('loading-state').style.display = 'block';
@@ -676,12 +729,20 @@
         document.getElementById('review-queue-container').style.display = 'none';
     }
     
+    /**
+     * Show empty state
+     * Displays empty state message and hides loading and table
+     */
     function showEmptyState() {
         document.getElementById('loading-state').style.display = 'none';
         document.getElementById('empty-state').style.display = 'block';
         document.getElementById('review-queue-container').style.display = 'none';
     }
     
+    /**
+     * Show table with entries
+     * Displays review queue table and hides loading and empty states
+     */
     function showTable() {
         document.getElementById('loading-state').style.display = 'none';
         document.getElementById('empty-state').style.display = 'none';
@@ -689,7 +750,10 @@
     }
     
     /**
-     * Helper: Get warning badge HTML
+     * Get warning badge HTML for table display
+     * Returns color-coded badge based on warning confidence level
+     * @param {Array} warnings - Array of warning objects with code property
+     * @returns {string} HTML string for badge element
      */
     function getWarningBadge(warnings) {
         if (!warnings || warnings.length === 0) {
@@ -701,7 +765,10 @@
     }
     
     /**
-     * Helper: Get warning code badge
+     * Get warning code badge
+     * Returns color-coded badge based on specific warning code
+     * @param {string} code - Warning code identifier
+     * @returns {string} HTML string for badge element
      */
     function getWarningCodeBadge(code) {
         if (code === 'reversed_dates_timezone_likely') {
@@ -713,7 +780,10 @@
     }
     
     /**
-     * Helper: Get relative time (e.g., "2h ago")
+     * Get relative time string
+     * Converts date to human-readable relative format (e.g., "2h ago", "5d ago")
+     * @param {string} dateString - ISO 8601 date string
+     * @returns {string} Relative time string or '-' if invalid
      */
     function getRelativeTime(dateString) {
         if (!dateString) return '-';
@@ -735,7 +805,10 @@
     }
     
     /**
-     * Helper: Format date value for display
+     * Format date value for display
+     * Safely formats date strings, returning original value if formatting fails
+     * @param {string} value - Date string to format
+     * @returns {string} Formatted date or original value
      */
     function formatDateValue(value) {
         if (!value) return '';
@@ -747,7 +820,10 @@
     }
     
     /**
-     * Helper: Convert ISO date to datetime-local format
+     * Convert ISO date to datetime-local format
+     * Formats ISO 8601 date string for use in datetime-local input field
+     * @param {string} isoString - ISO 8601 date string
+     * @returns {string} Date in YYYY-MM-DDTHH:MM format, or empty string if invalid
      */
     function formatDateTimeLocal(isoString) {
         if (!isoString) return '';
