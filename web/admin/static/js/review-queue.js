@@ -5,6 +5,27 @@
 (function() {
     'use strict';
     
+    // Constants
+    /** Default number of entries to fetch per page */
+    const DEFAULT_PAGE_SIZE = 50;
+    
+    /** Number of columns in the review queue table */
+    const TABLE_COLUMN_COUNT = 5;
+    
+    /** Time conversion constants */
+    const MILLISECONDS_PER_MINUTE = 60000;
+    const MINUTES_PER_HOUR = 60;
+    const HOURS_PER_DAY = 24;
+    
+    /** Thresholds for relative time display (when to switch from minutes to hours to days) */
+    const MINUTES_DISPLAY_THRESHOLD = 60;
+    const HOURS_DISPLAY_THRESHOLD = 24;
+    
+    /** Date formatting constants */
+    const DATE_PADDING_LENGTH = 2;
+    const DATE_PADDING_CHAR = '0';
+    const MONTH_INDEX_OFFSET = 1; // JavaScript months are 0-indexed, add 1 for human-readable
+    
     // State management
     let entries = [];
     let currentFilter = 'pending';
@@ -111,7 +132,7 @@
         try {
             const params = {
                 status: currentFilter,
-                limit: 50
+                limit: DEFAULT_PAGE_SIZE
             };
             
             if (cursor) {
@@ -209,7 +230,7 @@
         const detailRow = document.createElement('tr');
         detailRow.id = `detail-${id}`;
         detailRow.innerHTML = `
-            <td colspan="5" class="p-0">
+            <td colspan="${TABLE_COLUMN_COUNT}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body text-center py-5">
                         <div class="spinner-border text-primary" role="status">
@@ -314,7 +335,7 @@
         `;
         
         detailRow.innerHTML = `
-            <td colspan="5" class="p-0">
+            <td colspan="${TABLE_COLUMN_COUNT}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
                         <div class="d-flex justify-content-between mb-3">
@@ -791,13 +812,13 @@
         const date = new Date(dateString);
         const now = new Date();
         const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
+        const diffMins = Math.floor(diffMs / MILLISECONDS_PER_MINUTE);
+        const diffHours = Math.floor(diffMins / MINUTES_PER_HOUR);
+        const diffDays = Math.floor(diffHours / HOURS_PER_DAY);
         
-        if (diffMins < 60) {
+        if (diffMins < MINUTES_DISPLAY_THRESHOLD) {
             return `${diffMins}m ago`;
-        } else if (diffHours < 24) {
+        } else if (diffHours < HOURS_DISPLAY_THRESHOLD) {
             return `${diffHours}h ago`;
         } else {
             return `${diffDays}d ago`;
@@ -831,10 +852,10 @@
             const date = new Date(isoString);
             // Format as YYYY-MM-DDTHH:MM (required by datetime-local input)
             const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const month = String(date.getMonth() + MONTH_INDEX_OFFSET).padStart(DATE_PADDING_LENGTH, DATE_PADDING_CHAR);
+            const day = String(date.getDate()).padStart(DATE_PADDING_LENGTH, DATE_PADDING_CHAR);
+            const hours = String(date.getHours()).padStart(DATE_PADDING_LENGTH, DATE_PADDING_CHAR);
+            const minutes = String(date.getMinutes()).padStart(DATE_PADDING_LENGTH, DATE_PADDING_CHAR);
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         } catch {
             return '';
