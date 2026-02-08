@@ -340,27 +340,29 @@ func (q *Queries) GetReviewQueueEntry(ctx context.Context, id int32) (EventRevie
 }
 
 const listReviewQueue = `-- name: ListReviewQueue :many
-SELECT id,
-       event_id,
-       original_payload,
-       normalized_payload,
-       warnings,
-       source_id,
-       source_external_id,
-       dedup_hash,
-       event_start_time,
-       event_end_time,
-       status,
-       reviewed_by,
-       reviewed_at,
-       review_notes,
-       rejection_reason,
-       created_at,
-       updated_at
-  FROM event_review_queue
- WHERE ($1::text IS NULL OR status = $1)
-   AND ($2::integer IS NULL OR id > $2)
- ORDER BY id ASC
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+ WHERE ($1::text IS NULL OR r.status = $1)
+   AND ($2::integer IS NULL OR r.id > $2)
+ ORDER BY r.id ASC
  LIMIT $3
 `
 
@@ -370,19 +372,41 @@ type ListReviewQueueParams struct {
 	Limit   int32       `json:"limit"`
 }
 
+type ListReviewQueueRow struct {
+	ID                int32              `json:"id"`
+	EventID           pgtype.UUID        `json:"event_id"`
+	EventUlid         string             `json:"event_ulid"`
+	OriginalPayload   []byte             `json:"original_payload"`
+	NormalizedPayload []byte             `json:"normalized_payload"`
+	Warnings          []byte             `json:"warnings"`
+	SourceID          pgtype.Text        `json:"source_id"`
+	SourceExternalID  pgtype.Text        `json:"source_external_id"`
+	DedupHash         pgtype.Text        `json:"dedup_hash"`
+	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
+	Status            string             `json:"status"`
+	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes       pgtype.Text        `json:"review_notes"`
+	RejectionReason   pgtype.Text        `json:"rejection_reason"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 // List reviews with pagination and status filter
-func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]EventReviewQueue, error) {
+func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error) {
 	rows, err := q.db.Query(ctx, listReviewQueue, arg.Status, arg.AfterID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EventReviewQueue{}
+	items := []ListReviewQueueRow{}
 	for rows.Next() {
-		var i EventReviewQueue
+		var i ListReviewQueueRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.EventID,
+			&i.EventUlid,
 			&i.OriginalPayload,
 			&i.NormalizedPayload,
 			&i.Warnings,

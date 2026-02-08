@@ -113,7 +113,7 @@ type Querier interface {
 	// SQLc queries for places domain.
 	ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error)
 	// List reviews with pagination and status filter
-	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]EventReviewQueue, error)
+	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
 	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error

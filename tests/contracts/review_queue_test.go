@@ -42,7 +42,7 @@ func TestReviewQueueListResponseStructure(t *testing.T) {
 	insertReviewQueueEntry(t, env, eventID2, `{"name":"Summer Arts Expo"}`, `{"name":"Summer Arts Expo"}`, `[]`, time.Date(2026, 7, 11, 19, 0, 0, 0, time.UTC))
 
 	// Test list endpoint
-	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/admin/api/review-queue", nil)
+	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/review-queue", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
@@ -87,7 +87,7 @@ func TestReviewQueueListItemFields(t *testing.T) {
 
 	insertReviewQueueEntry(t, env, eventID, `{"name":"Jazz in the Park"}`, `{"name":"Jazz in the Park"}`, `[{"severity":"warning","message":"Test warning"}]`, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
 
-	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/admin/api/review-queue", nil)
+	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/review-queue", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
