@@ -595,6 +595,197 @@ Add analytics section showing:
 
 ---
 
+## Rate Limiting
+
+All review queue API endpoints are protected by **admin-tier rate limiting** to prevent abuse and ensure system stability.
+
+### What Rate Limits Apply
+
+Review queue endpoints (`/api/v1/admin/review-queue/*`) use the **TierAdmin** rate limit tier:
+
+- **Configuration:** `RATE_LIMIT_ADMIN` in `.env` file
+- **Default:** `0` (unlimited) - recommended for admin endpoints
+- **Units:** Requests per minute per client IP
+- **Scope:** Applies to all authenticated admin API endpoints, not just review queue
+
+**Why rate limit admin endpoints?**
+- Protects against compromised admin accounts
+- Prevents accidental denial-of-service from buggy scripts
+- Ensures fair resource usage when multiple admins work simultaneously
+- Limits damage from brute-force token guessing attacks
+
+### Rate Limit Tiers
+
+The server uses five rate limit tiers, each with different thresholds:
+
+| Tier | Env Variable | Default (Dev) | Typical Production | Applies To |
+|------|--------------|---------------|-------------------|-----------|
+| **Public** | `RATE_LIMIT_PUBLIC` | 60 req/min | 60 req/min | Unauthenticated API calls |
+| **Agent** | `RATE_LIMIT_AGENT` | 300 req/min | 300 req/min | API key authenticated calls |
+| **Admin** | `RATE_LIMIT_ADMIN` | 0 (unlimited) | 0 (unlimited) | Admin UI/API (including review queue) |
+| **Login** | `RATE_LIMIT_LOGIN` | 5 attempts/15min | 5 attempts/15min | `/api/v1/admin/login` endpoint |
+| **Federation** | `RATE_LIMIT_FEDERATION` | 500 req/min | 500 req/min | Federation sync endpoints |
+
+**Implementation:** See `internal/api/middleware/ratelimit.go:90-99`
+
+### Configuration for Different Environments
+
+#### Local Development
+
+High limits to avoid throttling during testing:
+
+```bash
+# .env (local development)
+RATE_LIMIT_PUBLIC=10000    # Effectively unlimited
+RATE_LIMIT_AGENT=20000     # Effectively unlimited
+RATE_LIMIT_ADMIN=0         # Unlimited (recommended)
+RATE_LIMIT_LOGIN=0         # Unlimited (for testing)
+RATE_LIMIT_FEDERATION=500
+```
+
+**Note:** `RATE_LIMIT_ADMIN=0` disables rate limiting entirely for admin endpoints. This is safe for local development and production (admins are already authenticated).
+
+#### Staging/Production
+
+Conservative limits for public tiers, unlimited for admins:
+
+```bash
+# .env (production)
+RATE_LIMIT_PUBLIC=60       # 1 request per second
+RATE_LIMIT_AGENT=300       # 5 requests per second
+RATE_LIMIT_ADMIN=0         # Unlimited (recommended)
+RATE_LIMIT_LOGIN=5         # 5 attempts per 15 minutes (aggressive)
+RATE_LIMIT_FEDERATION=500  # Federation sync traffic
+```
+
+**Rationale for unlimited admin limits:**
+- Admins are already authenticated (JWT tokens)
+- Admin UI patterns require rapid API calls (e.g., bulk operations, pagination)
+- Risk of abuse is low (admins are trusted, token compromise is mitigated by short expiry)
+- Better UX for legitimate admin workflows
+
+**If you need to limit admin traffic** (e.g., shared server with multiple tenants):
+```bash
+RATE_LIMIT_ADMIN=1000      # 1000 requests/minute (16 req/sec)
+```
+
+### How Rate Limiting Works
+
+**Token Bucket Algorithm:**
+1. Each client IP gets a bucket with a maximum capacity (e.g., 60 tokens for public tier)
+2. Each request consumes 1 token
+3. Tokens refill at a constant rate (e.g., 1 token/second for 60 req/min limit)
+4. When bucket is empty, requests are rejected with HTTP 429
+
+**Client Identification:**
+- By default, uses direct connection IP (`r.RemoteAddr`)
+- If behind a trusted proxy, uses `X-Forwarded-For` or `X-Real-IP` headers
+- Trusted proxies are configured via `TRUSTED_PROXY_CIDRS` in `.env`
+- Prevents header spoofing from untrusted sources (Security: server-chgh)
+
+**Bucket Cleanup:**
+- Inactive buckets are removed after 15 minutes of no requests
+- Prevents unbounded memory growth during attacks (Security: server-g746)
+- See `internal/api/middleware/ratelimit.go:149-164`
+
+### What Happens When Rate Limits Are Exceeded
+
+**HTTP 429 Too Many Requests response:**
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+Content-Type: application/json
+
+{
+  "error": "Too Many Requests"
+}
+```
+
+**Retry-After header values:**
+- **Admin/Public/Agent/Federation:** `60` seconds (1 minute)
+- **Login tier:** `180` seconds (3 minutes, matches token refill rate)
+
+**Client behavior:**
+- **Browser:** Admin UI will show error toast: "Too many requests. Please try again in 1 minute."
+- **API clients:** Should respect `Retry-After` header and implement exponential backoff
+- **Scripts:** Use delays between requests to stay under limits
+
+**Implementation:** See `internal/api/middleware/ratelimit.go:62-71`
+
+### Testing Rate Limits
+
+**Verify rate limiting works:**
+
+```bash
+# Public endpoint (60 req/min limit)
+for i in {1..70}; do
+  curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/events
+done
+# First 60 should return 200, next 10 should return 429
+
+# Admin endpoint (unlimited by default)
+TOKEN="your-jwt-token"
+for i in {1..100}; do
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Authorization: Bearer $TOKEN" \
+    http://localhost:8080/api/v1/admin/review-queue
+done
+# All should return 200 (or 401 if token invalid)
+```
+
+**Test with custom limits:**
+
+```bash
+# Temporarily set admin limit to 10 req/min
+RATE_LIMIT_ADMIN=10 make run
+
+# Then test with admin endpoints
+```
+
+### Troubleshooting
+
+**Problem: Getting 429 errors in local development**
+
+**Solution:** Check `.env` file and increase limits:
+```bash
+RATE_LIMIT_PUBLIC=10000
+RATE_LIMIT_AGENT=20000
+RATE_LIMIT_ADMIN=0  # Unlimited for admins
+```
+
+**Problem: Rate limits not working in production**
+
+**Solution:** Verify `RATE_LIMIT_*` values are set:
+```bash
+# On production server
+source .env && env | grep RATE_LIMIT
+```
+
+**Problem: False rate limiting behind load balancer**
+
+**Solution:** Configure trusted proxy CIDRs:
+```bash
+# .env
+TRUSTED_PROXY_CIDRS=10.0.0.0/8,172.16.0.0/12
+```
+This allows the server to trust `X-Forwarded-For` headers from your load balancer's IP range.
+
+**Problem: Want to rate limit specific admin users differently**
+
+**Current limitation:** Rate limits are per-IP, not per-user. All admins from the same IP share the same bucket.
+
+**Workaround:** If needed, modify `clientKey()` in `internal/api/middleware/ratelimit.go` to use JWT subject (user ID) instead of IP for admin tier.
+
+### Related Code
+
+- **Middleware:** `internal/api/middleware/ratelimit.go` - Token bucket implementation
+- **Router config:** `internal/api/router.go:318-322` - Review queue endpoints with `adminRateLimit`
+- **Environment config:** `.env.example:35-44` - Rate limit settings
+- **Config struct:** `internal/config/config.go` - Rate limit configuration
+
+---
+
 ## Related Documentation
 
 - **Architecture:** `docs/architecture/event-review-workflow.md` - Complete design rationale
