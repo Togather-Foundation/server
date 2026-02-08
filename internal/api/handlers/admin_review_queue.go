@@ -679,7 +679,7 @@ func convertToMapSlice(items []reviewQueueItem) []map[string]any {
 	for i, item := range items {
 		data, _ := json.Marshal(item)
 		var m map[string]any
-		json.Unmarshal(data, &m)
+		_ = json.Unmarshal(data, &m) // Ignore error - already marshaled successfully
 		result[i] = m
 	}
 	return result

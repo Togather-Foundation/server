@@ -201,7 +201,8 @@ func TestReviewQueue_FixedResubmit(t *testing.T) {
 	req1, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body1))
 	req1.Header.Set("Authorization", "Bearer "+key)
 	req1.Header.Set("Content-Type", "application/ld+json")
-	resp1, _ := env.Server.Client().Do(req1)
+	resp1, err := env.Server.Client().Do(req1)
+	require.NoError(t, err)
 	defer resp1.Body.Close()
 
 	require.Equal(t, http.StatusAccepted, resp1.StatusCode)
@@ -228,7 +229,8 @@ func TestReviewQueue_FixedResubmit(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body2))
 	req2.Header.Set("Authorization", "Bearer "+key)
 	req2.Header.Set("Content-Type", "application/ld+json")
-	resp2, _ := env.Server.Client().Do(req2)
+	resp2, err := env.Server.Client().Do(req2)
+	require.NoError(t, err)
 	defer resp2.Body.Close()
 
 	// Should auto-approve and return 201 Created (no longer needs review)
@@ -266,13 +268,14 @@ func TestReviewQueue_RejectedResubmit(t *testing.T) {
 	req1, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
 	req1.Header.Set("Authorization", "Bearer "+key)
 	req1.Header.Set("Content-Type", "application/ld+json")
-	resp1, _ := env.Server.Client().Do(req1)
+	resp1, err1 := env.Server.Client().Do(req1)
+	require.NoError(t, err1)
 	defer resp1.Body.Close()
 
 	require.Equal(t, http.StatusAccepted, resp1.StatusCode)
 
 	var created map[string]any
-	json.NewDecoder(resp1.Body).Decode(&created)
+	require.NoError(t, json.NewDecoder(resp1.Body).Decode(&created))
 	eventULID := eventIDFromPayload(created)
 
 	// Get the review queue entry ID (need to look up UUID from ULID)
@@ -299,11 +302,12 @@ func TestReviewQueue_RejectedResubmit(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
 	req2.Header.Set("Authorization", "Bearer "+key)
 	req2.Header.Set("Content-Type", "application/ld+json")
-	resp2, _ := env.Server.Client().Do(req2)
+	resp2, err2 := env.Server.Client().Do(req2)
+	require.NoError(t, err2)
 	defer resp2.Body.Close()
 
 	var errResp map[string]any
-	json.NewDecoder(resp2.Body).Decode(&errResp)
+	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&errResp))
 
 	// Should receive error indicating rejection (could be 400 or 409 depending on dedup timing)
 	if resp2.StatusCode != http.StatusBadRequest && resp2.StatusCode != http.StatusConflict {
@@ -341,14 +345,15 @@ func TestReviewQueue_NormalEvent(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/ld+json")
-	resp, _ := env.Server.Client().Do(req)
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Should receive 201 Created (NOT 202 Accepted)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var result map[string]any
-	json.NewDecoder(resp.Body).Decode(&result)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
 
 	// Should NOT have warnings or pending_review state
 	assert.NotEqual(t, "pending_review", result["lifecycle_state"])

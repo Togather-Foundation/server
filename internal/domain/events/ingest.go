@@ -374,11 +374,6 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings}, nil
 }
 
-// createOccurrences creates occurrences using the default repository (backward compatibility)
-func (s *IngestService) createOccurrences(ctx context.Context, event *Event, input EventInput) error {
-	return s.createOccurrencesWithRepo(ctx, s.repo, event, input)
-}
-
 // createOccurrencesWithRepo creates occurrences using the provided repository (supports transactions)
 func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repository, event *Event, input EventInput) error {
 	if event == nil {
@@ -446,11 +441,6 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 	}
 
 	return nil
-}
-
-// recordSource records the source using the default repository (backward compatibility)
-func (s *IngestService) recordSource(ctx context.Context, event *Event, input EventInput, sourceID string) error {
-	return s.recordSourceWithRepo(ctx, s.repo, event, input, sourceID)
 }
 
 // recordSourceWithRepo records the source using the provided repository (supports transactions)
