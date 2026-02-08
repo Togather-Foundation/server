@@ -462,7 +462,7 @@
         
         // Clear validation classes and data attributes
         const usernameInput = document.getElementById('user-username');
-        const emailInput = document.getElementById('user-email');
+        const emailInput = document.getElementById('modal-user-email');
         if (usernameInput) {
             usernameInput.classList.remove('is-invalid', 'is-valid');
             delete usernameInput.dataset.validationSetup;
@@ -472,7 +472,7 @@
             delete emailInput.dataset.validationSetup;
         }
         document.getElementById('username-error').textContent = '';
-        document.getElementById('email-error').textContent = '';
+        document.getElementById('modal-email-error').textContent = '';
         
         if (user) {
             // Edit mode
@@ -489,7 +489,7 @@
             
             document.getElementById('user-id').value = user.id;
             document.getElementById('user-username').value = user.username;
-            document.getElementById('user-email').value = user.email;
+            document.getElementById('modal-user-email').value = user.email;
             document.getElementById('user-role').value = user.role;
         } else {
             // Create mode
@@ -537,7 +537,7 @@
             emailInput.addEventListener('input', function() {
                 const email = this.value.trim();
                 const error = validateEmail(email);
-                const errorDiv = document.getElementById('email-error');
+                const errorDiv = document.getElementById('modal-email-error');
                 
                 if (error && email.length > 0) {
                     this.classList.add('is-invalid');
@@ -614,7 +614,7 @@
         
         const userId = document.getElementById('user-id').value;
         const username = document.getElementById('user-username').value.trim();
-        const email = document.getElementById('user-email').value.trim();
+        const email = document.getElementById('modal-user-email').value.trim();
         const role = document.getElementById('user-role').value;
         
         // Client-side username validation
@@ -634,8 +634,8 @@
         // Client-side email validation
         const emailError = validateEmail(email);
         if (emailError) {
-            const emailInput = document.getElementById('user-email');
-            const emailErrorDiv = document.getElementById('email-error');
+            const emailInput = document.getElementById('modal-user-email');
+            const emailErrorDiv = document.getElementById('modal-email-error');
             
             emailInput.classList.add('is-invalid');
             emailErrorDiv.textContent = emailError;
@@ -666,8 +666,16 @@
                 bsModal.hide();
             }
             
-            // Reload users
-            loadUsers();
+            // Remove any lingering modal backdrops
+            setTimeout(() => {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.remove();
+                }
+            }, 300);
+            
+            // Reload users list
+            await loadUsers();
         } catch (error) {
             console.error('Failed to save user:', error);
             showToast(error.message || 'Failed to save user', 'error');

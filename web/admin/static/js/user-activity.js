@@ -19,9 +19,8 @@
     document.addEventListener('DOMContentLoaded', init);
     
     function init() {
-        // Get user ID from template data (injected via window.USER_ID)
-        // This is more secure than parsing the URL pathname in JavaScript
-        userId = window.USER_ID;
+        // Get user ID from data attribute (CSP-compliant, no inline scripts)
+        userId = document.body.dataset.userId;
         
         if (!userId) {
             showToast('User ID not found', 'error');

@@ -8,14 +8,8 @@
     <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
     <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
 </head>
-<body>
+<body data-user-id="{{ .UserID }}">
     {{ template "_header.html" . }}
-    
-    <!-- Inject user ID from template data for JavaScript to use -->
-    <script>
-        // User ID injected from server-side template to avoid parsing URL in JS
-        window.USER_ID = '{{ .UserID }}';
-    </script>
     
     <!-- Page Content -->
     <div class="page">
@@ -122,7 +116,7 @@
                         </div>
                         
                         <!-- Collapsible Filters -->
-                        <div class="collapse" id="filters-collapse">
+                        <div class="collapse show" id="filters-collapse">
                             <div class="card-body border-bottom">
                                 <div class="row g-3">
                                     <div class="col-md-4">

@@ -189,7 +189,7 @@ class TestUserListPage:
 
         # Verify form fields
         expect(page.locator("#user-username")).to_be_visible()
-        expect(page.locator("#user-email")).to_be_visible()
+        expect(page.locator("#modal-user-email")).to_be_visible()
         expect(page.locator("#user-role")).to_be_visible()
         print("   ✓ All form fields present")
 
@@ -220,7 +220,7 @@ class TestUserCRUD:
 
         # Fill form
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         print("   ✓ Form filled")
 
@@ -255,7 +255,7 @@ class TestUserCRUD:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -296,7 +296,7 @@ class TestUserCRUD:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -365,7 +365,7 @@ class TestUserActions:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -623,7 +623,7 @@ class TestXSSProtection:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", malicious_username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -659,7 +659,7 @@ class TestXSSProtection:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", malicious_username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)

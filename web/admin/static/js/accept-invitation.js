@@ -139,7 +139,7 @@
         // Show missing criteria at all strength levels for clarity
         if (strength < 100) {
             // Determine color based on how many requirements are met
-            if (strength < 25) {
+            if (strength < 50) {
                 strengthBar.className = 'progress-bar bg-danger';
                 strengthText.textContent = 'Password strength: Weak - needs: ' + feedback.join(', ');
             } else if (strength < 75) {
