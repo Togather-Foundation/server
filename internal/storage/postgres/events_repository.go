@@ -1350,7 +1350,7 @@ func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.Re
 	entries := make([]events.ReviewQueueEntry, 0, len(rows))
 	var nextCursor *int
 	for i, row := range rows {
-		entries = append(entries, *convertReviewQueueRow(row))
+		entries = append(entries, *convertListReviewQueueRow(row))
 		// Set next cursor to the ID of the last item
 		if i == len(rows)-1 {
 			cursor := int(row.ID)
@@ -1437,6 +1437,50 @@ func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
 }
 
 // convertReviewQueueRow converts a SQLc EventReviewQueue row to a domain ReviewQueueEntry
+// convertListReviewQueueRow converts SQLc ListReviewQueueRow to events.ReviewQueueEntry
+// Used when the query includes a JOIN with events table to get event_ulid
+func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry {
+	entry := &events.ReviewQueueEntry{
+		ID:                int(row.ID),
+		EventID:           row.EventID.String(),
+		EventULID:         row.EventUlid, // Available from JOIN with events table
+		OriginalPayload:   row.OriginalPayload,
+		NormalizedPayload: row.NormalizedPayload,
+		Warnings:          row.Warnings,
+		EventStartTime:    row.EventStartTime.Time,
+		Status:            row.Status,
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
+	}
+
+	if row.SourceID.Valid {
+		entry.SourceID = &row.SourceID.String
+	}
+	if row.SourceExternalID.Valid {
+		entry.SourceExternalID = &row.SourceExternalID.String
+	}
+	if row.DedupHash.Valid {
+		entry.DedupHash = &row.DedupHash.String
+	}
+	if row.EventEndTime.Valid {
+		entry.EventEndTime = &row.EventEndTime.Time
+	}
+	if row.ReviewedBy.Valid {
+		entry.ReviewedBy = &row.ReviewedBy.String
+	}
+	if row.ReviewedAt.Valid {
+		entry.ReviewedAt = &row.ReviewedAt.Time
+	}
+	if row.ReviewNotes.Valid {
+		entry.ReviewNotes = &row.ReviewNotes.String
+	}
+	if row.RejectionReason.Valid {
+		entry.RejectionReason = &row.RejectionReason.String
+	}
+
+	return entry
+}
+
 func convertReviewQueueRow(row EventReviewQueue) *events.ReviewQueueEntry {
 	entry := &events.ReviewQueueEntry{
 		ID:                int(row.ID),

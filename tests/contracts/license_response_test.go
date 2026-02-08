@@ -20,8 +20,10 @@ func TestLicenseInformationInJSONLD(t *testing.T) {
 	key := insertAPIKey(t, env, "license-test-agent")
 
 	payload := map[string]any{
-		"name":      "Licensed Event",
-		"startDate": time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"name":        "Licensed Event",
+		"description": "A licensed event for contract testing with complete metadata to avoid review workflow",
+		"image":       "https://example.com/images/licensed-event.jpg",
+		"startDate":   time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Public Park",
 			"addressLocality": "Toronto",

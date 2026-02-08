@@ -23,8 +23,10 @@ func TestDualTimestampTracking(t *testing.T) {
 	sourcePublishedTime := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
 
 	payload := map[string]any{
-		"name":      "Timestamp Test Event",
-		"startDate": time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"name":        "Timestamp Test Event",
+		"description": "A timestamp tracking test event with complete metadata to avoid review workflow",
+		"image":       "https://example.com/images/timestamp-test.jpg",
+		"startDate":   time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Timestamp Venue",
 			"addressLocality": "Toronto",

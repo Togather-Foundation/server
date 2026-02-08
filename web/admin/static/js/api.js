@@ -112,7 +112,19 @@ const API = {
             throw err;
         }
         
-        return response.json();
+        // Handle empty responses (e.g., 204 No Content for DELETE operations)
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return null;
+        }
+        
+        // Parse JSON response
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        }
+        
+        // If not JSON, return text
+        return response.text();
     },
     
     /**
@@ -244,5 +256,30 @@ const API = {
             const query = new URLSearchParams(params);
             return API.request(`/api/v1/admin/users/${id}/activity?${query}`, { signal });
         }
+    },
+    
+    // Review Queue API
+    reviewQueue: {
+        list: (params = {}) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/admin/review-queue?${query}`);
+        },
+        
+        get: (id) => API.request(`/api/v1/admin/review-queue/${id}`),
+        
+        approve: (id, data = {}) => API.request(`/api/v1/admin/review-queue/${id}/approve`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        
+        reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        
+        fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        })
     }
 };

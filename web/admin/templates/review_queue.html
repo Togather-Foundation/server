@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Review Queue - SEL Admin</title>
+    {{ template "_head_meta.html" . }}
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
+</head>
+<body>
+    {{ template "_header.html" . }}
+    
+    <!-- Page Content -->
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <h2 class="page-title">Event Review Queue</h2>
+                            <div class="text-muted mt-1">Review events with data quality issues</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Page body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    <!-- Status Filter Tabs -->
+                    <ul class="nav nav-tabs mb-3" id="status-tabs">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" data-action="filter-status" data-status="pending">
+                                Pending <span class="badge bg-secondary ms-1" id="pending-count">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-action="filter-status" data-status="approved">
+                                Approved
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-action="filter-status" data-status="rejected">
+                                Rejected
+                            </a>
+                        </li>
+                    </ul>
+                    
+                    <!-- Loading state -->
+                    <div id="loading-state" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-3">Loading review queue...</p>
+                    </div>
+                    
+                    <!-- Empty state -->
+                    <div id="empty-state" class="empty text-center py-5" style="display: none;">
+                        <div class="empty-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-lg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M9 11l3 3L22 4"></path>
+                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                            </svg>
+                        </div>
+                        <p class="empty-title">No Events to Review</p>
+                        <p class="empty-subtitle text-muted">All clear! No events require review at the moment.</p>
+                    </div>
+                    
+                    <!-- Review Queue Table -->
+                    <div id="review-queue-container" class="card" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Event Name</th>
+                                        <th>Start Time</th>
+                                        <th>Warning</th>
+                                        <th>Created</th>
+                                        <th class="w-1"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="review-queue-table">
+                                    <!-- Populated via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination Footer -->
+                        <div class="card-footer d-flex align-items-center">
+                            <p class="m-0 text-muted">
+                                <span id="showing-text">Showing 0 items</span>
+                            </p>
+                            <ul class="pagination m-0 ms-auto" id="pagination">
+                                <!-- Pagination controls populated via JavaScript -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Reject Modal -->
+    <div class="modal fade" id="reject-modal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reject Event</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Reason (required)</label>
+                        <textarea class="form-control" id="reject-reason" rows="4" placeholder="Explain why this event is being rejected..."></textarea>
+                        <div class="invalid-feedback" id="reject-reason-error"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirm-reject-btn" data-action="confirm-reject">Reject</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/review-queue.js"></script>
+</body>
+</html>

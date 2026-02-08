@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	generateCount int
-	generateSeed  int64
+	generateCount       int
+	generateSeed        int64
+	generateReviewQueue bool
 )
 
 // generateCmd provides test event generation
@@ -45,6 +46,7 @@ func init() {
 
 	generateCmd.Flags().IntVarP(&generateCount, "count", "n", 1, "number of events to generate")
 	generateCmd.Flags().Int64Var(&generateSeed, "seed", 0, "random seed (0 = random)")
+	generateCmd.Flags().BoolVar(&generateReviewQueue, "review-queue", false, "generate events that need review (data quality issues)")
 }
 
 func runGenerate(args []string) error {
@@ -58,9 +60,19 @@ func runGenerate(args []string) error {
 
 	// Generate events
 	var eventInputs []interface{}
-	for i := 0; i < generateCount; i++ {
-		event := gen.RandomEventInput()
-		eventInputs = append(eventInputs, event)
+
+	if generateReviewQueue {
+		// Generate events with data quality issues for review queue testing
+		reviewEvents := gen.BatchReviewQueueInputs(generateCount)
+		for _, event := range reviewEvents {
+			eventInputs = append(eventInputs, event)
+		}
+	} else {
+		// Generate normal events
+		for i := 0; i < generateCount; i++ {
+			event := gen.RandomEventInput()
+			eventInputs = append(eventInputs, event)
+		}
 	}
 
 	// Create batch wrapper
@@ -82,11 +94,19 @@ func runGenerate(args []string) error {
 			return fmt.Errorf("write file: %w", err)
 		}
 
-		fmt.Printf("✓ Generated %d event(s) to %s\n", generateCount, outputFile)
+		eventType := "event(s)"
+		if generateReviewQueue {
+			eventType = "review queue event(s)"
+		}
+		fmt.Printf("✓ Generated %d %s to %s\n", generateCount, eventType, outputFile)
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Printf("  server ingest %s\n", outputFile)
-		fmt.Printf("  server ingest %s --watch\n", outputFile)
+		if generateReviewQueue {
+			fmt.Printf("  server ingest %s --watch  # Watch for review queue entries\n", outputFile)
+		} else {
+			fmt.Printf("  server ingest %s --watch\n", outputFile)
+		}
 	} else {
 		// Write to stdout
 		fmt.Println(string(output))

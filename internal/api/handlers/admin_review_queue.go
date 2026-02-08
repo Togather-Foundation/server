@@ -89,10 +89,15 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 		status = &defaultStatus
 	}
 
-	limitStr := r.URL.Query().Get("limit")
+	// Parse and validate limit parameter (default: 50, min: 1, max: 100)
 	limit := 50
+	limitStr := r.URL.Query().Get("limit")
 	if limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil || parsedLimit < 1 || parsedLimit > 100 {
+			// Invalid limit: use default
+			limit = 50
+		} else {
 			limit = parsedLimit
 		}
 	}
@@ -115,7 +120,7 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	// Fetch review queue entries
 	result, err := h.Repository.ListReviewQueue(r.Context(), filters)
 	if err != nil {
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to list review queue", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to list review queue", fmt.Errorf("list review queue with status=%v limit=%d: %w", status, limit, err), h.Env)
 		return
 	}
 
@@ -166,17 +171,17 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("get review queue entry id=%d: %w", id, err), h.Env)
 		return
 	}
 
 	// Build detailed response
 	detail, err := buildReviewQueueDetail(*review)
 	if err != nil {
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("build review queue detail for id=%d: %w", id, err), h.Env)
 		return
 	}
 
@@ -219,10 +224,10 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("approve review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("approve review: get review queue entry id=%d: %w", id, err), h.Env)
 		return
 	}
 
@@ -240,10 +245,10 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 		}
 
 		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("approve review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to publish event", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to publish event", fmt.Errorf("approve review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -263,10 +268,10 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 		}
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", fmt.Errorf("approve review id=%d event=%s: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -281,7 +286,7 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	// Build response
 	detail, err := buildReviewQueueDetail(*updatedReview)
 	if err != nil {
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("approve review id=%d: build detail: %w", id, err), h.Env)
 		return
 	}
 
@@ -329,10 +334,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("reject review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("reject review: get review queue entry id=%d: %w", id, err), h.Env)
 		return
 	}
 
@@ -351,10 +356,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 		}
 
 		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("reject review id=%d: delete event %s: %w", id, eventULID, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to delete event", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to delete event", fmt.Errorf("reject review id=%d: delete event %s: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -371,10 +376,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 		}
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to reject review", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to reject review", fmt.Errorf("reject review id=%d event=%s: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -390,7 +395,7 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	// Build response
 	detail, err := buildReviewQueueDetail(*updatedReview)
 	if err != nil {
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("reject review id=%d: build detail: %w", id, err), h.Env)
 		return
 	}
 
@@ -442,23 +447,25 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("fix review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("fix review: get review queue entry id=%d: %w", id, err), h.Env)
 		return
 	}
 
 	// Update event with corrected dates
 	eventULID := review.EventULID
 
-	// Build update params with corrected dates
-	// Note: This is a simplified implementation - in production, you'd need to handle
-	// occurrence-level updates and more complex event structures
+	// TODO(srv-trg): Implement FixReview workflow - allow admin to modify event data and re-normalize
+	// This handler currently only marks the review as approved with notes about corrections,
+	// but does not actually update the event's occurrence-level dates. Full implementation needs:
+	// - Update event occurrences with corrected start/end dates
+	// - Re-run normalization on the updated event data
+	// - Validate the corrected data meets SHACL constraints
+	// - Handle both simple date fixes and complex event structure changes
+	// Related: Need occurrence-level update API in AdminService
 	_ = events.UpdateEventParams{}
-
-	// For now, we'll just mark the review as approved with notes about the manual correction
-	// TODO: Implement proper event date updating when occurrence-level API is available
 
 	// Publish the event (assuming corrections were made outside this endpoint or will be made)
 	_, err = h.AdminService.PublishEvent(r.Context(), eventULID)
@@ -472,10 +479,10 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 		}
 
 		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to publish event", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to publish event", fmt.Errorf("fix review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -503,10 +510,10 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 		}
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", err, h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("fix review id=%d: approve review: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", fmt.Errorf("fix review id=%d event=%s: approve review: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -522,7 +529,7 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	// Build response
 	detail, err := buildReviewQueueDetail(*updatedReview)
 	if err != nil {
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", err, h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("fix review id=%d: build detail: %w", id, err), h.Env)
 		return
 	}
 
@@ -536,7 +543,7 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
 		if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
-			return reviewQueueItem{}, fmt.Errorf("failed to parse warnings: %w", err)
+			return reviewQueueItem{}, fmt.Errorf("build review queue item id=%d: parse warnings: %w", review.ID, err)
 		}
 	}
 
@@ -583,20 +590,20 @@ func buildReviewQueueDetail(review events.ReviewQueueEntry) (reviewQueueDetail, 
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
 		if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
-			return reviewQueueDetail{}, fmt.Errorf("failed to parse warnings: %w", err)
+			return reviewQueueDetail{}, fmt.Errorf("build review detail id=%d: parse warnings: %w", review.ID, err)
 		}
 	}
 
 	// Parse original payload
 	var original map[string]any
 	if err := json.Unmarshal(review.OriginalPayload, &original); err != nil {
-		return reviewQueueDetail{}, fmt.Errorf("failed to parse original payload: %w", err)
+		return reviewQueueDetail{}, fmt.Errorf("build review detail id=%d: parse original payload: %w", review.ID, err)
 	}
 
 	// Parse normalized payload
 	var normalized map[string]any
 	if err := json.Unmarshal(review.NormalizedPayload, &normalized); err != nil {
-		return reviewQueueDetail{}, fmt.Errorf("failed to parse normalized payload: %w", err)
+		return reviewQueueDetail{}, fmt.Errorf("build review detail id=%d: parse normalized payload: %w", review.ID, err)
 	}
 
 	// Calculate changes

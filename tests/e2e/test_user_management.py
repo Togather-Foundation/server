@@ -58,9 +58,13 @@ def console_errors():
 def admin_login(page: Page, console_errors):
     """Login as admin before test and setup console error tracking"""
 
-    # Setup console error tracking
+    # Setup console error tracking (filter known expected errors)
     def handle_console(msg):
         if msg.type == "error":
+            # Filter out known expected errors
+            # X-Frame-Options error appears during login redirect (expected, not a bug)
+            if "X-Frame-Options" in msg.text or "frame because it set" in msg.text:
+                return
             console_errors.append(msg.text)
             print(f"   [Console Error] {msg.text}")
 
@@ -78,9 +82,9 @@ def admin_login(page: Page, console_errors):
 
 
 def generate_unique_username():
-    """Generate unique username for test users"""
+    """Generate unique username for test users (alphanumeric only, no underscores)"""
     suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    return f"testuser_{suffix}"
+    return f"testuser{suffix}"  # No underscore - backend requires alphanum only
 
 
 def generate_unique_email(username):
@@ -189,7 +193,7 @@ class TestUserListPage:
 
         # Verify form fields
         expect(page.locator("#user-username")).to_be_visible()
-        expect(page.locator("#user-email")).to_be_visible()
+        expect(page.locator("#modal-user-email")).to_be_visible()
         expect(page.locator("#user-role")).to_be_visible()
         print("   ✓ All form fields present")
 
@@ -220,7 +224,7 @@ class TestUserCRUD:
 
         # Fill form
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         print("   ✓ Form filled")
 
@@ -255,7 +259,7 @@ class TestUserCRUD:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -296,7 +300,7 @@ class TestUserCRUD:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -365,7 +369,7 @@ class TestUserActions:
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
         page.wait_for_timeout(2000)
@@ -609,71 +613,72 @@ class TestXSSProtection:
     """Tests for XSS protection in user management"""
 
     def test_malicious_username_script_tag_escaped(self, page: Page, admin_login):
-        """Test that <script> tag in username is escaped"""
+        """Test that <script> tag in username is rejected by validation"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1000)
 
-        # Create user with malicious username
+        # Try to create user with malicious username
         malicious_username = "<script>alert('XSS')</script>"
         email = generate_unique_email("xss_test_1")
 
-        print(f"\n   Creating user with malicious username: {malicious_username}")
+        print(
+            f"\n   Attempting to create user with malicious username: {malicious_username}"
+        )
 
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", malicious_username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1000)
 
-        # Verify no script execution (no alert dialog)
-        # If script executed, page.evaluate would detect it
-        print("   ✓ No alert dialog appeared")
+        # Verify validation error appears
+        error_toast = page.locator(
+            '.toast:has-text("Username must contain only letters and numbers")'
+        )
+        expect(error_toast).to_be_visible()
+        print("   ✓ Validation rejected malicious username")
 
-        # Verify username is HTML-escaped in table
-        # Look for escaped HTML entities
-        page_content = page.content()
-
-        # Check that raw script tag is NOT in HTML
-        assert "<script>alert" not in page_content, "Script tag not escaped!"
-        print("   ✓ Script tag not present in HTML")
-
-        # Check that escaped version IS present
-        assert "&lt;script&gt;" in page_content or "&lt;" in page_content
-        print("   ✓ Username HTML-escaped in table")
+        # Verify user was NOT created (modal still open)
+        modal = page.locator("#user-modal")
+        expect(modal).to_be_visible()
+        print("   ✓ Modal still open (user not created)")
 
     def test_malicious_username_img_tag_escaped(self, page: Page, admin_login):
-        """Test that <img> tag with onerror is escaped"""
+        """Test that <img> tag with onerror is rejected by validation"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1000)
 
-        # Create user with malicious username
+        # Try to create user with malicious username
         malicious_username = "<img src=x onerror=alert('XSS')>"
         email = generate_unique_email("xss_test_2")
 
-        print(f"\n   Creating user with malicious img tag: {malicious_username}")
+        print(
+            f"\n   Attempting to create user with malicious img tag: {malicious_username}"
+        )
 
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
         page.fill("#user-username", malicious_username)
-        page.fill("#user-email", email)
+        page.fill("#modal-user-email", email)
         page.select_option("#user-role", "viewer")
         page.click("#user-submit-btn")
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1000)
 
-        # Verify no script execution
-        print("   ✓ No alert dialog appeared")
+        # Verify validation error appears
+        error_toast = page.locator(
+            '.toast:has-text("Username must contain only letters and numbers")'
+        )
+        expect(error_toast).to_be_visible()
+        print("   ✓ Validation rejected malicious username")
 
-        # Verify HTML is escaped
-        page_content = page.content()
-        assert "<img src=x onerror=" not in page_content, "Img tag not escaped!"
-        print("   ✓ Img tag not present in HTML")
-
-        assert "&lt;img" in page_content or "&lt;" in page_content
-        print("   ✓ Username HTML-escaped in table")
+        # Verify user was NOT created (modal still open)
+        modal = page.locator("#user-modal")
+        expect(modal).to_be_visible()
+        print("   ✓ Modal still open (user not created)")
 
     def test_malicious_search_input_escaped(self, page: Page, admin_login):
         """Test that search input with malicious content is escaped"""

@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean
+.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -70,6 +70,10 @@ help:
 	@echo "  make test-staging-smoke   - Run smoke tests on staging server"
 	@echo "  make test-production-smoke - Run smoke tests on production (read-only)"
 	@echo "  make test-remote ENV=<env> TYPE=<type> - Run custom remote tests"
+	@echo ""
+	@echo "E2E / Playwright Tests (requires running server + uvx):"
+	@echo "  make e2e               - Run all Python E2E tests (pytest + standalone)"
+	@echo "  make e2e-pytest        - Run only pytest-based E2E tests"
 	@echo ""
 	@echo "Docker Development:"
 	@echo "  make docker-up     - Start database and server in Docker (port 5433)"
@@ -206,6 +210,37 @@ test-remote:
 	@TYPE=$${TYPE:-smoke}; \
 	echo "Running $$TYPE tests on $(ENV) server..."; \
 	./deploy/scripts/test-remote.sh $(ENV) $$TYPE
+
+# ============================================================================
+# E2E / Playwright Tests (Python)
+# ============================================================================
+# Requires: uvx, playwright browsers (uvx --from playwright playwright install chromium)
+# Server must be running (make dev or make run)
+# See tests/e2e/AGENTS.md for full documentation
+
+# Run all Python e2e tests (pytest + standalone scripts)
+e2e:
+	@echo "Running all Python E2E tests..."
+	@echo ""
+	@echo "==> Running pytest-playwright tests (user management)..."
+	@uvx --from pytest-playwright --with playwright --with pytest pytest tests/e2e/test_user_management.py -v
+	@echo ""
+	@echo "==> Running pytest tests (self-managed browser)..."
+	@uvx --from playwright --with playwright --with pytest pytest tests/e2e/test_email_validation.py tests/e2e/test_password_strength.py tests/e2e/test_modal_cleanup.py -v
+	@echo ""
+	@echo "==> Running standalone test scripts..."
+	@uvx --from playwright --with playwright python tests/e2e/test_review_queue.py
+	@uvx --from playwright --with playwright python tests/e2e/test_keyboard_accessibility.py
+	@uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
+	@echo ""
+	@echo "✓ All E2E tests passed!"
+
+# Run only pytest-based e2e tests (faster, better output)
+e2e-pytest:
+	@echo "Running pytest-based E2E tests..."
+	@uvx --from pytest-playwright --with playwright --with pytest pytest tests/e2e/test_user_management.py tests/e2e/test_review_queue.py -v
+	@echo ""
+	@uvx --from playwright --with playwright --with pytest pytest tests/e2e/test_email_validation.py tests/e2e/test_password_strength.py tests/e2e/test_modal_cleanup.py -v
 
 # Run linter (requires golangci-lint)
 lint:
