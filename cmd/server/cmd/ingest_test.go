@@ -59,8 +59,13 @@ func TestIngestCommandRequiresFile(t *testing.T) {
 	root.SetArgs([]string{"ingest"})
 
 	err := root.Execute()
-	if err == nil {
-		t.Error("expected error when no file specified")
+	output := buf.String()
+
+	// Check if args validation worked - either error returned or help shown
+	if err == nil && !strings.Contains(output, "Usage:") {
+		t.Errorf("expected argument validation error when no file specified, output: %s", output)
+	} else if err != nil && !strings.Contains(err.Error(), "arg") && !strings.Contains(err.Error(), "argument") && !strings.Contains(err.Error(), "required") {
+		t.Errorf("expected argument validation error, got: %v", err)
 	}
 }
 

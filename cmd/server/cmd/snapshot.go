@@ -46,7 +46,7 @@ Examples:
 var snapshotCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new database snapshot",
-	Long: `Create a compressed database snapshot using pg_dump.
+	Long: `Create a new database snapshot using pg_dump compression.
 
 The snapshot will be stored in the configured snapshot directory with
 automatic retention management. Metadata is saved alongside the snapshot
@@ -95,7 +95,7 @@ Examples:
 var snapshotCleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Clean up expired snapshots",
-	Long: `Delete snapshots older than the retention period.
+	Long: `Clean up expired snapshots by deleting those older than the retention period.
 
 Snapshots are deleted based on their individual retention periods
 (stored in metadata) or the global retention period if not specified.
