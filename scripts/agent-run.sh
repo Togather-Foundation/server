@@ -18,17 +18,14 @@
 #   AGENT_OUTPUT   — Override output directory (default: .agent-output)
 #   AGENT_SUMMARY  — Max error/warning lines to show (default: 30)
 #
-# The script:
-#   1. Runs the command, capturing all stdout+stderr to a log file
-#   2. Reports exit status and timing
-#   3. On failure: extracts error lines (Go compile errors, test failures, lint issues)
-#   4. On success: shows only summary lines (ok, PASS, coverage, checkmarks)
-#   5. Always tells you where the full log is so you can grep/read it
+# On success: shows pass/fail status, timing, and a brief summary.
+# On failure: extracts and displays errors (compile, test, lint, panic)
+#             with log file line numbers so you can Read/Grep for context.
 #
 # Cleanup:
 #   scripts/agent-cleanup.sh                    — clean all sessions
 #   scripts/agent-cleanup.sh <session-id>       — clean one session
-#   AGENT=1 make agent-clean                    — clean all sessions via make
+#   make agent-clean                            — clean all sessions via make
 
 set -uo pipefail
 
@@ -71,7 +68,7 @@ echo "[agent-run] Session: $SESSION"
 
 START_TIME=$(date +%s)
 
-# Run the command, capture output, preserve exit code
+# Run the command, capture all output, preserve exit code
 set +e
 "$@" > "$LOG_FILE" 2>&1
 EXIT_CODE=$?
@@ -88,79 +85,81 @@ echo "[agent-run] Full output: $LOG_FILE ($TOTAL_LINES lines, ${ELAPSED}s)"
 # ---------------------------------------------------------------------------
 
 if [ "$EXIT_CODE" -eq 0 ]; then
-    # --- SUCCESS ---
+    # --- SUCCESS: minimal output, just confirm it passed ---
     echo "[agent-run] Status: PASSED"
 
-    # Show meaningful success lines (test results, coverage, completion markers)
-    SUMMARY=$(grep -E '(^ok[[:space:]]|^PASS$|^PASS |coverage:|All .* passed|successful|is up to date|is valid|properly formatted)' "$LOG_FILE" 2>/dev/null | tail -10)
+    # Show only high-signal success lines (coverage %, completion markers)
+    SUMMARY=$(grep -E '(coverage:|All .* passed|✓)' "$LOG_FILE" 2>/dev/null || true)
     if [ -n "$SUMMARY" ]; then
-        echo "$SUMMARY"
+        echo "$SUMMARY" | tail -5
     fi
 else
-    # --- FAILURE ---
+    # --- FAILURE: show errors prominently, this is what matters ---
     echo "[agent-run] Status: FAILED (exit code $EXIT_CODE)"
 
-    # Count different error types
-    COMPILE_ERRORS=$(grep -c -E '\.go:[0-9]+:[0-9]+:' "$LOG_FILE" 2>/dev/null || echo "0")
-    TEST_FAILURES=$(grep -c -E '(--- FAIL|^FAIL[[:space:]])' "$LOG_FILE" 2>/dev/null || echo "0")
-    PANICS=$(grep -c -E '^panic:' "$LOG_FILE" 2>/dev/null || echo "0")
-    LINT_ISSUES=$(grep -c -E '^\S+\.go:[0-9]+:[0-9]+: ' "$LOG_FILE" 2>/dev/null || echo "0")
+    # Count error types for the summary line
+    COMPILE_ERRORS=$(grep -c -E '\.go:[0-9]+:[0-9]+:' "$LOG_FILE" 2>/dev/null || true)
+    TEST_FAILURES=$(grep -c -E '^--- FAIL:' "$LOG_FILE" 2>/dev/null || true)
+    FAIL_PACKAGES=$(grep -c -E '^FAIL\s' "$LOG_FILE" 2>/dev/null || true)
+    PANICS=$(grep -c -E '^panic:' "$LOG_FILE" 2>/dev/null || true)
+    : "${COMPILE_ERRORS:=0}" "${TEST_FAILURES:=0}" "${FAIL_PACKAGES:=0}" "${PANICS:=0}"
 
-    echo "[agent-run] Found: ${COMPILE_ERRORS} compile errors, ${TEST_FAILURES} test failures, ${PANICS} panics, ${LINT_ISSUES} lint issues"
-    echo "[agent-run] ---"
+    echo "[agent-run] Found: ${COMPILE_ERRORS} compile errors, ${TEST_FAILURES} test failures (${FAIL_PACKAGES} packages), ${PANICS} panics"
+    echo ""
 
-    # Extract the most useful error lines
-    # Priority: compile errors > test failures > panics > general errors
-    ERRORS=""
-
-    # Go compile errors (file:line:col: message)
+    # --- Compile errors (file:line:col: message) ---
     if [ "$COMPILE_ERRORS" -gt 0 ]; then
-        ERRORS=$(grep -n -E '\.go:[0-9]+:[0-9]+:' "$LOG_FILE" | head -"$MAX_SUMMARY")
+        echo "Compile errors:"
+        # Show source file paths with their error messages
+        grep -E '\.go:[0-9]+:[0-9]+:' "$LOG_FILE" 2>/dev/null | head -"$MAX_SUMMARY"
+        echo ""
     fi
 
-    # Test failures (--- FAIL lines with context)
+    # --- Test failures ---
+    # Extract structured failure info: test name + error message + location
     if [ "$TEST_FAILURES" -gt 0 ]; then
-        TEST_ERRS=$(grep -n -E '(--- FAIL|^FAIL[[:space:]]|Error Trace:|Error:|Expected|Received|Got:|Want:)' "$LOG_FILE" | head -"$MAX_SUMMARY")
-        if [ -n "$ERRORS" ]; then
-            ERRORS="${ERRORS}
-${TEST_ERRS}"
-        else
-            ERRORS="$TEST_ERRS"
-        fi
+        echo "Test failures:"
+        # Show --- FAIL lines (test names) and FAIL package lines
+        grep -E '(^--- FAIL:|^FAIL\s)' "$LOG_FILE" 2>/dev/null | head -"$MAX_SUMMARY"
+        echo ""
+
+        # Show error details (the actual assertion messages)
+        # Use log line numbers (L:NNN) so agent can Read the file at that offset
+        echo "Error details (log line numbers for reference):"
+        grep -n -E '(Error Trace:|Error:|Expected |Received |Got:|Want:|actual  :|expected:)' "$LOG_FILE" 2>/dev/null \
+            | sed 's/^\([0-9]*\):/  L\1: /' \
+            | head -"$MAX_SUMMARY"
+        echo ""
     fi
 
-    # Panics
+    # --- Panics ---
     if [ "$PANICS" -gt 0 ]; then
-        PANIC_LINES=$(grep -n -A 3 '^panic:' "$LOG_FILE" | head -"$MAX_SUMMARY")
-        if [ -n "$ERRORS" ]; then
-            ERRORS="${ERRORS}
-${PANIC_LINES}"
+        echo "Panics:"
+        grep -n -A 5 '^panic:' "$LOG_FILE" 2>/dev/null \
+            | sed 's/^\([0-9]*\):/  L\1: /' \
+            | head -"$MAX_SUMMARY"
+        echo ""
+    fi
+
+    # --- Fallback: if no specific patterns matched ---
+    if [ "$COMPILE_ERRORS" -eq 0 ] && [ "$TEST_FAILURES" -eq 0 ] && [ "$PANICS" -eq 0 ]; then
+        # Try general error patterns
+        GENERAL_ERRORS=$(grep -n -i -E '(error[: ]|ERROR[: ]|fatal|FATAL|FAILED)' "$LOG_FILE" 2>/dev/null \
+            | sed 's/^\([0-9]*\):/  L\1: /' \
+            | head -"$MAX_SUMMARY" || true)
+
+        if [ -n "$GENERAL_ERRORS" ]; then
+            echo "Errors found:"
+            echo "$GENERAL_ERRORS"
         else
-            ERRORS="$PANIC_LINES"
+            echo "No recognizable error patterns. Last 15 lines of output:"
+            tail -15 "$LOG_FILE"
         fi
+        echo ""
     fi
 
-    # If we found nothing specific, fall back to general error/warning grep
-    if [ -z "$ERRORS" ]; then
-        ERRORS=$(grep -n -i -E '(error[: ]|ERROR[: ]|fatal|FATAL|failed|FAILED)' "$LOG_FILE" | head -"$MAX_SUMMARY")
-    fi
-
-    # Last resort: show the last 15 lines (often contains the actual error)
-    if [ -z "$ERRORS" ]; then
-        echo "[agent-run] No recognizable error patterns found. Last 15 lines:"
-        tail -15 "$LOG_FILE"
-    else
-        echo "$ERRORS" | head -"$MAX_SUMMARY"
-
-        # Note if truncated
-        TOTAL_ERRORS=$(( COMPILE_ERRORS + TEST_FAILURES + PANICS ))
-        if [ "$TOTAL_ERRORS" -gt "$MAX_SUMMARY" ]; then
-            echo "[agent-run] ... (showing $MAX_SUMMARY of $TOTAL_ERRORS issues)"
-        fi
-    fi
-
-    echo "[agent-run] ---"
-    echo "[agent-run] Grep the full log for details: $LOG_FILE"
+    echo "[agent-run] Full log: $LOG_FILE"
+    echo "[agent-run] Use Read tool with offset to see context around specific line numbers."
 fi
 
 exit "$EXIT_CODE"

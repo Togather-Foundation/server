@@ -109,7 +109,7 @@ test-ci:
 	@echo "Running tests as CI does (with race detector and verbose output)..."
 	@echo ""
 	@echo "==> Running unit tests..."
-	@go test -v -race -coverprofile=coverage.out ./internal/...
+	@$(RUN) go test -v -race -coverprofile=coverage.out ./internal/...
 	@echo ""
 	@echo "==> Running contract tests..."
 	@if ! command -v pyshacl > /dev/null 2>&1; then \
@@ -117,33 +117,33 @@ test-ci:
 		echo "Install with: make install-pyshacl"; \
 		echo ""; \
 	fi
-	@go test -v -race ./tests/contracts/...
+	@$(RUN) go test -v -race ./tests/contracts/...
 	@echo ""
 	@echo "==> Running integration tests..."
-	@go test -v -race ./tests/integration/...
+	@$(RUN) go test -v -race ./tests/integration/...
 	@echo ""
 	@echo "==> Running batch integration tests (with River workers)..."
-	@go test -v -race ./tests/integration_batch/...
+	@$(RUN) go test -v -race ./tests/integration_batch/...
 	@echo ""
 	@echo "==> Running E2E tests..."
-	@go test -v -race ./tests/e2e/...
+	@$(RUN) go test -v -race ./tests/e2e/...
 	@echo ""
 	@echo "✓ All tests passed!"
 
 # Run tests with verbose output
 test-v:
 	@echo "Running tests (verbose)..."
-	@go test -v ./...
+	@$(RUN) go test -v ./...
 
 # Run tests with race detector
 test-race:
 	@echo "Running tests with race detector..."
-	@go test -race ./...
+	@$(RUN) go test -race ./...
 
 # Generate coverage report
 coverage:
 	@echo "Generating coverage report..."
-	@go test -coverprofile=coverage.out ./...
+	@$(RUN) go test -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@$(MAKE) coverage-check
@@ -390,6 +390,10 @@ clean:
 	@rm -f coverage.out coverage.html
 	@go clean
 
+# Clean agent output files
+agent-clean:
+	@scripts/agent-cleanup.sh
+
 # Stop running server processes
 stop:
 	@echo "Stopping server processes..."
@@ -604,7 +608,7 @@ test-contracts:
 		echo "Install with: make install-pyshacl"; \
 		echo ""; \
 	fi
-	@go test -v ./tests/contracts/...
+	@$(RUN) go test -v ./tests/contracts/...
 
 # Validate SHACL shapes against sample data
 validate-shapes:
@@ -614,7 +618,7 @@ validate-shapes:
 		exit 1; \
 	fi
 	@echo "Running SHACL validation test..."
-	@go test -v ./tests/contracts/... -run SHACL
+	@$(RUN) go test -v ./tests/contracts/... -run SHACL
 
 # SQLc generate
 .PHONY: sqlc-generate

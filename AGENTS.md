@@ -106,7 +106,10 @@ For full workflow details: `bd prime`
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** — Clear stashes, prune remote branches
+5. **Clean up** — Clear stashes, prune remote branches, clean agent output:
+   ```bash
+   scripts/agent-cleanup.sh          # Remove agent output files
+   ```
 6. **Verify** — All changes committed AND pushed
 7. **Hand off** — Provide context for next session
 
@@ -159,6 +162,54 @@ make sqlc            # Regenerate SQLc code
 ## Build, Lint, Test Commands
 
 Use the Makefile for common build tasks. Run `make help` for all available targets.
+
+### Agent Output Management
+
+When running build, test, or lint commands, use the **agent-run wrapper** to preserve
+context window. It captures verbose output to `.agent-output/` and shows only a concise
+summary (errors, warnings, pass/fail status).
+
+**Two ways to use it:**
+
+```bash
+# Option 1: Explicit wrapper (works with any command)
+scripts/agent-run.sh make test
+scripts/agent-run.sh go build ./...
+scripts/agent-run.sh make ci
+
+# Option 2: AGENT=1 env var (works with supported Makefile targets)
+AGENT=1 make test
+AGENT=1 make build
+AGENT=1 make ci
+```
+
+Supported Makefile targets with `AGENT=1`: `build`, `test`, `test-ci`, `test-v`,
+`test-race`, `coverage`, `test-contracts`, `validate-shapes`.
+
+For compound targets (e.g., `lint`, `lint-ci`) that have multi-line shell blocks,
+use the wrapper script directly: `scripts/agent-run.sh make lint`.
+
+**Parallel sessions:** Set `AGENT_SESSION` to isolate output from concurrent sessions:
+```bash
+AGENT_SESSION=session1 scripts/agent-run.sh make test
+AGENT_SESSION=session2 scripts/agent-run.sh make lint
+```
+
+Output files live in `.agent-output/<session-id>/` and can be searched:
+- Use `Grep` to search for specific errors in the log files
+- Use `Read` to view sections of the full output
+- File paths are reported in the summary output
+
+**Cleanup:**
+```bash
+scripts/agent-cleanup.sh                  # Remove all sessions
+scripts/agent-cleanup.sh <session-id>     # Remove one session
+scripts/agent-cleanup.sh --list           # List sessions with stats
+scripts/agent-cleanup.sh --older-than 1h  # Remove stale sessions
+make agent-clean                          # Remove all sessions
+```
+
+### Command Reference
 
 ```bash
 # Full CI pipeline locally (run before pushing)
