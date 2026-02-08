@@ -119,6 +119,30 @@ The server supports:
 	testRootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level (debug, info, warn, error) (default: info)")
 	testRootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "", "log format (json, console) (default: json)")
 
+	// Remove commands from any previous parent to avoid state pollution
+	// This is necessary because commands are package-level variables
+	if deployCmd.HasParent() {
+		deployCmd.Parent().RemoveCommand(deployCmd)
+	}
+	if ingestCmd.HasParent() {
+		ingestCmd.Parent().RemoveCommand(ingestCmd)
+	}
+	if snapshotCmd.HasParent() {
+		snapshotCmd.Parent().RemoveCommand(snapshotCmd)
+	}
+	if healthcheckCmd.HasParent() {
+		healthcheckCmd.Parent().RemoveCommand(healthcheckCmd)
+	}
+	if cleanupCmd.HasParent() {
+		cleanupCmd.Parent().RemoveCommand(cleanupCmd)
+	}
+	if setupCmd.HasParent() {
+		setupCmd.Parent().RemoveCommand(setupCmd)
+	}
+	if versionCmd.HasParent() {
+		versionCmd.Parent().RemoveCommand(versionCmd)
+	}
+
 	// Add all subcommands
 	testRootCmd.AddCommand(versionCmd)
 	testRootCmd.AddCommand(newServeCommand())

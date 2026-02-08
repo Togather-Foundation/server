@@ -129,3 +129,6 @@ web/sitemap.xml
 # Python cache
 tests/e2e/__pycache__/
 failure-reports/
+
+# Agent output (command logs for context management)
+.agent-output/

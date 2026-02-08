@@ -1,4 +1,15 @@
-.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote
+.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean
+
+# Agent-aware command runner
+# Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
+# Supports parallel sessions via AGENT_SESSION=<id>.
+# Usage: AGENT=1 make test
+#        AGENT=1 AGENT_SESSION=session1 make ci
+ifdef AGENT
+RUN := scripts/agent-run.sh
+else
+RUN :=
+endif
 
 MIGRATIONS_DIR := internal/storage/postgres/migrations
 DOCKER_COMPOSE_DIR := deploy/docker
@@ -85,7 +96,7 @@ LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VE
 build:
 	@echo "Building server..."
 	@mkdir -p bin
-	@go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
+	@$(RUN) go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
 	@ln -sf bin/togather-server server
 
 # Run all tests
