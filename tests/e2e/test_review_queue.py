@@ -18,33 +18,22 @@ Tests:
 
 import sys
 import os
-import time
 from playwright.sync_api import sync_playwright, expect
 
-
-# Load .env file
-def load_env_file():
-    """Load environment variables from .env file"""
-    env_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"
-    )
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    os.environ.setdefault(key, value)
+# Import test fixtures
+sys.path.insert(0, os.path.dirname(__file__))
+from fixtures.review_queue_fixture import (
+    setup_review_queue_fixtures,
+    cleanup_review_queue_fixtures,
+)
 
 
-load_env_file()
-
-# Server URL
-BASE_URL = "http://localhost:8080"
+# Configuration
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
 
 # Test credentials (from .env file or environment)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "test123")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "XXKokg60kd8hLXgq")
 
 print(f"Using credentials: {ADMIN_USERNAME} / {'*' * len(ADMIN_PASSWORD)}")
 
@@ -320,7 +309,7 @@ def test_empty_state_or_table_displays(page):
         print("  ✓ Review queue table displayed")
 
 
-def test_expand_collapse_detail_view(page):
+def test_expand_collapse_detail_view(page, fixture_data):
     """Test expand/collapse detail view functionality"""
     print("✓ Testing expand/collapse detail view...")
 
@@ -328,11 +317,11 @@ def test_expand_collapse_detail_view(page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1500)
 
-    # Check if there are any items in the table
+    # Check if there are any items in the table (should have fixture data)
     expand_buttons = page.locator('[data-action="expand-detail"]')
 
     if expand_buttons.count() == 0:
-        print("  ⚠ No review queue items to test expand/collapse (this is OK)")
+        print("  ⚠ No review queue items to test expand/collapse")
         return
 
     # Get the first expand button
@@ -364,7 +353,7 @@ def test_expand_collapse_detail_view(page):
     print("  ✓ Expand/collapse detail view works")
 
 
-def test_action_buttons_in_detail_view(page):
+def test_action_buttons_in_detail_view(page, fixture_data):
     """Test that action buttons appear in detail view for pending items"""
     print("✓ Testing action buttons in detail view...")
 
@@ -372,11 +361,11 @@ def test_action_buttons_in_detail_view(page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1500)
 
-    # Check if there are any items in the table
+    # Check if there are any items in the table (should have fixture data)
     expand_buttons = page.locator('[data-action="expand-detail"]')
 
     if expand_buttons.count() == 0:
-        print("  ⚠ No review queue items to test action buttons (this is OK)")
+        print("  ⚠ No review queue items to test action buttons")
         return
 
     # Expand first item
@@ -413,7 +402,7 @@ def test_action_buttons_in_detail_view(page):
         print("  ⚠ No action buttons found (item may already be reviewed)")
 
 
-def test_reject_modal_requires_reason(page):
+def test_reject_modal_requires_reason(page, fixture_data):
     """Test that reject modal opens and requires a reason"""
     print("✓ Testing reject modal...")
 
@@ -421,11 +410,11 @@ def test_reject_modal_requires_reason(page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1500)
 
-    # Check if there are any items in the table
+    # Check if there are any items in the table (should have fixture data)
     expand_buttons = page.locator('[data-action="expand-detail"]')
 
     if expand_buttons.count() == 0:
-        print("  ⚠ No review queue items to test reject modal (this is OK)")
+        print("  ⚠ No review queue items to test reject modal")
         return
 
     # Expand first item
@@ -474,7 +463,7 @@ def test_reject_modal_requires_reason(page):
     print("  ✓ Reject modal validation works")
 
 
-def test_fix_dates_form_functionality(page):
+def test_fix_dates_form_functionality(page, fixture_data):
     """Test fix dates inline form functionality"""
     print("✓ Testing fix dates form...")
 
@@ -482,11 +471,11 @@ def test_fix_dates_form_functionality(page):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1500)
 
-    # Check if there are any items in the table
+    # Check if there are any items in the table (should have fixture data)
     expand_buttons = page.locator('[data-action="expand-detail"]')
 
     if expand_buttons.count() == 0:
-        print("  ⚠ No review queue items to test fix dates form (this is OK)")
+        print("  ⚠ No review queue items to test fix dates form")
         return
 
     # Expand first item
@@ -640,6 +629,14 @@ def run_all_tests():
     print("Running Review Queue E2E Tests (Playwright)")
     print("=" * 60 + "\n")
 
+    # Setup test fixtures
+    fixture_data = None
+    try:
+        fixture_data = setup_review_queue_fixtures()
+    except Exception as e:
+        print(f"✗ Failed to setup fixtures: {e}")
+        print("⚠ Continuing tests without fixtures (some may skip)")
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
@@ -661,10 +658,13 @@ def run_all_tests():
             test_status_filter_tabs(page)
             test_loading_state_displays(page)
             test_empty_state_or_table_displays(page)
-            test_expand_collapse_detail_view(page)
-            test_action_buttons_in_detail_view(page)
-            test_reject_modal_requires_reason(page)
-            test_fix_dates_form_functionality(page)
+
+            # Tests that require fixture data
+            test_expand_collapse_detail_view(page, fixture_data)
+            test_action_buttons_in_detail_view(page, fixture_data)
+            test_reject_modal_requires_reason(page, fixture_data)
+            test_fix_dates_form_functionality(page, fixture_data)
+
             test_empty_state_on_different_tabs(page)
             test_pagination_controls(page)
             test_unauthenticated_access_redirects(page)
@@ -707,6 +707,13 @@ def run_all_tests():
 
         finally:
             browser.close()
+
+            # Cleanup fixtures
+            if fixture_data:
+                try:
+                    cleanup_review_queue_fixtures(fixture_data)
+                except Exception as e:
+                    print(f"⚠ Warning: Failed to cleanup fixtures: {e}")
 
 
 if __name__ == "__main__":
