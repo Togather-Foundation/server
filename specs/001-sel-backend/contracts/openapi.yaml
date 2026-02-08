@@ -572,6 +572,265 @@ paths:
               schema:
                 $ref: '#/components/schemas/ChangeFeedResponse'
 
+  /admin/review-queue:
+    get:
+      operationId: listReviewQueue
+      summary: List review queue entries
+      description: |
+        Returns events awaiting admin review due to validation warnings or normalization changes.
+        Supports filtering by status and pagination.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by review status (defaults to 'pending')
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+            default: pending
+        - name: cursor
+          in: query
+          description: Pagination cursor (review queue entry ID)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum results per page (default 50, max 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Paginated list of review queue entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/review-queue/{id}:
+    get:
+      operationId: getReviewQueueEntry
+      summary: Get review queue entry details
+      description: |
+        Retrieve detailed information for a specific review queue entry, including
+        original payload, normalized payload, detected changes, and validation warnings.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Review queue entry details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/review-queue/{id}/approve:
+    post:
+      operationId: approveReviewQueueEntry
+      summary: Approve a review queue entry
+      description: |
+        Approve an event in the review queue and publish it. The event's lifecycle
+        state will be updated to 'published' and it will appear in public listings.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                  description: Optional review notes
+            examples:
+              withNotes:
+                summary: Approval with notes
+                value:
+                  notes: "Date corrections look good, publishing"
+              withoutNotes:
+                summary: Simple approval
+                value: {}
+      responses:
+        '200':
+          description: Review approved and event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/review-queue/{id}/reject:
+    post:
+      operationId: rejectReviewQueueEntry
+      summary: Reject a review queue entry
+      description: |
+        Reject an event in the review queue and mark it as deleted. The event will
+        return HTTP 410 Gone with a tombstone and will not appear in public listings.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  description: Required rejection reason
+            examples:
+              invalidDates:
+                summary: Reject due to invalid dates
+                value:
+                  reason: "Event dates are in the past and cannot be corrected"
+              spam:
+                summary: Reject spam event
+                value:
+                  reason: "Spam submission - not a legitimate event"
+      responses:
+        '200':
+          description: Review rejected and event deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/review-queue/{id}/fix:
+    post:
+      operationId: fixReviewQueueEntry
+      summary: Fix event dates and approve
+      description: |
+        Apply date corrections to an event and approve it for publication.
+        This endpoint is intended for fixing date-related issues detected during normalization.
+        
+        Note: Currently this endpoint only marks the review as approved with correction notes.
+        Full date correction implementation is tracked in srv-trg.
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [corrections]
+              properties:
+                corrections:
+                  type: object
+                  description: Date corrections to apply
+                  properties:
+                    startDate:
+                      type: string
+                      format: date-time
+                      description: Corrected start date
+                    endDate:
+                      type: string
+                      format: date-time
+                      description: Corrected end date
+                notes:
+                  type: string
+                  description: Optional notes about the corrections
+            examples:
+              fixEndDate:
+                summary: Fix reversed end date
+                value:
+                  corrections:
+                    endDate: "2026-03-15T22:00:00Z"
+                  notes: "Added 24 hours to fix reversed dates"
+              fixBothDates:
+                summary: Fix both dates
+                value:
+                  corrections:
+                    startDate: "2026-03-15T19:00:00Z"
+                    endDate: "2026-03-15T22:00:00Z"
+                  notes: "Corrected timezone offset"
+      responses:
+        '200':
+          description: Dates corrected and review approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /admin/login:
     post:
       operationId: login
@@ -1246,6 +1505,141 @@ components:
             key:
               type: string
               description: Full API key (shown only once)
+
+    ReviewQueueListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewQueueItem'
+        next_cursor:
+          type: string
+          description: Cursor for next page (review queue entry ID)
+
+    ReviewQueueItem:
+      type: object
+      required: [id, eventId, warnings, status, createdAt]
+      properties:
+        id:
+          type: integer
+          description: Review queue entry ID
+        eventId:
+          type: string
+          description: Event ULID
+        eventName:
+          type: string
+          description: Name of the event (from original payload)
+        eventStartTime:
+          type: string
+          format: date-time
+          description: Event start time
+        eventEndTime:
+          type: string
+          format: date-time
+          description: Event end time
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationWarning'
+          description: Validation warnings that triggered review
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: Current review status
+        createdAt:
+          type: string
+          format: date-time
+          description: When the entry was created
+        reviewedBy:
+          type: string
+          description: Email of admin who reviewed (if reviewed)
+        reviewedAt:
+          type: string
+          format: date-time
+          description: When the review was completed (if reviewed)
+
+    ReviewQueueDetail:
+      type: object
+      required: [id, eventId, status, warnings, original, normalized, changes, createdAt]
+      properties:
+        id:
+          type: integer
+          description: Review queue entry ID
+        eventId:
+          type: string
+          description: Event ULID
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: Current review status
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationWarning'
+          description: Validation warnings that triggered review
+        original:
+          type: object
+          description: Original event payload as submitted
+        normalized:
+          type: object
+          description: Normalized event payload after corrections
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeDetail'
+          description: List of changes made during normalization
+        createdAt:
+          type: string
+          format: date-time
+          description: When the entry was created
+        reviewedBy:
+          type: string
+          description: Email of admin who reviewed (if reviewed)
+        reviewedAt:
+          type: string
+          format: date-time
+          description: When the review was completed (if reviewed)
+        reviewNotes:
+          type: string
+          description: Notes from the reviewer (if approved with notes)
+        rejectionReason:
+          type: string
+          description: Reason for rejection (if rejected)
+
+    ValidationWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Warning code (e.g., "REVERSED_DATES", "MISSING_END_DATE")
+        message:
+          type: string
+          description: Human-readable warning message
+        field:
+          type: string
+          description: Field path that triggered the warning
+        severity:
+          type: string
+          enum: [info, warning, error]
+          description: Warning severity level
+
+    ChangeDetail:
+      type: object
+      required: [field, original, corrected, reason]
+      properties:
+        field:
+          type: string
+          description: Field that was changed (e.g., "endDate")
+        original:
+          description: Original value before normalization
+        corrected:
+          description: Corrected value after normalization
+        reason:
+          type: string
+          description: Explanation of why the change was made
 
     ProblemDetails:
       type: object
