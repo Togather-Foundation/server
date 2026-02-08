@@ -119,7 +119,7 @@ http_get() {
 
 test_health_endpoint() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 1/16: Health endpoint - GET ${BASE_URL}/health"
+    log "INFO" "Test 1/17: Health endpoint - GET ${BASE_URL}/health"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -170,7 +170,7 @@ test_health_endpoint() {
 
 test_version_endpoint() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 2/16: Version endpoint - GET ${BASE_URL}/version"
+    log "INFO" "Test 2/17: Version endpoint - GET ${BASE_URL}/version"
     
     local response=$(http_get "${BASE_URL}/version" 200)
     
@@ -197,7 +197,7 @@ test_version_endpoint() {
 
 test_database_connectivity() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 3/16: Database connectivity check"
+    log "INFO" "Test 3/17: Database connectivity check"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -229,7 +229,7 @@ test_database_connectivity() {
 
 test_migration_status() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 4/16: Database migration status check"
+    log "INFO" "Test 4/17: Database migration status check"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -270,7 +270,7 @@ test_migration_status() {
 
 test_http_endpoint_check() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 5/16: HTTP endpoint health check"
+    log "INFO" "Test 5/17: HTTP endpoint health check"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -295,7 +295,7 @@ test_http_endpoint_check() {
 
 test_cors_headers() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 6/16: CORS headers check"
+    log "INFO" "Test 6/17: CORS headers check"
     
     # CORS headers are only sent when Origin header is present (cross-origin requests)
     # Send a test Origin header to check if CORS is configured
@@ -331,7 +331,7 @@ test_cors_headers() {
 
 test_security_headers() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 7/16: Security headers check"
+    log "INFO" "Test 7/17: Security headers check"
     
     local headers=$(curl -s -I --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
     
@@ -365,7 +365,7 @@ test_security_headers() {
 
 test_response_time() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 8/16: Response time check (threshold: ${MAX_RESPONSE_TIME_MS}ms)"
+    log "INFO" "Test 8/17: Response time check (threshold: ${MAX_RESPONSE_TIME_MS}ms)"
     
     local start_time=$(date +%s%N)
     local response=$(http_get "${BASE_URL}/health" 200)
@@ -392,7 +392,7 @@ test_response_time() {
 
 test_events_api() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 9/16: Events API endpoint - GET ${BASE_URL}/api/v1/events"
+    log "INFO" "Test 9/17: Events API endpoint - GET ${BASE_URL}/api/v1/events"
     
     local response=$(http_get "${BASE_URL}/api/v1/events" 200)
     
@@ -417,7 +417,7 @@ test_events_api() {
 
 test_places_api() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 10/16: Places API endpoint - GET ${BASE_URL}/api/v1/places"
+    log "INFO" "Test 10/17: Places API endpoint - GET ${BASE_URL}/api/v1/places"
     
     local response=$(http_get "${BASE_URL}/api/v1/places" 200)
     
@@ -443,7 +443,7 @@ test_places_api() {
 
 test_organizations_api() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 11/16: Organizations API endpoint - GET ${BASE_URL}/api/v1/organizations"
+    log "INFO" "Test 11/17: Organizations API endpoint - GET ${BASE_URL}/api/v1/organizations"
     
     local response=$(http_get "${BASE_URL}/api/v1/organizations" 200)
     
@@ -469,7 +469,7 @@ test_organizations_api() {
 
 test_openapi_schema() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 12/16: OpenAPI schema endpoint - GET ${BASE_URL}/api/v1/openapi.json"
+    log "INFO" "Test 12/17: OpenAPI schema endpoint - GET ${BASE_URL}/api/v1/openapi.json"
     
     local response=$(http_get "${BASE_URL}/api/v1/openapi.json" 200 2>/dev/null || echo "")
     
@@ -499,7 +499,7 @@ test_openapi_schema() {
 
 test_admin_ui() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 13/16: Admin UI login page - GET ${BASE_URL}/admin/login"
+    log "INFO" "Test 13/17: Admin UI login page - GET ${BASE_URL}/admin/login"
     
     local response=$(http_get "${BASE_URL}/admin/login" 200)
     
@@ -524,7 +524,7 @@ test_admin_ui() {
 
 test_https_certificate() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 14/16: HTTPS certificate validity"
+    log "INFO" "Test 14/17: HTTPS certificate validity"
     
     # Skip if using http://
     if [[ "$BASE_URL" != https://* ]]; then
@@ -558,7 +558,7 @@ test_https_certificate() {
 
 test_slot_header() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 15/16: Active deployment slot identification"
+    log "INFO" "Test 15/17: Active deployment slot identification"
     
     local headers=$(curl -s -I --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
     
@@ -580,9 +580,142 @@ test_slot_header() {
     fi
 }
 
+test_river_worker_health() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Test 16/17: River worker job processing - POST ${BASE_URL}/api/v1/events:batch"
+    
+    # Skip on production - don't create test data in production
+    if [[ "$ENVIRONMENT" == "production" ]]; then
+        log "WARN" "Skipping River worker test in production (read-only mode)"
+        ((TESTS_PASSED++)) || true
+        return 0
+    fi
+    
+    # Check if API_KEY is available (required for batch submission)
+    if [[ -z "${API_KEY:-}" ]]; then
+        log "WARN" "Skipping River worker test (API_KEY not configured for ${ENVIRONMENT})"
+        log "INFO" "  Set API_KEY environment variable to enable this test"
+        ((TESTS_PASSED++)) || true
+        return 0
+    fi
+    
+    # First check if the job_queue health check passes
+    local health_response=$(http_get "${BASE_URL}/health" 200)
+    if [[ $? -eq 0 ]]; then
+        local job_queue_status=$(echo "$health_response" | jq -r '.checks.job_queue.status // "unknown"')
+        if [[ "$job_queue_status" == "fail" ]]; then
+            log "FAIL" "Job queue health check failed - River not initialized"
+            local msg=$(echo "$health_response" | jq -r '.checks.job_queue.message // "no message"')
+            log "ERROR" "  Job queue error: ${msg}"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    fi
+    
+    # Create a minimal test batch with one event
+    local batch_payload=$(cat <<'EOF'
+{
+  "events": [
+    {
+      "@type": "Event",
+      "name": "Smoke Test - River Worker Health Check",
+      "startDate": "2026-12-31T23:59:59Z",
+      "location": {
+        "@type": "Place",
+        "name": "Test Venue",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "addressCountry": "CA"
+      },
+      "description": "Automated smoke test to verify River workers are processing jobs"
+    }
+  ]
+}
+EOF
+)
+    
+    # Submit batch job
+    local submit_stderr=$(mktemp)
+    local submit_response=$(curl -s -w "\n%{http_code}" \
+        --max-time "$TIMEOUT" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${API_KEY}" \
+        -d "$batch_payload" \
+        "${BASE_URL}/api/v1/events:batch" 2>"$submit_stderr" || echo -e "\n000")
+    rm -f "$submit_stderr"
+    
+    local submit_body=$(echo "$submit_response" | head -n -1)
+    local submit_status=$(echo "$submit_response" | tail -n 1)
+    
+    if [[ "$submit_status" != "202" ]]; then
+        log "FAIL" "Failed to submit batch job (HTTP ${submit_status}, expected 202)"
+        log "ERROR" "  Response: $(echo "$submit_body" | head -c 200)"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+    
+    # Extract batch_id from response
+    local batch_id=$(echo "$submit_body" | jq -r '.batch_id // empty')
+    if [[ -z "$batch_id" ]]; then
+        log "FAIL" "Batch submission succeeded but no batch_id in response"
+        log "ERROR" "  Response: ${submit_body}"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+    
+    log "INFO" "  Batch submitted (ID: ${batch_id}), waiting for processing..."
+    
+    # Poll for batch completion (max 30 seconds)
+    local max_wait=30
+    local poll_interval=1
+    local elapsed=0
+    local batch_status=""
+    
+    while [[ $elapsed -lt $max_wait ]]; do
+        sleep "$poll_interval"
+        elapsed=$((elapsed + poll_interval))
+        
+        local status_response=$(http_get "${BASE_URL}/api/v1/batch-status/${batch_id}" 200 2>/dev/null || echo "")
+        
+        if [[ -n "$status_response" ]]; then
+            batch_status=$(echo "$status_response" | jq -r '.status // empty')
+            
+            if [[ "$batch_status" == "completed" ]]; then
+                local total=$(echo "$status_response" | jq -r '.total // 0')
+                local created=$(echo "$status_response" | jq -r '.created // 0')
+                local failed=$(echo "$status_response" | jq -r '.failed // 0')
+                local completed_at=$(echo "$status_response" | jq -r '.completed_at // "unknown"')
+                
+                log "SUCCESS" "River workers processed batch successfully (${elapsed}s)"
+                log "INFO" "  Total: ${total}, Created: ${created}, Failed: ${failed}"
+                log "INFO" "  Completed at: ${completed_at}"
+                ((TESTS_PASSED++)) || true
+                return 0
+            fi
+        fi
+    done
+    
+    # Timeout - batch didn't complete in time
+    if [[ -z "$batch_status" ]]; then
+        log "FAIL" "River workers not processing jobs - batch status not available after ${max_wait}s"
+        log "ERROR" "  Batch ID: ${batch_id}"
+        log "ERROR" "  This indicates River workers are not running or not processing jobs"
+        log "ERROR" "  Check River worker logs and ensure River client is started"
+    else
+        log "FAIL" "River workers not processing jobs - batch stuck in '${batch_status}' status after ${max_wait}s"
+        log "ERROR" "  Batch ID: ${batch_id}"
+        log "ERROR" "  Expected: completed, Got: ${batch_status}"
+        log "ERROR" "  Check River worker logs for errors"
+    fi
+    
+    ((TESTS_FAILED++)) || true
+    return 1
+}
+
 test_container_health() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 16/16: Docker container health status"
+    log "INFO" "Test 17/17: Docker container health status"
     
     # Skip if SSH_SERVER is not configured
     if [[ -z "${SSH_SERVER:-}" ]]; then
@@ -681,6 +814,9 @@ main() {
     echo ""
     
     test_slot_header
+    echo ""
+    
+    test_river_worker_health
     echo ""
     
     test_container_health
