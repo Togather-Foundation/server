@@ -9,6 +9,7 @@ import (
 // normalizeURL fixes common URL issues in external data sources:
 // - Adds https:// prefix to URLs starting with "www."
 // - Adds https:// to domain-like strings without protocol
+// - Normalizes social media shorthand (@username patterns)
 // - Preserves mailto: URLs
 // - Returns empty string if input is empty
 func normalizeURL(raw string) string {
@@ -25,6 +26,12 @@ func normalizeURL(raw string) string {
 	// Already has protocol
 	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
 		return trimmed
+	}
+
+	// Social media shorthand: @username -> don't try to normalize
+	// These should be caught by validation if they're in a URL field
+	if strings.HasPrefix(trimmed, "@") {
+		return trimmed // Let validation handle @mentions in URL fields
 	}
 
 	// Starts with www. -> add https://

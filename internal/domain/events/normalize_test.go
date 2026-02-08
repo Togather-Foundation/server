@@ -114,6 +114,31 @@ func TestNormalizeURL(t *testing.T) {
 			input:    "www.eventbrite.ca/e/event-name-123456",
 			expected: "https://www.eventbrite.ca/e/event-name-123456",
 		},
+		{
+			name:     "does not modify @mentions (let validation handle them)",
+			input:    "@username",
+			expected: "@username",
+		},
+		{
+			name:     "does not modify @handle social shorthand",
+			input:    "@instagram_user",
+			expected: "@instagram_user",
+		},
+		{
+			name:     "handles Twitter/X profile URLs",
+			input:    "twitter.com/username",
+			expected: "https://twitter.com/username",
+		},
+		{
+			name:     "handles LinkedIn URLs",
+			input:    "www.linkedin.com/company/example",
+			expected: "https://www.linkedin.com/company/example",
+		},
+		{
+			name:     "handles YouTube URLs",
+			input:    "www.youtube.com/@channel",
+			expected: "https://www.youtube.com/@channel",
+		},
 	}
 
 	for _, tt := range tests {
