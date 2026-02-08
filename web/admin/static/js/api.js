@@ -112,7 +112,19 @@ const API = {
             throw err;
         }
         
-        return response.json();
+        // Handle empty responses (e.g., 204 No Content for DELETE operations)
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return null;
+        }
+        
+        // Parse JSON response
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        }
+        
+        // If not JSON, return text
+        return response.text();
     },
     
     /**
