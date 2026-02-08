@@ -457,13 +457,15 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	// Update event with corrected dates
 	eventULID := review.EventULID
 
-	// Build update params with corrected dates
-	// Note: This is a simplified implementation - in production, you'd need to handle
-	// occurrence-level updates and more complex event structures
+	// TODO(srv-trg): Implement FixReview workflow - allow admin to modify event data and re-normalize
+	// This handler currently only marks the review as approved with notes about corrections,
+	// but does not actually update the event's occurrence-level dates. Full implementation needs:
+	// - Update event occurrences with corrected start/end dates
+	// - Re-run normalization on the updated event data
+	// - Validate the corrected data meets SHACL constraints
+	// - Handle both simple date fixes and complex event structure changes
+	// Related: Need occurrence-level update API in AdminService
 	_ = events.UpdateEventParams{}
-
-	// For now, we'll just mark the review as approved with notes about the manual correction
-	// TODO: Implement proper event date updating when occurrence-level API is available
 
 	// Publish the event (assuming corrections were made outside this endpoint or will be made)
 	_, err = h.AdminService.PublishEvent(r.Context(), eventULID)
