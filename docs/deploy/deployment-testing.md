@@ -537,7 +537,7 @@ Unified test interface with environment-aware testing:
 
 **Features:**
 - Environment-aware configuration (local/staging/production)
-- Comprehensive smoke tests (16 checks including health, database, migrations, APIs, security, containers)
+- Comprehensive smoke tests (17 checks including health, database, migrations, APIs, security, containers, River workers)
 - Optional performance testing (staging only)
 - Production safety (read-only mode, no destructive tests)
 - Detailed logging with color-coded output
@@ -559,7 +559,8 @@ Unified test interface with environment-aware testing:
 13. Admin UI accessibility
 14. HTTPS certificate validation
 15. Active slot identification
-16. Container health via Docker
+16. River worker job processing (batch ingestion end-to-end)
+17. Container health via Docker
 
 ### Usage Recommendations
 
@@ -591,6 +592,7 @@ Each configuration includes:
 - `TIMEOUT` - Request timeout settings
 - `ALLOW_DESTRUCTIVE` - Whether to allow data modification
 - `ALLOW_LOAD_TESTING` - Whether performance tests are allowed
+- `API_KEY` - API key for authenticated tests (optional, enables River worker test)
 
 Optional environment overrides (for test runners):
 - `WAIT_TIMEOUT` - Health wait timeout in seconds (default: 60)
