@@ -8,6 +8,122 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNormalizeURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "adds https to www prefix",
+			input:    "www.example.com",
+			expected: "https://www.example.com",
+		},
+		{
+			name:     "adds https to bare domain",
+			input:    "example.com",
+			expected: "https://example.com",
+		},
+		{
+			name:     "adds https to subdomain",
+			input:    "blog.example.com",
+			expected: "https://blog.example.com",
+		},
+		{
+			name:     "preserves existing https",
+			input:    "https://example.com",
+			expected: "https://example.com",
+		},
+		{
+			name:     "preserves existing http",
+			input:    "http://example.com",
+			expected: "http://example.com",
+		},
+		{
+			name:     "preserves mailto URLs",
+			input:    "mailto:test@example.com",
+			expected: "mailto:test@example.com",
+		},
+		{
+			name:     "handles empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "trims whitespace and adds https to www",
+			input:    "  www.example.com  ",
+			expected: "https://www.example.com",
+		},
+		{
+			name:     "trims whitespace and adds https to bare domain",
+			input:    "  example.com  ",
+			expected: "https://example.com",
+		},
+		{
+			name:     "trims whitespace from complete URL",
+			input:    "  https://example.com  ",
+			expected: "https://example.com",
+		},
+		{
+			name:     "handles short domain like bit.ly",
+			input:    "bit.ly/abc123",
+			expected: "https://bit.ly/abc123",
+		},
+		{
+			name:     "handles domain with path",
+			input:    "example.com/path/to/page",
+			expected: "https://example.com/path/to/page",
+		},
+		{
+			name:     "handles domain with query params",
+			input:    "example.com?param=value",
+			expected: "https://example.com?param=value",
+		},
+		{
+			name:     "does not add protocol to relative paths",
+			input:    "/path/to/resource",
+			expected: "/path/to/resource",
+		},
+		{
+			name:     "does not add protocol to anchor links",
+			input:    "#section",
+			expected: "#section",
+		},
+		{
+			name:     "does not modify strings with spaces (invalid URLs)",
+			input:    "not a url",
+			expected: "not a url",
+		},
+		{
+			name:     "handles Instagram URLs from Toronto data",
+			input:    "www.instagram.com/username",
+			expected: "https://www.instagram.com/username",
+		},
+		{
+			name:     "handles Facebook URLs from Toronto data",
+			input:    "www.facebook.com/events/123456",
+			expected: "https://www.facebook.com/events/123456",
+		},
+		{
+			name:     "handles bare domain social media",
+			input:    "facebook.com/page",
+			expected: "https://facebook.com/page",
+		},
+		{
+			name:     "handles Eventbrite URLs",
+			input:    "www.eventbrite.ca/e/event-name-123456",
+			expected: "https://www.eventbrite.ca/e/event-name-123456",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeURL(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestNormalizeStringSlice(t *testing.T) {
 	tests := []struct {
 		name     string
