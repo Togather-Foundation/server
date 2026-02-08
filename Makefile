@@ -238,7 +238,7 @@ e2e:
 # Run only pytest-based e2e tests (faster, better output)
 e2e-pytest:
 	@echo "Running pytest-based E2E tests..."
-	@uvx --from pytest-playwright --with playwright --with pytest pytest tests/e2e/test_user_management.py -v
+	@uvx --from pytest-playwright --with playwright --with pytest pytest tests/e2e/test_user_management.py tests/e2e/test_review_queue.py -v
 	@echo ""
 	@uvx --from playwright --with playwright --with pytest pytest tests/e2e/test_email_validation.py tests/e2e/test_password_strength.py tests/e2e/test_modal_cleanup.py -v
 
