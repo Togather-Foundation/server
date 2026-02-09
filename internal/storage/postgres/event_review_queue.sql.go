@@ -110,6 +110,20 @@ func (q *Queries) CleanupUnreviewedEvents(ctx context.Context) error {
 	return err
 }
 
+const countReviewQueueByStatus = `-- name: CountReviewQueueByStatus :one
+SELECT COUNT(*) as total
+  FROM event_review_queue
+ WHERE ($1::text IS NULL OR status = $1)
+`
+
+// Count total reviews by status (for badge display)
+func (q *Queries) CountReviewQueueByStatus(ctx context.Context, status pgtype.Text) (int64, error) {
+	row := q.db.QueryRow(ctx, countReviewQueueByStatus, status)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createReviewQueueEntry = `-- name: CreateReviewQueueEntry :one
 INSERT INTO event_review_queue (
   event_id,

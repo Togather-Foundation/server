@@ -152,6 +152,12 @@ SELECT r.id,
  ORDER BY r.id ASC
  LIMIT sqlc.arg('limit');
 
+-- name: CountReviewQueueByStatus :one
+-- Count total reviews by status (for badge display)
+SELECT COUNT(*) as total
+  FROM event_review_queue
+ WHERE (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'));
+
 -- name: ApproveReview :one
 -- Mark review as approved
 UPDATE event_review_queue

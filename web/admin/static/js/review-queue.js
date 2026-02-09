@@ -150,9 +150,9 @@
                 entries = [];
             }
             
-            // Update pending count badge
-            if (currentFilter === 'pending' && data.items) {
-                updatePendingCount(data.items.length);
+            // Update badge counts with total from API
+            if (data.total !== undefined) {
+                updateBadgeCount(currentFilter, data.total);
             }
             
             if (entries.length === 0) {
@@ -275,51 +275,113 @@
         const original = detail.original || {};
         const normalized = detail.normalized || {};
         
-        // Build warnings HTML
-        const warningsHtml = warnings.map(w => {
-            const badge = getWarningCodeBadge(w.code);
-            return `<div class="mb-2">${badge} ${escapeHtml(w.message)}</div>`;
-        }).join('');
+        // Check if there are any date-related warnings
+        const hasDateWarnings = warnings.some(w => 
+            w.code && (w.code.includes('date') || w.code.includes('time') || w.code.includes('reversed'))
+        );
         
-        // Build changes HTML
-        const changesHtml = changes.length > 0 ? `
-            <div class="mb-3">
-                <strong>Changes Applied:</strong>
-                ${changes.map(c => `
-                    <div class="mt-2">
-                        <strong>${escapeHtml(c.field)}:</strong><br>
-                        <span class="text-muted">From:</span> ${escapeHtml(formatDateValue(c.original))}<br>
-                        <span class="text-success">To:</span> ${escapeHtml(formatDateValue(c.corrected))}<br>
-                        <span class="text-muted small">${escapeHtml(c.reason)}</span>
-                    </div>
-                `).join('')}
+        // Build warnings HTML with prominent display
+        const warningsHtml = warnings.length > 0 ? `
+            <div class="alert alert-warning mb-3" role="alert">
+                <h4 class="alert-heading mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon alert-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M12 9v2m0 4v.01"/>
+                        <path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/>
+                    </svg>
+                    Data Quality Issues Detected
+                </h4>
+                ${warnings.map(w => {
+                    const badge = getWarningCodeBadge(w.code);
+                    return `<div class="mb-1">${badge} ${escapeHtml(w.message)}</div>`;
+                }).join('')}
             </div>
         ` : '';
         
-        // Build comparison HTML
+        // Build changes HTML with visual emphasis
+        const changesHtml = changes.length > 0 ? `
+            <div class="card bg-light mb-3">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Automatic Corrections Applied</h4>
+                </div>
+                <div class="card-body">
+                    ${changes.map(c => `
+                        <div class="mb-3">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <strong class="text-muted">${escapeHtml(c.field)}</strong>
+                                </div>
+                            </div>
+                            <div class="row mt-1">
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">Original:</small>
+                                    <span class="badge bg-danger-lt">${escapeHtml(formatDateValue(c.original))}</span>
+                                </div>
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">Corrected:</small>
+                                    <span class="badge bg-success-lt">${escapeHtml(formatDateValue(c.corrected))}</span>
+                                </div>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <circle cx="12" cy="12" r="9"/>
+                                    <path d="M12 8h.01"/>
+                                    <path d="M11 12h1v4h1"/>
+                                </svg>
+                                ${escapeHtml(c.reason)}
+                            </small>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        ` : '';
+        
+        // Build comparison HTML with diff highlighting
         const comparisonHtml = `
             <div class="row">
                 <div class="col-md-6">
                     <h4>Original Data</h4>
+                    <small class="text-muted d-block mb-2">Data as received from source</small>
                     ${renderEventData(original, changes, 'original')}
                 </div>
                 <div class="col-md-6">
                     <h4>Normalized Data</h4>
+                    <small class="text-muted d-block mb-2">Data after automatic corrections</small>
                     ${renderEventData(normalized, changes, 'normalized')}
                 </div>
             </div>
         `;
         
         // Build action buttons (only for pending status)
+        // Only show Fix Dates if there are date-related warnings
         const actionButtons = detail.status === 'pending' ? `
             <div class="btn-list" id="action-buttons-${id}">
                 <button class="btn btn-success" data-action="approve" data-id="${id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M5 12l5 5l10 -10"/>
+                    </svg>
                     Approve
                 </button>
-                <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
-                    Fix Dates
-                </button>
+                ${hasDateWarnings ? `
+                    <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <rect x="4" y="5" width="16" height="16" rx="2"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="4" y1="11" x2="20" y2="11"/>
+                        </svg>
+                        Fix Dates
+                    </button>
+                ` : ''}
                 <button class="btn btn-outline-danger" data-action="reject" data-id="${id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
                     Reject
                 </button>
             </div>
@@ -348,7 +410,7 @@
                             </button>
                         </div>
                         
-                        ${warningsHtml ? `<div class="mb-3"><strong>Warnings:</strong><br>${warningsHtml}</div>` : ''}
+                        ${warningsHtml}
                         ${changesHtml}
                         ${comparisonHtml}
                         
@@ -388,12 +450,35 @@
             
             // Check if this field changed
             const changed = changes.find(c => c.field === field.key);
-            const highlight = changed ? (type === 'original' ? 'bg-danger-lt' : 'bg-success-lt') : '';
+            let highlightClass = '';
+            let changeIndicator = '';
+            
+            if (changed) {
+                if (type === 'original') {
+                    highlightClass = 'bg-danger-lt text-danger';
+                    changeIndicator = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm ms-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="12" cy="12" r="9"/>
+                            <line x1="9" y1="12" x2="15" y2="12"/>
+                        </svg>
+                    `;
+                } else {
+                    highlightClass = 'bg-success-lt text-success';
+                    changeIndicator = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm ms-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="M12 7v6l3 3"/>
+                        </svg>
+                    `;
+                }
+            }
             
             return `
-                <div class="mb-2">
-                    <strong>${escapeHtml(field.label)}:</strong><br>
-                    <span class="${highlight}">${escapeHtml(value)}</span>
+                <div class="mb-2 ${changed ? 'p-2 rounded' : ''}">
+                    <strong class="${changed ? highlightClass : ''}">${escapeHtml(field.label)}:${changeIndicator}</strong><br>
+                    <span class="${highlightClass}">${escapeHtml(value)}</span>
                 </div>
             `;
         }).join('');
@@ -673,19 +758,24 @@
             updateShowingText(entries.length);
         }
         
-        // Update pending count
-        if (currentFilter === 'pending') {
-            updatePendingCount(entries.length);
+        // Decrement badge count for current filter
+        const badge = document.querySelector(`[data-action="filter-status"][data-status="${currentFilter}"] .badge`);
+        if (badge) {
+            const currentCount = parseInt(badge.textContent) || 0;
+            if (currentCount > 0) {
+                badge.textContent = currentCount - 1;
+            }
         }
     }
     
     /**
-     * Update pending count badge
-     * Updates the visual badge showing number of pending review items
-     * @param {number} count - Number of pending entries
+     * Update badge count for a specific status tab
+     * Updates the visual badge showing number of entries for the given status
+     * @param {string} status - Status to update ('pending', 'approved', 'rejected')
+     * @param {number} count - Total number of entries for this status
      */
-    function updatePendingCount(count) {
-        const badge = document.getElementById('pending-count');
+    function updateBadgeCount(status, count) {
+        const badge = document.querySelector(`[data-action="filter-status"][data-status="${status}"] .badge`);
         if (badge) {
             badge.textContent = count;
         }

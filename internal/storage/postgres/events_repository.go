@@ -1335,11 +1335,20 @@ func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.Re
 		Limit: int32(filters.Limit),
 	}
 
+	// Build count param with same status filter
+	var countStatus pgtype.Text
 	if filters.Status != nil {
 		params.Status = pgtype.Text{String: *filters.Status, Valid: true}
+		countStatus = pgtype.Text{String: *filters.Status, Valid: true}
 	}
 	if filters.NextCursor != nil {
 		params.AfterID = pgtype.Int4{Int32: int32(*filters.NextCursor), Valid: true}
+	}
+
+	// Get total count for this filter (for badge display)
+	totalCount, err := queries.CountReviewQueueByStatus(ctx, countStatus)
+	if err != nil {
+		return nil, fmt.Errorf("count review queue: %w", err)
 	}
 
 	rows, err := queries.ListReviewQueue(ctx, params)
@@ -1361,6 +1370,7 @@ func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.Re
 	return &events.ReviewQueueListResult{
 		Entries:    entries,
 		NextCursor: nextCursor,
+		TotalCount: totalCount,
 	}, nil
 }
 

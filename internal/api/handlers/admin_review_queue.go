@@ -144,6 +144,7 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, listResponse{
 		Items:      convertToMapSlice(items),
 		NextCursor: nextCursor,
+		Total:      result.TotalCount,
 	}, "application/json")
 }
 

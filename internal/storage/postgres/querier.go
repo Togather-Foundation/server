@@ -29,6 +29,8 @@ type Querier interface {
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	CountPastEvents(ctx context.Context) (int64, error)
+	// Count total reviews by status (for badge display)
+	CountReviewQueueByStatus(ctx context.Context, status pgtype.Text) (int64, error)
 	CountUpcomingEvents(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
