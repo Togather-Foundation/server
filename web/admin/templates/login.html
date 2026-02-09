@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Login - SEL Events</title>
     {{ template "_head_meta.html" . }}
-    <link rel="stylesheet" href="/admin/static/css/admin.css">
+    <link rel="stylesheet" href="/admin/static/css/admin.css?v={{ assetVersion }}">
 </head>
 <body>
     <div class="login-container">
@@ -23,6 +23,6 @@
             <button type="submit">Login</button>
         </form>
     </div>
-    <script src="/admin/static/js/login.js"></script>
+    <script src="/admin/static/js/login.js?v={{ assetVersion }}"></script>
 </body>
 </html>

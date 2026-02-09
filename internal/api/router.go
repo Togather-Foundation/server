@@ -518,6 +518,21 @@ func findShapesDirectory() string {
 // loadAdminTemplates loads HTML templates for the admin UI.
 // Returns nil if templates cannot be found (admin UI will gracefully degrade).
 func loadAdminTemplates() (*template.Template, error) {
+	// Get version from environment variable (set at build time)
+	gitCommit := os.Getenv("BUILD_COMMIT")
+	if gitCommit == "" {
+		gitCommit = "dev"
+	} else if len(gitCommit) > 7 {
+		gitCommit = gitCommit[:7] // Use short hash
+	}
+
+	// Create template with custom functions for cache-busting
+	funcMap := template.FuncMap{
+		"assetVersion": func() string {
+			return gitCommit
+		},
+	}
+
 	// Try common locations for the templates directory
 	candidates := []string{
 		"web/admin/templates",                      // From project root
@@ -532,7 +547,8 @@ func loadAdminTemplates() (*template.Template, error) {
 			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
 				// Found templates directory, parse all .html files
 				pattern := filepath.Join(absPath, "*.html")
-				if tmpl, err := template.ParseGlob(pattern); err == nil {
+				tmpl := template.New("").Funcs(funcMap)
+				if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 					return tmpl, nil
 				}
 			}
@@ -548,7 +564,8 @@ func loadAdminTemplates() (*template.Template, error) {
 				templatesPath := filepath.Join(dir, "web", "admin", "templates")
 				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
 					pattern := filepath.Join(templatesPath, "*.html")
-					if tmpl, err := template.ParseGlob(pattern); err == nil {
+					tmpl := template.New("").Funcs(funcMap)
+					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 						return tmpl, nil
 					}
 				}
