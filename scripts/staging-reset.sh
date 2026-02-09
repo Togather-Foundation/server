@@ -139,6 +139,7 @@ TRUNCATE TABLE
   event_changes,
   event_sources,     -- Links between events and sources (delete this)
   idempotency_keys,
+  event_review_queue,  -- Review queue for events
   events,
   places,
   organizations
