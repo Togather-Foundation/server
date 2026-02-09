@@ -21,6 +21,9 @@
                         <div class="col">
                             <h2 class="page-title">Edit Event</h2>
                             <div class="text-muted mt-1">Update event details and manage occurrences</div>
+                            <div id="review-context-banner" style="display: none;">
+                                <!-- Review context will be injected here by JavaScript -->
+                            </div>
                         </div>
                         <div class="col-auto ms-auto">
                             <button type="button" class="btn" data-action="cancel">
@@ -115,21 +118,11 @@
                                         <small class="form-hint">Online streaming or virtual venue link</small>
                                     </div>
                                 </div>
-                                <div class="col-md-3">
-                                    <div class="mb-3">
-                                        <label class="form-label">Confidence Score</label>
-                                        <input type="number" class="form-control" id="confidence" name="confidence" min="0" max="1" step="0.01">
-                                        <small class="form-hint">0.0 to 1.0</small>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="mb-3">
-                                        <label class="form-label">Quality Score</label>
-                                        <input type="number" class="form-control" id="quality_score" name="quality_score" min="0" max="100">
-                                        <small class="form-hint">0 to 100</small>
-                                    </div>
-                                </div>
                             </div>
+                            
+                            <!-- Hidden fields for federation metadata (not shown to users) -->
+                            <input type="hidden" id="confidence" name="confidence">
+                            <input type="hidden" id="quality_score" name="quality_score">
 
                             <hr class="my-4">
 

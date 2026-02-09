@@ -61,6 +61,11 @@
                     e.preventDefault();
                     filterByStatus(target.dataset.status);
                     break;
+                case 'navigate-to-event':
+                    // Store review queue context for event detail page
+                    sessionStorage.setItem('from_review_queue', target.dataset.reviewId);
+                    // Allow default navigation to proceed
+                    break;
                 case 'expand-detail':
                     e.preventDefault();
                     expandDetail(id);
@@ -186,7 +191,7 @@
             return `
                 <tr data-entry-id="${entry.id}">
                     <td>
-                        <a href="/admin/events/${entry.eventId}" class="text-reset">
+                        <a href="/admin/events/${entry.eventId}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
                             ${escapeHtml(eventName)}
                         </a>
                     </td>
