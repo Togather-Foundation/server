@@ -51,6 +51,14 @@ toronto.togather.foundation {
 		# Add slot identifier for debugging
 		# Update this when switching slots: "blue" or "green"
 		header_down X-Togather-Slot "blue"
+		
+		# Disable keepalive to prevent stale connections during deployments
+		# This ensures fresh connections to new containers immediately
+		# without requiring Caddy reload. Minor performance trade-off
+		# (TCP handshake overhead) for zero-downtime static file updates.
+		transport http {
+			keepalive off
+		}
 	}
 	# BLUE_GREEN_SLOT_END - Managed by deployment script (do not remove this marker)
 	

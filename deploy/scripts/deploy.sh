@@ -1286,6 +1286,11 @@ deploy_to_slot() {
         log "WARN" "To start manually: cd ${DOCKER_DIR} && docker compose --profile monitoring up -d"
     fi
     
+    # Note: No Caddy reload needed here (as of T043)
+    # Caddyfiles configured with "transport http { keepalive off }" to prevent
+    # stale connection pooling. This eliminates the need for manual reloads and
+    # ensures zero-downtime static file updates during blue-green deployments.
+    
     return 0
 }
 
