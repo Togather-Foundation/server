@@ -96,6 +96,10 @@
                     e.preventDefault();
                     applyFix(id);
                     break;
+                case 'show-more':
+                    e.preventDefault();
+                    showMoreText(target);
+                    break;
                 case 'confirm-reject':
                     confirmReject();
                     break;
@@ -307,24 +311,14 @@
             w.code && (w.code.includes('date') || w.code.includes('time') || w.code.includes('reversed'))
         );
         
-        // Build warnings HTML with prominent display
+        // Build warnings HTML - simple list without redundant heading
         const warningsHtml = warnings.length > 0 ? `
-            <div class="alert alert-warning mb-3" role="alert">
-                <h4 class="alert-heading mb-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="icon alert-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                        <path d="M12 9v2m0 4v.01"/>
-                        <path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/>
-                    </svg>
-                    Data Quality Issues Detected
-                </h4>
-                <div class="mt-2">
-                    ${warnings.map(w => {
-                        const badge = getWarningBadgeForDetail(w.code);
-                        const message = w.message || '(no message)';
-                        return `<div class="mb-2">${badge} ${escapeHtml(message)}</div>`;
-                    }).join('')}
-                </div>
+            <div class="mb-3">
+                ${warnings.map(w => {
+                    const badge = getWarningBadgeForDetail(w.code);
+                    const message = w.message || '(no message)';
+                    return `<div class="mb-2">${badge} ${escapeHtml(message)}</div>`;
+                }).join('')}
             </div>
         ` : '';
         
@@ -369,10 +363,10 @@
         
         // Build event data section (always show normalized data)
         const eventDataHtml = `
-            <div class="card bg-light mb-3">
+            <div class="card mb-3">
                 <div class="card-header">
                     <h4 class="card-title mb-0">Event Information</h4>
-                    <small class="text-muted">This is the data that will be published</small>
+                    <small class="text-secondary">This is the data that will be published</small>
                 </div>
                 <div class="card-body">
                     ${renderFullEventData(normalized)}
@@ -504,12 +498,12 @@
             
             // Format based on field type
             if (field.isJSON && typeof value === 'object') {
-                // Pretty print JSON with proper indentation
+                // Pretty print JSON with proper indentation and good contrast
                 const jsonString = JSON.stringify(value, null, 2);
                 return `
                     <div class="mb-3">
                         <strong>${escapeHtml(field.label)}:</strong>
-                        <pre class="bg-white border rounded p-2 mt-1" style="max-height: 300px; overflow-y: auto;"><code>${escapeHtml(jsonString)}</code></pre>
+                        <pre class="border rounded p-2 mt-1 text-body" style="max-height: 300px; overflow-y: auto; background-color: var(--tblr-bg-surface);"><code>${escapeHtml(jsonString)}</code></pre>
                     </div>
                 `;
             } else if (field.isDate) {
@@ -517,11 +511,12 @@
             } else if (typeof value === 'string' && value.length > 200) {
                 // Truncate long text with expand option
                 const truncated = value.substring(0, 200) + '...';
+                const escapedFull = escapeHtml(value).replace(/'/g, '&apos;');
                 return `
                     <div class="mb-2">
                         <strong>${escapeHtml(field.label)}:</strong><br>
-                        <span>${escapeHtml(truncated)}</span>
-                        <button class="btn btn-sm btn-link p-0" onclick="this.previousElementSibling.textContent='${escapeHtml(value)}'; this.style.display='none'">Show more</button>
+                        <span class="description-text">${escapeHtml(truncated)}</span>
+                        <button class="btn btn-sm btn-link p-0" data-action="show-more" data-full-text="${escapedFull}">Show more</button>
                     </div>
                 `;
             }
@@ -589,12 +584,12 @@
                 }
             }
             
-            // Use <pre> for JSON to preserve formatting
+            // Use <pre> for JSON to preserve formatting with good contrast
             if (isJSON) {
                 return `
                     <div class="mb-2 ${changed ? 'p-2 rounded' : ''}">
                         <strong class="${changed ? highlightClass : ''}">${escapeHtml(field.label)}:${changeIndicator}</strong>
-                        <pre class="bg-white border rounded p-2 mt-1 ${highlightClass}" style="max-height: 200px; overflow-y: auto;"><code>${escapeHtml(value)}</code></pre>
+                        <pre class="border rounded p-2 mt-1 text-body ${highlightClass}" style="max-height: 200px; overflow-y: auto; background-color: var(--tblr-bg-surface);"><code>${escapeHtml(value)}</code></pre>
                     </div>
                 `;
             }
@@ -621,6 +616,26 @@
         }
         
         expandedId = null;
+    }
+    
+    /**
+     * Show more text for truncated descriptions
+     * Expands a truncated text field and hides the "Show more" button
+     * @param {HTMLElement} button - The "Show more" button element
+     */
+    function showMoreText(button) {
+        const fullText = button.dataset.fullText;
+        if (!fullText) return;
+        
+        // Find the text span (previous sibling)
+        const textSpan = button.previousElementSibling;
+        if (textSpan && textSpan.classList.contains('description-text')) {
+            // Create a temporary element to decode HTML entities
+            const temp = document.createElement('div');
+            temp.innerHTML = fullText;
+            textSpan.textContent = temp.textContent;
+            button.style.display = 'none';
+        }
     }
     
     /**
