@@ -87,6 +87,10 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 	validated := validationResult.Input
 	warnings := validationResult.Warnings
+
+	// Add synthetic warnings for quality issues that trigger review
+	warnings = appendQualityWarnings(warnings, validated, nil)
+
 	// Check if review is needed due to validation warnings OR metadata quality issues
 	needsReview := len(warnings) > 0 || needsReview(validated, nil)
 
@@ -621,6 +625,66 @@ func isTooFarFuture(startDate string, days int) bool {
 
 func floatPtr(value float64) *float64 {
 	return &value
+}
+
+// appendQualityWarnings adds synthetic validation warnings for quality issues
+// that trigger review but aren't structural validation errors.
+// This ensures admins can see WHY an event was flagged for review.
+func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int) []ValidationWarning {
+	result := make([]ValidationWarning, len(warnings))
+	copy(result, warnings)
+
+	// Check for missing description
+	if strings.TrimSpace(input.Description) == "" {
+		result = append(result, ValidationWarning{
+			Field:   "description",
+			Message: "Event is missing a description. A description helps users understand what the event is about.",
+			Code:    "missing_description",
+		})
+	}
+
+	// Check for missing image
+	if strings.TrimSpace(input.Image) == "" {
+		result = append(result, ValidationWarning{
+			Field:   "image",
+			Message: "Event is missing an image. Images significantly improve event discoverability and appeal.",
+			Code:    "missing_image",
+		})
+	}
+
+	// Check for too far in future (>730 days = ~2 years)
+	if isTooFarFuture(input.StartDate, 730) {
+		result = append(result, ValidationWarning{
+			Field:   "startDate",
+			Message: "Event is scheduled more than 2 years in the future. This may indicate a data quality issue.",
+			Code:    "too_far_future",
+		})
+	}
+
+	// Check for low confidence score
+	confidence := reviewConfidence(input, false)
+	if confidence < 0.6 {
+		result = append(result, ValidationWarning{
+			Field:   "event",
+			Message: fmt.Sprintf("Event has low data quality score (%.0f%%). Review recommended.", confidence*100),
+			Code:    "low_confidence",
+		})
+	}
+
+	// Check for failed link checks (if provided)
+	if linkStatuses != nil {
+		for url, code := range linkStatuses {
+			if code >= 400 {
+				result = append(result, ValidationWarning{
+					Field:   "url",
+					Message: fmt.Sprintf("Link check failed for %s (HTTP %d)", url, code),
+					Code:    "link_check_failed",
+				})
+			}
+		}
+	}
+
+	return result
 }
 
 func normalizedInputForHash(input EventInput) EventInput {
