@@ -498,12 +498,11 @@
             
             // Format based on field type
             if (field.isJSON && typeof value === 'object') {
-                // Pretty print JSON with proper indentation and good contrast
-                const jsonString = JSON.stringify(value, null, 2);
+                // Render JSON as formatted HTML for better readability
                 return `
                     <div class="mb-3">
                         <strong>${escapeHtml(field.label)}:</strong>
-                        <pre class="border rounded p-2 mt-1 text-body" style="max-height: 300px; overflow-y: auto; background-color: var(--tblr-bg-surface);"><code>${escapeHtml(jsonString)}</code></pre>
+                        ${renderJSONAsHTML(value)}
                     </div>
                 `;
             } else if (field.isDate) {
@@ -528,6 +527,58 @@
                 </div>
             `;
         }).filter(html => html).join('');
+    }
+    
+    /**
+     * Render JSON object as formatted HTML
+     * Converts JSON objects into readable HTML with definition lists for nested objects
+     * @param {Object|Array} data - JSON data to render
+     * @param {number} depth - Current nesting depth (for limiting recursion)
+     * @returns {string} HTML string representation of JSON
+     */
+    function renderJSONAsHTML(data, depth = 0) {
+        if (depth > 3) {
+            // Too deep, fall back to JSON string
+            return `<pre class="border rounded p-2 mt-1 text-body" style="background-color: var(--tblr-bg-surface);"><code>${escapeHtml(JSON.stringify(data, null, 2))}</code></pre>`;
+        }
+        
+        if (Array.isArray(data)) {
+            if (data.length === 0) return '<span class="text-muted">[]</span>';
+            return `
+                <ul class="list-unstyled ms-3 mt-1">
+                    ${data.map(item => `<li>${typeof item === 'object' ? renderJSONAsHTML(item, depth + 1) : escapeHtml(String(item))}</li>`).join('')}
+                </ul>
+            `;
+        }
+        
+        if (typeof data === 'object' && data !== null) {
+            const entries = Object.entries(data);
+            if (entries.length === 0) return '<span class="text-muted">{}</span>';
+            
+            return `
+                <dl class="row ms-2 mt-1 mb-0" style="font-size: 0.95em;">
+                    ${entries.map(([key, value]) => {
+                        let renderedValue;
+                        if (typeof value === 'object' && value !== null) {
+                            renderedValue = renderJSONAsHTML(value, depth + 1);
+                        } else if (value === null) {
+                            renderedValue = '<span class="text-muted">null</span>';
+                        } else if (typeof value === 'boolean') {
+                            renderedValue = `<span class="badge bg-${value ? 'success' : 'secondary'}-lt">${value}</span>`;
+                        } else {
+                            renderedValue = escapeHtml(String(value));
+                        }
+                        
+                        return `
+                            <dt class="col-sm-4 text-muted">${escapeHtml(key)}</dt>
+                            <dd class="col-sm-8">${renderedValue}</dd>
+                        `;
+                    }).join('')}
+                </dl>
+            `;
+        }
+        
+        return escapeHtml(String(data));
     }
     
     /**
