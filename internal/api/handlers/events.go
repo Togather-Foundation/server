@@ -41,9 +41,9 @@ func NewEventsHandler(service *events.Service, ingest *events.IngestService, pro
 }
 
 type listResponse struct {
-	Items      []map[string]any `json:"items"`
-	NextCursor string           `json:"next_cursor"`
-	Total      int64            `json:"total,omitempty"` // Optional: total count for filtered results
+	Items      any    `json:"items"` // Accepts any slice type for JSON encoding
+	NextCursor string `json:"next_cursor"`
+	Total      int64  `json:"total,omitempty"` // Optional: total count for filtered results
 }
 
 func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {

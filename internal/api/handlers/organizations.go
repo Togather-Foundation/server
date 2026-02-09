@@ -22,8 +22,8 @@ func NewOrganizationsHandler(service *organizations.Service, env string, baseURL
 }
 
 type organizationListResponse struct {
-	Items      []map[string]any `json:"items"`
-	NextCursor string           `json:"next_cursor"`
+	Items      any    `json:"items"` // Accepts any slice type for JSON encoding
+	NextCursor string `json:"next_cursor"`
 }
 
 func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {

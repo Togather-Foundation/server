@@ -178,9 +178,13 @@ func TestEventsHandlerListSuccess(t *testing.T) {
 
 	var payload listResponse
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
-	require.Len(t, payload.Items, 1)
-	require.Equal(t, "Jazz Fest", payload.Items[0]["name"])
-	require.Equal(t, "Event", payload.Items[0]["@type"])
+	items, ok := payload.Items.([]any)
+	require.True(t, ok, "Items should be a slice")
+	require.Len(t, items, 1)
+	item0, ok := items[0].(map[string]any)
+	require.True(t, ok, "Item should be a map")
+	require.Equal(t, "Jazz Fest", item0["name"])
+	require.Equal(t, "Event", item0["@type"])
 	require.Equal(t, "next", payload.NextCursor)
 }
 

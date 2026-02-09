@@ -142,7 +142,7 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	}
 
 	writeJSON(w, http.StatusOK, listResponse{
-		Items:      convertToMapSlice(items),
+		Items:      items,
 		NextCursor: nextCursor,
 		Total:      result.TotalCount,
 	}, "application/json")
@@ -680,15 +680,4 @@ func getUserFromContext(r *http.Request) string {
 	}
 	// Fallback to empty string (anonymous admin)
 	return "admin"
-}
-
-func convertToMapSlice(items []reviewQueueItem) []map[string]any {
-	result := make([]map[string]any, len(items))
-	for i, item := range items {
-		data, _ := json.Marshal(item)
-		var m map[string]any
-		_ = json.Unmarshal(data, &m) // Ignore error - already marshaled successfully
-		result[i] = m
-	}
-	return result
 }
