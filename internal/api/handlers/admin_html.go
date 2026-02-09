@@ -24,10 +24,12 @@ func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.
 
 // ServeDashboard renders the admin dashboard page
 func (h *AdminHTMLHandler) ServeDashboard(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "dashboard"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "dashboard"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -37,7 +39,9 @@ func (h *AdminHTMLHandler) ServeDashboard(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "dashboard.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "dashboard.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -45,10 +49,12 @@ func (h *AdminHTMLHandler) ServeDashboard(w http.ResponseWriter, r *http.Request
 
 // ServeEventsList renders the events list page
 func (h *AdminHTMLHandler) ServeEventsList(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "events_list"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "events_list"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -58,7 +64,9 @@ func (h *AdminHTMLHandler) ServeEventsList(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "events_list.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "events_list.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "events_list.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -73,11 +81,13 @@ func (h *AdminHTMLHandler) ServeEventEdit(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "event_edit"),
-		slog.String("method", r.Method),
-		slog.String("event_id", eventID),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "event_edit"),
+			slog.String("method", r.Method),
+			slog.String("event_id", eventID),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -87,7 +97,9 @@ func (h *AdminHTMLHandler) ServeEventEdit(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "event_edit.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "event_edit.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "event_edit.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -95,10 +107,12 @@ func (h *AdminHTMLHandler) ServeEventEdit(w http.ResponseWriter, r *http.Request
 
 // ServeDuplicates renders the duplicates review page
 func (h *AdminHTMLHandler) ServeDuplicates(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "duplicates"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "duplicates"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -108,7 +122,9 @@ func (h *AdminHTMLHandler) ServeDuplicates(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "duplicates.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "duplicates.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "duplicates.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -116,10 +132,12 @@ func (h *AdminHTMLHandler) ServeDuplicates(w http.ResponseWriter, r *http.Reques
 
 // ServeAPIKeys renders the API keys management page
 func (h *AdminHTMLHandler) ServeAPIKeys(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "api_keys"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "api_keys"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -129,7 +147,9 @@ func (h *AdminHTMLHandler) ServeAPIKeys(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "api_keys.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "api_keys.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "api_keys.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -137,10 +157,12 @@ func (h *AdminHTMLHandler) ServeAPIKeys(w http.ResponseWriter, r *http.Request) 
 
 // ServeFederation renders the federation nodes management page
 func (h *AdminHTMLHandler) ServeFederation(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "federation"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "federation"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -150,7 +172,9 @@ func (h *AdminHTMLHandler) ServeFederation(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "federation.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "federation.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "federation.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -158,10 +182,12 @@ func (h *AdminHTMLHandler) ServeFederation(w http.ResponseWriter, r *http.Reques
 
 // ServeUsersList renders the users list page
 func (h *AdminHTMLHandler) ServeUsersList(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "users_list"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "users_list"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -171,7 +197,9 @@ func (h *AdminHTMLHandler) ServeUsersList(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "users_list.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "users_list.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "users_list.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -186,11 +214,13 @@ func (h *AdminHTMLHandler) ServeUserActivity(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "user_activity"),
-		slog.String("method", r.Method),
-		slog.String("user_id", userID),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "user_activity"),
+			slog.String("method", r.Method),
+			slog.String("user_id", userID),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -201,7 +231,9 @@ func (h *AdminHTMLHandler) ServeUserActivity(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "user_activity.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "user_activity.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "user_activity.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -209,10 +241,12 @@ func (h *AdminHTMLHandler) ServeUserActivity(w http.ResponseWriter, r *http.Requ
 
 // ServeReviewQueue renders the review queue page
 func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "review-queue"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "review-queue"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -222,7 +256,9 @@ func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "review_queue.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "review_queue.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "review_queue.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -230,10 +266,12 @@ func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Reque
 
 // ServeAcceptInvitation renders the public invitation acceptance page
 func (h *AdminHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.Request) {
-	h.Logger.Info("admin HTML request",
-		slog.String("page", "accept_invitation"),
-		slog.String("method", r.Method),
-		slog.String("remote_addr", r.RemoteAddr))
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "accept_invitation"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -242,7 +280,9 @@ func (h *AdminHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "accept_invitation.html", data); err != nil {
-		h.Logger.Error("template error", slog.String("template", "accept_invitation.html"), slog.Any("error", err))
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "accept_invitation.html"), slog.Any("error", err))
+		}
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
