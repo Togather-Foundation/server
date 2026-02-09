@@ -318,10 +318,12 @@
                     </svg>
                     Data Quality Issues Detected
                 </h4>
-                ${warnings.map(w => {
-                    const badge = getWarningCodeBadge(w.code);
-                    return `<div class="mb-1">${badge} ${escapeHtml(w.message)}</div>`;
-                }).join('')}
+                <div class="list-group list-group-flush">
+                    ${warnings.map(w => {
+                        const badge = getWarningBadgeForDetail(w.code);
+                        return `<div class="list-group-item px-0">${badge} ${escapeHtml(w.message)}</div>`;
+                    }).join('')}
+                </div>
             </div>
         ` : '';
         
@@ -968,18 +970,36 @@
     }
     
     /**
-     * Get warning code badge
-     * Returns color-coded badge based on specific warning code
+     * Get warning badge for detail view
+     * Returns color-coded badge based on warning code with human-readable labels
      * @param {string} code - Warning code identifier
      * @returns {string} HTML string for badge element
      */
-    function getWarningCodeBadge(code) {
-        if (code === 'reversed_dates_timezone_likely') {
-            return '<span class="badge bg-success">High Confidence</span>';
-        } else if (code === 'reversed_dates_corrected_needs_review') {
-            return '<span class="badge bg-warning">Low Confidence</span>';
+    function getWarningBadgeForDetail(code) {
+        // Map warning codes to user-friendly badge labels and colors
+        const badgeMap = {
+            // Date/Time issues
+            'reversed_dates_timezone_likely': { label: 'Date Fixed', color: 'info' },
+            'reversed_dates_corrected_needs_review': { label: 'Date Issue', color: 'warning' },
+            'too_far_future': { label: 'Too Far Future', color: 'warning' },
+            
+            // Missing data
+            'missing_image': { label: 'Missing Image', color: 'warning' },
+            'missing_description': { label: 'Missing Description', color: 'warning' },
+            
+            // Quality issues
+            'low_confidence': { label: 'Low Quality', color: 'warning' },
+            'link_check_failed': { label: 'Bad Link', color: 'warning' },
+        };
+        
+        const badge = badgeMap[code];
+        if (badge) {
+            return `<span class="badge bg-${badge.color}">${badge.label}</span>`;
         }
-        return '<span class="badge bg-secondary">Unknown</span>';
+        
+        // Fallback: use code as label with generic color
+        const label = code ? code.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Issue';
+        return `<span class="badge bg-secondary">${escapeHtml(label)}</span>`;
     }
     
     /**
