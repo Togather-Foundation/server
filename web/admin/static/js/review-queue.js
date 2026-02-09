@@ -318,10 +318,11 @@
                     </svg>
                     Data Quality Issues Detected
                 </h4>
-                <div class="list-group list-group-flush">
+                <div class="mt-2">
                     ${warnings.map(w => {
                         const badge = getWarningBadgeForDetail(w.code);
-                        return `<div class="list-group-item px-0">${badge} ${escapeHtml(w.message)}</div>`;
+                        const message = w.message || '(no message)';
+                        return `<div class="mb-2">${badge} ${escapeHtml(message)}</div>`;
                     }).join('')}
                 </div>
             </div>
