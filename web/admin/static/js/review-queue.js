@@ -906,31 +906,65 @@
     
     /**
      * Get warning badge HTML for table display
-     * Returns color-coded badge based on warning confidence level
-     * @param {Array} warnings - Array of warning objects with code property
-     * @returns {string} HTML string for badge element
+     * Shows actual warning messages inline so users know WHY events need review
+     * @param {Array} warnings - Array of warning objects with code, message properties
+     * @returns {string} HTML string for warning display with badges and messages
      */
     function getWarningBadge(warnings) {
         if (!warnings || warnings.length === 0) {
             return '<span class="badge bg-success">No Issues</span>';
         }
         
+        // Show first warning with descriptive message
         const firstWarning = warnings[0];
         
-        // Try to categorize by code for color/label
-        if (firstWarning.code === 'reversed_dates_timezone_likely') {
-            return '<span class="badge bg-success">High Confidence Fix</span>';
+        // Get badge based on warning type
+        let badge = '';
+        let message = '';
+        
+        if (firstWarning.code === 'missing_image') {
+            badge = '<span class="badge bg-warning">Missing Image</span>';
+            message = 'No image provided';
+        } else if (firstWarning.code === 'missing_description') {
+            badge = '<span class="badge bg-warning">Missing Description</span>';
+            message = 'No description provided';
+        } else if (firstWarning.code === 'low_confidence') {
+            badge = '<span class="badge bg-warning">Low Quality</span>';
+            // Extract percentage from message if present
+            const match = firstWarning.message && firstWarning.message.match(/(\d+)%/);
+            message = match ? `Data quality: ${match[1]}%` : 'Low data quality score';
+        } else if (firstWarning.code === 'too_far_future') {
+            badge = '<span class="badge bg-warning">Too Far Future</span>';
+            message = 'Event >2 years away';
+        } else if (firstWarning.code === 'link_check_failed') {
+            badge = '<span class="badge bg-warning">Bad Link</span>';
+            message = 'Link check failed';
+        } else if (firstWarning.code === 'reversed_dates_timezone_likely') {
+            badge = '<span class="badge bg-info">Date Fixed</span>';
+            message = 'Timezone issue auto-corrected';
         } else if (firstWarning.code === 'reversed_dates_corrected_needs_review') {
-            return '<span class="badge bg-warning">Low Confidence Fix</span>';
+            badge = '<span class="badge bg-warning">Date Issue</span>';
+            message = 'Dates corrected, review needed';
         } else if (firstWarning.code && firstWarning.code.includes('reversed_dates')) {
-            return '<span class="badge bg-warning">Date Issue</span>';
-        } else if (firstWarning.field) {
-            // Use field name as fallback
-            return `<span class="badge bg-warning">${escapeHtml(firstWarning.field)}</span>`;
+            badge = '<span class="badge bg-warning">Date Issue</span>';
+            message = 'Date ordering problem';
+        } else {
+            // Fallback: use field name or generic message
+            const label = firstWarning.field || 'issue';
+            badge = `<span class="badge bg-warning">${escapeHtml(label)}</span>`;
+            message = firstWarning.message || 'Needs review';
         }
         
-        // Generic fallback with count
-        return `<span class="badge bg-warning">${warnings.length} Issue${warnings.length > 1 ? 's' : ''}</span>`;
+        // If multiple warnings, add count badge
+        const additionalCount = warnings.length > 1 ? ` <span class="badge bg-secondary">+${warnings.length - 1} more</span>` : '';
+        
+        return `
+            <div class="d-flex flex-column gap-1">
+                <div>${badge}</div>
+                <small class="text-muted">${escapeHtml(message)}</small>
+                ${additionalCount}
+            </div>
+        `;
     }
     
     /**
