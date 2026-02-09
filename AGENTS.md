@@ -419,6 +419,8 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
 
 ### Deployment Workflow
 
+**IMPORTANT: Always wrap deployment commands with `scripts/agent-run.sh`** to capture verbose output and preserve context window. Deployment scripts produce hundreds of lines of colored logs that flood agent context.
+
 **For full deployment + testing:**
 1. Read `docs/deploy/deployment-testing.md` for complete instructions
 2. Load deployment config: `source .deploy.conf.{environment}` (if it exists)
@@ -429,17 +431,17 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
 4. Execute deployment (config auto-loads if available):
    ```bash
    # Deploy current HEAD commit to staging (RECOMMENDED for feature branches):
-   ./deploy/scripts/deploy.sh staging --version HEAD
+   scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
 
    # Deploy specific commit:
-   ./deploy/scripts/deploy.sh staging --version abc123
+   scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version abc123
 
    # Deploy to remote server with current commit:
-   ./deploy/scripts/deploy.sh staging --remote deploy@server --version HEAD
+   scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --remote deploy@server --version HEAD
    ```
 5. Run automated tests (health wait is handled automatically by `wait-for-health.sh`):
    ```bash
-   ./deploy/scripts/test-remote.sh staging all
+   scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
    ```
 6. If automated tests pass, report success summary
 7. If issues found, run specific checks from deployment-testing.md checklist
