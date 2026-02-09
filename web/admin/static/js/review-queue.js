@@ -64,6 +64,8 @@
                 case 'navigate-to-event':
                     // Store review queue context for event detail page
                     sessionStorage.setItem('from_review_queue', target.dataset.reviewId);
+                    // Prevent row expansion when clicking event link
+                    e.stopPropagation();
                     // Allow default navigation to proceed
                     break;
                 case 'expand-detail':
@@ -101,6 +103,26 @@
                     e.preventDefault();
                     goToNextPage(target.dataset.cursor);
                     break;
+            }
+        });
+        
+        // Make table rows clickable to expand/collapse
+        document.addEventListener('click', (e) => {
+            // Check if we clicked inside a table row (but not on a link or button)
+            const row = e.target.closest('tr[data-entry-id]');
+            if (!row) return;
+            
+            // Don't trigger if clicking on a link, button, or element with data-action
+            if (e.target.closest('a, button, [data-action]')) return;
+            
+            const entryId = row.dataset.entryId;
+            if (!entryId) return;
+            
+            // Toggle expand/collapse
+            if (expandedId === entryId) {
+                collapseDetail();
+            } else {
+                expandDetail(entryId);
             }
         });
     }
@@ -184,7 +206,7 @@
         
         tbody.innerHTML = entries.map(entry => {
             const eventName = entry.eventName || 'Untitled Event';
-            const startTime = entry.eventStartTime ? formatDate(entry.eventStartTime, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No date';
+            const startTime = entry.eventStartTime ? formatDate(entry.eventStartTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'No date';
             const warningBadge = getWarningBadge(entry.warnings);
             const createdAgo = getRelativeTime(entry.createdAt);
             

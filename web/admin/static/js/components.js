@@ -145,7 +145,7 @@ function formatDate(dateString, options = null) {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-        hour: '2-digit',
+        hour: 'numeric',
         minute: '2-digit'
     };
     return date.toLocaleDateString('en-US', options || defaultOptions);
