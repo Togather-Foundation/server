@@ -367,38 +367,42 @@
             </div>
         ` : '';
         
-        // Build comparison HTML with diff highlighting
-        const comparisonHtml = changes.length > 0 ? `
-            <div class="row">
-                <div class="col-md-6">
-                    <h4>Original Data</h4>
-                    <small class="text-muted d-block mb-2">Data as received from source</small>
-                    ${renderEventData(original, changes, 'original')}
+        // Build event data section (always show normalized data)
+        const eventDataHtml = `
+            <div class="card bg-light mb-3">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Event Information</h4>
+                    <small class="text-muted">This is the data that will be published</small>
                 </div>
-                <div class="col-md-6">
-                    <h4>Normalized Data</h4>
-                    <small class="text-muted d-block mb-2">Data after automatic corrections</small>
-                    ${renderEventData(normalized, changes, 'normalized')}
-                </div>
-            </div>
-        ` : `
-            <div class="alert alert-info" role="alert">
-                <div class="d-flex">
-                    <div>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon alert-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <circle cx="12" cy="12" r="9"/>
-                            <line x1="12" y1="8" x2="12.01" y2="8"/>
-                            <polyline points="11 12 12 12 12 16 13 16"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h4 class="alert-title">No Automatic Corrections Applied</h4>
-                        <div class="text-secondary">The original and normalized data are identical. The event may still require review for other reasons (e.g., manual quality checks, duplicate detection).</div>
-                    </div>
+                <div class="card-body">
+                    ${renderFullEventData(normalized)}
                 </div>
             </div>
         `;
+        
+        // Build comparison HTML with diff highlighting (only if there are changes)
+        const comparisonHtml = changes.length > 0 ? `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Changes Made</h4>
+                    <small class="text-muted">Comparison of original vs corrected data</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Original Data</h5>
+                            <small class="text-muted d-block mb-2">Data as received from source</small>
+                            ${renderEventData(original, changes, 'original')}
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Normalized Data</h5>
+                            <small class="text-muted d-block mb-2">Data after automatic corrections</small>
+                            ${renderEventData(normalized, changes, 'normalized')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ` : '';
         
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
@@ -459,6 +463,7 @@
                         
                         ${warningsHtml}
                         ${changesHtml}
+                        ${eventDataHtml}
                         ${comparisonHtml}
                         
                         <div class="mt-3">
@@ -468,6 +473,66 @@
                 </div>
             </td>
         `;
+    }
+    
+    /**
+     * Render full event data for display
+     * Shows all event fields with proper formatting, including pretty-printed JSON for location
+     * @param {Object} data - Event data object
+     * @returns {string} HTML string of formatted event fields
+     */
+    function renderFullEventData(data) {
+        if (!data) return '<p class="text-muted">No data available</p>';
+        
+        const fields = [
+            { label: 'Event Name', key: 'name' },
+            { label: 'Start Date', key: 'startDate', isDate: true },
+            { label: 'End Date', key: 'endDate', isDate: true },
+            { label: 'Description', key: 'description' },
+            { label: 'Location', key: 'location', isJSON: true },
+            { label: 'Organizer', key: 'organizer', isJSON: true },
+            { label: 'Image URL', key: 'image' },
+            { label: 'URL', key: 'url' },
+            { label: 'Offers', key: 'offers', isJSON: true },
+            { label: 'Event Status', key: 'eventStatus' },
+            { label: 'Event Attendance Mode', key: 'eventAttendanceMode' }
+        ];
+        
+        return fields.map(field => {
+            let value = data[field.key];
+            if (!value) return '';
+            
+            // Format based on field type
+            if (field.isJSON && typeof value === 'object') {
+                // Pretty print JSON with proper indentation
+                const jsonString = JSON.stringify(value, null, 2);
+                return `
+                    <div class="mb-3">
+                        <strong>${escapeHtml(field.label)}:</strong>
+                        <pre class="bg-white border rounded p-2 mt-1" style="max-height: 300px; overflow-y: auto;"><code>${escapeHtml(jsonString)}</code></pre>
+                    </div>
+                `;
+            } else if (field.isDate) {
+                value = formatDateValue(value);
+            } else if (typeof value === 'string' && value.length > 200) {
+                // Truncate long text with expand option
+                const truncated = value.substring(0, 200) + '...';
+                return `
+                    <div class="mb-2">
+                        <strong>${escapeHtml(field.label)}:</strong><br>
+                        <span>${escapeHtml(truncated)}</span>
+                        <button class="btn btn-sm btn-link p-0" onclick="this.previousElementSibling.textContent='${escapeHtml(value)}'; this.style.display='none'">Show more</button>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="mb-2">
+                    <strong>${escapeHtml(field.label)}:</strong><br>
+                    <span>${escapeHtml(String(value))}</span>
+                </div>
+            `;
+        }).filter(html => html).join('');
     }
     
     /**
@@ -489,7 +554,9 @@
             let value = data[field.key];
             if (!value) return '';
             
+            let isJSON = false;
             if (typeof value === 'object') {
+                isJSON = true;
                 value = JSON.stringify(value, null, 2);
             } else if (field.key.includes('Date')) {
                 value = formatDateValue(value);
@@ -520,6 +587,16 @@
                         </svg>
                     `;
                 }
+            }
+            
+            // Use <pre> for JSON to preserve formatting
+            if (isJSON) {
+                return `
+                    <div class="mb-2 ${changed ? 'p-2 rounded' : ''}">
+                        <strong class="${changed ? highlightClass : ''}">${escapeHtml(field.label)}:${changeIndicator}</strong>
+                        <pre class="bg-white border rounded p-2 mt-1 ${highlightClass}" style="max-height: 200px; overflow-y: auto;"><code>${escapeHtml(value)}</code></pre>
+                    </div>
+                `;
             }
             
             return `
