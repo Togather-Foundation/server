@@ -115,10 +115,10 @@
             };
             
             // Add filters if set
-            if (filters.search) params.search = filters.search;
-            if (filters.status) params.lifecycle_state = filters.status;
-            if (filters.dateFrom) params.start_date_from = filters.dateFrom;
-            if (filters.dateTo) params.start_date_to = filters.dateTo;
+            if (filters.search) params.q = filters.search;
+            if (filters.status) params.state = filters.status;
+            if (filters.dateFrom) params.startDate = filters.dateFrom;
+            if (filters.dateTo) params.endDate = filters.dateTo;
             if (currentCursor) params.after = currentCursor;
             
             const data = await API.events.list(params);
