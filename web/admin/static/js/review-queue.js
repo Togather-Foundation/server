@@ -365,7 +365,7 @@
         ` : '';
         
         // Build comparison HTML with diff highlighting
-        const comparisonHtml = `
+        const comparisonHtml = changes.length > 0 ? `
             <div class="row">
                 <div class="col-md-6">
                     <h4>Original Data</h4>
@@ -376,6 +376,23 @@
                     <h4>Normalized Data</h4>
                     <small class="text-muted d-block mb-2">Data after automatic corrections</small>
                     ${renderEventData(normalized, changes, 'normalized')}
+                </div>
+            </div>
+        ` : `
+            <div class="alert alert-info" role="alert">
+                <div class="d-flex">
+                    <div>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon alert-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="12" cy="12" r="9"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                            <polyline points="11 12 12 12 12 16 13 16"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="alert-title">No Automatic Corrections Applied</h4>
+                        <div class="text-secondary">The original and normalized data are identical. The event may still require review for other reasons (e.g., manual quality checks, duplicate detection).</div>
+                    </div>
                 </div>
             </div>
         `;
@@ -895,11 +912,25 @@
      */
     function getWarningBadge(warnings) {
         if (!warnings || warnings.length === 0) {
-            return '<span class="badge bg-secondary">Unknown</span>';
+            return '<span class="badge bg-success">No Issues</span>';
         }
         
         const firstWarning = warnings[0];
-        return getWarningCodeBadge(firstWarning.code);
+        
+        // Try to categorize by code for color/label
+        if (firstWarning.code === 'reversed_dates_timezone_likely') {
+            return '<span class="badge bg-success">High Confidence Fix</span>';
+        } else if (firstWarning.code === 'reversed_dates_corrected_needs_review') {
+            return '<span class="badge bg-warning">Low Confidence Fix</span>';
+        } else if (firstWarning.code && firstWarning.code.includes('reversed_dates')) {
+            return '<span class="badge bg-warning">Date Issue</span>';
+        } else if (firstWarning.field) {
+            // Use field name as fallback
+            return `<span class="badge bg-warning">${escapeHtml(firstWarning.field)}</span>`;
+        }
+        
+        // Generic fallback with count
+        return `<span class="badge bg-warning">${warnings.length} Issue${warnings.length > 1 ? 's' : ''}</span>`;
     }
     
     /**
