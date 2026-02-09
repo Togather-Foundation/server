@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/rs/zerolog/log"
 )
 
 type IngestResult struct {
@@ -88,8 +89,18 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	validated := validationResult.Input
 	warnings := validationResult.Warnings
 
+	log.Debug().
+		Str("event_name", validated.Name).
+		Int("validation_warnings", len(warnings)).
+		Msg("Ingest: Before appendQualityWarnings")
+
 	// Add synthetic warnings for quality issues that trigger review
 	warnings = appendQualityWarnings(warnings, validated, nil)
+
+	log.Debug().
+		Str("event_name", validated.Name).
+		Int("total_warnings", len(warnings)).
+		Msg("Ingest: After appendQualityWarnings")
 
 	// Check if review is needed due to validation warnings OR metadata quality issues
 	needsReview := len(warnings) > 0 || needsReview(validated, nil)
@@ -321,6 +332,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 	// Create review queue entry if needed
 	if needsReview {
+		log.Debug().
+			Str("event_ulid", event.ULID).
+			Str("event_name", event.Name).
+			Int("warnings_count", len(warnings)).
+			Msg("Creating review queue entry")
+
 		originalJSON, err := toJSON(input)
 		if err != nil {
 			return nil, fmt.Errorf("marshal original payload: %w", err)
@@ -333,6 +350,11 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		if err != nil {
 			return nil, fmt.Errorf("marshal warnings: %w", err)
 		}
+
+		log.Debug().
+			Str("event_ulid", event.ULID).
+			Str("warnings_json", string(warningsJSON)).
+			Msg("Marshaled warnings to JSON")
 
 		var externalID *string
 		if validated.Source != nil && validated.Source.EventID != "" {
@@ -348,7 +370,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 
 		startTime, endTime := parseEventTimes(validated)
-		_, err = txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+		reviewEntry, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:           event.ID, // Use UUID, not ULID
 			OriginalPayload:   originalJSON,
 			NormalizedPayload: normalizedJSON,
@@ -362,6 +384,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		if err != nil {
 			return nil, fmt.Errorf("create review queue entry: %w", err)
 		}
+
+		log.Debug().
+			Str("event_ulid", event.ULID).
+			Int("review_entry_id", reviewEntry.ID).
+			Int("warnings_in_db", len(reviewEntry.Warnings)).
+			Msg("Created review queue entry")
 	}
 
 	if strings.TrimSpace(idempotencyKey) != "" {
@@ -631,6 +659,13 @@ func floatPtr(value float64) *float64 {
 // that trigger review but aren't structural validation errors.
 // This ensures admins can see WHY an event was flagged for review.
 func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int) []ValidationWarning {
+	log.Debug().
+		Str("event_name", input.Name).
+		Int("initial_warnings", len(warnings)).
+		Str("has_description", fmt.Sprintf("%v", input.Description != "")).
+		Str("has_image", fmt.Sprintf("%v", input.Image != "")).
+		Msg("appendQualityWarnings: START")
+
 	result := make([]ValidationWarning, len(warnings))
 	copy(result, warnings)
 
@@ -683,6 +718,12 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 			}
 		}
 	}
+
+	log.Debug().
+		Str("event_name", input.Name).
+		Int("final_warnings", len(result)).
+		Int("added_warnings", len(result)-len(warnings)).
+		Msg("appendQualityWarnings: END")
 
 	return result
 }
