@@ -151,7 +151,7 @@ func TestFindShapesDirectory(t *testing.T) {
 func TestLoadAdminTemplates(t *testing.T) {
 	// Test that loadAdminTemplates attempts to find templates
 	// It may return an error if templates aren't found, which is okay
-	tmpl, err := loadAdminTemplates()
+	tmpl, err := loadAdminTemplates("test123")
 
 	// Either it succeeds and returns templates, or fails gracefully
 	if err == nil && tmpl == nil {

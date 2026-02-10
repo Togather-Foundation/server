@@ -132,7 +132,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger)
 
 	// Load admin templates
-	templates, err := loadAdminTemplates()
+	templates, err := loadAdminTemplates(gitCommit)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to load admin templates, admin UI will be unavailable")
 	}
@@ -516,10 +516,16 @@ func findShapesDirectory() string {
 }
 
 // loadAdminTemplates loads HTML templates for the admin UI.
-// Returns nil if templates cannot be found (admin UI will gracefully degrade).
-func loadAdminTemplates() (*template.Template, error) {
-	// Get version from environment variable (set at build time)
-	gitCommit := os.Getenv("BUILD_COMMIT")
+// The commitHash parameter should come from ldflags (the authoritative source baked into the binary at build time).
+// Falls back to BUILD_COMMIT env var, then "dev" if neither is available.
+func loadAdminTemplates(commitHash string) (*template.Template, error) {
+	// Use ldflags value as the authoritative commit hash source.
+	// Fall back to BUILD_COMMIT env var for backward compatibility,
+	// then "dev" for local development.
+	gitCommit := commitHash
+	if gitCommit == "" || gitCommit == "unknown" {
+		gitCommit = os.Getenv("BUILD_COMMIT")
+	}
 	if gitCommit == "" {
 		gitCommit = "dev"
 	} else if len(gitCommit) > 7 {
