@@ -30,18 +30,35 @@
     let entries = [];
     let currentFilter = 'pending';
     let expandedId = null;
-    let cursor = null;
+    let pagination = null;
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
     
     /**
      * Initialize the review queue page
-     * Sets up event listeners and loads initial entries
+     * Sets up event listeners, pagination component, and loads initial entries
      */
     function init() {
         setupEventListeners();
+        setupPagination();
         loadEntries();
+    }
+    
+    /**
+     * Setup pagination component
+     * Creates reusable Pagination instance for the review queue
+     */
+    function setupPagination() {
+        pagination = new Pagination({
+            container: document.getElementById('pagination'),
+            limit: DEFAULT_PAGE_SIZE,
+            mode: 'cursor',
+            showingTextElement: document.getElementById('showing-text'),
+            onPageChange: async (cursor, direction) => {
+                await loadEntries(cursor);
+            }
+        });
     }
     
     /**
@@ -103,10 +120,6 @@
                 case 'confirm-reject':
                     confirmReject();
                     break;
-                case 'next-page':
-                    e.preventDefault();
-                    goToNextPage(target.dataset.cursor);
-                    break;
             }
         });
         
@@ -137,7 +150,11 @@
      */
     function filterByStatus(status) {
         currentFilter = status;
-        cursor = null;
+        
+        // Reset pagination when changing filters
+        if (pagination) {
+            pagination.reset();
+        }
         
         // Update active tab
         document.querySelectorAll('[data-action="filter-status"]').forEach(link => {
@@ -155,9 +172,10 @@
      * Load review queue entries from API
      * Fetches entries based on current filter and cursor, handles pagination
      * @async
+     * @param {string|null} cursor - Optional cursor for pagination
      * @throws {Error} If API request fails
      */
-    async function loadEntries() {
+    async function loadEntries(cursor = null) {
         showLoading();
         
         try {
@@ -191,7 +209,10 @@
             } else {
                 showTable();
                 renderTable();
-                updatePagination(data.next_cursor);
+                // Update pagination component with response data
+                if (pagination) {
+                    pagination.update(data);
+                }
             }
         } catch (err) {
             console.error('Failed to load review queue:', err);
@@ -214,6 +235,27 @@
             const warningBadge = getWarningBadge(entry.warnings);
             const createdAgo = getRelativeTime(entry.createdAt);
             
+            // Build rejection reason cell (only for rejected events)
+            let rejectionReasonCell = '';
+            if (currentFilter === 'rejected' && entry.rejectionReason) {
+                const reason = entry.rejectionReason;
+                // Truncate long reasons with Show more button
+                if (reason.length > 100) {
+                    const truncated = reason.substring(0, 100) + '...';
+                    const escapedFull = escapeHtml(reason).replace(/'/g, '&apos;');
+                    rejectionReasonCell = `
+                        <td>
+                            <span class="rejection-reason-text">${escapeHtml(truncated)}</span>
+                            <button class="btn btn-sm btn-link p-0" data-action="show-more" data-full-text="${escapedFull}">Show more</button>
+                        </td>
+                    `;
+                } else {
+                    rejectionReasonCell = `<td>${escapeHtml(reason)}</td>`;
+                }
+            } else if (currentFilter === 'rejected') {
+                rejectionReasonCell = '<td class="text-muted">(no reason provided)</td>';
+            }
+            
             return `
                 <tr data-entry-id="${entry.id}">
                     <td>
@@ -223,6 +265,7 @@
                     </td>
                     <td class="text-muted">${startTime}</td>
                     <td>${warningBadge}</td>
+                    ${rejectionReasonCell}
                     <td class="text-muted">${createdAgo}</td>
                     <td>
                         <button class="btn btn-sm btn-ghost-primary" data-action="expand-detail" data-id="${entry.id}">
@@ -257,11 +300,14 @@
         
         expandedId = id;
         
+        // Calculate colspan based on current filter (rejected tab has extra column)
+        const colspan = currentFilter === 'rejected' ? TABLE_COLUMN_COUNT + 1 : TABLE_COLUMN_COUNT;
+        
         // Show loading state in detail row
         const detailRow = document.createElement('tr');
         detailRow.id = `detail-${id}`;
         detailRow.innerHTML = `
-            <td colspan="${TABLE_COLUMN_COUNT}" class="p-0">
+            <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body text-center py-5">
                         <div class="spinner-border text-primary" role="status">
@@ -709,6 +755,13 @@
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
+                
+                // Increment approved count badge
+                const approvedBadge = document.querySelector(`[data-action="filter-status"][data-status="approved"] .badge`);
+                if (approvedBadge) {
+                    const currentCount = parseInt(approvedBadge.textContent) || 0;
+                    approvedBadge.textContent = currentCount + 1;
+                }
             } else {
                 // Reload to show updated status
                 loadEntries();
@@ -787,6 +840,13 @@
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
+                
+                // Increment rejected count badge
+                const rejectedBadge = document.querySelector(`[data-action="filter-status"][data-status="rejected"] .badge`);
+                if (rejectedBadge) {
+                    const currentCount = parseInt(rejectedBadge.textContent) || 0;
+                    rejectedBadge.textContent = currentCount + 1;
+                }
             } else {
                 // Reload to show updated status
                 loadEntries();
@@ -912,6 +972,13 @@
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
+                
+                // Increment approved count badge (fix action approves the entry)
+                const approvedBadge = document.querySelector(`[data-action="filter-status"][data-status="approved"] .badge`);
+                if (approvedBadge) {
+                    const currentCount = parseInt(approvedBadge.textContent) || 0;
+                    approvedBadge.textContent = currentCount + 1;
+                }
             } else {
                 // Reload to show updated status
                 loadEntries();
@@ -944,8 +1011,6 @@
         // Update UI
         if (entries.length === 0) {
             showEmptyState();
-        } else {
-            updateShowingText(entries.length);
         }
         
         // Decrement badge count for current filter
@@ -971,54 +1036,7 @@
         }
     }
     
-    /**
-     * Update pagination controls
-     * Shows or hides "Next" button based on presence of next cursor
-     * @param {string|null} nextCursor - Cursor for next page, or null if no more pages
-     */
-    function updatePagination(nextCursor) {
-        const pagination = document.getElementById('pagination');
-        if (!pagination) return;
-        
-        if (nextCursor) {
-            pagination.innerHTML = `
-                <li class="page-item">
-                    <a class="page-link" href="#" data-action="next-page" data-cursor="${nextCursor}">
-                        Next
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <polyline points="9 6 15 12 9 18"/>
-                        </svg>
-                    </a>
-                </li>
-            `;
-        } else {
-            pagination.innerHTML = '';
-        }
-    }
-    
-    /**
-     * Navigate to next page
-     * Loads next page of entries using provided cursor and scrolls to top
-     * @param {string} nextCursor - Cursor token for next page
-     */
-    function goToNextPage(nextCursor) {
-        cursor = nextCursor;
-        loadEntries();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    
-    /**
-     * Update showing text
-     * Updates the text showing how many items are currently displayed
-     * @param {number} count - Number of items currently shown
-     */
-    function updateShowingText(count) {
-        const showingText = document.getElementById('showing-text');
-        if (!showingText) return;
-        
-        showingText.textContent = count === 0 ? 'No items' : `Showing ${count} items`;
-    }
+
     
     /**
      * Show loading state
