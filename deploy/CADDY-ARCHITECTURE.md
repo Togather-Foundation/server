@@ -206,7 +206,24 @@ sudo systemctl start caddy
 **Not guaranteed.** Run `install.sh` to deploy Caddyfile and start Caddy.
 
 ### ❌ Forgetting to reload after Caddyfile changes
-**Changes don't apply automatically.** Run `systemctl reload caddy` after editing.
+**Changes don't apply automatically.** Run `sudo caddy reload --config /etc/caddy/Caddyfile --force` after editing (preferred), or `systemctl reload caddy` as fallback.
+
+### ❌ Syncing Caddyfile from repo without preserving active slot
+**The repo Caddyfile has a hardcoded default port (blue/8081).** If the live Caddyfile points to green/8082 and you blindly copy from the repo, the port resets. The deploy script handles this by preserving the live port/slot during sync.
+
+## Caddy Reload Methods
+
+**Preferred: Admin API** (synchronous, reliable)
+```bash
+sudo caddy reload --config /etc/caddy/Caddyfile --force
+```
+The `--force` flag tells Caddy to apply the config even if it hasn't changed. This method uses the Caddy admin API at `localhost:2019` and **returns only after the new config is fully applied**.
+
+**Fallback: systemctl reload** (asynchronous, less reliable)
+```bash
+sudo systemctl reload caddy
+```
+This sends SIGUSR1 to the Caddy process, which triggers a graceful reload. However, the command **returns before Caddy finishes applying the new config**, creating a window where the old config is still active. This was the root cause of intermittent traffic switch failures in blue-green deployments.
 
 ## References
 

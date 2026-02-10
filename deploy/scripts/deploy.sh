@@ -1332,13 +1332,46 @@ switch_traffic() {
     fi
 
     local caddyfile="/etc/caddy/Caddyfile"
+    
+    # Check if Caddyfile exists
+    if [[ ! -f "${caddyfile}" ]]; then
+        log "WARN" "Caddyfile not found at ${caddyfile}"
+        log "WARN" "Skipping traffic switch (deployments will still work on direct ports)"
+        return 0  # Non-fatal
+    fi
+
+    # Track whether we need to reload Caddy
+    local needs_reload=false
 
     # Sync environment Caddyfile if available
+    # IMPORTANT: When syncing from repo, preserve the live port/slot settings.
+    # The repo Caddyfile has a hardcoded default port (usually 8081/blue), but
+    # the live Caddyfile may point to a different slot. Without preserving this,
+    # the sync overwrites the live port, and then the "already pointing" check
+    # short-circuits without reloading — leaving Caddy's in-memory config stale.
     local caddy_source="${CONFIG_DIR}/environments/Caddyfile.${env}"
     if [[ -f "${caddy_source}" ]]; then
         if ! cmp -s "${caddy_source}" "${caddyfile}" 2>/dev/null; then
             log "INFO" "Syncing Caddyfile from ${caddy_source}"
+            
+            # Capture current live port/slot before overwriting
+            local live_port=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'reverse_proxy\s+localhost:\K\d+' | head -1)
+            local live_slot=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'X-Togather-Slot "\K[^"]+' | head -1)
+            
+            # Sync the full Caddyfile from repo (picks up structural changes)
             sudo cp "${caddy_source}" "${caddyfile}"
+            
+            # Restore live port/slot if they were set and differ from repo defaults
+            if [[ -n "${live_port}" ]]; then
+                sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/reverse_proxy localhost:[0-9]\+/reverse_proxy localhost:'"${live_port}"'/' "${caddyfile}"
+            fi
+            if [[ -n "${live_slot}" ]]; then
+                sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/header_down X-Togather-Slot "[^"]*"/header_down X-Togather-Slot "'"${live_slot}"'"/' "${caddyfile}"
+            fi
+            
+            # Caddyfile structure changed — must reload even if port stays the same
+            needs_reload=true
+            log "INFO" "Caddyfile synced (preserved live port: ${live_port:-unknown}, slot: ${live_slot:-unknown})"
         fi
     else
         log "WARN" "Caddyfile source not found: ${caddy_source}"
@@ -1350,24 +1383,6 @@ switch_traffic() {
         return 1
     fi
     
-    # Check if Caddyfile exists
-    if [[ ! -f "${caddyfile}" ]]; then
-        log "WARN" "Caddyfile not found at ${caddyfile}"
-        log "WARN" "Skipping traffic switch (deployments will still work on direct ports)"
-        return 0  # Non-fatal
-    fi
-    
-    # Determine current active port (from blue-green managed section only)
-    local current_port=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'reverse_proxy\s+localhost:\K\d+' | head -1)
-    log "INFO" "Current active port: ${current_port}"
-    log "INFO" "Target port: ${target_port}"
-    
-    # Skip if already pointing to target
-    if [[ "${current_port}" == "${target_port}" ]]; then
-        log "INFO" "Traffic already pointing to ${target_slot} slot"
-        return 0
-    fi
-    
     # Verify markers exist before attempting replacement
     if ! grep -q "# BLUE_GREEN_SLOT_START" "${caddyfile}" || ! grep -q "# BLUE_GREEN_SLOT_END" "${caddyfile}"; then
         log "ERROR" "Caddyfile missing BLUE_GREEN_SLOT markers - cannot update automatically"
@@ -1375,40 +1390,69 @@ switch_traffic() {
         return 1
     fi
     
-    # Create backup of Caddyfile
+    # Determine current active port (from blue-green managed section only)
+    local current_port=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'reverse_proxy\s+localhost:\K\d+' | head -1)
+    log "INFO" "Current Caddyfile port: ${current_port}"
+    log "INFO" "Target port: ${target_port}"
+    
+    # Create backup of Caddyfile (always, before any modifications)
     local backup_file="${caddyfile}.backup.$(date +%Y%m%d_%H%M%S)"
     sudo cp "${caddyfile}" "${backup_file}"
     log "INFO" "Created Caddyfile backup: ${backup_file}"
     
-    # Update Caddyfile with new port and slot name (only within marked section)
-    log "INFO" "Updating Caddyfile to point to localhost:${target_port} (${target_slot})"
-    sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/reverse_proxy localhost:[0-9]\+/reverse_proxy localhost:'"${target_port}"'/' "${caddyfile}"
-    sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/header_down X-Togather-Slot "[^"]*"/header_down X-Togather-Slot "'"${target_slot}"'"/' "${caddyfile}"
-    
-    # Validate Caddyfile syntax
-    if ! sudo caddy validate --config "${caddyfile}" &> /dev/null; then
-        log "ERROR" "Caddyfile validation failed after update"
-        log "ERROR" "Restoring backup: ${backup_file}"
-        sudo cp "${backup_file}" "${caddyfile}"
-        return 1
-    fi
-    
-    log "SUCCESS" "Caddyfile validated"
-    
-    # Reload Caddy (graceful reload with zero downtime)
-    log "INFO" "Reloading Caddy configuration..."
-    if sudo systemctl reload caddy; then
-        log "SUCCESS" "Caddy reloaded successfully"
+    # Update port/slot if Caddyfile doesn't already point to target
+    if [[ "${current_port}" != "${target_port}" ]]; then
+        # Update Caddyfile with new port and slot name (only within marked section)
+        log "INFO" "Updating Caddyfile to point to localhost:${target_port} (${target_slot})"
+        sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/reverse_proxy localhost:[0-9]\+/reverse_proxy localhost:'"${target_port}"'/' "${caddyfile}"
+        sudo sed -i '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/ s/header_down X-Togather-Slot "[^"]*"/header_down X-Togather-Slot "'"${target_slot}"'"/' "${caddyfile}"
+        needs_reload=true
     else
-        log "ERROR" "Caddy reload failed"
-        log "ERROR" "Restoring backup: ${backup_file}"
-        sudo cp "${backup_file}" "${caddyfile}"
-        sudo systemctl reload caddy
-        return 1
+        log "INFO" "Caddyfile already pointing to ${target_slot} slot (port ${target_port})"
     fi
     
-    # Verify traffic switch worked by checking actual version
-    log "INFO" "Verifying traffic switch to ${target_slot} (version ${GIT_SHORT_COMMIT})..."
+    # Reload Caddy if any configuration changes were made
+    if [[ "$needs_reload" == "true" ]]; then
+        # Validate Caddyfile syntax before reload
+        if ! sudo caddy validate --config "${caddyfile}" &> /dev/null; then
+            log "ERROR" "Caddyfile validation failed after update"
+            log "ERROR" "Restoring backup: ${backup_file}"
+            sudo cp "${backup_file}" "${caddyfile}"
+            return 1
+        fi
+        
+        log "SUCCESS" "Caddyfile validated"
+        
+        # Reload Caddy using admin API for reliable, synchronous config reload.
+        # The admin API (localhost:2019) applies the new config and returns only
+        # after the reload is complete, unlike systemctl reload which sends SIGUSR1
+        # asynchronously and can return before Caddy actually applies the config.
+        log "INFO" "Reloading Caddy configuration..."
+        if sudo caddy reload --config "${caddyfile}" --force 2>/dev/null; then
+            log "SUCCESS" "Caddy reloaded via admin API"
+        else
+            # Fallback to systemctl reload if admin API fails (e.g., admin API disabled)
+            log "WARN" "Caddy admin API reload failed, falling back to systemctl reload"
+            if sudo systemctl reload caddy; then
+                log "SUCCESS" "Caddy reloaded via systemctl"
+                # systemctl reload is async — give Caddy time to apply config
+                sleep 1
+            else
+                log "ERROR" "Caddy reload failed"
+                log "ERROR" "Restoring backup: ${backup_file}"
+                sudo cp "${backup_file}" "${caddyfile}"
+                sudo systemctl reload caddy
+                return 1
+            fi
+        fi
+    else
+        log "INFO" "No Caddy configuration changes needed, skipping reload"
+    fi
+    
+    # Always verify traffic is serving the correct version, even if no reload
+    # was needed. This catches cases where Caddy's in-memory config diverged
+    # from the Caddyfile (e.g., after a failed previous reload).
+    log "INFO" "Verifying traffic serves correct version (${GIT_SHORT_COMMIT})..."
     
     # Determine domain from NODE_DOMAIN or construct from env parameter
     local domain="${NODE_DOMAIN:-${env}.toronto.togather.foundation}"
@@ -1422,8 +1466,8 @@ switch_traffic() {
         local live_version=$(curl -sf "https://${domain}/version" | jq -r '.git_commit // .version // empty' 2>/dev/null || echo "")
         
         if [[ "$live_version" == "$GIT_COMMIT" ]] || [[ "$live_version" == "$GIT_SHORT_COMMIT" ]]; then
-            log "SUCCESS" "Traffic successfully switched to ${target_slot} slot (verified version: ${live_version})"
-            log "INFO" "Caddy is now routing https://${domain} to localhost:${target_port}"
+            log "SUCCESS" "Traffic verified: serving version ${live_version} from ${target_slot} slot"
+            log "INFO" "Caddy is routing https://${domain} to localhost:${target_port}"
             return 0
         fi
         
@@ -1431,8 +1475,21 @@ switch_traffic() {
         log "WARN" "  Expected: ${GIT_SHORT_COMMIT} (${GIT_COMMIT})"
         log "WARN" "  Got: ${live_version:-<no response>}"
         
+        # If no reload was done but version is wrong, Caddy's in-memory config
+        # is stale — force a reload to recover
+        if [[ "$needs_reload" == "false" ]] && [[ $attempt -eq 3 ]]; then
+            log "WARN" "Version mismatch without config change — Caddy in-memory config may be stale"
+            log "INFO" "Forcing Caddy reload to recover..."
+            if sudo caddy reload --config "${caddyfile}" --force 2>/dev/null; then
+                log "INFO" "Recovery reload completed via admin API"
+            else
+                sudo systemctl reload caddy && sleep 1
+                log "INFO" "Recovery reload completed via systemctl"
+            fi
+        fi
+        
         if [[ $attempt -lt $max_attempts ]]; then
-            log "INFO" "Waiting ${sleep_duration}s for Caddy reload to propagate..."
+            log "INFO" "Waiting ${sleep_duration}s for Caddy to propagate..."
             sleep $sleep_duration
         fi
         
@@ -1444,7 +1501,11 @@ switch_traffic() {
     log "ERROR" "HTTPS endpoint still serving wrong version"
     log "ERROR" "Rolling back Caddyfile to prevent user-facing issues"
     sudo cp "${backup_file}" "${caddyfile}"
-    sudo systemctl reload caddy
+    if sudo caddy reload --config "${caddyfile}" --force 2>/dev/null; then
+        log "INFO" "Rollback reload completed via admin API"
+    else
+        sudo systemctl reload caddy
+    fi
     return 1
 }
 
