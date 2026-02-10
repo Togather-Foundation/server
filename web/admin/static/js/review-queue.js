@@ -504,6 +504,8 @@
             <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
+                        <h3 class="mb-3">Review Details</h3>
+                        
                         ${warningsHtml}
                         ${changesHtml}
                         ${eventDataHtml}
