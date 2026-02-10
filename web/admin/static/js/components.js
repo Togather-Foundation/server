@@ -277,8 +277,33 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         setupThemeToggle();
         setupLogout();
+        setupCommitHashCopy();
     });
 } else {
     setupThemeToggle();
     setupLogout();
+    setupCommitHashCopy();
+}
+
+/**
+ * Setup commit hash copy to clipboard
+ */
+function setupCommitHashCopy() {
+    document.addEventListener('click', (e) => {
+        const target = e.target.closest('[data-action="copy-commit"]');
+        if (!target) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const commit = target.dataset.commit;
+        if (!commit) return;
+        
+        copyToClipboard(commit).then(() => {
+            showToast(`Copied commit hash: ${commit}`, 'success');
+        }).catch((err) => {
+            console.error('Failed to copy commit hash:', err);
+            showToast('Failed to copy commit hash', 'error');
+        });
+    });
 }
