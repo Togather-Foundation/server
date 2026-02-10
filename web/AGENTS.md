@@ -524,18 +524,27 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/healthz
 - Edit the HTML/CSS/JavaScript files
 - Keep changes uncommitted until verified
 
-#### 2. Test on Local Server
+#### 2. Rebuild and Test on Local Server
+
+**🚨 CRITICAL: Always rebuild the server after making JavaScript/HTML/CSS changes!**
+
 ```bash
-# Check if server is already running
-if ! lsof -ti:8080 > /dev/null 2>&1; then
-    echo "Starting development server..."
-    make dev &
-    sleep 8  # Wait for server startup
-else
-    echo "✓ Server already running on port 8080"
-    # Air will auto-reload your changes
-fi
+# Stop and rebuild server with new changes
+make stop
+make build
+make run &
+sleep 5  # Wait for server startup
+
+# Verify server is running
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/healthz
+# Should return 401 (expected without auth)
 ```
+
+**Why rebuild?**
+- JavaScript/HTML/CSS files are embedded in the Go binary
+- Changes won't be visible until you rebuild
+- `make dev` with `air` only auto-reloads for `.go` file changes
+- Static assets in `web/` require a full rebuild
 
 #### 3. Verify Layout with Screenshot
 
