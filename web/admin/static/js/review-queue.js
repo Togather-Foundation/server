@@ -31,6 +31,7 @@
     let currentFilter = 'pending';
     let expandedId = null;
     let pagination = null;
+    let cursor = null;
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
