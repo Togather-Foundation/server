@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/rs/zerolog/log"
 )
 
 type IngestResult struct {
@@ -21,13 +23,19 @@ type IngestResult struct {
 }
 
 type IngestService struct {
-	repo       Repository
-	nodeDomain string
-	defaultTZ  string
+	repo             Repository
+	nodeDomain       string
+	defaultTZ        string
+	validationConfig config.ValidationConfig
 }
 
-func NewIngestService(repo Repository, nodeDomain string) *IngestService {
-	return &IngestService{repo: repo, nodeDomain: nodeDomain, defaultTZ: "America/Toronto"}
+func NewIngestService(repo Repository, nodeDomain string, validationConfig config.ValidationConfig) *IngestService {
+	return &IngestService{
+		repo:             repo,
+		nodeDomain:       nodeDomain,
+		defaultTZ:        "America/Toronto",
+		validationConfig: validationConfig,
+	}
 }
 
 func (s *IngestService) Ingest(ctx context.Context, input EventInput) (*IngestResult, error) {
@@ -87,8 +95,22 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 	validated := validationResult.Input
 	warnings := validationResult.Warnings
+
+	log.Debug().
+		Str("event_name", validated.Name).
+		Int("validation_warnings", len(warnings)).
+		Msg("Ingest: Before appendQualityWarnings")
+
+	// Add synthetic warnings for quality issues that trigger review
+	warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig)
+
+	log.Debug().
+		Str("event_name", validated.Name).
+		Int("total_warnings", len(warnings)).
+		Msg("Ingest: After appendQualityWarnings")
+
 	// Check if review is needed due to validation warnings OR metadata quality issues
-	needsReview := len(warnings) > 0 || needsReview(validated, nil)
+	needsReview := len(warnings) > 0 || needsReview(validated, nil, s.validationConfig)
 
 	var sourceID string
 	if validated.Source != nil && validated.Source.URL != "" {
@@ -235,7 +257,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		Keywords:       validated.Keywords,
 		LicenseURL:     licenseURL(validated.License),
 		LicenseStatus:  "cc0",
-		Confidence:     floatPtr(reviewConfidence(validated, needsReview)),
+		Confidence:     floatPtr(reviewConfidence(validated, needsReview, s.validationConfig)),
 		OriginNodeID:   nil,
 	}
 
@@ -317,6 +339,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 	// Create review queue entry if needed
 	if needsReview {
+		log.Debug().
+			Str("event_ulid", event.ULID).
+			Str("event_name", event.Name).
+			Int("warnings_count", len(warnings)).
+			Msg("Creating review queue entry")
+
 		originalJSON, err := toJSON(input)
 		if err != nil {
 			return nil, fmt.Errorf("marshal original payload: %w", err)
@@ -329,6 +357,11 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		if err != nil {
 			return nil, fmt.Errorf("marshal warnings: %w", err)
 		}
+
+		log.Debug().
+			Str("event_ulid", event.ULID).
+			Str("warnings_json", string(warningsJSON)).
+			Msg("Marshaled warnings to JSON")
 
 		var externalID *string
 		if validated.Source != nil && validated.Source.EventID != "" {
@@ -344,7 +377,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 
 		startTime, endTime := parseEventTimes(validated)
-		_, err = txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+		reviewEntry, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:           event.ID, // Use UUID, not ULID
 			OriginalPayload:   originalJSON,
 			NormalizedPayload: normalizedJSON,
@@ -358,6 +391,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		if err != nil {
 			return nil, fmt.Errorf("create review queue entry: %w", err)
 		}
+
+		log.Debug().
+			Str("event_ulid", event.ULID).
+			Int("review_entry_id", reviewEntry.ID).
+			Int("warnings_in_db", len(reviewEntry.Warnings)).
+			Msg("Created review queue entry")
 	}
 
 	if strings.TrimSpace(idempotencyKey) != "" {
@@ -566,14 +605,18 @@ func nullableString(value string) *string {
 	return &trimmed
 }
 
-func needsReview(input EventInput, linkStatuses map[string]int) bool {
-	if reviewConfidence(input, false) < 0.6 {
+func needsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
+	// Use zero-value defaults if config is uninitialized (RequireImage defaults to false)
+	// This should never happen in practice since all callers pass initialized config,
+	// but defensive check prevents potential panics.
+
+	if reviewConfidence(input, false, validationConfig) < 0.6 {
 		return true
 	}
 	if strings.TrimSpace(input.Description) == "" {
 		return true
 	}
-	if strings.TrimSpace(input.Image) == "" {
+	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		return true
 	}
 	if isTooFarFuture(input.StartDate, 730) {
@@ -587,12 +630,12 @@ func needsReview(input EventInput, linkStatuses map[string]int) bool {
 	return false
 }
 
-func reviewConfidence(input EventInput, flagged bool) float64 {
+func reviewConfidence(input EventInput, flagged bool, validationConfig config.ValidationConfig) float64 {
 	confidence := 0.9
 	if strings.TrimSpace(input.Description) == "" {
 		confidence -= 0.2
 	}
-	if strings.TrimSpace(input.Image) == "" {
+	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		confidence -= 0.2
 	}
 	if isTooFarFuture(input.StartDate, 730) {
@@ -621,6 +664,79 @@ func isTooFarFuture(startDate string, days int) bool {
 
 func floatPtr(value float64) *float64 {
 	return &value
+}
+
+// appendQualityWarnings adds synthetic validation warnings for quality issues
+// that trigger review but aren't structural validation errors.
+// This ensures admins can see WHY an event was flagged for review.
+func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) []ValidationWarning {
+	log.Debug().
+		Str("event_name", input.Name).
+		Int("initial_warnings", len(warnings)).
+		Str("has_description", fmt.Sprintf("%v", input.Description != "")).
+		Str("has_image", fmt.Sprintf("%v", input.Image != "")).
+		Msg("appendQualityWarnings: START")
+
+	result := make([]ValidationWarning, len(warnings))
+	copy(result, warnings)
+
+	// Check for missing description
+	if strings.TrimSpace(input.Description) == "" {
+		result = append(result, ValidationWarning{
+			Field:   "description",
+			Message: "Event is missing a description. A description helps users understand what the event is about.",
+			Code:    "missing_description",
+		})
+	}
+
+	// Check for missing image (only if configured to require it)
+	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
+		result = append(result, ValidationWarning{
+			Field:   "image",
+			Message: "Event is missing an image. Images significantly improve event discoverability and appeal.",
+			Code:    "missing_image",
+		})
+	}
+
+	// Check for too far in future (>730 days = ~2 years)
+	if isTooFarFuture(input.StartDate, 730) {
+		result = append(result, ValidationWarning{
+			Field:   "startDate",
+			Message: "Event is scheduled more than 2 years in the future. This may indicate a data quality issue.",
+			Code:    "too_far_future",
+		})
+	}
+
+	// Check for low confidence score
+	confidence := reviewConfidence(input, false, validationConfig)
+	if confidence < 0.6 {
+		result = append(result, ValidationWarning{
+			Field:   "event",
+			Message: fmt.Sprintf("Event has low data quality score (%.0f%%). Review recommended.", confidence*100),
+			Code:    "low_confidence",
+		})
+	}
+
+	// Check for failed link checks (if provided)
+	if linkStatuses != nil {
+		for url, code := range linkStatuses {
+			if code >= 400 {
+				result = append(result, ValidationWarning{
+					Field:   "url",
+					Message: fmt.Sprintf("Link check failed for %s (HTTP %d)", url, code),
+					Code:    "link_check_failed",
+				})
+			}
+		}
+	}
+
+	log.Debug().
+		Str("event_name", input.Name).
+		Int("final_warnings", len(result)).
+		Int("added_warnings", len(result)-len(warnings)).
+		Msg("appendQualityWarnings: END")
+
+	return result
 }
 
 func normalizedInputForHash(input EventInput) EventInput {

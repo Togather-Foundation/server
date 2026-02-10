@@ -19,6 +19,9 @@
             return;
         }
 
+        // Check if we came from review queue
+        checkReviewContext();
+
         // Load event data
         loadEvent();
 
@@ -39,7 +42,7 @@
             
             switch(action) {
                 case 'cancel':
-                    window.history.back();
+                    handleCancel();
                     break;
                 case 'reload':
                     window.location.reload();
@@ -58,6 +61,46 @@
                     break;
             }
         });
+    }
+    
+    function handleCancel() {
+        // If we came from review queue, go back to it
+        const reviewQueueId = sessionStorage.getItem('from_review_queue');
+        if (reviewQueueId) {
+            sessionStorage.removeItem('from_review_queue');
+            window.location.href = '/admin/review-queue';
+        } else {
+            window.history.back();
+        }
+    }
+    
+    function checkReviewContext() {
+        // Check if we came from review queue (set by review-queue.js)
+        const reviewQueueId = sessionStorage.getItem('from_review_queue');
+        if (reviewQueueId) {
+            const banner = document.getElementById('review-context-banner');
+            if (banner) {
+                banner.style.display = 'block';
+                banner.innerHTML = `
+                    <div class="alert alert-info mt-3 mb-0" role="alert">
+                        <div class="d-flex">
+                            <div>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon alert-icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <circle cx="12" cy="12" r="9"/>
+                                    <line x1="12" y1="8" x2="12" y2="12"/>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="alert-title">Viewing from Review Queue</h4>
+                                <div class="text-muted">This event was flagged for review. You can edit it here or <a href="/admin/review-queue" class="alert-link">return to the review queue</a>.</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
     }
 
     async function loadEvent() {
@@ -171,7 +214,7 @@
                             ${occ.virtual_url ? `<div class="text-muted small">Virtual: ${escapeHtml(occ.virtual_url)}</div>` : ''}
                         </div>
                         <div class="col-auto">
-                            <div class="btn-list">
+                            <div class="btn-list" style="gap: 0.5rem;">
                                 <button type="button" class="btn btn-sm btn-icon" data-action="edit-occurrence" data-index="${index}" title="Edit">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>

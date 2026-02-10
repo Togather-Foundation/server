@@ -272,6 +272,7 @@ func TestListReviewQueue(t *testing.T) {
 						*testReviewQueueEntry(2, "01HTEST2"),
 					},
 					NextCursor: nil,
+					TotalCount: 2,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -287,6 +288,7 @@ func TestListReviewQueue(t *testing.T) {
 				})).Return(&events.ReviewQueueListResult{
 					Entries:    []events.ReviewQueueEntry{},
 					NextCursor: nil,
+					TotalCount: 0,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -302,6 +304,7 @@ func TestListReviewQueue(t *testing.T) {
 				})).Return(&events.ReviewQueueListResult{
 					Entries:    []events.ReviewQueueEntry{},
 					NextCursor: nil,
+					TotalCount: 0,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -317,6 +320,7 @@ func TestListReviewQueue(t *testing.T) {
 				})).Return(&events.ReviewQueueListResult{
 					Entries:    []events.ReviewQueueEntry{},
 					NextCursor: nil,
+					TotalCount: 0,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -332,6 +336,7 @@ func TestListReviewQueue(t *testing.T) {
 				})).Return(&events.ReviewQueueListResult{
 					Entries:    []events.ReviewQueueEntry{},
 					NextCursor: nil,
+					TotalCount: 0,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -347,6 +352,7 @@ func TestListReviewQueue(t *testing.T) {
 				})).Return(&events.ReviewQueueListResult{
 					Entries:    []events.ReviewQueueEntry{},
 					NextCursor: nil,
+					TotalCount: 0,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -363,6 +369,7 @@ func TestListReviewQueue(t *testing.T) {
 						*testReviewQueueEntry(1, "01HTEST1"),
 					},
 					NextCursor: &nextCursor,
+					TotalCount: 1,
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,

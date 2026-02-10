@@ -64,9 +64,13 @@ func TestOrganizationsHandlerListSuccess(t *testing.T) {
 
 	var payload organizationListResponse
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
-	require.Len(t, payload.Items, 1)
-	require.Equal(t, "Arts Org", payload.Items[0]["name"])
-	require.Equal(t, "Organization", payload.Items[0]["@type"])
+	items, ok := payload.Items.([]any)
+	require.True(t, ok, "Items should be a slice")
+	require.Len(t, items, 1)
+	item0, ok := items[0].(map[string]any)
+	require.True(t, ok, "Item should be a map")
+	require.Equal(t, "Arts Org", item0["name"])
+	require.Equal(t, "Organization", item0["@type"])
 	require.Equal(t, "next", payload.NextCursor)
 }
 

@@ -28,9 +28,9 @@ func (e ValidationError) Error() string {
 }
 
 type ValidationWarning struct {
-	Field   string
-	Message string
-	Code    string // Machine-readable code (e.g., "reversed_dates", "suspicious_duration")
+	Field   string `json:"field"`
+	Message string `json:"message"`
+	Code    string `json:"code"` // Machine-readable code (e.g., "reversed_dates", "suspicious_duration")
 }
 
 type ValidationResult struct {

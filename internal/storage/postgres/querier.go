@@ -29,6 +29,8 @@ type Querier interface {
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	CountPastEvents(ctx context.Context) (int64, error)
+	// Count total reviews by status (for badge display)
+	CountReviewQueueByStatus(ctx context.Context, status pgtype.Text) (int64, error)
 	CountUpcomingEvents(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
@@ -87,7 +89,7 @@ type Querier interface {
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
 	// Get single review by ID
-	GetReviewQueueEntry(ctx context.Context, id int32) (EventReviewQueue, error)
+	GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error)
 	// Retrieves source metadata by ID
 	GetSourceByID(ctx context.Context, id pgtype.UUID) (GetSourceByIDRow, error)
 	// Gets all sources that contributed to an event (deduplicated)

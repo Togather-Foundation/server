@@ -59,7 +59,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	eventsService := events.NewService(repo.Events())
-	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL)
+	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.Validation)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 	provenanceService := provenance.NewService(repo.Provenance())
@@ -132,7 +132,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger)
 
 	// Load admin templates
-	templates, err := loadAdminTemplates()
+	templates, err := loadAdminTemplates(gitCommit)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to load admin templates, admin UI will be unavailable")
 	}
@@ -516,8 +516,32 @@ func findShapesDirectory() string {
 }
 
 // loadAdminTemplates loads HTML templates for the admin UI.
-// Returns nil if templates cannot be found (admin UI will gracefully degrade).
-func loadAdminTemplates() (*template.Template, error) {
+// The commitHash parameter should come from ldflags (the authoritative source baked into the binary at build time).
+// Falls back to BUILD_COMMIT env var, then "dev" if neither is available.
+func loadAdminTemplates(commitHash string) (*template.Template, error) {
+	// Use ldflags value as the authoritative commit hash source.
+	// Fall back to BUILD_COMMIT env var for backward compatibility,
+	// then "dev" for local development.
+	gitCommit := commitHash
+	if gitCommit == "" || gitCommit == "unknown" {
+		gitCommit = os.Getenv("BUILD_COMMIT")
+	}
+	if gitCommit == "" {
+		gitCommit = "dev"
+	} else if len(gitCommit) > 7 {
+		gitCommit = gitCommit[:7] // Use short hash
+	}
+
+	// Create template with custom functions for cache-busting
+	funcMap := template.FuncMap{
+		"assetVersion": func() string {
+			return gitCommit
+		},
+		"gitCommit": func() string {
+			return gitCommit
+		},
+	}
+
 	// Try common locations for the templates directory
 	candidates := []string{
 		"web/admin/templates",                      // From project root
@@ -532,7 +556,8 @@ func loadAdminTemplates() (*template.Template, error) {
 			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
 				// Found templates directory, parse all .html files
 				pattern := filepath.Join(absPath, "*.html")
-				if tmpl, err := template.ParseGlob(pattern); err == nil {
+				tmpl := template.New("").Funcs(funcMap)
+				if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 					return tmpl, nil
 				}
 			}
@@ -548,7 +573,8 @@ func loadAdminTemplates() (*template.Template, error) {
 				templatesPath := filepath.Join(dir, "web", "admin", "templates")
 				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
 					pattern := filepath.Join(templatesPath, "*.html")
-					if tmpl, err := template.ParseGlob(pattern); err == nil {
+					tmpl := template.New("").Funcs(funcMap)
+					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 						return tmpl, nil
 					}
 				}

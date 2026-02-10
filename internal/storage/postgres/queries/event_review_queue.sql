@@ -105,25 +105,27 @@ RETURNING id,
 
 -- name: GetReviewQueueEntry :one
 -- Get single review by ID
-SELECT id,
-       event_id,
-       original_payload,
-       normalized_payload,
-       warnings,
-       source_id,
-       source_external_id,
-       dedup_hash,
-       event_start_time,
-       event_end_time,
-       status,
-       reviewed_by,
-       reviewed_at,
-       review_notes,
-       rejection_reason,
-       created_at,
-       updated_at
-  FROM event_review_queue
- WHERE id = sqlc.arg('id');
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+ WHERE r.id = sqlc.arg('id');
 
 -- name: ListReviewQueue :many
 -- List reviews with pagination and status filter
@@ -151,6 +153,12 @@ SELECT r.id,
    AND (sqlc.narg('after_id')::integer IS NULL OR r.id > sqlc.narg('after_id'))
  ORDER BY r.id ASC
  LIMIT sqlc.arg('limit');
+
+-- name: CountReviewQueueByStatus :one
+-- Count total reviews by status (for badge display)
+SELECT COUNT(*) as total
+  FROM event_review_queue
+ WHERE (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'));
 
 -- name: ApproveReview :one
 -- Mark review as approved

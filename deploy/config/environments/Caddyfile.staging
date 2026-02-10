@@ -82,6 +82,14 @@ staging.toronto.togather.foundation {
 		# Add slot identifier for debugging
 		# Update this when switching slots: "blue" or "green"
 		header_down X-Togather-Slot "blue"
+		
+		# Disable keepalive to prevent stale connections during deployments
+		# This ensures fresh connections to new containers immediately
+		# without requiring Caddy reload. Minor performance trade-off
+		# (TCP handshake overhead) for zero-downtime static file updates.
+		transport http {
+			keepalive off
+		}
 	}
 	# BLUE_GREEN_SLOT_END - Managed by deployment script (do not remove this marker)
 	
@@ -97,6 +105,18 @@ staging.toronto.togather.foundation {
 		}
 		format json
 	}
+	
+	# Cache control: Prevent browsers from caching HTML pages
+	# HTML pages embed commit hashes for cache-busting; stale HTML = stale commit display
+	# Static assets use ?v=<commit> query params for cache-busting, so they get long-lived caching
+	@html_pages {
+		not path /admin/static/* /api/*
+		header Content-Type text/html*
+	}
+	header @html_pages Cache-Control "no-cache, no-store, must-revalidate"
+	
+	@static_assets path /admin/static/*
+	header @static_assets Cache-Control "public, max-age=31536000, immutable"
 	
 	# Security headers (staging - relaxed for testing)
 	header {

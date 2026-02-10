@@ -69,6 +69,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # ============================================================================
 FROM alpine:latest
 
+# Build arguments for runtime
+ARG GIT_COMMIT=unknown
+
+# Set as environment variable for template cache-busting
+ENV BUILD_COMMIT=${GIT_COMMIT}
+
 # Install runtime dependencies
 RUN apk add --no-cache \
     ca-certificates \

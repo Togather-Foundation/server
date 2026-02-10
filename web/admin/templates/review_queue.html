@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event Review Queue - SEL Admin</title>
     {{ template "_head_meta.html" . }}
-    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
-    <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css?v={{ assetVersion }}">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v={{ assetVersion }}">
 </head>
 <body>
     {{ template "_header.html" . }}
@@ -33,17 +33,17 @@
                     <ul class="nav nav-tabs mb-3" id="status-tabs">
                         <li class="nav-item">
                             <a class="nav-link active" href="#" data-action="filter-status" data-status="pending">
-                                Pending <span class="badge bg-secondary ms-1" id="pending-count">0</span>
+                                Pending <span class="badge bg-secondary ms-1">0</span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#" data-action="filter-status" data-status="approved">
-                                Approved
+                                Approved <span class="badge bg-secondary ms-1">0</span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="#" data-action="filter-status" data-status="rejected">
-                                Rejected
+                                Rejected <span class="badge bg-secondary ms-1">0</span>
                             </a>
                         </li>
                     </ul>
@@ -78,6 +78,7 @@
                                         <th>Event Name</th>
                                         <th>Start Time</th>
                                         <th>Warning</th>
+                                        <th id="rejection-reason-header" style="display: none;">Rejection Reason</th>
                                         <th>Created</th>
                                         <th class="w-1"></th>
                                     </tr>
@@ -127,6 +128,6 @@
     </div>
     
     {{ template "_footer.html" . }}
-    <script src="/admin/static/js/review-queue.js"></script>
+    <script src="/admin/static/js/review-queue.js?v={{ assetVersion }}"></script>
 </body>
 </html>

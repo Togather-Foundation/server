@@ -275,4 +275,5 @@ type ReviewQueueFilters struct {
 type ReviewQueueListResult struct {
 	Entries    []ReviewQueueEntry
 	NextCursor *int
+	TotalCount int64 // Total count for current filter (for badge display)
 }

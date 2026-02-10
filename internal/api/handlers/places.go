@@ -22,8 +22,8 @@ func NewPlacesHandler(service *places.Service, env string, baseURL string) *Plac
 }
 
 type placeListResponse struct {
-	Items      []map[string]any `json:"items"`
-	NextCursor string           `json:"next_cursor"`
+	Items      any    `json:"items"` // Accepts any slice type for JSON encoding
+	NextCursor string `json:"next_cursor"`
 }
 
 func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {

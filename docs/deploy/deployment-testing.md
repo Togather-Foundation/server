@@ -482,6 +482,55 @@ ssh deploy@<server> 'cat /etc/caddy/Caddyfile | grep reverse_proxy'
 ssh deploy@<server> 'sudo systemctl reload caddy'
 ```
 
+### Issue: Static files (JS/CSS) not updating after deployment
+**Symptom:** After deploying new code with updated JavaScript or CSS, files served through Caddy are stale even though the container serves fresh content.
+
+**Root Cause:** Caddy maintains persistent HTTP keep-alive connections to upstream backends (connection pooling). When a new container starts on the same port as the old one, existing connections may still point to stale state.
+
+**Solution (T043 - Configuration Fix):**
+Caddyfiles have been updated with `transport http { keepalive off }` to disable connection pooling to upstreams. This ensures:
+- Every request creates a fresh connection to the current container
+- No stale connections survive container replacements
+- Zero-downtime static file updates without manual intervention
+- No Caddy reload required
+
+**Trade-off:** Minor performance impact from TCP handshake overhead (negligible for localhost upstreams).
+
+**Diagnosis (if issue persists):**
+```bash
+# 1. Verify Caddyfile has keepalive disabled
+ssh deploy@<server> "grep -A 3 'transport http' /etc/caddy/Caddyfile"
+# Should show: keepalive off
+
+# 2. Verify container has new content
+ssh deploy@<server> "docker exec togather-server-blue grep 'YOUR_NEW_STRING' /app/web/admin/static/js/FILE.js"
+
+# 3. Verify direct container access works
+ssh deploy@<server> "curl -s http://localhost:8081/admin/static/js/FILE.js | grep 'YOUR_NEW_STRING'"
+
+# 4. Test through Caddy (should show NEW content)
+curl -s "https://${NODE_DOMAIN}/admin/static/js/FILE.js" | grep 'YOUR_NEW_STRING'
+```
+
+**Legacy Fix (if using old Caddyfile without keepalive off):**
+```bash
+# Reload Caddy to close stale connections (causes brief connection reset)
+ssh deploy@<server> "sudo systemctl reload caddy"
+```
+
+**Why This Happens:**
+- Static files are embedded in Docker images at build time (`//go:embed admin/static`)
+- Caddy's `keepalive_idle_conns_per_host` (default: 32) pools connections
+- Pooled connections survive container replacements on the same port
+- Disabling keepalive prevents connection reuse across deployments
+
+**Testing After Deploy:**
+```bash
+# Verify Caddy serves same content as container (should match)
+ssh deploy@<server> "curl -s http://localhost:8081/admin/static/js/FILE.js | sha256sum"
+curl -s "https://${NODE_DOMAIN}/admin/static/js/FILE.js" | sha256sum
+```
+
 ---
 
 ## Agent Instructions

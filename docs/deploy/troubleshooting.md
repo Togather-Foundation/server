@@ -768,6 +768,77 @@ sudo systemctl restart caddy
 
 ---
 
+### Issue: Static Files (JS/CSS) Not Updating After Deployment
+
+**Symptom:**
+Container serves fresh JavaScript/CSS files, but requests through Caddy proxy serve stale versions.
+
+**Root Cause:**
+Caddy maintains persistent HTTP keep-alive connections to upstream backends for performance (connection pooling). When a new container replaces an old one on the same port, Caddy's existing connections may still be pointed at stale state. This causes:
+- Direct container access (`curl localhost:8081/...`) returns NEW content ✅
+- Through Caddy (`curl https://domain/...`) returns OLD content ❌
+
+Technical details:
+- Caddy's `keepalive_idle_conns_per_host` defaults to 32 connections per upstream
+- These persistent connections survive container replacements
+- `systemctl reload caddy` gracefully closes old connections and establishes fresh ones
+
+**Diagnosis:**
+```bash
+# 1. Verify container has new content
+docker exec togather-server-blue strings /app/server | grep "YOUR_NEW_STRING"
+
+# 2. Verify direct container access works (bypasses Caddy)
+curl -s http://localhost:8081/admin/static/js/FILE.js | grep "YOUR_NEW_STRING"
+
+# 3. Test through Caddy proxy
+curl -s "https://${NODE_DOMAIN}/admin/static/js/FILE.js" | grep "YOUR_NEW_STRING"
+
+# If #3 fails but #1-2 pass: Caddy has stale upstream connections
+```
+
+**Resolution:**
+
+**Automated (Recommended):**
+As of deploy script T043 enhancement, Caddy is automatically reloaded:
+1. After deploying new container (closes stale connections before traffic switch)
+2. During traffic switching (closes stale connections again for safety)
+
+No manual intervention needed with updated `deploy.sh`.
+
+**Manual (if using older deploy.sh):**
+```bash
+# Reload Caddy to close stale upstream connections
+sudo systemctl reload caddy
+
+# Wait for reload to complete
+sleep 2
+
+# Verify new files are served
+curl -s "https://${NODE_DOMAIN}/admin/static/js/FILE.js" | sha256sum
+```
+
+**Why This Happens:**
+- Static files are embedded at Docker build time (`//go:embed` directive in Go code)
+- New images contain updated files
+- Containers serve fresh files correctly
+- BUT Caddy's persistent connections don't automatically reset when upstream changes
+- Reload forces Caddy to establish fresh connections to the new container
+
+**Prevention:**
+Always use the latest `deploy.sh` which includes T043 automatic Caddy reload.
+
+**Testing Static Files Updated:**
+```bash
+# Compare checksums (should match after Caddy reload)
+curl -s "https://${NODE_DOMAIN}/admin/static/js/FILE.js" | sha256sum
+docker exec togather-server-blue sha256sum /app/web/admin/static/js/FILE.js
+```
+
+**Note:** This is NOT caching. Caddy does not cache responses by default. The `cache-handler` plugin must be explicitly installed and configured for caching behavior. This issue is purely connection pooling/keep-alive behavior.
+
+---
+
 ## Performance Issues
 
 ### Issue: Slow Response Times

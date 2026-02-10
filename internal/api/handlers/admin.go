@@ -94,7 +94,7 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 }
 
 // ListEvents handles GET /api/v1/admin/events
-// Returns events for admin review
+// Paginated list of all events for admin review
 func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Service == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -130,6 +130,10 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		if event.LifecycleState != "" {
 			item["lifecycle_state"] = event.LifecycleState
+		}
+		// Add start date from first occurrence
+		if len(event.Occurrences) > 0 {
+			item["start_date"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
 		}
 		items = append(items, item)
 	}

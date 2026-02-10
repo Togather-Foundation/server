@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Activity - SEL Admin</title>
     {{ template "_head_meta.html" . }}
-    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
-    <link rel="stylesheet" href="/admin/static/css/custom.css?v=3">
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css?v={{ assetVersion }}">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v={{ assetVersion }}">
 </head>
 <body data-user-id="{{ .UserID }}">
     {{ template "_header.html" . }}
@@ -170,6 +170,6 @@
     </div>
     
     {{ template "_footer.html" . }}
-    <script src="/admin/static/js/user-activity.js"></script>
+    <script src="/admin/static/js/user-activity.js?v={{ assetVersion }}"></script>
 </body>
 </html>

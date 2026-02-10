@@ -1,6 +1,7 @@
 package events
 
 import (
+	"github.com/Togather-Foundation/server/internal/config"
 	"testing"
 	"time"
 )
@@ -76,11 +77,27 @@ func TestNeedsReview(t *testing.T) {
 			linkStatuses: map[string]int{"https://example.com/image.jpg": 200},
 			expected:     false,
 		},
+		{
+			name: "zero-value config (RequireImage=false) - missing image should pass",
+			input: EventInput{
+				Name:        "Event Name",
+				Description: "Description",
+				StartDate:   time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+			},
+			linkStatuses: nil,
+			expected:     false, // Should NOT need review when RequireImage is false
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := needsReview(tt.input, tt.linkStatuses)
+			// Most tests use RequireImage: true, but the last test uses zero-value (RequireImage: false)
+			var cfg config.ValidationConfig
+			if tt.name != "zero-value config (RequireImage=false) - missing image should pass" {
+				cfg = config.ValidationConfig{RequireImage: true}
+			} // else: zero-value config with RequireImage: false
+
+			result := needsReview(tt.input, tt.linkStatuses, cfg)
 			if result != tt.expected {
 				t.Errorf("needsReview() = %v, want %v", result, tt.expected)
 			}
@@ -175,11 +192,27 @@ func TestReviewConfidence(t *testing.T) {
 			flagged:  true,
 			expected: 0.2, // 0.9 - 0.2 (no desc) - 0.2 (no image) - 0.2 (too far) - 0.1 (flagged)
 		},
+		{
+			name: "zero-value config (RequireImage=false) - missing image should not reduce confidence",
+			input: EventInput{
+				Name:        "Event Name",
+				Description: "Description",
+				StartDate:   time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+			},
+			flagged:  false,
+			expected: 0.9, // Should be full confidence when RequireImage is false
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := reviewConfidence(tt.input, tt.flagged)
+			// Most tests use RequireImage: true, but the last test uses zero-value (RequireImage: false)
+			var cfg config.ValidationConfig
+			if tt.name != "zero-value config (RequireImage=false) - missing image should not reduce confidence" {
+				cfg = config.ValidationConfig{RequireImage: true}
+			} // else: zero-value config with RequireImage: false
+
+			result := reviewConfidence(tt.input, tt.flagged, cfg)
 			// Use epsilon for floating point comparison
 			epsilon := 0.0001
 			if result < tt.expected-epsilon || result > tt.expected+epsilon {
@@ -365,7 +398,7 @@ func TestHashInput(t *testing.T) {
 }
 
 func TestNewIngestService(t *testing.T) {
-	service := NewIngestService(nil, "https://example.com")
+	service := NewIngestService(nil, "https://example.com", config.ValidationConfig{RequireImage: true})
 
 	if service == nil {
 		t.Fatal("NewIngestService() returned nil")

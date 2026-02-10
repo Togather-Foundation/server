@@ -436,3 +436,186 @@ func TestEventRepository_ReviewQueue_Pagination(t *testing.T) {
 		assert.NotEqual(t, firstPage.Entries[0].ID, secondPage.Entries[0].ID)
 	})
 }
+
+// TestEventRepository_ListReviewQueue_PaginationEdgeCases tests the LIMIT+1 pagination pattern edge cases
+// for ListReviewQueue (internal/storage/postgres/events_repository.go:1330-1384)
+func TestEventRepository_ListReviewQueue_PaginationEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	container, dbURL := setupPostgres(t, ctx)
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	repo := &EventRepository{pool: pool}
+
+	t.Run("SinglePageResult_NoNextCursor", func(t *testing.T) {
+		// Create test venue
+		place := insertPlace(t, ctx, pool, "Single Page Venue", "Toronto", "ON")
+
+		// Create exactly 2 entries (limit will be 5, so no next page)
+		originalPayload, _ := json.Marshal(map[string]interface{}{"test": "data"})
+
+		for i := 0; i < 2; i++ {
+			eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+			params := events.ReviewQueueCreateParams{
+				EventID:           eventID,
+				OriginalPayload:   originalPayload,
+				NormalizedPayload: originalPayload,
+				Warnings:          originalPayload,
+				EventStartTime:    startTime,
+			}
+
+			_, err := repo.CreateReviewQueueEntry(ctx, params)
+			require.NoError(t, err)
+		}
+
+		// Query with limit > number of entries
+		status := "pending"
+		filters := events.ReviewQueueFilters{
+			Status: &status,
+			Limit:  5,
+		}
+
+		result, err := repo.ListReviewQueue(ctx, filters)
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(result.Entries), 2, "Should have at least 2 entries")
+		assert.Nil(t, result.NextCursor, "NextCursor should be nil when count <= limit")
+	})
+
+	t.Run("ExactlyLimitPlusOne_BoundaryCondition", func(t *testing.T) {
+		// Create test venue
+		place := insertPlace(t, ctx, pool, "Boundary Venue", "Toronto", "ON")
+
+		// Create exactly limit+1 entries (3 entries with limit=2)
+		originalPayload, _ := json.Marshal(map[string]interface{}{"test": "data"})
+
+		for i := 0; i < 3; i++ {
+			eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+			params := events.ReviewQueueCreateParams{
+				EventID:           eventID,
+				OriginalPayload:   originalPayload,
+				NormalizedPayload: originalPayload,
+				Warnings:          originalPayload,
+				EventStartTime:    startTime,
+			}
+
+			_, err := repo.CreateReviewQueueEntry(ctx, params)
+			require.NoError(t, err)
+		}
+
+		// Query with limit that will hit exactly limit+1 boundary
+		status := "pending"
+		filters := events.ReviewQueueFilters{
+			Status: &status,
+			Limit:  2,
+		}
+
+		result, err := repo.ListReviewQueue(ctx, filters)
+		require.NoError(t, err)
+
+		// Should return exactly 'limit' entries (2), not limit+1
+		assert.Len(t, result.Entries, 2, "Should return exactly limit entries")
+
+		// NextCursor should be set because there are more entries
+		assert.NotNil(t, result.NextCursor, "NextCursor should be set when hasMore is true")
+
+		// NextCursor should be the ID of the last returned entry
+		assert.Equal(t, result.Entries[1].ID, *result.NextCursor, "NextCursor should be ID of last entry")
+	})
+
+	t.Run("EmptyResultSet_NoEntries", func(t *testing.T) {
+		// Query with a status that has no entries
+		status := "nonexistent_status"
+		filters := events.ReviewQueueFilters{
+			Status: &status,
+			Limit:  10,
+		}
+
+		result, err := repo.ListReviewQueue(ctx, filters)
+		require.NoError(t, err)
+		assert.Empty(t, result.Entries, "Should return empty entries for nonexistent status")
+		assert.Nil(t, result.NextCursor, "NextCursor should be nil for empty result")
+		assert.Equal(t, int64(0), result.TotalCount, "TotalCount should be 0 for empty result")
+	})
+
+	t.Run("InvalidCursor_HandlesGracefully", func(t *testing.T) {
+		// Create test venue and one entry
+		place := insertPlace(t, ctx, pool, "Invalid Cursor Venue", "Toronto", "ON")
+		originalPayload, _ := json.Marshal(map[string]interface{}{"test": "data"})
+
+		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+		params := events.ReviewQueueCreateParams{
+			EventID:           eventID,
+			OriginalPayload:   originalPayload,
+			NormalizedPayload: originalPayload,
+			Warnings:          originalPayload,
+			EventStartTime:    startTime,
+		}
+
+		_, err := repo.CreateReviewQueueEntry(ctx, params)
+		require.NoError(t, err)
+
+		// Query with an invalid (very high) cursor ID
+		status := "pending"
+		invalidCursor := 999999
+		filters := events.ReviewQueueFilters{
+			Status:     &status,
+			Limit:      10,
+			NextCursor: &invalidCursor,
+		}
+
+		result, err := repo.ListReviewQueue(ctx, filters)
+		require.NoError(t, err, "Should handle invalid cursor gracefully")
+		assert.Empty(t, result.Entries, "Should return empty entries for cursor beyond all entries")
+		assert.Nil(t, result.NextCursor, "NextCursor should be nil when no more entries")
+	})
+
+	t.Run("ExactlyLimit_NoNextPage", func(t *testing.T) {
+		// Create test venue
+		place := insertPlace(t, ctx, pool, "Exact Limit Venue", "Toronto", "ON")
+
+		// Create exactly 3 entries
+		originalPayload, _ := json.Marshal(map[string]interface{}{"test": "data"})
+		var createdIDs []int
+
+		for i := 0; i < 3; i++ {
+			eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)
+			params := events.ReviewQueueCreateParams{
+				EventID:           eventID,
+				OriginalPayload:   originalPayload,
+				NormalizedPayload: originalPayload,
+				Warnings:          originalPayload,
+				EventStartTime:    startTime,
+			}
+
+			entry, err := repo.CreateReviewQueueEntry(ctx, params)
+			require.NoError(t, err)
+			createdIDs = append(createdIDs, entry.ID)
+		}
+
+		// Query from a cursor position where exactly 'limit' entries remain
+		// Use the first created ID as the cursor, so only 2 entries remain (< limit of 3)
+		status := "pending"
+		filters := events.ReviewQueueFilters{
+			Status:     &status,
+			Limit:      3,
+			NextCursor: &createdIDs[0], // Start after first entry
+		}
+
+		result, err := repo.ListReviewQueue(ctx, filters)
+		require.NoError(t, err)
+
+		// Should return the 2 remaining entries (less than limit)
+		assert.GreaterOrEqual(t, len(result.Entries), 2, "Should return at least 2 entries")
+
+		// NextCursor should be nil because we got fewer than limit entries
+		// This tests the case where hasMore=false (len(rows) <= limit)
+		assert.Nil(t, result.NextCursor, "NextCursor should be nil when fewer than limit entries returned")
+	})
+}

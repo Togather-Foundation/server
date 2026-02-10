@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -36,16 +37,17 @@ func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.Adm
 
 // reviewQueueItem represents a single item in the review queue list
 type reviewQueueItem struct {
-	ID             int                        `json:"id"`
-	EventID        string                     `json:"eventId"`
-	EventName      string                     `json:"eventName,omitempty"`
-	EventStartTime *time.Time                 `json:"eventStartTime,omitempty"`
-	EventEndTime   *time.Time                 `json:"eventEndTime,omitempty"`
-	Warnings       []events.ValidationWarning `json:"warnings"`
-	Status         string                     `json:"status"`
-	CreatedAt      time.Time                  `json:"createdAt"`
-	ReviewedBy     *string                    `json:"reviewedBy,omitempty"`
-	ReviewedAt     *time.Time                 `json:"reviewedAt,omitempty"`
+	ID              int                        `json:"id"`
+	EventID         string                     `json:"eventId"`
+	EventName       string                     `json:"eventName,omitempty"`
+	EventStartTime  *time.Time                 `json:"eventStartTime,omitempty"`
+	EventEndTime    *time.Time                 `json:"eventEndTime,omitempty"`
+	Warnings        []events.ValidationWarning `json:"warnings"`
+	Status          string                     `json:"status"`
+	CreatedAt       time.Time                  `json:"createdAt"`
+	ReviewedBy      *string                    `json:"reviewedBy,omitempty"`
+	ReviewedAt      *time.Time                 `json:"reviewedAt,omitempty"`
+	RejectionReason *string                    `json:"rejectionReason,omitempty"`
 }
 
 // reviewQueueDetail represents detailed review information
@@ -72,7 +74,9 @@ type changeDetail struct {
 	Reason    string `json:"reason"`
 }
 
-// ListReviewQueue handles GET /admin/review-queue
+// ListReviewQueue returns a paginated list of events pending review with quality warnings.
+// It handles GET /api/v1/admin/review-queue and supports filtering by status (pending, approved, rejected).
+// Query parameters: status (default: pending), limit (1-100, default: 50), cursor (pagination).
 func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -142,12 +146,15 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	}
 
 	writeJSON(w, http.StatusOK, listResponse{
-		Items:      convertToMapSlice(items),
+		Items:      items,
 		NextCursor: nextCursor,
+		Total:      result.TotalCount,
 	}, "application/json")
 }
 
-// GetReviewQueueEntry handles GET /admin/review-queue/:id
+// GetReviewQueueEntry returns detailed review information for a specific queue entry.
+// It handles GET /api/v1/admin/review-queue/:id and includes original payload, normalized payload,
+// validation warnings, and a diff of changes made during normalization.
 func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -188,7 +195,9 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-// ApproveReview handles POST /admin/review-queue/:id/approve
+// ApproveReview marks a review entry as approved and publishes the associated event.
+// It handles POST /api/v1/admin/review-queue/:id/approve and transitions the event lifecycle
+// state to published. Accepts optional review notes in the request body.
 func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -293,7 +302,9 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-// RejectReview handles POST /admin/review-queue/:id/reject
+// RejectReview marks a review entry as rejected and deletes the associated event.
+// It handles POST /api/v1/admin/review-queue/:id/reject and transitions the event lifecycle
+// state to deleted. Requires a rejection reason in the request body.
 func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -402,7 +413,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-// FixReview handles POST /admin/review-queue/:id/fix
+// FixReview applies manual corrections to a review entry and publishes the event.
+// It handles POST /api/v1/admin/review-queue/:id/fix and accepts date corrections in the
+// request body (startDate, endDate). After applying fixes, it approves the review and
+// publishes the event. Note: Full correction workflow is planned for future implementation.
 func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil || h.AdminService == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -551,10 +565,12 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	var original map[string]any
 	eventName := ""
 	if len(review.OriginalPayload) > 0 {
-		if err := json.Unmarshal(review.OriginalPayload, &original); err == nil {
-			if name, ok := original["name"].(string); ok {
-				eventName = name
-			}
+		if err := json.Unmarshal(review.OriginalPayload, &original); err != nil {
+			slog.Warn("failed to parse original payload",
+				slog.Int("review_id", review.ID),
+				slog.String("error", err.Error()))
+		} else if name, ok := original["name"].(string); ok {
+			eventName = name
 		}
 	}
 
@@ -580,6 +596,9 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	}
 	if review.ReviewedAt != nil {
 		item.ReviewedAt = review.ReviewedAt
+	}
+	if review.RejectionReason != nil {
+		item.RejectionReason = review.RejectionReason
 	}
 
 	return item, nil
@@ -679,15 +698,4 @@ func getUserFromContext(r *http.Request) string {
 	}
 	// Fallback to empty string (anonymous admin)
 	return "admin"
-}
-
-func convertToMapSlice(items []reviewQueueItem) []map[string]any {
-	result := make([]map[string]any, len(items))
-	for i, item := range items {
-		data, _ := json.Marshal(item)
-		var m map[string]any
-		_ = json.Unmarshal(data, &m) // Ignore error - already marshaled successfully
-		result[i] = m
-	}
-	return result
 }

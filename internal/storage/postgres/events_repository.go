@@ -1324,22 +1324,32 @@ func (r *EventRepository) GetReviewQueueEntry(ctx context.Context, id int) (*eve
 		return nil, fmt.Errorf("get review queue entry: %w", err)
 	}
 
-	return convertReviewQueueRow(row), nil
+	return convertGetReviewQueueEntryRow(row), nil
 }
 
 // ListReviewQueue lists review queue entries with filters and pagination
 func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	queries := Queries{db: r.queryer()}
 
+	// Request LIMIT + 1 to detect if there are more pages
 	params := ListReviewQueueParams{
-		Limit: int32(filters.Limit),
+		Limit: int32(filters.Limit + 1),
 	}
 
+	// Build count param with same status filter
+	var countStatus pgtype.Text
 	if filters.Status != nil {
 		params.Status = pgtype.Text{String: *filters.Status, Valid: true}
+		countStatus = pgtype.Text{String: *filters.Status, Valid: true}
 	}
 	if filters.NextCursor != nil {
 		params.AfterID = pgtype.Int4{Int32: int32(*filters.NextCursor), Valid: true}
+	}
+
+	// Get total count for this filter (for badge display)
+	totalCount, err := queries.CountReviewQueueByStatus(ctx, countStatus)
+	if err != nil {
+		return nil, fmt.Errorf("count review queue: %w", err)
 	}
 
 	rows, err := queries.ListReviewQueue(ctx, params)
@@ -1347,12 +1357,20 @@ func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.Re
 		return nil, fmt.Errorf("list review queue: %w", err)
 	}
 
+	// Check if there are more pages (we got LIMIT + 1 items)
+	hasMore := len(rows) > filters.Limit
+
+	// Trim to requested limit if we got more
+	if hasMore {
+		rows = rows[:filters.Limit]
+	}
+
 	entries := make([]events.ReviewQueueEntry, 0, len(rows))
 	var nextCursor *int
 	for i, row := range rows {
 		entries = append(entries, *convertListReviewQueueRow(row))
-		// Set next cursor to the ID of the last item
-		if i == len(rows)-1 {
+		// Set next cursor to the ID of the last item ONLY if there are more pages
+		if i == len(rows)-1 && hasMore {
 			cursor := int(row.ID)
 			nextCursor = &cursor
 		}
@@ -1361,6 +1379,7 @@ func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.Re
 	return &events.ReviewQueueListResult{
 		Entries:    entries,
 		NextCursor: nextCursor,
+		TotalCount: totalCount,
 	}, nil
 }
 
@@ -1418,14 +1437,26 @@ func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
 		return fmt.Errorf("mark unreviewed events as deleted: %w", err)
 	}
 
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
+	}
+
 	// Delete expired rejections
 	if err := queries.CleanupExpiredRejections(ctx); err != nil {
 		return fmt.Errorf("cleanup expired rejections: %w", err)
 	}
 
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
+	}
+
 	// Delete unreviewed events
 	if err := queries.CleanupUnreviewedEvents(ctx); err != nil {
 		return fmt.Errorf("cleanup unreviewed events: %w", err)
+	}
+
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
 	}
 
 	// Archive old approved/superseded reviews
@@ -1440,6 +1471,50 @@ func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
 // convertListReviewQueueRow converts SQLc ListReviewQueueRow to events.ReviewQueueEntry
 // Used when the query includes a JOIN with events table to get event_ulid
 func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry {
+	entry := &events.ReviewQueueEntry{
+		ID:                int(row.ID),
+		EventID:           row.EventID.String(),
+		EventULID:         row.EventUlid, // Available from JOIN with events table
+		OriginalPayload:   row.OriginalPayload,
+		NormalizedPayload: row.NormalizedPayload,
+		Warnings:          row.Warnings,
+		EventStartTime:    row.EventStartTime.Time,
+		Status:            row.Status,
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
+	}
+
+	if row.SourceID.Valid {
+		entry.SourceID = &row.SourceID.String
+	}
+	if row.SourceExternalID.Valid {
+		entry.SourceExternalID = &row.SourceExternalID.String
+	}
+	if row.DedupHash.Valid {
+		entry.DedupHash = &row.DedupHash.String
+	}
+	if row.EventEndTime.Valid {
+		entry.EventEndTime = &row.EventEndTime.Time
+	}
+	if row.ReviewedBy.Valid {
+		entry.ReviewedBy = &row.ReviewedBy.String
+	}
+	if row.ReviewedAt.Valid {
+		entry.ReviewedAt = &row.ReviewedAt.Time
+	}
+	if row.ReviewNotes.Valid {
+		entry.ReviewNotes = &row.ReviewNotes.String
+	}
+	if row.RejectionReason.Valid {
+		entry.RejectionReason = &row.RejectionReason.String
+	}
+
+	return entry
+}
+
+// convertGetReviewQueueEntryRow converts SQLc GetReviewQueueEntryRow to events.ReviewQueueEntry
+// Used when the query includes a JOIN with events table to get event_ulid
+func convertGetReviewQueueEntryRow(row GetReviewQueueEntryRow) *events.ReviewQueueEntry {
 	entry := &events.ReviewQueueEntry{
 		ID:                int(row.ID),
 		EventID:           row.EventID.String(),

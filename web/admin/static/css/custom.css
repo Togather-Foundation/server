@@ -47,6 +47,11 @@
     color: white;
 }
 
+/* Badge padding improvements - add breathing room around text */
+.badge {
+    padding: 0.35em 0.65em; /* Increased from Tabler default of ~0.25em 0.5em */
+}
+
 /* Badge text readability improvements - darker backgrounds with white text */
 /* Make all status badges darker so white text is always readable */
 
@@ -271,6 +276,27 @@
 .table-hover tbody tr:hover {
     background-color: var(--tblr-bg-surface-secondary);
     cursor: pointer;
+}
+
+/* Review queue rows are clickable (except links and buttons) */
+#review-queue-table tr[data-entry-id] {
+    cursor: pointer;
+}
+
+/* Detail rows should not have pointer cursor - allow text selection */
+#review-queue-table tr[id^="detail-"] {
+    cursor: default;
+}
+
+/* Detail card content should allow text selection */
+#review-queue-table tr[id^="detail-"] * {
+    cursor: default;
+}
+
+/* Links in review queue detail cards should have pointer cursor */
+.review-detail-card a,
+#review-queue-table tr[id^="detail-"] a {
+    cursor: pointer !important;
 }
 
 /* Custom scrollbar for table containers */

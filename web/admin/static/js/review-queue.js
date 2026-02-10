@@ -30,6 +30,7 @@
     let entries = [];
     let currentFilter = 'pending';
     let expandedId = null;
+    let pagination = null;
     let cursor = null;
     
     // Initialize on page load
@@ -37,11 +38,28 @@
     
     /**
      * Initialize the review queue page
-     * Sets up event listeners and loads initial entries
+     * Sets up event listeners, pagination component, and loads initial entries
      */
     function init() {
         setupEventListeners();
+        setupPagination();
         loadEntries();
+    }
+    
+    /**
+     * Setup pagination component
+     * Creates reusable Pagination instance for the review queue
+     */
+    function setupPagination() {
+        pagination = new Pagination({
+            container: document.getElementById('pagination'),
+            limit: DEFAULT_PAGE_SIZE,
+            mode: 'cursor',
+            showingTextElement: document.getElementById('showing-text'),
+            onPageChange: async (cursor, direction) => {
+                await loadEntries(cursor);
+            }
+        });
     }
     
     /**
@@ -61,12 +79,26 @@
                     e.preventDefault();
                     filterByStatus(target.dataset.status);
                     break;
+                case 'navigate-to-event':
+                    // Store review queue context for event detail page
+                    sessionStorage.setItem('from_review_queue', target.dataset.reviewId);
+                    // Prevent row expansion when clicking event link
+                    e.stopPropagation();
+                    // Allow default navigation to proceed
+                    break;
                 case 'expand-detail':
                     e.preventDefault();
-                    expandDetail(id);
+                    e.stopPropagation();
+                    // Toggle: if this entry is already expanded, collapse it
+                    if (expandedId === id) {
+                        collapseDetail();
+                    } else {
+                        expandDetail(id);
+                    }
                     break;
                 case 'collapse-detail':
                     e.preventDefault();
+                    e.stopPropagation();
                     collapseDetail();
                     break;
                 case 'approve':
@@ -89,13 +121,33 @@
                     e.preventDefault();
                     applyFix(id);
                     break;
+                case 'show-more':
+                    e.preventDefault();
+                    showMoreText(target);
+                    break;
                 case 'confirm-reject':
                     confirmReject();
                     break;
-                case 'next-page':
-                    e.preventDefault();
-                    goToNextPage(target.dataset.cursor);
-                    break;
+            }
+        });
+        
+        // Make table rows clickable to expand/collapse
+        document.addEventListener('click', (e) => {
+            // Check if we clicked inside a table row (but not on a link or button)
+            const row = e.target.closest('tr[data-entry-id]');
+            if (!row) return;
+            
+            // Don't trigger if clicking on a link, button, or element with data-action
+            if (e.target.closest('a, button, [data-action]')) return;
+            
+            const entryId = row.dataset.entryId;
+            if (!entryId) return;
+            
+            // Toggle expand/collapse
+            if (expandedId === entryId) {
+                collapseDetail();
+            } else {
+                expandDetail(entryId);
             }
         });
     }
@@ -117,6 +169,12 @@
             }
         });
         
+        // Show/hide rejection reason column header
+        const reasonHeader = document.getElementById('rejection-reason-header');
+        if (reasonHeader) {
+            reasonHeader.style.display = status === 'rejected' ? '' : 'none';
+        }
+        
         loadEntries();
     }
     
@@ -124,9 +182,10 @@
      * Load review queue entries from API
      * Fetches entries based on current filter and cursor, handles pagination
      * @async
+     * @param {string|null} cursor - Optional cursor for pagination
      * @throws {Error} If API request fails
      */
-    async function loadEntries() {
+    async function loadEntries(cursor = null) {
         showLoading();
         
         try {
@@ -150,9 +209,9 @@
                 entries = [];
             }
             
-            // Update pending count badge
-            if (currentFilter === 'pending' && data.items) {
-                updatePendingCount(data.items.length);
+            // Update badge counts with total from API
+            if (data.total !== undefined) {
+                updateBadgeCount(currentFilter, data.total);
             }
             
             if (entries.length === 0) {
@@ -160,7 +219,10 @@
             } else {
                 showTable();
                 renderTable();
-                updatePagination(data.next_cursor);
+                // Update pagination component with response data
+                if (pagination) {
+                    pagination.update(data);
+                }
             }
         } catch (err) {
             console.error('Failed to load review queue:', err);
@@ -179,22 +241,44 @@
         
         tbody.innerHTML = entries.map(entry => {
             const eventName = entry.eventName || 'Untitled Event';
-            const startTime = entry.eventStartTime ? formatDate(entry.eventStartTime, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No date';
+            const startTime = entry.eventStartTime ? formatDate(entry.eventStartTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'No date';
             const warningBadge = getWarningBadge(entry.warnings);
             const createdAgo = getRelativeTime(entry.createdAt);
+            
+            // Build rejection reason cell (only for rejected events)
+            let rejectionReasonCell = '';
+            if (currentFilter === 'rejected' && entry.rejectionReason) {
+                const reason = entry.rejectionReason;
+                // Truncate long reasons with Show more button
+                if (reason.length > 100) {
+                    const truncated = reason.substring(0, 100) + '...';
+                    const escapedFull = escapeHtml(reason).replace(/'/g, '&apos;');
+                    rejectionReasonCell = `
+                        <td>
+                            <span class="rejection-reason-text">${escapeHtml(truncated)}</span>
+                            <button class="btn btn-sm btn-link p-0" data-action="show-more" data-full-text="${escapedFull}">Show more</button>
+                        </td>
+                    `;
+                } else {
+                    rejectionReasonCell = `<td>${escapeHtml(reason)}</td>`;
+                }
+            } else if (currentFilter === 'rejected') {
+                rejectionReasonCell = '<td class="text-muted">(no reason provided)</td>';
+            }
             
             return `
                 <tr data-entry-id="${entry.id}">
                     <td>
-                        <a href="/admin/events/${entry.eventId}" class="text-reset">
+                        <a href="/admin/events/${entry.eventId}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
                             ${escapeHtml(eventName)}
                         </a>
                     </td>
                     <td class="text-muted">${startTime}</td>
                     <td>${warningBadge}</td>
+                    ${rejectionReasonCell}
                     <td class="text-muted">${createdAgo}</td>
                     <td>
-                        <button class="btn btn-sm btn-ghost-primary" data-action="expand-detail" data-id="${entry.id}">
+                        <button class="btn btn-sm btn-ghost-primary expand-arrow" data-action="expand-detail" data-id="${entry.id}">
                             <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                 <polyline points="6 9 12 15 18 9"/>
@@ -204,8 +288,6 @@
                 </tr>
             `;
         }).join('');
-        
-        updateShowingText(entries.length);
     }
     
     /**
@@ -226,11 +308,23 @@
         
         expandedId = id;
         
+        // Change arrow direction to up (collapsed → expanded)
+        const arrowButton = entryRow.querySelector('.expand-arrow');
+        if (arrowButton) {
+            const arrowIcon = arrowButton.querySelector('polyline');
+            if (arrowIcon) {
+                arrowIcon.setAttribute('points', '6 15 12 9 18 15'); // Up arrow
+            }
+        }
+        
+        // Calculate colspan based on current filter (rejected tab has extra column)
+        const colspan = currentFilter === 'rejected' ? TABLE_COLUMN_COUNT + 1 : TABLE_COLUMN_COUNT;
+        
         // Show loading state in detail row
         const detailRow = document.createElement('tr');
         detailRow.id = `detail-${id}`;
         detailRow.innerHTML = `
-            <td colspan="${TABLE_COLUMN_COUNT}" class="p-0">
+            <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body text-center py-5">
                         <div class="spinner-border text-primary" role="status">
@@ -275,51 +369,127 @@
         const original = detail.original || {};
         const normalized = detail.normalized || {};
         
-        // Build warnings HTML
-        const warningsHtml = warnings.map(w => {
-            const badge = getWarningCodeBadge(w.code);
-            return `<div class="mb-2">${badge} ${escapeHtml(w.message)}</div>`;
-        }).join('');
+        // Check if there are any date-related warnings
+        const hasDateWarnings = warnings.some(w => 
+            w.code && (w.code.includes('date') || w.code.includes('time') || w.code.includes('reversed'))
+        );
         
-        // Build changes HTML
-        const changesHtml = changes.length > 0 ? `
+        // Build warnings HTML - simple list without redundant heading
+        const warningsHtml = warnings.length > 0 ? `
             <div class="mb-3">
-                <strong>Changes Applied:</strong>
-                ${changes.map(c => `
-                    <div class="mt-2">
-                        <strong>${escapeHtml(c.field)}:</strong><br>
-                        <span class="text-muted">From:</span> ${escapeHtml(formatDateValue(c.original))}<br>
-                        <span class="text-success">To:</span> ${escapeHtml(formatDateValue(c.corrected))}<br>
-                        <span class="text-muted small">${escapeHtml(c.reason)}</span>
-                    </div>
-                `).join('')}
+                ${warnings.map(w => {
+                    const badge = getWarningBadgeForDetail(w.code);
+                    const message = w.message || '(no message)';
+                    return `<div class="mb-2">${badge} ${escapeHtml(message)}</div>`;
+                }).join('')}
             </div>
         ` : '';
         
-        // Build comparison HTML
-        const comparisonHtml = `
-            <div class="row">
-                <div class="col-md-6">
-                    <h4>Original Data</h4>
-                    ${renderEventData(original, changes, 'original')}
+        // Build changes HTML with visual emphasis
+        const changesHtml = changes.length > 0 ? `
+            <div class="card bg-light mb-3">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Automatic Corrections Applied</h4>
                 </div>
-                <div class="col-md-6">
-                    <h4>Normalized Data</h4>
-                    ${renderEventData(normalized, changes, 'normalized')}
+                <div class="card-body">
+                    ${changes.map(c => `
+                        <div class="mb-3">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <strong class="text-muted">${escapeHtml(c.field)}</strong>
+                                </div>
+                            </div>
+                            <div class="row mt-1">
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">Original:</small>
+                                    <span class="badge bg-danger-lt">${escapeHtml(formatDateValue(c.original))}</span>
+                                </div>
+                                <div class="col-md-6">
+                                    <small class="text-muted d-block">Corrected:</small>
+                                    <span class="badge bg-success-lt">${escapeHtml(formatDateValue(c.corrected))}</span>
+                                </div>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <circle cx="12" cy="12" r="9"/>
+                                    <path d="M12 8h.01"/>
+                                    <path d="M11 12h1v4h1"/>
+                                </svg>
+                                ${escapeHtml(c.reason)}
+                            </small>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        ` : '';
+        
+        // Build event data section (always show normalized data)
+        const eventDataHtml = `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Event Information</h4>
+                    <small class="text-secondary">This is the data that will be published</small>
+                </div>
+                <div class="card-body">
+                    ${renderFullEventData(normalized)}
                 </div>
             </div>
         `;
         
+        // Build comparison HTML with diff highlighting (only if there are changes)
+        const comparisonHtml = changes.length > 0 ? `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Changes Made</h4>
+                    <small class="text-muted">Comparison of original vs corrected data</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Original Data</h5>
+                            <small class="text-muted d-block mb-2">Data as received from source</small>
+                            ${renderEventData(original, changes, 'original')}
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Normalized Data</h5>
+                            <small class="text-muted d-block mb-2">Data after automatic corrections</small>
+                            ${renderEventData(normalized, changes, 'normalized')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ` : '';
+        
         // Build action buttons (only for pending status)
+        // Only show Fix Dates if there are date-related warnings
         const actionButtons = detail.status === 'pending' ? `
             <div class="btn-list" id="action-buttons-${id}">
                 <button class="btn btn-success" data-action="approve" data-id="${id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M5 12l5 5l10 -10"/>
+                    </svg>
                     Approve
                 </button>
-                <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
-                    Fix Dates
-                </button>
+                ${hasDateWarnings ? `
+                    <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <rect x="4" y="5" width="16" height="16" rx="2"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="4" y1="11" x2="20" y2="11"/>
+                        </svg>
+                        Fix Dates
+                    </button>
+                ` : ''}
                 <button class="btn btn-outline-danger" data-action="reject" data-id="${id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
                     Reject
                 </button>
             </div>
@@ -334,22 +504,16 @@
             </div>
         `;
         
+        // Calculate colspan based on current filter (rejected tab has extra column)
+        const colspan = currentFilter === 'rejected' ? TABLE_COLUMN_COUNT + 1 : TABLE_COLUMN_COUNT;
+        
         detailRow.innerHTML = `
-            <td colspan="${TABLE_COLUMN_COUNT}" class="p-0">
+            <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
-                        <div class="d-flex justify-content-between mb-3">
-                            <h3>Review Details</h3>
-                            <button class="btn btn-ghost-secondary" data-action="collapse-detail">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                    <polyline points="6 15 12 9 18 15"/>
-                                </svg>
-                            </button>
-                        </div>
-                        
-                        ${warningsHtml ? `<div class="mb-3"><strong>Warnings:</strong><br>${warningsHtml}</div>` : ''}
+                        ${warningsHtml}
                         ${changesHtml}
+                        ${eventDataHtml}
                         ${comparisonHtml}
                         
                         <div class="mt-3">
@@ -359,6 +523,136 @@
                 </div>
             </td>
         `;
+    }
+    
+    /**
+     * Render full event data for display
+     * Shows all event fields with proper formatting, including pretty-printed JSON for location
+     * @param {Object} data - Event data object
+     * @returns {string} HTML string of formatted event fields
+     */
+    function renderFullEventData(data) {
+        if (!data) return '<p class="text-muted">No data available</p>';
+        
+        const fields = [
+            { label: 'Event Name', key: 'name' },
+            { label: 'Start Date', key: 'startDate', isDate: true },
+            { label: 'End Date', key: 'endDate', isDate: true },
+            { label: 'Description', key: 'description' },
+            { label: 'Location', key: 'location', isJSON: true },
+            { label: 'Organizer', key: 'organizer', isJSON: true },
+            { label: 'Image URL', key: 'image' },
+            { label: 'URL', key: 'url' },
+            { label: 'Offers', key: 'offers', isJSON: true },
+            { label: 'Event Status', key: 'eventStatus' },
+            { label: 'Event Attendance Mode', key: 'eventAttendanceMode' }
+        ];
+        
+        return fields.map(field => {
+            let value = data[field.key];
+            if (!value) return '';
+            
+            // Format based on field type
+            if (field.isJSON && typeof value === 'object') {
+                // Render JSON as formatted HTML for better readability
+                return `
+                    <div class="mb-3">
+                        <strong>${escapeHtml(field.label)}:</strong>
+                        ${renderJSONAsHTML(value)}
+                    </div>
+                `;
+            } else if (field.isDate) {
+                value = formatDateValue(value);
+            } else if (typeof value === 'string' && value.length > 200) {
+                // Truncate long text with expand option
+                const truncated = value.substring(0, 200) + '...';
+                const escapedTruncated = escapeHtml(truncated);
+                const linkedTruncated = linkifyUrls(escapedTruncated);
+                const escapedFull = escapeHtml(value).replace(/'/g, '&apos;');
+                const linkedFull = linkifyUrls(escapedFull).replace(/"/g, '&quot;');
+                return `
+                    <div class="mb-2">
+                        <strong>${escapeHtml(field.label)}:</strong><br>
+                        <span class="description-text">${linkedTruncated}</span>
+                        <button class="btn btn-sm btn-link p-0" data-action="show-more" data-full-text="${linkedFull}">Show more</button>
+                    </div>
+                `;
+            }
+            
+            // Apply linkification for text fields (escape first, then linkify)
+            const escapedValue = escapeHtml(String(value));
+            const displayValue = linkifyUrls(escapedValue);
+            
+            return `
+                <div class="mb-2">
+                    <strong>${escapeHtml(field.label)}:</strong><br>
+                    <span>${displayValue}</span>
+                </div>
+            `;
+        }).filter(html => html).join('');
+    }
+    
+    /**
+     * Render JSON object as formatted HTML
+     * Converts JSON objects into readable HTML with definition lists for nested objects
+     * @param {Object|Array} data - JSON data to render
+     * @param {number} depth - Current nesting depth (for limiting recursion)
+     * @returns {string} HTML string representation of JSON
+     */
+    function renderJSONAsHTML(data, depth = 0) {
+        if (depth > 3) {
+            // Too deep, fall back to JSON string
+            return `<pre class="border rounded p-2 mt-1 text-body" style="background-color: var(--tblr-bg-surface);"><code>${escapeHtml(JSON.stringify(data, null, 2))}</code></pre>`;
+        }
+        
+        if (Array.isArray(data)) {
+            if (data.length === 0) return '<span class="text-muted">[]</span>';
+            return `
+                <ul class="list-unstyled ms-3 mt-1">
+                    ${data.map(item => {
+                        if (typeof item === 'object') {
+                            return `<li>${renderJSONAsHTML(item, depth + 1)}</li>`;
+                        } else {
+                            const escapedItem = escapeHtml(String(item));
+                            const linkedItem = linkifyUrls(escapedItem);
+                            return `<li>${linkedItem}</li>`;
+                        }
+                    }).join('')}
+                </ul>
+            `;
+        }
+        
+        if (typeof data === 'object' && data !== null) {
+            const entries = Object.entries(data);
+            if (entries.length === 0) return '<span class="text-muted">{}</span>';
+            
+            return `
+                <dl style="display: grid; grid-template-columns: 150px 1fr; gap: 0.5rem 1rem; margin-left: 0.5rem; margin-top: 0.25rem; margin-bottom: 0; font-size: 0.95em;">
+                    ${entries.map(([key, value]) => {
+                        let renderedValue;
+                        if (typeof value === 'object' && value !== null) {
+                            renderedValue = renderJSONAsHTML(value, depth + 1);
+                        } else if (value === null) {
+                            renderedValue = '<span class="text-muted">null</span>';
+                        } else if (typeof value === 'boolean') {
+                            renderedValue = `<span class="badge bg-${value ? 'success' : 'secondary'}-lt">${value}</span>`;
+                        } else {
+                            const escapedValue = escapeHtml(String(value));
+                            renderedValue = linkifyUrls(escapedValue);
+                        }
+                        
+                        return `
+                            <dt class="text-muted text-truncate" style="max-width: 150px;" title="${escapeHtml(key)}">${escapeHtml(key)}</dt>
+                            <dd style="margin: 0;">${renderedValue}</dd>
+                        `;
+                    }).join('')}
+                </dl>
+            `;
+        }
+        
+        // Linkify any remaining string values (at max depth)
+        const escapedData = escapeHtml(String(data));
+        return linkifyUrls(escapedData);
     }
     
     /**
@@ -380,7 +674,9 @@
             let value = data[field.key];
             if (!value) return '';
             
+            let isJSON = false;
             if (typeof value === 'object') {
+                isJSON = true;
                 value = JSON.stringify(value, null, 2);
             } else if (field.key.includes('Date')) {
                 value = formatDateValue(value);
@@ -388,12 +684,45 @@
             
             // Check if this field changed
             const changed = changes.find(c => c.field === field.key);
-            const highlight = changed ? (type === 'original' ? 'bg-danger-lt' : 'bg-success-lt') : '';
+            let highlightClass = '';
+            let changeIndicator = '';
+            
+            if (changed) {
+                if (type === 'original') {
+                    highlightClass = 'bg-danger-lt text-danger';
+                    changeIndicator = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm ms-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="12" cy="12" r="9"/>
+                            <line x1="9" y1="12" x2="15" y2="12"/>
+                        </svg>
+                    `;
+                } else {
+                    highlightClass = 'bg-success-lt text-success';
+                    changeIndicator = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm ms-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="M12 7v6l3 3"/>
+                        </svg>
+                    `;
+                }
+            }
+            
+            // Use <pre> for JSON to preserve formatting with good contrast
+            if (isJSON) {
+                return `
+                    <div class="mb-2 ${changed ? 'p-2 rounded' : ''}">
+                        <strong class="${changed ? highlightClass : ''}">${escapeHtml(field.label)}:${changeIndicator}</strong>
+                        <pre class="border rounded p-2 mt-1 text-body ${highlightClass}" style="max-height: 200px; overflow-y: auto; background-color: var(--tblr-bg-surface);"><code>${escapeHtml(value)}</code></pre>
+                    </div>
+                `;
+            }
             
             return `
-                <div class="mb-2">
-                    <strong>${escapeHtml(field.label)}:</strong><br>
-                    <span class="${highlight}">${escapeHtml(value)}</span>
+                <div class="mb-2 ${changed ? 'p-2 rounded' : ''}">
+                    <strong class="${changed ? highlightClass : ''}">${escapeHtml(field.label)}:${changeIndicator}</strong><br>
+                    <span class="${highlightClass}">${escapeHtml(value)}</span>
                 </div>
             `;
         }).join('');
@@ -411,7 +740,37 @@
             detailRow.remove();
         }
         
+        // Change arrow direction back to down (expanded → collapsed)
+        const entryRow = document.querySelector(`tr[data-entry-id="${expandedId}"]`);
+        if (entryRow) {
+            const arrowButton = entryRow.querySelector('.expand-arrow');
+            if (arrowButton) {
+                const arrowIcon = arrowButton.querySelector('polyline');
+                if (arrowIcon) {
+                    arrowIcon.setAttribute('points', '6 9 12 15 18 9'); // Down arrow
+                }
+            }
+        }
+        
         expandedId = null;
+    }
+    
+    /**
+     * Show more text for truncated descriptions
+     * Expands a truncated text field and hides the "Show more" button
+     * @param {HTMLElement} button - The "Show more" button element
+     */
+    function showMoreText(button) {
+        const fullText = button.dataset.fullText;
+        if (!fullText) return;
+        
+        // Find the text span (previous sibling)
+        const textSpan = button.previousElementSibling;
+        if (textSpan && textSpan.classList.contains('description-text')) {
+            // Use innerHTML to preserve linkified URLs (already escaped + linkified)
+            textSpan.innerHTML = fullText;
+            button.style.display = 'none';
+        }
     }
     
     /**
@@ -434,6 +793,13 @@
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
+                
+                // Increment approved count badge
+                const approvedBadge = document.querySelector(`[data-action="filter-status"][data-status="approved"] .badge`);
+                if (approvedBadge) {
+                    const currentCount = parseInt(approvedBadge.textContent) || 0;
+                    approvedBadge.textContent = currentCount + 1;
+                }
             } else {
                 // Reload to show updated status
                 loadEntries();
@@ -512,6 +878,13 @@
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
+                
+                // Increment rejected count badge
+                const rejectedBadge = document.querySelector(`[data-action="filter-status"][data-status="rejected"] .badge`);
+                if (rejectedBadge) {
+                    const currentCount = parseInt(rejectedBadge.textContent) || 0;
+                    rejectedBadge.textContent = currentCount + 1;
+                }
             } else {
                 // Reload to show updated status
                 loadEntries();
@@ -637,6 +1010,13 @@
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
+                
+                // Increment approved count badge (fix action approves the entry)
+                const approvedBadge = document.querySelector(`[data-action="filter-status"][data-status="approved"] .badge`);
+                if (approvedBadge) {
+                    const currentCount = parseInt(approvedBadge.textContent) || 0;
+                    approvedBadge.textContent = currentCount + 1;
+                }
             } else {
                 // Reload to show updated status
                 loadEntries();
@@ -669,76 +1049,32 @@
         // Update UI
         if (entries.length === 0) {
             showEmptyState();
-        } else {
-            updateShowingText(entries.length);
         }
         
-        // Update pending count
-        if (currentFilter === 'pending') {
-            updatePendingCount(entries.length);
+        // Decrement badge count for current filter
+        const badge = document.querySelector(`[data-action="filter-status"][data-status="${currentFilter}"] .badge`);
+        if (badge) {
+            const currentCount = parseInt(badge.textContent) || 0;
+            if (currentCount > 0) {
+                badge.textContent = currentCount - 1;
+            }
         }
     }
     
     /**
-     * Update pending count badge
-     * Updates the visual badge showing number of pending review items
-     * @param {number} count - Number of pending entries
+     * Update badge count for a specific status tab
+     * Updates the visual badge showing number of entries for the given status
+     * @param {string} status - Status to update ('pending', 'approved', 'rejected')
+     * @param {number} count - Total number of entries for this status
      */
-    function updatePendingCount(count) {
-        const badge = document.getElementById('pending-count');
+    function updateBadgeCount(status, count) {
+        const badge = document.querySelector(`[data-action="filter-status"][data-status="${status}"] .badge`);
         if (badge) {
             badge.textContent = count;
         }
     }
     
-    /**
-     * Update pagination controls
-     * Shows or hides "Next" button based on presence of next cursor
-     * @param {string|null} nextCursor - Cursor for next page, or null if no more pages
-     */
-    function updatePagination(nextCursor) {
-        const pagination = document.getElementById('pagination');
-        if (!pagination) return;
-        
-        if (nextCursor) {
-            pagination.innerHTML = `
-                <li class="page-item">
-                    <a class="page-link" href="#" data-action="next-page" data-cursor="${nextCursor}">
-                        Next
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <polyline points="9 6 15 12 9 18"/>
-                        </svg>
-                    </a>
-                </li>
-            `;
-        } else {
-            pagination.innerHTML = '';
-        }
-    }
-    
-    /**
-     * Navigate to next page
-     * Loads next page of entries using provided cursor and scrolls to top
-     * @param {string} nextCursor - Cursor token for next page
-     */
-    function goToNextPage(nextCursor) {
-        cursor = nextCursor;
-        loadEntries();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    
-    /**
-     * Update showing text
-     * Updates the text showing how many items are currently displayed
-     * @param {number} count - Number of items currently shown
-     */
-    function updateShowingText(count) {
-        const showingText = document.getElementById('showing-text');
-        if (!showingText) return;
-        
-        showingText.textContent = count === 0 ? 'No items' : `Showing ${count} items`;
-    }
+
     
     /**
      * Show loading state
@@ -772,32 +1108,98 @@
     
     /**
      * Get warning badge HTML for table display
-     * Returns color-coded badge based on warning confidence level
-     * @param {Array} warnings - Array of warning objects with code property
-     * @returns {string} HTML string for badge element
+     * Shows actual warning messages inline so users know WHY events need review
+     * @param {Array} warnings - Array of warning objects with code, message properties
+     * @returns {string} HTML string for warning display with badges and messages
      */
     function getWarningBadge(warnings) {
         if (!warnings || warnings.length === 0) {
-            return '<span class="badge bg-secondary">Unknown</span>';
+            return '<span class="badge bg-success">No Issues</span>';
         }
         
+        // Show first warning with descriptive message
         const firstWarning = warnings[0];
-        return getWarningCodeBadge(firstWarning.code);
+        
+        // Get badge based on warning type
+        let badge = '';
+        let message = '';
+        
+        if (firstWarning.code === 'missing_image') {
+            badge = '<span class="badge bg-warning">Missing Image</span>';
+            message = 'No image provided';
+        } else if (firstWarning.code === 'missing_description') {
+            badge = '<span class="badge bg-warning">Missing Description</span>';
+            message = 'No description provided';
+        } else if (firstWarning.code === 'low_confidence') {
+            badge = '<span class="badge bg-warning">Low Quality</span>';
+            // Extract percentage from message if present
+            const match = firstWarning.message && firstWarning.message.match(/(\d+)%/);
+            message = match ? `Data quality: ${match[1]}%` : 'Low data quality score';
+        } else if (firstWarning.code === 'too_far_future') {
+            badge = '<span class="badge bg-warning">Too Far Future</span>';
+            message = 'Event >2 years away';
+        } else if (firstWarning.code === 'link_check_failed') {
+            badge = '<span class="badge bg-warning">Bad Link</span>';
+            message = 'Link check failed';
+        } else if (firstWarning.code === 'reversed_dates_timezone_likely') {
+            badge = '<span class="badge bg-info">Date Fixed</span>';
+            message = 'Timezone issue auto-corrected';
+        } else if (firstWarning.code === 'reversed_dates_corrected_needs_review') {
+            badge = '<span class="badge bg-warning">Date Issue</span>';
+            message = 'Dates corrected, review needed';
+        } else if (firstWarning.code && firstWarning.code.includes('reversed_dates')) {
+            badge = '<span class="badge bg-warning">Date Issue</span>';
+            message = 'Date ordering problem';
+        } else {
+            // Fallback: use field name or generic message
+            const label = firstWarning.field || 'issue';
+            badge = `<span class="badge bg-warning">${escapeHtml(label)}</span>`;
+            message = firstWarning.message || 'Needs review';
+        }
+        
+        // If multiple warnings, add count badge
+        const additionalCount = warnings.length > 1 ? ` <span class="badge bg-secondary">+${warnings.length - 1} more</span>` : '';
+        
+        return `
+            <div class="d-flex flex-column gap-1">
+                <div>${badge}</div>
+                <small class="text-muted">${escapeHtml(message)}</small>
+                ${additionalCount}
+            </div>
+        `;
     }
     
     /**
-     * Get warning code badge
-     * Returns color-coded badge based on specific warning code
+     * Get warning badge for detail view
+     * Returns color-coded badge based on warning code with human-readable labels
      * @param {string} code - Warning code identifier
      * @returns {string} HTML string for badge element
      */
-    function getWarningCodeBadge(code) {
-        if (code === 'reversed_dates_timezone_likely') {
-            return '<span class="badge bg-success">High Confidence</span>';
-        } else if (code === 'reversed_dates_corrected_needs_review') {
-            return '<span class="badge bg-warning">Low Confidence</span>';
+    function getWarningBadgeForDetail(code) {
+        // Map warning codes to user-friendly badge labels and colors
+        const badgeMap = {
+            // Date/Time issues
+            'reversed_dates_timezone_likely': { label: 'Date Fixed', color: 'info' },
+            'reversed_dates_corrected_needs_review': { label: 'Date Issue', color: 'warning' },
+            'too_far_future': { label: 'Too Far Future', color: 'warning' },
+            
+            // Missing data
+            'missing_image': { label: 'Missing Image', color: 'warning' },
+            'missing_description': { label: 'Missing Description', color: 'warning' },
+            
+            // Quality issues
+            'low_confidence': { label: 'Low Quality', color: 'warning' },
+            'link_check_failed': { label: 'Bad Link', color: 'warning' },
+        };
+        
+        const badge = badgeMap[code];
+        if (badge) {
+            return `<span class="badge bg-${badge.color}">${badge.label}</span>`;
         }
-        return '<span class="badge bg-secondary">Unknown</span>';
+        
+        // Fallback: use code as label with generic color
+        const label = code ? code.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Issue';
+        return `<span class="badge bg-secondary">${escapeHtml(label)}</span>`;
     }
     
     /**

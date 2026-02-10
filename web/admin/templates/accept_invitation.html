@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accept Invitation - SEL Admin</title>
     {{ template "_head_meta.html" . }}
-    <link rel="stylesheet" href="/admin/static/css/tabler.min.css">
-    <link rel="stylesheet" href="/admin/static/css/admin.css">
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css?v={{ assetVersion }}">
+    <link rel="stylesheet" href="/admin/static/css/admin.css?v={{ assetVersion }}">
 </head>
 <body class="d-flex flex-column">
     <div class="page page-center">
@@ -89,6 +89,6 @@
     <div id="toast-container" class="position-fixed top-0 end-0 p-3" style="z-index: 11"></div>
     
     <script src="/admin/static/js/tabler.min.js?v=1.4.0"></script>
-    <script src="/admin/static/js/accept-invitation.js"></script>
+    <script src="/admin/static/js/accept-invitation.js?v={{ assetVersion }}"></script>
 </body>
 </html>
