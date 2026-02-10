@@ -556,7 +556,7 @@
             if (entries.length === 0) return '<span class="text-muted">{}</span>';
             
             return `
-                <dl class="row ms-2 mt-1 mb-0" style="font-size: 0.95em;">
+                <dl style="display: grid; grid-template-columns: 150px 1fr; gap: 0.5rem 1rem; margin-left: 0.5rem; margin-top: 0.25rem; margin-bottom: 0; font-size: 0.95em;">
                     ${entries.map(([key, value]) => {
                         let renderedValue;
                         if (typeof value === 'object' && value !== null) {
@@ -570,8 +570,8 @@
                         }
                         
                         return `
-                            <dt class="col-3 text-muted text-truncate" style="max-width: 150px;" title="${escapeHtml(key)}">${escapeHtml(key)}</dt>
-                            <dd class="col-9">${renderedValue}</dd>
+                            <dt class="text-muted text-truncate" style="max-width: 150px;" title="${escapeHtml(key)}">${escapeHtml(key)}</dt>
+                            <dd style="margin: 0;">${renderedValue}</dd>
                         `;
                     }).join('')}
                 </dl>
