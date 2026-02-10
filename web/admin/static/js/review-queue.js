@@ -504,8 +504,6 @@
             <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
-                        <h3 class="mb-3">Review Details</h3>
-                        
                         ${warningsHtml}
                         ${changesHtml}
                         ${eventDataHtml}
@@ -604,7 +602,15 @@
             if (data.length === 0) return '<span class="text-muted">[]</span>';
             return `
                 <ul class="list-unstyled ms-3 mt-1">
-                    ${data.map(item => `<li>${typeof item === 'object' ? renderJSONAsHTML(item, depth + 1) : escapeHtml(String(item))}</li>`).join('')}
+                    ${data.map(item => {
+                        if (typeof item === 'object') {
+                            return `<li>${renderJSONAsHTML(item, depth + 1)}</li>`;
+                        } else {
+                            const escapedItem = escapeHtml(String(item));
+                            const linkedItem = linkifyUrls(escapedItem);
+                            return `<li>${linkedItem}</li>`;
+                        }
+                    }).join('')}
                 </ul>
             `;
         }
@@ -624,7 +630,8 @@
                         } else if (typeof value === 'boolean') {
                             renderedValue = `<span class="badge bg-${value ? 'success' : 'secondary'}-lt">${value}</span>`;
                         } else {
-                            renderedValue = escapeHtml(String(value));
+                            const escapedValue = escapeHtml(String(value));
+                            renderedValue = linkifyUrls(escapedValue);
                         }
                         
                         return `
@@ -636,7 +643,9 @@
             `;
         }
         
-        return escapeHtml(String(data));
+        // Linkify any remaining string values (at max depth)
+        const escapedData = escapeHtml(String(data));
+        return linkifyUrls(escapedData);
     }
     
     /**
