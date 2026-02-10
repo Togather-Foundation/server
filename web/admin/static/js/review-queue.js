@@ -88,10 +88,17 @@
                     break;
                 case 'expand-detail':
                     e.preventDefault();
-                    expandDetail(id);
+                    e.stopPropagation();
+                    // Toggle: if this entry is already expanded, collapse it
+                    if (expandedId === id) {
+                        collapseDetail();
+                    } else {
+                        expandDetail(id);
+                    }
                     break;
                 case 'collapse-detail':
                     e.preventDefault();
+                    e.stopPropagation();
                     collapseDetail();
                     break;
                 case 'approve':
