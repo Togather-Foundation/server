@@ -606,6 +606,10 @@ func nullableString(value string) *string {
 }
 
 func needsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
+	// Use zero-value defaults if config is uninitialized (RequireImage defaults to false)
+	// This should never happen in practice since all callers pass initialized config,
+	// but defensive check prevents potential panics.
+
 	if reviewConfidence(input, false, validationConfig) < 0.6 {
 		return true
 	}
