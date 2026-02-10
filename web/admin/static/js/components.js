@@ -137,6 +137,30 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Convert URLs in text to clickable links
+ * SECURITY: Must call escapeHtml() BEFORE this function to prevent XSS
+ * @param {string} escapedHtml - Already HTML-escaped text containing URLs
+ * @returns {string} HTML with linkified URLs (links open in new tab with security attributes)
+ */
+function linkifyUrls(escapedHtml) {
+    if (!escapedHtml) return escapedHtml;
+    
+    // Regex for URLs (http://, https://, www.)
+    // Matches URLs until whitespace or HTML entity
+    const urlRegex = /(https?:\/\/[^\s<&]+)|(www\.[^\s<&]+)/gi;
+    
+    return escapedHtml.replace(urlRegex, (match) => {
+        let url = match;
+        // Add https:// prefix for www. URLs
+        if (match.startsWith('www.')) {
+            url = 'https://' + match;
+        }
+        // Both url and match are safe because they come from already-escaped text
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+    });
+}
+
 // Date formatting
 function formatDate(dateString, options = null) {
     if (!dateString) return '-';
