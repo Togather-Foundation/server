@@ -538,6 +538,42 @@ fi
 ```
 
 #### 3. Verify Layout with Screenshot
+
+**IMPORTANT: For review queue testing, you need events with validation warnings!**
+
+If testing review queue layout:
+```bash
+# Create event with location data (triggers review queue entry)
+cat > /tmp/test-event.json << 'EOF'
+{
+  "events": [{
+    "@context": "https://schema.org",
+    "@type": "Event",
+    "name": "Test Event with Location",
+    "description": "Event with nested location JSON for layout testing",
+    "startDate": "2026-03-15T19:00:00-04:00",
+    "endDate": "2026-03-15T22:00:00-04:00",
+    "location": {
+      "@type": "Place",
+      "name": "Test Venue",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "123 Test St",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "addressCountry": "CA",
+        "postalCode": "M5V 1A1"
+      }
+    }
+  }]
+}
+EOF
+
+# Ingest the test event
+./server ingest /tmp/test-event.json
+sleep 3  # Wait for processing
+```
+
 Create a Playwright script to capture the specific layout issue:
 
 ```python
