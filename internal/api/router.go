@@ -531,6 +531,9 @@ func loadAdminTemplates() (*template.Template, error) {
 		"assetVersion": func() string {
 			return gitCommit
 		},
+		"gitCommit": func() string {
+			return gitCommit
+		},
 	}
 
 	// Try common locations for the templates directory
