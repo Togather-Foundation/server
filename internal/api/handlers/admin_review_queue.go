@@ -73,7 +73,9 @@ type changeDetail struct {
 	Reason    string `json:"reason"`
 }
 
-// ListReviewQueue handles GET /admin/review-queue
+// ListReviewQueue returns a paginated list of events pending review with quality warnings.
+// It handles GET /api/v1/admin/review-queue and supports filtering by status (pending, approved, rejected).
+// Query parameters: status (default: pending), limit (1-100, default: 50), cursor (pagination).
 func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -149,7 +151,9 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	}, "application/json")
 }
 
-// GetReviewQueueEntry handles GET /admin/review-queue/:id
+// GetReviewQueueEntry returns detailed review information for a specific queue entry.
+// It handles GET /api/v1/admin/review-queue/:id and includes original payload, normalized payload,
+// validation warnings, and a diff of changes made during normalization.
 func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -190,7 +194,9 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-// ApproveReview handles POST /admin/review-queue/:id/approve
+// ApproveReview marks a review entry as approved and publishes the associated event.
+// It handles POST /api/v1/admin/review-queue/:id/approve and transitions the event lifecycle
+// state to published. Accepts optional review notes in the request body.
 func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -295,7 +301,9 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-// RejectReview handles POST /admin/review-queue/:id/reject
+// RejectReview marks a review entry as rejected and deletes the associated event.
+// It handles POST /api/v1/admin/review-queue/:id/reject and transitions the event lifecycle
+// state to deleted. Requires a rejection reason in the request body.
 func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -404,7 +412,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-// FixReview handles POST /admin/review-queue/:id/fix
+// FixReview applies manual corrections to a review entry and publishes the event.
+// It handles POST /api/v1/admin/review-queue/:id/fix and accepts date corrections in the
+// request body (startDate, endDate). After applying fixes, it approves the review and
+// publishes the event. Note: Full correction workflow is planned for future implementation.
 func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil || h.AdminService == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
