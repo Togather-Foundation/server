@@ -293,6 +293,12 @@
     cursor: default;
 }
 
+/* Links in review queue detail cards should have pointer cursor */
+.review-detail-card a,
+#review-queue-table tr[id^="detail-"] a {
+    cursor: pointer !important;
+}
+
 /* Custom scrollbar for table containers */
 .table-responsive::-webkit-scrollbar {
     height: 8px;
