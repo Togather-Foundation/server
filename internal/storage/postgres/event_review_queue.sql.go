@@ -306,34 +306,58 @@ func (q *Queries) FindReviewByDedup(ctx context.Context, arg FindReviewByDedupPa
 }
 
 const getReviewQueueEntry = `-- name: GetReviewQueueEntry :one
-SELECT id,
-       event_id,
-       original_payload,
-       normalized_payload,
-       warnings,
-       source_id,
-       source_external_id,
-       dedup_hash,
-       event_start_time,
-       event_end_time,
-       status,
-       reviewed_by,
-       reviewed_at,
-       review_notes,
-       rejection_reason,
-       created_at,
-       updated_at
-  FROM event_review_queue
- WHERE id = $1
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+ WHERE r.id = $1
 `
 
+type GetReviewQueueEntryRow struct {
+	ID                int32              `json:"id"`
+	EventID           pgtype.UUID        `json:"event_id"`
+	EventUlid         string             `json:"event_ulid"`
+	OriginalPayload   []byte             `json:"original_payload"`
+	NormalizedPayload []byte             `json:"normalized_payload"`
+	Warnings          []byte             `json:"warnings"`
+	SourceID          pgtype.Text        `json:"source_id"`
+	SourceExternalID  pgtype.Text        `json:"source_external_id"`
+	DedupHash         pgtype.Text        `json:"dedup_hash"`
+	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
+	Status            string             `json:"status"`
+	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes       pgtype.Text        `json:"review_notes"`
+	RejectionReason   pgtype.Text        `json:"rejection_reason"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Get single review by ID
-func (q *Queries) GetReviewQueueEntry(ctx context.Context, id int32) (EventReviewQueue, error) {
+func (q *Queries) GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error) {
 	row := q.db.QueryRow(ctx, getReviewQueueEntry, id)
-	var i EventReviewQueue
+	var i GetReviewQueueEntryRow
 	err := row.Scan(
 		&i.ID,
 		&i.EventID,
+		&i.EventUlid,
 		&i.OriginalPayload,
 		&i.NormalizedPayload,
 		&i.Warnings,
