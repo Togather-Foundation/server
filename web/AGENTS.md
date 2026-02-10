@@ -516,6 +516,124 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/healthz
 
 ## Testing Considerations
 
+### Frontend Layout Testing Workflow
+
+**🚨 CRITICAL: When fixing CSS/HTML layout issues, you MUST follow this workflow:**
+
+#### 1. Make Changes Locally (DO NOT COMMIT YET)
+- Edit the HTML/CSS/JavaScript files
+- Keep changes uncommitted until verified
+
+#### 2. Test on Local Server
+```bash
+# Check if server is already running
+if ! lsof -ti:8080 > /dev/null 2>&1; then
+    echo "Starting development server..."
+    make dev &
+    sleep 8  # Wait for server startup
+else
+    echo "✓ Server already running on port 8080"
+    # Air will auto-reload your changes
+fi
+```
+
+#### 3. Verify Layout with Screenshot
+Create a Playwright script to capture the specific layout issue:
+
+```python
+# tests/e2e/verify_layout.py
+import os
+from playwright.sync_api import sync_playwright
+
+def test_layout():
+    admin_password = os.getenv('ADMIN_PASSWORD', 'XXKokg60kd8hLXgq')
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)  # Set False to see browser
+        context = browser.new_context(viewport={'width': 1280, 'height': 720})
+        page = context.new_page()
+        
+        # Login
+        page.goto('http://localhost:8080/admin/login')
+        page.fill('#username', 'admin')
+        page.fill('#password', admin_password)
+        page.click('button[type="submit"]')
+        page.wait_for_url('**/admin/dashboard')
+        
+        # Navigate to page with layout issue
+        page.goto('http://localhost:8080/admin/events')  # or whatever page
+        
+        # Wait for specific element to be visible
+        page.wait_for_selector('.your-layout-element', timeout=10000)
+        
+        # Take screenshot
+        page.screenshot(path='/tmp/layout_verification.png')
+        print("✅ Screenshot saved to /tmp/layout_verification.png")
+        
+        # Optional: Check specific layout properties
+        element = page.query_selector('.your-element')
+        box = element.bounding_box()
+        print(f"Element position: x={box['x']}, y={box['y']}, width={box['width']}, height={box['height']}")
+        
+        browser.close()
+
+if __name__ == '__main__':
+    test_layout()
+```
+
+Run the verification:
+```bash
+source .env  # Load ADMIN_PASSWORD
+uvx --from playwright --with playwright python tests/e2e/verify_layout.py
+```
+
+#### 4. Visually Inspect Screenshot
+```bash
+# Open screenshot to verify layout is correct
+xdg-open /tmp/layout_verification.png  # Linux
+# or
+open /tmp/layout_verification.png      # macOS
+```
+
+**Verify:**
+- ✅ Elements are positioned correctly (side-by-side, aligned, etc.)
+- ✅ Spacing/margins look right
+- ✅ Text is readable (good contrast)
+- ✅ No overlapping elements
+- ✅ Responsive on different viewport sizes
+- ✅ Works in both light and dark themes (if applicable)
+
+#### 5. Run Full E2E Tests
+```bash
+uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
+```
+
+Check for:
+- ❌ Console errors
+- ❌ CSP violations
+- ❌ JavaScript exceptions
+
+#### 6. ONLY THEN Commit and Deploy
+**DO NOT commit until screenshots confirm the layout is correct!**
+
+```bash
+git add <files>
+git commit -m "Fix: Description of layout issue fixed"
+git push origin <branch>
+```
+
+#### 7. Deploy to Staging
+```bash
+scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
+```
+
+#### 8. Verify on Staging
+Re-run verification script against staging:
+```bash
+# Modify script to use staging URL
+uvx --from playwright --with playwright python tests/e2e/verify_layout_staging.py
+```
+
 ### MANDATORY Error Verification Workflow
 
 **🚨 CRITICAL: Before claiming any UI work is "fixed" or "complete", you MUST:**
@@ -538,7 +656,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/admin/healthz
    - One shared server instance is sufficient for all agents
    - Air provides live reload, so code changes are picked up automatically
 
-2. **Run E2E tests to capture console errors:**
+3. **Run E2E tests to capture console errors:**
    ```bash
    # The server must be running first (see step 1)
    uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py
