@@ -36,16 +36,17 @@ func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.Adm
 
 // reviewQueueItem represents a single item in the review queue list
 type reviewQueueItem struct {
-	ID             int                        `json:"id"`
-	EventID        string                     `json:"eventId"`
-	EventName      string                     `json:"eventName,omitempty"`
-	EventStartTime *time.Time                 `json:"eventStartTime,omitempty"`
-	EventEndTime   *time.Time                 `json:"eventEndTime,omitempty"`
-	Warnings       []events.ValidationWarning `json:"warnings"`
-	Status         string                     `json:"status"`
-	CreatedAt      time.Time                  `json:"createdAt"`
-	ReviewedBy     *string                    `json:"reviewedBy,omitempty"`
-	ReviewedAt     *time.Time                 `json:"reviewedAt,omitempty"`
+	ID              int                        `json:"id"`
+	EventID         string                     `json:"eventId"`
+	EventName       string                     `json:"eventName,omitempty"`
+	EventStartTime  *time.Time                 `json:"eventStartTime,omitempty"`
+	EventEndTime    *time.Time                 `json:"eventEndTime,omitempty"`
+	Warnings        []events.ValidationWarning `json:"warnings"`
+	Status          string                     `json:"status"`
+	CreatedAt       time.Time                  `json:"createdAt"`
+	ReviewedBy      *string                    `json:"reviewedBy,omitempty"`
+	ReviewedAt      *time.Time                 `json:"reviewedAt,omitempty"`
+	RejectionReason *string                    `json:"rejectionReason,omitempty"`
 }
 
 // reviewQueueDetail represents detailed review information
@@ -581,6 +582,9 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	}
 	if review.ReviewedAt != nil {
 		item.ReviewedAt = review.ReviewedAt
+	}
+	if review.RejectionReason != nil {
+		item.RejectionReason = review.RejectionReason
 	}
 
 	return item, nil
