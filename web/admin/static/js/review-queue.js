@@ -150,11 +150,7 @@
      */
     function filterByStatus(status) {
         currentFilter = status;
-        
-        // Reset pagination when changing filters
-        if (pagination) {
-            pagination.reset();
-        }
+        cursor = null;
         
         // Update active tab
         document.querySelectorAll('[data-action="filter-status"]').forEach(link => {
@@ -164,6 +160,12 @@
                 link.classList.remove('active');
             }
         });
+        
+        // Show/hide rejection reason column header
+        const reasonHeader = document.getElementById('rejection-reason-header');
+        if (reasonHeader) {
+            reasonHeader.style.display = status === 'rejected' ? '' : 'none';
+        }
         
         loadEntries();
     }
@@ -278,8 +280,6 @@
                 </tr>
             `;
         }).join('');
-        
-        updateShowingText(entries.length);
     }
     
     /**
@@ -487,8 +487,11 @@
             </div>
         `;
         
+        // Calculate colspan based on current filter (rejected tab has extra column)
+        const colspan = currentFilter === 'rejected' ? TABLE_COLUMN_COUNT + 1 : TABLE_COLUMN_COUNT;
+        
         detailRow.innerHTML = `
-            <td colspan="${TABLE_COLUMN_COUNT}" class="p-0">
+            <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
                         <div class="d-flex justify-content-between mb-3">
