@@ -86,7 +86,7 @@ type EmailConfig struct {
 
 // ValidationConfig holds validation behavior configuration
 type ValidationConfig struct {
-	RequireImage bool // Require image field (default: true); if false, missing image is a warning
+	RequireImage bool // Require image field (default: false); if true, events without images go to review queue
 }
 
 func Load() (Config, error) {
@@ -156,7 +156,7 @@ func Load() (Config, error) {
 			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
 		},
 		Validation: ValidationConfig{
-			RequireImage: getEnvBool("VALIDATION_REQUIRE_IMAGE", true),
+			RequireImage: getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
