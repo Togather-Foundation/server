@@ -1331,8 +1331,9 @@ func (r *EventRepository) GetReviewQueueEntry(ctx context.Context, id int) (*eve
 func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	queries := Queries{db: r.queryer()}
 
+	// Request LIMIT + 1 to detect if there are more pages
 	params := ListReviewQueueParams{
-		Limit: int32(filters.Limit),
+		Limit: int32(filters.Limit + 1),
 	}
 
 	// Build count param with same status filter
@@ -1356,12 +1357,20 @@ func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.Re
 		return nil, fmt.Errorf("list review queue: %w", err)
 	}
 
+	// Check if there are more pages (we got LIMIT + 1 items)
+	hasMore := len(rows) > filters.Limit
+
+	// Trim to requested limit if we got more
+	if hasMore {
+		rows = rows[:filters.Limit]
+	}
+
 	entries := make([]events.ReviewQueueEntry, 0, len(rows))
 	var nextCursor *int
 	for i, row := range rows {
 		entries = append(entries, *convertListReviewQueueRow(row))
-		// Set next cursor to the ID of the last item
-		if i == len(rows)-1 {
+		// Set next cursor to the ID of the last item ONLY if there are more pages
+		if i == len(rows)-1 && hasMore {
 			cursor := int(row.ID)
 			nextCursor = &cursor
 		}
