@@ -570,8 +570,8 @@
                         }
                         
                         return `
-                            <dt class="col-sm-3 text-muted" style="max-width: 150px; overflow-wrap: break-word;">${escapeHtml(key)}</dt>
-                            <dd class="col-sm-9">${renderedValue}</dd>
+                            <dt class="col-3 text-muted text-truncate" style="max-width: 150px;" title="${escapeHtml(key)}">${escapeHtml(key)}</dt>
+                            <dd class="col-9">${renderedValue}</dd>
                         `;
                     }).join('')}
                 </dl>
