@@ -1437,14 +1437,26 @@ func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
 		return fmt.Errorf("mark unreviewed events as deleted: %w", err)
 	}
 
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
+	}
+
 	// Delete expired rejections
 	if err := queries.CleanupExpiredRejections(ctx); err != nil {
 		return fmt.Errorf("cleanup expired rejections: %w", err)
 	}
 
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
+	}
+
 	// Delete unreviewed events
 	if err := queries.CleanupUnreviewedEvents(ctx); err != nil {
 		return fmt.Errorf("cleanup unreviewed events: %w", err)
+	}
+
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
 	}
 
 	// Archive old approved/superseded reviews
