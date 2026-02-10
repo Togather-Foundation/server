@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/Togather-Foundation/server/internal/config"
 	"context"
 	"encoding/json"
 	"errors"
@@ -316,7 +317,7 @@ func TestEventsHandlerCreateUsesIdempotencyHeader(t *testing.T) {
 	}
 
 	service := events.NewService(repo)
-	ingest := events.NewIngestService(repo, "example.org")
+	ingest := events.NewIngestService(repo, "example.org", config.ValidationConfig{RequireImage: true})
 	h := NewEventsHandler(service, ingest, nil, nil, nil, "test", "https://example.org")
 
 	body := `{"name":"Jazz","startDate":"2026-07-10T19:00:00Z"}`

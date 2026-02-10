@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/rs/zerolog/log"
 )
@@ -22,13 +23,19 @@ type IngestResult struct {
 }
 
 type IngestService struct {
-	repo       Repository
-	nodeDomain string
-	defaultTZ  string
+	repo             Repository
+	nodeDomain       string
+	defaultTZ        string
+	validationConfig config.ValidationConfig
 }
 
-func NewIngestService(repo Repository, nodeDomain string) *IngestService {
-	return &IngestService{repo: repo, nodeDomain: nodeDomain, defaultTZ: "America/Toronto"}
+func NewIngestService(repo Repository, nodeDomain string, validationConfig config.ValidationConfig) *IngestService {
+	return &IngestService{
+		repo:             repo,
+		nodeDomain:       nodeDomain,
+		defaultTZ:        "America/Toronto",
+		validationConfig: validationConfig,
+	}
 }
 
 func (s *IngestService) Ingest(ctx context.Context, input EventInput) (*IngestResult, error) {
@@ -95,7 +102,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		Msg("Ingest: Before appendQualityWarnings")
 
 	// Add synthetic warnings for quality issues that trigger review
-	warnings = appendQualityWarnings(warnings, validated, nil)
+	warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig)
 
 	log.Debug().
 		Str("event_name", validated.Name).
@@ -103,7 +110,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		Msg("Ingest: After appendQualityWarnings")
 
 	// Check if review is needed due to validation warnings OR metadata quality issues
-	needsReview := len(warnings) > 0 || needsReview(validated, nil)
+	needsReview := len(warnings) > 0 || needsReview(validated, nil, s.validationConfig)
 
 	var sourceID string
 	if validated.Source != nil && validated.Source.URL != "" {
@@ -250,7 +257,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		Keywords:       validated.Keywords,
 		LicenseURL:     licenseURL(validated.License),
 		LicenseStatus:  "cc0",
-		Confidence:     floatPtr(reviewConfidence(validated, needsReview)),
+		Confidence:     floatPtr(reviewConfidence(validated, needsReview, s.validationConfig)),
 		OriginNodeID:   nil,
 	}
 
@@ -598,14 +605,14 @@ func nullableString(value string) *string {
 	return &trimmed
 }
 
-func needsReview(input EventInput, linkStatuses map[string]int) bool {
-	if reviewConfidence(input, false) < 0.6 {
+func needsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
+	if reviewConfidence(input, false, validationConfig) < 0.6 {
 		return true
 	}
 	if strings.TrimSpace(input.Description) == "" {
 		return true
 	}
-	if strings.TrimSpace(input.Image) == "" {
+	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		return true
 	}
 	if isTooFarFuture(input.StartDate, 730) {
@@ -619,12 +626,12 @@ func needsReview(input EventInput, linkStatuses map[string]int) bool {
 	return false
 }
 
-func reviewConfidence(input EventInput, flagged bool) float64 {
+func reviewConfidence(input EventInput, flagged bool, validationConfig config.ValidationConfig) float64 {
 	confidence := 0.9
 	if strings.TrimSpace(input.Description) == "" {
 		confidence -= 0.2
 	}
-	if strings.TrimSpace(input.Image) == "" {
+	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		confidence -= 0.2
 	}
 	if isTooFarFuture(input.StartDate, 730) {
@@ -658,7 +665,7 @@ func floatPtr(value float64) *float64 {
 // appendQualityWarnings adds synthetic validation warnings for quality issues
 // that trigger review but aren't structural validation errors.
 // This ensures admins can see WHY an event was flagged for review.
-func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int) []ValidationWarning {
+func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) []ValidationWarning {
 	log.Debug().
 		Str("event_name", input.Name).
 		Int("initial_warnings", len(warnings)).
@@ -678,8 +685,8 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 		})
 	}
 
-	// Check for missing image
-	if strings.TrimSpace(input.Image) == "" {
+	// Check for missing image (only if configured to require it)
+	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		result = append(result, ValidationWarning{
 			Field:   "image",
 			Message: "Event is missing an image. Images significantly improve event discoverability and appeal.",
@@ -697,7 +704,7 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 	}
 
 	// Check for low confidence score
-	confidence := reviewConfidence(input, false)
+	confidence := reviewConfidence(input, false, validationConfig)
 	if confidence < 0.6 {
 		result = append(result, ValidationWarning{
 			Field:   "event",

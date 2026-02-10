@@ -1,6 +1,7 @@
 package events
 
 import (
+	"github.com/Togather-Foundation/server/internal/config"
 	"testing"
 	"time"
 )
@@ -80,7 +81,7 @@ func TestNeedsReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := needsReview(tt.input, tt.linkStatuses)
+			result := needsReview(tt.input, tt.linkStatuses, config.ValidationConfig{RequireImage: true})
 			if result != tt.expected {
 				t.Errorf("needsReview() = %v, want %v", result, tt.expected)
 			}
@@ -179,7 +180,7 @@ func TestReviewConfidence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := reviewConfidence(tt.input, tt.flagged)
+			result := reviewConfidence(tt.input, tt.flagged, config.ValidationConfig{RequireImage: true})
 			// Use epsilon for floating point comparison
 			epsilon := 0.0001
 			if result < tt.expected-epsilon || result > tt.expected+epsilon {
@@ -365,7 +366,7 @@ func TestHashInput(t *testing.T) {
 }
 
 func TestNewIngestService(t *testing.T) {
-	service := NewIngestService(nil, "https://example.com")
+	service := NewIngestService(nil, "https://example.com", config.ValidationConfig{RequireImage: true})
 
 	if service == nil {
 		t.Fatal("NewIngestService() returned nil")

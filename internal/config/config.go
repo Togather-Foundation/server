@@ -19,6 +19,7 @@ type Config struct {
 	Jobs           JobsConfig
 	Logging        LoggingConfig
 	Email          EmailConfig
+	Validation     ValidationConfig
 	Environment    string
 }
 
@@ -81,6 +82,11 @@ type EmailConfig struct {
 	SMTPUser     string // SMTP username (Gmail address)
 	SMTPPassword string // Gmail App Password (NOT regular Gmail password - see https://support.google.com/accounts/answer/185833)
 	TemplatesDir string // Path to email templates directory (default: "web/email/templates")
+}
+
+// ValidationConfig holds validation behavior configuration
+type ValidationConfig struct {
+	RequireImage bool // Require image field (default: true); if false, missing image is a warning
 }
 
 func Load() (Config, error) {
@@ -148,6 +154,9 @@ func Load() (Config, error) {
 			SMTPUser:     getEnv("SMTP_USER", ""),
 			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
+		},
+		Validation: ValidationConfig{
+			RequireImage: getEnvBool("VALIDATION_REQUIRE_IMAGE", true),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
