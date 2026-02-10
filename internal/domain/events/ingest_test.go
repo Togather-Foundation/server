@@ -1,10 +1,10 @@
 package events
 
 import (
-	"github.com/Togather-Foundation/server/internal/config"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Togather-Foundation/server/internal/config"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +26,8 @@ type MockRepository struct {
 	places            map[string]*PlaceRecord
 	organizations     map[string]*OrganizationRecord
 	occurrences       map[string][]OccurrenceCreateParams // eventID -> occurrences
+	reviewQueue       map[int]*ReviewQueueEntry           // id -> review queue entry
+	nextReviewID      int
 
 	// Behavior controls
 	shouldFailCreate                 bool
@@ -51,6 +53,8 @@ func NewMockRepository() *MockRepository {
 		places:            make(map[string]*PlaceRecord),
 		organizations:     make(map[string]*OrganizationRecord),
 		occurrences:       make(map[string][]OccurrenceCreateParams),
+		reviewQueue:       make(map[int]*ReviewQueueEntry),
+		nextReviewID:      1,
 	}
 }
 
@@ -368,9 +372,11 @@ func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string
 }
 
 func (m *MockRepository) CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
-	// For tests, return a basic entry
-	return &ReviewQueueEntry{
-		ID:                1,
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	entry := &ReviewQueueEntry{
+		ID:                m.nextReviewID,
 		EventID:           params.EventID,
 		OriginalPayload:   params.OriginalPayload,
 		NormalizedPayload: params.NormalizedPayload,
@@ -383,7 +389,10 @@ func (m *MockRepository) CreateReviewQueueEntry(ctx context.Context, params Revi
 		Status:            "pending",
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),
-	}, nil
+	}
+	m.reviewQueue[m.nextReviewID] = entry
+	m.nextReviewID++
+	return entry, nil
 }
 
 func (m *MockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
@@ -391,7 +400,14 @@ func (m *MockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, par
 }
 
 func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {
-	return nil, ErrNotFound
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	entry, ok := m.reviewQueue[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return entry, nil
 }
 
 func (m *MockRepository) ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error) {

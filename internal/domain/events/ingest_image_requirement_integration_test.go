@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/config"
@@ -87,16 +88,49 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 			t.Errorf("Expected lifecycle_state=pending_review, got %s", result.Event.LifecycleState)
 		}
 
-		// Verify missing_image warning is present
+		// Verify missing_image warning is present in IngestResult
 		foundWarning := false
+		var warningMessage string
 		for _, w := range result.Warnings {
 			if w.Code == "missing_image" {
 				foundWarning = true
+				warningMessage = w.Message
 				break
 			}
 		}
 		if !foundWarning {
-			t.Error("Expected missing_image warning when RequireImage=true and image is missing")
+			t.Error("Expected missing_image warning in IngestResult when RequireImage=true and image is missing")
+		}
+
+		// Verify the warning is also stored in the review queue entry
+		reviewEntry, err := repo.GetReviewQueueEntry(context.Background(), 1)
+		if err != nil {
+			t.Fatalf("Failed to get review queue entry: %v", err)
+		}
+
+		if reviewEntry == nil {
+			t.Fatal("Expected review queue entry to be created")
+		}
+
+		// Unmarshal the warnings from the review queue entry
+		var storedWarnings []ValidationWarning
+		if err := json.Unmarshal(reviewEntry.Warnings, &storedWarnings); err != nil {
+			t.Fatalf("Failed to unmarshal stored warnings: %v", err)
+		}
+
+		// Verify missing_image warning is in the stored warnings
+		foundStoredWarning := false
+		for _, w := range storedWarnings {
+			if w.Code == "missing_image" {
+				foundStoredWarning = true
+				if w.Message != warningMessage {
+					t.Errorf("Stored warning message mismatch: got %q, want %q", w.Message, warningMessage)
+				}
+				break
+			}
+		}
+		if !foundStoredWarning {
+			t.Error("Expected missing_image warning in stored review queue entry")
 		}
 	})
 
