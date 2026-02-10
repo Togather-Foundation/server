@@ -283,6 +283,16 @@
     cursor: pointer;
 }
 
+/* Detail rows should not have pointer cursor - allow text selection */
+#review-queue-table tr[id^="detail-"] {
+    cursor: default;
+}
+
+/* Detail card content should allow text selection */
+#review-queue-table tr[id^="detail-"] * {
+    cursor: default;
+}
+
 /* Custom scrollbar for table containers */
 .table-responsive::-webkit-scrollbar {
     height: 8px;
