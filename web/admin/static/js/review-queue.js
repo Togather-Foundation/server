@@ -271,7 +271,7 @@
                     ${rejectionReasonCell}
                     <td class="text-muted">${createdAgo}</td>
                     <td>
-                        <button class="btn btn-sm btn-ghost-primary" data-action="expand-detail" data-id="${entry.id}">
+                        <button class="btn btn-sm btn-ghost-primary expand-arrow" data-action="expand-detail" data-id="${entry.id}">
                             <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                 <polyline points="6 9 12 15 18 9"/>
@@ -300,6 +300,15 @@
         if (!entryRow) return;
         
         expandedId = id;
+        
+        // Change arrow direction to up (collapsed → expanded)
+        const arrowButton = entryRow.querySelector('.expand-arrow');
+        if (arrowButton) {
+            const arrowIcon = arrowButton.querySelector('polyline');
+            if (arrowIcon) {
+                arrowIcon.setAttribute('points', '6 15 12 9 18 15'); // Up arrow
+            }
+        }
         
         // Calculate colspan based on current filter (rejected tab has extra column)
         const colspan = currentFilter === 'rejected' ? TABLE_COLUMN_COUNT + 1 : TABLE_COLUMN_COUNT;
@@ -495,16 +504,6 @@
             <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
-                        <div class="d-flex justify-content-between mb-3">
-                            <h3>Review Details</h3>
-                            <button class="btn btn-ghost-secondary" data-action="collapse-detail">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                    <polyline points="6 15 12 9 18 15"/>
-                                </svg>
-                            </button>
-                        </div>
-                        
                         ${warningsHtml}
                         ${changesHtml}
                         ${eventDataHtml}
@@ -560,20 +559,27 @@
             } else if (typeof value === 'string' && value.length > 200) {
                 // Truncate long text with expand option
                 const truncated = value.substring(0, 200) + '...';
+                const escapedTruncated = escapeHtml(truncated);
+                const linkedTruncated = linkifyUrls(escapedTruncated);
                 const escapedFull = escapeHtml(value).replace(/'/g, '&apos;');
+                const linkedFull = linkifyUrls(escapedFull).replace(/"/g, '&quot;');
                 return `
                     <div class="mb-2">
                         <strong>${escapeHtml(field.label)}:</strong><br>
-                        <span class="description-text">${escapeHtml(truncated)}</span>
-                        <button class="btn btn-sm btn-link p-0" data-action="show-more" data-full-text="${escapedFull}">Show more</button>
+                        <span class="description-text">${linkedTruncated}</span>
+                        <button class="btn btn-sm btn-link p-0" data-action="show-more" data-full-text="${linkedFull}">Show more</button>
                     </div>
                 `;
             }
             
+            // Apply linkification for text fields (escape first, then linkify)
+            const escapedValue = escapeHtml(String(value));
+            const displayValue = linkifyUrls(escapedValue);
+            
             return `
                 <div class="mb-2">
                     <strong>${escapeHtml(field.label)}:</strong><br>
-                    <span>${escapeHtml(String(value))}</span>
+                    <span>${displayValue}</span>
                 </div>
             `;
         }).filter(html => html).join('');
@@ -716,6 +722,18 @@
             detailRow.remove();
         }
         
+        // Change arrow direction back to down (expanded → collapsed)
+        const entryRow = document.querySelector(`tr[data-entry-id="${expandedId}"]`);
+        if (entryRow) {
+            const arrowButton = entryRow.querySelector('.expand-arrow');
+            if (arrowButton) {
+                const arrowIcon = arrowButton.querySelector('polyline');
+                if (arrowIcon) {
+                    arrowIcon.setAttribute('points', '6 9 12 15 18 9'); // Down arrow
+                }
+            }
+        }
+        
         expandedId = null;
     }
     
@@ -731,10 +749,8 @@
         // Find the text span (previous sibling)
         const textSpan = button.previousElementSibling;
         if (textSpan && textSpan.classList.contains('description-text')) {
-            // Create a temporary element to decode HTML entities
-            const temp = document.createElement('div');
-            temp.innerHTML = fullText;
-            textSpan.textContent = temp.textContent;
+            // Use innerHTML to preserve linkified URLs (already escaped + linkified)
+            textSpan.innerHTML = fullText;
             button.style.display = 'none';
         }
     }
