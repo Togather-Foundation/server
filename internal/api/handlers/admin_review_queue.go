@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -564,10 +565,12 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	var original map[string]any
 	eventName := ""
 	if len(review.OriginalPayload) > 0 {
-		if err := json.Unmarshal(review.OriginalPayload, &original); err == nil {
-			if name, ok := original["name"].(string); ok {
-				eventName = name
-			}
+		if err := json.Unmarshal(review.OriginalPayload, &original); err != nil {
+			slog.Warn("failed to parse original payload",
+				slog.Int("review_id", review.ID),
+				slog.String("error", err.Error()))
+		} else if name, ok := original["name"].(string); ok {
+			eventName = name
 		}
 	}
 
