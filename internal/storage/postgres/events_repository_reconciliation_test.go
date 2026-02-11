@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -38,16 +38,7 @@ func createOrgParams(name, city, region, country string) events.OrganizationCrea
 // in the same location are reconciled (deduplicated) correctly
 func TestUpsertPlaceReconciliation(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 
@@ -67,16 +58,7 @@ func TestUpsertPlaceReconciliation(t *testing.T) {
 // including handling of NULL/empty base_url values
 func TestGetOrCreateSourceReconciliation(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 
@@ -157,16 +139,7 @@ func TestGetOrCreateSourceReconciliation(t *testing.T) {
 // TestUpsertOrganizationReconciliation tests organizations reconciliation
 func TestUpsertOrganizationReconciliation(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 

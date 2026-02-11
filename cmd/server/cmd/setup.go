@@ -666,22 +666,53 @@ func runSetup() error {
 	if backupCreated {
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println()
+		fmt.Println("📋 Backup File Management")
+		fmt.Println()
 		fmt.Println("A backup of your previous .env file was saved to .env.backup")
+		fmt.Println()
 
 		if setupNonInteractive {
 			// In non-interactive mode, keep the backup for safety
-			fmt.Println("Backup file retained. You can safely delete it once you've verified the new configuration.")
+			fmt.Println("✓ Backup file retained for safety")
+			fmt.Println()
+			fmt.Println("Once you've verified the new configuration:")
+			fmt.Println("  rm .env.backup")
 		} else {
 			if confirm("Remove .env.backup file now?", false) {
 				if err := os.Remove(".env.backup"); err != nil {
 					fmt.Printf("⚠️  Could not remove .env.backup: %v\n", err)
-					fmt.Println("You can manually remove it with: rm .env.backup")
+					fmt.Println()
+					fmt.Println("You can manually remove it with:")
+					fmt.Println("  rm .env.backup")
 				} else {
 					fmt.Println("✓ Removed .env.backup")
 				}
 			} else {
-				fmt.Println("Backup file retained. You can remove it later with: rm .env.backup")
+				fmt.Println("✓ Backup file retained")
+				fmt.Println()
+				fmt.Println("When ready to clean up:")
+				fmt.Println("  rm .env.backup")
 			}
+		}
+		fmt.Println()
+	}
+
+	// Check for and warn about .env.original files (from older setup versions)
+	if fileExists(".env.original") {
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println()
+		fmt.Println("⚠️  Found legacy .env.original file")
+		fmt.Println()
+		fmt.Println("This appears to be from an older setup run.")
+		if !setupNonInteractive && confirm("Remove .env.original file?", true) {
+			if err := os.Remove(".env.original"); err != nil {
+				fmt.Printf("⚠️  Could not remove .env.original: %v\n", err)
+				fmt.Println("You can manually remove it with: rm .env.original")
+			} else {
+				fmt.Println("✓ Removed .env.original")
+			}
+		} else {
+			fmt.Println("You can manually remove it with: rm .env.original")
 		}
 		fmt.Println()
 	}

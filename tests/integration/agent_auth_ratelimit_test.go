@@ -16,8 +16,9 @@ func TestAgentAuthEnforcement(t *testing.T) {
 
 	// Sample event payload
 	payload := map[string]any{
-		"name":      "Test Event",
-		"startDate": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+		"name":        "Test Event",
+		"description": "Test event for verifying authentication and authorization on agent endpoints.",
+		"startDate":   time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -126,8 +127,9 @@ func TestAgentRateLimiting(t *testing.T) {
 
 	// Sample event payload
 	payload := map[string]any{
-		"name":      "Rate Limit Test Event",
-		"startDate": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+		"name":        "Rate Limit Test Event",
+		"description": "Test event for verifying rate limiting behavior on agent tier API endpoints.",
+		"startDate":   time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -241,8 +243,9 @@ func TestPublicEndpointsNoAuth(t *testing.T) {
 	// Create a test event first (with auth)
 	apiKey := insertAPIKey(t, env, "setup-test-event")
 	payload := map[string]any{
-		"name":      "Public Access Test Event",
-		"startDate": time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+		"name":        "Public Access Test Event",
+		"description": "Test event for verifying public access to read endpoints without authentication.",
+		"startDate":   time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Public Venue",
 			"addressLocality": "Toronto",

@@ -16,8 +16,9 @@ func TestCreateEventHappyPath(t *testing.T) {
 
 	key := insertAPIKey(t, env, "agent-happy")
 	payload := map[string]any{
-		"name":      "Neighborhood Jazz Night",
-		"startDate": time.Date(2026, 9, 12, 19, 0, 0, 0, time.FixedZone("EDT", -4*60*60)).Format(time.RFC3339),
+		"name":        "Neighborhood Jazz Night",
+		"description": "An evening of smooth jazz featuring local Toronto musicians in the heart of Centennial Park.",
+		"startDate":   time.Date(2026, 9, 12, 19, 0, 0, 0, time.FixedZone("EDT", -4*60*60)).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
@@ -200,8 +201,9 @@ func TestCreateEventIdempotencyReturnsSameEvent(t *testing.T) {
 
 	key := insertAPIKey(t, env, "agent-idempotent")
 	payload := map[string]any{
-		"name":      "Idempotent event",
-		"startDate": time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"name":        "Idempotent event",
+		"description": "Test event for verifying idempotency key handling in the event creation API.",
+		"startDate":   time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",

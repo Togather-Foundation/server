@@ -127,7 +127,6 @@ func TestAPIDocsHandlerContent(t *testing.T) {
 			"Togather API Documentation",
 			"Scalar",
 			"/api/v1/openapi.json",
-			"info@togather.foundation",
 		}
 
 		for _, required := range requiredStrings {

@@ -57,8 +57,8 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Override lifecycle state to only return draft events (pending review)
-	filters.LifecycleState = "draft"
+	// Override lifecycle state to only return events pending review
+	filters.LifecycleState = "pending_review"
 
 	// Fetch pending events
 	result, err := h.Service.List(r.Context(), filters, pagination)

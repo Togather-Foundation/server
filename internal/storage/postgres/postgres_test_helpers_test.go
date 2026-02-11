@@ -2,38 +2,146 @@ package postgres
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
+
+var (
+	sharedOnce      sync.Once
+	sharedInitErr   error
+	sharedContainer *postgres.PostgresContainer
+	sharedPool      *pgxpool.Pool
+	sharedDBURL     string
+)
+
+const sharedContainerName = "togather-storage-db"
 
 type seededEntity struct {
 	ID   string
 	ULID string
 }
 
-func setupPostgres(t *testing.T, ctx context.Context) (*postgres.PostgresContainer, string) {
-	container, err := postgres.Run(
-		ctx,
-		"postgis/postgis:16-3.4",
-		postgres.WithDatabase("sel"),
-		postgres.WithUsername("sel"),
-		postgres.WithPassword("sel_dev"),
-	)
-	require.NoError(t, err)
+func TestMain(m *testing.M) {
+	code := m.Run()
+	cleanupShared()
+	os.Exit(code)
+}
 
-	dbURL, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
+func setupPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, string) {
+	t.Helper()
 
-	migrationsPath := filepath.Join(projectRoot(), DefaultMigrationsPath)
-	require.NoError(t, migrateWithRetry(dbURL, migrationsPath, 10*time.Second))
-	return container, dbURL
+	initShared(t)
+	resetDatabase(t, sharedPool)
+
+	return sharedPool, sharedDBURL
+}
+
+func initShared(t *testing.T) {
+	t.Helper()
+	sharedOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		// Disable ryuk (resource reaper) to prevent premature container cleanup
+		_ = os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+
+		container, err := postgres.Run(
+			ctx,
+			"postgis/postgis:16-3.4",
+			postgres.WithDatabase("sel"),
+			postgres.WithUsername("sel"),
+			postgres.WithPassword("sel_dev"),
+			testcontainers.WithReuseByName(sharedContainerName),
+		)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedContainer = container
+
+		dbURL, err := container.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedDBURL = dbURL
+
+		migrationsPath := filepath.Join(projectRoot(), DefaultMigrationsPath)
+		if err := migrateWithRetry(dbURL, migrationsPath, 10*time.Second); err != nil {
+			sharedInitErr = err
+			return
+		}
+
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+
+		sharedPool = pool
+	})
+
+	require.NoError(t, sharedInitErr)
+}
+
+func cleanupShared() {
+	if sharedPool != nil {
+		sharedPool.Close()
+	}
+	// Note: Do NOT terminate the shared container - testcontainers will clean it up
+	// Terminating it here causes connection errors in tests that haven't run yet
+}
+
+func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if pool == nil {
+		require.Fail(t, "shared pool is nil")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := pool.Query(ctx, `
+SELECT tablename
+  FROM pg_tables
+ WHERE schemaname = 'public'
+   AND tablename <> 'schema_migrations'
+ ORDER BY tablename;
+`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		if name == "" {
+			continue
+		}
+		safe := strings.ReplaceAll(name, "\"", "\"\"")
+		tables = append(tables, "\"public\".\""+safe+"\"")
+	}
+	require.NoError(t, rows.Err())
+
+	if len(tables) == 0 {
+		return
+	}
+
+	truncateSQL := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE;"
+	_, err = pool.Exec(ctx, truncateSQL)
+	require.NoError(t, err)
 }
 
 func insertOrganization(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) seededEntity {

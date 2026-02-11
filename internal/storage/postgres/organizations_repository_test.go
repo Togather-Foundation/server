@@ -6,22 +6,13 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
-	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestOrganizationRepositoryListFiltersAndPagination(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &OrganizationRepository{pool: pool}
 
@@ -61,16 +52,7 @@ func TestOrganizationRepositoryListFiltersAndPagination(t *testing.T) {
 
 func TestOrganizationRepositoryGetByULID(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &OrganizationRepository{pool: pool}
 

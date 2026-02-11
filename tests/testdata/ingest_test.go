@@ -1,13 +1,13 @@
 package testdata
 
 import (
-	"github.com/Togather-Foundation/server/internal/config"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Togather-Foundation/server/internal/config"
 	"net/url"
 	"strings"
 	"sync"

@@ -511,12 +511,23 @@ func (h *HealthChecker) checkHTTPEndpoint(ctx context.Context) CheckResult {
 	}
 }
 
-// Healthz returns a lightweight liveness response (legacy, kept for compatibility)
-// This only checks if the HTTP server is responding - it doesn't verify dependencies
+// Healthz returns a lightweight liveness response
+// This checks if the server process is alive and can handle requests
+// For comprehensive health checks including all dependencies, use /health
+// For readiness checks (deployment/blue-green), use /readyz
 func Healthz() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Liveness check: server process is alive and responding
-		// This is intentionally simple - just verify HTTP layer works
+		// Check if server is shutting down
+		select {
+		case <-r.Context().Done():
+			// Context cancelled - server is shutting down
+			respondHealth(w, http.StatusServiceUnavailable, "shutting_down")
+			return
+		default:
+			// Server is alive and responding
+		}
+
+		// Liveness check passed: process is alive and HTTP layer is operational
 		respondHealth(w, http.StatusOK, "ok")
 	})
 }

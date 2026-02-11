@@ -428,6 +428,15 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		if err != nil {
 			return fmt.Errorf("parse end date: %w", err)
 		}
+
+		// SAFETY: If endDate is before startDate, don't create occurrence
+		// This can happen when dates don't meet auto-correction criteria but the event
+		// goes to review queue. The admin will fix the dates and then occurrence can be created.
+		if end != nil && end.Before(start) {
+			// Skip creating occurrence - will be created after admin review fixes the dates
+			return nil
+		}
+
 		venueID := event.PrimaryVenueID
 		virtual := nullableString(virtualURL(input))
 		if venueID == nil && virtual == nil && event.VirtualURL != "" {
@@ -453,6 +462,15 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		if err != nil {
 			return fmt.Errorf("parse occurrence end date: %w", err)
 		}
+
+		// SAFETY: If endDate is before startDate, skip this occurrence
+		// This can happen when dates don't meet auto-correction criteria but the event
+		// goes to review queue. The admin will fix the dates and then occurrence can be created.
+		if end != nil && end.Before(start) {
+			// Skip creating occurrence - will be created after admin review fixes the dates
+			continue
+		}
+
 		var door *time.Time
 		if occ.DoorTime != "" {
 			value, err := time.Parse(time.RFC3339, strings.TrimSpace(occ.DoorTime))
@@ -723,15 +741,13 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 	}
 
 	// Check for failed link checks (if provided)
-	if linkStatuses != nil {
-		for url, code := range linkStatuses {
-			if code >= 400 {
-				result = append(result, ValidationWarning{
-					Field:   "url",
-					Message: fmt.Sprintf("Link check failed for %s (HTTP %d)", url, code),
-					Code:    "link_check_failed",
-				})
-			}
+	for url, code := range linkStatuses {
+		if code >= 400 {
+			result = append(result, ValidationWarning{
+				Field:   "url",
+				Message: fmt.Sprintf("Link check failed for %s (HTTP %d)", url, code),
+				Code:    "link_check_failed",
+			})
 		}
 	}
 

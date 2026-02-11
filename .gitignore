@@ -132,3 +132,4 @@ failure-reports/
 
 # Agent output (command logs for context management)
 .agent-output/
+.ci-start-time

@@ -20,6 +20,7 @@ type Config struct {
 	Logging        LoggingConfig
 	Email          EmailConfig
 	Validation     ValidationConfig
+	Tracing        TracingConfig
 	Environment    string
 }
 
@@ -82,6 +83,34 @@ type EmailConfig struct {
 	SMTPUser     string // SMTP username (Gmail address)
 	SMTPPassword string // Gmail App Password (NOT regular Gmail password - see https://support.google.com/accounts/answer/185833)
 	TemplatesDir string // Path to email templates directory (default: "web/email/templates")
+}
+
+// TracingConfig holds OpenTelemetry tracing configuration.
+// Tracing is opt-in and disabled by default to avoid breaking existing deployments.
+type TracingConfig struct {
+	// Enabled controls whether OpenTelemetry tracing is active.
+	// When false (default): no traces are generated, zero performance overhead.
+	// When true: spans are created for HTTP requests and key operations.
+	Enabled bool
+
+	// ServiceName identifies this service in traces (default: "togather-sel-server")
+	ServiceName string
+
+	// Exporter determines where traces are sent: "stdout", "otlp", "none" (default: "stdout")
+	// - stdout: human-readable traces to console (good for development/debugging)
+	// - otlp: send to OpenTelemetry Collector via OTLP (production setup)
+	// - none: traces generated but not exported (useful for testing instrumentation)
+	Exporter string
+
+	// OTLPEndpoint is the OTLP gRPC endpoint URL (e.g., "localhost:4317")
+	// Only used when Exporter is "otlp".
+	OTLPEndpoint string
+
+	// SampleRate controls what percentage of requests are traced (0.0 to 1.0).
+	// - 1.0 (default): trace all requests
+	// - 0.1: trace 10% of requests
+	// - 0.0: trace nothing (effectively disables tracing)
+	SampleRate float64
 }
 
 // ValidationConfig holds validation behavior configuration for event ingestion.
@@ -180,6 +209,13 @@ func Load() (Config, error) {
 		Validation: ValidationConfig{
 			RequireImage: getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
 		},
+		Tracing: TracingConfig{
+			Enabled:      getEnvBool("TRACING_ENABLED", false),
+			ServiceName:  getEnv("TRACING_SERVICE_NAME", "togather-sel-server"),
+			Exporter:     getEnv("TRACING_EXPORTER", "stdout"),
+			OTLPEndpoint: getEnv("TRACING_OTLP_ENDPOINT", "localhost:4317"),
+			SampleRate:   getEnvFloat("TRACING_SAMPLE_RATE", 1.0),
+		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
 
@@ -264,6 +300,18 @@ func getEnvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return fallback
 	}

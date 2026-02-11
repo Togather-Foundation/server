@@ -3,6 +3,9 @@ package users
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,75 +19,168 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/testcontainers/testcontainers-go"
 	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+var (
+	sharedOnce      sync.Once
+	sharedInitErr   error
+	sharedContainer testcontainers.Container
+	sharedPool      *pgxpool.Pool
+	sharedDBURL     string
+)
+
+const sharedContainerName = "togather-users-db"
 
 // testEnv holds resources for integration tests
 type testEnv struct {
-	Container testcontainers.Container
-	Pool      *pgxpool.Pool
-	Context   context.Context
-	Cancel    context.CancelFunc
+	Pool    *pgxpool.Pool
+	Context context.Context
+	Cancel  context.CancelFunc
 }
 
-// setupTestDB creates a PostgreSQL testcontainer and runs migrations
+// TestMain sets up and tears down the shared test container
+func TestMain(m *testing.M) {
+	code := m.Run()
+	cleanupShared()
+	os.Exit(code)
+}
+
+// initShared initializes the shared container once for all tests
+func initShared(t *testing.T) {
+	t.Helper()
+	sharedOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		// Disable ryuk (resource reaper) to prevent premature container cleanup
+		_ = os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+
+		container, err := testpostgres.Run(
+			ctx,
+			"docker.io/postgres:16-alpine",
+			testpostgres.WithDatabase("testdb"),
+			testpostgres.WithUsername("testuser"),
+			testpostgres.WithPassword("testpass"),
+			testcontainers.WithReuseByName(sharedContainerName),
+		)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedContainer = container
+
+		connStr, err := container.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedDBURL = connStr
+
+		// Wait for database to be ready with retries
+		var pool *pgxpool.Pool
+		maxRetries := 10
+		for i := 0; i < maxRetries; i++ {
+			pool, err = pgxpool.New(ctx, connStr)
+			if err == nil {
+				// Test connection
+				if err = pool.Ping(ctx); err == nil {
+					break
+				}
+				pool.Close()
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedPool = pool
+
+		// Run migrations
+		if err := runMigrations(ctx, connStr); err != nil {
+			sharedInitErr = err
+			return
+		}
+	})
+
+	if sharedInitErr != nil {
+		t.Fatalf("failed to initialize shared container: %v", sharedInitErr)
+	}
+}
+
+// cleanupShared closes the shared pool (container reuse handles cleanup)
+func cleanupShared() {
+	if sharedPool != nil {
+		sharedPool.Close()
+	}
+	// Note: Do NOT terminate the shared container - testcontainers will clean it up
+	// Terminating it here causes connection errors in tests that haven't run yet
+}
+
+// resetDatabase truncates all tables except migrations to provide test isolation
+func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if pool == nil {
+		t.Fatal("shared pool is nil")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := pool.Query(ctx, `
+		SELECT tablename
+		  FROM pg_tables
+		 WHERE schemaname = 'public'
+		 ORDER BY tablename;
+	`)
+	if err != nil {
+		t.Fatalf("failed to query tables: %v", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("failed to scan table name: %v", err)
+		}
+		if name == "" {
+			continue
+		}
+		// Quote table names to handle special characters
+		safe := strings.ReplaceAll(name, "\"", "\"\"")
+		tables = append(tables, "\"public\".\""+safe+"\"")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("error iterating tables: %v", err)
+	}
+
+	if len(tables) == 0 {
+		return
+	}
+
+	truncateSQL := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE;"
+	_, err = pool.Exec(ctx, truncateSQL)
+	if err != nil {
+		t.Fatalf("failed to truncate tables: %v", err)
+	}
+}
+
+// setupTestDB uses the shared container and resets the database for test isolation
 func setupTestDB(t *testing.T) *testEnv {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	initShared(t)
+	resetDatabase(t, sharedPool)
 
-	// Start PostgreSQL container
-	container, err := testpostgres.Run(ctx,
-		"docker.io/postgres:16-alpine",
-		testpostgres.WithDatabase("testdb"),
-		testpostgres.WithUsername("testuser"),
-		testpostgres.WithPassword("testpass"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second)),
-	)
-	if err != nil {
-		cancel()
-		t.Fatalf("failed to start postgres container: %v", err)
-	}
-
-	// Get connection string
-	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		cancel()
-		_ = container.Terminate(ctx)
-		t.Fatalf("failed to get connection string: %v", err)
-	}
-
-	// Create connection pool
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		cancel()
-		_ = container.Terminate(ctx)
-		t.Fatalf("failed to create connection pool: %v", err)
-	}
-
-	// Run migrations
-	if err := runMigrations(ctx, connStr); err != nil {
-		pool.Close()
-		cancel()
-		_ = container.Terminate(ctx)
-		t.Fatalf("failed to run migrations: %v", err)
-	}
-
-	// Cleanup on test completion
-	t.Cleanup(func() {
-		pool.Close()
-		cancel()
-		_ = container.Terminate(context.Background())
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
 
 	return &testEnv{
-		Container: container,
-		Pool:      pool,
-		Context:   ctx,
-		Cancel:    cancel,
+		Pool:    sharedPool,
+		Context: ctx,
+		Cancel:  cancel,
 	}
 }
 

@@ -6,26 +6,16 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/auth"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAPIKeyRepositoryLookupByPrefixAndUpdate(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &APIKeyRepository{pool: pool}
 
-	_, err = pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `
 INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, rate_limit_tier, is_active, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `, "tok_123", "hash", 2, "Test Key", "agent", "agent", true, time.Now().Add(24*time.Hour))
@@ -49,16 +39,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
 func TestAPIKeyRepositoryLookupMissing(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &APIKeyRepository{pool: pool}
 

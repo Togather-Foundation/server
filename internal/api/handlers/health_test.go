@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,8 +16,120 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+var (
+	sharedOnce      sync.Once
+	sharedInitErr   error
+	sharedContainer *tcpostgres.PostgresContainer
+	sharedPool      *pgxpool.Pool
+	sharedDBURL     string
+)
+
+const sharedContainerName = "togather-handlers-health-db"
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	cleanupShared()
+	os.Exit(code)
+}
+
+func initShared(t *testing.T) {
+	t.Helper()
+	sharedOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		// Disable ryuk (resource reaper) to prevent premature container cleanup
+		_ = os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+
+		container, err := tcpostgres.Run(
+			ctx,
+			"postgis/postgis:16-3.4",
+			tcpostgres.WithDatabase("togather_test"),
+			tcpostgres.WithUsername("togather"),
+			tcpostgres.WithPassword("togather-test-password"),
+			testcontainers.WithReuseByName(sharedContainerName),
+		)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedContainer = container
+
+		dbURL, err := container.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		sharedDBURL = dbURL
+
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+
+		// Verify connection
+		err = pool.Ping(ctx)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+
+		sharedPool = pool
+	})
+
+	require.NoError(t, sharedInitErr)
+}
+
+func cleanupShared() {
+	if sharedPool != nil {
+		sharedPool.Close()
+	}
+	// Note: Do NOT terminate the shared container - testcontainers will clean it up
+}
+
+func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	if pool == nil {
+		require.Fail(t, "shared pool is nil")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := pool.Query(ctx, `
+SELECT tablename
+  FROM pg_tables
+ WHERE schemaname = 'public'
+   AND tablename <> 'schema_migrations'
+ ORDER BY tablename;
+`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		if name == "" {
+			continue
+		}
+		safe := strings.ReplaceAll(name, "\"", "\"\"")
+		tables = append(tables, "\"public\".\""+safe+"\"")
+	}
+	require.NoError(t, rows.Err())
+
+	if len(tables) == 0 {
+		return
+	}
+
+	truncateSQL := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE;"
+	_, err = pool.Exec(ctx, truncateSQL)
+	require.NoError(t, err)
+}
 
 func TestHealthCheck_AllHealthy(t *testing.T) {
 	// Setup test database connection
@@ -392,6 +506,28 @@ func TestLegacyHealthz(t *testing.T) {
 	assert.Equal(t, "ok", response.Status)
 }
 
+// TestHealthz_ShuttingDown verifies /healthz returns 503 during shutdown
+func TestHealthz_ShuttingDown(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	// Create a cancelled context to simulate shutdown
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel() // Cancel immediately to simulate shutdown
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+
+	Healthz().ServeHTTP(w, req)
+
+	// Should return 503 when shutting down
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var response healthResponse
+	err := json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+	assert.Equal(t, "shutting_down", response.Status)
+}
+
 func TestLegacyReadyz(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupTestDB(t, ctx)
@@ -486,53 +622,16 @@ func TestReadyz_MigrationFailure(t *testing.T) {
 	assert.Equal(t, "not_ready", response.Status)
 }
 
-// setupTestDB creates a test database connection for health check tests
-// It first tries to use DATABASE_URL if set, otherwise creates a testcontainer
+// setupTestDB provides a test database connection using the shared container
+// It resets the database state before each test for isolation
 func setupTestDB(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 	t.Helper()
 
-	// Try DATABASE_URL first (faster for CI/local with existing DB)
-	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		pool, err := pgxpool.New(ctx, dbURL)
-		if err == nil && pool.Ping(ctx) == nil {
-			return pool, func() { pool.Close() }
-		}
-		// If DATABASE_URL is set but fails, fall through to testcontainers
-		t.Logf("DATABASE_URL set but connection failed, using testcontainer")
-	}
+	initShared(t)
+	resetDatabase(t, sharedPool)
 
-	// Use testcontainers as fallback
-	postgresContainer, err := tcpostgres.Run(ctx,
-		"postgis/postgis:16-3.4",
-		tcpostgres.WithDatabase("togather_test"),
-		tcpostgres.WithUsername("togather"),
-		tcpostgres.WithPassword("togather-test-password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	require.NoError(t, err, "failed to start PostgreSQL container")
-
-	dbURL, err := postgresContainer.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err, "failed to get connection string")
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err, "failed to connect to test database")
-
-	// Verify connection
-	err = pool.Ping(ctx)
-	require.NoError(t, err, "failed to ping test database")
-
-	cleanup := func() {
-		pool.Close()
-		if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
-			t.Logf("Failed to terminate PostgreSQL container: %v", err)
-		}
-	}
-
-	return pool, cleanup
+	// Return the shared pool and a no-op cleanup function
+	return sharedPool, func() {}
 }
 
 // TestHealthCheck_MigrationVersionValidation tests the migration check behavior

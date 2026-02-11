@@ -19,6 +19,11 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const testUserKey contextKey = "user"
+
 // MockRepository is a mock implementation of events.Repository
 type MockRepository struct {
 	mock.Mock
@@ -225,7 +230,7 @@ func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	}
 	claims.Subject = userEmail
 	ctx := middleware.ContextWithAdminClaims(r.Context(), claims)
-	ctx = context.WithValue(ctx, "user", userEmail)
+	ctx = context.WithValue(ctx, testUserKey, userEmail)
 	return r.WithContext(ctx)
 }
 

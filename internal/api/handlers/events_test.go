@@ -1,10 +1,10 @@
 package handlers
 
 import (
-	"github.com/Togather-Foundation/server/internal/config"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Togather-Foundation/server/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
