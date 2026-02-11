@@ -723,15 +723,13 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 	}
 
 	// Check for failed link checks (if provided)
-	if linkStatuses != nil {
-		for url, code := range linkStatuses {
-			if code >= 400 {
-				result = append(result, ValidationWarning{
-					Field:   "url",
-					Message: fmt.Sprintf("Link check failed for %s (HTTP %d)", url, code),
-					Code:    "link_check_failed",
-				})
-			}
+	for url, code := range linkStatuses {
+		if code >= 400 {
+			result = append(result, ValidationWarning{
+				Field:   "url",
+				Message: fmt.Sprintf("Link check failed for %s (HTTP %d)", url, code),
+				Code:    "link_check_failed",
+			})
 		}
 	}
 
