@@ -49,9 +49,12 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		item := BuildBaseListItem("Place", place.Name, place.ULID, "places", h.BaseURL)
 
 		// Add address (required per Interop Profile §3.1 - must have address OR geo)
-		if place.City != "" || place.Region != "" || place.Country != "" {
+		if place.StreetAddress != "" || place.City != "" || place.Region != "" || place.PostalCode != "" || place.Country != "" {
 			address := map[string]any{
 				"@type": "PostalAddress",
+			}
+			if place.StreetAddress != "" {
+				address["streetAddress"] = place.StreetAddress
 			}
 			if place.City != "" {
 				address["addressLocality"] = place.City
@@ -59,10 +62,22 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 			if place.Region != "" {
 				address["addressRegion"] = place.Region
 			}
+			if place.PostalCode != "" {
+				address["postalCode"] = place.PostalCode
+			}
 			if place.Country != "" {
 				address["addressCountry"] = place.Country
 			}
 			item["address"] = address
+		}
+
+		// Add geo coordinates
+		if place.Latitude != nil && place.Longitude != nil {
+			item["geo"] = map[string]any{
+				"@type":     "GeoCoordinates",
+				"latitude":  *place.Latitude,
+				"longitude": *place.Longitude,
+			}
 		}
 
 		items = append(items, item)
@@ -131,9 +146,12 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add address (required per Interop Profile §3.1 - must have address OR geo)
-	if item.City != "" || item.Region != "" || item.Country != "" {
+	if item.StreetAddress != "" || item.City != "" || item.Region != "" || item.PostalCode != "" || item.Country != "" {
 		address := map[string]any{
 			"@type": "PostalAddress",
+		}
+		if item.StreetAddress != "" {
+			address["streetAddress"] = item.StreetAddress
 		}
 		if item.City != "" {
 			address["addressLocality"] = item.City
@@ -141,10 +159,36 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		if item.Region != "" {
 			address["addressRegion"] = item.Region
 		}
+		if item.PostalCode != "" {
+			address["postalCode"] = item.PostalCode
+		}
 		if item.Country != "" {
 			address["addressCountry"] = item.Country
 		}
 		payload["address"] = address
+	}
+
+	// Add geo coordinates
+	if item.Latitude != nil && item.Longitude != nil {
+		payload["geo"] = map[string]any{
+			"@type":     "GeoCoordinates",
+			"latitude":  *item.Latitude,
+			"longitude": *item.Longitude,
+		}
+	}
+
+	// Add optional fields
+	if item.Telephone != "" {
+		payload["telephone"] = item.Telephone
+	}
+	if item.Email != "" {
+		payload["email"] = item.Email
+	}
+	if item.URL != "" {
+		payload["url"] = item.URL
+	}
+	if item.MaximumAttendeeCapacity != nil {
+		payload["maximumAttendeeCapacity"] = *item.MaximumAttendeeCapacity
 	}
 
 	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))

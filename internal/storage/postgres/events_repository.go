@@ -907,40 +907,56 @@ LIMIT 1
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO places (ulid, name, street_address, postal_code, address_locality, address_region, address_country, latitude, longitude, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
   DO UPDATE SET 
     name = EXCLUDED.name,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude
 RETURNING id, ulid
 `,
 			params.ULID,
 			params.Name,
+			nilIfEmpty(params.StreetAddress),
+			nilIfEmpty(params.PostalCode),
 			params.AddressLocality,
 			params.AddressRegion,
 			params.AddressCountry,
+			params.Latitude,
+			params.Longitude,
 			params.FederationURI,
 		)
 	} else {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO places (ulid, name, street_address, postal_code, address_locality, address_region, address_country, latitude, longitude, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (ulid)
   DO UPDATE SET 
     name = EXCLUDED.name,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude
 RETURNING id, ulid
 `,
 			params.ULID,
 			params.Name,
+			nilIfEmpty(params.StreetAddress),
+			nilIfEmpty(params.PostalCode),
 			params.AddressLocality,
 			params.AddressRegion,
 			params.AddressCountry,
+			params.Latitude,
+			params.Longitude,
 			params.FederationURI,
 		)
 	}
@@ -1100,6 +1116,15 @@ func intPtr(value *int32) *int {
 	}
 	converted := int(*value)
 	return &converted
+}
+
+// nilIfEmpty returns nil for empty strings, or a pointer to the string otherwise.
+// Used to map empty Go strings to SQL NULL for optional text columns.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // UpdateEvent updates an event by ULID with the provided parameters

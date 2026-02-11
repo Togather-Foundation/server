@@ -387,10 +387,13 @@ func buildPlacePayload(place *places.Place, baseURL string) map[string]any {
 	payload := buildBasePayload("Place", buildPlaceURI(baseURL, place.ULID))
 	payload["name"] = place.Name
 
-	// Build address from City, Region, Country fields
-	if place.City != "" || place.Region != "" || place.Country != "" {
+	// Build address from address fields
+	if place.StreetAddress != "" || place.City != "" || place.Region != "" || place.PostalCode != "" || place.Country != "" {
 		address := map[string]any{
 			"@type": "PostalAddress",
+		}
+		if place.StreetAddress != "" {
+			address["streetAddress"] = place.StreetAddress
 		}
 		if place.City != "" {
 			address["addressLocality"] = place.City
@@ -398,10 +401,22 @@ func buildPlacePayload(place *places.Place, baseURL string) map[string]any {
 		if place.Region != "" {
 			address["addressRegion"] = place.Region
 		}
+		if place.PostalCode != "" {
+			address["postalCode"] = place.PostalCode
+		}
 		if place.Country != "" {
 			address["addressCountry"] = place.Country
 		}
 		payload["address"] = address
+	}
+
+	// Add geo coordinates
+	if place.Latitude != nil && place.Longitude != nil {
+		payload["geo"] = map[string]any{
+			"@type":     "GeoCoordinates",
+			"latitude":  *place.Latitude,
+			"longitude": *place.Longitude,
+		}
 	}
 
 	return payload

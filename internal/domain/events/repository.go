@@ -214,6 +214,8 @@ type TombstoneCreateParams struct {
 type EntityCreateFields struct {
 	ULID            string
 	Name            string
+	StreetAddress   string
+	PostalCode      string
 	AddressLocality string
 	AddressRegion   string
 	AddressCountry  string
@@ -222,6 +224,8 @@ type EntityCreateFields struct {
 
 type PlaceCreateParams struct {
 	EntityCreateFields
+	Latitude  *float64
+	Longitude *float64
 }
 
 type PlaceRecord struct {

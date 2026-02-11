@@ -22,17 +22,27 @@ type PlaceRepository struct {
 }
 
 type placeRow struct {
-	ID          string
-	ULID        string
-	Name        string
-	Description *string
-	City        *string
-	Region      *string
-	Country     *string
-	DeletedAt   pgtype.Timestamptz
-	Reason      pgtype.Text
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID                      string
+	ULID                    string
+	Name                    string
+	Description             *string
+	StreetAddress           *string
+	City                    *string
+	Region                  *string
+	PostalCode              *string
+	Country                 *string
+	Latitude                pgtype.Numeric
+	Longitude               pgtype.Numeric
+	Telephone               *string
+	Email                   *string
+	URL                     *string
+	MaximumAttendeeCapacity pgtype.Int4
+	VenueType               *string
+	FederationURI           *string
+	DeletedAt               pgtype.Timestamptz
+	Reason                  pgtype.Text
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
 }
 
 func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, paginationArgs places.Pagination) (places.ListResult, error) {
@@ -58,7 +68,11 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 	limitPlusOne := limit + 1
 
 	rows, err := queryer.Query(ctx, `
-SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region, p.address_country,
+SELECT p.id, p.ulid, p.name, p.description,
+       p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
+       p.latitude, p.longitude,
+       p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type,
+       p.federation_uri,
        p.created_at, p.updated_at
   FROM places p
  WHERE ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
@@ -90,32 +104,25 @@ SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region
 			&row.ULID,
 			&row.Name,
 			&row.Description,
+			&row.StreetAddress,
 			&row.City,
 			&row.Region,
+			&row.PostalCode,
 			&row.Country,
+			&row.Latitude,
+			&row.Longitude,
+			&row.Telephone,
+			&row.Email,
+			&row.URL,
+			&row.MaximumAttendeeCapacity,
+			&row.VenueType,
+			&row.FederationURI,
 			&row.CreatedAt,
 			&row.UpdatedAt,
 		); err != nil {
 			return places.ListResult{}, fmt.Errorf("scan places: %w", err)
 		}
-		place := places.Place{
-			ID:          row.ID,
-			ULID:        row.ULID,
-			Name:        row.Name,
-			Description: derefString(row.Description),
-			City:        derefString(row.City),
-			Region:      derefString(row.Region),
-			Country:     derefString(row.Country),
-			CreatedAt:   time.Time{},
-			UpdatedAt:   time.Time{},
-		}
-		if row.CreatedAt.Valid {
-			place.CreatedAt = row.CreatedAt.Time
-		}
-		if row.UpdatedAt.Valid {
-			place.UpdatedAt = row.UpdatedAt.Time
-		}
-		items = append(items, place)
+		items = append(items, placeRowToDomain(&row))
 	}
 	if err := rows.Err(); err != nil {
 		return places.ListResult{}, fmt.Errorf("iterate places: %w", err)
@@ -137,7 +144,11 @@ func (r *PlaceRepository) GetByULID(ctx context.Context, ulid string) (*places.P
 	queryer := r.queryer()
 
 	row := queryer.QueryRow(ctx, `
-SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region, p.address_country,
+SELECT p.id, p.ulid, p.name, p.description,
+       p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
+       p.latitude, p.longitude,
+       p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type,
+       p.federation_uri,
        p.deleted_at, p.deletion_reason, p.created_at, p.updated_at
   FROM places p
  WHERE p.ulid = $1
@@ -149,9 +160,19 @@ SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region
 		&data.ULID,
 		&data.Name,
 		&data.Description,
+		&data.StreetAddress,
 		&data.City,
 		&data.Region,
+		&data.PostalCode,
 		&data.Country,
+		&data.Latitude,
+		&data.Longitude,
+		&data.Telephone,
+		&data.Email,
+		&data.URL,
+		&data.MaximumAttendeeCapacity,
+		&data.VenueType,
+		&data.FederationURI,
 		&data.DeletedAt,
 		&data.Reason,
 		&data.CreatedAt,
@@ -163,28 +184,63 @@ SELECT p.id, p.ulid, p.name, p.description, p.address_locality, p.address_region
 		return nil, fmt.Errorf("get place: %w", err)
 	}
 
-	place := &places.Place{
-		ID:          data.ID,
-		ULID:        data.ULID,
-		Name:        data.Name,
-		Description: derefString(data.Description),
-		City:        derefString(data.City),
-		Region:      derefString(data.Region),
-		Country:     derefString(data.Country),
-		Lifecycle:   "",
-		CreatedAt:   time.Time{},
-		UpdatedAt:   time.Time{},
-	}
-	if data.CreatedAt.Valid {
-		place.CreatedAt = data.CreatedAt.Time
-	}
-	if data.UpdatedAt.Valid {
-		place.UpdatedAt = data.UpdatedAt.Time
-	}
+	place := placeRowToDomain(&data)
 	if data.DeletedAt.Valid {
 		place.Lifecycle = "deleted"
 	}
-	return place, nil
+	return &place, nil
+}
+
+// placeRowToDomain converts a placeRow (DB scan target) to a places.Place domain struct.
+func placeRowToDomain(row *placeRow) places.Place {
+	place := places.Place{
+		ID:                      row.ID,
+		ULID:                    row.ULID,
+		Name:                    row.Name,
+		Description:             derefString(row.Description),
+		StreetAddress:           derefString(row.StreetAddress),
+		City:                    derefString(row.City),
+		Region:                  derefString(row.Region),
+		PostalCode:              derefString(row.PostalCode),
+		Country:                 derefString(row.Country),
+		Latitude:                numericToFloat64Ptr(row.Latitude),
+		Longitude:               numericToFloat64Ptr(row.Longitude),
+		Telephone:               derefString(row.Telephone),
+		Email:                   derefString(row.Email),
+		URL:                     derefString(row.URL),
+		MaximumAttendeeCapacity: int4Ptr(row.MaximumAttendeeCapacity),
+		VenueType:               derefString(row.VenueType),
+		FederationURI:           derefString(row.FederationURI),
+	}
+	if row.CreatedAt.Valid {
+		place.CreatedAt = row.CreatedAt.Time
+	}
+	if row.UpdatedAt.Valid {
+		place.UpdatedAt = row.UpdatedAt.Time
+	}
+	return place
+}
+
+// numericToFloat64Ptr converts a pgtype.Numeric to *float64.
+// Returns nil if the Numeric is not valid (SQL NULL).
+func numericToFloat64Ptr(n pgtype.Numeric) *float64 {
+	if !n.Valid {
+		return nil
+	}
+	f, _ := n.Float64Value()
+	if !f.Valid {
+		return nil
+	}
+	return &f.Float64
+}
+
+// int4Ptr converts a pgtype.Int4 to *int. Returns nil if not valid (SQL NULL).
+func int4Ptr(n pgtype.Int4) *int {
+	if !n.Valid {
+		return nil
+	}
+	v := int(n.Int32)
+	return &v
 }
 
 // SoftDelete marks a place as deleted

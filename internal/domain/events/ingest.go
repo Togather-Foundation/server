@@ -273,10 +273,14 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			EntityCreateFields: EntityCreateFields{
 				ULID:            placeULID,
 				Name:            validated.Location.Name,
+				StreetAddress:   validated.Location.StreetAddress,
+				PostalCode:      validated.Location.PostalCode,
 				AddressLocality: validated.Location.AddressLocality,
 				AddressRegion:   validated.Location.AddressRegion,
 				AddressCountry:  validated.Location.AddressCountry,
 			},
+			Latitude:  float64PtrNonZero(validated.Location.Latitude),
+			Longitude: float64PtrNonZero(validated.Location.Longitude),
 		})
 		if err != nil {
 			return nil, err
@@ -727,6 +731,17 @@ func isTooFarFuture(startDate string, days int) bool {
 }
 
 func floatPtr(value float64) *float64 {
+	return &value
+}
+
+// float64PtrNonZero returns a pointer to the value if non-zero, nil otherwise.
+// Used for coordinates where 0 from JSON omitempty means "not provided" rather
+// than the actual coordinate 0,0 (Gulf of Guinea). Input PlaceInput uses plain
+// float64 with omitempty, so zero genuinely means absent.
+func float64PtrNonZero(value float64) *float64 {
+	if value == 0 {
+		return nil
+	}
 	return &value
 }
 
