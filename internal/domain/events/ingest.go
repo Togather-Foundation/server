@@ -169,7 +169,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 	dedupHash := BuildDedupHash(DedupCandidate{
 		Name:      validated.Name,
-		VenueID:   primaryVenueKey(validated),
+		VenueID:   NormalizeVenueKey(validated),
 		StartDate: validated.StartDate,
 	})
 	if dedupHash != "" {
@@ -377,19 +377,27 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 					if best.Similarity >= s.dedupConfig.PlaceAutoMergeThreshold {
 						// Auto-merge: the new place is almost certainly the same.
 						// Merge new into existing (existing is primary).
-						if mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID); mergeErr != nil {
+						mergeResult, mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID)
+						if mergeErr != nil {
 							log.Warn().Err(mergeErr).
 								Str("duplicate_place", place.ULID).
 								Str("primary_place", best.ULID).
 								Msg("Place auto-merge failed, continuing with new place")
 						} else {
-							log.Info().
-								Str("duplicate_place", place.ULID).
-								Str("primary_place", best.ULID).
-								Float64("similarity", best.Similarity).
-								Msg("Auto-merged duplicate place")
-							// Use the primary (existing) place for this event
-							params.PrimaryVenueID = &best.ID
+							if mergeResult.AlreadyMerged {
+								log.Info().
+									Str("duplicate_place", place.ULID).
+									Str("canonical_place", mergeResult.CanonicalID).
+									Msg("Place already merged by concurrent operation, using canonical")
+							} else {
+								log.Info().
+									Str("duplicate_place", place.ULID).
+									Str("primary_place", best.ULID).
+									Float64("similarity", best.Similarity).
+									Msg("Auto-merged duplicate place")
+							}
+							// Use the canonical place for this event
+							params.PrimaryVenueID = &mergeResult.CanonicalID
 						}
 					} else {
 						// Below auto-merge but above review threshold — flag for review
@@ -431,24 +439,44 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 					Str("event_name", validated.Name).
 					Msg("Near-duplicate check failed, continuing ingestion")
 			} else if len(candidates) > 0 {
-				// Build details about the matches for the review queue
-				matches := make([]map[string]any, 0, len(candidates))
+				// Filter out candidates previously marked as not-duplicates of this event.
+				// This prevents re-flagging pairs that an admin already reviewed and confirmed
+				// are distinct events. Uses the new event's ULID (generated above at ulidValue).
+				filtered := make([]NearDuplicateCandidate, 0, len(candidates))
 				for _, c := range candidates {
-					matches = append(matches, map[string]any{
-						"ulid":       c.ULID,
-						"name":       c.Name,
-						"similarity": c.Similarity,
-					})
+					notDup, err := s.repo.IsNotDuplicate(ctx, ulidValue, c.ULID)
+					if err != nil {
+						log.Warn().Err(err).
+							Str("event_ulid", ulidValue).
+							Str("candidate_ulid", c.ULID).
+							Msg("Not-duplicate check failed, keeping candidate")
+						filtered = append(filtered, c)
+					} else if !notDup {
+						filtered = append(filtered, c)
+					}
 				}
-				warnings = append(warnings, ValidationWarning{
-					Field:   "name",
-					Message: fmt.Sprintf("Potential duplicate: found %d similar event(s) at the same venue on the same date", len(candidates)),
-					Code:    "potential_duplicate",
-					Details: map[string]any{
-						"matches": matches,
-					},
-				})
-				needsReview = true
+				candidates = filtered
+
+				if len(candidates) > 0 {
+					// Build details about the matches for the review queue
+					matches := make([]map[string]any, 0, len(candidates))
+					for _, c := range candidates {
+						matches = append(matches, map[string]any{
+							"ulid":       c.ULID,
+							"name":       c.Name,
+							"similarity": c.Similarity,
+						})
+					}
+					warnings = append(warnings, ValidationWarning{
+						Field:   "name",
+						Message: fmt.Sprintf("Potential duplicate: found %d similar event(s) at the same venue on the same date", len(candidates)),
+						Code:    "potential_duplicate",
+						Details: map[string]any{
+							"matches": matches,
+						},
+					})
+					needsReview = true
+				}
 			}
 		}
 	}
@@ -506,19 +534,27 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 					best := filtered[0] // highest similarity, sorted DESC
 					if best.Similarity >= s.dedupConfig.OrgAutoMergeThreshold {
 						// Auto-merge: the new org is almost certainly the same.
-						if mergeErr := s.repo.MergeOrganizations(ctx, org.ID, best.ID); mergeErr != nil {
+						mergeResult, mergeErr := s.repo.MergeOrganizations(ctx, org.ID, best.ID)
+						if mergeErr != nil {
 							log.Warn().Err(mergeErr).
 								Str("duplicate_org", org.ULID).
 								Str("primary_org", best.ULID).
 								Msg("Organization auto-merge failed, continuing with new org")
 						} else {
-							log.Info().
-								Str("duplicate_org", org.ULID).
-								Str("primary_org", best.ULID).
-								Float64("similarity", best.Similarity).
-								Msg("Auto-merged duplicate organization")
-							// Use the primary (existing) org for this event
-							params.OrganizerID = &best.ID
+							if mergeResult.AlreadyMerged {
+								log.Info().
+									Str("duplicate_org", org.ULID).
+									Str("canonical_org", mergeResult.CanonicalID).
+									Msg("Organization already merged by concurrent operation, using canonical")
+							} else {
+								log.Info().
+									Str("duplicate_org", org.ULID).
+									Str("primary_org", best.ULID).
+									Float64("similarity", best.Similarity).
+									Msg("Auto-merged duplicate organization")
+							}
+							// Use the canonical org for this event
+							params.OrganizerID = &mergeResult.CanonicalID
 						}
 					} else {
 						// Below auto-merge but above review threshold — flag for review
@@ -803,6 +839,9 @@ func (s *IngestService) recordSourceForExisting(ctx context.Context, event *Even
 	})
 }
 
+// primaryVenueKey returns the raw venue key from the input without normalization.
+// Deprecated: Use NormalizeVenueKey for dedup hashing. This function is kept for
+// backward compatibility in non-dedup contexts.
 func primaryVenueKey(input EventInput) string {
 	if input.Location != nil {
 		if input.Location.ID != "" {

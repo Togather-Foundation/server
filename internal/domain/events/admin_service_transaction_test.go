@@ -275,11 +275,17 @@ func (m *mockTransactionalRepo) FindSimilarPlaces(ctx context.Context, name stri
 func (m *mockTransactionalRepo) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
 	return nil, nil
 }
-func (m *mockTransactionalRepo) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+func (m *mockTransactionalRepo) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *mockTransactionalRepo) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *mockTransactionalRepo) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
 	return nil
 }
-func (m *mockTransactionalRepo) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
-	return nil
+func (m *mockTransactionalRepo) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	return false, nil
 }
 
 // mockTxCommitter implements TxCommitter

@@ -77,6 +77,38 @@ UPDATE events e1
  WHERE e1.ulid = $1
    AND e1.deleted_at IS NULL;
 
+-- name: ResolveCanonicalEventULID :one
+-- Follow the merged_into_id chain from a given ULID to find the final canonical event.
+-- Uses a recursive CTE with a max depth of 10 to prevent infinite loops.
+-- Returns the ULID of the final canonical event (the one that is not itself merged).
+WITH RECURSIVE chain AS (
+    SELECT e.id, e.ulid, e.merged_into_id, 1 AS depth
+      FROM events e
+     WHERE e.ulid = $1
+    UNION ALL
+    SELECT e.id, e.ulid, e.merged_into_id, c.depth + 1
+      FROM events e
+      JOIN chain c ON c.merged_into_id = e.id
+     WHERE c.merged_into_id IS NOT NULL
+       AND c.depth < 10
+)
+SELECT ulid FROM chain
+ WHERE merged_into_id IS NULL
+    OR depth = 10
+ ORDER BY depth DESC
+ LIMIT 1;
+
+-- name: UpdateMergedIntoChain :exec
+-- Flatten existing merge chains: update all events that point to an old target
+-- to point to the new canonical target instead. This prevents transitive chains.
+-- $1 = old target event ULID (intermediate node being re-pointed)
+-- $2 = new canonical target event ULID (final destination)
+UPDATE events e_upd
+   SET merged_into_id = (SELECT e_new.id FROM events e_new WHERE e_new.ulid = $2),
+       updated_at = now()
+ WHERE e_upd.merged_into_id = (SELECT e_old.id FROM events e_old WHERE e_old.ulid = $1)
+    AND e_upd.ulid != $2;
+
 -- name: CreateEventTombstone :exec
 INSERT INTO event_tombstones (event_id, event_uri, deleted_at, deletion_reason, superseded_by_uri, payload)
 VALUES ($1, $2, $3, $4, $5, $6);

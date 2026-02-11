@@ -10,6 +10,23 @@ var ErrNotFound = errors.New("event not found")
 
 var ErrConflict = errors.New("event conflict")
 
+// ErrAlreadyMerged is returned when attempting to merge an entity that has
+// already been merged into another entity by a concurrent operation.
+var ErrAlreadyMerged = errors.New("entity already merged")
+
+// MergeResult is returned by MergePlaces/MergeOrganizations to communicate
+// the canonical entity ID when a concurrent merge was detected.
+type MergeResult struct {
+	// CanonicalID is the UUID of the entity that should be used.
+	// When the merge succeeds normally, this equals the primaryID passed in.
+	// When the duplicate was already merged by another goroutine, this is
+	// the ID at the end of the merge chain.
+	CanonicalID string
+	// AlreadyMerged is true when the duplicate had already been merged
+	// by a concurrent operation, making this call a no-op.
+	AlreadyMerged bool
+}
+
 type Event struct {
 	ID                  string
 	ULID                string
@@ -171,8 +188,8 @@ type Repository interface {
 	// Place/Organization fuzzy dedup (Layer 3)
 	FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error)
 	FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error)
-	MergePlaces(ctx context.Context, duplicateID string, primaryID string) error
-	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error
+	MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
+	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
 
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
@@ -182,6 +199,10 @@ type Repository interface {
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByEventID(ctx context.Context, eventID string) (*Tombstone, error)
 	GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error)
+
+	// Not-duplicate tracking (suppresses re-flagging during near-duplicate detection)
+	InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error
+	IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error)
 
 	// Review Queue operations
 	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)

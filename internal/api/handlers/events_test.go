@@ -175,11 +175,17 @@ func (s stubEventsRepo) FindSimilarPlaces(_ context.Context, _ string, _ string,
 func (s stubEventsRepo) FindSimilarOrganizations(_ context.Context, _ string, _ string, _ string, _ float64) ([]events.SimilarOrgCandidate, error) {
 	return nil, nil
 }
-func (s stubEventsRepo) MergePlaces(_ context.Context, _ string, _ string) error {
+func (s stubEventsRepo) MergePlaces(_ context.Context, _ string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (s stubEventsRepo) MergeOrganizations(_ context.Context, _ string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (s stubEventsRepo) InsertNotDuplicate(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }
-func (s stubEventsRepo) MergeOrganizations(_ context.Context, _ string, _ string) error {
-	return nil
+func (s stubEventsRepo) IsNotDuplicate(_ context.Context, _ string, _ string) (bool, error) {
+	return false, nil
 }
 
 func TestEventsHandlerListSuccess(t *testing.T) {

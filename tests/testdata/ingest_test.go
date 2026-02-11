@@ -378,11 +378,17 @@ func (m *IngestMockRepository) FindSimilarPlaces(ctx context.Context, name strin
 func (m *IngestMockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarOrgCandidate, error) {
 	return nil, nil
 }
-func (m *IngestMockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+func (m *IngestMockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *IngestMockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *IngestMockRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
 	return nil
 }
-func (m *IngestMockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
-	return nil
+func (m *IngestMockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	return false, nil
 }
 
 type noOpTxCommitter struct{}

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 )
 
 // escapeILIKEPattern escapes special characters in ILIKE patterns to prevent SQL injection.
@@ -1281,12 +1282,66 @@ SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
 // MergePlaces merges a duplicate place into a primary place.
 // Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
 // fills empty fields on the primary from the duplicate, and soft-deletes the duplicate.
-func (r *EventRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+//
+// Handles concurrent merge races gracefully:
+//   - If the duplicate was already merged by another goroutine, follows the merge chain
+//     and returns the canonical place ID (AlreadyMerged=true).
+//   - If the primary was itself merged, follows that chain to find the real canonical.
+//   - Uses FOR UPDATE SKIP LOCKED to prevent two goroutines from merging the same
+//     duplicate simultaneously.
+func (r *EventRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
 	queryer := r.queryer()
 
+	// Step 1: Lock the duplicate row and check its current state.
+	// FOR UPDATE SKIP LOCKED means if another tx already locked this row,
+	// we skip it (get no rows) rather than blocking — we'll treat that as
+	// "already being merged by someone else".
+	var dupMergedInto *string
+	var dupDeletedAt *string
+	err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text, deleted_at::text
+  FROM places
+ WHERE id = $1
+   FOR UPDATE SKIP LOCKED
+`, duplicateID).Scan(&dupMergedInto, &dupDeletedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Row is locked by another tx or doesn't exist.
+			// Follow the merge chain to find where it ended up.
+			canonicalID, resolveErr := r.resolveCanonicalPlace(ctx, duplicateID)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolve place after skip lock: %w", resolveErr)
+			}
+			return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+		}
+		return nil, fmt.Errorf("lock duplicate place: %w", err)
+	}
+
+	// Step 2: If the duplicate is already merged, follow the chain.
+	if dupMergedInto != nil {
+		canonicalID, resolveErr := r.resolveCanonicalPlace(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve already-merged place: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+	}
+
+	// Step 3: Check if the primary itself has been merged (follow chain).
+	resolvedPrimaryID, err := r.resolveCanonicalPlace(ctx, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary place: %w", err)
+	}
+	primaryID = resolvedPrimaryID
+
+	// Step 4: Don't merge into self.
+	if duplicateID == primaryID {
+		return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: true}, nil
+	}
+
+	// Step 5: Proceed with the actual merge.
 	// Fill gaps on the primary from the duplicate: only overwrite NULL/empty fields.
 	// full_address and geo_point are generated columns and must not be set directly.
-	_, err := queryer.Exec(ctx, `
+	_, err = queryer.Exec(ctx, `
 UPDATE places p
    SET description              = COALESCE(NULLIF(p.description, ''),              d.description),
        street_address           = COALESCE(NULLIF(p.street_address, ''),           d.street_address),
@@ -1309,7 +1364,7 @@ UPDATE places p
  WHERE p.id = $2 AND d.id = $1
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("fill place gaps from duplicate: %w", err)
+		return nil, fmt.Errorf("fill place gaps from duplicate: %w", err)
 	}
 
 	// Reassign all events from duplicate place to primary place
@@ -1318,7 +1373,7 @@ UPDATE events SET primary_venue_id = $2
  WHERE primary_venue_id = $1
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("reassign events from duplicate place: %w", err)
+		return nil, fmt.Errorf("reassign events from duplicate place: %w", err)
 	}
 
 	// Reassign all occurrences from duplicate place to primary place
@@ -1327,32 +1382,82 @@ UPDATE event_occurrences SET venue_id = $2
  WHERE venue_id = $1
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("reassign occurrences from duplicate place: %w", err)
+		return nil, fmt.Errorf("reassign occurrences from duplicate place: %w", err)
 	}
 
 	// Mark the duplicate as merged and soft-delete it
 	cmd, err := queryer.Exec(ctx, `
 UPDATE places SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'merged'
- WHERE id = $1
+ WHERE id = $1 AND merged_into_id IS NULL
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("merge place: %w", err)
+		return nil, fmt.Errorf("merge place: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
-		return events.ErrNotFound
+		// Another goroutine merged it between our check and this UPDATE.
+		// Follow the chain to find the canonical place.
+		canonicalID, resolveErr := r.resolveCanonicalPlace(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve place after concurrent merge: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
 	}
 
-	return nil
+	return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: false}, nil
 }
 
 // MergeOrganizations merges a duplicate organization into a primary organization.
 // Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
 // fills empty fields on the primary from the duplicate, and soft-deletes the duplicate.
-func (r *EventRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
+//
+// Handles concurrent merge races gracefully (same pattern as MergePlaces).
+func (r *EventRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
 	queryer := r.queryer()
 
+	// Step 1: Lock the duplicate row and check its current state.
+	var dupMergedInto *string
+	var dupDeletedAt *string
+	err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text, deleted_at::text
+  FROM organizations
+ WHERE id = $1
+   FOR UPDATE SKIP LOCKED
+`, duplicateID).Scan(&dupMergedInto, &dupDeletedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			canonicalID, resolveErr := r.resolveCanonicalOrg(ctx, duplicateID)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolve org after skip lock: %w", resolveErr)
+			}
+			return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+		}
+		return nil, fmt.Errorf("lock duplicate organization: %w", err)
+	}
+
+	// Step 2: If the duplicate is already merged, follow the chain.
+	if dupMergedInto != nil {
+		canonicalID, resolveErr := r.resolveCanonicalOrg(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve already-merged org: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+	}
+
+	// Step 3: Check if the primary itself has been merged (follow chain).
+	resolvedPrimaryID, err := r.resolveCanonicalOrg(ctx, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary org: %w", err)
+	}
+	primaryID = resolvedPrimaryID
+
+	// Step 4: Don't merge into self.
+	if duplicateID == primaryID {
+		return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: true}, nil
+	}
+
+	// Step 5: Proceed with the actual merge.
 	// Fill gaps on the primary from the duplicate: only overwrite NULL/empty fields.
-	_, err := queryer.Exec(ctx, `
+	_, err = queryer.Exec(ctx, `
 UPDATE organizations p
    SET legal_name         = COALESCE(NULLIF(p.legal_name, ''),         d.legal_name),
        alternate_name     = COALESCE(NULLIF(p.alternate_name, ''),     d.alternate_name),
@@ -1372,7 +1477,7 @@ UPDATE organizations p
  WHERE p.id = $2 AND d.id = $1
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("fill organization gaps from duplicate: %w", err)
+		return nil, fmt.Errorf("fill organization gaps from duplicate: %w", err)
 	}
 
 	// Reassign all events from duplicate org to primary org
@@ -1381,22 +1486,100 @@ UPDATE events SET organizer_id = $2
  WHERE organizer_id = $1
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("reassign events from duplicate organization: %w", err)
+		return nil, fmt.Errorf("reassign events from duplicate organization: %w", err)
 	}
 
 	// Mark the duplicate as merged and soft-delete it
 	cmd, err := queryer.Exec(ctx, `
 UPDATE organizations SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'merged'
- WHERE id = $1
+ WHERE id = $1 AND merged_into_id IS NULL
 `, duplicateID, primaryID)
 	if err != nil {
-		return fmt.Errorf("merge organization: %w", err)
+		return nil, fmt.Errorf("merge organization: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
-		return events.ErrNotFound
+		canonicalID, resolveErr := r.resolveCanonicalOrg(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve org after concurrent merge: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
 	}
 
-	return nil
+	return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: false}, nil
+}
+
+// resolveCanonicalPlace follows the merged_into_id chain to find the ultimate
+// canonical place. Limits to 10 hops to prevent infinite loops from corrupt data.
+func (r *EventRepository) resolveCanonicalPlace(ctx context.Context, placeID string) (string, error) {
+	queryer := r.queryer()
+	currentID := placeID
+	const maxHops = 10
+
+	for i := 0; i < maxHops; i++ {
+		var mergedInto *string
+		err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text FROM places WHERE id = $1
+`, currentID).Scan(&mergedInto)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return currentID, nil // place doesn't exist, return last known ID
+			}
+			return "", fmt.Errorf("resolve canonical place at hop %d: %w", i, err)
+		}
+		if mergedInto == nil {
+			return currentID, nil // found the canonical (not merged)
+		}
+		currentID = *mergedInto
+	}
+
+	return currentID, nil // max hops reached, return best guess
+}
+
+// resolveCanonicalOrg follows the merged_into_id chain to find the ultimate
+// canonical organization. Limits to 10 hops to prevent infinite loops.
+func (r *EventRepository) resolveCanonicalOrg(ctx context.Context, orgID string) (string, error) {
+	queryer := r.queryer()
+	currentID := orgID
+	const maxHops = 10
+
+	for i := 0; i < maxHops; i++ {
+		var mergedInto *string
+		err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text FROM organizations WHERE id = $1
+`, currentID).Scan(&mergedInto)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return currentID, nil
+			}
+			return "", fmt.Errorf("resolve canonical org at hop %d: %w", i, err)
+		}
+		if mergedInto == nil {
+			return currentID, nil
+		}
+		currentID = *mergedInto
+	}
+
+	return currentID, nil
+}
+
+// InsertNotDuplicate records that two events are confirmed as NOT duplicates.
+// The pair is stored with canonical ordering (LEAST/GREATEST) so that (A,B) and (B,A) are equivalent.
+func (r *EventRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	queries := Queries{db: r.queryer()}
+	return queries.InsertNotDuplicate(ctx, InsertNotDuplicateParams{
+		EventIDA:  eventIDa,
+		EventIDB:  eventIDb,
+		CreatedBy: pgtype.Text{String: createdBy, Valid: createdBy != ""},
+	})
+}
+
+// IsNotDuplicate checks if a pair of events has been marked as not-duplicates.
+func (r *EventRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	queries := Queries{db: r.queryer()}
+	return queries.IsNotDuplicate(ctx, IsNotDuplicateParams{
+		EventIDA: eventIDa,
+		EventIDB: eventIDb,
+	})
 }
 
 // UpdateOccurrenceDates updates the start_time and end_time of all occurrences for an event.
@@ -1498,34 +1681,76 @@ func (r *EventRepository) SoftDeleteEvent(ctx context.Context, ulid string, reas
 }
 
 // MergeEvents merges a duplicate event into a primary event.
-// Verifies the primary event exists and is not deleted before merging.
+// Implements transitive chain resolution: if the primary event has itself been
+// merged into another event, follows the chain to find the final canonical event
+// and merges into that instead. Also flattens any existing chains pointing to
+// intermediate targets. This prevents stale merged_into_id references.
 func (r *EventRepository) MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error {
 	queryer := r.queryer()
-
-	// Verify primary event exists and is not deleted
-	var exists bool
-	err := queryer.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM events WHERE ulid = $1 AND deleted_at IS NULL)`,
-		primaryULID,
-	).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("verify primary event: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("primary event %s not found or deleted: %w", primaryULID, events.ErrNotFound)
-	}
-
 	queries := Queries{db: queryer}
 
+	// Resolve the primary ULID to the final canonical event in case the
+	// primary itself was previously merged (transitive chain resolution).
+	canonicalULID, err := queries.ResolveCanonicalEventULID(ctx, primaryULID)
+	if err != nil {
+		return fmt.Errorf("resolve canonical event for %s: %w", primaryULID, err)
+	}
+
+	// Log if we followed a chain (the target was already merged)
+	if canonicalULID != primaryULID {
+		log.Warn().
+			Str("original_target", primaryULID).
+			Str("canonical_target", canonicalULID).
+			Str("duplicate", duplicateULID).
+			Msg("merge target was itself merged; resolved transitive chain")
+	}
+
+	// Verify the canonical event exists and is not deleted
+	var exists bool
+	err = queryer.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM events WHERE ulid = $1 AND deleted_at IS NULL)`,
+		canonicalULID,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("verify canonical event: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("canonical event %s not found or deleted: %w", canonicalULID, events.ErrNotFound)
+	}
+
+	// Flatten existing chains: re-point any events whose merged_into_id
+	// points to the original primary (now an intermediate) to the canonical target.
+	if canonicalULID != primaryULID {
+		err = queries.UpdateMergedIntoChain(ctx, UpdateMergedIntoChainParams{
+			Ulid:   primaryULID,
+			Ulid_2: canonicalULID,
+		})
+		if err != nil {
+			return fmt.Errorf("flatten merge chain from %s to %s: %w", primaryULID, canonicalULID, err)
+		}
+	}
+
+	// Merge duplicate into the canonical primary
 	err = queries.MergeEventIntoDuplicate(ctx, MergeEventIntoDuplicateParams{
 		Ulid:   duplicateULID,
-		Ulid_2: primaryULID,
+		Ulid_2: canonicalULID,
 	})
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return events.ErrNotFound
 		}
 		return fmt.Errorf("merge events: %w", err)
+	}
+
+	// Flatten chains from the duplicate: re-point any events whose merged_into_id
+	// pointed to the duplicate (e.g., A→B when B is being merged into C) to the
+	// canonical target (A→C). This prevents stale transitive chains.
+	err = queries.UpdateMergedIntoChain(ctx, UpdateMergedIntoChainParams{
+		Ulid:   duplicateULID,
+		Ulid_2: canonicalULID,
+	})
+	if err != nil {
+		return fmt.Errorf("flatten duplicate merge chain from %s to %s: %w", duplicateULID, canonicalULID, err)
 	}
 
 	return nil
@@ -2125,9 +2350,5 @@ func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry 
 // convertGetReviewQueueEntryRow converts SQLc GetReviewQueueEntryRow to events.ReviewQueueEntry
 // Used when the query includes a JOIN with events table to get event_ulid
 func convertGetReviewQueueEntryRow(row GetReviewQueueEntryRow) *events.ReviewQueueEntry {
-	return convertReviewQueueRowGeneric(row)
-}
-
-func convertReviewQueueRow(row EventReviewQueue) *events.ReviewQueueEntry {
 	return convertReviewQueueRowGeneric(row)
 }

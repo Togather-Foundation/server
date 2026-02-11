@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -402,6 +403,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 			"reason":      req.Reason,
 		})
 	}
+
+	// Record not-duplicate decisions: if the review had potential_duplicate warnings,
+	// extract the matched event ULIDs and record them so future ingestion won't re-flag.
+	h.recordNotDuplicatesFromWarnings(r.Context(), review, reviewedBy)
 
 	// Build response
 	detail, err := buildReviewQueueDetail(*updatedReview)
@@ -810,4 +815,54 @@ func getUserFromContext(r *http.Request) string {
 	}
 	// Fallback to empty string (anonymous admin)
 	return "admin"
+}
+
+// recordNotDuplicatesFromWarnings extracts potential_duplicate warnings from a review entry
+// and records each matched pair as not-duplicates so future ingestion won't re-flag them.
+// Errors are logged but not propagated — this is a best-effort enhancement.
+func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Context, review *events.ReviewQueueEntry, reviewedBy string) {
+	if review == nil || len(review.Warnings) == 0 {
+		return
+	}
+
+	var warnings []events.ValidationWarning
+	if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
+		slog.Warn("recordNotDuplicates: failed to parse warnings",
+			slog.Int("review_id", review.ID),
+			slog.String("error", err.Error()))
+		return
+	}
+
+	eventULID := review.EventULID
+	for _, w := range warnings {
+		if w.Code != "potential_duplicate" {
+			continue
+		}
+		matchesRaw, ok := w.Details["matches"]
+		if !ok {
+			continue
+		}
+		// matches is []any where each element is map[string]any with "ulid", "name", "similarity"
+		matches, ok := matchesRaw.([]any)
+		if !ok {
+			continue
+		}
+		for _, m := range matches {
+			matchMap, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			candidateULID, ok := matchMap["ulid"].(string)
+			if !ok || candidateULID == "" {
+				continue
+			}
+			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
+				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
+					slog.Int("review_id", review.ID),
+					slog.String("event_ulid", eventULID),
+					slog.String("candidate_ulid", candidateULID),
+					slog.String("error", err.Error()))
+			}
+		}
+	}
 }

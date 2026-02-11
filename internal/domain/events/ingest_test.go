@@ -450,11 +450,17 @@ func (m *MockRepository) FindSimilarPlaces(ctx context.Context, name string, loc
 func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
 	return nil, nil
 }
-func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *MockRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
 	return nil
 }
-func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
-	return nil
+func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	return false, nil
 }
 
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {

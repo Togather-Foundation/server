@@ -266,13 +266,21 @@ func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name stri
 	}
 	return args.Get(0).([]events.SimilarOrgCandidate), args.Error(1)
 }
-func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
 	args := m.Called(ctx, duplicateID, primaryID)
+	return args.Get(0).(*events.MergeResult), args.Error(1)
+}
+func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	args := m.Called(ctx, duplicateID, primaryID)
+	return args.Get(0).(*events.MergeResult), args.Error(1)
+}
+func (m *MockRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	args := m.Called(ctx, eventIDa, eventIDb, createdBy)
 	return args.Error(0)
 }
-func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
-	args := m.Called(ctx, duplicateID, primaryID)
-	return args.Error(0)
+func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	args := m.Called(ctx, eventIDa, eventIDb)
+	return args.Bool(0), args.Error(1)
 }
 
 // Helper to add admin user to request context

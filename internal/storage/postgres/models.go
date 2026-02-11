@@ -85,6 +85,13 @@ type EventChange struct {
 	UserID         pgtype.UUID        `json:"user_id"`
 }
 
+type EventNotDuplicate struct {
+	EventIDA  string             `json:"event_id_a"`
+	EventIDB  string             `json:"event_id_b"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedBy pgtype.Text        `json:"created_by"`
+}
+
 type EventOccurrence struct {
 	ID                 pgtype.UUID        `json:"id"`
 	EventID            pgtype.UUID        `json:"event_id"`
