@@ -392,6 +392,28 @@ func TestLegacyHealthz(t *testing.T) {
 	assert.Equal(t, "ok", response.Status)
 }
 
+// TestHealthz_ShuttingDown verifies /healthz returns 503 during shutdown
+func TestHealthz_ShuttingDown(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	// Create a cancelled context to simulate shutdown
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel() // Cancel immediately to simulate shutdown
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+
+	Healthz().ServeHTTP(w, req)
+
+	// Should return 503 when shutting down
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var response healthResponse
+	err := json.NewDecoder(w.Body).Decode(&response)
+	require.NoError(t, err)
+	assert.Equal(t, "shutting_down", response.Status)
+}
+
 func TestLegacyReadyz(t *testing.T) {
 	ctx := context.Background()
 	pool, cleanup := setupTestDB(t, ctx)
