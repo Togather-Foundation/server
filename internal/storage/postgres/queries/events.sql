@@ -50,6 +50,15 @@ UPDATE events
  WHERE ulid = $1
 RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, created_at, updated_at;
 
+-- name: UpdateOccurrenceDatesByEventULID :exec
+-- Update the start_time and end_time of all occurrences for an event identified by ULID.
+-- Used by the FixReview workflow to correct occurrence dates during admin review.
+UPDATE event_occurrences
+   SET start_time = sqlc.arg('start_time'),
+       end_time = sqlc.narg('end_time'),
+       updated_at = now()
+ WHERE event_id = (SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid'));
+
 -- name: SoftDeleteEvent :exec
 UPDATE events
    SET deleted_at = now(),

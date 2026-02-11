@@ -47,6 +47,19 @@ func AutoMergeFields(existing *Event, input EventInput, existingTrust int, newTr
 	return params, changed
 }
 
+// EventInputFromEvent converts an Event's mergeable fields into an EventInput.
+// This allows AutoMergeFields to be reused for admin merge enrichment,
+// where the "new" data comes from a duplicate Event rather than an ingestion payload.
+func EventInputFromEvent(e *Event) EventInput {
+	return EventInput{
+		Description: e.Description,
+		Image:       e.ImageURL,
+		URL:         e.PublicURL,
+		EventDomain: e.EventDomain,
+		Keywords:    e.Keywords,
+	}
+}
+
 // mergeStringField applies the merge strategy for a single string field.
 // - If existing is empty and new has data → fill (set target to new value)
 // - If both have data and new has higher trust (lower number) → overwrite

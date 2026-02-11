@@ -1280,12 +1280,40 @@ SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
 
 // MergePlaces merges a duplicate place into a primary place.
 // Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
-// and soft-deletes the duplicate.
+// fills empty fields on the primary from the duplicate, and soft-deletes the duplicate.
 func (r *EventRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
 	queryer := r.queryer()
 
-	// Reassign all events from duplicate place to primary place
+	// Fill gaps on the primary from the duplicate: only overwrite NULL/empty fields.
+	// full_address and geo_point are generated columns and must not be set directly.
 	_, err := queryer.Exec(ctx, `
+UPDATE places p
+   SET description              = COALESCE(NULLIF(p.description, ''),              d.description),
+       street_address           = COALESCE(NULLIF(p.street_address, ''),           d.street_address),
+       address_locality         = COALESCE(NULLIF(p.address_locality, ''),         d.address_locality),
+       address_region           = COALESCE(NULLIF(p.address_region, ''),           d.address_region),
+       postal_code              = COALESCE(NULLIF(p.postal_code, ''),              d.postal_code),
+       address_country          = COALESCE(NULLIF(p.address_country, ''),          d.address_country),
+       latitude                 = COALESCE(p.latitude,                             d.latitude),
+       longitude                = COALESCE(p.longitude,                            d.longitude),
+       telephone                = COALESCE(NULLIF(p.telephone, ''),                d.telephone),
+       email                    = COALESCE(NULLIF(p.email, ''),                    d.email),
+       url                      = COALESCE(NULLIF(p.url, ''),                      d.url),
+       maximum_attendee_capacity = COALESCE(p.maximum_attendee_capacity,           d.maximum_attendee_capacity),
+       venue_type               = COALESCE(NULLIF(p.venue_type, ''),               d.venue_type),
+       accessibility_features   = CASE WHEN p.accessibility_features IS NULL OR array_length(p.accessibility_features, 1) IS NULL
+                                       THEN d.accessibility_features
+                                       ELSE p.accessibility_features END,
+       updated_at               = NOW()
+  FROM places d
+ WHERE p.id = $2 AND d.id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("fill place gaps from duplicate: %w", err)
+	}
+
+	// Reassign all events from duplicate place to primary place
+	_, err = queryer.Exec(ctx, `
 UPDATE events SET primary_venue_id = $2
  WHERE primary_venue_id = $1
 `, duplicateID, primaryID)
@@ -1319,12 +1347,36 @@ UPDATE places SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'me
 
 // MergeOrganizations merges a duplicate organization into a primary organization.
 // Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
-// and soft-deletes the duplicate.
+// fills empty fields on the primary from the duplicate, and soft-deletes the duplicate.
 func (r *EventRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
 	queryer := r.queryer()
 
-	// Reassign all events from duplicate org to primary org
+	// Fill gaps on the primary from the duplicate: only overwrite NULL/empty fields.
 	_, err := queryer.Exec(ctx, `
+UPDATE organizations p
+   SET legal_name         = COALESCE(NULLIF(p.legal_name, ''),         d.legal_name),
+       alternate_name     = COALESCE(NULLIF(p.alternate_name, ''),     d.alternate_name),
+       description        = COALESCE(NULLIF(p.description, ''),        d.description),
+       email              = COALESCE(NULLIF(p.email, ''),              d.email),
+       telephone          = COALESCE(NULLIF(p.telephone, ''),          d.telephone),
+       url                = COALESCE(NULLIF(p.url, ''),                d.url),
+       street_address     = COALESCE(NULLIF(p.street_address, ''),     d.street_address),
+       address_locality   = COALESCE(NULLIF(p.address_locality, ''),   d.address_locality),
+       address_region     = COALESCE(NULLIF(p.address_region, ''),     d.address_region),
+       postal_code        = COALESCE(NULLIF(p.postal_code, ''),        d.postal_code),
+       address_country    = COALESCE(NULLIF(p.address_country, ''),    d.address_country),
+       organization_type  = COALESCE(NULLIF(p.organization_type, ''),  d.organization_type),
+       founding_date      = COALESCE(p.founding_date,                  d.founding_date),
+       updated_at         = NOW()
+  FROM organizations d
+ WHERE p.id = $2 AND d.id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("fill organization gaps from duplicate: %w", err)
+	}
+
+	// Reassign all events from duplicate org to primary org
+	_, err = queryer.Exec(ctx, `
 UPDATE events SET organizer_id = $2
  WHERE organizer_id = $1
 `, duplicateID, primaryID)
@@ -1344,6 +1396,26 @@ UPDATE organizations SET merged_into_id = $2, deleted_at = NOW(), deletion_reaso
 		return events.ErrNotFound
 	}
 
+	return nil
+}
+
+// UpdateOccurrenceDates updates the start_time and end_time of all occurrences for an event.
+// Used by the FixReview workflow to correct occurrence dates during admin review.
+func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	queries := Queries{db: r.queryer()}
+
+	params := UpdateOccurrenceDatesByEventULIDParams{
+		EventUlid: eventULID,
+		StartTime: pgtype.Timestamptz{Time: startTime, Valid: true},
+	}
+	if endTime != nil {
+		params.EndTime = pgtype.Timestamptz{Time: *endTime, Valid: true}
+	}
+
+	err := queries.UpdateOccurrenceDatesByEventULID(ctx, params)
+	if err != nil {
+		return fmt.Errorf("update occurrence dates: %w", err)
+	}
 	return nil
 }
 
@@ -1425,11 +1497,27 @@ func (r *EventRepository) SoftDeleteEvent(ctx context.Context, ulid string, reas
 	return nil
 }
 
-// MergeEvents merges a duplicate event into a primary event
+// MergeEvents merges a duplicate event into a primary event.
+// Verifies the primary event exists and is not deleted before merging.
 func (r *EventRepository) MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error {
-	queries := Queries{db: r.queryer()}
+	queryer := r.queryer()
 
-	err := queries.MergeEventIntoDuplicate(ctx, MergeEventIntoDuplicateParams{
+	// Verify primary event exists and is not deleted
+	var exists bool
+	err := queryer.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM events WHERE ulid = $1 AND deleted_at IS NULL)`,
+		primaryULID,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("verify primary event: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("primary event %s not found or deleted: %w", primaryULID, events.ErrNotFound)
+	}
+
+	queries := Queries{db: queryer}
+
+	err = queries.MergeEventIntoDuplicate(ctx, MergeEventIntoDuplicateParams{
 		Ulid:   duplicateULID,
 		Ulid_2: primaryULID,
 	})
@@ -1667,85 +1755,10 @@ func (r EventReviewQueue) GetRejectionReason() pgtype.Text       { return r.Reje
 func (r EventReviewQueue) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
 func (r EventReviewQueue) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
 
-// Implement reviewQueueRowFields for ApproveReviewRow
-func (r ApproveReviewRow) GetID() int32                          { return r.ID }
-func (r ApproveReviewRow) GetEventID() pgtype.UUID               { return r.EventID }
-func (r ApproveReviewRow) GetEventUlid() string                  { return "" } // Not available without JOIN
-func (r ApproveReviewRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
-func (r ApproveReviewRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
-func (r ApproveReviewRow) GetWarnings() []byte                   { return r.Warnings }
-func (r ApproveReviewRow) GetSourceID() pgtype.Text              { return r.SourceID }
-func (r ApproveReviewRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
-func (r ApproveReviewRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
-func (r ApproveReviewRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
-func (r ApproveReviewRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
-func (r ApproveReviewRow) GetStatus() string                     { return r.Status }
-func (r ApproveReviewRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
-func (r ApproveReviewRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
-func (r ApproveReviewRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
-func (r ApproveReviewRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
-func (r ApproveReviewRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
-func (r ApproveReviewRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
-
-// Implement reviewQueueRowFields for CreateReviewQueueEntryRow
-func (r CreateReviewQueueEntryRow) GetID() int32                          { return r.ID }
-func (r CreateReviewQueueEntryRow) GetEventID() pgtype.UUID               { return r.EventID }
-func (r CreateReviewQueueEntryRow) GetEventUlid() string                  { return "" } // Not available without JOIN
-func (r CreateReviewQueueEntryRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
-func (r CreateReviewQueueEntryRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
-func (r CreateReviewQueueEntryRow) GetWarnings() []byte                   { return r.Warnings }
-func (r CreateReviewQueueEntryRow) GetSourceID() pgtype.Text              { return r.SourceID }
-func (r CreateReviewQueueEntryRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
-func (r CreateReviewQueueEntryRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
-func (r CreateReviewQueueEntryRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
-func (r CreateReviewQueueEntryRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
-func (r CreateReviewQueueEntryRow) GetStatus() string                     { return r.Status }
-func (r CreateReviewQueueEntryRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
-func (r CreateReviewQueueEntryRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
-func (r CreateReviewQueueEntryRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
-func (r CreateReviewQueueEntryRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
-func (r CreateReviewQueueEntryRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
-func (r CreateReviewQueueEntryRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
-
-// Implement reviewQueueRowFields for RejectReviewRow
-func (r RejectReviewRow) GetID() int32                          { return r.ID }
-func (r RejectReviewRow) GetEventID() pgtype.UUID               { return r.EventID }
-func (r RejectReviewRow) GetEventUlid() string                  { return "" } // Not available without JOIN
-func (r RejectReviewRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
-func (r RejectReviewRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
-func (r RejectReviewRow) GetWarnings() []byte                   { return r.Warnings }
-func (r RejectReviewRow) GetSourceID() pgtype.Text              { return r.SourceID }
-func (r RejectReviewRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
-func (r RejectReviewRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
-func (r RejectReviewRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
-func (r RejectReviewRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
-func (r RejectReviewRow) GetStatus() string                     { return r.Status }
-func (r RejectReviewRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
-func (r RejectReviewRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
-func (r RejectReviewRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
-func (r RejectReviewRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
-func (r RejectReviewRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
-func (r RejectReviewRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
-
-// Implement reviewQueueRowFields for UpdateReviewQueueEntryRow
-func (r UpdateReviewQueueEntryRow) GetID() int32                          { return r.ID }
-func (r UpdateReviewQueueEntryRow) GetEventID() pgtype.UUID               { return r.EventID }
-func (r UpdateReviewQueueEntryRow) GetEventUlid() string                  { return "" } // Not available without JOIN
-func (r UpdateReviewQueueEntryRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
-func (r UpdateReviewQueueEntryRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
-func (r UpdateReviewQueueEntryRow) GetWarnings() []byte                   { return r.Warnings }
-func (r UpdateReviewQueueEntryRow) GetSourceID() pgtype.Text              { return r.SourceID }
-func (r UpdateReviewQueueEntryRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
-func (r UpdateReviewQueueEntryRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
-func (r UpdateReviewQueueEntryRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
-func (r UpdateReviewQueueEntryRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
-func (r UpdateReviewQueueEntryRow) GetStatus() string                     { return r.Status }
-func (r UpdateReviewQueueEntryRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
-func (r UpdateReviewQueueEntryRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
-func (r UpdateReviewQueueEntryRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
-func (r UpdateReviewQueueEntryRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
-func (r UpdateReviewQueueEntryRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
-func (r UpdateReviewQueueEntryRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+// Note: ApproveReviewRow, RejectReviewRow, CreateReviewQueueEntryRow, and
+// UpdateReviewQueueEntryRow no longer exist as separate types — these queries
+// now use RETURNING * and return EventReviewQueue directly (which already
+// implements reviewQueueRowFields above).
 
 // convertReviewQueueRowGeneric converts any SQLc review queue row type to domain ReviewQueueEntry.
 // This generic converter eliminates ~120 lines of duplicated conversion logic across four

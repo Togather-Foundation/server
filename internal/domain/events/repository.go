@@ -175,6 +175,7 @@ type Repository interface {
 	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error
 
 	// Admin operations
+	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
 	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error

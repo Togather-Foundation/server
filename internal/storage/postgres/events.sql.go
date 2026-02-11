@@ -445,3 +445,24 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Updat
 	)
 	return i, err
 }
+
+const updateOccurrenceDatesByEventULID = `-- name: UpdateOccurrenceDatesByEventULID :exec
+UPDATE event_occurrences
+   SET start_time = $1,
+       end_time = $2,
+       updated_at = now()
+ WHERE event_id = (SELECT id FROM events WHERE ulid = $3)
+`
+
+type UpdateOccurrenceDatesByEventULIDParams struct {
+	StartTime pgtype.Timestamptz `json:"start_time"`
+	EndTime   pgtype.Timestamptz `json:"end_time"`
+	EventUlid string             `json:"event_ulid"`
+}
+
+// Update the start_time and end_time of all occurrences for an event identified by ULID.
+// Used by the FixReview workflow to correct occurrence dates during admin review.
+func (q *Queries) UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error {
+	_, err := q.db.Exec(ctx, updateOccurrenceDatesByEventULID, arg.StartTime, arg.EndTime, arg.EventUlid)
+	return err
+}

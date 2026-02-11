@@ -59,23 +59,7 @@ INSERT INTO event_review_queue (
   sqlc.arg('event_start_time'),
   sqlc.narg('event_end_time')
 )
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at;
+RETURNING *;
 
 -- name: UpdateReviewQueueEntry :one
 -- Update existing review entry (for resubmissions with same issues)
@@ -85,23 +69,7 @@ UPDATE event_review_queue
        warnings = COALESCE(sqlc.narg('warnings'), warnings),
        updated_at = NOW()
  WHERE id = sqlc.arg('id')
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at;
+RETURNING *;
 
 -- name: GetReviewQueueEntry :one
 -- Get single review by ID
@@ -170,23 +138,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = sqlc.arg('id')
    AND status = 'pending'
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at;
+RETURNING *;
 
 -- name: RejectReview :one
 -- Mark review as rejected
@@ -198,23 +150,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = sqlc.arg('id')
    AND status = 'pending'
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at;
+RETURNING *;
 
 -- name: CleanupExpiredRejections :exec
 -- Delete rejected reviews for past events (7 day grace period)

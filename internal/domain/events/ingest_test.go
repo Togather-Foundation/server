@@ -318,6 +318,10 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	return event, nil
 }
 
+func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	return nil
+}
+
 func (m *MockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

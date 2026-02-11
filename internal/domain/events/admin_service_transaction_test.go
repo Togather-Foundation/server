@@ -225,6 +225,9 @@ func (m *mockTransactionalRepo) UpsertOrganization(ctx context.Context, params O
 func (m *mockTransactionalRepo) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	return errors.New("not implemented")
+}
 func (m *mockTransactionalRepo) SoftDeleteEvent(ctx context.Context, ulid, reason string) error {
 	return errors.New("not implemented")
 }

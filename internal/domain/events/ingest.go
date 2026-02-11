@@ -137,7 +137,30 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 		existing, err := s.repo.FindBySourceExternalID(ctx, sourceID, validated.Source.EventID)
 		if err == nil && existing != nil {
-			return &IngestResult{Event: existing, IsDuplicate: true, Warnings: warnings}, nil
+			// Same source re-ingestion: merge fields to enrich/update existing event.
+			// Both events share the same source, so trust levels should match —
+			// the merge will primarily fill empty fields.
+			existingTrust, err := s.repo.GetSourceTrustLevel(ctx, existing.ID)
+			if err != nil {
+				return nil, fmt.Errorf("get existing source trust for source-external-id match: %w", err)
+			}
+			newTrust, err := s.repo.GetSourceTrustLevelBySourceID(ctx, sourceID)
+			if err != nil {
+				return nil, fmt.Errorf("get new source trust for source-external-id match: %w", err)
+			}
+
+			updates, changed := AutoMergeFields(existing, validated, existingTrust, newTrust)
+			if changed {
+				existing, err = s.repo.UpdateEvent(ctx, existing.ULID, updates)
+				if err != nil {
+					return nil, fmt.Errorf("source-external-id auto-merge update: %w", err)
+				}
+			}
+
+			// Record the source's contribution (may add updated payload)
+			_ = s.recordSourceForExisting(ctx, existing, validated, sourceID)
+
+			return &IngestResult{Event: existing, IsDuplicate: true, IsMerged: changed, Warnings: warnings}, nil
 		}
 		if err != nil && err != ErrNotFound {
 			return nil, err

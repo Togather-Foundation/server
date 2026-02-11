@@ -20,23 +20,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type ApproveReviewParams struct {
@@ -45,30 +29,10 @@ type ApproveReviewParams struct {
 	ID         int32       `json:"id"`
 }
 
-type ApproveReviewRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Mark review as approved
-func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (ApproveReviewRow, error) {
+func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error) {
 	row := q.db.QueryRow(ctx, approveReview, arg.ReviewedBy, arg.Notes, arg.ID)
-	var i ApproveReviewRow
+	var i EventReviewQueue
 	err := row.Scan(
 		&i.ID,
 		&i.EventID,
@@ -87,6 +51,7 @@ func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (A
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -166,23 +131,7 @@ INSERT INTO event_review_queue (
   $8,
   $9
 )
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type CreateReviewQueueEntryParams struct {
@@ -197,28 +146,8 @@ type CreateReviewQueueEntryParams struct {
 	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
 }
 
-type CreateReviewQueueEntryRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Create new review queue entry
-func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQueueEntryParams) (CreateReviewQueueEntryRow, error) {
+func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQueueEntryParams) (EventReviewQueue, error) {
 	row := q.db.QueryRow(ctx, createReviewQueueEntry,
 		arg.EventID,
 		arg.OriginalPayload,
@@ -230,7 +159,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		arg.EventStartTime,
 		arg.EventEndTime,
 	)
-	var i CreateReviewQueueEntryRow
+	var i EventReviewQueue
 	err := row.Scan(
 		&i.ID,
 		&i.EventID,
@@ -249,6 +178,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -539,23 +469,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type RejectReviewParams struct {
@@ -564,30 +478,10 @@ type RejectReviewParams struct {
 	ID         int32       `json:"id"`
 }
 
-type RejectReviewRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Mark review as rejected
-func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) (RejectReviewRow, error) {
+func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) (EventReviewQueue, error) {
 	row := q.db.QueryRow(ctx, rejectReview, arg.ReviewedBy, arg.Reason, arg.ID)
-	var i RejectReviewRow
+	var i EventReviewQueue
 	err := row.Scan(
 		&i.ID,
 		&i.EventID,
@@ -606,6 +500,7 @@ func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) (Rej
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -617,23 +512,7 @@ UPDATE event_review_queue
        warnings = COALESCE($3, warnings),
        updated_at = NOW()
  WHERE id = $4
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type UpdateReviewQueueEntryParams struct {
@@ -643,35 +522,15 @@ type UpdateReviewQueueEntryParams struct {
 	ID                int32  `json:"id"`
 }
 
-type UpdateReviewQueueEntryRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Update existing review entry (for resubmissions with same issues)
-func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (UpdateReviewQueueEntryRow, error) {
+func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error) {
 	row := q.db.QueryRow(ctx, updateReviewQueueEntry,
 		arg.OriginalPayload,
 		arg.NormalizedPayload,
 		arg.Warnings,
 		arg.ID,
 	)
-	var i UpdateReviewQueueEntryRow
+	var i EventReviewQueue
 	err := row.Scan(
 		&i.ID,
 		&i.EventID,
@@ -690,6 +549,7 @@ func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQu
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }

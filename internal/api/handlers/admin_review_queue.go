@@ -471,17 +471,26 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	// Update event with corrected dates
 	eventULID := review.EventULID
 
-	// TODO(srv-trg): Implement FixReview workflow - allow admin to modify event data and re-normalize
-	// This handler currently only marks the review as approved with notes about corrections,
-	// but does not actually update the event's occurrence-level dates. Full implementation needs:
-	// - Update event occurrences with corrected start/end dates
-	// - Re-run normalization on the updated event data
-	// - Validate the corrected data meets SHACL constraints
-	// - Handle both simple date fixes and complex event structure changes
-	// Related: Need occurrence-level update API in AdminService
-	_ = events.UpdateEventParams{}
+	// Apply occurrence date corrections before publishing
+	err = h.AdminService.FixEventOccurrenceDates(r.Context(), eventULID, req.Corrections.StartDate, req.Corrections.EndDate)
+	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.fix", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":    err.Error(),
+				"event_id": eventULID,
+			})
+		}
 
-	// Publish the event (assuming corrections were made outside this endpoint or will be made)
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: fix occurrence dates for event %s: %w", id, eventULID, err), h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fix occurrence dates", fmt.Errorf("fix review id=%d: fix occurrence dates for event %s: %w", id, eventULID, err), h.Env)
+		return
+	}
+
+	// Publish the event now that dates are corrected
 	_, err = h.AdminService.PublishEvent(r.Context(), eventULID)
 	if err != nil {
 		// Log failure
@@ -607,11 +616,11 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Perform the actual event merge via AdminService
-	err = h.AdminService.MergeEvents(r.Context(), events.MergeEventsParams{
+	// Perform event merge AND review status update atomically in a single transaction
+	updatedReview, err := h.AdminService.MergeEventsWithReview(r.Context(), events.MergeEventsParams{
 		PrimaryULID:   req.PrimaryEventULID,
 		DuplicateULID: duplicateULID,
-	})
+	}, id, reviewedBy)
 	if err != nil {
 		// Log failure
 		if h.AuditLogger != nil {
@@ -623,7 +632,7 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 		}
 
 		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event or review entry not found", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
 			return
 		}
 		if errors.Is(err, events.ErrCannotMergeSameEvent) {
@@ -631,27 +640,6 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to merge events", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
-		return
-	}
-
-	// Mark review as merged
-	updatedReview, err := h.Repository.MergeReview(r.Context(), id, reviewedBy, req.PrimaryEventULID)
-	if err != nil {
-		// Log failure — the merge succeeded but marking the review failed
-		if h.AuditLogger != nil {
-			h.AuditLogger.LogFromRequest(r, "admin.review.merge", "review", strconv.Itoa(id), "failure", map[string]string{
-				"error":           err.Error(),
-				"duplicate_event": duplicateULID,
-				"primary_event":   req.PrimaryEventULID,
-				"note":            "events merged but review status update failed",
-			})
-		}
-
-		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
-			return
-		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to update review status", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
 		return
 	}
 

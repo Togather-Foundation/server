@@ -102,6 +102,10 @@ func (s stubEventsRepo) UpdateEvent(_ context.Context, _ string, _ events.Update
 	return nil, errors.New("not implemented")
 }
 
+func (s stubEventsRepo) UpdateOccurrenceDates(_ context.Context, _ string, _ time.Time, _ *time.Time) error {
+	return errors.New("not implemented")
+}
+
 func (s stubEventsRepo) SoftDeleteEvent(_ context.Context, _ string, _ string) error {
 	return errors.New("not implemented")
 }

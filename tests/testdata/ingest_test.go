@@ -278,6 +278,10 @@ func (m *IngestMockRepository) UpdateEvent(ctx context.Context, ulid string, par
 	return event, nil
 }
 
+func (m *IngestMockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	return nil
+}
+
 func (m *IngestMockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
