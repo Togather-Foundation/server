@@ -50,11 +50,24 @@ Write/ingestion endpoints are **implementation-specific** and out of scope for t
 ```json
 {
   "items": [
-    { "@id": "https://toronto.togather.foundation/events/01J...", "@type": "Event", "name": "Jazz Night" }
+    {
+      "@id": "https://toronto.togather.foundation/events/01J...",
+      "@type": "Event",
+      "name": "Jazz Night",
+      "startDate": "2025-07-15T19:00:00-04:00",
+      "location": {
+        "@type": "Place",
+        "@id": "https://toronto.togather.foundation/places/01J9...",
+        "name": "Centennial Park"
+      }
+    }
   ],
   "next_cursor": "seq_1048602"
 }
 ```
+
+List responses use `items` (not `itemListElement`) as the JSON key for backward compatibility.
+Each item is a typed schema.org object (Event, Place, or Organization) with `@type` and `@id`.
 
 **Pagination Defaults:**
 - Default `limit`: 50
@@ -460,6 +473,7 @@ curl -X POST https://toronto.togather.foundation/api/v1/reconcile/places \
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.0-DRAFT | 2026-02-11 | Updated list response example with typed schema.org objects |
 | 1.0-DRAFT | 2026-01-27 | Drafted API contract |
 | 1.0-DRAFT | 2025-01-20 | Initial draft |
 
