@@ -29,9 +29,10 @@ func (e ValidationError) Error() string {
 }
 
 type ValidationWarning struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-	Code    string `json:"code"` // Machine-readable code (e.g., "reversed_dates", "suspicious_duration")
+	Field   string         `json:"field"`
+	Message string         `json:"message"`
+	Code    string         `json:"code"`              // Machine-readable code (e.g., "reversed_dates", "suspicious_duration")
+	Details map[string]any `json:"details,omitempty"` // Optional structured metadata (e.g., duplicate candidate info)
 }
 
 type ValidationResult struct {

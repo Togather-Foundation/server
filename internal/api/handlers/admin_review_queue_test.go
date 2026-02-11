@@ -223,6 +223,24 @@ func (m *MockRepository) BeginTx(ctx context.Context) (events.Repository, events
 	return args.Get(0).(events.Repository), args.Get(1).(events.TxCommitter), args.Error(2)
 }
 
+func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	args := m.Called(ctx, eventID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	args := m.Called(ctx, sourceID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+	args := m.Called(ctx, venueID, startTime, eventName, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.NearDuplicateCandidate), args.Error(1)
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{

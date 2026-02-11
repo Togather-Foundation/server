@@ -317,6 +317,55 @@ func (m *IngestMockRepository) BeginTx(ctx context.Context) (events.Repository, 
 	return m, &noOpTxCommitter{}, nil
 }
 
+// Review Queue methods (stub implementations)
+func (m *IngestMockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) CreateReviewQueueEntry(ctx context.Context, params events.ReviewQueueCreateParams) (*events.ReviewQueueEntry, error) {
+	return &events.ReviewQueueEntry{
+		ID:      1,
+		EventID: params.EventID,
+		Status:  "pending",
+	}, nil
+}
+
+func (m *IngestMockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, params events.ReviewQueueUpdateParams) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
+	return &events.ReviewQueueListResult{Entries: []events.ReviewQueueEntry{}, NextCursor: nil}, nil
+}
+
+func (m *IngestMockRepository) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) CleanupExpiredReviews(ctx context.Context) error {
+	return nil
+}
+
+func (m *IngestMockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	return 5, nil
+}
+
+func (m *IngestMockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	return 5, nil
+}
+
+func (m *IngestMockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+	return nil, nil
+}
+
 type noOpTxCommitter struct{}
 
 func (n *noOpTxCommitter) Commit(ctx context.Context) error   { return nil }

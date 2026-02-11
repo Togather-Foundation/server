@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/Togather-Foundation/server/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/stretchr/testify/require"
 )
@@ -148,6 +149,18 @@ func (s stubEventsRepo) RejectReview(_ context.Context, _ int, _ string, _ strin
 
 func (s stubEventsRepo) CleanupExpiredReviews(_ context.Context) error {
 	return nil
+}
+
+func (s stubEventsRepo) GetSourceTrustLevel(_ context.Context, _ string) (int, error) {
+	return 5, nil
+}
+
+func (s stubEventsRepo) GetSourceTrustLevelBySourceID(_ context.Context, _ string) (int, error) {
+	return 5, nil
+}
+
+func (s stubEventsRepo) FindNearDuplicates(_ context.Context, _ string, _ time.Time, _ string, _ float64) ([]events.NearDuplicateCandidate, error) {
+	return nil, nil
 }
 
 func TestEventsHandlerListSuccess(t *testing.T) {

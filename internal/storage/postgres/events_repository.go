@@ -1127,6 +1127,83 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
+// GetSourceTrustLevel returns the highest trust level among sources linked to an event.
+// Trust levels are 1-10 where higher values mean more trusted (10 = most trusted).
+// Returns the default trust level of 5 if no sources are linked.
+func (r *EventRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	var eventUUID pgtype.UUID
+	if err := eventUUID.Scan(eventID); err != nil {
+		return 0, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	queryer := r.queryer()
+	var trustLevel int
+	err := queryer.QueryRow(ctx, `
+SELECT COALESCE(MAX(s.trust_level), 5)
+  FROM sources s
+  JOIN event_sources es ON es.source_id = s.id
+ WHERE es.event_id = $1
+`, eventUUID).Scan(&trustLevel)
+	if err != nil {
+		return 0, fmt.Errorf("get source trust level: %w", err)
+	}
+	return trustLevel, nil
+}
+
+// GetSourceTrustLevelBySourceID returns the trust level for a specific source.
+func (r *EventRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	queryer := r.queryer()
+	var trustLevel int
+	err := queryer.QueryRow(ctx, `
+SELECT trust_level FROM sources WHERE id = $1
+`, sourceID).Scan(&trustLevel)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 5, nil // default trust level if source not found
+		}
+		return 0, fmt.Errorf("get source trust level by ID: %w", err)
+	}
+	return trustLevel, nil
+}
+
+// FindNearDuplicates finds events at the same venue on the same date with similar names.
+// Uses pg_trgm similarity() for fuzzy name matching. Returns candidates above the threshold.
+func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+	queryer := r.queryer()
+
+	// Match events at the same venue on the same calendar date with similar names.
+	// Uses pg_trgm similarity() which returns a float between 0 and 1.
+	rows, err := queryer.Query(ctx, `
+SELECT e.ulid, e.name, similarity(e.name, $3) AS sim
+  FROM events e
+  JOIN event_occurrences o ON o.event_id = e.id
+ WHERE e.deleted_at IS NULL
+   AND e.primary_venue_id = $1
+   AND DATE(o.start_time) = DATE($2::timestamptz)
+   AND similarity(e.name, $3) >= $4
+ ORDER BY sim DESC
+ LIMIT 5
+`, venueID, startTime, eventName, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("find near duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []events.NearDuplicateCandidate
+	for rows.Next() {
+		var c events.NearDuplicateCandidate
+		if err := rows.Scan(&c.ULID, &c.Name, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("scan near duplicate: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate near duplicates: %w", err)
+	}
+
+	return candidates, nil
+}
+
 // UpdateEvent updates an event by ULID with the provided parameters
 func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
 	queries := Queries{db: r.queryer()}

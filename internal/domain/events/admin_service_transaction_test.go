@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // TestMergeEvents_AtomicRollback verifies that MergeEvents rolls back on error
@@ -252,6 +253,15 @@ func (m *mockTransactionalRepo) RejectReview(ctx context.Context, id int, review
 }
 func (m *mockTransactionalRepo) CleanupExpiredReviews(ctx context.Context) error {
 	return errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	return 5, nil
+}
+func (m *mockTransactionalRepo) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	return 5, nil
+}
+func (m *mockTransactionalRepo) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+	return nil, nil
 }
 
 // mockTxCommitter implements TxCommitter

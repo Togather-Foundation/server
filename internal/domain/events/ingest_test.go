@@ -426,6 +426,18 @@ func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil
 }
 
+func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	return 5, nil // default trust level
+}
+
+func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	return 5, nil // default trust level
+}
+
+func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+	return nil, nil // no near duplicates by default
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

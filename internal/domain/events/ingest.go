@@ -19,6 +19,7 @@ import (
 type IngestResult struct {
 	Event       *Event
 	IsDuplicate bool
+	IsMerged    bool // true when auto-merged with existing event
 	NeedsReview bool
 	Warnings    []ValidationWarning
 }
@@ -28,6 +29,7 @@ type IngestService struct {
 	nodeDomain       string
 	defaultTZ        string
 	validationConfig config.ValidationConfig
+	dedupConfig      config.DedupConfig
 }
 
 func NewIngestService(repo Repository, nodeDomain string, validationConfig config.ValidationConfig) *IngestService {
@@ -37,6 +39,12 @@ func NewIngestService(repo Repository, nodeDomain string, validationConfig confi
 		defaultTZ:        "America/Toronto",
 		validationConfig: validationConfig,
 	}
+}
+
+// WithDedupConfig sets the deduplication configuration and returns the service for chaining.
+func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
+	s.dedupConfig = cfg
+	return s
 }
 
 func (s *IngestService) Ingest(ctx context.Context, input EventInput) (*IngestResult, error) {
@@ -144,7 +152,33 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	if dedupHash != "" {
 		existing, err := s.repo.FindByDedupHash(ctx, dedupHash)
 		if err == nil && existing != nil {
-			return &IngestResult{Event: existing, IsDuplicate: true, Warnings: warnings}, nil
+			// Auto-merge: fill gaps and overwrite if new source has higher trust
+			existingTrust, err := s.repo.GetSourceTrustLevel(ctx, existing.ID)
+			if err != nil {
+				return nil, fmt.Errorf("get existing source trust: %w", err)
+			}
+			newTrust := 5 // default trust level
+			if sourceID != "" {
+				newTrust, err = s.repo.GetSourceTrustLevelBySourceID(ctx, sourceID)
+				if err != nil {
+					return nil, fmt.Errorf("get new source trust: %w", err)
+				}
+			}
+
+			updates, changed := AutoMergeFields(existing, validated, existingTrust, newTrust)
+			if changed {
+				existing, err = s.repo.UpdateEvent(ctx, existing.ULID, updates)
+				if err != nil {
+					return nil, fmt.Errorf("auto-merge update: %w", err)
+				}
+			}
+
+			// Record the new source's contribution to this event
+			if sourceID != "" {
+				_ = s.recordSourceForExisting(ctx, existing, validated, sourceID)
+			}
+
+			return &IngestResult{Event: existing, IsDuplicate: true, IsMerged: changed, Warnings: warnings}, nil
 		}
 		if err != nil && err != ErrNotFound {
 			return nil, err
@@ -292,6 +326,41 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			return nil, err
 		}
 		params.PrimaryVenueID = &place.ID
+	}
+
+	// Layer 2: Near-duplicate detection via pg_trgm fuzzy name matching.
+	// After place reconciliation, check if a similar-named event already exists
+	// at the same venue on the same date. This is a soft warning — if the check
+	// fails (DB error), we log and continue rather than failing the ingest.
+	if params.PrimaryVenueID != nil && s.dedupConfig.NearDuplicateThreshold > 0 {
+		startTime, err := time.Parse(time.RFC3339, strings.TrimSpace(validated.StartDate))
+		if err == nil {
+			candidates, err := s.repo.FindNearDuplicates(ctx, *params.PrimaryVenueID, startTime, validated.Name, s.dedupConfig.NearDuplicateThreshold)
+			if err != nil {
+				log.Warn().Err(err).
+					Str("event_name", validated.Name).
+					Msg("Near-duplicate check failed, continuing ingestion")
+			} else if len(candidates) > 0 {
+				// Build details about the matches for the review queue
+				matches := make([]map[string]any, 0, len(candidates))
+				for _, c := range candidates {
+					matches = append(matches, map[string]any{
+						"ulid":       c.ULID,
+						"name":       c.Name,
+						"similarity": c.Similarity,
+					})
+				}
+				warnings = append(warnings, ValidationWarning{
+					Field:   "name",
+					Message: fmt.Sprintf("Potential duplicate: found %d similar event(s) at the same venue on the same date", len(candidates)),
+					Code:    "potential_duplicate",
+					Details: map[string]any{
+						"matches": matches,
+					},
+				})
+				needsReview = true
+			}
+		}
 	}
 
 	if validated.Organizer != nil && validated.Organizer.Name != "" {
@@ -553,6 +622,30 @@ func (s *IngestService) recordSourceWithRepo(ctx context.Context, repo Repositor
 	}
 
 	return repo.CreateSource(ctx, params)
+}
+
+// recordSourceForExisting records a new source against an existing event during auto-merge.
+// Unlike recordSourceWithRepo, this works outside a transaction and does not fail the
+// ingest if source recording fails (the merge already succeeded).
+func (s *IngestService) recordSourceForExisting(ctx context.Context, event *Event, input EventInput, sourceID string) error {
+	if input.Source == nil || input.Source.URL == "" {
+		return nil
+	}
+
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	payloadHash := sha256.Sum256(payload)
+
+	return s.repo.CreateSource(ctx, EventSourceCreateParams{
+		EventID:       event.ID,
+		SourceID:      sourceID,
+		SourceURL:     input.Source.URL,
+		SourceEventID: input.Source.EventID,
+		Payload:       payload,
+		PayloadHash:   hex.EncodeToString(payloadHash[:]),
+	})
 }
 
 func primaryVenueKey(input EventInput) string {

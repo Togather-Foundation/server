@@ -161,6 +161,13 @@ type Repository interface {
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
 	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
 
+	// Trust level queries for auto-merge
+	GetSourceTrustLevel(ctx context.Context, eventID string) (int, error)
+	GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error)
+
+	// Near-duplicate detection (Layer 2)
+	FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
+
 	// Admin operations
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
@@ -299,4 +306,11 @@ type ReviewQueueListResult struct {
 	Entries    []ReviewQueueEntry
 	NextCursor *int
 	TotalCount int64 // Total count for current filter (for badge display)
+}
+
+// NearDuplicateCandidate represents an existing event that may be a near-duplicate
+type NearDuplicateCandidate struct {
+	ULID       string  // ULID of the candidate event
+	Name       string  // Name of the candidate event
+	Similarity float64 // Trigram similarity score (0.0 to 1.0)
 }
