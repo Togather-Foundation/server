@@ -22,7 +22,7 @@
 13. [Concurrent Submission Scenarios](#13-concurrent-submission-scenarios)
 14. [Config Threshold Edge Cases](#14-config-threshold-edge-cases)
 15. [Source Provenance Through Merges](#15-source-provenance-through-merges)
-16. [Known Gaps & Future Work](#16-known-gaps--future-work)
+16. [Resolved Gaps](#16-resolved-gaps)
 
 ---
 
@@ -46,10 +46,10 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 ```
 
 **Key ordering invariants:**
-- Source external ID check returns early WITHOUT merging fields — it's a pure "already seen this exact submission" check.
+- Source external ID check now calls `AutoMergeFields` with actual trust levels from both sources, persisting field updates via `UpdateEvent`. It also records the source contribution. Returns `IsMerged: true` if any fields changed.
 - Dedup hash auto-merge (step 5) runs BEFORE review queue check (step 6) — an exact match never enters the review queue.
-- Place/org fuzzy dedup (step 7a, 7c) runs AFTER event creation begins — the place is created first, then checked for similarity.
-- Near-duplicate check (step 7b) runs AFTER place reconciliation — needs the venue ID.
+- Place/org fuzzy dedup (step 7a, 7c) runs AFTER event creation begins — the place is created first, then checked for similarity. Auto-merge gap-fills primary place/org fields from duplicate before reassigning events.
+- Near-duplicate check (step 7b) runs AFTER place reconciliation — needs the venue ID. Known not-duplicate pairs are filtered out before creating warnings.
 - Review queue dedup check (step 6) only runs if `needsReview` is true (warnings exist or quality checks fail).
 
 ---
@@ -96,13 +96,13 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 
 **Code path:** `ingest.go:125-145`
 
-### S3.1: Same source, same external ID — duplicate detected
+### S3.1: Same source, same external ID — duplicate detected with field merge
 
 - **Given:** Source "scraper-A" previously submitted event with externalID "evt-001", creating event E1.
 - **Action:** Source "scraper-A" submits again with externalID "evt-001".
-- **Expected:** `FindBySourceExternalID` returns E1. Returns immediately with `IsDuplicate: true`. No field merging occurs. Warnings from current validation are included.
-- **Result:** `IngestResult{Event: E1, IsDuplicate: true, Warnings: <current>}`
-- **Key detail:** This is NOT an auto-merge — no fields are updated. It's a pure "we've seen this exact submission before" check.
+- **Expected:** `FindBySourceExternalID` returns E1. `AutoMergeFields` is called using actual trust levels from both the existing event's source and the submitting source (looked up via `GetSourceTrustLevel` and `GetSourceTrustLevelBySourceID`). If fields changed, `UpdateEvent` persists the updates. Source contribution is recorded via `recordSourceForExisting`.
+- **Result:** `IngestResult{Event: E1_updated, IsDuplicate: true, IsMerged: <true if fields changed>, Warnings: <current>}`
+- **Key detail:** This IS an auto-merge with real trust levels. Since both submissions share the same source, trust levels typically match, so the merge primarily gap-fills empty fields. Higher-trust resubmissions can also overwrite existing data.
 
 ### S3.2: Same source, different external ID — no match
 
@@ -173,13 +173,15 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 - **Action:** `GetSourceTrustLevel` returns error.
 - **Expected:** Entire ingest fails with wrapped error. No partial update.
 
-### S4.6: Dedup hash — venue identified by name vs ID
+### S4.6: Dedup hash — venue key normalization
 
-- **Given:** Event submitted with `Location.Name = "The Rex"` (no ID).
-- **Expected:** `primaryVenueKey` returns the name. Hash = SHA256("event name|The Rex|2026-03-01T...").
-- **Given:** Same event later submitted with `Location.ID = "place-uuid-123"`.
-- **Expected:** `primaryVenueKey` returns the ID. Hash differs from above.
-- **Key detail:** Two submissions for the same real event could produce different hashes if one uses place name and the other uses place ID. This is a known limitation.
+- **Given:** Event submitted with `Location.Name = "  The  Rex  "` (extra whitespace, no ID).
+- **Expected:** `NormalizeVenueKey` normalizes the name: lowercase, trim leading/trailing whitespace, collapse internal whitespace runs. Hash = SHA256("event name|the rex|2026-03-01T...").
+- **Given:** Same event submitted with `Location.Name = "the rex"`.
+- **Expected:** Produces the same normalized venue key `"the rex"`. Hash matches.
+- **Given:** Event submitted with `Location.ID = "  place-uuid-123  "`.
+- **Expected:** `NormalizeVenueKey` returns the trimmed ID `"place-uuid-123"`. IDs are used as-is (not lowercased) since they are already canonical identifiers.
+- **Key detail:** `NormalizeVenueKey` in `dedup.go` applies consistent canonicalization. When only a name is available, lowercasing and whitespace normalization prevent trivial formatting differences from producing different hashes. When an ID is available, it takes precedence. Note that a submission with a place ID and one with only a place name will still produce different hashes — this is inherent to having two different key types, but the normalization prevents false negatives within each key type. `BuildDedupHash` also collapses whitespace in the name field for additional safety.
 
 ---
 
@@ -269,11 +271,11 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 **SQL:** `FindNearDuplicates` — same venue + same date + `similarity(name) > threshold`  
 **Default threshold:** 0.4
 
-### S6.1: Near-duplicate found — flagged for review
+### S6.1: Near-duplicate found — flagged for review (with not-duplicate filtering)
 
-- **Given:** Event "Jazz at the Rex" exists at venue V1 on 2026-03-01.
+- **Given:** Event "Jazz at the Rex" exists at venue V1 on 2026-03-01. This pair has NOT been previously marked as not-duplicates.
 - **Action:** New event "Rex Jazz Night" submitted for venue V1 on 2026-03-01. Name similarity = 0.55.
-- **Expected:** `FindNearDuplicates` returns the candidate. Warning added with code `potential_duplicate`, including candidate ULID, name, and similarity score. `needsReview` set to true.
+- **Expected:** `FindNearDuplicates` returns the candidate. Each candidate is checked against the `event_not_duplicates` table via `IsNotDuplicate` — known not-duplicate pairs are filtered out. Remaining candidates produce a warning with code `potential_duplicate`, including candidate ULID, name, and similarity score. `needsReview` set to true.
 
 ### S6.2: Same venue, same date, different name — no match
 
@@ -334,15 +336,18 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 **Code path:** `ingest.go:330-396`  
 **Default thresholds:** Review=0.6, AutoMerge=0.95
 
-### S7.1: New place, high similarity — auto-merge
+### S7.1: New place, high similarity — auto-merge with gap-fill
 
-- **Given:** Place "Rex Hotel Jazz Bar" exists.
-- **Action:** Event submitted with venue "The Rex Jazz & Blues Bar". Similarity = 0.96.
+- **Given:** Place "Rex Hotel Jazz Bar" exists with no description or email.
+- **Action:** Event submitted with venue "The Rex Jazz & Blues Bar" that includes description and email. Similarity = 0.96.
 - **Expected:**
   - `UpsertPlace` creates a new place (ULID matches generated one).
   - `FindSimilarPlaces` returns the existing place with similarity >= 0.95.
-  - `MergePlaces` called: reassigns events/occurrences from new to existing, soft-deletes new.
-  - `params.PrimaryVenueID` updated to existing place's ID.
+  - `MergePlaces` called:
+    - Gap-fills primary place fields from duplicate via SQL `UPDATE ... FROM` join (14 fields: description, street_address, address_locality, address_region, postal_code, address_country, latitude, longitude, telephone, email, url, maximum_attendee_capacity, venue_type, accessibility_features). Only fills NULL/empty fields on the primary.
+    - Reassigns events/occurrences from new to existing.
+    - Soft-deletes new place with `merged_into_id` set.
+  - `params.PrimaryVenueID` updated to `mergeResult.CanonicalID`.
   - No warning added. No review needed (from this check alone).
 
 ### S7.2: New place, moderate similarity — flagged for review
@@ -375,11 +380,11 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 - **Action:** New place created, similarity search returns only the newly created place itself.
 - **Expected:** Self-match filtered by `c.ID != place.ID`. `filtered` is empty. No action.
 
-### S7.6: Auto-merge fails — continue with new place
+### S7.6: Auto-merge fails or duplicate already merged — continue gracefully
 
 - **Given:** Similar place found with similarity 0.97.
-- **Action:** `MergePlaces` returns an error.
-- **Expected:** Warning logged. Event continues using the new place (NOT the existing one). No warning added to review queue.
+- **Action:** `MergePlaces` returns an error, or returns `MergeResult{AlreadyMerged: true}` if another goroutine already merged the duplicate.
+- **Expected:** If the merge result indicates `AlreadyMerged`, the `CanonicalID` from the result is used as the venue ID (the chain was followed to the final canonical place). If an error occurs, warning logged and event continues using the new place. No warning added to review queue.
 
 ### S7.7: FindSimilarPlaces DB error — continue
 
@@ -415,11 +420,11 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 **Code path:** `ingest.go:433-525`  
 **Default thresholds:** Review=0.6, AutoMerge=0.95
 
-### S8.1: New org, high similarity — auto-merge
+### S8.1: New org, high similarity — auto-merge with gap-fill
 
-- **Given:** Org "Toronto Arts Council" exists.
-- **Action:** Event with organizer "Toronto Arts Council Inc." Similarity = 0.96.
-- **Expected:** Same pattern as place auto-merge. New org merged into existing. `params.OrganizerID` updated.
+- **Given:** Org "Toronto Arts Council" exists with no description or email.
+- **Action:** Event with organizer "Toronto Arts Council Inc." that includes description and email. Similarity = 0.96.
+- **Expected:** Same pattern as place auto-merge. `MergeOrganizations` gap-fills primary org fields from duplicate via SQL `UPDATE ... FROM` join (13 fields: legal_name, alternate_name, description, email, telephone, url, street_address, address_locality, address_region, postal_code, address_country, organization_type, founding_date). Only fills NULL/empty fields. Then reassigns events, soft-deletes duplicate. `params.OrganizerID` updated to `mergeResult.CanonicalID`.
 
 ### S8.2: New org, moderate similarity — flagged for review
 
@@ -472,35 +477,39 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 
 ### S9.3: Fix — apply date corrections
 
-**Code path:** `admin_review_queue.go:420-551`
+**Code path:** `admin_review_queue.go:421-565`
 
 - **Given:** Review entry #42 with `date_order_reversed` warning.
 - **Action:** `POST /api/v1/admin/review-queue/42/fix` with corrected startDate/endDate.
 - **Expected:**
-  - **Note:** Current implementation is incomplete — it publishes the event and approves the review, but does NOT actually update the event's occurrence dates. This is a known TODO (srv-trg).
+  - `AdminService.FixEventOccurrenceDates` called first: updates occurrence-level start_time and end_time via `UpdateOccurrenceDates` SQL query. Validates that end is not before start. If only one date is provided, the other is preserved from the existing occurrence.
+  - `AdminService.PublishEvent` called to change lifecycle state to "published".
+  - `ApproveReview` called with notes describing the corrections applied.
   - At least one correction is required (400 if both startDate and endDate are null).
+  - If the event has no occurrences, returns an error.
 
-### S9.4: Merge — merge duplicate into primary
+### S9.4: Merge — merge duplicate into primary (atomic)
 
-**Code path:** `admin_review_queue.go:556-675`
+**Code path:** `admin_review_queue.go:567-668`
 
 - **Given:** Review entry #42 for event E_dup with `potential_duplicate` warning pointing to E_primary.
 - **Action:** `POST /api/v1/admin/review-queue/42/merge` with `{"primary_event_ulid":"01J_PRIMARY"}`.
 - **Expected:**
   - Guard: Cannot merge event into itself (400).
-  - `AdminService.MergeEvents` called:
-    - Both events verified to exist.
-    - `repo.MergeEvents` sets `merged_into_id` on duplicate, soft-deletes it.
+  - `AdminService.MergeEventsWithReview` called — performs ALL of the following in a single database transaction:
+    - Both events verified to exist and neither may have `LifecycleState == "deleted"` (returns `ErrEventDeleted` if so).
+    - Primary enriched from duplicate via `AutoMergeFields` with trust (0,0) — gap-fills empty fields on primary without overwriting existing data. Uses `EventInputFromEvent` helper to convert the duplicate Event to an EventInput.
+    - `repo.MergeEvents` sets `merged_into_id` on duplicate, soft-deletes it. Resolves transitive chains via `ResolveCanonicalEventULID` and flattens stale pointers.
     - Tombstone created for duplicate with `superseded_by` pointing to primary.
-    - All in a transaction.
-  - `MergeReview` called: review status set to "merged", `duplicate_of_event_id` set.
+    - Review status set to "merged" via `MergeReview`, `duplicate_of_event_id` set.
+    - Transaction committed — all operations succeed or none do.
   - **Key detail:** `MergeReview` only updates reviews with status "pending". Already-reviewed entries cannot be merged.
 
-### S9.5: Merge — AdminService.MergeEvents succeeds but MergeReview fails
+### S9.5: Merge — transaction guarantees atomicity
 
-- **Given:** Events merged successfully, but review status update fails.
-- **Expected:** The events are already merged (committed). Review status is inconsistent — the events are merged but the review entry still shows "pending". Error returned to client.
-- **Key detail:** This is a potential consistency issue. The event merge and review status update are NOT in the same transaction.
+- **Given:** Events and review status update are performed together.
+- **Expected:** `MergeEventsWithReview` wraps the event merge, tombstone creation, AND review status update in a single database transaction. If any step fails, the entire operation rolls back. No inconsistency is possible — either everything succeeds or nothing does.
+- **Key detail:** The handler calls `MergeEventsWithReview` (single atomic call) instead of separate `MergeEvents` + `MergeReview` calls.
 
 ### S9.6: Approve already-reviewed entry
 
@@ -593,25 +602,23 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 ### S11.1: Event chain merge — A merged into B, then B merged into C
 
 - **Given:** Event A merged into B (`A.merged_into_id = B`). Then B merged into C (`B.merged_into_id = C`).
-- **Current behavior:** Looking up A's `merged_into_id` gives B, NOT C. No transitive resolution.
-- **Impact:** API consumers following `merged_into_id` would need to follow the chain themselves. If B is soft-deleted, looking up A → B returns a deleted event.
+- **Behavior:** At the time B is merged into C, `repo.MergeEvents` calls `ResolveCanonicalEventULID` (recursive CTE, max depth 10) to find the final canonical target. It then calls `UpdateMergedIntoChain` to flatten all pointers: A's `merged_into_id` is updated from B to C. After the merge, there are no transitive chains — all events point directly to the canonical target C.
+- **Key detail:** Chain flattening is bi-directional: both events previously pointing to the primary AND events previously pointing to the duplicate are re-pointed to the resolved canonical. This ensures no stale references remain.
 
 ### S11.2: Place chain merge
 
 - **Given:** Place P1 merged into P2, then P2 merged into P3.
-- **Current behavior:** Same as events — `P1.merged_into_id = P2`, no transitive update.
-- **Impact:** Events that were reassigned from P1 to P2 during the first merge are NOT automatically reassigned to P3 during the second merge. They remain pointing to P2. If P2 is then soft-deleted, events point to a deleted place.
+- **Behavior:** `MergePlaces` calls `resolveCanonicalPlace` (iterative chain follower, max 10 hops) to resolve the primary to its canonical target. If P2 was merged into P3, the merge of a new duplicate into P2 is redirected to P3. Events reassigned from P1 to P2 during the first merge are reassigned to P3 during the second merge (since all events pointing to P2 are reassigned as part of the merge).
 
 ### S11.3: Org chain merge
 
-- Same pattern and same limitation as places.
+- Same pattern as places. `MergeOrganizations` uses `resolveCanonicalOrg` to follow chains.
 
 ### S11.4: Merge into already-merged event
 
 - **Given:** Event B is already merged into C (B has `merged_into_id = C`, `deleted_at` set).
 - **Action:** Admin attempts to merge A into B via review queue.
-- **Expected:** `AdminService.MergeEvents` calls `GetByULID` for B. If the query filters by `deleted_at IS NULL`, it returns ErrNotFound. If not, B is found but is already soft-deleted — the merge proceeds, creating a chain.
-- **Key detail:** Current `MergeEvents` does NOT check if the primary event is already merged/deleted.
+- **Expected:** `AdminService.MergeEventsWithReview` checks `LifecycleState` of both events. If B has `LifecycleState == "deleted"`, the merge is rejected with `ErrEventDeleted`. If the lifecycle state check passes but B has `merged_into_id` set, `repo.MergeEvents` resolves the chain via `ResolveCanonicalEventULID` — A would be merged into C (the canonical target), not B.
 
 ---
 
@@ -671,10 +678,15 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
   - Resubmission's `UpdateReviewQueueEntry` succeeds but the event was already published.
   - Resubmission's `ApproveReview` (auto-approve case) conflicts with admin's `ApproveReview`.
 
-### S13.3: Race in place auto-merge
+### S13.3: Race in place auto-merge — handled with row locking
 
 - **Given:** Two events submitted simultaneously, both creating a new place "The Rex Jazz Bar" that fuzzy-matches an existing "Rex Jazz Bar".
-- **Expected:** Both may call `MergePlaces` targeting the same primary. The first succeeds, the second may fail if the duplicate place is already merged (soft-deleted).
+- **Expected:** Both may call `MergePlaces` targeting the same duplicate. `MergePlaces` uses `SELECT ... FOR UPDATE SKIP LOCKED` on the duplicate row:
+  - The first goroutine acquires the lock and performs the merge normally.
+  - The second goroutine's `SELECT FOR UPDATE SKIP LOCKED` returns no rows (the row is locked). It then calls `resolveCanonicalPlace` to follow the merge chain, finding where the duplicate ended up.
+  - The second goroutine returns `MergeResult{CanonicalID: <resolved>, AlreadyMerged: true}` — no error, no duplicate merge.
+  - Ingestion code uses `mergeResult.CanonicalID` as the venue ID regardless of whether it performed the merge or found an already-merged result.
+- **Key detail:** The same pattern applies to `MergeOrganizations`. This eliminates race-condition failures during concurrent ingestion.
 
 ### S13.4: Idempotency key prevents double-creation
 
@@ -744,52 +756,74 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 - **Given:** Event submitted without `Source` field.
 - **Expected:** `sourceID` is empty. `recordSourceForExisting` guard `input.Source == nil || input.Source.URL == ""` returns early. No source recorded.
 
-### S15.5: Admin merge (MergeEvents) — no auto-merge of source data
+### S15.5: Admin merge (MergeEvents) — enriches primary via AutoMergeFields
 
-- **Given:** Admin merges event E_dup into E_primary.
-- **Expected:** `AdminService.MergeEvents` does NOT call `AutoMergeFields`. The `Note: Future enhancement: merge data from duplicate into primary (enrichment)` comment at `admin_service.go:207-208` confirms this is not implemented.
-- **Impact:** Data from E_dup is lost (only the tombstone preserves it). The primary event is not enriched.
+- **Given:** Admin merges event E_dup (has description, image) into E_primary (missing description).
+- **Expected:** `AdminService.MergeEvents` (and `MergeEventsWithReview`) calls `AutoMergeFields` with trust levels (0, 0) before soft-deleting the duplicate. The `EventInputFromEvent` helper converts the duplicate Event into an EventInput suitable for the merge function. With equal trust (0, 0), only gap-filling occurs: the duplicate's description fills the primary's empty description field, but no existing fields on the primary are overwritten. Changes are persisted via `UpdateEvent` within the same transaction.
+- **Key detail:** The primary event is enriched before the duplicate is lost. The tombstone preserves the duplicate's full data as a secondary reference.
 
 ---
 
-## 16. Known Gaps & Future Work
+## 16. Resolved Gaps
 
-### G1: Admin merge doesn't enrich primary event
+All gaps identified during the initial design review have been resolved. This section documents what each gap was and how it was fixed.
 
-`AdminService.MergeEvents` soft-deletes the duplicate and creates a tombstone, but does NOT merge the duplicate's field data into the primary. The `_ = primary` at `admin_service.go:208` confirms the primary event data is intentionally unused.
+### G1: Admin merge doesn't enrich primary event [RESOLVED]
 
-### G2: No transitive chain resolution
+**Was:** `AdminService.MergeEvents` soft-deleted the duplicate but did not merge its field data into the primary.
 
-`merged_into_id` is a single pointer. No recursive resolution. Chain merges (A→B→C) leave stale references.
+**Fix:** Both `MergeEvents` and `MergeEventsWithReview` now call `AutoMergeFields` with trust (0, 0) before soft-deleting the duplicate. Uses `EventInputFromEvent` helper to convert the duplicate to an EventInput. Gap-fills empty fields on the primary without overwriting existing data. Changes persisted via `UpdateEvent` within the transaction. (srv-o7jg6)
 
-### G3: MergeReview checks primary event with `deleted_at IS NULL`
+### G2: No transitive chain resolution [RESOLVED]
 
-`MergeReview` at `events_repository.go:1991` looks up the primary event with `WHERE ulid = $1 AND deleted_at IS NULL`. If the primary was already soft-deleted, the merge fails. But `AdminService.MergeEvents` does NOT check this — it could merge into a deleted event while `MergeReview` would fail.
+**Was:** `merged_into_id` was a single pointer with no recursive resolution. Chain merges (A->B->C) left stale references.
 
-### G4: FixReview doesn't update occurrence dates
+**Fix:** `ResolveCanonicalEventULID` recursive CTE (max depth 10) added to SQL. `repo.MergeEvents` resolves chains at merge time and calls `UpdateMergedIntoChain` to flatten all pointers to the canonical target. No transitive chains remain after merge. Places and orgs use iterative `resolveCanonicalPlace`/`resolveCanonicalOrg` helpers (max 10 hops). (srv-tjy06)
 
-The TODO at `admin_review_queue.go:474-481` notes that the fix handler approves the review but doesn't actually update the event's occurrence-level dates.
+### G3: MergeEvents doesn't check for deleted events [RESOLVED]
 
-### G5: No "not_duplicate_of" tracking
+**Was:** `AdminService.MergeEvents` did not check if primary or duplicate was deleted, potentially merging into a deleted event.
 
-When an admin approves a `potential_duplicate` review (marking it as "not a duplicate"), there's no mechanism to prevent the same pair from being re-flagged on future ingestion.
+**Fix:** Both `MergeEvents` and `MergeEventsWithReview` now check `LifecycleState == "deleted"` on both primary and duplicate events before proceeding. Returns `ErrEventDeleted` if either is deleted. The repository's `MergeEvents` also verifies `deleted_at IS NULL` on the resolved canonical primary. (srv-29jsv)
 
-### G6: Place/org auto-merge doesn't fill gaps on primary
+### G4: FixReview doesn't update occurrence dates [RESOLVED]
 
-`MergePlaces` at `events_repository.go:1284-1318` reassigns events and soft-deletes the duplicate, but does NOT copy any fields from the duplicate to fill gaps on the primary place record.
+**Was:** The fix handler published the event and approved the review but did not actually update occurrence-level dates.
 
-### G7: Source external ID check returns without merging
+**Fix:** Added `UpdateOccurrenceDates` SQL query and `FixEventOccurrenceDates` service method in AdminService. The fix handler now calls `FixEventOccurrenceDates` before `PublishEvent` to persist date corrections. Supports partial corrections (providing only startDate or only endDate preserves the other). Validates that end is not before start. (srv-hqh8j)
 
-The `FindBySourceExternalID` check returns the existing event immediately without running `AutoMergeFields`. If the source resubmits with updated data, the improvements are silently lost.
+### G5: No "not_duplicate_of" tracking [RESOLVED]
 
-### G8: Event merge and review status update not atomic
+**Was:** When an admin approved/rejected a `potential_duplicate` review, there was no mechanism to prevent the same pair from being re-flagged on future ingestion.
 
-In `MergeReview` handler, `AdminService.MergeEvents` and `repo.MergeReview` are separate operations. If the first succeeds but the second fails, the events are merged but the review entry is stuck in "pending".
+**Fix:** New `event_not_duplicates` table (migration 000027) with composite PK `(event_id_a, event_id_b)` using canonical ULID ordering. `InsertNotDuplicate`/`IsNotDuplicate` queries added. The reject handler calls `recordNotDuplicatesFromWarnings` to extract `potential_duplicate` warning matches and record each pair. Near-duplicate detection in `ingest.go` filters out known not-duplicate pairs via `IsNotDuplicate` before creating warnings. (srv-jjxlc)
 
-### G9: Concurrent place auto-merge races
+### G6: Place/org auto-merge doesn't fill gaps on primary [RESOLVED]
 
-Two simultaneous ingestions creating the same fuzzy-matching place could both attempt `MergePlaces` with the same primary. The second may fail if the duplicate place is already soft-deleted.
+**Was:** `MergePlaces` and `MergeOrganizations` reassigned events and soft-deleted the duplicate but did not copy fields to fill gaps on the primary.
 
-### G10: DedupHash depends on venue key format
+**Fix:** `MergePlaces` now fills 14 fields (description, street_address, address_locality, address_region, postal_code, address_country, latitude, longitude, telephone, email, url, maximum_attendee_capacity, venue_type, accessibility_features) via SQL `UPDATE ... FROM` join. `MergeOrganizations` fills 13 fields (legal_name, alternate_name, description, email, telephone, url, street_address, address_locality, address_region, postal_code, address_country, organization_type, founding_date). Gap-fill only (COALESCE with NULLIF), runs before event reassignment. (srv-60m7b)
 
-`primaryVenueKey` returns either `Location.ID` or `Location.Name`. Two submissions for the same event could produce different hashes if one uses place ID and the other uses place name.
+### G7: Source external ID check returns without merging [RESOLVED]
+
+**Was:** `FindBySourceExternalID` returned the existing event immediately without running `AutoMergeFields`, silently losing updated data from resubmissions.
+
+**Fix:** Source external ID match now looks up actual trust levels from both the existing event's source and the submitting source, calls `AutoMergeFields` with those real trust levels, persists changes via `UpdateEvent`, and records the source contribution. Returns `IsMerged: true` if fields changed. (srv-chwid)
+
+### G8: Event merge and review status update not atomic [RESOLVED]
+
+**Was:** `AdminService.MergeEvents` and `repo.MergeReview` were separate operations. If the first succeeded but the second failed, events were merged but the review entry was stuck in "pending".
+
+**Fix:** `MergeEventsWithReview` wraps event merge, enrichment, tombstone creation, AND review status update in a single database transaction. The handler calls this single atomic method instead of two separate calls. Either everything succeeds or everything rolls back. (srv-byabo)
+
+### G9: Concurrent place auto-merge races [RESOLVED]
+
+**Was:** Two simultaneous ingestions creating the same fuzzy-matching place could both attempt `MergePlaces`, with the second failing if the duplicate was already soft-deleted.
+
+**Fix:** `MergePlaces` and `MergeOrganizations` now use `SELECT ... FOR UPDATE SKIP LOCKED` on the duplicate row. If another transaction has the lock, the query returns no rows (instead of blocking), and the code follows the merge chain via `resolveCanonicalPlace`/`resolveCanonicalOrg` to find the canonical entity. Returns `MergeResult` with `CanonicalID` and `AlreadyMerged` flag. Pre-checks `merged_into_id` and resolves chains on the primary as well. Ingestion code uses `mergeResult.CanonicalID`. (srv-e8yd9)
+
+### G10: DedupHash depends on venue key format [RESOLVED]
+
+**Was:** `primaryVenueKey` returned either `Location.ID` or `Location.Name` without normalization, so whitespace or casing differences could produce different hashes for the same venue.
+
+**Fix:** `NormalizeVenueKey()` function in `dedup.go` canonicalizes venue keys: uses place ID if available (trimmed), otherwise normalizes name (lowercase, trim, collapse internal whitespace). `BuildDedupHash` also collapses whitespace in the name field. This ensures that `"  The  Rex  "` and `"the rex"` produce the same hash when no ID is available. Note: a submission with a place ID and one with only a name will still produce different hashes, which is inherent to having two different key types. (srv-l6mrz)
