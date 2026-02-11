@@ -62,7 +62,7 @@ func TestOrganizationsHandlerListSuccess(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, res.Code)
 
-	var payload organizationListResponse
+	var payload listResponse
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
 	items, ok := payload.Items.([]any)
 	require.True(t, ok, "Items should be a slice")

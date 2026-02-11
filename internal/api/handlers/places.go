@@ -9,6 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
 
 type PlacesHandler struct {
@@ -19,11 +20,6 @@ type PlacesHandler struct {
 
 func NewPlacesHandler(service *places.Service, env string, baseURL string) *PlacesHandler {
 	return &PlacesHandler{Service: service, Env: env, BaseURL: baseURL}
-}
-
-type placeListResponse struct {
-	Items      any    `json:"items"` // Accepts any slice type for JSON encoding
-	NextCursor string `json:"next_cursor"`
 }
 
 func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -44,46 +40,20 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]map[string]any, 0, len(result.Places))
+	contextValue := loadDefaultContext()
+	items := make([]*schema.Place, 0, len(result.Places))
 	for _, place := range result.Places {
-		item := BuildBaseListItem("Place", place.Name, place.ULID, "places", h.BaseURL)
-
-		// Add address (required per Interop Profile §3.1 - must have address OR geo)
-		if place.StreetAddress != "" || place.City != "" || place.Region != "" || place.PostalCode != "" || place.Country != "" {
-			address := map[string]any{
-				"@type": "PostalAddress",
-			}
-			if place.StreetAddress != "" {
-				address["streetAddress"] = place.StreetAddress
-			}
-			if place.City != "" {
-				address["addressLocality"] = place.City
-			}
-			if place.Region != "" {
-				address["addressRegion"] = place.Region
-			}
-			if place.PostalCode != "" {
-				address["postalCode"] = place.PostalCode
-			}
-			if place.Country != "" {
-				address["addressCountry"] = place.Country
-			}
-			item["address"] = address
-		}
-
-		// Add geo coordinates
+		item := schema.NewPlace(place.Name)
+		item.Context = contextValue
+		item.ID = schema.BuildPlaceURI(h.BaseURL, place.ULID)
+		item.Address = schema.NewPostalAddress(place.StreetAddress, place.City, place.Region, place.PostalCode, place.Country)
 		if place.Latitude != nil && place.Longitude != nil {
-			item["geo"] = map[string]any{
-				"@type":     "GeoCoordinates",
-				"latitude":  *place.Latitude,
-				"longitude": *place.Longitude,
-			}
+			item.Geo = schema.NewGeoCoordinates(*place.Latitude, *place.Longitude)
 		}
-
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, placeListResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
 }
 
 func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -133,63 +103,20 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
-	payload := map[string]any{
-		"@context": contextValue,
-		"@type":    "Place",
-		"name":     item.Name,
-	}
-
-	// Add @id (required per Interop Profile §3.1)
-	if uri, err := ids.BuildCanonicalURI(h.BaseURL, "places", item.ULID); err == nil {
-		payload["@id"] = uri
-	}
-
-	// Add address (required per Interop Profile §3.1 - must have address OR geo)
-	if item.StreetAddress != "" || item.City != "" || item.Region != "" || item.PostalCode != "" || item.Country != "" {
-		address := map[string]any{
-			"@type": "PostalAddress",
-		}
-		if item.StreetAddress != "" {
-			address["streetAddress"] = item.StreetAddress
-		}
-		if item.City != "" {
-			address["addressLocality"] = item.City
-		}
-		if item.Region != "" {
-			address["addressRegion"] = item.Region
-		}
-		if item.PostalCode != "" {
-			address["postalCode"] = item.PostalCode
-		}
-		if item.Country != "" {
-			address["addressCountry"] = item.Country
-		}
-		payload["address"] = address
-	}
-
-	// Add geo coordinates
+	place := schema.NewPlace(item.Name)
+	place.Context = loadDefaultContext()
+	place.ID = schema.BuildPlaceURI(h.BaseURL, item.ULID)
+	place.Description = item.Description
+	place.Address = schema.NewPostalAddress(item.StreetAddress, item.City, item.Region, item.PostalCode, item.Country)
 	if item.Latitude != nil && item.Longitude != nil {
-		payload["geo"] = map[string]any{
-			"@type":     "GeoCoordinates",
-			"latitude":  *item.Latitude,
-			"longitude": *item.Longitude,
-		}
+		place.Geo = schema.NewGeoCoordinates(*item.Latitude, *item.Longitude)
 	}
-
-	// Add optional fields
-	if item.Telephone != "" {
-		payload["telephone"] = item.Telephone
-	}
-	if item.Email != "" {
-		payload["email"] = item.Email
-	}
-	if item.URL != "" {
-		payload["url"] = item.URL
-	}
+	place.Telephone = item.Telephone
+	place.Email = item.Email
+	place.URL = item.URL
 	if item.MaximumAttendeeCapacity != nil {
-		payload["maximumAttendeeCapacity"] = *item.MaximumAttendeeCapacity
+		place.MaximumAttendeeCapacity = *item.MaximumAttendeeCapacity
 	}
 
-	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, place, contentTypeFromRequest(r))
 }

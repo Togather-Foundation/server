@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
 	"github.com/Togather-Foundation/server/internal/jobs"
+	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -64,37 +65,23 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]map[string]any, 0, len(result.Events))
+	contextValue := loadDefaultContext()
+	items := make([]*schema.EventSummary, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := BuildBaseListItem("Event", event.Name, event.ULID, "events", h.BaseURL)
+		item := schema.NewEventSummary(event.Name)
+		item.Context = contextValue
+		item.ID = schema.BuildEventURI(h.BaseURL, event.ULID)
 
 		// Add startDate (required per Interop Profile §3.1)
 		if len(event.Occurrences) > 0 {
-			item["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+			item.StartDate = event.Occurrences[0].StartTime.Format(time.RFC3339)
+			if event.Occurrences[0].EndTime != nil {
+				item.EndDate = event.Occurrences[0].EndTime.Format(time.RFC3339)
+			}
 		}
 
 		// Add location (required per Interop Profile §3.1)
-		// Use URI reference for Place if venue is available
-		if len(event.Occurrences) > 0 && event.Occurrences[0].VenueID != nil {
-			if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *event.Occurrences[0].VenueID); err == nil {
-				item["location"] = placeURI
-			}
-		} else if event.PrimaryVenueID != nil {
-			if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *event.PrimaryVenueID); err == nil {
-				item["location"] = placeURI
-			}
-		} else if len(event.Occurrences) > 0 && event.Occurrences[0].VirtualURL != nil && *event.Occurrences[0].VirtualURL != "" {
-			// Virtual event
-			item["location"] = map[string]any{
-				"@type": "VirtualLocation",
-				"url":   *event.Occurrences[0].VirtualURL,
-			}
-		} else if event.VirtualURL != "" {
-			item["location"] = map[string]any{
-				"@type": "VirtualLocation",
-				"url":   event.VirtualURL,
-			}
-		}
+		item.Location = buildEventLocation(h.BaseURL, &event)
 
 		items = append(items, item)
 	}
@@ -154,20 +141,23 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusAccepted
 	}
 
-	location := eventLocationPayload(input)
-	payload := map[string]any{
-		"@context": loadDefaultContext(),
-		"@type":    "Event",
-		"@id":      eventURI(h.BaseURL, result),
-		"name":     input.Name,
-	}
-	if location != nil {
-		payload["location"] = location
-	}
+	location := createEventLocation(input)
+	event := schema.NewEvent(input.Name)
+	event.Context = loadDefaultContext()
+	event.ID = eventURI(h.BaseURL, result)
+	event.Location = location
 
 	// Include lifecycle_state and warnings for events needing review
 	if result != nil && result.NeedsReview {
-		payload["lifecycle_state"] = "pending_review"
+		type createEventResponse struct {
+			schema.Event
+			LifecycleState string           `json:"lifecycle_state,omitempty"`
+			Warnings       []map[string]any `json:"warnings,omitempty"`
+		}
+		resp := createEventResponse{
+			Event:          *event,
+			LifecycleState: "pending_review",
+		}
 		if len(result.Warnings) > 0 {
 			warnings := make([]map[string]any, len(result.Warnings))
 			for i, w := range result.Warnings {
@@ -177,11 +167,13 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 					"message": w.Message,
 				}
 			}
-			payload["warnings"] = warnings
+			resp.Warnings = warnings
 		}
+		writeJSON(w, status, resp, contentTypeFromRequest(r))
+		return
 	}
 
-	writeJSON(w, status, payload, contentTypeFromRequest(r))
+	writeJSON(w, status, event, contentTypeFromRequest(r))
 }
 
 func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -232,52 +224,71 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
-	payload := map[string]any{
-		"@context": contextValue,
-		"@type":    "Event",
-		"@id":      buildEventURI(h.BaseURL, item.ULID),
-		"name":     item.Name,
+	// eventDetailResponse wraps schema.Event with provenance fields that don't
+	// belong in the schema.org type.
+	type eventDetailResponse struct {
+		schema.Event
+		Sources    any `json:"sources,omitempty"`
+		Provenance any `json:"_provenance,omitempty"`
 	}
 
-	// Add startDate (required per Interop Profile §3.1)
+	contextValue := loadDefaultContext()
+	event := schema.NewEvent(item.Name)
+	event.Context = contextValue
+	event.ID = schema.BuildEventURI(h.BaseURL, item.ULID)
+	event.Description = item.Description
+	event.Image = item.ImageURL
+	event.URL = item.PublicURL
+	event.Keywords = item.Keywords
+	event.InLanguage = item.InLanguage
+	event.IsAccessibleForFree = item.IsAccessibleForFree
+	event.EventStatus = item.EventStatus
+	event.EventAttendanceMode = item.AttendanceMode
+
+	// Add startDate/endDate/doorTime from first occurrence (required per Interop Profile §3.1)
 	if len(item.Occurrences) > 0 {
-		payload["startDate"] = item.Occurrences[0].StartTime.Format(time.RFC3339)
+		occ := item.Occurrences[0]
+		event.StartDate = occ.StartTime.Format(time.RFC3339)
+		if occ.EndTime != nil {
+			event.EndDate = occ.EndTime.Format(time.RFC3339)
+		}
+		if occ.DoorTime != nil {
+			event.DoorTime = occ.DoorTime.Format(time.RFC3339)
+		}
+
+		// Build offers from first occurrence
+		if occ.TicketURL != "" || occ.PriceMin != nil {
+			offer := schema.NewOffer()
+			offer.URL = occ.TicketURL
+			offer.Price = occ.PriceMin
+			offer.PriceCurrency = occ.PriceCurrency
+			offer.Availability = occ.Availability
+			event.Offers = []schema.Offer{*offer}
+		}
 	}
 
 	// Add location (required per Interop Profile §3.1)
-	if len(item.Occurrences) > 0 && item.Occurrences[0].VenueID != nil {
-		if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *item.Occurrences[0].VenueID); err == nil {
-			payload["location"] = placeURI
-		}
-	} else if item.PrimaryVenueID != nil {
-		if placeURI, err := ids.BuildCanonicalURI(h.BaseURL, "places", *item.PrimaryVenueID); err == nil {
-			payload["location"] = placeURI
-		}
-	} else if len(item.Occurrences) > 0 && item.Occurrences[0].VirtualURL != nil && *item.Occurrences[0].VirtualURL != "" {
-		payload["location"] = map[string]any{
-			"@type": "VirtualLocation",
-			"url":   *item.Occurrences[0].VirtualURL,
-		}
-	} else if item.VirtualURL != "" {
-		payload["location"] = map[string]any{
-			"@type": "VirtualLocation",
-			"url":   item.VirtualURL,
-		}
+	event.Location = buildEventLocation(h.BaseURL, item)
+
+	// Add organizer as URI reference if present
+	if item.OrganizerID != nil && *item.OrganizerID != "" {
+		event.Organizer = schema.BuildOrganizationURI(h.BaseURL, *item.OrganizerID)
 	}
 
 	// Add license information per FR-024
 	if item.LicenseURL != "" {
-		payload["license"] = item.LicenseURL
+		event.License = item.LicenseURL
 	} else {
 		// Default to CC0 if not specified
-		payload["license"] = "https://creativecommons.org/publicdomain/zero/1.0/"
+		event.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 	}
 
 	// Add federation URI as sameAs if present (federated events)
 	if item.FederationURI != nil && *item.FederationURI != "" {
-		payload["sameAs"] = *item.FederationURI
+		event.SameAs = []string{*item.FederationURI}
 	}
+
+	resp := eventDetailResponse{Event: *event}
 
 	// Check if provenance is requested (FR-029, US5)
 	includeProvenance := strings.EqualFold(r.URL.Query().Get("include_provenance"), "true")
@@ -287,7 +298,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		// Get source attribution
 		sources, err := h.ProvenanceService.GetEventSourceAttribution(r.Context(), item.ID)
 		if err == nil && len(sources) > 0 {
-			payload["sources"] = buildSourcesPayload(sources)
+			resp.Sources = buildSourcesPayload(sources)
 		}
 
 		// Get field-level provenance if requested
@@ -299,11 +310,11 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err == nil && len(fieldProvenance) > 0 {
-			payload["_provenance"] = buildFieldProvenancePayload(fieldProvenance)
+			resp.Provenance = buildFieldProvenancePayload(fieldProvenance)
 		}
 	}
 
-	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any, contentType string) {
@@ -348,26 +359,45 @@ func eventURI(baseURL string, result *events.IngestResult) string {
 	if result == nil || result.Event == nil {
 		return ""
 	}
-	uri, err := ids.BuildCanonicalURI(baseURL, "events", result.Event.ULID)
-	if err != nil {
-		return ""
-	}
-	return uri
+	return schema.BuildEventURI(baseURL, result.Event.ULID)
 }
 
-func eventLocationPayload(input events.EventInput) map[string]any {
-	if input.Location != nil {
-		return map[string]any{
-			"@type": "Place",
-			"name":  input.Location.Name,
+// buildEventLocation determines the location value for an event.
+// Returns a Place URI string, a VirtualLocation struct, or nil.
+func buildEventLocation(baseURL string, event *events.Event) any {
+	// Prefer occurrence-level venue
+	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueID != nil {
+		if uri := schema.BuildPlaceURI(baseURL, *event.Occurrences[0].VenueID); uri != "" {
+			return uri
 		}
 	}
-	if input.VirtualLocation != nil {
-		return map[string]any{
-			"@type": "VirtualLocation",
-			"url":   input.VirtualLocation.URL,
-			"name":  input.VirtualLocation.Name,
+	// Fall back to primary venue
+	if event.PrimaryVenueID != nil {
+		if uri := schema.BuildPlaceURI(baseURL, *event.PrimaryVenueID); uri != "" {
+			return uri
 		}
+	}
+	// Occurrence-level virtual URL
+	if len(event.Occurrences) > 0 && event.Occurrences[0].VirtualURL != nil && *event.Occurrences[0].VirtualURL != "" {
+		return schema.NewVirtualLocation(*event.Occurrences[0].VirtualURL)
+	}
+	// Event-level virtual URL
+	if event.VirtualURL != "" {
+		return schema.NewVirtualLocation(event.VirtualURL)
+	}
+	return nil
+}
+
+// createEventLocation builds a location value for event creation responses.
+func createEventLocation(input events.EventInput) any {
+	if input.Location != nil {
+		p := schema.NewPlace(input.Location.Name)
+		return p
+	}
+	if input.VirtualLocation != nil {
+		vl := schema.NewVirtualLocation(input.VirtualLocation.URL)
+		vl.Name = input.VirtualLocation.Name
+		return vl
 	}
 	return nil
 }

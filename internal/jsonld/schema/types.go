@@ -38,6 +38,7 @@ func NewEvent(name string) *Event {
 
 // EventSummary is a compact event representation for lists and sub-events.
 type EventSummary struct {
+	Context   any    `json:"@context,omitempty"`
 	Type      string `json:"@type"`
 	ID        string `json:"@id,omitempty"`
 	Name      string `json:"name"`

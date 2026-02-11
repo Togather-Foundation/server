@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -39,6 +40,7 @@ type ValidationResult struct {
 }
 
 type EventInput struct {
+	Context             json.RawMessage       `json:"@context,omitempty"` // Accepted but ignored (schema.org compatibility)
 	ID                  string                `json:"@id,omitempty"`
 	Type                string                `json:"@type,omitempty"`
 	Name                string                `json:"name,omitempty"`
@@ -46,6 +48,7 @@ type EventInput struct {
 	StartDate           string                `json:"startDate,omitempty"`
 	EndDate             string                `json:"endDate,omitempty"`
 	DoorTime            string                `json:"doorTime,omitempty"`
+	EventDomain         string                `json:"eventDomain,omitempty"`
 	Location            *PlaceInput           `json:"location,omitempty"`
 	VirtualLocation     *VirtualLocationInput `json:"virtualLocation,omitempty"`
 	Organizer           *OrganizationInput    `json:"organizer,omitempty"`
@@ -80,9 +83,11 @@ type VirtualLocationInput struct {
 }
 
 type OrganizationInput struct {
-	ID   string `json:"@id,omitempty"`
-	Name string `json:"name,omitempty"`
-	URL  string `json:"url,omitempty"`
+	ID        string `json:"@id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Telephone string `json:"telephone,omitempty"`
 }
 
 type OfferInput struct {

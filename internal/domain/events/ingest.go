@@ -244,12 +244,18 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	if needsReview {
 		lifecycleState = "pending_review"
 	}
+	// Determine event domain from input (set during normalization from @type)
+	// or fall back to default "arts"
+	eventDomain := validated.EventDomain
+	if eventDomain == "" {
+		eventDomain = "arts"
+	}
 	params := EventCreateParams{
 		ULID:                ulidValue,
 		Name:                validated.Name,
 		Description:         validated.Description,
 		LifecycleState:      lifecycleState,
-		EventDomain:         "arts",
+		EventDomain:         eventDomain,
 		OrganizerID:         nil,
 		PrimaryVenueID:      nil,
 		VirtualURL:          virtualURL(validated),

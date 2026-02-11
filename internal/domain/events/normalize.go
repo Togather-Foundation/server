@@ -52,6 +52,28 @@ func normalizeURL(raw string) string {
 	return trimmed
 }
 
+// eventSubtypeDomains maps schema.org Event subtypes to SEL event_domain values.
+// Only subtypes that map to recognized domains are included.
+var eventSubtypeDomains = map[string]string{
+	"MusicEvent":      "music",
+	"DanceEvent":      "arts",
+	"Festival":        "arts",
+	"TheaterEvent":    "arts",
+	"ScreeningEvent":  "arts",
+	"LiteraryEvent":   "arts",
+	"EducationEvent":  "education",
+	"ExhibitionEvent": "arts",
+	"FoodEvent":       "community",
+	"SportsEvent":     "sports",
+	"SaleEvent":       "community",
+	"SocialEvent":     "community",
+	"ComedyEvent":     "arts",
+	"ChildrensEvent":  "community",
+	"BusinessEvent":   "general",
+	"VisualArtsEvent": "arts",
+	// "Event" is generic — no domain mapping
+}
+
 // NormalizeEventInput trims and normalizes values for consistent storage and hashing.
 // Also auto-corrects common data quality issues like timezone errors and malformed URLs.
 func NormalizeEventInput(input EventInput) EventInput {
@@ -63,6 +85,13 @@ func NormalizeEventInput(input EventInput) EventInput {
 	input.Image = normalizeURL(input.Image)
 	input.URL = normalizeURL(input.URL)
 	input.License = strings.TrimSpace(input.License)
+
+	// Map schema.org Event subtypes to event_domain if not already set
+	if input.EventDomain == "" && input.Type != "" {
+		if domain, ok := eventSubtypeDomains[input.Type]; ok {
+			input.EventDomain = domain
+		}
+	}
 
 	// Auto-correct timezone errors where endDate appears before startDate
 	// This typically happens with midnight-spanning events that were incorrectly
@@ -117,6 +146,8 @@ func normalizeOrganizationInput(org OrganizationInput) *OrganizationInput {
 	org.ID = strings.TrimSpace(org.ID)
 	org.Name = strings.TrimSpace(org.Name)
 	org.URL = normalizeURL(org.URL)
+	org.Email = strings.TrimSpace(org.Email)
+	org.Telephone = strings.TrimSpace(org.Telephone)
 	return &org
 }
 
