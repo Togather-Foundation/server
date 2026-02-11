@@ -29,6 +29,10 @@ func TestEventFarFutureDateAcceptedWithFlagging(t *testing.T) {
 		},
 		"description": "An event very far in the future",
 		"image":       "https://example.com/image.jpg",
+		"source": map[string]any{
+			"url":     "https://example.com/events/far-future",
+			"eventId": "evt-far-future",
+		},
 	}
 
 	body, err := json.Marshal(payload)
@@ -44,8 +48,8 @@ func TestEventFarFutureDateAcceptedWithFlagging(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	// Should accept (201) but flag for review
-	require.Equal(t, http.StatusCreated, resp.StatusCode, "far future events should be accepted")
+	// Should accept (202) and flag for review due to too_far_future warning
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, "far future events should be accepted for review")
 
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
@@ -54,13 +58,13 @@ func TestEventFarFutureDateAcceptedWithFlagging(t *testing.T) {
 	eventID := eventIDFromPayload(created)
 	require.NotEmpty(t, eventID, "event should have an ID")
 
-	// Verify event is flagged for review (draft state means needs review)
-	// Query the database to verify lifecycle state is draft
+	// Verify event is flagged for review (pending_review state due to too_far_future warning)
+	// Query the database to verify lifecycle state is pending_review
 	var lifecycleState string
 	err = env.Pool.QueryRow(env.Context,
 		"SELECT lifecycle_state FROM events WHERE ulid = $1", eventID).Scan(&lifecycleState)
 	require.NoError(t, err)
-	require.Equal(t, "draft", lifecycleState, "far future events should be flagged as draft for review")
+	require.Equal(t, "pending_review", lifecycleState, "far future events should be flagged as pending_review")
 }
 
 // TestEventInvalidExternalLinkAcceptedWithWarning tests T118b: Invalid/expired external links

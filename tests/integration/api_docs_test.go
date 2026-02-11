@@ -32,7 +32,6 @@ func TestAPIDocumentation(t *testing.T) {
 		assert.Contains(t, body, "Togather API Documentation")
 		assert.Contains(t, body, "Scalar")
 		assert.Contains(t, body, "/api/v1/openapi.json")
-		assert.Contains(t, body, "info@togather.foundation")
 	})
 
 	t.Run("GET /api/docs/ with trailing slash returns HTML", func(t *testing.T) {

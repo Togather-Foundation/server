@@ -118,7 +118,14 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		_ = resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
+
+		// Verify event was created successfully
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+			var errorBody map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&errorBody)
+			t.Fatalf("Failed to create event %v: status %d, body: %v", event["name"], resp.StatusCode, errorBody)
+		}
 	}
 
 	// Fetch pending events as admin
@@ -139,7 +146,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 	items, ok := result["items"].([]any)
 	require.True(t, ok, "expected items array")
 
-	// All three events should be in pending state (draft lifecycle_state)
+	// All three events should be in pending state (pending_review lifecycle_state)
 	assert.GreaterOrEqual(t, len(items), 3, "expected at least 3 pending events")
 }
 
@@ -369,7 +376,14 @@ func TestAdminPendingListSortOrder(t *testing.T) {
 
 		resp, err := env.Server.Client().Do(req)
 		require.NoError(t, err)
-		_ = resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
+
+		// Verify event was created successfully
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+			var errorBody map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&errorBody)
+			t.Fatalf("Failed to create event %s: status %d, body: %v", name, resp.StatusCode, errorBody)
+		}
 
 		// Small delay to ensure different created_at timestamps
 		time.Sleep(10 * time.Millisecond)

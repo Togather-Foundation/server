@@ -23,8 +23,9 @@ func TestEventSourceAttribution(t *testing.T) {
 
 	// Create event with source information
 	payload := map[string]any{
-		"name":      "Community Art Festival",
-		"startDate": time.Date(2026, 8, 15, 14, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"name":        "Community Art Festival",
+		"description": "Annual celebration of local artists featuring live music, art installations, and interactive workshops for all ages.",
+		"startDate":   time.Date(2026, 8, 15, 14, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "City Hall Plaza",
 			"addressLocality": "Toronto",
