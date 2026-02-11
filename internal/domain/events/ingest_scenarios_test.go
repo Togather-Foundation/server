@@ -137,9 +137,9 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 		// Actually: for source external ID match, both sourceIDs are the same source.
 		// existingTrust comes from GetSourceTrustLevel(existing.ID) which looks up event by ID.
 		// newTrust comes from GetSourceTrustLevelBySourceID(sourceID).
-		// Since both use the same source "source-A", trust is the same (7).
-		// To test overwrite, we need different trust levels. Let's create a second source
-		// that links the existing event with lower trust.
+		// To test overwrite with higher trust, we use SetEventTrust to explicitly set
+		// the existing event's trust to 3 (simulating it was ingested from a low-trust source).
+		// The new submission from source-A has trust 7, so newTrust > existingTrust → overwrite.
 		repo2 := NewMockRepository()
 		existingULID2, _ := ids.NewULID()
 		existingEvent2 := &Event{
@@ -149,13 +149,12 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			Description:    "Old description",
 			LifecycleState: "published",
 		}
-		// Link existing event to source-old with trust 3
-		repo2.AddExistingEvent("source-old", "evt-001-old", existingEvent2)
-		repo2.SetSourceTrust("source-old", 3)
-		// Also link it to source-A for the FindBySourceExternalID lookup
+		// Link existing event to source-A for FindBySourceExternalID lookup
 		repo2.AddExistingEvent("source-A", "evt-001", existingEvent2)
 		repo2.sources["Scraper A|https://example.com"] = "source-A"
 		repo2.SetSourceTrust("source-A", 7) // new source trust is 7
+		// Override the existing event's trust to 3 (as if originally from a lower-trust source)
+		repo2.SetEventTrust("existing-2", 3)
 
 		service := newTestService(repo2)
 
@@ -169,9 +168,9 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 		if !result.IsDuplicate {
 			t.Error("Expected IsDuplicate = true")
 		}
-		// With same source (trust 7 vs 7, from same source-A), description won't overwrite.
-		// GetSourceTrustLevel finds the event via source-old (trust 3) first.
-		// So existingTrust=3, newTrust=7 → overwrite happens.
+		// GetSourceTrustLevel("existing-2") returns 3 (via eventTrustOverride).
+		// GetSourceTrustLevelBySourceID("source-A") returns 7.
+		// existingTrust=3, newTrust=7 → higher trust overwrites description.
 		updated := repo2.events[existingULID2]
 		if updated.Description != "New description" {
 			t.Errorf("Expected description overwrite with higher trust, got %q", updated.Description)
@@ -421,11 +420,11 @@ func TestScenario_S5_ReviewResubmission(t *testing.T) {
 	t.Run("S5.1_pending_resubmission_fully_fixed_creates_new_published", func(t *testing.T) {
 		// Given: Event E1 in review queue as pending, had warning "missing_description".
 		// Action: Resubmit with description and image — no more warnings.
-		// Expected: Since the fully-fixed resubmission has no warnings, needsReview=false,
-		// and the code does NOT check the review queue — it creates a new published event.
-		// NOTE: This is a known code limitation — the auto-approve path in handleReviewResubmission
-		// (len(warnings)==0) is unreachable because needsReview is false when warnings are empty,
-		// so the review queue check is skipped entirely.
+		// Expected: The review queue check now runs unconditionally (not gated by needsReview),
+		// so the auto-approve path in handleReviewResubmission fires:
+		// - ApproveReview is called to mark the review as approved
+		// - The existing event is updated to "published" lifecycle state
+		// - NeedsReview = false, no new event is created
 		repo := NewMockRepository()
 		existingULID, _ := ids.NewULID()
 		existingEvent := &Event{
@@ -480,17 +479,20 @@ func TestScenario_S5_ReviewResubmission(t *testing.T) {
 			t.Fatalf("Ingest() unexpected error = %v", err)
 		}
 
-		// Fully-fixed event creates a new published event (needsReview=false skips review queue check)
+		// Auto-approve path is now reachable: review is approved, event updated to published
 		if result.NeedsReview {
-			t.Error("Expected NeedsReview = false (fully fixed event)")
+			t.Error("Expected NeedsReview = false (auto-approved via S5.1 path)")
 		}
-		// The review queue is NOT consulted because needsReview=false
-		if repo.approveReviewCalled {
-			t.Error("ApproveReview should NOT be called (review queue path not entered)")
+		// ApproveReview IS called because the unconditional review queue check finds the pending review
+		if !repo.approveReviewCalled {
+			t.Error("ApproveReview should be called (S5.1 auto-approve path)")
 		}
-		// A new event is created as published
+		// The existing event should be returned (not a new one created)
 		if result.Event == nil {
-			t.Fatal("Expected a new event to be created")
+			t.Fatal("Expected an event to be returned")
+		}
+		if result.Event.ULID != existingULID {
+			t.Errorf("Expected existing event ULID %s, got %s", existingULID, result.Event.ULID)
 		}
 		if result.Event.LifecycleState != "published" {
 			t.Errorf("Expected published, got %q", result.Event.LifecycleState)

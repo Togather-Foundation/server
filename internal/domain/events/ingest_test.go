@@ -30,13 +30,14 @@ type MockRepository struct {
 	nextReviewID      int
 
 	// Enhanced storage for scenario tests
-	sourceTrustLevels map[string]int                   // sourceID -> trust level
-	notDuplicates     map[string]bool                  // "eventA|eventB" -> true (canonical order)
-	nearDuplicates    []NearDuplicateCandidate         // configurable return for FindNearDuplicates
-	similarPlaces     []SimilarPlaceCandidate          // configurable return for FindSimilarPlaces
-	similarOrgs       []SimilarOrgCandidate            // configurable return for FindSimilarOrganizations
-	reviewEntries     map[string]*ReviewQueueEntry     // lookup key -> entry (for FindReviewByDedup)
-	occurrenceDates   map[string]*occurrenceDateUpdate // eventULID -> updated dates
+	sourceTrustLevels  map[string]int                   // sourceID -> trust level
+	eventTrustOverride map[string]int                   // eventID -> trust level (overrides source-based lookup)
+	notDuplicates      map[string]bool                  // "eventA|eventB" -> true (canonical order)
+	nearDuplicates     []NearDuplicateCandidate         // configurable return for FindNearDuplicates
+	similarPlaces      []SimilarPlaceCandidate          // configurable return for FindSimilarPlaces
+	similarOrgs        []SimilarOrgCandidate            // configurable return for FindSimilarOrganizations
+	reviewEntries      map[string]*ReviewQueueEntry     // lookup key -> entry (for FindReviewByDedup)
+	occurrenceDates    map[string]*occurrenceDateUpdate // eventULID -> updated dates
 
 	// Tracking for assertions
 	approveReviewCalled bool
@@ -79,20 +80,21 @@ type updateEventCall struct {
 
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
-		events:            make(map[string]*Event),
-		idempotencyKeys:   make(map[string]*IdempotencyKey),
-		sources:           make(map[string]string),
-		eventsBySources:   make(map[string]map[string]*Event),
-		eventsByDedupHash: make(map[string]*Event),
-		places:            make(map[string]*PlaceRecord),
-		organizations:     make(map[string]*OrganizationRecord),
-		occurrences:       make(map[string][]OccurrenceCreateParams),
-		reviewQueue:       make(map[int]*ReviewQueueEntry),
-		nextReviewID:      1,
-		sourceTrustLevels: make(map[string]int),
-		notDuplicates:     make(map[string]bool),
-		reviewEntries:     make(map[string]*ReviewQueueEntry),
-		occurrenceDates:   make(map[string]*occurrenceDateUpdate),
+		events:             make(map[string]*Event),
+		idempotencyKeys:    make(map[string]*IdempotencyKey),
+		sources:            make(map[string]string),
+		eventsBySources:    make(map[string]map[string]*Event),
+		eventsByDedupHash:  make(map[string]*Event),
+		places:             make(map[string]*PlaceRecord),
+		organizations:      make(map[string]*OrganizationRecord),
+		occurrences:        make(map[string][]OccurrenceCreateParams),
+		reviewQueue:        make(map[int]*ReviewQueueEntry),
+		nextReviewID:       1,
+		sourceTrustLevels:  make(map[string]int),
+		eventTrustOverride: make(map[string]int),
+		notDuplicates:      make(map[string]bool),
+		reviewEntries:      make(map[string]*ReviewQueueEntry),
+		occurrenceDates:    make(map[string]*occurrenceDateUpdate),
 	}
 }
 
@@ -594,12 +596,21 @@ func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Look up the event to find its source, then look up trust for that source
+	// Check for explicit event trust override first
+	if trust, ok := m.eventTrustOverride[eventID]; ok {
+		return trust, nil
+	}
+
+	// Match real DB behavior: return MAX trust level across all sources linked to this event.
+	// The real SQL query is: SELECT COALESCE(MAX(s.trust_level), 5) FROM sources s JOIN event_sources es ON es.event_id = $1
+	maxTrust := -1
 	for sourceID, events := range m.eventsBySources {
 		for _, evt := range events {
 			if evt.ID == eventID {
 				if trust, ok := m.sourceTrustLevels[sourceID]; ok {
-					return trust, nil
+					if trust > maxTrust {
+						maxTrust = trust
+					}
 				}
 			}
 		}
@@ -611,12 +622,17 @@ func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string
 				for _, srcEvt := range events {
 					if srcEvt.ULID == evt.ULID {
 						if trust, ok := m.sourceTrustLevels[sourceID]; ok {
-							return trust, nil
+							if trust > maxTrust {
+								maxTrust = trust
+							}
 						}
 					}
 				}
 			}
 		}
+	}
+	if maxTrust >= 0 {
+		return maxTrust, nil
 	}
 	return 5, nil // default trust level
 }
@@ -727,6 +743,15 @@ func (m *MockRepository) SetSourceTrust(sourceID string, trust int) {
 	defer m.mu.Unlock()
 
 	m.sourceTrustLevels[sourceID] = trust
+}
+
+// SetEventTrust sets a trust level override for a specific event ID.
+// This takes precedence over the source-based trust lookup in GetSourceTrustLevel.
+func (m *MockRepository) SetEventTrust(eventID string, trust int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.eventTrustOverride[eventID] = trust
 }
 
 // AddReviewEntry adds a review queue entry that FindReviewByDedup can find.

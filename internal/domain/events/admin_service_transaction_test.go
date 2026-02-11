@@ -93,9 +93,10 @@ func TestMergeEvents_AtomicCommit(t *testing.T) {
 		t.Error("Commit was not called after successful transaction")
 	}
 
-	// Verify rollback was not called
-	if repo.rollbackCalled {
-		t.Error("Rollback should not be called after successful transaction")
+	// Note: Rollback IS called via defer (idiomatic Go pattern: defer rollback, no-op after commit).
+	// This is correct behavior — the deferred Rollback is a safety net, not an error indicator.
+	if !repo.rollbackCalled {
+		t.Error("Rollback should be called via defer (idiomatic safety-net pattern)")
 	}
 }
 

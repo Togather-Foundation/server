@@ -23,9 +23,9 @@ func TestAdminMergeDuplicatesSuccess(t *testing.T) {
 
 	agentKey := insertAPIKey(t, env, "test-agent")
 
-	// Create two duplicate events
+	// Create two distinct events that we'll merge (different names to avoid dedup)
 	event1 := map[string]any{
-		"name":        "Jazz Festival",
+		"name":        "Jazz Festival Day 1",
 		"description": "First description",
 		"startDate":   time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"location": map[string]any{
@@ -40,11 +40,11 @@ func TestAdminMergeDuplicatesSuccess(t *testing.T) {
 	}
 
 	event2 := map[string]any{
-		"name":        "Jazz Festival", // Same name
+		"name":        "Jazz Festival Day 2",
 		"description": "Second description with more details",
-		"startDate":   time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339), // Same date
+		"startDate":   time.Date(2026, 10, 2, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"location": map[string]any{
-			"name":            "Central Park", // Same location
+			"name":            "Central Park",
 			"addressLocality": "Toronto",
 			"addressRegion":   "ON",
 		},

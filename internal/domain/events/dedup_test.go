@@ -48,8 +48,8 @@ func TestBuildDedupHash(t *testing.T) {
 				VenueID:   "",
 				StartDate: "",
 			},
-			expected: "565d240f5343e625ae579a4d45a770f1f02c6368b5ed4d06da4fbe6f47c28866",
-			desc:     "should handle empty fields (all pipes delimiter)",
+			expected: "",
+			desc:     "should return empty string for all-empty fields (no useful dedup data)",
 		},
 		{
 			name: "different name same venue and date",
@@ -109,6 +109,15 @@ func TestBuildDedupHash(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := BuildDedupHash(tt.input)
+
+			// For expected empty string (all-empty inputs), verify it returns empty
+			if tt.expected == "" && tt.name == "empty fields" {
+				if result != "" {
+					t.Errorf("BuildDedupHash() = %q, want empty string for all-empty inputs", result)
+				}
+				hashes[tt.name] = result
+				return
+			}
 
 			// Check hash format (SHA256 hex = 64 characters)
 			if len(result) != 64 {
