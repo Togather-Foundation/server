@@ -84,9 +84,31 @@ type EmailConfig struct {
 	TemplatesDir string // Path to email templates directory (default: "web/email/templates")
 }
 
-// ValidationConfig holds validation behavior configuration
+// ValidationConfig holds validation behavior configuration for event ingestion.
+// These settings control quality checks and review queue routing.
 type ValidationConfig struct {
-	RequireImage bool // Require image field (default: false); if true, events without images go to review queue
+	// RequireImage controls whether events must have an image to be published automatically.
+	//
+	// When false (default):
+	//   - Events without images are published immediately
+	//   - No quality warnings are generated for missing images
+	//   - Confidence score is not reduced for missing images
+	//   - Use this for data sources where images are optional or unavailable
+	//
+	// When true:
+	//   - Events without images are sent to the review queue (lifecycle_state='pending_review')
+	//   - A "missing_image" quality warning is added to the review queue entry
+	//   - Confidence score is reduced by 0.2 (from baseline 1.0)
+	//   - Admin must manually approve or reject the event via /admin/review-queue
+	//   - Use this for high-quality feeds where images are expected
+	//
+	// Environment variable: VALIDATION_REQUIRE_IMAGE (default: false)
+	//
+	// Related code:
+	//   - internal/domain/events/ingest.go:needsReview() - Review queue routing logic
+	//   - internal/domain/events/ingest.go:reviewConfidence() - Confidence scoring
+	//   - internal/domain/events/ingest.go:appendQualityWarnings() - Warning generation
+	RequireImage bool
 }
 
 func Load() (Config, error) {

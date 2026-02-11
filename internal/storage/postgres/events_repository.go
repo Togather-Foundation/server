@@ -1202,47 +1202,158 @@ func (r *EventRepository) FindReviewByDedup(ctx context.Context, sourceID *strin
 	return convertFindReviewByDedupRow(row), nil
 }
 
-// convertFindReviewByDedupRow converts SQLc-generated FindReviewByDedupRow to domain ReviewQueueEntry
-func convertFindReviewByDedupRow(row FindReviewByDedupRow) *events.ReviewQueueEntry {
+// reviewQueueRowFields defines the common interface for review queue row types.
+// All SQLc-generated row types (FindReviewByDedupRow, ListReviewQueueRow, GetReviewQueueEntryRow)
+// share this structure, allowing DRY conversion logic.
+type reviewQueueRowFields interface {
+	GetID() int32
+	GetEventID() pgtype.UUID
+	GetEventUlid() string
+	GetOriginalPayload() []byte
+	GetNormalizedPayload() []byte
+	GetWarnings() []byte
+	GetSourceID() pgtype.Text
+	GetSourceExternalID() pgtype.Text
+	GetDedupHash() pgtype.Text
+	GetEventStartTime() pgtype.Timestamptz
+	GetEventEndTime() pgtype.Timestamptz
+	GetStatus() string
+	GetReviewedBy() pgtype.Text
+	GetReviewedAt() pgtype.Timestamptz
+	GetReviewNotes() pgtype.Text
+	GetRejectionReason() pgtype.Text
+	GetCreatedAt() pgtype.Timestamptz
+	GetUpdatedAt() pgtype.Timestamptz
+}
+
+// Implement reviewQueueRowFields for FindReviewByDedupRow
+func (r FindReviewByDedupRow) GetID() int32                          { return r.ID }
+func (r FindReviewByDedupRow) GetEventID() pgtype.UUID               { return r.EventID }
+func (r FindReviewByDedupRow) GetEventUlid() string                  { return r.EventUlid }
+func (r FindReviewByDedupRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
+func (r FindReviewByDedupRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
+func (r FindReviewByDedupRow) GetWarnings() []byte                   { return r.Warnings }
+func (r FindReviewByDedupRow) GetSourceID() pgtype.Text              { return r.SourceID }
+func (r FindReviewByDedupRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
+func (r FindReviewByDedupRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
+func (r FindReviewByDedupRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
+func (r FindReviewByDedupRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r FindReviewByDedupRow) GetStatus() string                     { return r.Status }
+func (r FindReviewByDedupRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
+func (r FindReviewByDedupRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
+func (r FindReviewByDedupRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
+func (r FindReviewByDedupRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
+func (r FindReviewByDedupRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
+func (r FindReviewByDedupRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+
+// Implement reviewQueueRowFields for ListReviewQueueRow
+func (r ListReviewQueueRow) GetID() int32                          { return r.ID }
+func (r ListReviewQueueRow) GetEventID() pgtype.UUID               { return r.EventID }
+func (r ListReviewQueueRow) GetEventUlid() string                  { return r.EventUlid }
+func (r ListReviewQueueRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
+func (r ListReviewQueueRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
+func (r ListReviewQueueRow) GetWarnings() []byte                   { return r.Warnings }
+func (r ListReviewQueueRow) GetSourceID() pgtype.Text              { return r.SourceID }
+func (r ListReviewQueueRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
+func (r ListReviewQueueRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
+func (r ListReviewQueueRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
+func (r ListReviewQueueRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r ListReviewQueueRow) GetStatus() string                     { return r.Status }
+func (r ListReviewQueueRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
+func (r ListReviewQueueRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
+func (r ListReviewQueueRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
+func (r ListReviewQueueRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
+func (r ListReviewQueueRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
+func (r ListReviewQueueRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+
+// Implement reviewQueueRowFields for GetReviewQueueEntryRow
+func (r GetReviewQueueEntryRow) GetID() int32                          { return r.ID }
+func (r GetReviewQueueEntryRow) GetEventID() pgtype.UUID               { return r.EventID }
+func (r GetReviewQueueEntryRow) GetEventUlid() string                  { return r.EventUlid }
+func (r GetReviewQueueEntryRow) GetOriginalPayload() []byte            { return r.OriginalPayload }
+func (r GetReviewQueueEntryRow) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
+func (r GetReviewQueueEntryRow) GetWarnings() []byte                   { return r.Warnings }
+func (r GetReviewQueueEntryRow) GetSourceID() pgtype.Text              { return r.SourceID }
+func (r GetReviewQueueEntryRow) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
+func (r GetReviewQueueEntryRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
+func (r GetReviewQueueEntryRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
+func (r GetReviewQueueEntryRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r GetReviewQueueEntryRow) GetStatus() string                     { return r.Status }
+func (r GetReviewQueueEntryRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
+func (r GetReviewQueueEntryRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
+func (r GetReviewQueueEntryRow) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
+func (r GetReviewQueueEntryRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
+func (r GetReviewQueueEntryRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
+func (r GetReviewQueueEntryRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+
+// Implement reviewQueueRowFields for EventReviewQueue (standard row type without JOIN)
+func (r EventReviewQueue) GetID() int32                          { return r.ID }
+func (r EventReviewQueue) GetEventID() pgtype.UUID               { return r.EventID }
+func (r EventReviewQueue) GetEventUlid() string                  { return "" } // Not available without JOIN
+func (r EventReviewQueue) GetOriginalPayload() []byte            { return r.OriginalPayload }
+func (r EventReviewQueue) GetNormalizedPayload() []byte          { return r.NormalizedPayload }
+func (r EventReviewQueue) GetWarnings() []byte                   { return r.Warnings }
+func (r EventReviewQueue) GetSourceID() pgtype.Text              { return r.SourceID }
+func (r EventReviewQueue) GetSourceExternalID() pgtype.Text      { return r.SourceExternalID }
+func (r EventReviewQueue) GetDedupHash() pgtype.Text             { return r.DedupHash }
+func (r EventReviewQueue) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
+func (r EventReviewQueue) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r EventReviewQueue) GetStatus() string                     { return r.Status }
+func (r EventReviewQueue) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
+func (r EventReviewQueue) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
+func (r EventReviewQueue) GetReviewNotes() pgtype.Text           { return r.ReviewNotes }
+func (r EventReviewQueue) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
+func (r EventReviewQueue) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
+func (r EventReviewQueue) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+
+// convertReviewQueueRowGeneric converts any SQLc review queue row type to domain ReviewQueueEntry.
+// This generic converter eliminates ~120 lines of duplicated conversion logic across four
+// nearly-identical converter functions.
+func convertReviewQueueRowGeneric(row reviewQueueRowFields) *events.ReviewQueueEntry {
 	entry := &events.ReviewQueueEntry{
-		ID:                int(row.ID),
-		EventID:           row.EventID.String(),
-		EventULID:         row.EventUlid,
-		OriginalPayload:   row.OriginalPayload,
-		NormalizedPayload: row.NormalizedPayload,
-		Warnings:          row.Warnings,
-		EventStartTime:    row.EventStartTime.Time,
-		Status:            row.Status,
-		CreatedAt:         row.CreatedAt.Time,
-		UpdatedAt:         row.UpdatedAt.Time,
+		ID:                int(row.GetID()),
+		EventID:           row.GetEventID().String(),
+		EventULID:         row.GetEventUlid(),
+		OriginalPayload:   row.GetOriginalPayload(),
+		NormalizedPayload: row.GetNormalizedPayload(),
+		Warnings:          row.GetWarnings(),
+		EventStartTime:    row.GetEventStartTime().Time,
+		Status:            row.GetStatus(),
+		CreatedAt:         row.GetCreatedAt().Time,
+		UpdatedAt:         row.GetUpdatedAt().Time,
 	}
 
-	if row.SourceID.Valid {
-		entry.SourceID = &row.SourceID.String
+	if sourceID := row.GetSourceID(); sourceID.Valid {
+		entry.SourceID = &sourceID.String
 	}
-	if row.SourceExternalID.Valid {
-		entry.SourceExternalID = &row.SourceExternalID.String
+	if sourceExternalID := row.GetSourceExternalID(); sourceExternalID.Valid {
+		entry.SourceExternalID = &sourceExternalID.String
 	}
-	if row.DedupHash.Valid {
-		entry.DedupHash = &row.DedupHash.String
+	if dedupHash := row.GetDedupHash(); dedupHash.Valid {
+		entry.DedupHash = &dedupHash.String
 	}
-	if row.EventEndTime.Valid {
-		entry.EventEndTime = &row.EventEndTime.Time
+	if eventEndTime := row.GetEventEndTime(); eventEndTime.Valid {
+		entry.EventEndTime = &eventEndTime.Time
 	}
-	if row.ReviewedBy.Valid {
-		entry.ReviewedBy = &row.ReviewedBy.String
+	if reviewedBy := row.GetReviewedBy(); reviewedBy.Valid {
+		entry.ReviewedBy = &reviewedBy.String
 	}
-	if row.ReviewedAt.Valid {
-		entry.ReviewedAt = &row.ReviewedAt.Time
+	if reviewedAt := row.GetReviewedAt(); reviewedAt.Valid {
+		entry.ReviewedAt = &reviewedAt.Time
 	}
-	if row.ReviewNotes.Valid {
-		entry.ReviewNotes = &row.ReviewNotes.String
+	if reviewNotes := row.GetReviewNotes(); reviewNotes.Valid {
+		entry.ReviewNotes = &reviewNotes.String
 	}
-	if row.RejectionReason.Valid {
-		entry.RejectionReason = &row.RejectionReason.String
+	if rejectionReason := row.GetRejectionReason(); rejectionReason.Valid {
+		entry.RejectionReason = &rejectionReason.String
 	}
 
 	return entry
+}
+
+// convertFindReviewByDedupRow converts SQLc-generated FindReviewByDedupRow to domain ReviewQueueEntry
+func convertFindReviewByDedupRow(row FindReviewByDedupRow) *events.ReviewQueueEntry {
+	return convertReviewQueueRowGeneric(row)
 }
 
 // CreateReviewQueueEntry creates a new review queue entry
@@ -1467,133 +1578,18 @@ func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil
 }
 
-// convertReviewQueueRow converts a SQLc EventReviewQueue row to a domain ReviewQueueEntry
 // convertListReviewQueueRow converts SQLc ListReviewQueueRow to events.ReviewQueueEntry
 // Used when the query includes a JOIN with events table to get event_ulid
 func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry {
-	entry := &events.ReviewQueueEntry{
-		ID:                int(row.ID),
-		EventID:           row.EventID.String(),
-		EventULID:         row.EventUlid, // Available from JOIN with events table
-		OriginalPayload:   row.OriginalPayload,
-		NormalizedPayload: row.NormalizedPayload,
-		Warnings:          row.Warnings,
-		EventStartTime:    row.EventStartTime.Time,
-		Status:            row.Status,
-		CreatedAt:         row.CreatedAt.Time,
-		UpdatedAt:         row.UpdatedAt.Time,
-	}
-
-	if row.SourceID.Valid {
-		entry.SourceID = &row.SourceID.String
-	}
-	if row.SourceExternalID.Valid {
-		entry.SourceExternalID = &row.SourceExternalID.String
-	}
-	if row.DedupHash.Valid {
-		entry.DedupHash = &row.DedupHash.String
-	}
-	if row.EventEndTime.Valid {
-		entry.EventEndTime = &row.EventEndTime.Time
-	}
-	if row.ReviewedBy.Valid {
-		entry.ReviewedBy = &row.ReviewedBy.String
-	}
-	if row.ReviewedAt.Valid {
-		entry.ReviewedAt = &row.ReviewedAt.Time
-	}
-	if row.ReviewNotes.Valid {
-		entry.ReviewNotes = &row.ReviewNotes.String
-	}
-	if row.RejectionReason.Valid {
-		entry.RejectionReason = &row.RejectionReason.String
-	}
-
-	return entry
+	return convertReviewQueueRowGeneric(row)
 }
 
 // convertGetReviewQueueEntryRow converts SQLc GetReviewQueueEntryRow to events.ReviewQueueEntry
 // Used when the query includes a JOIN with events table to get event_ulid
 func convertGetReviewQueueEntryRow(row GetReviewQueueEntryRow) *events.ReviewQueueEntry {
-	entry := &events.ReviewQueueEntry{
-		ID:                int(row.ID),
-		EventID:           row.EventID.String(),
-		EventULID:         row.EventUlid, // Available from JOIN with events table
-		OriginalPayload:   row.OriginalPayload,
-		NormalizedPayload: row.NormalizedPayload,
-		Warnings:          row.Warnings,
-		EventStartTime:    row.EventStartTime.Time,
-		Status:            row.Status,
-		CreatedAt:         row.CreatedAt.Time,
-		UpdatedAt:         row.UpdatedAt.Time,
-	}
-
-	if row.SourceID.Valid {
-		entry.SourceID = &row.SourceID.String
-	}
-	if row.SourceExternalID.Valid {
-		entry.SourceExternalID = &row.SourceExternalID.String
-	}
-	if row.DedupHash.Valid {
-		entry.DedupHash = &row.DedupHash.String
-	}
-	if row.EventEndTime.Valid {
-		entry.EventEndTime = &row.EventEndTime.Time
-	}
-	if row.ReviewedBy.Valid {
-		entry.ReviewedBy = &row.ReviewedBy.String
-	}
-	if row.ReviewedAt.Valid {
-		entry.ReviewedAt = &row.ReviewedAt.Time
-	}
-	if row.ReviewNotes.Valid {
-		entry.ReviewNotes = &row.ReviewNotes.String
-	}
-	if row.RejectionReason.Valid {
-		entry.RejectionReason = &row.RejectionReason.String
-	}
-
-	return entry
+	return convertReviewQueueRowGeneric(row)
 }
 
 func convertReviewQueueRow(row EventReviewQueue) *events.ReviewQueueEntry {
-	entry := &events.ReviewQueueEntry{
-		ID:                int(row.ID),
-		EventID:           row.EventID.String(),
-		EventULID:         "", // Not available in standard queries (only in FindReviewByDedup)
-		OriginalPayload:   row.OriginalPayload,
-		NormalizedPayload: row.NormalizedPayload,
-		Warnings:          row.Warnings,
-		EventStartTime:    row.EventStartTime.Time,
-		Status:            row.Status,
-		CreatedAt:         row.CreatedAt.Time,
-		UpdatedAt:         row.UpdatedAt.Time,
-	}
-
-	if row.SourceID.Valid {
-		entry.SourceID = &row.SourceID.String
-	}
-	if row.SourceExternalID.Valid {
-		entry.SourceExternalID = &row.SourceExternalID.String
-	}
-	if row.DedupHash.Valid {
-		entry.DedupHash = &row.DedupHash.String
-	}
-	if row.EventEndTime.Valid {
-		entry.EventEndTime = &row.EventEndTime.Time
-	}
-	if row.ReviewedBy.Valid {
-		entry.ReviewedBy = &row.ReviewedBy.String
-	}
-	if row.ReviewedAt.Valid {
-		entry.ReviewedAt = &row.ReviewedAt.Time
-	}
-	if row.ReviewNotes.Valid {
-		entry.ReviewNotes = &row.ReviewNotes.String
-	}
-	if row.RejectionReason.Valid {
-		entry.RejectionReason = &row.RejectionReason.String
-	}
-
-	return entry
+	return convertReviewQueueRowGeneric(row)
 }

@@ -677,7 +677,12 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 		Str("has_image", fmt.Sprintf("%v", input.Image != "")).
 		Msg("appendQualityWarnings: START")
 
-	result := make([]ValidationWarning, len(warnings))
+	// Pre-allocate capacity for expected quality warnings to avoid reallocation:
+	// - Up to 4 deterministic warnings (description, image, future date, confidence)
+	// - Plus variable link check failures
+	// Conservative estimate: assume max 2 link failures in typical case
+	expectedCapacity := len(warnings) + 6
+	result := make([]ValidationWarning, len(warnings), expectedCapacity)
 	copy(result, warnings)
 
 	// Check for missing description
