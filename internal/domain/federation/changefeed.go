@@ -323,6 +323,38 @@ func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage
 	if licenseURL, ok := dbData["license_url"].(string); ok && licenseURL != "" {
 		jsonLD["license"] = licenseURL
 	}
+	if imageURL, ok := dbData["image_url"].(string); ok && imageURL != "" {
+		jsonLD["image"] = imageURL
+	}
+	if publicURL, ok := dbData["public_url"].(string); ok && publicURL != "" {
+		jsonLD["url"] = publicURL
+	}
+	if eventStatus, ok := dbData["event_status"].(string); ok && eventStatus != "" {
+		jsonLD["eventStatus"] = eventStatus
+	}
+	if attendanceMode, ok := dbData["attendance_mode"].(string); ok && attendanceMode != "" {
+		jsonLD["eventAttendanceMode"] = attendanceMode
+	}
+
+	// keywords — stored as JSON array in snapshot, arrives as []any after unmarshal
+	if keywords, ok := dbData["keywords"].([]any); ok && len(keywords) > 0 {
+		jsonLD["keywords"] = keywords
+	}
+
+	// inLanguage — stored as JSON array in snapshot, arrives as []any after unmarshal
+	if inLanguage, ok := dbData["in_language"].([]any); ok && len(inLanguage) > 0 {
+		jsonLD["inLanguage"] = inLanguage
+	}
+
+	// isAccessibleForFree — boolean
+	if accessible, ok := dbData["is_accessible_for_free"].(bool); ok {
+		jsonLD["isAccessibleForFree"] = accessible
+	}
+
+	// startDate — try to extract from snapshot occurrence data if present
+	if startDate, ok := dbData["start_date"].(string); ok && startDate != "" {
+		jsonLD["startDate"] = startDate
+	}
 
 	// Marshal back to JSON
 	result, err := json.Marshal(jsonLD)

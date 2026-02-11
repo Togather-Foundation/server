@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 	"github.com/Togather-Foundation/server/internal/sanitize"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/internal/validation"
@@ -67,25 +68,26 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// adminEventItem extends EventSummary with admin-specific fields.
+	type adminEventItem struct {
+		schema.EventSummary
+		Description    string   `json:"description,omitempty"`
+		Confidence     *float64 `json:"confidence,omitempty"`
+		LifecycleState string   `json:"lifecycle_state,omitempty"`
+	}
+
 	// Build response with JSON-LD context
-	contextValue := loadDefaultContext()
-	items := make([]map[string]any, 0, len(result.Events))
+	items := make([]adminEventItem, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := map[string]any{
-			"@context": contextValue,
-			"@type":    "Event",
-			"@id":      buildEventURI(h.BaseURL, event.ULID),
-			"name":     event.Name,
-		}
-		// Include additional fields for admin review
-		if event.Description != "" {
-			item["description"] = event.Description
-		}
-		if event.Confidence != nil {
-			item["confidence"] = *event.Confidence
-		}
-		if event.LifecycleState != "" {
-			item["lifecycle_state"] = event.LifecycleState
+		item := adminEventItem{
+			EventSummary: schema.EventSummary{
+				Type: "Event",
+				ID:   buildEventURI(h.BaseURL, event.ULID),
+				Name: event.Name,
+			},
+			Description:    event.Description,
+			Confidence:     event.Confidence,
+			LifecycleState: event.LifecycleState,
 		}
 		items = append(items, item)
 	}
@@ -113,27 +115,30 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
-	items := make([]map[string]any, 0, len(result.Events))
+	// adminEventListItem extends EventSummary with admin-specific fields.
+	type adminEventListItem struct {
+		schema.EventSummary
+		Description    string   `json:"description,omitempty"`
+		Confidence     *float64 `json:"confidence,omitempty"`
+		LifecycleState string   `json:"lifecycle_state,omitempty"`
+		StartDateAdmin string   `json:"start_date,omitempty"`
+	}
+
+	items := make([]adminEventListItem, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := map[string]any{
-			"@context": contextValue,
-			"@type":    "Event",
-			"@id":      buildEventURI(h.BaseURL, event.ULID),
-			"name":     event.Name,
-		}
-		if event.Description != "" {
-			item["description"] = event.Description
-		}
-		if event.Confidence != nil {
-			item["confidence"] = *event.Confidence
-		}
-		if event.LifecycleState != "" {
-			item["lifecycle_state"] = event.LifecycleState
+		item := adminEventListItem{
+			EventSummary: schema.EventSummary{
+				Type: "Event",
+				ID:   buildEventURI(h.BaseURL, event.ULID),
+				Name: event.Name,
+			},
+			Description:    event.Description,
+			Confidence:     event.Confidence,
+			LifecycleState: event.LifecycleState,
 		}
 		// Add start date from first occurrence
 		if len(event.Occurrences) > 0 {
-			item["start_date"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+			item.StartDateAdmin = event.Occurrences[0].StartTime.Format(time.RFC3339)
 		}
 		items = append(items, item)
 	}
@@ -204,21 +209,22 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		h.AuditLogger.LogFromRequest(r, "admin.event.update", "event", ulidValue, "success", nil)
 	}
 
-	contextValue := loadDefaultContext()
-	payload := map[string]any{
-		"@context": contextValue,
-		"@type":    "Event",
-		"@id":      buildEventURI(h.BaseURL, updated.ULID),
-		"name":     updated.Name,
-	}
-	if updated.Description != "" {
-		payload["description"] = updated.Description
-	}
-	if updated.LifecycleState != "" {
-		payload["lifecycle_state"] = updated.LifecycleState
+	type adminEventResponse struct {
+		schema.Event
+		LifecycleState string `json:"lifecycle_state,omitempty"`
 	}
 
-	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+	event := schema.NewEvent(updated.Name)
+	event.Context = loadDefaultContext()
+	event.ID = buildEventURI(h.BaseURL, updated.ULID)
+	event.Description = updated.Description
+
+	resp := adminEventResponse{
+		Event:          *event,
+		LifecycleState: updated.LifecycleState,
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 
 // PublishEvent handles POST /api/v1/admin/events/{id}/publish
@@ -258,16 +264,21 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		h.AuditLogger.LogFromRequest(r, "admin.event.publish", "event", ulidValue, "success", nil)
 	}
 
-	contextValue := loadDefaultContext()
-	payload := map[string]any{
-		"@context":        contextValue,
-		"@type":           "Event",
-		"@id":             buildEventURI(h.BaseURL, published.ULID),
-		"name":            published.Name,
-		"lifecycle_state": published.LifecycleState,
+	type adminPublishResponse struct {
+		schema.Event
+		LifecycleState string `json:"lifecycle_state,omitempty"`
 	}
 
-	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+	event := schema.NewEvent(published.Name)
+	event.Context = loadDefaultContext()
+	event.ID = buildEventURI(h.BaseURL, published.ULID)
+
+	resp := adminPublishResponse{
+		Event:          *event,
+		LifecycleState: published.LifecycleState,
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 
 // UnpublishEvent handles POST /api/v1/admin/events/{id}/unpublish
@@ -307,16 +318,21 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 		h.AuditLogger.LogFromRequest(r, "admin.event.unpublish", "event", ulidValue, "success", nil)
 	}
 
-	contextValue := loadDefaultContext()
-	payload := map[string]any{
-		"@context":        contextValue,
-		"@type":           "Event",
-		"@id":             buildEventURI(h.BaseURL, unpublished.ULID),
-		"name":            unpublished.Name,
-		"lifecycle_state": unpublished.LifecycleState,
+	type adminUnpublishResponse struct {
+		schema.Event
+		LifecycleState string `json:"lifecycle_state,omitempty"`
 	}
 
-	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+	event := schema.NewEvent(unpublished.Name)
+	event.Context = loadDefaultContext()
+	event.ID = buildEventURI(h.BaseURL, unpublished.ULID)
+
+	resp := adminUnpublishResponse{
+		Event:          *event,
+		LifecycleState: unpublished.LifecycleState,
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 
 // MergeEvents handles POST /api/v1/admin/events/merge

@@ -9,6 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
 
 type OrganizationsHandler struct {
@@ -19,11 +20,6 @@ type OrganizationsHandler struct {
 
 func NewOrganizationsHandler(service *organizations.Service, env string, baseURL string) *OrganizationsHandler {
 	return &OrganizationsHandler{Service: service, Env: env, BaseURL: baseURL}
-}
-
-type organizationListResponse struct {
-	Items      any    `json:"items"` // Accepts any slice type for JSON encoding
-	NextCursor string `json:"next_cursor"`
 }
 
 func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -44,13 +40,21 @@ func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]map[string]any, 0, len(result.Organizations))
+	contextValue := loadDefaultContext()
+	items := make([]*schema.Organization, 0, len(result.Organizations))
 	for _, org := range result.Organizations {
-		item := BuildBaseListItem("Organization", org.Name, org.ULID, "organizations", h.BaseURL)
+		item := schema.NewOrganization(org.Name)
+		item.Context = contextValue
+		item.ID = schema.BuildOrganizationURI(h.BaseURL, org.ULID)
+		item.Description = org.Description
+		item.URL = org.URL
+		item.Email = org.Email
+		item.Telephone = org.Telephone
+		item.Address = schema.NewPostalAddress(org.StreetAddress, org.AddressLocality, org.AddressRegion, org.PostalCode, org.AddressCountry)
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, organizationListResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
 }
 
 func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -100,17 +104,15 @@ func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contextValue := loadDefaultContext()
-	payload := map[string]any{
-		"@context": contextValue,
-		"@type":    "Organization",
-		"name":     item.Name,
-	}
+	org := schema.NewOrganization(item.Name)
+	org.Context = loadDefaultContext()
+	org.ID = schema.BuildOrganizationURI(h.BaseURL, item.ULID)
+	org.LegalName = item.LegalName
+	org.Description = item.Description
+	org.URL = item.URL
+	org.Email = item.Email
+	org.Telephone = item.Telephone
+	org.Address = schema.NewPostalAddress(item.StreetAddress, item.AddressLocality, item.AddressRegion, item.PostalCode, item.AddressCountry)
 
-	// Add @id (required per Interop Profile §3.1)
-	if uri, err := ids.BuildCanonicalURI(h.BaseURL, "organizations", item.ULID); err == nil {
-		payload["@id"] = uri
-	}
-
-	writeJSON(w, http.StatusOK, payload, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, org, contentTypeFromRequest(r))
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -243,22 +244,30 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	if needsReview {
 		lifecycleState = "pending_review"
 	}
+	// Determine event domain from input (set during normalization from @type)
+	// or fall back to default "arts"
+	eventDomain := validated.EventDomain
+	if eventDomain == "" {
+		eventDomain = "arts"
+	}
 	params := EventCreateParams{
-		ULID:           ulidValue,
-		Name:           validated.Name,
-		Description:    validated.Description,
-		LifecycleState: lifecycleState,
-		EventDomain:    "arts",
-		OrganizerID:    nil,
-		PrimaryVenueID: nil,
-		VirtualURL:     virtualURL(validated),
-		ImageURL:       validated.Image,
-		PublicURL:      validated.URL,
-		Keywords:       validated.Keywords,
-		LicenseURL:     licenseURL(validated.License),
-		LicenseStatus:  "cc0",
-		Confidence:     floatPtr(reviewConfidence(validated, needsReview, s.validationConfig)),
-		OriginNodeID:   nil,
+		ULID:                ulidValue,
+		Name:                validated.Name,
+		Description:         validated.Description,
+		LifecycleState:      lifecycleState,
+		EventDomain:         eventDomain,
+		OrganizerID:         nil,
+		PrimaryVenueID:      nil,
+		VirtualURL:          virtualURL(validated),
+		ImageURL:            validated.Image,
+		PublicURL:           validated.URL,
+		Keywords:            validated.Keywords,
+		InLanguage:          validated.InLanguage,
+		IsAccessibleForFree: validated.IsAccessibleForFree,
+		LicenseURL:          licenseURL(validated.License),
+		LicenseStatus:       "cc0",
+		Confidence:          floatPtr(reviewConfidence(validated, needsReview, s.validationConfig)),
+		OriginNodeID:        nil,
 	}
 
 	if validated.Location != nil && validated.Location.Name != "" {
@@ -270,10 +279,14 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			EntityCreateFields: EntityCreateFields{
 				ULID:            placeULID,
 				Name:            validated.Location.Name,
+				StreetAddress:   validated.Location.StreetAddress,
+				PostalCode:      validated.Location.PostalCode,
 				AddressLocality: validated.Location.AddressLocality,
 				AddressRegion:   validated.Location.AddressRegion,
 				AddressCountry:  validated.Location.AddressCountry,
 			},
+			Latitude:  float64PtrNonZero(validated.Location.Latitude),
+			Longitude: float64PtrNonZero(validated.Location.Longitude),
 		})
 		if err != nil {
 			return nil, err
@@ -302,6 +315,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 				AddressRegion:   addressRegion,
 				AddressCountry:  addressCountry,
 			},
+			URL: validated.Organizer.URL,
 		})
 		if err != nil {
 			return nil, err
@@ -450,6 +464,14 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 			VenueID:    venueID,
 			VirtualURL: virtual,
 		}
+		if input.Offers != nil {
+			occurrence.TicketURL = nullableString(input.Offers.URL)
+			occurrence.PriceCurrency = input.Offers.PriceCurrency
+			if price, err := parsePrice(input.Offers.Price); err == nil && price != nil {
+				occurrence.PriceMin = price
+				occurrence.PriceMax = price
+			}
+		}
 		return repo.CreateOccurrence(ctx, occurrence)
 	}
 
@@ -491,6 +513,15 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 			DoorTime:   door,
 			VenueID:    nullableString(occ.VenueID),
 			VirtualURL: nullableString(occ.VirtualURL),
+		}
+		// Apply event-level offers to each occurrence as defaults
+		if input.Offers != nil {
+			occurrence.TicketURL = nullableString(input.Offers.URL)
+			occurrence.PriceCurrency = input.Offers.PriceCurrency
+			if price, err := parsePrice(input.Offers.Price); err == nil && price != nil {
+				occurrence.PriceMin = price
+				occurrence.PriceMax = price
+			}
 		}
 		if err := repo.CreateOccurrence(ctx, occurrence); err != nil {
 			return fmt.Errorf("create occurrence: %w", err)
@@ -623,6 +654,31 @@ func nullableString(value string) *string {
 	return &trimmed
 }
 
+// parsePrice parses a user-provided price string into a float64.
+// Handles: empty → nil, "Free"/"free" → 0.0, "0" → 0.0, "25.00" → 25.0, "$25" → 25.0
+func parsePrice(s string) (*float64, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return nil, nil
+	}
+	lower := strings.ToLower(trimmed)
+	if lower == "free" {
+		zero := 0.0
+		return &zero, nil
+	}
+	// Strip common currency symbols
+	trimmed = strings.TrimLeft(trimmed, "$€£¥")
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse price %q: %w", s, err)
+	}
+	return &v, nil
+}
+
 func needsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
 	// Use zero-value defaults if config is uninitialized (RequireImage defaults to false)
 	// This should never happen in practice since all callers pass initialized config,
@@ -681,6 +737,17 @@ func isTooFarFuture(startDate string, days int) bool {
 }
 
 func floatPtr(value float64) *float64 {
+	return &value
+}
+
+// float64PtrNonZero returns a pointer to the value if non-zero, nil otherwise.
+// Used for coordinates where 0 from JSON omitempty means "not provided" rather
+// than the actual coordinate 0,0 (Gulf of Guinea). Input PlaceInput uses plain
+// float64 with omitempty, so zero genuinely means absent.
+func float64PtrNonZero(value float64) *float64 {
+	if value == 0 {
+		return nil
+	}
 	return &value
 }
 

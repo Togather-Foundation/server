@@ -71,6 +71,14 @@ type PlaceCreateParams struct {
 	AddressRegion   string
 	AddressCountry  string
 	FederationURI   *string
+	StreetAddress   string
+	PostalCode      string
+	Latitude        *float64
+	Longitude       *float64
+	Telephone       string
+	Email           string
+	URL             string
+	Description     string
 }
 
 // PlaceRecord represents a place record returned from database operations.
@@ -87,6 +95,12 @@ type OrganizationCreateParams struct {
 	AddressRegion   string
 	AddressCountry  string
 	FederationURI   *string
+	Description     string
+	Email           string
+	Telephone       string
+	URL             string
+	StreetAddress   string
+	PostalCode      string
 }
 
 // OrganizationRecord represents an organization record returned from database operations.
@@ -563,14 +577,24 @@ func extractOptionalEventFields(payload map[string]any, params *UpsertFederatedE
 	if urlStr, ok := payload["url"].(string); ok && urlStr != "" {
 		params.PublicUrl = pgtype.Text{String: urlStr, Valid: true}
 	}
+	// Handle image as either a string or an ImageObject with url key
 	if image, ok := payload["image"].(string); ok && image != "" {
 		params.ImageUrl = pgtype.Text{String: image, Valid: true}
+	} else if imageObj, ok := payload["image"].(map[string]any); ok {
+		if imgURL, ok := imageObj["url"].(string); ok && imgURL != "" {
+			params.ImageUrl = pgtype.Text{String: imgURL, Valid: true}
+		}
 	}
 
 	// Virtual URL - check for virtualLocation or URL field
+	// Handle virtualLocation as either a string or a VirtualLocation object with url key
 	// Required by event_location_required constraint if no primary_venue_id
 	if virtualURL, ok := payload["virtualLocation"].(string); ok && virtualURL != "" {
 		params.VirtualUrl = pgtype.Text{String: virtualURL, Valid: true}
+	} else if vlObj, ok := payload["virtualLocation"].(map[string]any); ok {
+		if vlURL, ok := vlObj["url"].(string); ok && vlURL != "" {
+			params.VirtualUrl = pgtype.Text{String: vlURL, Valid: true}
+		}
 	} else if urlStr, ok := payload["url"].(string); ok && urlStr != "" {
 		// Fallback to url field as virtual_url to satisfy constraint
 		params.VirtualUrl = pgtype.Text{String: urlStr, Valid: true}
@@ -664,15 +688,64 @@ func extractPlaceFromPayload(payload map[string]any) (*PlaceCreateParams, error)
 		Name: name,
 	}
 
-	// Extract optional fields
-	if locality, ok := location["addressLocality"].(string); ok {
-		params.AddressLocality = locality
+	// Extract address fields - check for nested PostalAddress object first
+	if addrObj, ok := location["address"].(map[string]any); ok {
+		if locality, ok := addrObj["addressLocality"].(string); ok {
+			params.AddressLocality = locality
+		}
+		if region, ok := addrObj["addressRegion"].(string); ok {
+			params.AddressRegion = region
+		}
+		if country, ok := addrObj["addressCountry"].(string); ok {
+			params.AddressCountry = country
+		}
+		if street, ok := addrObj["streetAddress"].(string); ok {
+			params.StreetAddress = street
+		}
+		if postal, ok := addrObj["postalCode"].(string); ok {
+			params.PostalCode = postal
+		}
+	} else {
+		// Fall back to flat address fields on the location object
+		if locality, ok := location["addressLocality"].(string); ok {
+			params.AddressLocality = locality
+		}
+		if region, ok := location["addressRegion"].(string); ok {
+			params.AddressRegion = region
+		}
+		if country, ok := location["addressCountry"].(string); ok {
+			params.AddressCountry = country
+		}
+		if street, ok := location["streetAddress"].(string); ok {
+			params.StreetAddress = street
+		}
+		if postal, ok := location["postalCode"].(string); ok {
+			params.PostalCode = postal
+		}
 	}
-	if region, ok := location["addressRegion"].(string); ok {
-		params.AddressRegion = region
+
+	// Extract geo coordinates from nested GeoCoordinates object
+	if geoObj, ok := location["geo"].(map[string]any); ok {
+		if lat := extractFloat64(geoObj, "latitude"); lat != nil {
+			params.Latitude = lat
+		}
+		if lng := extractFloat64(geoObj, "longitude"); lng != nil {
+			params.Longitude = lng
+		}
 	}
-	if country, ok := location["addressCountry"].(string); ok {
-		params.AddressCountry = country
+
+	// Extract flat fields
+	if tel, ok := location["telephone"].(string); ok {
+		params.Telephone = tel
+	}
+	if email, ok := location["email"].(string); ok {
+		params.Email = email
+	}
+	if u, ok := location["url"].(string); ok {
+		params.URL = u
+	}
+	if desc, ok := location["description"].(string); ok {
+		params.Description = desc
 	}
 
 	// Extract federation URI from @id
@@ -708,15 +781,54 @@ func extractOrganizationFromPayload(payload map[string]any) (*OrganizationCreate
 		Name: name,
 	}
 
-	// Extract optional fields
-	if locality, ok := organizer["addressLocality"].(string); ok {
-		params.AddressLocality = locality
+	// Extract address fields - check for nested PostalAddress object first
+	if addrObj, ok := organizer["address"].(map[string]any); ok {
+		if locality, ok := addrObj["addressLocality"].(string); ok {
+			params.AddressLocality = locality
+		}
+		if region, ok := addrObj["addressRegion"].(string); ok {
+			params.AddressRegion = region
+		}
+		if country, ok := addrObj["addressCountry"].(string); ok {
+			params.AddressCountry = country
+		}
+		if street, ok := addrObj["streetAddress"].(string); ok {
+			params.StreetAddress = street
+		}
+		if postal, ok := addrObj["postalCode"].(string); ok {
+			params.PostalCode = postal
+		}
+	} else {
+		// Fall back to flat address fields on the organizer object
+		if locality, ok := organizer["addressLocality"].(string); ok {
+			params.AddressLocality = locality
+		}
+		if region, ok := organizer["addressRegion"].(string); ok {
+			params.AddressRegion = region
+		}
+		if country, ok := organizer["addressCountry"].(string); ok {
+			params.AddressCountry = country
+		}
+		if street, ok := organizer["streetAddress"].(string); ok {
+			params.StreetAddress = street
+		}
+		if postal, ok := organizer["postalCode"].(string); ok {
+			params.PostalCode = postal
+		}
 	}
-	if region, ok := organizer["addressRegion"].(string); ok {
-		params.AddressRegion = region
+
+	// Extract flat fields
+	if desc, ok := organizer["description"].(string); ok {
+		params.Description = desc
 	}
-	if country, ok := organizer["addressCountry"].(string); ok {
-		params.AddressCountry = country
+	if email, ok := organizer["email"].(string); ok {
+		params.Email = email
+	}
+	if tel, ok := organizer["telephone"].(string); ok {
+		params.Telephone = tel
+	}
+	if u, ok := organizer["url"].(string); ok {
+		params.URL = u
 	}
 
 	// Extract federation URI from @id
@@ -765,5 +877,25 @@ func normalizeToCanonical(v any) any {
 	default:
 		// Primitives (string, number, bool, nil) are already deterministic
 		return val
+	}
+}
+
+// extractFloat64 extracts a float64 value from a map, handling both float64 and json.Number types.
+func extractFloat64(m map[string]any, key string) *float64 {
+	val, ok := m[key]
+	if !ok {
+		return nil
+	}
+	switch v := val.(type) {
+	case float64:
+		return &v
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return nil
+		}
+		return &f
+	default:
+		return nil
 	}
 }

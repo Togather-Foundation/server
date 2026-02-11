@@ -35,26 +35,35 @@ type EventRepository struct {
 }
 
 type eventRow struct {
-	ID             string
-	ULID           string
-	Name           string
-	Description    *string
-	LicenseURL     *string
-	LicenseStatus  *string
-	DedupHash      *string
-	LifecycleState string
-	EventDomain    string
-	OrganizerID    *string
-	PrimaryVenueID *string
-	VirtualURL     *string
-	ImageURL       *string
-	PublicURL      *string
-	Confidence     *float64
-	QualityScore   *int32
-	Keywords       []string
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	StartTime      pgtype.Timestamptz
+	ID                  string
+	ULID                string
+	Name                string
+	Description         *string
+	LicenseURL          *string
+	LicenseStatus       *string
+	DedupHash           *string
+	LifecycleState      string
+	EventStatus         *string
+	AttendanceMode      *string
+	EventDomain         string
+	OrganizerID         *string
+	PrimaryVenueID      *string
+	VirtualURL          *string
+	ImageURL            *string
+	PublicURL           *string
+	Confidence          *float64
+	QualityScore        *int32
+	Keywords            []string
+	InLanguage          []string
+	IsAccessibleForFree *bool
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	PublishedAt         pgtype.Timestamptz
+	StartTime           pgtype.Timestamptz
+	EndTime             pgtype.Timestamptz
+	Timezone            *string
+	OccVenueID          *string
+	OccVirtualURL       *string
 }
 
 func (r *EventRepository) List(ctx context.Context, filters events.Filters, paginationArgs events.Pagination) (events.ListResult, error) {
@@ -91,14 +100,21 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 
 	rows, err := queryer.Query(ctx, `
 SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
-	   lifecycle_state, event_domain, organizer_id, primary_venue_id,
+	   lifecycle_state, event_status, attendance_mode, event_domain,
+	   organizer_id, primary_venue_id,
 	   virtual_url, image_url, public_url, confidence, quality_score,
-	   keywords, created_at, updated_at, start_time
+	   keywords, in_language, is_accessible_for_free,
+	   created_at, updated_at, published_at,
+	   start_time, end_time, timezone, occ_venue_id, occ_virtual_url
   FROM (
     SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
-	       e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	       e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
+	       e.organizer_id, e.primary_venue_id,
 	       e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
-	       e.keywords, e.created_at, e.updated_at, o.start_time,
+	       e.keywords, e.in_language, e.is_accessible_for_free,
+	       e.created_at, e.updated_at, e.published_at,
+	       o.start_time, o.end_time, o.timezone,
+	       o.venue_id AS occ_venue_id, o.virtual_url AS occ_virtual_url,
 	       row_number() OVER (PARTITION BY e.id ORDER BY o.start_time ASC, e.ulid ASC) AS row_num
 	  FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
@@ -156,6 +172,8 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.LicenseStatus,
 			&row.DedupHash,
 			&row.LifecycleState,
+			&row.EventStatus,
+			&row.AttendanceMode,
 			&row.EventDomain,
 			&row.OrganizerID,
 			&row.PrimaryVenueID,
@@ -165,32 +183,43 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.Confidence,
 			&row.QualityScore,
 			&row.Keywords,
+			&row.InLanguage,
+			&row.IsAccessibleForFree,
 			&row.CreatedAt,
 			&row.UpdatedAt,
+			&row.PublishedAt,
 			&row.StartTime,
+			&row.EndTime,
+			&row.Timezone,
+			&row.OccVenueID,
+			&row.OccVirtualURL,
 		); err != nil {
 			return events.ListResult{}, fmt.Errorf("scan events: %w", err)
 		}
 		event := events.Event{
-			ID:             row.ID,
-			ULID:           row.ULID,
-			Name:           row.Name,
-			Description:    derefString(row.Description),
-			LicenseURL:     derefString(row.LicenseURL),
-			LicenseStatus:  derefString(row.LicenseStatus),
-			DedupHash:      derefString(row.DedupHash),
-			LifecycleState: row.LifecycleState,
-			EventDomain:    row.EventDomain,
-			OrganizerID:    row.OrganizerID,
-			PrimaryVenueID: row.PrimaryVenueID,
-			VirtualURL:     derefString(row.VirtualURL),
-			ImageURL:       derefString(row.ImageURL),
-			PublicURL:      derefString(row.PublicURL),
-			Confidence:     row.Confidence,
-			QualityScore:   intPtr(row.QualityScore),
-			Keywords:       row.Keywords,
-			CreatedAt:      time.Time{},
-			UpdatedAt:      time.Time{},
+			ID:                  row.ID,
+			ULID:                row.ULID,
+			Name:                row.Name,
+			Description:         derefString(row.Description),
+			LicenseURL:          derefString(row.LicenseURL),
+			LicenseStatus:       derefString(row.LicenseStatus),
+			DedupHash:           derefString(row.DedupHash),
+			LifecycleState:      row.LifecycleState,
+			EventStatus:         derefString(row.EventStatus),
+			AttendanceMode:      derefString(row.AttendanceMode),
+			EventDomain:         row.EventDomain,
+			OrganizerID:         row.OrganizerID,
+			PrimaryVenueID:      row.PrimaryVenueID,
+			VirtualURL:          derefString(row.VirtualURL),
+			ImageURL:            derefString(row.ImageURL),
+			PublicURL:           derefString(row.PublicURL),
+			Confidence:          row.Confidence,
+			QualityScore:        intPtr(row.QualityScore),
+			Keywords:            row.Keywords,
+			InLanguage:          row.InLanguage,
+			IsAccessibleForFree: row.IsAccessibleForFree,
+			CreatedAt:           time.Time{},
+			UpdatedAt:           time.Time{},
 		}
 		if row.CreatedAt.Valid {
 			event.CreatedAt = row.CreatedAt.Time
@@ -198,8 +227,22 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 		if row.UpdatedAt.Valid {
 			event.UpdatedAt = row.UpdatedAt.Time
 		}
+		if row.PublishedAt.Valid {
+			value := row.PublishedAt.Time
+			event.PublishedAt = &value
+		}
 		if row.StartTime.Valid {
-			event.Occurrences = []events.Occurrence{{StartTime: row.StartTime.Time}}
+			occ := events.Occurrence{
+				StartTime:  row.StartTime.Time,
+				Timezone:   derefString(row.Timezone),
+				VenueID:    row.OccVenueID,
+				VirtualURL: row.OccVirtualURL,
+			}
+			if row.EndTime.Valid {
+				value := row.EndTime.Time
+				occ.EndTime = &value
+			}
+			event.Occurrences = []events.Occurrence{occ}
 		}
 		items = append(items, event)
 	}
@@ -224,9 +267,13 @@ func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.E
 
 	rows, err := queryer.Query(ctx, `
 SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
-	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+	   e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
+	   e.organizer_id, e.primary_venue_id,
 	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
-	   e.keywords, e.federation_uri, e.created_at, e.updated_at, o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, o.virtual_url
+	   e.keywords, e.in_language, e.is_accessible_for_free,
+	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
+	   o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, o.virtual_url,
+	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability
 	  FROM events e
 	  LEFT JOIN event_occurrences o ON o.event_id = e.id
 	 WHERE e.ulid = $1
@@ -240,33 +287,43 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	var event *events.Event
 	for rows.Next() {
 		var (
-			eventID        string
-			eventULID      string
-			name           string
-			description    *string
-			licenseURL     *string
-			licenseStatus  *string
-			dedupHash      *string
-			lifecycleState string
-			eventDomain    string
-			organizerID    *string
-			primaryVenueID *string
-			virtualURL     *string
-			imageURL       *string
-			publicURL      *string
-			confidence     *float64
-			qualityScore   *int32
-			keywords       []string
-			federationURI  *string
-			createdAt      pgtype.Timestamptz
-			updatedAt      pgtype.Timestamptz
-			occurrenceID   *string
-			startTime      pgtype.Timestamptz
-			endTime        pgtype.Timestamptz
-			timezone       *string
-			doorTime       pgtype.Timestamptz
-			venueID        *string
-			occurrenceURL  *string
+			eventID             string
+			eventULID           string
+			name                string
+			description         *string
+			licenseURL          *string
+			licenseStatus       *string
+			dedupHash           *string
+			lifecycleState      string
+			eventStatus         *string
+			attendanceMode      *string
+			eventDomain         string
+			organizerID         *string
+			primaryVenueID      *string
+			virtualURL          *string
+			imageURL            *string
+			publicURL           *string
+			confidence          *float64
+			qualityScore        *int32
+			keywords            []string
+			inLanguage          []string
+			isAccessibleForFree *bool
+			federationURI       *string
+			createdAt           pgtype.Timestamptz
+			updatedAt           pgtype.Timestamptz
+			publishedAt         pgtype.Timestamptz
+			occurrenceID        *string
+			startTime           pgtype.Timestamptz
+			endTime             pgtype.Timestamptz
+			timezone            *string
+			doorTime            pgtype.Timestamptz
+			venueID             *string
+			occurrenceURL       *string
+			ticketURL           *string
+			priceMin            *float64
+			priceMax            *float64
+			priceCurrency       *string
+			availability        *string
 		)
 		if err := rows.Scan(
 			&eventID,
@@ -277,6 +334,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&licenseStatus,
 			&dedupHash,
 			&lifecycleState,
+			&eventStatus,
+			&attendanceMode,
 			&eventDomain,
 			&organizerID,
 			&primaryVenueID,
@@ -286,9 +345,12 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&confidence,
 			&qualityScore,
 			&keywords,
+			&inLanguage,
+			&isAccessibleForFree,
 			&federationURI,
 			&createdAt,
 			&updatedAt,
+			&publishedAt,
 			&occurrenceID,
 			&startTime,
 			&endTime,
@@ -296,32 +358,41 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&doorTime,
 			&venueID,
 			&occurrenceURL,
+			&ticketURL,
+			&priceMin,
+			&priceMax,
+			&priceCurrency,
+			&availability,
 		); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
 
 		if event == nil {
 			event = &events.Event{
-				ID:             eventID,
-				ULID:           eventULID,
-				Name:           name,
-				Description:    derefString(description),
-				LicenseURL:     derefString(licenseURL),
-				LicenseStatus:  derefString(licenseStatus),
-				DedupHash:      derefString(dedupHash),
-				LifecycleState: lifecycleState,
-				EventDomain:    eventDomain,
-				OrganizerID:    organizerID,
-				PrimaryVenueID: primaryVenueID,
-				VirtualURL:     derefString(virtualURL),
-				ImageURL:       derefString(imageURL),
-				PublicURL:      derefString(publicURL),
-				Confidence:     confidence,
-				QualityScore:   intPtr(qualityScore),
-				Keywords:       keywords,
-				FederationURI:  federationURI,
-				CreatedAt:      time.Time{},
-				UpdatedAt:      time.Time{},
+				ID:                  eventID,
+				ULID:                eventULID,
+				Name:                name,
+				Description:         derefString(description),
+				LicenseURL:          derefString(licenseURL),
+				LicenseStatus:       derefString(licenseStatus),
+				DedupHash:           derefString(dedupHash),
+				LifecycleState:      lifecycleState,
+				EventStatus:         derefString(eventStatus),
+				AttendanceMode:      derefString(attendanceMode),
+				EventDomain:         eventDomain,
+				OrganizerID:         organizerID,
+				PrimaryVenueID:      primaryVenueID,
+				VirtualURL:          derefString(virtualURL),
+				ImageURL:            derefString(imageURL),
+				PublicURL:           derefString(publicURL),
+				Confidence:          confidence,
+				QualityScore:        intPtr(qualityScore),
+				Keywords:            keywords,
+				InLanguage:          inLanguage,
+				IsAccessibleForFree: isAccessibleForFree,
+				FederationURI:       federationURI,
+				CreatedAt:           time.Time{},
+				UpdatedAt:           time.Time{},
 			}
 			if createdAt.Valid {
 				event.CreatedAt = createdAt.Time
@@ -329,14 +400,23 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			if updatedAt.Valid {
 				event.UpdatedAt = updatedAt.Time
 			}
+			if publishedAt.Valid {
+				value := publishedAt.Time
+				event.PublishedAt = &value
+			}
 		}
 
 		if occurrenceID != nil {
 			occ := events.Occurrence{
-				ID:         *occurrenceID,
-				Timezone:   derefString(timezone),
-				VenueID:    venueID,
-				VirtualURL: occurrenceURL,
+				ID:            *occurrenceID,
+				Timezone:      derefString(timezone),
+				VenueID:       venueID,
+				VirtualURL:    occurrenceURL,
+				TicketURL:     derefString(ticketURL),
+				PriceMin:      priceMin,
+				PriceMax:      priceMax,
+				PriceCurrency: derefString(priceCurrency),
+				Availability:  derefString(availability),
 			}
 			if startTime.Valid {
 				occ.StartTime = startTime.Time
@@ -377,6 +457,8 @@ INSERT INTO events (
 	image_url,
 	public_url,
 	keywords,
+	in_language,
+	is_accessible_for_free,
 	license_url,
 	license_status,
 	confidence,
@@ -396,12 +478,16 @@ INSERT INTO events (
 	$12,
 	$13,
 	$14,
-	$15
+	$15,
+	$16,
+	$17
 )
 RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
-	  lifecycle_state, event_domain, organizer_id, primary_venue_id,
+	  lifecycle_state, event_status, attendance_mode, event_domain,
+	  organizer_id, primary_venue_id,
 	  virtual_url, image_url, public_url, confidence, quality_score,
-	  keywords, created_at, updated_at
+	  keywords, in_language, is_accessible_for_free,
+	  created_at, updated_at
 `,
 		params.ULID,
 		params.Name,
@@ -414,6 +500,8 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		params.ImageURL,
 		params.PublicURL,
 		params.Keywords,
+		params.InLanguage,
+		params.IsAccessibleForFree,
 		params.LicenseURL,
 		params.LicenseStatus,
 		params.Confidence,
@@ -430,6 +518,8 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		&data.LicenseStatus,
 		&data.DedupHash,
 		&data.LifecycleState,
+		&data.EventStatus,
+		&data.AttendanceMode,
 		&data.EventDomain,
 		&data.OrganizerID,
 		&data.PrimaryVenueID,
@@ -439,6 +529,8 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		&data.Confidence,
 		&data.QualityScore,
 		&data.Keywords,
+		&data.InLanguage,
+		&data.IsAccessibleForFree,
 		&data.CreatedAt,
 		&data.UpdatedAt,
 	); err != nil {
@@ -449,23 +541,27 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 	}
 
 	event := &events.Event{
-		ID:             data.ID,
-		ULID:           data.ULID,
-		Name:           data.Name,
-		Description:    derefString(data.Description),
-		LicenseURL:     derefString(data.LicenseURL),
-		LicenseStatus:  derefString(data.LicenseStatus),
-		DedupHash:      derefString(data.DedupHash),
-		LifecycleState: data.LifecycleState,
-		EventDomain:    data.EventDomain,
-		OrganizerID:    data.OrganizerID,
-		PrimaryVenueID: data.PrimaryVenueID,
-		VirtualURL:     derefString(data.VirtualURL),
-		ImageURL:       derefString(data.ImageURL),
-		PublicURL:      derefString(data.PublicURL),
-		Confidence:     data.Confidence,
-		QualityScore:   intPtr(data.QualityScore),
-		Keywords:       data.Keywords,
+		ID:                  data.ID,
+		ULID:                data.ULID,
+		Name:                data.Name,
+		Description:         derefString(data.Description),
+		LicenseURL:          derefString(data.LicenseURL),
+		LicenseStatus:       derefString(data.LicenseStatus),
+		DedupHash:           derefString(data.DedupHash),
+		LifecycleState:      data.LifecycleState,
+		EventStatus:         derefString(data.EventStatus),
+		AttendanceMode:      derefString(data.AttendanceMode),
+		EventDomain:         data.EventDomain,
+		OrganizerID:         data.OrganizerID,
+		PrimaryVenueID:      data.PrimaryVenueID,
+		VirtualURL:          derefString(data.VirtualURL),
+		ImageURL:            derefString(data.ImageURL),
+		PublicURL:           derefString(data.PublicURL),
+		Confidence:          data.Confidence,
+		QualityScore:        intPtr(data.QualityScore),
+		Keywords:            data.Keywords,
+		InLanguage:          data.InLanguage,
+		IsAccessibleForFree: data.IsAccessibleForFree,
 	}
 	if data.CreatedAt.Valid {
 		event.CreatedAt = data.CreatedAt.Time
@@ -487,8 +583,12 @@ INSERT INTO event_occurrences (
 	timezone,
 	door_time,
 	venue_id,
-	virtual_url
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	virtual_url,
+	ticket_url,
+	price_min,
+	price_max,
+	price_currency
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''))
 `,
 		params.EventID,
 		params.StartTime,
@@ -497,6 +597,10 @@ INSERT INTO event_occurrences (
 		params.DoorTime,
 		params.VenueID,
 		params.VirtualURL,
+		params.TicketURL,
+		params.PriceMin,
+		params.PriceMax,
+		params.PriceCurrency,
 	)
 	if err != nil {
 		return fmt.Errorf("create occurrence: %w", err)
@@ -803,40 +907,56 @@ LIMIT 1
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO places (ulid, name, street_address, postal_code, address_locality, address_region, address_country, latitude, longitude, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
   DO UPDATE SET 
     name = EXCLUDED.name,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude
 RETURNING id, ulid
 `,
 			params.ULID,
 			params.Name,
+			nilIfEmpty(params.StreetAddress),
+			nilIfEmpty(params.PostalCode),
 			params.AddressLocality,
 			params.AddressRegion,
 			params.AddressCountry,
+			params.Latitude,
+			params.Longitude,
 			params.FederationURI,
 		)
 	} else {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO places (ulid, name, street_address, postal_code, address_locality, address_region, address_country, latitude, longitude, federation_uri)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (ulid)
   DO UPDATE SET 
     name = EXCLUDED.name,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude
 RETURNING id, ulid
 `,
 			params.ULID,
 			params.Name,
+			nilIfEmpty(params.StreetAddress),
+			nilIfEmpty(params.PostalCode),
 			params.AddressLocality,
 			params.AddressRegion,
 			params.AddressCountry,
+			params.Latitude,
+			params.Longitude,
 			params.FederationURI,
 		)
 	}
@@ -881,14 +1001,17 @@ LIMIT 1
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri, email, telephone, url)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''))
 ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
   DO UPDATE SET 
     name = EXCLUDED.name,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    email = COALESCE(NULLIF(EXCLUDED.email, ''), organizations.email),
+    telephone = COALESCE(NULLIF(EXCLUDED.telephone, ''), organizations.telephone),
+    url = COALESCE(NULLIF(EXCLUDED.url, ''), organizations.url)
 RETURNING id, ulid
 `,
 			params.ULID,
@@ -897,17 +1020,23 @@ RETURNING id, ulid
 			params.AddressRegion,
 			params.AddressCountry,
 			params.FederationURI,
+			params.Email,
+			params.Telephone,
+			params.URL,
 		)
 	} else {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri, email, telephone, url)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''))
 ON CONFLICT (ulid)
   DO UPDATE SET 
     name = EXCLUDED.name,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    email = COALESCE(NULLIF(EXCLUDED.email, ''), organizations.email),
+    telephone = COALESCE(NULLIF(EXCLUDED.telephone, ''), organizations.telephone),
+    url = COALESCE(NULLIF(EXCLUDED.url, ''), organizations.url)
 RETURNING id, ulid
 `,
 			params.ULID,
@@ -916,6 +1045,9 @@ RETURNING id, ulid
 			params.AddressRegion,
 			params.AddressCountry,
 			params.FederationURI,
+			params.Email,
+			params.Telephone,
+			params.URL,
 		)
 	}
 
@@ -984,6 +1116,15 @@ func intPtr(value *int32) *int {
 	}
 	converted := int(*value)
 	return &converted
+}
+
+// nilIfEmpty returns nil for empty strings, or a pointer to the string otherwise.
+// Used to map empty Go strings to SQL NULL for optional text columns.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // UpdateEvent updates an event by ULID with the provided parameters

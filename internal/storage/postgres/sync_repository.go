@@ -238,14 +238,23 @@ func (r *SyncRepository) UpsertPlace(ctx context.Context, params federation.Plac
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri,
+  street_address, postal_code, latitude, longitude, telephone, email, url, description)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
   DO UPDATE SET 
     name = EXCLUDED.name,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    telephone = EXCLUDED.telephone,
+    email = EXCLUDED.email,
+    url = EXCLUDED.url,
+    description = EXCLUDED.description
 RETURNING id, ulid
 `,
 			params.ULID,
@@ -254,17 +263,34 @@ RETURNING id, ulid
 			params.AddressRegion,
 			params.AddressCountry,
 			params.FederationURI,
+			params.StreetAddress,
+			params.PostalCode,
+			params.Latitude,
+			params.Longitude,
+			params.Telephone,
+			params.Email,
+			params.URL,
+			params.Description,
 		)
 	} else {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO places (ulid, name, address_locality, address_region, address_country, federation_uri,
+  street_address, postal_code, latitude, longitude, telephone, email, url, description)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (ulid)
   DO UPDATE SET 
     name = EXCLUDED.name,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    telephone = EXCLUDED.telephone,
+    email = EXCLUDED.email,
+    url = EXCLUDED.url,
+    description = EXCLUDED.description
 RETURNING id, ulid
 `,
 			params.ULID,
@@ -273,6 +299,14 @@ RETURNING id, ulid
 			params.AddressRegion,
 			params.AddressCountry,
 			params.FederationURI,
+			params.StreetAddress,
+			params.PostalCode,
+			params.Latitude,
+			params.Longitude,
+			params.Telephone,
+			params.Email,
+			params.URL,
+			params.Description,
 		)
 	}
 
@@ -291,14 +325,21 @@ func (r *SyncRepository) UpsertOrganization(ctx context.Context, params federati
 	var row pgx.Row
 	if params.FederationURI != nil && *params.FederationURI != "" {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri,
+  description, email, telephone, url, street_address, postal_code)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
   DO UPDATE SET 
     name = EXCLUDED.name,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    description = EXCLUDED.description,
+    email = EXCLUDED.email,
+    telephone = EXCLUDED.telephone,
+    url = EXCLUDED.url,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code
 RETURNING id, ulid
 `,
 			params.ULID,
@@ -307,17 +348,30 @@ RETURNING id, ulid
 			params.AddressRegion,
 			params.AddressCountry,
 			params.FederationURI,
+			params.Description,
+			params.Email,
+			params.Telephone,
+			params.URL,
+			params.StreetAddress,
+			params.PostalCode,
 		)
 	} else {
 		row = queryer.QueryRow(ctx, `
-INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO organizations (ulid, name, address_locality, address_region, address_country, federation_uri,
+  description, email, telephone, url, street_address, postal_code)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (ulid)
   DO UPDATE SET 
     name = EXCLUDED.name,
     address_locality = EXCLUDED.address_locality,
     address_region = EXCLUDED.address_region,
-    address_country = EXCLUDED.address_country
+    address_country = EXCLUDED.address_country,
+    description = EXCLUDED.description,
+    email = EXCLUDED.email,
+    telephone = EXCLUDED.telephone,
+    url = EXCLUDED.url,
+    street_address = EXCLUDED.street_address,
+    postal_code = EXCLUDED.postal_code
 RETURNING id, ulid
 `,
 			params.ULID,
@@ -326,6 +380,12 @@ RETURNING id, ulid
 			params.AddressRegion,
 			params.AddressCountry,
 			params.FederationURI,
+			params.Description,
+			params.Email,
+			params.Telephone,
+			params.URL,
+			params.StreetAddress,
+			params.PostalCode,
 		)
 	}
 

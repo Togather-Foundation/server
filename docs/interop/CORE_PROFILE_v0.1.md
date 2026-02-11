@@ -495,6 +495,76 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 }
 ```
 
+### 2.5 Input Acceptance (Flexible Ingestion)
+
+SEL nodes MUST accept schema.org-compliant Event data for ingestion without requiring
+node-specific field formats. Both **flat** (legacy) and **nested** (schema.org canonical)
+input formats are accepted and normalized at the ingestion boundary.
+
+**Flexibility Points:**
+
+| Field | Accepted Formats |
+|-------|-----------------|
+| `location` | Place object with nested `address`/`geo`, OR flat string (venue name) |
+| `image` | URL string, OR `ImageObject` with `url` key |
+| `organizer` | Organization object, OR string URI |
+| `keywords` | Array of strings, OR comma-separated string |
+| `inLanguage` | Array of strings, OR single string |
+| `offers` | Single Offer object, OR array of Offer objects |
+| `@context` | Accepted and ignored gracefully (not stored) |
+| `@type` | Schema.org event subtypes (e.g., `MusicEvent`, `DanceEvent`) mapped to domain categories |
+
+**Event Subtype Mapping:**
+
+Schema.org event subtypes are mapped to SEL domain categories:
+
+| Schema.org Subtypes | SEL Domain |
+|--------------------|------------|
+| `MusicEvent` | `music` |
+| `SportsEvent` | `sports` |
+| `EducationEvent` | `education` |
+| `SocialEvent` | `community` |
+| `DanceEvent`, `TheaterEvent`, `ComedyEvent`, `LiteraryEvent`, `VisualArtsEvent`, `ScreeningEvent`, `ExhibitionEvent` | `arts` |
+| `Event` (generic) | `general` |
+
+**Example (nested schema.org input):**
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "MusicEvent",
+  "name": "Jazz in the Park",
+  "startDate": "2025-07-15T19:00:00-04:00",
+  "location": {
+    "@type": "Place",
+    "name": "Centennial Park",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "256 Centennial Park Rd",
+      "addressLocality": "Toronto",
+      "addressRegion": "ON"
+    },
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": 43.6426,
+      "longitude": -79.5652
+    }
+  },
+  "organizer": {
+    "@type": "Organization",
+    "name": "Toronto Arts Council"
+  },
+  "image": {
+    "@type": "ImageObject",
+    "url": "https://example.com/jazz.jpg"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": 0,
+    "priceCurrency": "CAD"
+  }
+}
+```
+
 ---
 
 ## 3. Minimal Required Fields & SHACL Validation
@@ -862,5 +932,6 @@ Reference the shapes in `docs/interop/schemas/` for validation requirements.
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 0.1.0-DRAFT | 2026-02-11 | Added § 2.5 Input Acceptance (flexible ingestion formats, event subtype mapping) |
 | 0.1.0-DRAFT | 2026-01-27 | Drafted core profile |
 | 0.1.0-DRAFT | 2025-01-20 | Initial draft |

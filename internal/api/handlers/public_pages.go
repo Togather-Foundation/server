@@ -14,6 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/jsonld"
+	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
 
 // PublicPagesHandler handles dereferenceable URIs with content negotiation.
@@ -341,84 +342,70 @@ func (h *PublicPagesHandler) serveOrganizationTombstone(w http.ResponseWriter, r
 
 // Helper functions to build payloads
 
-// buildBasePayload creates a JSON-LD payload with common @context, @type, and @id fields.
-// Additional entity-specific fields can be added to the returned map.
-func buildBasePayload(entityType string, uri string) map[string]any {
-	return map[string]any{
-		"@context": loadDefaultContext(),
-		"@type":    entityType,
-		"@id":      uri,
-	}
-}
-
 func buildEventPayload(event *events.Event, baseURL string) map[string]any {
-	payload := buildBasePayload("Event", buildEventURI(baseURL, event.ULID))
-	payload["name"] = event.Name
+	ev := schema.NewEvent(event.Name)
+	ev.Context = loadDefaultContext()
+	ev.ID = buildEventURI(baseURL, event.ULID)
+	ev.Description = event.Description
 
 	// Extract startDate from first occurrence if available
 	if len(event.Occurrences) > 0 && !event.Occurrences[0].StartTime.IsZero() {
-		payload["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
-	}
-
-	if event.Description != "" {
-		payload["description"] = event.Description
+		ev.StartDate = event.Occurrences[0].StartTime.Format(time.RFC3339)
 	}
 
 	// Add location if venue ID is available
 	if event.PrimaryVenueID != nil && *event.PrimaryVenueID != "" {
-		payload["location"] = map[string]any{
+		ev.Location = map[string]any{
 			"@type": "Place",
-			"@id":   buildPlaceURI(baseURL, *event.PrimaryVenueID),
+			"@id":   schema.BuildPlaceURI(baseURL, *event.PrimaryVenueID),
 		}
 	}
 
 	// Add organizer if organizer ID is available
 	if event.OrganizerID != nil && *event.OrganizerID != "" {
-		payload["organizer"] = map[string]any{
+		ev.Organizer = map[string]any{
 			"@type": "Organization",
-			"@id":   buildOrganizationURI(baseURL, *event.OrganizerID),
+			"@id":   schema.BuildOrganizationURI(baseURL, *event.OrganizerID),
 		}
 	}
 
-	return payload
+	return structToMap(ev)
 }
 
 func buildPlacePayload(place *places.Place, baseURL string) map[string]any {
-	payload := buildBasePayload("Place", buildPlaceURI(baseURL, place.ULID))
-	payload["name"] = place.Name
-
-	// Build address from City, Region, Country fields
-	if place.City != "" || place.Region != "" || place.Country != "" {
-		address := map[string]any{
-			"@type": "PostalAddress",
-		}
-		if place.City != "" {
-			address["addressLocality"] = place.City
-		}
-		if place.Region != "" {
-			address["addressRegion"] = place.Region
-		}
-		if place.Country != "" {
-			address["addressCountry"] = place.Country
-		}
-		payload["address"] = address
+	p := schema.NewPlace(place.Name)
+	p.Context = loadDefaultContext()
+	p.ID = schema.BuildPlaceURI(baseURL, place.ULID)
+	p.Address = schema.NewPostalAddress(place.StreetAddress, place.City, place.Region, place.PostalCode, place.Country)
+	if place.Latitude != nil && place.Longitude != nil {
+		p.Geo = schema.NewGeoCoordinates(*place.Latitude, *place.Longitude)
 	}
 
-	return payload
+	return structToMap(p)
 }
 
 func buildOrganizationPayload(org *organizations.Organization, baseURL string) map[string]any {
-	payload := buildBasePayload("Organization", buildOrganizationURI(baseURL, org.ULID))
-	payload["name"] = org.Name
+	o := schema.NewOrganization(org.Name)
+	o.Context = loadDefaultContext()
+	o.ID = schema.BuildOrganizationURI(baseURL, org.ULID)
+	o.Description = org.Description
+	o.URL = org.URL
 
-	if org.Description != "" {
-		payload["description"] = org.Description
-	}
-	if org.URL != "" {
-		payload["url"] = org.URL
-	}
+	return structToMap(o)
+}
 
-	return payload
+// structToMap converts a typed struct to map[string]any via JSON round-trip.
+// This is needed because the render package expects map[string]any for template data.
+func structToMap(v any) map[string]any {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return map[string]any{}
+	}
+	return m
 }
 
 func extractType(payload map[string]any) string {

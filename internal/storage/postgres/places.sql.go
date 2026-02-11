@@ -53,9 +53,19 @@ SELECT p.id,
        p.ulid,
        p.name,
        p.description,
+       p.street_address,
        p.address_locality,
        p.address_region,
+       p.postal_code,
        p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
        p.deleted_at,
        p.deletion_reason,
        p.created_at,
@@ -65,17 +75,27 @@ SELECT p.id,
 `
 
 type GetPlaceByULIDRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Ulid            string             `json:"ulid"`
-	Name            string             `json:"name"`
-	Description     pgtype.Text        `json:"description"`
-	AddressLocality pgtype.Text        `json:"address_locality"`
-	AddressRegion   pgtype.Text        `json:"address_region"`
-	AddressCountry  pgtype.Text        `json:"address_country"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	DeletionReason  pgtype.Text        `json:"deletion_reason"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	Ulid                    string             `json:"ulid"`
+	Name                    string             `json:"name"`
+	Description             pgtype.Text        `json:"description"`
+	StreetAddress           pgtype.Text        `json:"street_address"`
+	AddressLocality         pgtype.Text        `json:"address_locality"`
+	AddressRegion           pgtype.Text        `json:"address_region"`
+	PostalCode              pgtype.Text        `json:"postal_code"`
+	AddressCountry          pgtype.Text        `json:"address_country"`
+	Latitude                pgtype.Numeric     `json:"latitude"`
+	Longitude               pgtype.Numeric     `json:"longitude"`
+	Telephone               pgtype.Text        `json:"telephone"`
+	Email                   pgtype.Text        `json:"email"`
+	Url                     pgtype.Text        `json:"url"`
+	MaximumAttendeeCapacity pgtype.Int4        `json:"maximum_attendee_capacity"`
+	VenueType               pgtype.Text        `json:"venue_type"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
+	DeletedAt               pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason          pgtype.Text        `json:"deletion_reason"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error) {
@@ -86,9 +106,19 @@ func (q *Queries) GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByUL
 		&i.Ulid,
 		&i.Name,
 		&i.Description,
+		&i.StreetAddress,
 		&i.AddressLocality,
 		&i.AddressRegion,
+		&i.PostalCode,
 		&i.AddressCountry,
+		&i.Latitude,
+		&i.Longitude,
+		&i.Telephone,
+		&i.Email,
+		&i.Url,
+		&i.MaximumAttendeeCapacity,
+		&i.VenueType,
+		&i.FederationUri,
 		&i.DeletedAt,
 		&i.DeletionReason,
 		&i.CreatedAt,
@@ -133,9 +163,19 @@ SELECT p.id,
        p.ulid,
        p.name,
        p.description,
+       p.street_address,
        p.address_locality,
        p.address_region,
+       p.postal_code,
        p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
        p.created_at,
        p.updated_at
   FROM places p
@@ -159,15 +199,25 @@ type ListPlacesParams struct {
 }
 
 type ListPlacesRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Ulid            string             `json:"ulid"`
-	Name            string             `json:"name"`
-	Description     pgtype.Text        `json:"description"`
-	AddressLocality pgtype.Text        `json:"address_locality"`
-	AddressRegion   pgtype.Text        `json:"address_region"`
-	AddressCountry  pgtype.Text        `json:"address_country"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID                      pgtype.UUID        `json:"id"`
+	Ulid                    string             `json:"ulid"`
+	Name                    string             `json:"name"`
+	Description             pgtype.Text        `json:"description"`
+	StreetAddress           pgtype.Text        `json:"street_address"`
+	AddressLocality         pgtype.Text        `json:"address_locality"`
+	AddressRegion           pgtype.Text        `json:"address_region"`
+	PostalCode              pgtype.Text        `json:"postal_code"`
+	AddressCountry          pgtype.Text        `json:"address_country"`
+	Latitude                pgtype.Numeric     `json:"latitude"`
+	Longitude               pgtype.Numeric     `json:"longitude"`
+	Telephone               pgtype.Text        `json:"telephone"`
+	Email                   pgtype.Text        `json:"email"`
+	Url                     pgtype.Text        `json:"url"`
+	MaximumAttendeeCapacity pgtype.Int4        `json:"maximum_attendee_capacity"`
+	VenueType               pgtype.Text        `json:"venue_type"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 }
 
 // SQLc queries for places domain.
@@ -191,9 +241,19 @@ func (q *Queries) ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListP
 			&i.Ulid,
 			&i.Name,
 			&i.Description,
+			&i.StreetAddress,
 			&i.AddressLocality,
 			&i.AddressRegion,
+			&i.PostalCode,
 			&i.AddressCountry,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Telephone,
+			&i.Email,
+			&i.Url,
+			&i.MaximumAttendeeCapacity,
+			&i.VenueType,
+			&i.FederationUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

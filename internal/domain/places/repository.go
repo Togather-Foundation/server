@@ -9,16 +9,26 @@ import (
 var ErrNotFound = errors.New("place not found")
 
 type Place struct {
-	ID          string
-	ULID        string
-	Name        string
-	Description string
-	City        string
-	Region      string
-	Country     string
-	Lifecycle   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                      string
+	ULID                    string
+	Name                    string
+	Description             string
+	StreetAddress           string
+	City                    string
+	Region                  string
+	PostalCode              string
+	Country                 string
+	Latitude                *float64
+	Longitude               *float64
+	Telephone               string
+	Email                   string
+	URL                     string
+	MaximumAttendeeCapacity *int
+	VenueType               string
+	FederationURI           string
+	Lifecycle               string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 type Filters struct {

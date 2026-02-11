@@ -5,7 +5,10 @@ import (
 )
 
 // BuildBaseListItem creates a base JSON-LD list item with @context, @type, name, and @id.
-// Additional fields can be added by the caller.
+//
+// Deprecated: Use typed schema structs from internal/jsonld/schema instead.
+// This function is retained for backward compatibility but new code should use
+// schema.NewEventSummary, schema.NewPlace, or schema.NewOrganization.
 //
 // Parameters:
 //   - entityType: JSON-LD @type (e.g., "Event", "Place", "Organization")
