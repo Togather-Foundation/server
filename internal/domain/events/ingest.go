@@ -302,6 +302,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 				AddressRegion:   addressRegion,
 				AddressCountry:  addressCountry,
 			},
+			URL: validated.Organizer.URL,
 		})
 		if err != nil {
 			return nil, err

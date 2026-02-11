@@ -22,15 +22,26 @@ type OrganizationRepository struct {
 }
 
 type organizationRow struct {
-	ID        string
-	ULID      string
-	Name      string
-	LegalName *string
-	URL       *string
-	DeletedAt pgtype.Timestamptz
-	Reason    pgtype.Text
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID               string
+	ULID             string
+	Name             string
+	LegalName        *string
+	Description      *string
+	Email            *string
+	Telephone        *string
+	URL              *string
+	AddressLocality  *string
+	AddressRegion    *string
+	AddressCountry   *string
+	StreetAddress    *string
+	PostalCode       *string
+	OrganizationType *string
+	FederationURI    *string
+	AlternateName    *string
+	DeletedAt        pgtype.Timestamptz
+	Reason           pgtype.Text
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
 }
 
 func (r *OrganizationRepository) List(ctx context.Context, filters organizations.Filters, paginationArgs organizations.Pagination) (organizations.ListResult, error) {
@@ -56,7 +67,9 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 	}
 
 	rows, err := queryer.Query(ctx, `
-SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.email, o.telephone, o.url,
+       o.address_locality, o.address_region, o.address_country, o.street_address, o.postal_code,
+       o.organization_type, o.federation_uri, o.alternate_name, o.created_at, o.updated_at
   FROM organizations o
  WHERE ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
    AND (
@@ -85,27 +98,24 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.created_at, o.updated_at
 			&row.ULID,
 			&row.Name,
 			&row.LegalName,
+			&row.Description,
+			&row.Email,
+			&row.Telephone,
 			&row.URL,
+			&row.AddressLocality,
+			&row.AddressRegion,
+			&row.AddressCountry,
+			&row.StreetAddress,
+			&row.PostalCode,
+			&row.OrganizationType,
+			&row.FederationURI,
+			&row.AlternateName,
 			&row.CreatedAt,
 			&row.UpdatedAt,
 		); err != nil {
 			return organizations.ListResult{}, fmt.Errorf("scan organizations: %w", err)
 		}
-		org := organizations.Organization{
-			ID:        row.ID,
-			ULID:      row.ULID,
-			Name:      row.Name,
-			LegalName: derefString(row.LegalName),
-			URL:       derefString(row.URL),
-			CreatedAt: time.Time{},
-			UpdatedAt: time.Time{},
-		}
-		if row.CreatedAt.Valid {
-			org.CreatedAt = row.CreatedAt.Time
-		}
-		if row.UpdatedAt.Valid {
-			org.UpdatedAt = row.UpdatedAt.Time
-		}
+		org := organizationRowToDomain(row)
 		items = append(items, org)
 	}
 	if err := rows.Err(); err != nil {
@@ -126,7 +136,10 @@ func (r *OrganizationRepository) GetByULID(ctx context.Context, ulid string) (*o
 	queryer := r.queryer()
 
 	row := queryer.QueryRow(ctx, `
-SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reason, o.created_at, o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.email, o.telephone, o.url,
+       o.address_locality, o.address_region, o.address_country, o.street_address, o.postal_code,
+       o.organization_type, o.federation_uri, o.alternate_name,
+       o.deleted_at, o.deletion_reason, o.created_at, o.updated_at
   FROM organizations o
  WHERE o.ulid = $1
 `, ulid)
@@ -137,7 +150,18 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reaso
 		&data.ULID,
 		&data.Name,
 		&data.LegalName,
+		&data.Description,
+		&data.Email,
+		&data.Telephone,
 		&data.URL,
+		&data.AddressLocality,
+		&data.AddressRegion,
+		&data.AddressCountry,
+		&data.StreetAddress,
+		&data.PostalCode,
+		&data.OrganizationType,
+		&data.FederationURI,
+		&data.AlternateName,
 		&data.DeletedAt,
 		&data.Reason,
 		&data.CreatedAt,
@@ -149,26 +173,11 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.url, o.deleted_at, o.deletion_reaso
 		return nil, fmt.Errorf("get organization: %w", err)
 	}
 
-	org := &organizations.Organization{
-		ID:        data.ID,
-		ULID:      data.ULID,
-		Name:      data.Name,
-		LegalName: derefString(data.LegalName),
-		URL:       derefString(data.URL),
-		Lifecycle: "",
-		CreatedAt: time.Time{},
-		UpdatedAt: time.Time{},
-	}
-	if data.CreatedAt.Valid {
-		org.CreatedAt = data.CreatedAt.Time
-	}
-	if data.UpdatedAt.Valid {
-		org.UpdatedAt = data.UpdatedAt.Time
-	}
+	org := organizationRowToDomain(data)
 	if data.DeletedAt.Valid {
 		org.Lifecycle = "deleted"
 	}
-	return org, nil
+	return &org, nil
 }
 
 // SoftDelete marks an organization as deleted
@@ -246,6 +255,35 @@ func (r *OrganizationRepository) GetTombstoneByULID(ctx context.Context, ulid st
 	}
 
 	return tombstone, nil
+}
+
+// organizationRowToDomain converts an organizationRow to an organizations.Organization domain struct.
+func organizationRowToDomain(row organizationRow) organizations.Organization {
+	org := organizations.Organization{
+		ID:               row.ID,
+		ULID:             row.ULID,
+		Name:             row.Name,
+		LegalName:        derefString(row.LegalName),
+		Description:      derefString(row.Description),
+		URL:              derefString(row.URL),
+		Email:            derefString(row.Email),
+		Telephone:        derefString(row.Telephone),
+		AddressLocality:  derefString(row.AddressLocality),
+		AddressRegion:    derefString(row.AddressRegion),
+		AddressCountry:   derefString(row.AddressCountry),
+		StreetAddress:    derefString(row.StreetAddress),
+		PostalCode:       derefString(row.PostalCode),
+		OrganizationType: derefString(row.OrganizationType),
+		FederationURI:    derefString(row.FederationURI),
+		AlternateName:    derefString(row.AlternateName),
+	}
+	if row.CreatedAt.Valid {
+		org.CreatedAt = row.CreatedAt.Time
+	}
+	if row.UpdatedAt.Valid {
+		org.UpdatedAt = row.UpdatedAt.Time
+	}
+	return org
 }
 
 type organizationQueryer interface {

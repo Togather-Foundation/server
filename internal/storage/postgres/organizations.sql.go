@@ -53,7 +53,18 @@ SELECT o.id,
        o.ulid,
        o.name,
        o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
        o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
        o.deleted_at,
        o.deletion_reason,
        o.created_at,
@@ -63,15 +74,26 @@ SELECT o.id,
 `
 
 type GetOrganizationByULIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Ulid           string             `json:"ulid"`
-	Name           string             `json:"name"`
-	LegalName      pgtype.Text        `json:"legal_name"`
-	Url            pgtype.Text        `json:"url"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	DeletionReason pgtype.Text        `json:"deletion_reason"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Ulid             string             `json:"ulid"`
+	Name             string             `json:"name"`
+	LegalName        pgtype.Text        `json:"legal_name"`
+	Description      pgtype.Text        `json:"description"`
+	Email            pgtype.Text        `json:"email"`
+	Telephone        pgtype.Text        `json:"telephone"`
+	Url              pgtype.Text        `json:"url"`
+	AddressLocality  pgtype.Text        `json:"address_locality"`
+	AddressRegion    pgtype.Text        `json:"address_region"`
+	AddressCountry   pgtype.Text        `json:"address_country"`
+	StreetAddress    pgtype.Text        `json:"street_address"`
+	PostalCode       pgtype.Text        `json:"postal_code"`
+	OrganizationType pgtype.Text        `json:"organization_type"`
+	FederationUri    pgtype.Text        `json:"federation_uri"`
+	AlternateName    pgtype.Text        `json:"alternate_name"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	DeletionReason   pgtype.Text        `json:"deletion_reason"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error) {
@@ -82,7 +104,18 @@ func (q *Queries) GetOrganizationByULID(ctx context.Context, ulid string) (GetOr
 		&i.Ulid,
 		&i.Name,
 		&i.LegalName,
+		&i.Description,
+		&i.Email,
+		&i.Telephone,
 		&i.Url,
+		&i.AddressLocality,
+		&i.AddressRegion,
+		&i.AddressCountry,
+		&i.StreetAddress,
+		&i.PostalCode,
+		&i.OrganizationType,
+		&i.FederationUri,
+		&i.AlternateName,
 		&i.DeletedAt,
 		&i.DeletionReason,
 		&i.CreatedAt,
@@ -127,7 +160,18 @@ SELECT o.id,
        o.ulid,
        o.name,
        o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
        o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
        o.created_at,
        o.updated_at
   FROM organizations o
@@ -149,13 +193,24 @@ type ListOrganizationsParams struct {
 }
 
 type ListOrganizationsRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Ulid      string             `json:"ulid"`
-	Name      string             `json:"name"`
-	LegalName pgtype.Text        `json:"legal_name"`
-	Url       pgtype.Text        `json:"url"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Ulid             string             `json:"ulid"`
+	Name             string             `json:"name"`
+	LegalName        pgtype.Text        `json:"legal_name"`
+	Description      pgtype.Text        `json:"description"`
+	Email            pgtype.Text        `json:"email"`
+	Telephone        pgtype.Text        `json:"telephone"`
+	Url              pgtype.Text        `json:"url"`
+	AddressLocality  pgtype.Text        `json:"address_locality"`
+	AddressRegion    pgtype.Text        `json:"address_region"`
+	AddressCountry   pgtype.Text        `json:"address_country"`
+	StreetAddress    pgtype.Text        `json:"street_address"`
+	PostalCode       pgtype.Text        `json:"postal_code"`
+	OrganizationType pgtype.Text        `json:"organization_type"`
+	FederationUri    pgtype.Text        `json:"federation_uri"`
+	AlternateName    pgtype.Text        `json:"alternate_name"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 // SQLc queries for organizations domain.
@@ -178,7 +233,18 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 			&i.Ulid,
 			&i.Name,
 			&i.LegalName,
+			&i.Description,
+			&i.Email,
+			&i.Telephone,
 			&i.Url,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.AddressCountry,
+			&i.StreetAddress,
+			&i.PostalCode,
+			&i.OrganizationType,
+			&i.FederationUri,
+			&i.AlternateName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

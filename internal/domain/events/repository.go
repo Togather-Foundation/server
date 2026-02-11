@@ -11,67 +11,83 @@ var ErrNotFound = errors.New("event not found")
 var ErrConflict = errors.New("event conflict")
 
 type Event struct {
-	ID             string
-	ULID           string
-	Name           string
-	Description    string
-	LicenseURL     string
-	LicenseStatus  string
-	DedupHash      string
-	LifecycleState string
-	EventDomain    string
-	OrganizerID    *string
-	PrimaryVenueID *string
-	VirtualURL     string
-	ImageURL       string
-	PublicURL      string
-	Confidence     *float64
-	QualityScore   *int
-	Keywords       []string
-	FederationURI  *string
-	Occurrences    []Occurrence
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                  string
+	ULID                string
+	Name                string
+	Description         string
+	LicenseURL          string
+	LicenseStatus       string
+	DedupHash           string
+	LifecycleState      string
+	EventStatus         string
+	AttendanceMode      string
+	EventDomain         string
+	OrganizerID         *string
+	PrimaryVenueID      *string
+	VirtualURL          string
+	ImageURL            string
+	PublicURL           string
+	Confidence          *float64
+	QualityScore        *int
+	Keywords            []string
+	InLanguage          []string
+	IsAccessibleForFree *bool
+	FederationURI       *string
+	Occurrences         []Occurrence
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	PublishedAt         *time.Time
 }
 
 type Occurrence struct {
-	ID         string
-	StartTime  time.Time
-	EndTime    *time.Time
-	Timezone   string
-	DoorTime   *time.Time
-	VenueID    *string
-	VirtualURL *string
+	ID            string
+	StartTime     time.Time
+	EndTime       *time.Time
+	Timezone      string
+	DoorTime      *time.Time
+	VenueID       *string
+	VirtualURL    *string
+	TicketURL     string
+	PriceMin      *float64
+	PriceMax      *float64
+	PriceCurrency string
+	Availability  string
 }
 
 type EventCreateParams struct {
-	ULID           string
-	Name           string
-	Description    string
-	LifecycleState string
-	EventDomain    string
-	OrganizerID    *string
-	PrimaryVenueID *string
-	VirtualURL     string
-	ImageURL       string
-	PublicURL      string
-	Keywords       []string
-	LicenseURL     string
-	LicenseStatus  string
-	DedupHash      string
-	Confidence     *float64
-	QualityScore   *int
-	OriginNodeID   *string
+	ULID                string
+	Name                string
+	Description         string
+	LifecycleState      string
+	EventDomain         string
+	OrganizerID         *string
+	PrimaryVenueID      *string
+	VirtualURL          string
+	ImageURL            string
+	PublicURL           string
+	Keywords            []string
+	InLanguage          []string
+	IsAccessibleForFree *bool
+	LicenseURL          string
+	LicenseStatus       string
+	DedupHash           string
+	Confidence          *float64
+	QualityScore        *int
+	OriginNodeID        *string
 }
 
 type OccurrenceCreateParams struct {
-	EventID    string
-	StartTime  time.Time
-	EndTime    *time.Time
-	Timezone   string
-	DoorTime   *time.Time
-	VenueID    *string
-	VirtualURL *string
+	EventID       string
+	StartTime     time.Time
+	EndTime       *time.Time
+	Timezone      string
+	DoorTime      *time.Time
+	VenueID       *string
+	VirtualURL    *string
+	TicketURL     *string
+	PriceMin      *float64
+	PriceMax      *float64
+	PriceCurrency string
 }
 
 type EventSourceCreateParams struct {
@@ -215,6 +231,9 @@ type PlaceRecord struct {
 
 type OrganizationCreateParams struct {
 	EntityCreateFields
+	Email     string
+	Telephone string
+	URL       string
 }
 
 type OrganizationRecord struct {

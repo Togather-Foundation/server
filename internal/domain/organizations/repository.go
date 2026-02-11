@@ -9,15 +9,25 @@ import (
 var ErrNotFound = errors.New("organization not found")
 
 type Organization struct {
-	ID          string
-	ULID        string
-	Name        string
-	LegalName   string
-	Description string
-	URL         string
-	Lifecycle   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID               string
+	ULID             string
+	Name             string
+	LegalName        string
+	Description      string
+	URL              string
+	Email            string
+	Telephone        string
+	AddressLocality  string
+	AddressRegion    string
+	AddressCountry   string
+	StreetAddress    string
+	PostalCode       string
+	OrganizationType string
+	FederationURI    string
+	AlternateName    string
+	Lifecycle        string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type Filters struct {
