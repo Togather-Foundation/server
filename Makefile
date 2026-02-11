@@ -366,6 +366,11 @@ docker-compose-lint:
 # Run full CI pipeline locally
 ci: sqlc-generate lint-ci vulncheck
 	@echo ""
+	@echo "=========================================="
+	@echo "Starting CI pipeline at $$(date '+%H:%M:%S')"
+	@echo "=========================================="
+	@date +%s > .ci-start-time
+	@echo ""
 	@echo "==> Validating YAML files..."
 	@$(MAKE) lint-yaml
 	@echo ""
@@ -409,6 +414,15 @@ ci: sqlc-generate lint-ci vulncheck
 	@echo ""
 	@echo "=========================================="
 	@echo "✓ All CI checks passed!"
+	@if [ -f .ci-start-time ]; then \
+		CI_START=$$(cat .ci-start-time); \
+		CI_END=$$(date +%s); \
+		CI_DURATION=$$((CI_END - CI_START)); \
+		CI_MINUTES=$$((CI_DURATION / 60)); \
+		CI_SECONDS=$$((CI_DURATION % 60)); \
+		echo "Completed at $$(date '+%H:%M:%S') (took $${CI_MINUTES}m $${CI_SECONDS}s)"; \
+		rm -f .ci-start-time; \
+	fi
 	@echo "=========================================="
 
 # Format all Go files
