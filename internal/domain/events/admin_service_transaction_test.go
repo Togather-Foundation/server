@@ -251,6 +251,9 @@ func (m *mockTransactionalRepo) ApproveReview(ctx context.Context, id int, revie
 func (m *mockTransactionalRepo) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
 func (m *mockTransactionalRepo) CleanupExpiredReviews(ctx context.Context) error {
 	return errors.New("not implemented")
 }

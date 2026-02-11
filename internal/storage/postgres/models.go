@@ -110,23 +110,24 @@ type EventOccurrence struct {
 }
 
 type EventReviewQueue struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                 int32              `json:"id"`
+	EventID            pgtype.UUID        `json:"event_id"`
+	OriginalPayload    []byte             `json:"original_payload"`
+	NormalizedPayload  []byte             `json:"normalized_payload"`
+	Warnings           []byte             `json:"warnings"`
+	SourceID           pgtype.Text        `json:"source_id"`
+	SourceExternalID   pgtype.Text        `json:"source_external_id"`
+	DedupHash          pgtype.Text        `json:"dedup_hash"`
+	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	Status             string             `json:"status"`
+	ReviewedBy         pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes        pgtype.Text        `json:"review_notes"`
+	RejectionReason    pgtype.Text        `json:"rejection_reason"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 }
 
 type EventSeries struct {
@@ -253,6 +254,7 @@ type Organization struct {
 	DeletionReason   pgtype.Text        `json:"deletion_reason"`
 	FederationUri    pgtype.Text        `json:"federation_uri"`
 	NormalizedName   pgtype.Text        `json:"normalized_name"`
+	MergedIntoID     pgtype.UUID        `json:"merged_into_id"`
 }
 
 type OrganizationTombstone struct {
@@ -293,6 +295,7 @@ type Place struct {
 	DeletionReason          pgtype.Text        `json:"deletion_reason"`
 	FederationUri           pgtype.Text        `json:"federation_uri"`
 	NormalizedName          pgtype.Text        `json:"normalized_name"`
+	MergedIntoID            pgtype.UUID        `json:"merged_into_id"`
 }
 
 type PlaceTombstone struct {

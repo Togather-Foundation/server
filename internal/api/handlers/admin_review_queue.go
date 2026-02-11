@@ -550,6 +550,130 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
+// MergeReview marks a review entry as merged, merging the duplicate event into a primary event.
+// It handles POST /api/v1/admin/review-queue/:id/merge and uses AdminService.MergeEvents
+// to perform the actual merge. Requires primary_event_ulid in the request body.
+func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Repository == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Extract and validate ID
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing review ID", nil, h.Env)
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid review ID", nil, h.Env)
+		return
+	}
+
+	// Parse request body — requires the ULID of the primary event to merge into
+	var req struct {
+		PrimaryEventULID string `json:"primary_event_ulid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+	if req.PrimaryEventULID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "primary_event_ulid is required", nil, h.Env)
+		return
+	}
+
+	// Get reviewer identity from context
+	reviewedBy := getUserFromContext(r)
+
+	// Fetch the review entry to get the duplicate event's ULID
+	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("merge review: get review queue entry id=%d: %w", id, err), h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("merge review: get review queue entry id=%d: %w", id, err), h.Env)
+		return
+	}
+
+	duplicateULID := review.EventULID
+
+	// Prevent merging an event into itself
+	if duplicateULID == req.PrimaryEventULID {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event into itself", nil, h.Env)
+		return
+	}
+
+	// Perform the actual event merge via AdminService
+	err = h.AdminService.MergeEvents(r.Context(), events.MergeEventsParams{
+		PrimaryULID:   req.PrimaryEventULID,
+		DuplicateULID: duplicateULID,
+	})
+	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.merge", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":           err.Error(),
+				"duplicate_event": duplicateULID,
+				"primary_event":   req.PrimaryEventULID,
+			})
+		}
+
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrCannotMergeSameEvent) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event into itself", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to merge events", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
+		return
+	}
+
+	// Mark review as merged
+	updatedReview, err := h.Repository.MergeReview(r.Context(), id, reviewedBy, req.PrimaryEventULID)
+	if err != nil {
+		// Log failure — the merge succeeded but marking the review failed
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.merge", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":           err.Error(),
+				"duplicate_event": duplicateULID,
+				"primary_event":   req.PrimaryEventULID,
+				"note":            "events merged but review status update failed",
+			})
+		}
+
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to update review status", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
+		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.review.merge", "review", strconv.Itoa(id), "success", map[string]string{
+			"duplicate_event": duplicateULID,
+			"primary_event":   req.PrimaryEventULID,
+			"reviewed_by":     reviewedBy,
+		})
+	}
+
+	// Build response
+	detail, err := buildReviewQueueDetail(*updatedReview)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("merge review id=%d: build detail: %w", id, err), h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, detail, "application/json")
+}
+
 // Helper functions
 
 func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, error) {

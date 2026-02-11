@@ -13,8 +13,8 @@ import (
 type Querier interface {
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
 	// Mark review as approved
-	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
-	// Archive old approved/superseded reviews (90 day retention)
+	ApproveReview(ctx context.Context, arg ApproveReviewParams) (ApproveReviewRow, error)
+	// Archive old approved/superseded/merged reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
 	// Delete rejected reviews for past events (7 day grace period)
 	CleanupExpiredRejections(ctx context.Context) error
@@ -42,7 +42,7 @@ type Querier interface {
 	CreateOrganizationTombstone(ctx context.Context, arg CreateOrganizationTombstoneParams) error
 	CreatePlaceTombstone(ctx context.Context, arg CreatePlaceTombstoneParams) error
 	// Create new review queue entry
-	CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQueueEntryParams) (EventReviewQueue, error)
+	CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQueueEntryParams) (CreateReviewQueueEntryRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	// User Invitation Queries
 	CreateUserInvitation(ctx context.Context, arg CreateUserInvitationParams) (CreateUserInvitationRow, error)
@@ -123,7 +123,7 @@ type Querier interface {
 	MarkUnreviewedEventsAsDeleted(ctx context.Context) error
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
 	// Mark review as rejected
-	RejectReview(ctx context.Context, arg RejectReviewParams) (EventReviewQueue, error)
+	RejectReview(ctx context.Context, arg RejectReviewParams) (RejectReviewRow, error)
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
@@ -136,7 +136,7 @@ type Querier interface {
 	UpdateFederationNodeSyncStatus(ctx context.Context, arg UpdateFederationNodeSyncStatusParams) error
 	UpdateLastLogin(ctx context.Context, id pgtype.UUID) error
 	// Update existing review entry (for resubmissions with same issues)
-	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
+	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (UpdateReviewQueueEntryRow, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)

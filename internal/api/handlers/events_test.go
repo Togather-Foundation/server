@@ -146,6 +146,9 @@ func (s stubEventsRepo) ApproveReview(_ context.Context, _ int, _ string, _ *str
 func (s stubEventsRepo) RejectReview(_ context.Context, _ int, _ string, _ string) (*events.ReviewQueueEntry, error) {
 	return nil, errors.New("not implemented")
 }
+func (s stubEventsRepo) MergeReview(_ context.Context, _ int, _ string, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
 
 func (s stubEventsRepo) CleanupExpiredReviews(_ context.Context) error {
 	return nil

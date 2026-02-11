@@ -212,6 +212,13 @@ func (m *MockRepository) RejectReview(ctx context.Context, id int, reviewedBy st
 	}
 	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
 }
+func (m *MockRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*events.ReviewQueueEntry, error) {
+	args := m.Called(ctx, id, reviewedBy, primaryEventULID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
+}
 
 func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	args := m.Called(ctx)

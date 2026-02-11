@@ -190,6 +190,7 @@ type Repository interface {
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
+	MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
 	CleanupExpiredReviews(ctx context.Context) error
 
 	// Transaction support
@@ -260,24 +261,25 @@ type OrganizationRecord struct {
 
 // ReviewQueueEntry represents an event in the review queue
 type ReviewQueueEntry struct {
-	ID                int
-	EventID           string // UUID (events.id)
-	EventULID         string // ULID (events.ulid) - populated via JOIN
-	OriginalPayload   []byte
-	NormalizedPayload []byte
-	Warnings          []byte
-	SourceID          *string
-	SourceExternalID  *string
-	DedupHash         *string
-	EventStartTime    time.Time
-	EventEndTime      *time.Time
-	Status            string
-	ReviewedBy        *string
-	ReviewedAt        *time.Time
-	ReviewNotes       *string
-	RejectionReason   *string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                 int
+	EventID            string // UUID (events.id)
+	EventULID          string // ULID (events.ulid) - populated via JOIN
+	OriginalPayload    []byte
+	NormalizedPayload  []byte
+	Warnings           []byte
+	SourceID           *string
+	SourceExternalID   *string
+	DedupHash          *string
+	DuplicateOfEventID *string // UUID of the event this is a duplicate of (for merge workflow)
+	EventStartTime     time.Time
+	EventEndTime       *time.Time
+	Status             string
+	ReviewedBy         *string
+	ReviewedAt         *time.Time
+	ReviewNotes        *string
+	RejectionReason    *string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // ReviewQueueCreateParams contains data for creating a review queue entry

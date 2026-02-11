@@ -421,6 +421,9 @@ func (m *MockRepository) ApproveReview(ctx context.Context, id int, reviewedBy s
 func (m *MockRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
 	return nil, nil
 }
+func (m *MockRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
 
 func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil

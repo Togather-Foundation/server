@@ -1,6 +1,11 @@
 /**
  * Duplicates Review Page JavaScript
- * Handles duplicate event detection, comparison, and merging
+ * 
+ * Duplicate detection is now integrated into the Review Queue.
+ * Events flagged as potential duplicates appear in the review queue with
+ * 'potential_duplicate', 'place_possible_duplicate', or 'org_possible_duplicate' warnings.
+ * 
+ * This page redirects to the review queue for a unified workflow.
  */
 (function() {
     'use strict';
@@ -14,8 +19,9 @@
     document.addEventListener('DOMContentLoaded', init);
     
     function init() {
-        loadDuplicates();
-        setupEventListeners();
+        // Redirect to review queue — duplicates are now handled there
+        window.location.href = '/admin/review-queue';
+        return;
     }
     
     function setupEventListeners() {

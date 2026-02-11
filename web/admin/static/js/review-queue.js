@@ -121,12 +121,19 @@
                     e.preventDefault();
                     applyFix(id);
                     break;
+                case 'merge':
+                    e.preventDefault();
+                    showMergeModal(id);
+                    break;
                 case 'show-more':
                     e.preventDefault();
                     showMoreText(target);
                     break;
                 case 'confirm-reject':
                     confirmReject();
+                    break;
+                case 'confirm-merge':
+                    confirmMerge();
                     break;
             }
         });
@@ -461,6 +468,15 @@
             </div>
         ` : '';
         
+        // Check if there are any duplicate-related warnings
+        const hasDuplicateWarnings = warnings.some(w => 
+            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
+        );
+        
+        // Extract duplicate event ID from warnings details if available
+        const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
+        const duplicateEventId = duplicateWarning ? duplicateWarning.details : (detail.duplicateOfEventId || '');
+        
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
         const actionButtons = detail.status === 'pending' ? `
@@ -472,6 +488,19 @@
                     </svg>
                     Approve
                 </button>
+                ${hasDuplicateWarnings ? `
+                    <button class="btn btn-purple" data-action="merge" data-id="${id}" data-duplicate-event-id="${escapeHtml(duplicateEventId)}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="7" cy="18" r="2"/>
+                            <circle cx="7" cy="6" r="2"/>
+                            <circle cx="17" cy="12" r="2"/>
+                            <line x1="7" y1="8" x2="7" y2="16"/>
+                            <path d="M7 8a4 4 0 0 0 4 4h4"/>
+                        </svg>
+                        Merge Duplicate
+                    </button>
+                ` : ''}
                 ${hasDateWarnings ? `
                     <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
@@ -498,7 +527,8 @@
             </div>
         ` : `
             <div class="text-muted">
-                ${detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
+                ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
+                ${detail.duplicateOfEventId ? `<br>Merged into: <a href="/admin/events/${escapeHtml(detail.duplicateOfEventId)}" class="text-reset">${escapeHtml(detail.duplicateOfEventId)}</a>` : ''}
                 ${detail.reviewNotes ? `<br>Notes: ${escapeHtml(detail.reviewNotes)}` : ''}
                 ${detail.rejectionReason ? `<br>Reason: ${escapeHtml(detail.rejectionReason)}` : ''}
             </div>
@@ -898,6 +928,95 @@
     }
     
     /**
+     * Show merge modal dialog
+     * Opens Bootstrap modal for confirming merge of duplicate event
+     * @param {string} id - Review queue entry ID
+     */
+    function showMergeModal(id) {
+        const button = document.querySelector(`[data-action="merge"][data-id="${id}"]`);
+        const duplicateEventId = button ? button.dataset.duplicateEventId : '';
+        
+        const modal = document.getElementById('merge-modal');
+        const input = document.getElementById('merge-primary-event-id');
+        const confirmBtn = document.getElementById('confirm-merge-btn');
+        const errorDiv = document.getElementById('merge-event-error');
+        
+        if (!modal || !input || !confirmBtn) return;
+        
+        // Pre-fill with duplicate event ID if available
+        input.value = duplicateEventId || '';
+        input.classList.remove('is-invalid');
+        errorDiv.textContent = '';
+        
+        // Store entry ID on confirm button
+        confirmBtn.dataset.id = id;
+        
+        // Show modal
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    }
+    
+    /**
+     * Confirm merge action
+     * Validates primary event ID, sends merge request to API, and removes entry from list
+     * @async
+     * @throws {Error} If validation fails or API request fails
+     */
+    async function confirmMerge() {
+        const modal = document.getElementById('merge-modal');
+        const input = document.getElementById('merge-primary-event-id');
+        const confirmBtn = document.getElementById('confirm-merge-btn');
+        const errorDiv = document.getElementById('merge-event-error');
+        const id = confirmBtn.dataset.id;
+        
+        if (!id) return;
+        
+        const primaryEventId = input.value.trim();
+        
+        // Validate
+        if (!primaryEventId) {
+            input.classList.add('is-invalid');
+            errorDiv.textContent = 'Primary event ID is required';
+            return;
+        }
+        
+        input.classList.remove('is-invalid');
+        setLoading(confirmBtn, true);
+        
+        try {
+            await API.reviewQueue.merge(id, primaryEventId);
+            
+            // Close modal
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            if (bsModal) {
+                bsModal.hide();
+            }
+            
+            showToast('Events merged successfully', 'success');
+            
+            // Remove from list if filtering by pending
+            if (currentFilter === 'pending') {
+                removeEntryFromList(id);
+                
+                // Increment merged count badge
+                const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
+                if (mergedBadge) {
+                    const currentCount = parseInt(mergedBadge.textContent) || 0;
+                    mergedBadge.textContent = currentCount + 1;
+                }
+            } else {
+                // Reload to show updated status
+                loadEntries();
+            }
+        } catch (err) {
+            console.error('Failed to merge events:', err);
+            showToast(err.message || 'Failed to merge events', 'error');
+        } finally {
+            setLoading(confirmBtn, false);
+        }
+    }
+    
+    /**
      * Show fix dates form
      * Displays inline form for correcting event start/end dates with current values pre-filled
      * @param {string} id - Review queue entry ID
@@ -1150,6 +1269,15 @@
         } else if (firstWarning.code && firstWarning.code.includes('reversed_dates')) {
             badge = '<span class="badge bg-warning">Date Issue</span>';
             message = 'Date ordering problem';
+        } else if (firstWarning.code === 'potential_duplicate') {
+            badge = '<span class="badge bg-purple">Possible Duplicate</span>';
+            message = firstWarning.message || 'May be a duplicate event';
+        } else if (firstWarning.code === 'place_possible_duplicate') {
+            badge = '<span class="badge bg-purple">Place Duplicate</span>';
+            message = firstWarning.message || 'Similar place already exists';
+        } else if (firstWarning.code === 'org_possible_duplicate') {
+            badge = '<span class="badge bg-purple">Org Duplicate</span>';
+            message = firstWarning.message || 'Similar organization already exists';
         } else {
             // Fallback: use field name or generic message
             const label = firstWarning.field || 'issue';
@@ -1190,6 +1318,11 @@
             // Quality issues
             'low_confidence': { label: 'Low Quality', color: 'warning' },
             'link_check_failed': { label: 'Bad Link', color: 'warning' },
+            
+            // Duplicate detection
+            'potential_duplicate': { label: 'Possible Duplicate', color: 'purple' },
+            'place_possible_duplicate': { label: 'Place Duplicate', color: 'purple' },
+            'org_possible_duplicate': { label: 'Org Duplicate', color: 'purple' },
         };
         
         const badge = badgeMap[code];

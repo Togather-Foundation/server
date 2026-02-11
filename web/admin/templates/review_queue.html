@@ -46,6 +46,11 @@
                                 Rejected <span class="badge bg-secondary ms-1">0</span>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-action="filter-status" data-status="merged">
+                                Merged <span class="badge bg-secondary ms-1">0</span>
+                            </a>
+                        </li>
                     </ul>
                     
                     <!-- Loading state -->
@@ -122,6 +127,31 @@
                 <div class="modal-footer">
                     <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-danger" id="confirm-reject-btn" data-action="confirm-reject">Reject</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Merge Modal -->
+    <div class="modal fade" id="merge-modal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Merge Duplicate Event</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">This will merge the duplicate event into the primary event. The duplicate will be soft-deleted and its source provenance preserved.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Primary Event ID (merge into)</label>
+                        <input type="text" class="form-control" id="merge-primary-event-id" placeholder="Enter the ULID of the event to keep">
+                        <div class="invalid-feedback" id="merge-event-error"></div>
+                        <small class="form-hint">The duplicate event from this review will be merged into the primary event specified above.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-purple" id="confirm-merge-btn" data-action="confirm-merge">Merge</button>
                 </div>
             </div>
         </div>

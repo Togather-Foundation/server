@@ -349,6 +349,9 @@ func (m *IngestMockRepository) ApproveReview(ctx context.Context, id int, review
 func (m *IngestMockRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*events.ReviewQueueEntry, error) {
 	return nil, nil
 }
+func (m *IngestMockRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
 
 func (m *IngestMockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil
