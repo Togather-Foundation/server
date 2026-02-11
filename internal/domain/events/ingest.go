@@ -326,6 +326,73 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			return nil, err
 		}
 		params.PrimaryVenueID = &place.ID
+
+		// Layer 3: Fuzzy place dedup. Only check when a NEW place was just created
+		// (returned ULID matches our generated one) — if UpsertPlace returned an
+		// existing record, the names already matched exactly under normalization.
+		if place.ULID == placeULID && s.dedupConfig.PlaceReviewThreshold > 0 {
+			placeCandidates, err := s.repo.FindSimilarPlaces(ctx,
+				validated.Location.Name,
+				validated.Location.AddressLocality,
+				validated.Location.AddressRegion,
+				s.dedupConfig.PlaceReviewThreshold,
+			)
+			if err != nil {
+				log.Warn().Err(err).
+					Str("place_name", validated.Location.Name).
+					Msg("Place similarity check failed, continuing ingestion")
+			} else {
+				// Filter out self-match (the place we just created)
+				var filtered []SimilarPlaceCandidate
+				for _, c := range placeCandidates {
+					if c.ID != place.ID {
+						filtered = append(filtered, c)
+					}
+				}
+				if len(filtered) > 0 {
+					best := filtered[0] // highest similarity, sorted DESC
+					if best.Similarity >= s.dedupConfig.PlaceAutoMergeThreshold {
+						// Auto-merge: the new place is almost certainly the same.
+						// Merge new into existing (existing is primary).
+						if mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID); mergeErr != nil {
+							log.Warn().Err(mergeErr).
+								Str("duplicate_place", place.ULID).
+								Str("primary_place", best.ULID).
+								Msg("Place auto-merge failed, continuing with new place")
+						} else {
+							log.Info().
+								Str("duplicate_place", place.ULID).
+								Str("primary_place", best.ULID).
+								Float64("similarity", best.Similarity).
+								Msg("Auto-merged duplicate place")
+							// Use the primary (existing) place for this event
+							params.PrimaryVenueID = &best.ID
+						}
+					} else {
+						// Below auto-merge but above review threshold — flag for review
+						matches := make([]map[string]any, 0, len(filtered))
+						for _, c := range filtered {
+							matches = append(matches, map[string]any{
+								"ulid":       c.ULID,
+								"name":       c.Name,
+								"similarity": c.Similarity,
+							})
+						}
+						warnings = append(warnings, ValidationWarning{
+							Field:   "location.name",
+							Message: fmt.Sprintf("Possible duplicate place: found %d similar place(s) in the same area", len(filtered)),
+							Code:    "place_possible_duplicate",
+							Details: map[string]any{
+								"matches":        matches,
+								"new_place_ulid": place.ULID,
+								"new_place_name": validated.Location.Name,
+							},
+						})
+						needsReview = true
+					}
+				}
+			}
+		}
 	}
 
 	// Layer 2: Near-duplicate detection via pg_trgm fuzzy name matching.
@@ -390,6 +457,71 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			return nil, err
 		}
 		params.OrganizerID = &org.ID
+
+		// Layer 3: Fuzzy organization dedup. Same pattern as places — only check
+		// when a NEW org was just created (returned ULID matches our generated one).
+		if org.ULID == orgULID && s.dedupConfig.OrgReviewThreshold > 0 {
+			orgCandidates, err := s.repo.FindSimilarOrganizations(ctx,
+				validated.Organizer.Name,
+				addressLocality,
+				addressRegion,
+				s.dedupConfig.OrgReviewThreshold,
+			)
+			if err != nil {
+				log.Warn().Err(err).
+					Str("org_name", validated.Organizer.Name).
+					Msg("Organization similarity check failed, continuing ingestion")
+			} else {
+				// Filter out self-match (the org we just created)
+				var filtered []SimilarOrgCandidate
+				for _, c := range orgCandidates {
+					if c.ID != org.ID {
+						filtered = append(filtered, c)
+					}
+				}
+				if len(filtered) > 0 {
+					best := filtered[0] // highest similarity, sorted DESC
+					if best.Similarity >= s.dedupConfig.OrgAutoMergeThreshold {
+						// Auto-merge: the new org is almost certainly the same.
+						if mergeErr := s.repo.MergeOrganizations(ctx, org.ID, best.ID); mergeErr != nil {
+							log.Warn().Err(mergeErr).
+								Str("duplicate_org", org.ULID).
+								Str("primary_org", best.ULID).
+								Msg("Organization auto-merge failed, continuing with new org")
+						} else {
+							log.Info().
+								Str("duplicate_org", org.ULID).
+								Str("primary_org", best.ULID).
+								Float64("similarity", best.Similarity).
+								Msg("Auto-merged duplicate organization")
+							// Use the primary (existing) org for this event
+							params.OrganizerID = &best.ID
+						}
+					} else {
+						// Below auto-merge but above review threshold — flag for review
+						matches := make([]map[string]any, 0, len(filtered))
+						for _, c := range filtered {
+							matches = append(matches, map[string]any{
+								"ulid":       c.ULID,
+								"name":       c.Name,
+								"similarity": c.Similarity,
+							})
+						}
+						warnings = append(warnings, ValidationWarning{
+							Field:   "organizer.name",
+							Message: fmt.Sprintf("Possible duplicate organization: found %d similar org(s) in the same area", len(filtered)),
+							Code:    "org_possible_duplicate",
+							Details: map[string]any{
+								"matches":      matches,
+								"new_org_ulid": org.ULID,
+								"new_org_name": validated.Organizer.Name,
+							},
+						})
+						needsReview = true
+					}
+				}
+			}
+		}
 	}
 
 	// Store the dedup hash so future ingestions can find this event

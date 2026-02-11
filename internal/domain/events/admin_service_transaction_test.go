@@ -263,6 +263,18 @@ func (m *mockTransactionalRepo) GetSourceTrustLevelBySourceID(ctx context.Contex
 func (m *mockTransactionalRepo) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
 	return nil, nil
 }
+func (m *mockTransactionalRepo) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
+	return nil, nil
+}
+func (m *mockTransactionalRepo) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
+	return nil, nil
+}
+func (m *mockTransactionalRepo) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+	return nil
+}
+func (m *mockTransactionalRepo) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
+	return nil
+}
 
 // mockTxCommitter implements TxCommitter
 type mockTxCommitter struct {

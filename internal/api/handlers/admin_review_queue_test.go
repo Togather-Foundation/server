@@ -240,6 +240,28 @@ func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string,
 	}
 	return args.Get(0).([]events.NearDuplicateCandidate), args.Error(1)
 }
+func (m *MockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
+	args := m.Called(ctx, name, locality, region, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.SimilarPlaceCandidate), args.Error(1)
+}
+func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarOrgCandidate, error) {
+	args := m.Called(ctx, name, locality, region, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.SimilarOrgCandidate), args.Error(1)
+}
+func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+	args := m.Called(ctx, duplicateID, primaryID)
+	return args.Error(0)
+}
+func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
+	args := m.Called(ctx, duplicateID, primaryID)
+	return args.Error(0)
+}
 
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {

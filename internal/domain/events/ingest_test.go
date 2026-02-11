@@ -437,6 +437,18 @@ func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sour
 func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
 	return nil, nil // no near duplicates by default
 }
+func (m *MockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
+	return nil, nil
+}
+func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
+	return nil, nil
+}
+func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+	return nil
+}
+func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
+	return nil
+}
 
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer

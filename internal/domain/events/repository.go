@@ -168,6 +168,12 @@ type Repository interface {
 	// Near-duplicate detection (Layer 2)
 	FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 
+	// Place/Organization fuzzy dedup (Layer 3)
+	FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error)
+	FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error)
+	MergePlaces(ctx context.Context, duplicateID string, primaryID string) error
+	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error
+
 	// Admin operations
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
@@ -312,5 +318,21 @@ type ReviewQueueListResult struct {
 type NearDuplicateCandidate struct {
 	ULID       string  // ULID of the candidate event
 	Name       string  // Name of the candidate event
+	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+}
+
+// SimilarPlaceCandidate represents an existing place that may be a fuzzy duplicate
+type SimilarPlaceCandidate struct {
+	ID         string  // UUID of the candidate place
+	ULID       string  // ULID of the candidate place
+	Name       string  // Name of the candidate place
+	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+}
+
+// SimilarOrgCandidate represents an existing organization that may be a fuzzy duplicate
+type SimilarOrgCandidate struct {
+	ID         string  // UUID of the candidate organization
+	ULID       string  // ULID of the candidate organization
+	Name       string  // Name of the candidate organization
 	Similarity float64 // Trigram similarity score (0.0 to 1.0)
 }

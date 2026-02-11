@@ -1204,6 +1204,149 @@ SELECT e.ulid, e.name, similarity(e.name, $3) AS sim
 	return candidates, nil
 }
 
+// FindSimilarPlaces returns places with similar normalized names in the same locality/region.
+// Uses pg_trgm similarity() against the normalized_name column, which has a GIN trgm index.
+// Excludes places that have already been merged into another place.
+func (r *EventRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
+	queryer := r.queryer()
+
+	rows, err := queryer.Query(ctx, `
+SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
+  FROM places
+ WHERE deleted_at IS NULL
+   AND merged_into_id IS NULL
+   AND COALESCE(address_locality, '') = COALESCE($2, '')
+   AND COALESCE(address_region, '') = COALESCE($3, '')
+   AND similarity(normalized_name, normalize_name($1)) >= $4
+ ORDER BY sim DESC
+ LIMIT 5
+`, name, locality, region, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("find similar places: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []events.SimilarPlaceCandidate
+	for rows.Next() {
+		var c events.SimilarPlaceCandidate
+		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("scan similar place: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate similar places: %w", err)
+	}
+
+	return candidates, nil
+}
+
+// FindSimilarOrganizations returns organizations with similar normalized names in the same locality/region.
+// Uses pg_trgm similarity() against the normalized_name column, which has a GIN trgm index.
+// Excludes organizations that have already been merged into another organization.
+func (r *EventRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarOrgCandidate, error) {
+	queryer := r.queryer()
+
+	rows, err := queryer.Query(ctx, `
+SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
+  FROM organizations
+ WHERE deleted_at IS NULL
+   AND merged_into_id IS NULL
+   AND COALESCE(address_locality, '') = COALESCE($2, '')
+   AND COALESCE(address_region, '') = COALESCE($3, '')
+   AND similarity(normalized_name, normalize_name($1)) >= $4
+ ORDER BY sim DESC
+ LIMIT 5
+`, name, locality, region, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("find similar organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []events.SimilarOrgCandidate
+	for rows.Next() {
+		var c events.SimilarOrgCandidate
+		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("scan similar organization: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate similar organizations: %w", err)
+	}
+
+	return candidates, nil
+}
+
+// MergePlaces merges a duplicate place into a primary place.
+// Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
+// and soft-deletes the duplicate.
+func (r *EventRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) error {
+	queryer := r.queryer()
+
+	// Reassign all events from duplicate place to primary place
+	_, err := queryer.Exec(ctx, `
+UPDATE events SET primary_venue_id = $2
+ WHERE primary_venue_id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("reassign events from duplicate place: %w", err)
+	}
+
+	// Reassign all occurrences from duplicate place to primary place
+	_, err = queryer.Exec(ctx, `
+UPDATE event_occurrences SET venue_id = $2
+ WHERE venue_id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("reassign occurrences from duplicate place: %w", err)
+	}
+
+	// Mark the duplicate as merged and soft-delete it
+	cmd, err := queryer.Exec(ctx, `
+UPDATE places SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'merged'
+ WHERE id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("merge place: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return events.ErrNotFound
+	}
+
+	return nil
+}
+
+// MergeOrganizations merges a duplicate organization into a primary organization.
+// Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
+// and soft-deletes the duplicate.
+func (r *EventRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) error {
+	queryer := r.queryer()
+
+	// Reassign all events from duplicate org to primary org
+	_, err := queryer.Exec(ctx, `
+UPDATE events SET organizer_id = $2
+ WHERE organizer_id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("reassign events from duplicate organization: %w", err)
+	}
+
+	// Mark the duplicate as merged and soft-delete it
+	cmd, err := queryer.Exec(ctx, `
+UPDATE organizations SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'merged'
+ WHERE id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return fmt.Errorf("merge organization: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return events.ErrNotFound
+	}
+
+	return nil
+}
+
 // UpdateEvent updates an event by ULID with the provided parameters
 func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
 	queries := Queries{db: r.queryer()}

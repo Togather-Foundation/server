@@ -162,6 +162,18 @@ func (s stubEventsRepo) GetSourceTrustLevelBySourceID(_ context.Context, _ strin
 func (s stubEventsRepo) FindNearDuplicates(_ context.Context, _ string, _ time.Time, _ string, _ float64) ([]events.NearDuplicateCandidate, error) {
 	return nil, nil
 }
+func (s stubEventsRepo) FindSimilarPlaces(_ context.Context, _ string, _ string, _ string, _ float64) ([]events.SimilarPlaceCandidate, error) {
+	return nil, nil
+}
+func (s stubEventsRepo) FindSimilarOrganizations(_ context.Context, _ string, _ string, _ string, _ float64) ([]events.SimilarOrgCandidate, error) {
+	return nil, nil
+}
+func (s stubEventsRepo) MergePlaces(_ context.Context, _ string, _ string) error {
+	return nil
+}
+func (s stubEventsRepo) MergeOrganizations(_ context.Context, _ string, _ string) error {
+	return nil
+}
 
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
