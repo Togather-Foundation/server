@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,16 +67,7 @@ func reviewQueueTestEvent(t *testing.T, ctx context.Context, repo *EventReposito
 
 func TestEventRepository_ReviewQueue(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 
@@ -369,16 +360,7 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 
 func TestEventRepository_ReviewQueue_Pagination(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 
@@ -441,16 +423,7 @@ func TestEventRepository_ReviewQueue_Pagination(t *testing.T) {
 // for ListReviewQueue (internal/storage/postgres/events_repository.go:1330-1384)
 func TestEventRepository_ListReviewQueue_PaginationEdgeCases(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,16 +69,7 @@ func TestEscapeILIKEPattern(t *testing.T) {
 
 func TestEventRepository_ILIKEInjectionPrevention(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool}
 

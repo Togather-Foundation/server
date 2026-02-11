@@ -6,22 +6,13 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
-	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestProvenanceRepositoryCreateAndGetByBaseURL(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &ProvenanceRepository{pool: pool}
 
@@ -46,16 +37,7 @@ func TestProvenanceRepositoryCreateAndGetByBaseURL(t *testing.T) {
 
 func TestProvenanceRepositoryGetEventSourcesAndFields(t *testing.T) {
 	ctx := context.Background()
-	container, dbURL := setupPostgres(t, ctx)
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	pool, err := pgxpool.New(ctx, dbURL)
-	require.NoError(t, err)
-	defer pool.Close()
+	pool, _ := setupPostgres(t, ctx)
 
 	repo := &ProvenanceRepository{pool: pool}
 
