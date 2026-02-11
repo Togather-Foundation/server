@@ -463,7 +463,8 @@ INSERT INTO events (
 	license_url,
 	license_status,
 	confidence,
-	quality_score
+	quality_score,
+	dedup_hash
 ) VALUES (
 	$1,
 	$2,
@@ -481,7 +482,8 @@ INSERT INTO events (
 	$14,
 	$15,
 	$16,
-	$17
+	$17,
+	NULLIF($18, '')
 )
 RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 	  lifecycle_state, event_status, attendance_mode, event_domain,
@@ -507,6 +509,7 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		params.LicenseStatus,
 		params.Confidence,
 		params.QualityScore,
+		params.DedupHash,
 	)
 
 	var data eventRow

@@ -62,7 +62,7 @@ func EventInputFromEvent(e *Event) EventInput {
 
 // mergeStringField applies the merge strategy for a single string field.
 // - If existing is empty and new has data → fill (set target to new value)
-// - If both have data and new has higher trust (lower number) → overwrite
+// - If both have data and new has higher trust (higher number = more trusted) → overwrite
 // - Otherwise → keep existing (no change)
 //
 // Returns true if the field was changed.

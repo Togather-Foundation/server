@@ -197,13 +197,69 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	// Ensure rollback on error
+	// Ensure rollback on error (no-op after commit)
 	defer func() {
-		if err != nil {
-			_ = txCommitter.Rollback(ctx)
-		}
+		_ = txCommitter.Rollback(ctx)
 	}()
 
+	if err := s.executeMerge(ctx, txRepo, params); err != nil {
+		return err
+	}
+
+	// Commit transaction
+	err = txCommitter.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// MergeEventsWithReview atomically merges a duplicate event into a primary event AND
+// updates the review queue entry status to "merged" in a single database transaction.
+// This prevents inconsistency where the merge could succeed but the review status update fails.
+func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEventsParams, reviewID int, reviewedBy string) (*ReviewQueueEntry, error) {
+	if params.PrimaryULID == "" || params.DuplicateULID == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	if params.PrimaryULID == params.DuplicateULID {
+		return nil, ErrCannotMergeSameEvent
+	}
+
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error (no-op after commit)
+	defer func() {
+		_ = txCommitter.Rollback(ctx)
+	}()
+
+	if err := s.executeMerge(ctx, txRepo, params); err != nil {
+		return nil, err
+	}
+
+	// Update the review queue entry to "merged" status — within the same transaction
+	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, params.PrimaryULID)
+	if err != nil {
+		return nil, fmt.Errorf("update review status: %w", err)
+	}
+
+	// Commit transaction — all operations succeed or none do
+	err = txCommitter.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return reviewEntry, nil
+}
+
+// executeMerge performs the core merge operations within an existing transaction:
+// verify events, enrich primary, soft-delete duplicate, create tombstone.
+func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, params MergeEventsParams) error {
 	// Verify both events exist
 	primary, err := txRepo.GetByULID(ctx, params.PrimaryULID)
 	if err != nil {
@@ -254,7 +310,6 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 	}
 
 	// Generate tombstone for the duplicate event
-	// Build canonical URI for primary event (supersededBy)
 	primaryURI := fmt.Sprintf("https://togather.foundation/events/%s", params.PrimaryULID)
 
 	tombstonePayload, err := buildTombstonePayload(duplicate.ULID, duplicate.Name, &primaryURI, "duplicate_merged")
@@ -276,25 +331,15 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		return fmt.Errorf("create tombstone: %w", err)
 	}
 
-	// Commit transaction
-	err = txCommitter.Commit(ctx)
-	if err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-
 	return nil
 }
 
-// MergeEventsWithReview atomically merges a duplicate event into a primary event AND
-// updates the review queue entry status to "merged" in a single database transaction.
-// This prevents inconsistency where the merge could succeed but the review status update fails.
-func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEventsParams, reviewID int, reviewedBy string) (*ReviewQueueEntry, error) {
-	if params.PrimaryULID == "" || params.DuplicateULID == "" {
+// ApproveEventWithReview atomically publishes an event AND marks its review queue entry
+// as approved in a single database transaction. This prevents inconsistency where the
+// event is published but the review stays pending.
+func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID string, reviewID int, reviewedBy string, notes *string) (*ReviewQueueEntry, error) {
+	if eventULID == "" {
 		return nil, ErrInvalidUpdateParams
-	}
-
-	if params.PrimaryULID == params.DuplicateULID {
-		return nil, ErrCannotMergeSameEvent
 	}
 
 	// Begin transaction
@@ -308,72 +353,80 @@ func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEv
 		_ = txCommitter.Rollback(ctx)
 	}()
 
-	// Verify both events exist
-	primary, err := txRepo.GetByULID(ctx, params.PrimaryULID)
+	// Publish the event within the transaction
+	existing, err := txRepo.GetByULID(ctx, eventULID)
 	if err != nil {
-		return nil, fmt.Errorf("primary event not found: %w", err)
+		return nil, fmt.Errorf("get event: %w", err)
 	}
 
-	duplicate, err := txRepo.GetByULID(ctx, params.DuplicateULID)
-	if err != nil {
-		return nil, fmt.Errorf("duplicate event not found: %w", err)
-	}
-
-	// Verify neither event is deleted or already merged
-	if primary.LifecycleState == "deleted" {
-		log.Warn().
-			Str("primary_ulid", params.PrimaryULID).
-			Str("duplicate_ulid", params.DuplicateULID).
-			Int("review_id", reviewID).
-			Msg("merge rejected: primary event is deleted")
-		return nil, fmt.Errorf("primary event %s: %w", params.PrimaryULID, ErrEventDeleted)
-	}
-	if duplicate.LifecycleState == "deleted" {
-		log.Warn().
-			Str("primary_ulid", params.PrimaryULID).
-			Str("duplicate_ulid", params.DuplicateULID).
-			Int("review_id", reviewID).
-			Msg("merge rejected: duplicate event is already deleted or merged")
-		return nil, fmt.Errorf("duplicate event %s: %w", params.DuplicateULID, ErrEventDeleted)
-	}
-
-	// Enrich primary event with data from the duplicate before soft-deleting it.
-	// Admin merges use equal trust (0, 0) so only gap-filling occurs — the
-	// duplicate's data fills empty fields on the primary but never overwrites.
-	dupInput := EventInputFromEvent(duplicate)
-	enrichParams, enriched := AutoMergeFields(primary, dupInput, 0, 0)
-	if enriched {
-		_, err = txRepo.UpdateEvent(ctx, params.PrimaryULID, enrichParams)
+	if existing.LifecycleState != "published" {
+		published := "published"
+		_, err = txRepo.UpdateEvent(ctx, eventULID, UpdateEventParams{
+			LifecycleState: &published,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("enrich primary event: %w", err)
+			return nil, fmt.Errorf("publish event: %w", err)
 		}
-		log.Info().
-			Str("primary_ulid", params.PrimaryULID).
-			Str("duplicate_ulid", params.DuplicateULID).
-			Int("review_id", reviewID).
-			Msg("enriched primary event with duplicate data during merge")
 	}
 
-	// Merge duplicate into primary (soft delete + set merged_into_id)
-	err = txRepo.MergeEvents(ctx, params.DuplicateULID, params.PrimaryULID)
+	// Mark review as approved within the same transaction
+	reviewEntry, err := txRepo.ApproveReview(ctx, reviewID, reviewedBy, notes)
 	if err != nil {
-		return nil, fmt.Errorf("merge events: %w", err)
+		return nil, fmt.Errorf("approve review: %w", err)
 	}
 
-	// Generate tombstone for the duplicate event
-	primaryURI := fmt.Sprintf("https://togather.foundation/events/%s", params.PrimaryULID)
+	// Commit transaction — both operations succeed or neither does
+	err = txCommitter.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
 
-	tombstonePayload, err := buildTombstonePayload(duplicate.ULID, duplicate.Name, &primaryURI, "duplicate_merged")
+	return reviewEntry, nil
+}
+
+// RejectEventWithReview atomically soft-deletes an event with a tombstone AND marks its
+// review queue entry as rejected in a single database transaction. This prevents inconsistency
+// where the event is deleted but the review stays pending.
+func (s *AdminService) RejectEventWithReview(ctx context.Context, eventULID string, reviewID int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
+	if eventULID == "" || reason == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error (no-op after commit)
+	defer func() {
+		_ = txCommitter.Rollback(ctx)
+	}()
+
+	// Get the event for tombstone generation
+	event, err := txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get event: %w", err)
+	}
+
+	// Soft delete the event
+	err = txRepo.SoftDeleteEvent(ctx, eventULID, reason)
+	if err != nil {
+		return nil, fmt.Errorf("soft delete event: %w", err)
+	}
+
+	// Generate tombstone
+	tombstonePayload, err := buildTombstonePayload(event.ULID, event.Name, nil, reason)
 	if err != nil {
 		return nil, fmt.Errorf("build tombstone: %w", err)
 	}
 
 	tombstoneParams := TombstoneCreateParams{
-		EventID:      duplicate.ID,
-		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", duplicate.ULID),
+		EventID:      event.ID,
+		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", event.ULID),
 		DeletedAt:    time.Now(),
-		Reason:       "duplicate_merged",
-		SupersededBy: &primaryURI,
+		Reason:       reason,
+		SupersededBy: nil,
 		Payload:      tombstonePayload,
 	}
 
@@ -382,10 +435,91 @@ func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEv
 		return nil, fmt.Errorf("create tombstone: %w", err)
 	}
 
-	// Update the review queue entry to "merged" status — within the same transaction
-	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, params.PrimaryULID)
+	// Mark review as rejected within the same transaction
+	reviewEntry, err := txRepo.RejectReview(ctx, reviewID, reviewedBy, reason)
 	if err != nil {
-		return nil, fmt.Errorf("update review status: %w", err)
+		return nil, fmt.Errorf("reject review: %w", err)
+	}
+
+	// Commit transaction — all operations succeed or none do
+	err = txCommitter.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return reviewEntry, nil
+}
+
+// FixAndApproveEventWithReview atomically fixes occurrence dates, publishes the event,
+// AND marks the review queue entry as approved in a single database transaction.
+func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventULID string, reviewID int, reviewedBy string, notes *string, startDate *time.Time, endDate *time.Time) (*ReviewQueueEntry, error) {
+	if eventULID == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error (no-op after commit)
+	defer func() {
+		_ = txCommitter.Rollback(ctx)
+	}()
+
+	// Get the event and its occurrences
+	existing, err := txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get event: %w", err)
+	}
+
+	if len(existing.Occurrences) == 0 {
+		return nil, fmt.Errorf("event %s has no occurrences to fix", eventULID)
+	}
+
+	// Determine effective start and end times
+	var effectiveStart time.Time
+	var effectiveEnd *time.Time
+
+	if startDate != nil {
+		effectiveStart = *startDate
+	} else {
+		effectiveStart = existing.Occurrences[0].StartTime
+	}
+
+	if endDate != nil {
+		effectiveEnd = endDate
+	} else {
+		effectiveEnd = existing.Occurrences[0].EndTime
+	}
+
+	// Validate: end must not be before start
+	if effectiveEnd != nil && effectiveEnd.Before(effectiveStart) {
+		return nil, FilterError{Field: "endDate", Message: "end date cannot be before start date"}
+	}
+
+	// Fix occurrence dates within the transaction
+	err = txRepo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd)
+	if err != nil {
+		return nil, fmt.Errorf("fix occurrence dates: %w", err)
+	}
+
+	// Publish the event within the transaction
+	if existing.LifecycleState != "published" {
+		published := "published"
+		_, err = txRepo.UpdateEvent(ctx, eventULID, UpdateEventParams{
+			LifecycleState: &published,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("publish event: %w", err)
+		}
+	}
+
+	// Mark review as approved within the same transaction
+	reviewEntry, err := txRepo.ApproveReview(ctx, reviewID, reviewedBy, notes)
+	if err != nil {
+		return nil, fmt.Errorf("approve review: %w", err)
 	}
 
 	// Commit transaction — all operations succeed or none do

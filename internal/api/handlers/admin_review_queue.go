@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -241,10 +242,23 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Only pending reviews can be approved
+	if review.Status != "pending" {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", fmt.Sprintf("Review entry has already been %s", review.Status), nil, h.Env)
+		return
+	}
+
 	// Update event lifecycle state to published
 	eventULID := review.EventULID
 
-	_, err = h.AdminService.PublishEvent(r.Context(), eventULID)
+	// Mark review as approved
+	notes := &req.Notes
+	if req.Notes == "" {
+		notes = nil
+	}
+
+	// Atomically publish event AND approve review in a single transaction
+	updatedReview, err := h.AdminService.ApproveEventWithReview(r.Context(), eventULID, id, reviewedBy, notes)
 	if err != nil {
 		// Log failure
 		if h.AuditLogger != nil {
@@ -255,30 +269,7 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 		}
 
 		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("approve review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
-			return
-		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to publish event", fmt.Errorf("approve review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
-		return
-	}
-
-	// Mark review as approved
-	notes := &req.Notes
-	if req.Notes == "" {
-		notes = nil
-	}
-	updatedReview, err := h.Repository.ApproveReview(r.Context(), id, reviewedBy, notes)
-	if err != nil {
-		// Log failure
-		if h.AuditLogger != nil {
-			h.AuditLogger.LogFromRequest(r, "admin.review.approve", "review", strconv.Itoa(id), "failure", map[string]string{
-				"error":    err.Error(),
-				"event_id": eventULID,
-			})
-		}
-
-		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", fmt.Errorf("approve review id=%d event=%s: %w", id, eventULID, err), h.Env)
@@ -353,10 +344,17 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Only pending reviews can be rejected
+	if review.Status != "pending" {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", fmt.Sprintf("Review entry has already been %s", review.Status), nil, h.Env)
+		return
+	}
+
 	// Update event lifecycle state to deleted
 	eventULID := review.EventULID
 
-	err = h.AdminService.DeleteEvent(r.Context(), eventULID, req.Reason)
+	// Atomically delete event AND reject review in a single transaction
+	updatedReview, err := h.AdminService.RejectEventWithReview(r.Context(), eventULID, id, reviewedBy, req.Reason)
 	if err != nil {
 		// Log failure
 		if h.AuditLogger != nil {
@@ -368,27 +366,7 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 		}
 
 		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("reject review id=%d: delete event %s: %w", id, eventULID, err), h.Env)
-			return
-		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to delete event", fmt.Errorf("reject review id=%d: delete event %s: %w", id, eventULID, err), h.Env)
-		return
-	}
-
-	// Mark review as rejected
-	updatedReview, err := h.Repository.RejectReview(r.Context(), id, reviewedBy, req.Reason)
-	if err != nil {
-		// Log failure
-		if h.AuditLogger != nil {
-			h.AuditLogger.LogFromRequest(r, "admin.review.reject", "review", strconv.Itoa(id), "failure", map[string]string{
-				"error":    err.Error(),
-				"event_id": eventULID,
-				"reason":   req.Reason,
-			})
-		}
-
-		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to reject review", fmt.Errorf("reject review id=%d event=%s: %w", id, eventULID, err), h.Env)
@@ -473,48 +451,16 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Only pending reviews can be fixed
+	if review.Status != "pending" {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", fmt.Sprintf("Review entry has already been %s", review.Status), nil, h.Env)
+		return
+	}
+
 	// Update event with corrected dates
 	eventULID := review.EventULID
 
-	// Apply occurrence date corrections before publishing
-	err = h.AdminService.FixEventOccurrenceDates(r.Context(), eventULID, req.Corrections.StartDate, req.Corrections.EndDate)
-	if err != nil {
-		// Log failure
-		if h.AuditLogger != nil {
-			h.AuditLogger.LogFromRequest(r, "admin.review.fix", "review", strconv.Itoa(id), "failure", map[string]string{
-				"error":    err.Error(),
-				"event_id": eventULID,
-			})
-		}
-
-		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: fix occurrence dates for event %s: %w", id, eventULID, err), h.Env)
-			return
-		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fix occurrence dates", fmt.Errorf("fix review id=%d: fix occurrence dates for event %s: %w", id, eventULID, err), h.Env)
-		return
-	}
-
-	// Publish the event now that dates are corrected
-	_, err = h.AdminService.PublishEvent(r.Context(), eventULID)
-	if err != nil {
-		// Log failure
-		if h.AuditLogger != nil {
-			h.AuditLogger.LogFromRequest(r, "admin.review.fix", "review", strconv.Itoa(id), "failure", map[string]string{
-				"error":    err.Error(),
-				"event_id": eventULID,
-			})
-		}
-
-		if errors.Is(err, events.ErrNotFound) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
-			return
-		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to publish event", fmt.Errorf("fix review id=%d: publish event %s: %w", id, eventULID, err), h.Env)
-		return
-	}
-
-	// Mark review as approved with notes about manual correction
+	// Build notes for the correction
 	notes := req.Notes
 	if notes == "" {
 		notes = "Manually corrected dates"
@@ -525,9 +471,10 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	if req.Corrections.EndDate != nil {
 		notes += fmt.Sprintf(" (endDate: %s)", req.Corrections.EndDate.Format(time.RFC3339))
 	}
-
 	notesPtr := &notes
-	updatedReview, err := h.Repository.ApproveReview(r.Context(), id, reviewedBy, notesPtr)
+
+	// Atomically fix dates, publish event, AND approve review in a single transaction
+	updatedReview, err := h.AdminService.FixAndApproveEventWithReview(r.Context(), eventULID, id, reviewedBy, notesPtr, req.Corrections.StartDate, req.Corrections.EndDate)
 	if err != nil {
 		// Log failure
 		if h.AuditLogger != nil {
@@ -537,11 +484,11 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 			})
 		}
 
-		if errors.Is(err, pgx.ErrNoRows) {
-			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found or already reviewed", fmt.Errorf("fix review id=%d: approve review: %w", id, err), h.Env)
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
 			return
 		}
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", fmt.Errorf("fix review id=%d event=%s: approve review: %w", id, eventULID, err), h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fix and approve review", fmt.Errorf("fix review id=%d event=%s: %w", id, eventULID, err), h.Env)
 		return
 	}
 
@@ -807,13 +754,11 @@ func calculateChanges(original, normalized map[string]any) []changeDetail {
 }
 
 func getUserFromContext(r *http.Request) string {
-	// Try to get user from context (set by auth middleware)
-	if user := r.Context().Value("user"); user != nil {
-		if email, ok := user.(string); ok && email != "" {
-			return email
-		}
+	// Get user identity from auth middleware claims (typed context key)
+	if claims := middleware.AdminClaims(r); claims != nil && claims.Subject != "" {
+		return claims.Subject
 	}
-	// Fallback to empty string (anonymous admin)
+	// Fallback for unauthenticated admin (e.g., dev mode)
 	return "admin"
 }
 

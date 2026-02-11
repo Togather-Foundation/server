@@ -65,6 +65,14 @@ func BuildDedupHash(candidate DedupCandidate) string {
 	venue := strings.ToLower(strings.TrimSpace(candidate.VenueID))
 	venue = collapseSpaces.ReplaceAllString(venue, " ")
 	start := strings.TrimSpace(candidate.StartDate)
+
+	// If all fields are empty, return empty string to signal "no dedup hash available".
+	// This matches the design doc expectation that events without enough identity
+	// information (S4.4) skip the dedup hash check entirely.
+	if name == "" && venue == "" && start == "" {
+		return ""
+	}
+
 	payload := strings.Join([]string{name, venue, start}, "|")
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])

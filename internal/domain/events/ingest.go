@@ -208,8 +208,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}
 
-	// Check for existing review queue entry if this event needs review
-	if needsReview {
+	// Check for existing review queue entry for this event.
+	// This runs regardless of needsReview so we can:
+	// 1. Detect previously rejected events (block resubmission)
+	// 2. Auto-approve pending reviews when a resubmission has no warnings (S5.1)
+	// 3. Update pending reviews with new payloads when still has issues
+	{
 		var externalID *string
 		if validated.Source != nil && validated.Source.EventID != "" {
 			externalID = &validated.Source.EventID
@@ -244,9 +248,9 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 				// Event passed or different issues - allow resubmission (continue to create new event)
 
 			case "pending":
-				// Already in queue - check if fixed
+				// Already in queue - check if the resubmission fixed the issues
 				if len(warnings) == 0 {
-					// Fixed! Approve and publish
+					// Fixed! Approve and publish (S5.1 auto-approve path)
 					_, err := s.repo.ApproveReview(ctx, existingReview.ID, "system", stringPtr("Auto-approved: resubmission with no warnings"))
 					if err != nil {
 						return nil, fmt.Errorf("approve review: %w", err)
