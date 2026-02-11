@@ -247,6 +247,8 @@ func TestAdminMergeDuplicatesPreservesProvenance(t *testing.T) {
 	agentKey := insertAPIKey(t, env, "test-agent")
 
 	// Create two events from different sources
+	// Use slightly different times (1 hour apart) to avoid automatic deduplication
+	// This simulates two different sources reporting similar events that an admin wants to merge
 	event1 := map[string]any{
 		"name":      "Community Event",
 		"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
@@ -263,7 +265,7 @@ func TestAdminMergeDuplicatesPreservesProvenance(t *testing.T) {
 
 	event2 := map[string]any{
 		"name":      "Community Event",
-		"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": time.Date(2026, 10, 1, 20, 0, 0, 0, time.UTC).Format(time.RFC3339), // 1 hour later to avoid dedup
 		"location": map[string]any{
 			"name":            "Community Center",
 			"addressLocality": "Toronto",
