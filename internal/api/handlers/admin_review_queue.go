@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -403,6 +404,10 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 		})
 	}
 
+	// Record not-duplicate decisions: if the review had potential_duplicate warnings,
+	// extract the matched event ULIDs and record them so future ingestion won't re-flag.
+	h.recordNotDuplicatesFromWarnings(r.Context(), review, reviewedBy)
+
 	// Build response
 	detail, err := buildReviewQueueDetail(*updatedReview)
 	if err != nil {
@@ -471,17 +476,26 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	// Update event with corrected dates
 	eventULID := review.EventULID
 
-	// TODO(srv-trg): Implement FixReview workflow - allow admin to modify event data and re-normalize
-	// This handler currently only marks the review as approved with notes about corrections,
-	// but does not actually update the event's occurrence-level dates. Full implementation needs:
-	// - Update event occurrences with corrected start/end dates
-	// - Re-run normalization on the updated event data
-	// - Validate the corrected data meets SHACL constraints
-	// - Handle both simple date fixes and complex event structure changes
-	// Related: Need occurrence-level update API in AdminService
-	_ = events.UpdateEventParams{}
+	// Apply occurrence date corrections before publishing
+	err = h.AdminService.FixEventOccurrenceDates(r.Context(), eventULID, req.Corrections.StartDate, req.Corrections.EndDate)
+	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.fix", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":    err.Error(),
+				"event_id": eventULID,
+			})
+		}
 
-	// Publish the event (assuming corrections were made outside this endpoint or will be made)
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: fix occurrence dates for event %s: %w", id, eventULID, err), h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fix occurrence dates", fmt.Errorf("fix review id=%d: fix occurrence dates for event %s: %w", id, eventULID, err), h.Env)
+		return
+	}
+
+	// Publish the event now that dates are corrected
 	_, err = h.AdminService.PublishEvent(r.Context(), eventULID)
 	if err != nil {
 		// Log failure
@@ -544,6 +558,109 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	detail, err := buildReviewQueueDetail(*updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("fix review id=%d: build detail: %w", id, err), h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, detail, "application/json")
+}
+
+// MergeReview marks a review entry as merged, merging the duplicate event into a primary event.
+// It handles POST /api/v1/admin/review-queue/:id/merge and uses AdminService.MergeEvents
+// to perform the actual merge. Requires primary_event_ulid in the request body.
+func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Repository == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Extract and validate ID
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing review ID", nil, h.Env)
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid review ID", nil, h.Env)
+		return
+	}
+
+	// Parse request body — requires the ULID of the primary event to merge into
+	var req struct {
+		PrimaryEventULID string `json:"primary_event_ulid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+	if req.PrimaryEventULID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "primary_event_ulid is required", nil, h.Env)
+		return
+	}
+
+	// Get reviewer identity from context
+	reviewedBy := getUserFromContext(r)
+
+	// Fetch the review entry to get the duplicate event's ULID
+	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("merge review: get review queue entry id=%d: %w", id, err), h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("merge review: get review queue entry id=%d: %w", id, err), h.Env)
+		return
+	}
+
+	duplicateULID := review.EventULID
+
+	// Prevent merging an event into itself
+	if duplicateULID == req.PrimaryEventULID {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event into itself", nil, h.Env)
+		return
+	}
+
+	// Perform event merge AND review status update atomically in a single transaction
+	updatedReview, err := h.AdminService.MergeEventsWithReview(r.Context(), events.MergeEventsParams{
+		PrimaryULID:   req.PrimaryEventULID,
+		DuplicateULID: duplicateULID,
+	}, id, reviewedBy)
+	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.merge", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":           err.Error(),
+				"duplicate_event": duplicateULID,
+				"primary_event":   req.PrimaryEventULID,
+			})
+		}
+
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event or review entry not found", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrCannotMergeSameEvent) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event into itself", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to merge events", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
+		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.review.merge", "review", strconv.Itoa(id), "success", map[string]string{
+			"duplicate_event": duplicateULID,
+			"primary_event":   req.PrimaryEventULID,
+			"reviewed_by":     reviewedBy,
+		})
+	}
+
+	// Build response
+	detail, err := buildReviewQueueDetail(*updatedReview)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("merge review id=%d: build detail: %w", id, err), h.Env)
 		return
 	}
 
@@ -698,4 +815,54 @@ func getUserFromContext(r *http.Request) string {
 	}
 	// Fallback to empty string (anonymous admin)
 	return "admin"
+}
+
+// recordNotDuplicatesFromWarnings extracts potential_duplicate warnings from a review entry
+// and records each matched pair as not-duplicates so future ingestion won't re-flag them.
+// Errors are logged but not propagated — this is a best-effort enhancement.
+func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Context, review *events.ReviewQueueEntry, reviewedBy string) {
+	if review == nil || len(review.Warnings) == 0 {
+		return
+	}
+
+	var warnings []events.ValidationWarning
+	if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
+		slog.Warn("recordNotDuplicates: failed to parse warnings",
+			slog.Int("review_id", review.ID),
+			slog.String("error", err.Error()))
+		return
+	}
+
+	eventULID := review.EventULID
+	for _, w := range warnings {
+		if w.Code != "potential_duplicate" {
+			continue
+		}
+		matchesRaw, ok := w.Details["matches"]
+		if !ok {
+			continue
+		}
+		// matches is []any where each element is map[string]any with "ulid", "name", "similarity"
+		matches, ok := matchesRaw.([]any)
+		if !ok {
+			continue
+		}
+		for _, m := range matches {
+			matchMap, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			candidateULID, ok := matchMap["ulid"].(string)
+			if !ok || candidateULID == "" {
+				continue
+			}
+			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
+				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
+					slog.Int("review_id", review.ID),
+					slog.String("event_ulid", eventULID),
+					slog.String("candidate_ulid", candidateULID),
+					slog.String("error", err.Error()))
+			}
+		}
+	}
 }

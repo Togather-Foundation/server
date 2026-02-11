@@ -278,6 +278,10 @@ func (m *IngestMockRepository) UpdateEvent(ctx context.Context, ulid string, par
 	return event, nil
 }
 
+func (m *IngestMockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	return nil
+}
+
 func (m *IngestMockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -315,6 +319,76 @@ func (m *IngestMockRepository) GetTombstoneByEventULID(ctx context.Context, even
 
 func (m *IngestMockRepository) BeginTx(ctx context.Context) (events.Repository, events.TxCommitter, error) {
 	return m, &noOpTxCommitter{}, nil
+}
+
+// Review Queue methods (stub implementations)
+func (m *IngestMockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) CreateReviewQueueEntry(ctx context.Context, params events.ReviewQueueCreateParams) (*events.ReviewQueueEntry, error) {
+	return &events.ReviewQueueEntry{
+		ID:      1,
+		EventID: params.EventID,
+		Status:  "pending",
+	}, nil
+}
+
+func (m *IngestMockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, params events.ReviewQueueUpdateParams) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
+	return &events.ReviewQueueListResult{Entries: []events.ReviewQueueEntry{}, NextCursor: nil}, nil
+}
+
+func (m *IngestMockRepository) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+func (m *IngestMockRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) CleanupExpiredReviews(ctx context.Context) error {
+	return nil
+}
+
+func (m *IngestMockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	return 5, nil
+}
+
+func (m *IngestMockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	return 5, nil
+}
+
+func (m *IngestMockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+	return nil, nil
+}
+func (m *IngestMockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
+	return nil, nil
+}
+func (m *IngestMockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarOrgCandidate, error) {
+	return nil, nil
+}
+func (m *IngestMockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *IngestMockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *IngestMockRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	return nil
+}
+func (m *IngestMockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	return false, nil
 }
 
 type noOpTxCommitter struct{}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // TestMergeEvents_AtomicRollback verifies that MergeEvents rolls back on error
@@ -224,6 +225,9 @@ func (m *mockTransactionalRepo) UpsertOrganization(ctx context.Context, params O
 func (m *mockTransactionalRepo) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	return errors.New("not implemented")
+}
 func (m *mockTransactionalRepo) SoftDeleteEvent(ctx context.Context, ulid, reason string) error {
 	return errors.New("not implemented")
 }
@@ -250,8 +254,38 @@ func (m *mockTransactionalRepo) ApproveReview(ctx context.Context, id int, revie
 func (m *mockTransactionalRepo) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
 func (m *mockTransactionalRepo) CleanupExpiredReviews(ctx context.Context) error {
 	return errors.New("not implemented")
+}
+func (m *mockTransactionalRepo) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	return 5, nil
+}
+func (m *mockTransactionalRepo) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	return 5, nil
+}
+func (m *mockTransactionalRepo) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+	return nil, nil
+}
+func (m *mockTransactionalRepo) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
+	return nil, nil
+}
+func (m *mockTransactionalRepo) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
+	return nil, nil
+}
+func (m *mockTransactionalRepo) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *mockTransactionalRepo) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *mockTransactionalRepo) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	return nil
+}
+func (m *mockTransactionalRepo) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	return false, nil
 }
 
 // mockTxCommitter implements TxCommitter

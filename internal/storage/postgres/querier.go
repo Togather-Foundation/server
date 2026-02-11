@@ -14,7 +14,7 @@ type Querier interface {
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
 	// Mark review as approved
 	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
-	// Archive old approved/superseded reviews (90 day retention)
+	// Archive old approved/superseded/merged reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
 	// Delete rejected reviews for past events (7 day grace period)
 	CleanupExpiredRejections(ctx context.Context) error
@@ -104,11 +104,24 @@ type Querier interface {
 	// Records field-level provenance with source timestamp
 	InsertFieldProvenance(ctx context.Context, arg InsertFieldProvenanceParams) (FieldProvenance, error)
 	InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) (InsertIdempotencyKeyRow, error)
+	// SQLc queries for event_not_duplicates table.
+	// Tracks pairs of events that an admin has confirmed are NOT duplicates,
+	// preventing them from being re-flagged during near-duplicate detection.
+	// Record that two events are confirmed as NOT duplicates.
+	// Uses canonical ordering (smaller ULID first) to prevent storing both (A,B) and (B,A).
+	// ON CONFLICT DO NOTHING handles the case where the pair already exists.
+	InsertNotDuplicate(ctx context.Context, arg InsertNotDuplicateParams) error
+	// Check if a pair of events has been marked as not-duplicates.
+	// Uses canonical ordering to match regardless of argument order.
+	IsNotDuplicate(ctx context.Context, arg IsNotDuplicateParams) (bool, error)
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
 	// SQLc queries for change feeds.
 	ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error)
 	ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error)
 	ListFederationNodes(ctx context.Context, arg ListFederationNodesParams) ([]FederationNode, error)
+	// List all events that have been confirmed as NOT duplicates of a given event.
+	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
+	ListNotDuplicatesForEvent(ctx context.Context, eventID string) ([]EventNotDuplicate, error)
 	// SQLc queries for organizations domain.
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error)
 	ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error)
@@ -124,6 +137,10 @@ type Querier interface {
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
 	// Mark review as rejected
 	RejectReview(ctx context.Context, arg RejectReviewParams) (EventReviewQueue, error)
+	// Follow the merged_into_id chain from a given ULID to find the final canonical event.
+	// Uses a recursive CTE with a max depth of 10 to prevent infinite loops.
+	// Returns the ULID of the final canonical event (the one that is not itself merged).
+	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
@@ -135,6 +152,14 @@ type Querier interface {
 	UpdateFederationNodeHealth(ctx context.Context, arg UpdateFederationNodeHealthParams) error
 	UpdateFederationNodeSyncStatus(ctx context.Context, arg UpdateFederationNodeSyncStatusParams) error
 	UpdateLastLogin(ctx context.Context, id pgtype.UUID) error
+	// Flatten existing merge chains: update all events that point to an old target
+	// to point to the new canonical target instead. This prevents transitive chains.
+	// $1 = old target event ULID (intermediate node being re-pointed)
+	// $2 = new canonical target event ULID (final destination)
+	UpdateMergedIntoChain(ctx context.Context, arg UpdateMergedIntoChainParams) error
+	// Update the start_time and end_time of all occurrences for an event identified by ULID.
+	// Used by the FixReview workflow to correct occurrence dates during admin review.
+	UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error
 	// Update existing review entry (for resubmissions with same issues)
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error

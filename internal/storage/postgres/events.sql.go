@@ -359,6 +359,34 @@ func (q *Queries) MergeEventIntoDuplicate(ctx context.Context, arg MergeEventInt
 	return err
 }
 
+const resolveCanonicalEventULID = `-- name: ResolveCanonicalEventULID :one
+WITH RECURSIVE chain AS (
+    SELECT e.id, e.ulid, e.merged_into_id, 1 AS depth
+      FROM events e
+     WHERE e.ulid = $1
+    UNION ALL
+    SELECT e.id, e.ulid, e.merged_into_id, c.depth + 1
+      FROM events e
+      JOIN chain c ON c.merged_into_id = e.id
+     WHERE c.merged_into_id IS NOT NULL
+       AND c.depth < 10
+)
+SELECT ulid FROM chain
+ WHERE merged_into_id IS NULL
+    OR depth = 10
+ ORDER BY depth DESC
+ LIMIT 1
+`
+
+// Follow the merged_into_id chain from a given ULID to find the final canonical event.
+// Uses a recursive CTE with a max depth of 10 to prevent infinite loops.
+// Returns the ULID of the final canonical event (the one that is not itself merged).
+func (q *Queries) ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error) {
+	row := q.db.QueryRow(ctx, resolveCanonicalEventULID, ulid)
+	err := row.Scan(&ulid)
+	return ulid, err
+}
+
 const softDeleteEvent = `-- name: SoftDeleteEvent :exec
 UPDATE events
    SET deleted_at = now(),
@@ -444,4 +472,47 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Updat
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateMergedIntoChain = `-- name: UpdateMergedIntoChain :exec
+UPDATE events e_upd
+   SET merged_into_id = (SELECT e_new.id FROM events e_new WHERE e_new.ulid = $2),
+       updated_at = now()
+ WHERE e_upd.merged_into_id = (SELECT e_old.id FROM events e_old WHERE e_old.ulid = $1)
+    AND e_upd.ulid != $2
+`
+
+type UpdateMergedIntoChainParams struct {
+	Ulid   string `json:"ulid"`
+	Ulid_2 string `json:"ulid_2"`
+}
+
+// Flatten existing merge chains: update all events that point to an old target
+// to point to the new canonical target instead. This prevents transitive chains.
+// $1 = old target event ULID (intermediate node being re-pointed)
+// $2 = new canonical target event ULID (final destination)
+func (q *Queries) UpdateMergedIntoChain(ctx context.Context, arg UpdateMergedIntoChainParams) error {
+	_, err := q.db.Exec(ctx, updateMergedIntoChain, arg.Ulid, arg.Ulid_2)
+	return err
+}
+
+const updateOccurrenceDatesByEventULID = `-- name: UpdateOccurrenceDatesByEventULID :exec
+UPDATE event_occurrences
+   SET start_time = $1,
+       end_time = $2,
+       updated_at = now()
+ WHERE event_id = (SELECT id FROM events WHERE ulid = $3)
+`
+
+type UpdateOccurrenceDatesByEventULIDParams struct {
+	StartTime pgtype.Timestamptz `json:"start_time"`
+	EndTime   pgtype.Timestamptz `json:"end_time"`
+	EventUlid string             `json:"event_ulid"`
+}
+
+// Update the start_time and end_time of all occurrences for an event identified by ULID.
+// Used by the FixReview workflow to correct occurrence dates during admin review.
+func (q *Queries) UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error {
+	_, err := q.db.Exec(ctx, updateOccurrenceDatesByEventULID, arg.StartTime, arg.EndTime, arg.EventUlid)
+	return err
 }

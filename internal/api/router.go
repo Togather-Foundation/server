@@ -59,7 +59,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	eventsService := events.NewService(repo.Events())
-	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.Validation)
+	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.Validation).WithDedupConfig(cfg.Dedup)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 	provenanceService := provenance.NewService(repo.Provenance())
@@ -320,12 +320,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminApproveReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.ApproveReview))))
 	adminRejectReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.RejectReview))))
 	adminFixReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.FixReview))))
+	adminMergeReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.MergeReview))))
 
 	mux.Handle("GET /api/v1/admin/review-queue", adminListReviews)
 	mux.Handle("GET /api/v1/admin/review-queue/{id}", adminGetReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/approve", adminApproveReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/reject", adminRejectReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/fix", adminFixReview)
+	mux.Handle("POST /api/v1/admin/review-queue/{id}/merge", adminMergeReview)
 
 	// Admin user management (user administration system)
 	adminCreateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.CreateUser))))

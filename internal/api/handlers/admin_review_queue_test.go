@@ -126,6 +126,11 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params ev
 	return args.Get(0).(*events.Event), args.Error(1)
 }
 
+func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	args := m.Called(ctx, eventULID, startTime, endTime)
+	return args.Error(0)
+}
+
 func (m *MockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
 	args := m.Called(ctx, ulid, reason)
 	return args.Error(0)
@@ -212,6 +217,13 @@ func (m *MockRepository) RejectReview(ctx context.Context, id int, reviewedBy st
 	}
 	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
 }
+func (m *MockRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*events.ReviewQueueEntry, error) {
+	args := m.Called(ctx, id, reviewedBy, primaryEventULID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
+}
 
 func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	args := m.Called(ctx)
@@ -221,6 +233,54 @@ func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 func (m *MockRepository) BeginTx(ctx context.Context) (events.Repository, events.TxCommitter, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(events.Repository), args.Get(1).(events.TxCommitter), args.Error(2)
+}
+
+func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	args := m.Called(ctx, eventID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	args := m.Called(ctx, sourceID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+	args := m.Called(ctx, venueID, startTime, eventName, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.NearDuplicateCandidate), args.Error(1)
+}
+func (m *MockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
+	args := m.Called(ctx, name, locality, region, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.SimilarPlaceCandidate), args.Error(1)
+}
+func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarOrgCandidate, error) {
+	args := m.Called(ctx, name, locality, region, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.SimilarOrgCandidate), args.Error(1)
+}
+func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	args := m.Called(ctx, duplicateID, primaryID)
+	return args.Get(0).(*events.MergeResult), args.Error(1)
+}
+func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	args := m.Called(ctx, duplicateID, primaryID)
+	return args.Get(0).(*events.MergeResult), args.Error(1)
+}
+func (m *MockRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	args := m.Called(ctx, eventIDa, eventIDb, createdBy)
+	return args.Error(0)
+}
+func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	args := m.Called(ctx, eventIDa, eventIDb)
+	return args.Bool(0), args.Error(1)
 }
 
 // Helper to add admin user to request context
@@ -833,8 +893,23 @@ func TestRejectReview(t *testing.T) {
 	}
 }
 
-// TestFixReview tests the fix review handler (stub implementation)
+// TestFixReview tests the fix review handler
 func TestFixReview(t *testing.T) {
+	// eventWithOccurrence returns a test event with a single occurrence for FixEventOccurrenceDates
+	eventWithOccurrence := func(state string) *events.Event {
+		return &events.Event{
+			ULID:           "01HTEST1",
+			LifecycleState: state,
+			Occurrences: []events.Occurrence{
+				{
+					ID:        "occ-1",
+					StartTime: time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC),
+					EndTime:   func() *time.Time { t := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC); return &t }(),
+				},
+			},
+		}
+	}
+
 	tests := []struct {
 		name           string
 		reviewID       string
@@ -854,7 +929,10 @@ func TestFixReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
+				// FixEventOccurrenceDates: GetByULID + UpdateOccurrenceDates
+				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				// PublishEvent: GetByULID (again) + UpdateEvent
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(entry, nil)
 			},
@@ -872,7 +950,8 @@ func TestFixReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(entry, nil)
 			},
@@ -891,7 +970,8 @@ func TestFixReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(entry, nil)
 			},
@@ -931,7 +1011,7 @@ func TestFixReview(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:        "Error - Publish event fails",
+			name:        "Error - Fix occurrence dates fails (event not found)",
 			reviewID:    "1",
 			requestBody: map[string]any{"corrections": map[string]string{"startDate": "2024-01-01T10:00:00Z"}},
 			mockSetup: func(m *MockRepository) {
@@ -939,8 +1019,26 @@ func TestFixReview(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
 					(*events.Event)(nil),
-					errors.New("publish error"),
+					events.ErrNotFound,
 				)
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:        "Error - Publish event fails",
+			reviewID:    "1",
+			requestBody: map[string]any{"corrections": map[string]string{"startDate": "2024-01-01T10:00:00Z"}},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HTEST1")
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				// FixEventOccurrenceDates succeeds
+				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil).Once()
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				// PublishEvent fails
+				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
+					(*events.Event)(nil),
+					errors.New("publish error"),
+				).Once()
 			},
 			expectedStatus: http.StatusInternalServerError,
 		},
@@ -951,7 +1049,8 @@ func TestFixReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(
 					(*events.ReviewQueueEntry)(nil),

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 )
 
 // escapeILIKEPattern escapes special characters in ILIKE patterns to prevent SQL injection.
@@ -1127,6 +1128,480 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
+// GetSourceTrustLevel returns the highest trust level among sources linked to an event.
+// Trust levels are 1-10 where higher values mean more trusted (10 = most trusted).
+// Returns the default trust level of 5 if no sources are linked.
+func (r *EventRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	var eventUUID pgtype.UUID
+	if err := eventUUID.Scan(eventID); err != nil {
+		return 0, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	queryer := r.queryer()
+	var trustLevel int
+	err := queryer.QueryRow(ctx, `
+SELECT COALESCE(MAX(s.trust_level), 5)
+  FROM sources s
+  JOIN event_sources es ON es.source_id = s.id
+ WHERE es.event_id = $1
+`, eventUUID).Scan(&trustLevel)
+	if err != nil {
+		return 0, fmt.Errorf("get source trust level: %w", err)
+	}
+	return trustLevel, nil
+}
+
+// GetSourceTrustLevelBySourceID returns the trust level for a specific source.
+func (r *EventRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	queryer := r.queryer()
+	var trustLevel int
+	err := queryer.QueryRow(ctx, `
+SELECT trust_level FROM sources WHERE id = $1
+`, sourceID).Scan(&trustLevel)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 5, nil // default trust level if source not found
+		}
+		return 0, fmt.Errorf("get source trust level by ID: %w", err)
+	}
+	return trustLevel, nil
+}
+
+// FindNearDuplicates finds events at the same venue on the same date with similar names.
+// Uses pg_trgm similarity() for fuzzy name matching. Returns candidates above the threshold.
+func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+	queryer := r.queryer()
+
+	// Match events at the same venue on the same calendar date with similar names.
+	// Uses pg_trgm similarity() which returns a float between 0 and 1.
+	rows, err := queryer.Query(ctx, `
+SELECT e.ulid, e.name, similarity(e.name, $3) AS sim
+  FROM events e
+  JOIN event_occurrences o ON o.event_id = e.id
+ WHERE e.deleted_at IS NULL
+   AND e.primary_venue_id = $1
+   AND DATE(o.start_time) = DATE($2::timestamptz)
+   AND similarity(e.name, $3) >= $4
+ ORDER BY sim DESC
+ LIMIT 5
+`, venueID, startTime, eventName, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("find near duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []events.NearDuplicateCandidate
+	for rows.Next() {
+		var c events.NearDuplicateCandidate
+		if err := rows.Scan(&c.ULID, &c.Name, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("scan near duplicate: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate near duplicates: %w", err)
+	}
+
+	return candidates, nil
+}
+
+// FindSimilarPlaces returns places with similar normalized names in the same locality/region.
+// Uses pg_trgm similarity() against the normalized_name column, which has a GIN trgm index.
+// Excludes places that have already been merged into another place.
+func (r *EventRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
+	queryer := r.queryer()
+
+	rows, err := queryer.Query(ctx, `
+SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
+  FROM places
+ WHERE deleted_at IS NULL
+   AND merged_into_id IS NULL
+   AND COALESCE(address_locality, '') = COALESCE($2, '')
+   AND COALESCE(address_region, '') = COALESCE($3, '')
+   AND similarity(normalized_name, normalize_name($1)) >= $4
+ ORDER BY sim DESC
+ LIMIT 5
+`, name, locality, region, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("find similar places: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []events.SimilarPlaceCandidate
+	for rows.Next() {
+		var c events.SimilarPlaceCandidate
+		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("scan similar place: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate similar places: %w", err)
+	}
+
+	return candidates, nil
+}
+
+// FindSimilarOrganizations returns organizations with similar normalized names in the same locality/region.
+// Uses pg_trgm similarity() against the normalized_name column, which has a GIN trgm index.
+// Excludes organizations that have already been merged into another organization.
+func (r *EventRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarOrgCandidate, error) {
+	queryer := r.queryer()
+
+	rows, err := queryer.Query(ctx, `
+SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
+  FROM organizations
+ WHERE deleted_at IS NULL
+   AND merged_into_id IS NULL
+   AND COALESCE(address_locality, '') = COALESCE($2, '')
+   AND COALESCE(address_region, '') = COALESCE($3, '')
+   AND similarity(normalized_name, normalize_name($1)) >= $4
+ ORDER BY sim DESC
+ LIMIT 5
+`, name, locality, region, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("find similar organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []events.SimilarOrgCandidate
+	for rows.Next() {
+		var c events.SimilarOrgCandidate
+		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity); err != nil {
+			return nil, fmt.Errorf("scan similar organization: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate similar organizations: %w", err)
+	}
+
+	return candidates, nil
+}
+
+// MergePlaces merges a duplicate place into a primary place.
+// Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
+// fills empty fields on the primary from the duplicate, and soft-deletes the duplicate.
+//
+// Handles concurrent merge races gracefully:
+//   - If the duplicate was already merged by another goroutine, follows the merge chain
+//     and returns the canonical place ID (AlreadyMerged=true).
+//   - If the primary was itself merged, follows that chain to find the real canonical.
+//   - Uses FOR UPDATE SKIP LOCKED to prevent two goroutines from merging the same
+//     duplicate simultaneously.
+func (r *EventRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	queryer := r.queryer()
+
+	// Step 1: Lock the duplicate row and check its current state.
+	// FOR UPDATE SKIP LOCKED means if another tx already locked this row,
+	// we skip it (get no rows) rather than blocking — we'll treat that as
+	// "already being merged by someone else".
+	var dupMergedInto *string
+	var dupDeletedAt *string
+	err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text, deleted_at::text
+  FROM places
+ WHERE id = $1
+   FOR UPDATE SKIP LOCKED
+`, duplicateID).Scan(&dupMergedInto, &dupDeletedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Row is locked by another tx or doesn't exist.
+			// Follow the merge chain to find where it ended up.
+			canonicalID, resolveErr := r.resolveCanonicalPlace(ctx, duplicateID)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolve place after skip lock: %w", resolveErr)
+			}
+			return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+		}
+		return nil, fmt.Errorf("lock duplicate place: %w", err)
+	}
+
+	// Step 2: If the duplicate is already merged, follow the chain.
+	if dupMergedInto != nil {
+		canonicalID, resolveErr := r.resolveCanonicalPlace(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve already-merged place: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+	}
+
+	// Step 3: Check if the primary itself has been merged (follow chain).
+	resolvedPrimaryID, err := r.resolveCanonicalPlace(ctx, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary place: %w", err)
+	}
+	primaryID = resolvedPrimaryID
+
+	// Step 4: Don't merge into self.
+	if duplicateID == primaryID {
+		return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: true}, nil
+	}
+
+	// Step 5: Proceed with the actual merge.
+	// Fill gaps on the primary from the duplicate: only overwrite NULL/empty fields.
+	// full_address and geo_point are generated columns and must not be set directly.
+	_, err = queryer.Exec(ctx, `
+UPDATE places p
+   SET description              = COALESCE(NULLIF(p.description, ''),              d.description),
+       street_address           = COALESCE(NULLIF(p.street_address, ''),           d.street_address),
+       address_locality         = COALESCE(NULLIF(p.address_locality, ''),         d.address_locality),
+       address_region           = COALESCE(NULLIF(p.address_region, ''),           d.address_region),
+       postal_code              = COALESCE(NULLIF(p.postal_code, ''),              d.postal_code),
+       address_country          = COALESCE(NULLIF(p.address_country, ''),          d.address_country),
+       latitude                 = COALESCE(p.latitude,                             d.latitude),
+       longitude                = COALESCE(p.longitude,                            d.longitude),
+       telephone                = COALESCE(NULLIF(p.telephone, ''),                d.telephone),
+       email                    = COALESCE(NULLIF(p.email, ''),                    d.email),
+       url                      = COALESCE(NULLIF(p.url, ''),                      d.url),
+       maximum_attendee_capacity = COALESCE(p.maximum_attendee_capacity,           d.maximum_attendee_capacity),
+       venue_type               = COALESCE(NULLIF(p.venue_type, ''),               d.venue_type),
+       accessibility_features   = CASE WHEN p.accessibility_features IS NULL OR array_length(p.accessibility_features, 1) IS NULL
+                                       THEN d.accessibility_features
+                                       ELSE p.accessibility_features END,
+       updated_at               = NOW()
+  FROM places d
+ WHERE p.id = $2 AND d.id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("fill place gaps from duplicate: %w", err)
+	}
+
+	// Reassign all events from duplicate place to primary place
+	_, err = queryer.Exec(ctx, `
+UPDATE events SET primary_venue_id = $2
+ WHERE primary_venue_id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("reassign events from duplicate place: %w", err)
+	}
+
+	// Reassign all occurrences from duplicate place to primary place
+	_, err = queryer.Exec(ctx, `
+UPDATE event_occurrences SET venue_id = $2
+ WHERE venue_id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("reassign occurrences from duplicate place: %w", err)
+	}
+
+	// Mark the duplicate as merged and soft-delete it
+	cmd, err := queryer.Exec(ctx, `
+UPDATE places SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'merged'
+ WHERE id = $1 AND merged_into_id IS NULL
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("merge place: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		// Another goroutine merged it between our check and this UPDATE.
+		// Follow the chain to find the canonical place.
+		canonicalID, resolveErr := r.resolveCanonicalPlace(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve place after concurrent merge: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+	}
+
+	return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: false}, nil
+}
+
+// MergeOrganizations merges a duplicate organization into a primary organization.
+// Sets merged_into_id on the duplicate, reassigns all events pointing to the duplicate,
+// fills empty fields on the primary from the duplicate, and soft-deletes the duplicate.
+//
+// Handles concurrent merge races gracefully (same pattern as MergePlaces).
+func (r *EventRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	queryer := r.queryer()
+
+	// Step 1: Lock the duplicate row and check its current state.
+	var dupMergedInto *string
+	var dupDeletedAt *string
+	err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text, deleted_at::text
+  FROM organizations
+ WHERE id = $1
+   FOR UPDATE SKIP LOCKED
+`, duplicateID).Scan(&dupMergedInto, &dupDeletedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			canonicalID, resolveErr := r.resolveCanonicalOrg(ctx, duplicateID)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolve org after skip lock: %w", resolveErr)
+			}
+			return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+		}
+		return nil, fmt.Errorf("lock duplicate organization: %w", err)
+	}
+
+	// Step 2: If the duplicate is already merged, follow the chain.
+	if dupMergedInto != nil {
+		canonicalID, resolveErr := r.resolveCanonicalOrg(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve already-merged org: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+	}
+
+	// Step 3: Check if the primary itself has been merged (follow chain).
+	resolvedPrimaryID, err := r.resolveCanonicalOrg(ctx, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary org: %w", err)
+	}
+	primaryID = resolvedPrimaryID
+
+	// Step 4: Don't merge into self.
+	if duplicateID == primaryID {
+		return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: true}, nil
+	}
+
+	// Step 5: Proceed with the actual merge.
+	// Fill gaps on the primary from the duplicate: only overwrite NULL/empty fields.
+	_, err = queryer.Exec(ctx, `
+UPDATE organizations p
+   SET legal_name         = COALESCE(NULLIF(p.legal_name, ''),         d.legal_name),
+       alternate_name     = COALESCE(NULLIF(p.alternate_name, ''),     d.alternate_name),
+       description        = COALESCE(NULLIF(p.description, ''),        d.description),
+       email              = COALESCE(NULLIF(p.email, ''),              d.email),
+       telephone          = COALESCE(NULLIF(p.telephone, ''),          d.telephone),
+       url                = COALESCE(NULLIF(p.url, ''),                d.url),
+       street_address     = COALESCE(NULLIF(p.street_address, ''),     d.street_address),
+       address_locality   = COALESCE(NULLIF(p.address_locality, ''),   d.address_locality),
+       address_region     = COALESCE(NULLIF(p.address_region, ''),     d.address_region),
+       postal_code        = COALESCE(NULLIF(p.postal_code, ''),        d.postal_code),
+       address_country    = COALESCE(NULLIF(p.address_country, ''),    d.address_country),
+       organization_type  = COALESCE(NULLIF(p.organization_type, ''),  d.organization_type),
+       founding_date      = COALESCE(p.founding_date,                  d.founding_date),
+       updated_at         = NOW()
+  FROM organizations d
+ WHERE p.id = $2 AND d.id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("fill organization gaps from duplicate: %w", err)
+	}
+
+	// Reassign all events from duplicate org to primary org
+	_, err = queryer.Exec(ctx, `
+UPDATE events SET organizer_id = $2
+ WHERE organizer_id = $1
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("reassign events from duplicate organization: %w", err)
+	}
+
+	// Mark the duplicate as merged and soft-delete it
+	cmd, err := queryer.Exec(ctx, `
+UPDATE organizations SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'merged'
+ WHERE id = $1 AND merged_into_id IS NULL
+`, duplicateID, primaryID)
+	if err != nil {
+		return nil, fmt.Errorf("merge organization: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		canonicalID, resolveErr := r.resolveCanonicalOrg(ctx, duplicateID)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve org after concurrent merge: %w", resolveErr)
+		}
+		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
+	}
+
+	return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: false}, nil
+}
+
+// resolveCanonicalPlace follows the merged_into_id chain to find the ultimate
+// canonical place. Limits to 10 hops to prevent infinite loops from corrupt data.
+func (r *EventRepository) resolveCanonicalPlace(ctx context.Context, placeID string) (string, error) {
+	queryer := r.queryer()
+	currentID := placeID
+	const maxHops = 10
+
+	for i := 0; i < maxHops; i++ {
+		var mergedInto *string
+		err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text FROM places WHERE id = $1
+`, currentID).Scan(&mergedInto)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return currentID, nil // place doesn't exist, return last known ID
+			}
+			return "", fmt.Errorf("resolve canonical place at hop %d: %w", i, err)
+		}
+		if mergedInto == nil {
+			return currentID, nil // found the canonical (not merged)
+		}
+		currentID = *mergedInto
+	}
+
+	return currentID, nil // max hops reached, return best guess
+}
+
+// resolveCanonicalOrg follows the merged_into_id chain to find the ultimate
+// canonical organization. Limits to 10 hops to prevent infinite loops.
+func (r *EventRepository) resolveCanonicalOrg(ctx context.Context, orgID string) (string, error) {
+	queryer := r.queryer()
+	currentID := orgID
+	const maxHops = 10
+
+	for i := 0; i < maxHops; i++ {
+		var mergedInto *string
+		err := queryer.QueryRow(ctx, `
+SELECT merged_into_id::text FROM organizations WHERE id = $1
+`, currentID).Scan(&mergedInto)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return currentID, nil
+			}
+			return "", fmt.Errorf("resolve canonical org at hop %d: %w", i, err)
+		}
+		if mergedInto == nil {
+			return currentID, nil
+		}
+		currentID = *mergedInto
+	}
+
+	return currentID, nil
+}
+
+// InsertNotDuplicate records that two events are confirmed as NOT duplicates.
+// The pair is stored with canonical ordering (LEAST/GREATEST) so that (A,B) and (B,A) are equivalent.
+func (r *EventRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	queries := Queries{db: r.queryer()}
+	return queries.InsertNotDuplicate(ctx, InsertNotDuplicateParams{
+		EventIDA:  eventIDa,
+		EventIDB:  eventIDb,
+		CreatedBy: pgtype.Text{String: createdBy, Valid: createdBy != ""},
+	})
+}
+
+// IsNotDuplicate checks if a pair of events has been marked as not-duplicates.
+func (r *EventRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	queries := Queries{db: r.queryer()}
+	return queries.IsNotDuplicate(ctx, IsNotDuplicateParams{
+		EventIDA: eventIDa,
+		EventIDB: eventIDb,
+	})
+}
+
+// UpdateOccurrenceDates updates the start_time and end_time of all occurrences for an event.
+// Used by the FixReview workflow to correct occurrence dates during admin review.
+func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	queries := Queries{db: r.queryer()}
+
+	params := UpdateOccurrenceDatesByEventULIDParams{
+		EventUlid: eventULID,
+		StartTime: pgtype.Timestamptz{Time: startTime, Valid: true},
+	}
+	if endTime != nil {
+		params.EndTime = pgtype.Timestamptz{Time: *endTime, Valid: true}
+	}
+
+	err := queries.UpdateOccurrenceDatesByEventULID(ctx, params)
+	if err != nil {
+		return fmt.Errorf("update occurrence dates: %w", err)
+	}
+	return nil
+}
+
 // UpdateEvent updates an event by ULID with the provided parameters
 func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
 	queries := Queries{db: r.queryer()}
@@ -1205,19 +1680,77 @@ func (r *EventRepository) SoftDeleteEvent(ctx context.Context, ulid string, reas
 	return nil
 }
 
-// MergeEvents merges a duplicate event into a primary event
+// MergeEvents merges a duplicate event into a primary event.
+// Implements transitive chain resolution: if the primary event has itself been
+// merged into another event, follows the chain to find the final canonical event
+// and merges into that instead. Also flattens any existing chains pointing to
+// intermediate targets. This prevents stale merged_into_id references.
 func (r *EventRepository) MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error {
-	queries := Queries{db: r.queryer()}
+	queryer := r.queryer()
+	queries := Queries{db: queryer}
 
-	err := queries.MergeEventIntoDuplicate(ctx, MergeEventIntoDuplicateParams{
+	// Resolve the primary ULID to the final canonical event in case the
+	// primary itself was previously merged (transitive chain resolution).
+	canonicalULID, err := queries.ResolveCanonicalEventULID(ctx, primaryULID)
+	if err != nil {
+		return fmt.Errorf("resolve canonical event for %s: %w", primaryULID, err)
+	}
+
+	// Log if we followed a chain (the target was already merged)
+	if canonicalULID != primaryULID {
+		log.Warn().
+			Str("original_target", primaryULID).
+			Str("canonical_target", canonicalULID).
+			Str("duplicate", duplicateULID).
+			Msg("merge target was itself merged; resolved transitive chain")
+	}
+
+	// Verify the canonical event exists and is not deleted
+	var exists bool
+	err = queryer.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM events WHERE ulid = $1 AND deleted_at IS NULL)`,
+		canonicalULID,
+	).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("verify canonical event: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("canonical event %s not found or deleted: %w", canonicalULID, events.ErrNotFound)
+	}
+
+	// Flatten existing chains: re-point any events whose merged_into_id
+	// points to the original primary (now an intermediate) to the canonical target.
+	if canonicalULID != primaryULID {
+		err = queries.UpdateMergedIntoChain(ctx, UpdateMergedIntoChainParams{
+			Ulid:   primaryULID,
+			Ulid_2: canonicalULID,
+		})
+		if err != nil {
+			return fmt.Errorf("flatten merge chain from %s to %s: %w", primaryULID, canonicalULID, err)
+		}
+	}
+
+	// Merge duplicate into the canonical primary
+	err = queries.MergeEventIntoDuplicate(ctx, MergeEventIntoDuplicateParams{
 		Ulid:   duplicateULID,
-		Ulid_2: primaryULID,
+		Ulid_2: canonicalULID,
 	})
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return events.ErrNotFound
 		}
 		return fmt.Errorf("merge events: %w", err)
+	}
+
+	// Flatten chains from the duplicate: re-point any events whose merged_into_id
+	// pointed to the duplicate (e.g., A→B when B is being merged into C) to the
+	// canonical target (A→C). This prevents stale transitive chains.
+	err = queries.UpdateMergedIntoChain(ctx, UpdateMergedIntoChainParams{
+		Ulid:   duplicateULID,
+		Ulid_2: canonicalULID,
+	})
+	if err != nil {
+		return fmt.Errorf("flatten duplicate merge chain from %s to %s: %w", duplicateULID, canonicalULID, err)
 	}
 
 	return nil
@@ -1447,6 +1980,11 @@ func (r EventReviewQueue) GetRejectionReason() pgtype.Text       { return r.Reje
 func (r EventReviewQueue) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
 func (r EventReviewQueue) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
 
+// Note: ApproveReviewRow, RejectReviewRow, CreateReviewQueueEntryRow, and
+// UpdateReviewQueueEntryRow no longer exist as separate types — these queries
+// now use RETURNING * and return EventReviewQueue directly (which already
+// implements reviewQueueRowFields above).
+
 // convertReviewQueueRowGeneric converts any SQLc review queue row type to domain ReviewQueueEntry.
 // This generic converter eliminates ~120 lines of duplicated conversion logic across four
 // nearly-identical converter functions.
@@ -1532,7 +2070,7 @@ func (r *EventRepository) CreateReviewQueueEntry(ctx context.Context, params eve
 		return nil, fmt.Errorf("create review queue entry: %w", err)
 	}
 
-	return convertReviewQueueRow(row), nil
+	return convertReviewQueueRowGeneric(row), nil
 }
 
 // UpdateReviewQueueEntry updates an existing review queue entry
@@ -1561,7 +2099,7 @@ func (r *EventRepository) UpdateReviewQueueEntry(ctx context.Context, id int, pa
 		return nil, fmt.Errorf("update review queue entry: %w", err)
 	}
 
-	return convertReviewQueueRow(row), nil
+	return convertReviewQueueRowGeneric(row), nil
 }
 
 // GetReviewQueueEntry retrieves a single review queue entry by ID
@@ -1656,7 +2194,7 @@ func (r *EventRepository) ApproveReview(ctx context.Context, id int, reviewedBy 
 		return nil, fmt.Errorf("approve review: %w", err)
 	}
 
-	return convertReviewQueueRow(row), nil
+	return convertReviewQueueRowGeneric(row), nil
 }
 
 // RejectReview marks a review as rejected
@@ -1677,7 +2215,91 @@ func (r *EventRepository) RejectReview(ctx context.Context, id int, reviewedBy s
 		return nil, fmt.Errorf("reject review: %w", err)
 	}
 
-	return convertReviewQueueRow(row), nil
+	return convertReviewQueueRowGeneric(row), nil
+}
+
+// MergeReview marks a review as merged, linking it to the primary event it was merged into.
+// The duplicate event (from the review entry) is merged into primaryEventULID via AdminService.MergeEvents.
+// This method only updates the review queue status — the caller is responsible for the actual event merge.
+func (r *EventRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*events.ReviewQueueEntry, error) {
+	queryer := r.queryer()
+
+	// Look up the primary event's UUID from its ULID
+	var primaryEventID pgtype.UUID
+	err := queryer.QueryRow(ctx, `SELECT id FROM events WHERE ulid = $1 AND deleted_at IS NULL`, primaryEventULID).Scan(&primaryEventID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("primary event not found: %s", primaryEventULID)
+		}
+		return nil, fmt.Errorf("lookup primary event: %w", err)
+	}
+
+	row := queryer.QueryRow(ctx, `
+UPDATE event_review_queue
+   SET status = 'merged',
+       reviewed_by = $2,
+       reviewed_at = NOW(),
+       review_notes = 'Merged into event ' || $4,
+       duplicate_of_event_id = $3,
+       updated_at = NOW()
+ WHERE id = $1
+   AND status = 'pending'
+RETURNING id, event_id, original_payload, normalized_payload, warnings,
+          source_id, source_external_id, dedup_hash, event_start_time,
+          event_end_time, status, reviewed_by, reviewed_at, review_notes,
+          rejection_reason, created_at, updated_at
+`, id, reviewedBy, primaryEventID, primaryEventULID)
+
+	var entry events.ReviewQueueEntry
+	var eventID pgtype.UUID
+	var sourceID, sourceExternalID, dedupHash, rReviewedBy, reviewNotes, rejectionReason pgtype.Text
+	var eventStartTime, eventEndTime, reviewedAt, createdAt, updatedAt pgtype.Timestamptz
+
+	err = row.Scan(
+		&entry.ID, &eventID, &entry.OriginalPayload, &entry.NormalizedPayload, &entry.Warnings,
+		&sourceID, &sourceExternalID, &dedupHash, &eventStartTime,
+		&eventEndTime, &entry.Status, &rReviewedBy, &reviewedAt, &reviewNotes,
+		&rejectionReason, &createdAt, &updatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("merge review: %w", err)
+	}
+
+	entry.EventID = eventID.String()
+	entry.EventStartTime = eventStartTime.Time
+	entry.CreatedAt = createdAt.Time
+	entry.UpdatedAt = updatedAt.Time
+	entry.DuplicateOfEventID = &primaryEventULID
+
+	if sourceID.Valid {
+		entry.SourceID = &sourceID.String
+	}
+	if sourceExternalID.Valid {
+		entry.SourceExternalID = &sourceExternalID.String
+	}
+	if dedupHash.Valid {
+		entry.DedupHash = &dedupHash.String
+	}
+	if eventEndTime.Valid {
+		entry.EventEndTime = &eventEndTime.Time
+	}
+	if rReviewedBy.Valid {
+		entry.ReviewedBy = &rReviewedBy.String
+	}
+	if reviewedAt.Valid {
+		entry.ReviewedAt = &reviewedAt.Time
+	}
+	if reviewNotes.Valid {
+		entry.ReviewNotes = &reviewNotes.String
+	}
+	if rejectionReason.Valid {
+		entry.RejectionReason = &rejectionReason.String
+	}
+
+	return &entry, nil
 }
 
 // CleanupExpiredReviews runs all cleanup operations for the review queue
@@ -1728,9 +2350,5 @@ func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry 
 // convertGetReviewQueueEntryRow converts SQLc GetReviewQueueEntryRow to events.ReviewQueueEntry
 // Used when the query includes a JOIN with events table to get event_ulid
 func convertGetReviewQueueEntryRow(row GetReviewQueueEntryRow) *events.ReviewQueueEntry {
-	return convertReviewQueueRowGeneric(row)
-}
-
-func convertReviewQueueRow(row EventReviewQueue) *events.ReviewQueueEntry {
 	return convertReviewQueueRowGeneric(row)
 }

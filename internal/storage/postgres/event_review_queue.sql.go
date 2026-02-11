@@ -20,23 +20,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type ApproveReviewParams struct {
@@ -67,17 +51,18 @@ func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (E
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
 
 const cleanupArchivedReviews = `-- name: CleanupArchivedReviews :exec
 DELETE FROM event_review_queue
- WHERE status IN ('approved', 'superseded')
+ WHERE status IN ('approved', 'superseded', 'merged')
    AND reviewed_at < NOW() - INTERVAL '90 days'
 `
 
-// Archive old approved/superseded reviews (90 day retention)
+// Archive old approved/superseded/merged reviews (90 day retention)
 func (q *Queries) CleanupArchivedReviews(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, cleanupArchivedReviews)
 	return err
@@ -146,23 +131,7 @@ INSERT INTO event_review_queue (
   $8,
   $9
 )
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type CreateReviewQueueEntryParams struct {
@@ -209,6 +178,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -499,23 +469,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type RejectReviewParams struct {
@@ -546,6 +500,7 @@ func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) (Eve
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -557,23 +512,7 @@ UPDATE event_review_queue
        warnings = COALESCE($3, warnings),
        updated_at = NOW()
  WHERE id = $4
-RETURNING id,
-          event_id,
-          original_payload,
-          normalized_payload,
-          warnings,
-          source_id,
-          source_external_id,
-          dedup_hash,
-          event_start_time,
-          event_end_time,
-          status,
-          reviewed_by,
-          reviewed_at,
-          review_notes,
-          rejection_reason,
-          created_at,
-          updated_at
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type UpdateReviewQueueEntryParams struct {
@@ -610,6 +549,7 @@ func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQu
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }

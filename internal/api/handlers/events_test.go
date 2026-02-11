@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/Togather-Foundation/server/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/stretchr/testify/require"
 )
@@ -101,6 +102,10 @@ func (s stubEventsRepo) UpdateEvent(_ context.Context, _ string, _ events.Update
 	return nil, errors.New("not implemented")
 }
 
+func (s stubEventsRepo) UpdateOccurrenceDates(_ context.Context, _ string, _ time.Time, _ *time.Time) error {
+	return errors.New("not implemented")
+}
+
 func (s stubEventsRepo) SoftDeleteEvent(_ context.Context, _ string, _ string) error {
 	return errors.New("not implemented")
 }
@@ -145,9 +150,42 @@ func (s stubEventsRepo) ApproveReview(_ context.Context, _ int, _ string, _ *str
 func (s stubEventsRepo) RejectReview(_ context.Context, _ int, _ string, _ string) (*events.ReviewQueueEntry, error) {
 	return nil, errors.New("not implemented")
 }
+func (s stubEventsRepo) MergeReview(_ context.Context, _ int, _ string, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, errors.New("not implemented")
+}
 
 func (s stubEventsRepo) CleanupExpiredReviews(_ context.Context) error {
 	return nil
+}
+
+func (s stubEventsRepo) GetSourceTrustLevel(_ context.Context, _ string) (int, error) {
+	return 5, nil
+}
+
+func (s stubEventsRepo) GetSourceTrustLevelBySourceID(_ context.Context, _ string) (int, error) {
+	return 5, nil
+}
+
+func (s stubEventsRepo) FindNearDuplicates(_ context.Context, _ string, _ time.Time, _ string, _ float64) ([]events.NearDuplicateCandidate, error) {
+	return nil, nil
+}
+func (s stubEventsRepo) FindSimilarPlaces(_ context.Context, _ string, _ string, _ string, _ float64) ([]events.SimilarPlaceCandidate, error) {
+	return nil, nil
+}
+func (s stubEventsRepo) FindSimilarOrganizations(_ context.Context, _ string, _ string, _ string, _ float64) ([]events.SimilarOrgCandidate, error) {
+	return nil, nil
+}
+func (s stubEventsRepo) MergePlaces(_ context.Context, _ string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (s stubEventsRepo) MergeOrganizations(_ context.Context, _ string, primaryID string) (*events.MergeResult, error) {
+	return &events.MergeResult{CanonicalID: primaryID}, nil
+}
+func (s stubEventsRepo) InsertNotDuplicate(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+func (s stubEventsRepo) IsNotDuplicate(_ context.Context, _ string, _ string) (bool, error) {
+	return false, nil
 }
 
 func TestEventsHandlerListSuccess(t *testing.T) {

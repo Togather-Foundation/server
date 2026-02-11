@@ -21,6 +21,7 @@ type Config struct {
 	Email          EmailConfig
 	Validation     ValidationConfig
 	Tracing        TracingConfig
+	Dedup          DedupConfig
 	Environment    string
 }
 
@@ -111,6 +112,33 @@ type TracingConfig struct {
 	// - 0.1: trace 10% of requests
 	// - 0.0: trace nothing (effectively disables tracing)
 	SampleRate float64
+}
+
+// DedupConfig holds configuration for the unified duplicate detection system.
+// These thresholds control pg_trgm similarity scoring for flagging and auto-merging
+// duplicate events, places, and organizations.
+type DedupConfig struct {
+	// NearDuplicateThreshold is the pg_trgm similarity threshold for
+	// flagging potential duplicate events (same venue + date + similar name).
+	// Range: 0.0-1.0. Lower = more flags, higher = fewer flags.
+	// Default: 0.4
+	NearDuplicateThreshold float64
+
+	// PlaceReviewThreshold is the similarity threshold for flagging
+	// a potential place duplicate for review. Default: 0.6
+	PlaceReviewThreshold float64
+
+	// PlaceAutoMergeThreshold is the similarity above which places
+	// are auto-merged without review. Default: 0.95
+	PlaceAutoMergeThreshold float64
+
+	// OrgReviewThreshold is the similarity threshold for flagging
+	// a potential organization duplicate for review. Default: 0.6
+	OrgReviewThreshold float64
+
+	// OrgAutoMergeThreshold is the similarity above which orgs
+	// are auto-merged without review. Default: 0.95
+	OrgAutoMergeThreshold float64
 }
 
 // ValidationConfig holds validation behavior configuration for event ingestion.
@@ -215,6 +243,13 @@ func Load() (Config, error) {
 			Exporter:     getEnv("TRACING_EXPORTER", "stdout"),
 			OTLPEndpoint: getEnv("TRACING_OTLP_ENDPOINT", "localhost:4317"),
 			SampleRate:   getEnvFloat("TRACING_SAMPLE_RATE", 1.0),
+		},
+		Dedup: DedupConfig{
+			NearDuplicateThreshold:  getEnvFloat("DEDUP_NEAR_DUPLICATE_THRESHOLD", 0.4),
+			PlaceReviewThreshold:    getEnvFloat("DEDUP_PLACE_REVIEW_THRESHOLD", 0.6),
+			PlaceAutoMergeThreshold: getEnvFloat("DEDUP_PLACE_AUTO_MERGE_THRESHOLD", 0.95),
+			OrgReviewThreshold:      getEnvFloat("DEDUP_ORG_REVIEW_THRESHOLD", 0.6),
+			OrgAutoMergeThreshold:   getEnvFloat("DEDUP_ORG_AUTO_MERGE_THRESHOLD", 0.95),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}

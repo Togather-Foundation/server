@@ -29,6 +29,23 @@ type MockRepository struct {
 	reviewQueue       map[int]*ReviewQueueEntry           // id -> review queue entry
 	nextReviewID      int
 
+	// Enhanced storage for scenario tests
+	sourceTrustLevels map[string]int                   // sourceID -> trust level
+	notDuplicates     map[string]bool                  // "eventA|eventB" -> true (canonical order)
+	nearDuplicates    []NearDuplicateCandidate         // configurable return for FindNearDuplicates
+	similarPlaces     []SimilarPlaceCandidate          // configurable return for FindSimilarPlaces
+	similarOrgs       []SimilarOrgCandidate            // configurable return for FindSimilarOrganizations
+	reviewEntries     map[string]*ReviewQueueEntry     // lookup key -> entry (for FindReviewByDedup)
+	occurrenceDates   map[string]*occurrenceDateUpdate // eventULID -> updated dates
+
+	// Tracking for assertions
+	approveReviewCalled bool
+	approveReviewID     int
+	updateEventCalls    []updateEventCall
+	mergePlacesCalled   bool
+	mergePlacesDupID    string
+	mergePlacesPriID    string
+
 	// Behavior controls
 	shouldFailCreate                 bool
 	shouldFailGetIdempotencyKey      bool
@@ -41,6 +58,23 @@ type MockRepository struct {
 	shouldFailUpsertOrganization     bool
 	shouldFailCreateOccurrence       bool
 	shouldFailCreateSource           bool
+	shouldFailFindNearDuplicates     bool
+	shouldFailFindSimilarPlaces      bool
+	shouldFailFindSimilarOrgs        bool
+	shouldFailUpdateEvent            bool
+	shouldFailApproveReview          bool
+}
+
+// occurrenceDateUpdate stores occurrence date updates for verification
+type occurrenceDateUpdate struct {
+	startTime time.Time
+	endTime   *time.Time
+}
+
+// updateEventCall tracks calls to UpdateEvent for verification
+type updateEventCall struct {
+	ULID   string
+	Params UpdateEventParams
 }
 
 func NewMockRepository() *MockRepository {
@@ -55,6 +89,10 @@ func NewMockRepository() *MockRepository {
 		occurrences:       make(map[string][]OccurrenceCreateParams),
 		reviewQueue:       make(map[int]*ReviewQueueEntry),
 		nextReviewID:      1,
+		sourceTrustLevels: make(map[string]int),
+		notDuplicates:     make(map[string]bool),
+		reviewEntries:     make(map[string]*ReviewQueueEntry),
+		occurrenceDates:   make(map[string]*occurrenceDateUpdate),
 	}
 }
 
@@ -298,10 +336,17 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.shouldFailUpdateEvent {
+		return nil, errors.New("mock update event error")
+	}
+
 	event, ok := m.events[ulid]
 	if !ok {
 		return nil, ErrNotFound
 	}
+
+	// Track calls for assertions
+	m.updateEventCalls = append(m.updateEventCalls, updateEventCall{ULID: ulid, Params: params})
 
 	// Apply updates in memory
 	if params.Name != nil {
@@ -313,9 +358,32 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	if params.LifecycleState != nil {
 		event.LifecycleState = *params.LifecycleState
 	}
+	if params.ImageURL != nil {
+		event.ImageURL = *params.ImageURL
+	}
+	if params.PublicURL != nil {
+		event.PublicURL = *params.PublicURL
+	}
+	if params.EventDomain != nil {
+		event.EventDomain = *params.EventDomain
+	}
+	if len(params.Keywords) > 0 {
+		event.Keywords = params.Keywords
+	}
 	event.UpdatedAt = time.Now()
 
 	return event, nil
+}
+
+func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.occurrenceDates[eventULID] = &occurrenceDateUpdate{
+		startTime: startTime,
+		endTime:   endTime,
+	}
+	return nil
 }
 
 func (m *MockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
@@ -367,7 +435,23 @@ func (m *MockRepository) GetTombstoneByEventULID(ctx context.Context, eventULID 
 
 // Review Queue methods
 func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error) {
-	// For tests, return nil (no existing review)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Search by source+externalID first
+	if sourceID != nil && externalID != nil {
+		key := *sourceID + "|" + *externalID
+		if entry, ok := m.reviewEntries[key]; ok {
+			return entry, nil
+		}
+	}
+	// Search by dedupHash
+	if dedupHash != nil {
+		key := "hash:" + *dedupHash
+		if entry, ok := m.reviewEntries[key]; ok {
+			return entry, nil
+		}
+	}
 	return nil, ErrNotFound
 }
 
@@ -396,7 +480,26 @@ func (m *MockRepository) CreateReviewQueueEntry(ctx context.Context, params Revi
 }
 
 func (m *MockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	entry, ok := m.reviewQueue[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	if params.OriginalPayload != nil {
+		entry.OriginalPayload = *params.OriginalPayload
+	}
+	if params.NormalizedPayload != nil {
+		entry.NormalizedPayload = *params.NormalizedPayload
+	}
+	if params.Warnings != nil {
+		entry.Warnings = *params.Warnings
+	}
+	entry.UpdatedAt = time.Now()
+
+	return entry, nil
 }
 
 func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {
@@ -415,15 +518,180 @@ func (m *MockRepository) ListReviewQueue(ctx context.Context, filters ReviewQueu
 }
 
 func (m *MockRepository) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.shouldFailApproveReview {
+		return nil, errors.New("mock approve review error")
+	}
+
+	m.approveReviewCalled = true
+	m.approveReviewID = id
+
+	entry, ok := m.reviewQueue[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	entry.Status = "approved"
+	entry.ReviewedBy = &reviewedBy
+	now := time.Now()
+	entry.ReviewedAt = &now
+	if notes != nil {
+		entry.ReviewNotes = notes
+	}
+	entry.UpdatedAt = now
+
+	return entry, nil
 }
 
 func (m *MockRepository) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	entry, ok := m.reviewQueue[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	entry.Status = "rejected"
+	entry.ReviewedBy = &reviewedBy
+	now := time.Now()
+	entry.ReviewedAt = &now
+	entry.RejectionReason = &reason
+	entry.UpdatedAt = now
+
+	return entry, nil
+}
+func (m *MockRepository) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	entry, ok := m.reviewQueue[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	if entry.Status != "pending" {
+		return nil, ErrNotFound // only pending can be merged
+	}
+
+	entry.Status = "merged"
+	entry.ReviewedBy = &reviewedBy
+	now := time.Now()
+	entry.ReviewedAt = &now
+	entry.DuplicateOfEventID = &primaryEventULID
+	entry.UpdatedAt = now
+
+	return entry, nil
 }
 
 func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil
+}
+
+func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Look up the event to find its source, then look up trust for that source
+	for sourceID, events := range m.eventsBySources {
+		for _, evt := range events {
+			if evt.ID == eventID {
+				if trust, ok := m.sourceTrustLevels[sourceID]; ok {
+					return trust, nil
+				}
+			}
+		}
+	}
+	// Also check by event ULID in case the eventID is a UUID mapped via events map
+	for _, evt := range m.events {
+		if evt.ID == eventID {
+			for sourceID, events := range m.eventsBySources {
+				for _, srcEvt := range events {
+					if srcEvt.ULID == evt.ULID {
+						if trust, ok := m.sourceTrustLevels[sourceID]; ok {
+							return trust, nil
+						}
+					}
+				}
+			}
+		}
+	}
+	return 5, nil // default trust level
+}
+
+func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if trust, ok := m.sourceTrustLevels[sourceID]; ok {
+		return trust, nil
+	}
+	return 5, nil // default trust level
+}
+
+func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.shouldFailFindNearDuplicates {
+		return nil, errors.New("mock find near duplicates error")
+	}
+	return m.nearDuplicates, nil
+}
+func (m *MockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.shouldFailFindSimilarPlaces {
+		return nil, errors.New("mock find similar places error")
+	}
+	return m.similarPlaces, nil
+}
+func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.shouldFailFindSimilarOrgs {
+		return nil, errors.New("mock find similar orgs error")
+	}
+	return m.similarOrgs, nil
+}
+func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.mergePlacesCalled = true
+	m.mergePlacesDupID = duplicateID
+	m.mergePlacesPriID = primaryID
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *MockRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	return &MergeResult{CanonicalID: primaryID}, nil
+}
+func (m *MockRepository) InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Store in canonical order (alphabetical)
+	a, b := eventIDa, eventIDb
+	if a > b {
+		a, b = b, a
+	}
+	m.notDuplicates[a+"|"+b] = true
+	return nil
+}
+func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check in canonical order
+	a, b := eventIDa, eventIDb
+	if a > b {
+		a, b = b, a
+	}
+	return m.notDuplicates[a+"|"+b], nil
 }
 
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
@@ -450,6 +718,79 @@ func (m *MockRepository) AddExistingEvent(sourceID, sourceEventID string, event 
 		m.eventsBySources[sourceID] = make(map[string]*Event)
 	}
 	m.eventsBySources[sourceID][sourceEventID] = event
+	m.events[event.ULID] = event
+}
+
+// SetSourceTrust sets the trust level for a source ID
+func (m *MockRepository) SetSourceTrust(sourceID string, trust int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.sourceTrustLevels[sourceID] = trust
+}
+
+// AddReviewEntry adds a review queue entry that FindReviewByDedup can find.
+// It indexes the entry by source+externalID and/or dedupHash.
+func (m *MockRepository) AddReviewEntry(entry *ReviewQueueEntry) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Store in reviewQueue by ID
+	m.reviewQueue[entry.ID] = entry
+
+	// Index for FindReviewByDedup
+	if entry.SourceID != nil && entry.SourceExternalID != nil {
+		key := *entry.SourceID + "|" + *entry.SourceExternalID
+		m.reviewEntries[key] = entry
+	}
+	if entry.DedupHash != nil {
+		key := "hash:" + *entry.DedupHash
+		m.reviewEntries[key] = entry
+	}
+}
+
+// SetNearDuplicates configures the candidates returned by FindNearDuplicates
+func (m *MockRepository) SetNearDuplicates(candidates []NearDuplicateCandidate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.nearDuplicates = candidates
+}
+
+// SetSimilarPlaces configures the candidates returned by FindSimilarPlaces
+func (m *MockRepository) SetSimilarPlaces(candidates []SimilarPlaceCandidate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.similarPlaces = candidates
+}
+
+// SetSimilarOrgs configures the candidates returned by FindSimilarOrganizations
+func (m *MockRepository) SetSimilarOrgs(candidates []SimilarOrgCandidate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.similarOrgs = candidates
+}
+
+// AddNotDuplicate records a known not-duplicate pair
+func (m *MockRepository) AddNotDuplicate(eventA, eventB string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	a, b := eventA, eventB
+	if a > b {
+		a, b = b, a
+	}
+	m.notDuplicates[a+"|"+b] = true
+}
+
+// AddEventByDedupHash adds an event to the dedup hash index
+func (m *MockRepository) AddEventByDedupHash(hash string, event *Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.eventsByDedupHash[hash] = event
 	m.events[event.ULID] = event
 }
 

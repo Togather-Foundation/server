@@ -10,6 +10,23 @@ var ErrNotFound = errors.New("event not found")
 
 var ErrConflict = errors.New("event conflict")
 
+// ErrAlreadyMerged is returned when attempting to merge an entity that has
+// already been merged into another entity by a concurrent operation.
+var ErrAlreadyMerged = errors.New("entity already merged")
+
+// MergeResult is returned by MergePlaces/MergeOrganizations to communicate
+// the canonical entity ID when a concurrent merge was detected.
+type MergeResult struct {
+	// CanonicalID is the UUID of the entity that should be used.
+	// When the merge succeeds normally, this equals the primaryID passed in.
+	// When the duplicate was already merged by another goroutine, this is
+	// the ID at the end of the merge chain.
+	CanonicalID string
+	// AlreadyMerged is true when the duplicate had already been merged
+	// by a concurrent operation, making this call a no-op.
+	AlreadyMerged bool
+}
+
 type Event struct {
 	ID                  string
 	ULID                string
@@ -161,13 +178,31 @@ type Repository interface {
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
 	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
 
+	// Trust level queries for auto-merge
+	GetSourceTrustLevel(ctx context.Context, eventID string) (int, error)
+	GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error)
+
+	// Near-duplicate detection (Layer 2)
+	FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
+
+	// Place/Organization fuzzy dedup (Layer 3)
+	FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error)
+	FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error)
+	MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
+	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
+
 	// Admin operations
+	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
 	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByEventID(ctx context.Context, eventID string) (*Tombstone, error)
 	GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error)
+
+	// Not-duplicate tracking (suppresses re-flagging during near-duplicate detection)
+	InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error
+	IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error)
 
 	// Review Queue operations
 	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)
@@ -177,6 +212,7 @@ type Repository interface {
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
+	MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
 	CleanupExpiredReviews(ctx context.Context) error
 
 	// Transaction support
@@ -247,24 +283,25 @@ type OrganizationRecord struct {
 
 // ReviewQueueEntry represents an event in the review queue
 type ReviewQueueEntry struct {
-	ID                int
-	EventID           string // UUID (events.id)
-	EventULID         string // ULID (events.ulid) - populated via JOIN
-	OriginalPayload   []byte
-	NormalizedPayload []byte
-	Warnings          []byte
-	SourceID          *string
-	SourceExternalID  *string
-	DedupHash         *string
-	EventStartTime    time.Time
-	EventEndTime      *time.Time
-	Status            string
-	ReviewedBy        *string
-	ReviewedAt        *time.Time
-	ReviewNotes       *string
-	RejectionReason   *string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                 int
+	EventID            string // UUID (events.id)
+	EventULID          string // ULID (events.ulid) - populated via JOIN
+	OriginalPayload    []byte
+	NormalizedPayload  []byte
+	Warnings           []byte
+	SourceID           *string
+	SourceExternalID   *string
+	DedupHash          *string
+	DuplicateOfEventID *string // UUID of the event this is a duplicate of (for merge workflow)
+	EventStartTime     time.Time
+	EventEndTime       *time.Time
+	Status             string
+	ReviewedBy         *string
+	ReviewedAt         *time.Time
+	ReviewNotes        *string
+	RejectionReason    *string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // ReviewQueueCreateParams contains data for creating a review queue entry
@@ -299,4 +336,27 @@ type ReviewQueueListResult struct {
 	Entries    []ReviewQueueEntry
 	NextCursor *int
 	TotalCount int64 // Total count for current filter (for badge display)
+}
+
+// NearDuplicateCandidate represents an existing event that may be a near-duplicate
+type NearDuplicateCandidate struct {
+	ULID       string  // ULID of the candidate event
+	Name       string  // Name of the candidate event
+	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+}
+
+// SimilarPlaceCandidate represents an existing place that may be a fuzzy duplicate
+type SimilarPlaceCandidate struct {
+	ID         string  // UUID of the candidate place
+	ULID       string  // ULID of the candidate place
+	Name       string  // Name of the candidate place
+	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+}
+
+// SimilarOrgCandidate represents an existing organization that may be a fuzzy duplicate
+type SimilarOrgCandidate struct {
+	ID         string  // UUID of the candidate organization
+	ULID       string  // ULID of the candidate organization
+	Name       string  // Name of the candidate organization
+	Similarity float64 // Trigram similarity score (0.0 to 1.0)
 }

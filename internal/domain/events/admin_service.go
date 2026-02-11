@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/validation"
+	"github.com/rs/zerolog/log"
 )
 
 // AdminService provides admin operations for event management
@@ -44,6 +45,8 @@ type MergeEventsParams struct {
 var (
 	ErrInvalidUpdateParams  = errors.New("invalid update parameters")
 	ErrCannotMergeSameEvent = errors.New("cannot merge event with itself")
+	ErrEventDeleted         = errors.New("event has been deleted")
+	ErrEventAlreadyMerged   = errors.New("event has already been merged")
 )
 
 // UpdateEvent updates event fields with admin attribution
@@ -78,6 +81,50 @@ func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params Upda
 	}
 
 	return updated, nil
+}
+
+// FixEventOccurrenceDates updates occurrence dates for an event during the fix review workflow.
+// If only startDate is provided, the existing end_time is preserved.
+// If only endDate is provided, the existing start_time is preserved.
+func (s *AdminService) FixEventOccurrenceDates(ctx context.Context, eventULID string, startDate *time.Time, endDate *time.Time) error {
+	if eventULID == "" {
+		return ErrInvalidUpdateParams
+	}
+
+	// Verify the event exists and get current occurrence data
+	existing, err := s.repo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return fmt.Errorf("get event for fix: %w", err)
+	}
+
+	if len(existing.Occurrences) == 0 {
+		return fmt.Errorf("event %s has no occurrences to fix", eventULID)
+	}
+
+	// Determine the effective start and end times
+	var effectiveStart time.Time
+	var effectiveEnd *time.Time
+
+	if startDate != nil {
+		effectiveStart = *startDate
+	} else {
+		// Keep existing start time
+		effectiveStart = existing.Occurrences[0].StartTime
+	}
+
+	if endDate != nil {
+		effectiveEnd = endDate
+	} else {
+		// Keep existing end time
+		effectiveEnd = existing.Occurrences[0].EndTime
+	}
+
+	// Validate: end must not be before start
+	if effectiveEnd != nil && effectiveEnd.Before(effectiveStart) {
+		return FilterError{Field: "endDate", Message: "end date cannot be before start date"}
+	}
+
+	return s.repo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd)
 }
 
 // PublishEvent changes lifecycle_state from draft to published
@@ -168,6 +215,38 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		return fmt.Errorf("duplicate event not found: %w", err)
 	}
 
+	// Verify neither event is deleted or already merged
+	if primary.LifecycleState == "deleted" {
+		log.Warn().
+			Str("primary_ulid", params.PrimaryULID).
+			Str("duplicate_ulid", params.DuplicateULID).
+			Msg("merge rejected: primary event is deleted")
+		return fmt.Errorf("primary event %s: %w", params.PrimaryULID, ErrEventDeleted)
+	}
+	if duplicate.LifecycleState == "deleted" {
+		log.Warn().
+			Str("primary_ulid", params.PrimaryULID).
+			Str("duplicate_ulid", params.DuplicateULID).
+			Msg("merge rejected: duplicate event is already deleted or merged")
+		return fmt.Errorf("duplicate event %s: %w", params.DuplicateULID, ErrEventDeleted)
+	}
+
+	// Enrich primary event with data from the duplicate before soft-deleting it.
+	// Admin merges use equal trust (0, 0) so only gap-filling occurs — the
+	// duplicate's data fills empty fields on the primary but never overwrites.
+	dupInput := EventInputFromEvent(duplicate)
+	enrichParams, enriched := AutoMergeFields(primary, dupInput, 0, 0)
+	if enriched {
+		_, err = txRepo.UpdateEvent(ctx, params.PrimaryULID, enrichParams)
+		if err != nil {
+			return fmt.Errorf("enrich primary event: %w", err)
+		}
+		log.Info().
+			Str("primary_ulid", params.PrimaryULID).
+			Str("duplicate_ulid", params.DuplicateULID).
+			Msg("enriched primary event with duplicate data during merge")
+	}
+
 	// Merge duplicate into primary (soft delete + set merged_into_id)
 	err = txRepo.MergeEvents(ctx, params.DuplicateULID, params.PrimaryULID)
 	if err != nil {
@@ -203,11 +282,119 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
-	// Note: The actual event record remains in DB with deleted_at set and merged_into_id pointing to primary
-	// Future enhancement: merge data from duplicate into primary (enrichment)
-	_ = primary
-
 	return nil
+}
+
+// MergeEventsWithReview atomically merges a duplicate event into a primary event AND
+// updates the review queue entry status to "merged" in a single database transaction.
+// This prevents inconsistency where the merge could succeed but the review status update fails.
+func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEventsParams, reviewID int, reviewedBy string) (*ReviewQueueEntry, error) {
+	if params.PrimaryULID == "" || params.DuplicateULID == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	if params.PrimaryULID == params.DuplicateULID {
+		return nil, ErrCannotMergeSameEvent
+	}
+
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error (no-op after commit)
+	defer func() {
+		_ = txCommitter.Rollback(ctx)
+	}()
+
+	// Verify both events exist
+	primary, err := txRepo.GetByULID(ctx, params.PrimaryULID)
+	if err != nil {
+		return nil, fmt.Errorf("primary event not found: %w", err)
+	}
+
+	duplicate, err := txRepo.GetByULID(ctx, params.DuplicateULID)
+	if err != nil {
+		return nil, fmt.Errorf("duplicate event not found: %w", err)
+	}
+
+	// Verify neither event is deleted or already merged
+	if primary.LifecycleState == "deleted" {
+		log.Warn().
+			Str("primary_ulid", params.PrimaryULID).
+			Str("duplicate_ulid", params.DuplicateULID).
+			Int("review_id", reviewID).
+			Msg("merge rejected: primary event is deleted")
+		return nil, fmt.Errorf("primary event %s: %w", params.PrimaryULID, ErrEventDeleted)
+	}
+	if duplicate.LifecycleState == "deleted" {
+		log.Warn().
+			Str("primary_ulid", params.PrimaryULID).
+			Str("duplicate_ulid", params.DuplicateULID).
+			Int("review_id", reviewID).
+			Msg("merge rejected: duplicate event is already deleted or merged")
+		return nil, fmt.Errorf("duplicate event %s: %w", params.DuplicateULID, ErrEventDeleted)
+	}
+
+	// Enrich primary event with data from the duplicate before soft-deleting it.
+	// Admin merges use equal trust (0, 0) so only gap-filling occurs — the
+	// duplicate's data fills empty fields on the primary but never overwrites.
+	dupInput := EventInputFromEvent(duplicate)
+	enrichParams, enriched := AutoMergeFields(primary, dupInput, 0, 0)
+	if enriched {
+		_, err = txRepo.UpdateEvent(ctx, params.PrimaryULID, enrichParams)
+		if err != nil {
+			return nil, fmt.Errorf("enrich primary event: %w", err)
+		}
+		log.Info().
+			Str("primary_ulid", params.PrimaryULID).
+			Str("duplicate_ulid", params.DuplicateULID).
+			Int("review_id", reviewID).
+			Msg("enriched primary event with duplicate data during merge")
+	}
+
+	// Merge duplicate into primary (soft delete + set merged_into_id)
+	err = txRepo.MergeEvents(ctx, params.DuplicateULID, params.PrimaryULID)
+	if err != nil {
+		return nil, fmt.Errorf("merge events: %w", err)
+	}
+
+	// Generate tombstone for the duplicate event
+	primaryURI := fmt.Sprintf("https://togather.foundation/events/%s", params.PrimaryULID)
+
+	tombstonePayload, err := buildTombstonePayload(duplicate.ULID, duplicate.Name, &primaryURI, "duplicate_merged")
+	if err != nil {
+		return nil, fmt.Errorf("build tombstone: %w", err)
+	}
+
+	tombstoneParams := TombstoneCreateParams{
+		EventID:      duplicate.ID,
+		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", duplicate.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       "duplicate_merged",
+		SupersededBy: &primaryURI,
+		Payload:      tombstonePayload,
+	}
+
+	err = txRepo.CreateTombstone(ctx, tombstoneParams)
+	if err != nil {
+		return nil, fmt.Errorf("create tombstone: %w", err)
+	}
+
+	// Update the review queue entry to "merged" status — within the same transaction
+	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, params.PrimaryULID)
+	if err != nil {
+		return nil, fmt.Errorf("update review status: %w", err)
+	}
+
+	// Commit transaction — all operations succeed or none do
+	err = txCommitter.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return reviewEntry, nil
 }
 
 // DeleteEvent soft-deletes an event and generates a tombstone
