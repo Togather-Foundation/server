@@ -52,6 +52,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Test counters
+TESTS_TOTAL=19
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
@@ -119,7 +120,7 @@ http_get() {
 
 test_health_endpoint() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 1/17: Health endpoint - GET ${BASE_URL}/health"
+    log "INFO" "Test 1/${TESTS_TOTAL}: Health endpoint - GET ${BASE_URL}/health"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -170,7 +171,7 @@ test_health_endpoint() {
 
 test_version_endpoint() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 2/17: Version endpoint - GET ${BASE_URL}/version"
+    log "INFO" "Test 2/${TESTS_TOTAL}: Version endpoint - GET ${BASE_URL}/version"
     
     local response=$(http_get "${BASE_URL}/version" 200)
     
@@ -197,7 +198,7 @@ test_version_endpoint() {
 
 test_database_connectivity() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 3/17: Database connectivity check"
+    log "INFO" "Test 3/${TESTS_TOTAL}: Database connectivity check"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -229,7 +230,7 @@ test_database_connectivity() {
 
 test_migration_status() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 4/17: Database migration status check"
+    log "INFO" "Test 4/${TESTS_TOTAL}: Database migration status check"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -270,7 +271,7 @@ test_migration_status() {
 
 test_http_endpoint_check() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 5/17: HTTP endpoint health check"
+    log "INFO" "Test 5/${TESTS_TOTAL}: HTTP endpoint health check"
     
     local response=$(http_get "${BASE_URL}/health" 200)
     
@@ -295,7 +296,7 @@ test_http_endpoint_check() {
 
 test_cors_headers() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 6/17: CORS headers check"
+    log "INFO" "Test 6/${TESTS_TOTAL}: CORS headers check"
     
     # CORS headers are only sent when Origin header is present (cross-origin requests)
     # Send a test Origin header to check if CORS is configured
@@ -331,7 +332,7 @@ test_cors_headers() {
 
 test_security_headers() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 7/17: Security headers check"
+    log "INFO" "Test 7/${TESTS_TOTAL}: Security headers check"
     
     local headers=$(curl -s -I --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
     
@@ -365,7 +366,7 @@ test_security_headers() {
 
 test_response_time() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 8/17: Response time check (threshold: ${MAX_RESPONSE_TIME_MS}ms)"
+    log "INFO" "Test 8/${TESTS_TOTAL}: Response time check (threshold: ${MAX_RESPONSE_TIME_MS}ms)"
     
     local start_time=$(date +%s%N)
     local response=$(http_get "${BASE_URL}/health" 200)
@@ -392,7 +393,7 @@ test_response_time() {
 
 test_events_api() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 9/17: Events API endpoint - GET ${BASE_URL}/api/v1/events"
+    log "INFO" "Test 9/${TESTS_TOTAL}: Events API endpoint - GET ${BASE_URL}/api/v1/events"
     
     local response=$(http_get "${BASE_URL}/api/v1/events" 200)
     
@@ -417,7 +418,7 @@ test_events_api() {
 
 test_places_api() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 10/17: Places API endpoint - GET ${BASE_URL}/api/v1/places"
+    log "INFO" "Test 10/${TESTS_TOTAL}: Places API endpoint - GET ${BASE_URL}/api/v1/places"
     
     local response=$(http_get "${BASE_URL}/api/v1/places" 200)
     
@@ -443,7 +444,7 @@ test_places_api() {
 
 test_organizations_api() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 11/17: Organizations API endpoint - GET ${BASE_URL}/api/v1/organizations"
+    log "INFO" "Test 11/${TESTS_TOTAL}: Organizations API endpoint - GET ${BASE_URL}/api/v1/organizations"
     
     local response=$(http_get "${BASE_URL}/api/v1/organizations" 200)
     
@@ -469,7 +470,7 @@ test_organizations_api() {
 
 test_openapi_schema() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 12/17: OpenAPI schema endpoint - GET ${BASE_URL}/api/v1/openapi.json"
+    log "INFO" "Test 12/${TESTS_TOTAL}: OpenAPI schema endpoint - GET ${BASE_URL}/api/v1/openapi.json"
     
     local response=$(http_get "${BASE_URL}/api/v1/openapi.json" 200 2>/dev/null || echo "")
     
@@ -499,7 +500,7 @@ test_openapi_schema() {
 
 test_admin_ui() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 13/17: Admin UI login page - GET ${BASE_URL}/admin/login"
+    log "INFO" "Test 13/${TESTS_TOTAL}: Admin UI login page - GET ${BASE_URL}/admin/login"
     
     local response=$(http_get "${BASE_URL}/admin/login" 200)
     
@@ -524,7 +525,7 @@ test_admin_ui() {
 
 test_https_certificate() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 14/17: HTTPS certificate validity"
+    log "INFO" "Test 14/${TESTS_TOTAL}: HTTPS certificate validity"
     
     # Skip if using http://
     if [[ "$BASE_URL" != https://* ]]; then
@@ -558,7 +559,7 @@ test_https_certificate() {
 
 test_slot_header() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 15/17: Active deployment slot identification"
+    log "INFO" "Test 15/${TESTS_TOTAL}: Active deployment slot identification"
     
     local headers=$(curl -s -I --max-time "$TIMEOUT" "${BASE_URL}/health" 2>/dev/null || echo "")
     
@@ -582,7 +583,7 @@ test_slot_header() {
 
 test_river_worker_health() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 16/17: River worker job processing - POST ${BASE_URL}/api/v1/events:batch"
+    log "INFO" "Test 16/${TESTS_TOTAL}: River worker job processing - POST ${BASE_URL}/api/v1/events:batch"
     
     # Skip on production - don't create test data in production
     if [[ "$ENVIRONMENT" == "production" ]]; then
@@ -715,7 +716,7 @@ EOF
 
 test_container_health() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 17/17: Docker container health status"
+    log "INFO" "Test 17/${TESTS_TOTAL}: Docker container health status"
     
     # Skip if SSH_SERVER is not configured
     if [[ -z "${SSH_SERVER:-}" ]]; then
@@ -742,6 +743,72 @@ test_container_health() {
         fi
     else
         log "FAIL" "No healthy togather-server containers found"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_dev_portal_login() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Test 18/${TESTS_TOTAL}: Developer portal login page - GET ${BASE_URL}/dev/login"
+    
+    local response=$(http_get "${BASE_URL}/dev/login" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Check if it's HTML with developer portal content
+        if echo "$response" | grep -qi "<!DOCTYPE html>"; then
+            if echo "$response" | grep -qi "developer\|dev.*portal\|sign.*in"; then
+                log "SUCCESS" "Developer portal login page accessible and rendering HTML"
+                ((TESTS_PASSED++)) || true
+                return 0
+            else
+                log "FAIL" "Developer portal login page returned HTML but missing expected content"
+                log "ERROR" "  Expected page to contain 'developer' or 'sign in'"
+                ((TESTS_FAILED++)) || true
+                return 1
+            fi
+        else
+            log "FAIL" "Developer portal returned non-HTML response"
+            log "ERROR" "  Response preview: $(echo "$response" | head -c 100)"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "Developer portal login page not accessible"
+        log "ERROR" "  This may indicate dev templates are missing from the Docker image"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+}
+
+test_dev_portal_accept_invitation() {
+    ((TESTS_RUN++)) || true
+    log "INFO" "Test 19/${TESTS_TOTAL}: Developer portal accept invitation page - GET ${BASE_URL}/dev/accept-invitation"
+    
+    local response=$(http_get "${BASE_URL}/dev/accept-invitation?token=smoke-test" 200)
+    
+    if [[ $? -eq 0 ]]; then
+        # Check if it's HTML with invitation content
+        if echo "$response" | grep -qi "<!DOCTYPE html>"; then
+            if echo "$response" | grep -qi "invitation\|accept\|activate"; then
+                log "SUCCESS" "Developer portal accept invitation page accessible and rendering HTML"
+                ((TESTS_PASSED++)) || true
+                return 0
+            else
+                log "FAIL" "Developer portal accept invitation page returned HTML but missing expected content"
+                log "ERROR" "  Expected page to contain 'invitation' or 'accept' or 'activate'"
+                ((TESTS_FAILED++)) || true
+                return 1
+            fi
+        else
+            log "FAIL" "Developer portal accept invitation page returned non-HTML response"
+            log "ERROR" "  Response preview: $(echo "$response" | head -c 100)"
+            ((TESTS_FAILED++)) || true
+            return 1
+        fi
+    else
+        log "FAIL" "Developer portal accept invitation page not accessible"
+        log "ERROR" "  This may indicate dev templates are missing from the Docker image"
         ((TESTS_FAILED++)) || true
         return 1
     fi
@@ -820,6 +887,12 @@ main() {
     echo ""
     
     test_container_health
+    echo ""
+    
+    test_dev_portal_login
+    echo ""
+    
+    test_dev_portal_accept_invitation
     echo ""
     
     local end_time=$(date +%s)
