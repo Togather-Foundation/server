@@ -199,6 +199,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminUsersHandler := handlers.NewAdminUsersHandler(userService, auditLogger, cfg.Environment)
 	invitationsHandler := handlers.NewInvitationsHandler(userService, auditLogger, cfg.Environment)
 
+	// Admin developer management handlers (srv-2q4ic)
+	adminDevelopersHandler := handlers.NewAdminDevelopersHandler(developerService, developerRepo, auditLogger, cfg.Environment)
+
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
 	adminService := events.NewAdminService(repo.Events(), requireHTTPS)
@@ -407,6 +410,23 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/admin/users/{id}/resend-invitation", adminResendInvitation)
 	mux.Handle("GET /api/v1/admin/users/{id}/activity", adminGetUserActivity)
 
+	// Admin developer management (srv-2q4ic)
+	adminInviteDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.InviteDeveloper))))
+	adminListDevelopers := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.ListDevelopers))))
+	adminGetDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.GetDeveloper))))
+	adminUpdateDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.UpdateDeveloper))))
+	adminDeactivateDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.DeactivateDeveloper))))
+
+	mux.Handle("POST /api/v1/admin/developers/invite", adminInviteDeveloper)
+	mux.Handle("/api/v1/admin/developers", methodMux(map[string]http.Handler{
+		http.MethodGet: adminListDevelopers,
+	}))
+	mux.Handle("/api/v1/admin/developers/{id}", methodMux(map[string]http.Handler{
+		http.MethodGet:    adminGetDeveloper,
+		http.MethodPut:    adminUpdateDeveloper,
+		http.MethodDelete: adminDeactivateDeveloper,
+	}))
+
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
 	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
@@ -495,6 +515,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
 	mux.Handle("/admin/users", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUsersList))))
 	mux.Handle("/admin/users/{id}/activity", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUserActivity))))
+	mux.Handle("/admin/developers", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDevelopersList))))
 
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -670,6 +691,91 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
 					pattern := filepath.Join(templatesPath, "*.html")
 					tmpl := template.New("").Funcs(funcMap)
+					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
+						return tmpl, nil
+					}
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	return nil, os.ErrNotExist
+}
+
+// loadDevTemplates loads HTML templates for the developer portal UI.
+// The commitHash parameter should come from ldflags (the authoritative source baked into the binary at build time).
+// Falls back to BUILD_COMMIT env var, then "dev" if neither is available.
+func loadDevTemplates(commitHash string) (*template.Template, error) {
+	// Use ldflags value as the authoritative commit hash source.
+	// Fall back to BUILD_COMMIT env var for backward compatibility,
+	// then "dev" for local development.
+	gitCommit := commitHash
+	if gitCommit == "" || gitCommit == "unknown" {
+		gitCommit = os.Getenv("BUILD_COMMIT")
+	}
+	if gitCommit == "" {
+		gitCommit = "dev"
+	} else if len(gitCommit) > 7 {
+		gitCommit = gitCommit[:7] // Use short hash
+	}
+
+	// Create template with custom functions for cache-busting
+	funcMap := template.FuncMap{
+		"assetVersion": func() string {
+			return gitCommit
+		},
+		"gitCommit": func() string {
+			return gitCommit
+		},
+	}
+
+	// Try common locations for the templates directory
+	candidates := []string{
+		"web/dev/templates",                      // From project root
+		"../web/dev/templates",                   // One level up
+		"../../web/dev/templates",                // Two levels up
+		"/app/web/dev/templates",                 // Container deployment
+		"/usr/local/share/sel/web/dev/templates", // System-wide installation
+	}
+
+	for _, candidate := range candidates {
+		if absPath, err := filepath.Abs(candidate); err == nil {
+			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
+				// Found templates directory, parse all .html files
+				pattern := filepath.Join(absPath, "*.html")
+				tmpl := template.New("").Funcs(funcMap)
+				// Also need to include admin templates for _head_meta.html partial
+				adminPattern := filepath.Join(filepath.Dir(absPath), "../admin/templates/_head_meta.html")
+				if _, err := os.Stat(adminPattern); err == nil {
+					tmpl, _ = tmpl.ParseFiles(adminPattern)
+				}
+				if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
+					return tmpl, nil
+				}
+			}
+		}
+	}
+
+	// Try to find via working directory
+	if wd, err := os.Getwd(); err == nil {
+		// Walk up from working directory looking for go.mod (repo root)
+		dir := wd
+		for i := 0; i < maxRouterRetries; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				templatesPath := filepath.Join(dir, "web", "dev", "templates")
+				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
+					pattern := filepath.Join(templatesPath, "*.html")
+					tmpl := template.New("").Funcs(funcMap)
+					// Also load admin _head_meta.html partial
+					adminHeadMetaPath := filepath.Join(dir, "web", "admin", "templates", "_head_meta.html")
+					if _, err := os.Stat(adminHeadMetaPath); err == nil {
+						tmpl, _ = tmpl.ParseFiles(adminHeadMetaPath)
+					}
 					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 						return tmpl, nil
 					}
