@@ -203,29 +203,15 @@ func (s *Service) AuthenticateDeveloper(ctx context.Context, email, password str
 		return nil, ErrDeveloperInactive
 	}
 
-	// Get the password hash from database (we need to fetch it separately as it's not in the Developer domain type)
-	// For now, we'll need to get it from the repo layer
-	// Note: This is a limitation of our current architecture - we might need to adjust
-	// For this implementation, we'll assume the repo can validate the password
-	// TODO: Consider adding a ValidatePassword method to Repository or including hash in a special auth-only type
-
-	// Since we don't have password hash in the domain model, we'll need to add a helper
-	// For now, let's work around this by directly using bcrypt comparison
-	// This requires the Repository to provide access to password hash validation
-	// Actually, looking at the postgres models, we can see Developer has PasswordHash as pgtype.Text
-	// We need to handle this properly
-
-	// Let's add a note that the caller should validate password through the repository
-	// For this initial implementation, we'll return the developer and let the caller validate
-	// Actually, let's fix this properly by adding password validation to the repository interface
-
-	// For now, we'll use a temporary approach: verify the password inline
-	// This requires fetching the raw developer record with password hash
-	// Since our Repository interface doesn't expose this yet, let's document that
-	// the implementation needs to be completed with proper password validation
-
-	// TEMPORARY: Return developer without password check
-	// TODO: Add password validation via repository or service layer
+	// Validate password using repository layer
+	valid, err := s.repo.ValidateDeveloperPassword(ctx, developer.ID, password)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("developer_id", developer.ID.String()).Msg("password validation error")
+		return nil, ErrInvalidCredentials
+	}
+	if !valid {
+		return nil, ErrInvalidCredentials
+	}
 
 	// Update last login
 	if err := s.repo.UpdateDeveloperLastLogin(ctx, developer.ID); err != nil {
@@ -317,17 +303,14 @@ func (s *Service) CreateAPIKey(ctx context.Context, params CreateAPIKeyParams) (
 	}
 
 	// Convert to APIKeyWithUsage (no usage yet for a new key)
-	var keyUUID uuid.UUID
-	copy(keyUUID[:], createdKey.ID.Bytes[:])
-
 	keyInfo = &APIKeyWithUsage{
-		ID:            keyUUID,
+		ID:            createdKey.ID,
 		Prefix:        prefix,
 		Name:          createdKey.Name,
 		Role:          createdKey.Role,
 		RateLimitTier: createdKey.RateLimitTier,
-		IsActive:      createdKey.IsActive,
-		CreatedAt:     createdKey.CreatedAt.Time,
+		IsActive:      true,
+		CreatedAt:     createdKey.CreatedAt,
 		LastUsedAt:    nil,
 		ExpiresAt:     expiresAt,
 		UsageToday:    0,
@@ -363,48 +346,35 @@ func (s *Service) ListOwnKeys(ctx context.Context, developerID uuid.UUID) ([]*AP
 	now := time.Now()
 
 	for _, key := range keys {
-		var keyUUID uuid.UUID
-		copy(keyUUID[:], key.ID.Bytes[:])
-
 		// Get usage statistics
-		usage1d, _, err := s.repo.GetAPIKeyUsageTotal(ctx, keyUUID, now.AddDate(0, 0, -1), now)
+		usage1d, _, err := s.repo.GetAPIKeyUsageTotal(ctx, key.ID, now.AddDate(0, 0, -1), now)
 		if err != nil {
-			s.logger.Warn().Err(err).Str("key_id", keyUUID.String()).Msg("failed to get 1d usage")
+			s.logger.Warn().Err(err).Str("key_id", key.ID.String()).Msg("failed to get 1d usage")
 			usage1d = 0
 		}
 
-		usage7d, _, err := s.repo.GetAPIKeyUsageTotal(ctx, keyUUID, now.AddDate(0, 0, -7), now)
+		usage7d, _, err := s.repo.GetAPIKeyUsageTotal(ctx, key.ID, now.AddDate(0, 0, -7), now)
 		if err != nil {
-			s.logger.Warn().Err(err).Str("key_id", keyUUID.String()).Msg("failed to get 7d usage")
+			s.logger.Warn().Err(err).Str("key_id", key.ID.String()).Msg("failed to get 7d usage")
 			usage7d = 0
 		}
 
-		usage30d, _, err := s.repo.GetAPIKeyUsageTotal(ctx, keyUUID, now.AddDate(0, 0, -30), now)
+		usage30d, _, err := s.repo.GetAPIKeyUsageTotal(ctx, key.ID, now.AddDate(0, 0, -30), now)
 		if err != nil {
-			s.logger.Warn().Err(err).Str("key_id", keyUUID.String()).Msg("failed to get 30d usage")
+			s.logger.Warn().Err(err).Str("key_id", key.ID.String()).Msg("failed to get 30d usage")
 			usage30d = 0
 		}
 
-		var lastUsedAt *time.Time
-		if key.LastUsedAt.Valid {
-			lastUsedAt = &key.LastUsedAt.Time
-		}
-
-		var expiresAt *time.Time
-		if key.ExpiresAt.Valid {
-			expiresAt = &key.ExpiresAt.Time
-		}
-
 		result = append(result, &APIKeyWithUsage{
-			ID:            keyUUID,
+			ID:            key.ID,
 			Prefix:        key.Prefix,
 			Name:          key.Name,
 			Role:          key.Role,
 			RateLimitTier: key.RateLimitTier,
 			IsActive:      key.IsActive,
-			CreatedAt:     key.CreatedAt.Time,
-			LastUsedAt:    lastUsedAt,
-			ExpiresAt:     expiresAt,
+			CreatedAt:     key.CreatedAt,
+			LastUsedAt:    key.LastUsedAt,
+			ExpiresAt:     key.ExpiresAt,
 			UsageToday:    usage1d,
 			Usage7d:       usage7d,
 			Usage30d:      usage30d,
@@ -436,13 +406,11 @@ func (s *Service) RevokeOwnKey(ctx context.Context, developerID uuid.UUID, keyID
 	}
 
 	// Verify the key belongs to this developer
-	var keyDeveloperUUID uuid.UUID
-	copy(keyDeveloperUUID[:], key.DeveloperID.Bytes[:])
-	if keyDeveloperUUID != developerID {
+	if key.DeveloperID != developerID {
 		s.logger.Warn().
 			Str("developer_id", developerID.String()).
 			Str("key_id", keyID.String()).
-			Str("key_owner_id", keyDeveloperUUID.String()).
+			Str("key_owner_id", key.DeveloperID.String()).
 			Msg("unauthorized key revocation attempt")
 		return ErrUnauthorized
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +21,7 @@ type Repository interface {
 	UpdateDeveloperLastLogin(ctx context.Context, id uuid.UUID) error
 	DeactivateDeveloper(ctx context.Context, id uuid.UUID) error
 	CountDevelopers(ctx context.Context) (int64, error)
+	ValidateDeveloperPassword(ctx context.Context, id uuid.UUID, password string) (bool, error)
 
 	// Invitation operations
 	CreateInvitation(ctx context.Context, params CreateInvitationDBParams) (*DeveloperInvitation, error)
@@ -30,11 +30,11 @@ type Repository interface {
 	ListActiveInvitations(ctx context.Context) ([]*DeveloperInvitation, error)
 
 	// API key operations
-	ListDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) ([]postgres.ApiKey, error)
+	ListDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) ([]APIKey, error)
 	CountDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) (int64, error)
-	CreateAPIKey(ctx context.Context, params CreateAPIKeyDBParams) (*postgres.CreateAPIKeyRow, error)
+	CreateAPIKey(ctx context.Context, params CreateAPIKeyDBParams) (*CreateAPIKeyResult, error)
 	DeactivateAPIKey(ctx context.Context, id uuid.UUID) error
-	GetAPIKeyByID(ctx context.Context, id uuid.UUID) (*postgres.ApiKey, error)
+	GetAPIKeyByID(ctx context.Context, id uuid.UUID) (*APIKey, error)
 
 	// Usage operations
 	GetAPIKeyUsageTotal(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error)

@@ -76,3 +76,34 @@ type UsageStats struct {
 	StartDate     time.Time
 	EndDate       time.Time
 }
+
+// APIKey represents an API key in the domain layer.
+// This is a clean domain model without database implementation details.
+type APIKey struct {
+	ID            uuid.UUID
+	Prefix        string
+	KeyHash       string
+	HashVersion   int
+	Name          string
+	SourceID      uuid.UUID
+	Role          string
+	RateLimitTier string
+	IsActive      bool
+	CreatedAt     time.Time
+	LastUsedAt    *time.Time
+	ExpiresAt     *time.Time
+	DeveloperID   uuid.UUID
+}
+
+// CreateAPIKeyResult contains the result of creating an API key.
+// It includes the full plaintext key (only shown once) and metadata.
+type CreateAPIKeyResult struct {
+	ID            uuid.UUID
+	Key           string // Full plaintext key (shown only once)
+	Prefix        string
+	Name          string
+	Role          string
+	RateLimitTier string
+	ExpiresAt     *time.Time
+	CreatedAt     time.Time
+}

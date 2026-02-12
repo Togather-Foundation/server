@@ -17,6 +17,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -130,6 +131,27 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Initialize user service
 	baseURL := fmt.Sprintf("https://%s", cfg.Server.PublicURL) // For invitation links
 	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger)
+
+	// Initialize developer service (srv-x7vv0)
+	developerRepo := postgres.NewDeveloperRepositoryAdapter(pool)
+	developerService := developers.NewService(developerRepo, logger)
+
+	// Developer auth and API key handlers (srv-x7vv0)
+	devAuthHandler := handlers.NewDeveloperAuthHandler(
+		developerService,
+		logger,
+		cfg.Auth.JWTSecret,
+		cfg.Auth.JWTExpiry,
+		"sel.events",
+		cfg.Environment,
+		auditLogger,
+	)
+	devAPIKeyHandler := handlers.NewDeveloperAPIKeyHandler(
+		developerService,
+		logger,
+		cfg.Environment,
+		auditLogger,
+	)
 
 	// Load admin templates
 	templates, err := loadAdminTemplates(gitCommit)
@@ -357,6 +379,28 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
 	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
+
+	// Developer API routes (srv-x7vv0)
+	// Developer auth endpoints with rate limiting
+	devLogin := rateLimitLogin(http.HandlerFunc(devAuthHandler.Login))
+	devLogout := http.HandlerFunc(devAuthHandler.Logout)
+	devAcceptInvitation := rateLimitPublic(http.HandlerFunc(devAuthHandler.AcceptInvitation))
+
+	mux.Handle("POST /api/v1/dev/login", devLogin)
+	mux.Handle("POST /api/v1/dev/logout", devLogout)
+	mux.Handle("POST /api/v1/dev/accept-invitation", devAcceptInvitation)
+
+	// Developer API key management endpoints with DevCookieAuth middleware
+	devCookieAuth := middleware.DevCookieAuth(cfg.Auth.JWTSecret)
+	devListKeys := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.ListAPIKeys))
+	devCreateKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.CreateAPIKey))
+	devRevokeKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.RevokeAPIKey))
+	devGetUsage := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.GetAPIKeyUsage))
+
+	mux.Handle("GET /api/v1/dev/api-keys", devListKeys)
+	mux.Handle("POST /api/v1/dev/api-keys", devCreateKey)
+	mux.Handle("DELETE /api/v1/dev/api-keys/{id}", devRevokeKey)
+	mux.Handle("GET /api/v1/dev/api-keys/{id}/usage", devGetUsage)
 
 	// Admin federation node management (T081b)
 	adminCreateNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.CreateNode))))
