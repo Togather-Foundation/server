@@ -238,13 +238,6 @@
     }
     
     /**
-     * Format number with thousands separators
-     */
-    function formatNumber(num) {
-        return new Intl.NumberFormat().format(num);
-    }
-    
-    /**
      * Update pagination controls
      */
     function updatePagination(nextCursor) {

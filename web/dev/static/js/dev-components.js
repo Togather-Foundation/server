@@ -33,6 +33,20 @@ function setLoading(element, loading, loadingText = 'Loading...') {
 }
 
 /**
+ * Format number with K/M suffixes (compact format)
+ * @param {number} num - Number to format
+ * @returns {string} Formatted number (e.g., 1.5K, 2.3M)
+ */
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+/**
  * Show toast notification
  * @param {string} message - Toast message
  * @param {string} type - Toast type (success, error, warning, info)

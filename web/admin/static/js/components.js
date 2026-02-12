@@ -266,6 +266,15 @@ function renderEmptyState(tbody, message, colSpan) {
 }
 
 /**
+ * Format number with thousands separators
+ * @param {number} num - Number to format
+ * @returns {string} Formatted number (e.g., 1,500, 2,300,000)
+ */
+function formatNumber(num) {
+    return new Intl.NumberFormat().format(num);
+}
+
+/**
  * Get badge color for user status
  * @param {string} status - User status
  * @returns {string} Bootstrap color class
