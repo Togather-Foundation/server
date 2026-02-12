@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-const openAPISourcePath = "specs/001-sel-backend/contracts/openapi.yaml"
+const openAPISourcePath = "docs/api/openapi.yaml"
 
 // maxParentTraversal is the maximum number of parent directories to traverse
 // when searching for go.mod to determine the repository root. This prevents

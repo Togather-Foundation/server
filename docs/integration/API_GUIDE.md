@@ -67,7 +67,7 @@ The OpenAPI spec provides:
 - Validate API contracts in CI/CD pipelines
 - Auto-generate documentation with **ReDoc** or **Swagger UI**
 
-**Source:** The canonical YAML source is maintained at `specs/001-sel-backend/contracts/openapi.yaml` in the repository.
+**Source:** The canonical YAML source is maintained at `docs/api/openapi.yaml` in the repository.
 
 ---
 

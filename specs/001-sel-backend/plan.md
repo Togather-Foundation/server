@@ -92,8 +92,8 @@ specs/001-sel-backend/
 ├── research.md          # Phase 0 output
 ├── data-model.md        # Phase 1 output
 ├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output (OpenAPI spec)
-│   └── openapi.yaml
+├── contracts/           # Phase 1 output (OpenAPI spec - now at ../../docs/api/openapi.yaml)
+│   └── openapi.yaml     # Historical reference; canonical location is docs/api/openapi.yaml
 ├── checklists/
 │   └── requirements.md  # Already exists
 └── tasks.md             # Phase 2 output (NOT created by /speckit.plan)

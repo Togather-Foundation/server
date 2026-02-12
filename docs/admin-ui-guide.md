@@ -1384,7 +1384,7 @@ POST /api/v1/admin/users/01HQABC.../resend-invitation
 GET /api/v1/admin/activity?user_id=01HQABC...&event_type=user.login&start_date=2026-02-01&limit=50
 ```
 
-See full API documentation in `specs/001-sel-backend/contracts/openapi.yaml`
+See full API documentation in `docs/api/openapi.yaml`
 
 ---
 
@@ -1880,7 +1880,7 @@ Each page has its own JS file following this structure:
 - **Tabler Documentation:** https://docs.tabler.io
 - **Tabler Components:** https://preview.tabler.io
 - **Bootstrap 5 Docs:** https://getbootstrap.com/docs/5.3/
-- **Backend API Endpoints:** See `specs/001-sel-backend/contracts/openapi.yaml`
+- **Backend API Endpoints:** See `docs/api/openapi.yaml`
 - **Design Mockups:** (Add link to Figma/design files if available)
 
 ---
@@ -1889,7 +1889,7 @@ Each page has its own JS file following this structure:
 
 **For questions or clarifications:**
 - Check existing beads: `bd list --status open`
-- Review backend API contracts: `specs/001-sel-backend/contracts/openapi.yaml`
+- Review backend API contracts: `docs/api/openapi.yaml`
 - Test backend endpoints directly: `curl -H "Authorization: Bearer $TOKEN" https://staging.toronto.togather.foundation/api/v1/admin/events`
 
 **Common Issues:**

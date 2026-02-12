@@ -334,7 +334,7 @@ git push
 - [MCP Protocol Documentation](https://modelcontextprotocol.io/docs/getting-started/intro)
 - [mark3labs/mcp-go GitHub](https://github.com/mark3labs/mcp-go)
 - [SEL Backend Spec](../001-sel-backend/spec.md)
-- [Togather API OpenAPI Spec](../001-sel-backend/contracts/openapi.yaml)
+- [Togather API OpenAPI Spec](../../docs/api/openapi.yaml)
 
 ## Approvals
 

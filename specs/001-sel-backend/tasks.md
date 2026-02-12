@@ -5,7 +5,7 @@ description: "Task list for SEL backend implementation"
 # Tasks: SEL Backend Server with Admin Frontend
 
 **Input**: Design documents from /specs/001-sel-backend/
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/openapi.yaml, SEL_Implementation_Plan.md, docs/
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, ../../docs/api/openapi.yaml, SEL_Implementation_Plan.md, docs/
 **Tests**: REQUIRED (TDD). Write tests first, confirm red, then implement until passing. Target 80%+ coverage (unit + integration + E2E where applicable).
 
 ## Format: [ID] [P?] [Story] Description
