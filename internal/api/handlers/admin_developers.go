@@ -113,18 +113,26 @@ func (h *AdminDevelopersHandler) InviteDeveloper(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Construct invitation URL
+	// In production, this URL would be sent via email instead of returned in the response
+	invitationURL := fmt.Sprintf("https://%s/dev/accept-invitation?token=%s",
+		r.Host, // Use request host to support local/staging/production
+		token)
+
 	// Audit log
 	h.auditLogger.LogFromRequest(r, "developer.invited", "developer", req.Email, "success", map[string]string{
 		"email": req.Email,
 	})
 
-	// Return invitation details (token would be sent via email in production)
+	// Return invitation details
+	// NOTE: The invitation_url is provided for manual distribution. In production,
+	// invitations should be sent via email. The raw token is never exposed in the response.
 	resp := map[string]interface{}{
 		"email":                 req.Email,
 		"status":                "invited",
-		"invitation_sent":       true,
-		"invitation_token":      token, // In production, this would only be in the email
+		"invitation_url":        invitationURL,
 		"invitation_expires_at": time.Now().Add(168 * time.Hour).Format(time.RFC3339),
+		"note":                  "In production, invitation emails should be sent automatically. Copy the invitation_url and send it to the developer securely.",
 	}
 
 	writeJSON(w, http.StatusCreated, resp, contentTypeFromRequest(r))

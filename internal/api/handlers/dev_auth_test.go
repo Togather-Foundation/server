@@ -181,21 +181,6 @@ func (m *MockDeveloperRepository) BeginTx(ctx context.Context) (developers.Repos
 	return args.Get(0).(developers.Repository), args.Get(1).(developers.TxCommitter), args.Error(2)
 }
 
-// MockTxCommitter is a mock implementation of developers.TxCommitter
-type MockTxCommitter struct {
-	mock.Mock
-}
-
-func (m *MockTxCommitter) Commit(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
-func (m *MockTxCommitter) Rollback(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
 // Helper to add developer claims to request context
 func withDeveloperClaims(r *http.Request, developerID uuid.UUID, email, name string) *http.Request {
 	claims := &auth.DeveloperClaims{
