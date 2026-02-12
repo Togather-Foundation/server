@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/go-playground/validator/v10"
@@ -720,10 +721,10 @@ func (s *Service) UpdateDeveloperLastLogin(ctx context.Context, id uuid.UUID) er
 // Developer passwords have simpler requirements than user passwords since
 // developers are typically more security-aware and may use password managers.
 func validatePassword(password string) error {
-	if len(password) < 8 {
+	if utf8.RuneCountInString(password) < 8 {
 		return ErrPasswordTooShort
 	}
-	if len(password) > 128 {
+	if utf8.RuneCountInString(password) > 128 {
 		return ErrPasswordTooLong
 	}
 	return nil
