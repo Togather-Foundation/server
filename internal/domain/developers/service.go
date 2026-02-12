@@ -61,6 +61,7 @@ var (
 	ErrEmailTaken = errors.New("email is already taken")
 
 	// ErrPasswordTooShort is returned when a password is less than 8 characters.
+	// Also returned when trying to create a non-OAuth developer without a password.
 	ErrPasswordTooShort = errors.New("password must be at least 8 characters")
 
 	// ErrPasswordTooLong is returned when a password exceeds 128 characters.
@@ -114,8 +115,13 @@ func NewService(repo Repository, logger zerolog.Logger) *Service {
 	}
 }
 
-// CreateDeveloper creates a new developer account with email/password authentication.
-// The password is hashed using bcrypt before storage.
+// CreateDeveloper creates a new developer account with email/password authentication
+// or OAuth-only authentication (GitHub).
+//
+// Password handling:
+//   - If params.Password is empty AND params.GitHubID is set: OAuth-only account (no password)
+//   - If params.Password is empty AND params.GitHubID is nil: Error (invitation-based devs need password)
+//   - If params.Password is not empty: Validate and hash the password
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout
@@ -127,17 +133,12 @@ func NewService(repo Repository, logger zerolog.Logger) *Service {
 //   - Validation errors: Invalid email format or missing required fields
 //
 // Side effects:
-//   - Creates developer record in database with hashed password
+//   - Creates developer record in database with hashed password (or NULL for OAuth-only)
 //   - Sets is_active to true (account is immediately active)
 func (s *Service) CreateDeveloper(ctx context.Context, params CreateDeveloperParams) (*Developer, error) {
 	// Set default max_keys if not provided
 	if params.MaxKeys <= 0 {
 		params.MaxKeys = DefaultMaxKeys
-	}
-
-	// Validate password
-	if err := validatePassword(params.Password); err != nil {
-		return nil, err
 	}
 
 	// Check if email is already taken
@@ -146,18 +147,35 @@ func (s *Service) CreateDeveloper(ctx context.Context, params CreateDeveloperPar
 		return nil, ErrEmailTaken
 	}
 
-	// Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), BcryptCost)
-	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+	// Handle password validation and hashing
+	var passwordHashPtr *string
+	if params.Password == "" {
+		// Empty password: only allowed for OAuth-only accounts
+		if params.GitHubID == nil {
+			// No password and no GitHub ID = error (invitation-based devs need a password)
+			return nil, ErrPasswordTooShort
+		}
+		// OAuth-only account: store NULL password hash
+		passwordHashPtr = nil
+	} else {
+		// Non-empty password: validate and hash
+		if err := validatePassword(params.Password); err != nil {
+			return nil, err
+		}
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(params.Password), BcryptCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %w", err)
+		}
+		passwordHashStr := string(hashedPassword)
+		passwordHashPtr = &passwordHashStr
 	}
-	passwordHashStr := string(hashedPassword)
 
 	// Create developer
 	dbParams := CreateDeveloperDBParams{
 		Email:          params.Email,
 		Name:           params.Name,
-		PasswordHash:   &passwordHashStr,
+		PasswordHash:   passwordHashPtr,
 		GitHubID:       params.GitHubID,
 		GitHubUsername: params.GitHubUsername,
 		MaxKeys:        params.MaxKeys,
@@ -171,6 +189,7 @@ func (s *Service) CreateDeveloper(ctx context.Context, params CreateDeveloperPar
 	s.logger.Info().
 		Str("developer_id", developer.ID.String()).
 		Str("email", developer.Email).
+		Bool("oauth_only", passwordHashPtr == nil).
 		Msg("developer account created")
 
 	return developer, nil
@@ -451,6 +470,36 @@ func (s *Service) GetUsageStats(ctx context.Context, developerID uuid.UUID, star
 		StartDate:     startDate,
 		EndDate:       endDate,
 	}, nil
+}
+
+// GetAPIKeyUsageStats retrieves usage statistics for a specific API key including
+// daily breakdown. This is for per-key usage tracking.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - keyID: UUID of the API key
+//   - startDate: Start of the date range (inclusive)
+//   - endDate: End of the date range (inclusive)
+//
+// Returns:
+//   - totalRequests: Total request count across the date range
+//   - totalErrors: Total error count across the date range
+//   - daily: Array of daily usage records
+//   - error: Any error that occurred
+func (s *Service) GetAPIKeyUsageStats(ctx context.Context, keyID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, daily []DailyUsage, err error) {
+	// Get total usage for the key
+	totalRequests, totalErrors, err = s.repo.GetAPIKeyUsageTotal(ctx, keyID, startDate, endDate)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("failed to get api key usage total: %w", err)
+	}
+
+	// Get daily breakdown
+	daily, err = s.repo.GetAPIKeyUsage(ctx, keyID, startDate, endDate)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("failed to get api key usage daily: %w", err)
+	}
+
+	return totalRequests, totalErrors, daily, nil
 }
 
 // InviteDeveloper generates a secure invitation token, hashes it with SHA-256,
