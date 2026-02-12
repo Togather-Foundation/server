@@ -104,6 +104,14 @@ func (h *DeveloperAPIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Requ
 	// Get developer ID from claims
 	developerID := claims.DeveloperID
 
+	// Get developer to retrieve max_keys limit
+	developer, err := h.service.GetDeveloperByID(r.Context(), developerID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("developer_id", developerID.String()).Msg("failed to get developer")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.env)
+		return
+	}
+
 	// List all keys for this developer
 	keys, err := h.service.ListOwnKeys(r.Context(), developerID)
 	if err != nil {
@@ -143,9 +151,15 @@ func (h *DeveloperAPIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
+	// Use developer's max_keys, fallback to 5 if not set (for old records)
+	maxKeys := developer.MaxKeys
+	if maxKeys == 0 {
+		maxKeys = 5
+	}
+
 	resp := apiKeyListResponse{
 		Items:    items,
-		MaxKeys:  5, // Default max keys per developer
+		MaxKeys:  maxKeys,
 		KeyCount: len(keys),
 	}
 
