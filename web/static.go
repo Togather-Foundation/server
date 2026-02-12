@@ -14,6 +14,9 @@ var sitemapXML []byte
 //go:embed admin/static
 var AdminStaticFiles embed.FS
 
+//go:embed dev/static
+var DevStaticFiles embed.FS
+
 // RobotsTxtHandler serves the robots.txt file.
 func RobotsTxtHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -519,6 +519,19 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", adminStaticFS))
 	}
 
+	// Developer HTML routes (srv-7m0cf) - public pages (no auth required)
+	mux.Handle("/dev/login", http.HandlerFunc(devHTMLHandler.ServeLogin))
+	mux.Handle("/dev/accept-invitation", http.HandlerFunc(devHTMLHandler.ServeAcceptInvitation))
+
+	// Serve developer static files (JS only - reuses admin CSS/images via CDN)
+	devStaticSubFS, err := fs.Sub(web.DevStaticFiles, "dev/static")
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to create dev static sub-filesystem")
+	} else {
+		devStaticFS := http.FileServer(http.FS(devStaticSubFS))
+		mux.Handle("/dev/static/", http.StripPrefix("/dev/static/", devStaticFS))
+	}
+
 	// Wrap entire router with middleware stack
 	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit -> HTTPMetrics
 	// Note: Security headers and CORS must be applied first to ensure they're set on all responses
