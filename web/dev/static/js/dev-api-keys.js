@@ -70,9 +70,22 @@
     
     async function loadAPIKeys() {
         try {
-            const keys = await DevAPI.apiKeys.list();
+            const response = await DevAPI.apiKeys.list();
+            const keys = response.items || response;
             currentKeys = keys;
-            renderAPIKeys(keys);
+            
+            // Load usage data for each key (for sparklines)
+            const keysWithUsage = await Promise.all(keys.map(async key => {
+                try {
+                    const usage = await DevAPI.apiKeys.getUsage(key.id);
+                    return { ...key, usageData: usage };
+                } catch (err) {
+                    console.error(`Failed to load usage for key ${key.id}:`, err);
+                    return { ...key, usageData: null };
+                }
+            }));
+            
+            renderAPIKeys(keysWithUsage);
         } catch (err) {
             console.error('Failed to load API keys:', err);
             showToast('Failed to load API keys', 'error');
@@ -90,11 +103,12 @@
         
         tbody.innerHTML = keys.map(key => {
             const createdDate = formatDate(key.created_at);
-            const lastUsed = key.last_used ? formatDate(key.last_used) : 'Never';
-            const statusBadge = key.status === 'active' 
+            const lastUsed = key.last_used_at ? formatDate(key.last_used_at) : 'Never';
+            const statusBadge = key.is_active 
                 ? '<span class="badge bg-success-lt">Active</span>'
                 : '<span class="badge bg-secondary-lt">Revoked</span>';
-            const requestCount = key.request_count_30d || 0;
+            const requestCount = key.usage_30d || 0;
+            const sparkline = renderSparkline(key.usageData);
             
             return `
                 <tr>
@@ -103,12 +117,17 @@
                         ${key.description ? `<div class="text-muted small">${escapeHtml(key.description)}</div>` : ''}
                     </td>
                     <td>
-                        <code class="font-monospace">${escapeHtml(key.key_prefix)}</code>
+                        <code class="font-monospace">${escapeHtml(key.prefix)}</code>
                     </td>
                     <td>${statusBadge}</td>
                     <td>${createdDate}</td>
                     <td>${lastUsed}</td>
-                    <td>${formatNumber(requestCount)}</td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="me-2">${formatNumber(requestCount)}</div>
+                            ${sparkline}
+                        </div>
+                    </td>
                     <td>
                         <div class="btn-list">
                             <button class="btn btn-sm btn-icon" 
@@ -121,7 +140,7 @@
                                     <path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2"/>
                                 </svg>
                             </button>
-                            ${key.status === 'active' ? `
+                            ${key.is_active ? `
                             <button class="btn btn-sm btn-icon text-danger" 
                                     data-action="revoke" 
                                     data-key-id="${key.id}"
@@ -138,6 +157,36 @@
                 </tr>
             `;
         }).join('');
+    }
+    
+    /**
+     * Render a usage sparkline (last 30 days)
+     * @param {Object} usageData - Usage data from API
+     * @returns {string} SVG sparkline HTML
+     */
+    function renderSparkline(usageData) {
+        if (!usageData || !usageData.daily || usageData.daily.length === 0) {
+            return '<span class="text-muted small">—</span>';
+        }
+        
+        const daily = usageData.daily;
+        const values = daily.map(d => d.requests);
+        const maxValue = Math.max(...values, 1); // Avoid division by zero
+        
+        // SVG dimensions
+        const width = 100;
+        const height = 24;
+        const barWidth = width / values.length;
+        
+        // Generate bars
+        const bars = values.map((value, index) => {
+            const barHeight = (value / maxValue) * height;
+            const x = index * barWidth;
+            const y = height - barHeight;
+            return `<rect x="${x}" y="${y}" width="${barWidth - 1}" height="${barHeight}" fill="currentColor" opacity="0.6"/>`;
+        }).join('');
+        
+        return `<svg width="${width}" height="${height}" class="text-primary" style="display: inline-block; vertical-align: middle;">${bars}</svg>`;
     }
     
     function renderEmptyState(message) {
@@ -198,7 +247,7 @@
     function handleCopyPrefix(keyId) {
         const key = currentKeys.find(k => k.id === keyId);
         if (key) {
-            copyToClipboard(key.key_prefix, 'Key prefix copied to clipboard');
+            copyToClipboard(key.prefix, 'Key prefix copied to clipboard');
         }
     }
     

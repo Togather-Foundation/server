@@ -10,6 +10,7 @@
     
     function init() {
         setupEventListeners();
+        checkOAuthErrors();
     }
     
     /**
@@ -87,6 +88,43 @@
                 alert(message);
             }
             setLoading(submitBtn, false);
+        }
+    }
+    
+    /**
+     * Check for OAuth error parameters in URL
+     */
+    function checkOAuthErrors() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const error = urlParams.get('error');
+        
+        if (error) {
+            const errorDiv = document.getElementById('error-message');
+            let message = '';
+            
+            switch (error) {
+                case 'oauth_failed':
+                    message = 'GitHub authentication failed. Please try again.';
+                    break;
+                case 'no_email':
+                    message = 'Your GitHub account does not have a public email. Please make your email public in GitHub settings or use email/password login.';
+                    break;
+                case 'account_inactive':
+                    message = 'Your account is inactive. Please contact your administrator.';
+                    break;
+                default:
+                    message = 'Authentication error. Please try again.';
+            }
+            
+            if (errorDiv) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+            }
+            
+            // Clean up URL without reloading
+            const url = new URL(window.location);
+            url.searchParams.delete('error');
+            window.history.replaceState({}, '', url);
         }
     }
     

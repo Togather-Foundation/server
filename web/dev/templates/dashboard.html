@@ -135,40 +135,50 @@
                     </div>
                     
                     <!-- GitHub Account Link -->
-                    <div class="row row-deck row-cards mt-3" id="github-section" style="display: none;">
+                    {{ if .GitHubLinked }}
+                    <div class="row row-deck row-cards mt-3">
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-header">
                                     <h3 class="card-title">GitHub Account</h3>
                                 </div>
                                 <div class="card-body">
-                                    <div id="github-linked" style="display: none;">
-                                        <div class="d-flex align-items-center">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="icon me-2 text-success" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                                <circle cx="12" cy="12" r="9" />
-                                                <path d="M9 12l2 2l4 -4" />
-                                            </svg>
-                                            <div>
-                                                <strong>Connected to GitHub</strong>
-                                                <div class="text-muted small" id="github-username"></div>
-                                            </div>
+                                    <div class="d-flex align-items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="icon me-2 text-success" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                            <circle cx="12" cy="12" r="9" />
+                                            <path d="M9 12l2 2l4 -4" />
+                                        </svg>
+                                        <div>
+                                            <strong>Connected to GitHub</strong>
+                                            <div class="text-muted small">@{{ .GitHubUsername }}</div>
                                         </div>
-                                    </div>
-                                    <div id="github-not-linked" style="display: none;">
-                                        <div class="text-muted mb-2">Link your GitHub account for OAuth authentication</div>
-                                        <button class="btn btn-outline-secondary disabled" disabled title="Coming Soon">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="icon me-2" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                                                <path d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5" />
-                                            </svg>
-                                            Connect GitHub (Coming Soon)
-                                        </button>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+                    {{ else }}
+                    <div class="row row-deck row-cards mt-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3 class="card-title">GitHub Account</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="text-muted mb-2">Link your GitHub account for OAuth authentication</div>
+                                    <a href="/auth/github" class="btn btn-outline-secondary">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="icon me-2" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                            <path d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5" />
+                                        </svg>
+                                        Connect GitHub
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{ end }}
                 </div>
             </div>
         </div>

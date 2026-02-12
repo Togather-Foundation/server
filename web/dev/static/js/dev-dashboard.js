@@ -46,33 +46,15 @@
     }
     
     function calculateUsageStats(keys) {
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weekAgo = new Date(today);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const monthAgo = new Date(today);
-        monthAgo.setDate(monthAgo.getDate() - 30);
-        
         let requestsToday = 0;
         let requestsWeek = 0;
         let requestsMonth = 0;
         
-        // Note: This is a simplified calculation
-        // In a real implementation, we'd fetch detailed usage stats from the API
-        // For now, we'll estimate based on last_used timestamps
+        // Sum up usage across all keys
         keys.forEach(key => {
-            if (key.last_used) {
-                const lastUsed = new Date(key.last_used);
-                if (lastUsed >= today) {
-                    requestsToday++;
-                }
-                if (lastUsed >= weekAgo) {
-                    requestsWeek++;
-                }
-                if (lastUsed >= monthAgo) {
-                    requestsMonth++;
-                }
-            }
+            requestsToday += key.usage_today || 0;
+            requestsWeek += key.usage_7d || 0;
+            requestsMonth += key.usage_30d || 0;
         });
         
         return {

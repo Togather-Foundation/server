@@ -193,7 +193,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger)
 
 	// Developer HTML handler (srv-7m0cf)
-	devHTMLHandler := handlers.NewDevHTMLHandler(devTemplates, cfg.Environment, slogLogger)
+	devHTMLHandler := handlers.NewDevHTMLHandler(devTemplates, cfg.Environment, slogLogger, developerService)
 
 	// Admin user management handlers
 	adminUsersHandler := handlers.NewAdminUsersHandler(userService, auditLogger, cfg.Environment)

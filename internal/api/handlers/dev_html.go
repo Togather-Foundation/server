@@ -4,6 +4,9 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+
+	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 )
 
 // DevHTMLHandler handles developer portal HTML page rendering
@@ -11,14 +14,16 @@ type DevHTMLHandler struct {
 	Templates *template.Template
 	Env       string
 	Logger    *slog.Logger
+	Service   *developers.Service
 }
 
 // NewDevHTMLHandler creates a new developer HTML handler
-func NewDevHTMLHandler(templates *template.Template, env string, logger *slog.Logger) *DevHTMLHandler {
+func NewDevHTMLHandler(templates *template.Template, env string, logger *slog.Logger, service *developers.Service) *DevHTMLHandler {
 	return &DevHTMLHandler{
 		Templates: templates,
 		Env:       env,
 		Logger:    logger,
+		Service:   service,
 	}
 }
 
@@ -84,6 +89,20 @@ func (h *DevHTMLHandler) ServeDashboard(w http.ResponseWriter, r *http.Request) 
 	data := map[string]interface{}{
 		"Title":      "Dashboard - SEL Developer Portal",
 		"ActivePage": "dashboard",
+	}
+
+	// Get developer info from context to check GitHub account status
+	if claims := middleware.DeveloperClaims(r); claims != nil && h.Service != nil {
+		developer, err := h.Service.GetDeveloperByEmail(r.Context(), claims.Email)
+		if err == nil && developer != nil {
+			data["DeveloperName"] = developer.Name
+			if developer.GitHubUsername != nil && *developer.GitHubUsername != "" {
+				data["GitHubUsername"] = *developer.GitHubUsername
+				data["GitHubLinked"] = true
+			} else {
+				data["GitHubLinked"] = false
+			}
+		}
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {

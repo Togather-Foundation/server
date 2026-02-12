@@ -581,6 +581,16 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, name, password st
 	return developer, nil
 }
 
+// GetDeveloperByID retrieves a developer by their ID.
+// Returns ErrDeveloperNotFound if no developer exists with this ID.
+func (s *Service) GetDeveloperByID(ctx context.Context, id uuid.UUID) (*Developer, error) {
+	developer, err := s.repo.GetDeveloperByID(ctx, id)
+	if err != nil {
+		return nil, ErrDeveloperNotFound
+	}
+	return developer, nil
+}
+
 // GetDeveloperByGitHubID retrieves a developer by their GitHub ID.
 // Returns ErrDeveloperNotFound if no developer exists with this GitHub ID.
 func (s *Service) GetDeveloperByGitHubID(ctx context.Context, githubID int64) (*Developer, error) {
