@@ -42,6 +42,16 @@ type AuthConfig struct {
 	JWTSecret string
 	JWTExpiry time.Duration
 	CSRFKey   string // 32-byte key for CSRF token encryption (required for admin HTML forms)
+	GitHub    GitHubOAuthConfig
+}
+
+// GitHubOAuthConfig holds GitHub OAuth 2.0 configuration.
+// These settings are optional - if not configured, GitHub OAuth login is disabled.
+type GitHubOAuthConfig struct {
+	ClientID     string   // GitHub OAuth App Client ID
+	ClientSecret string   // GitHub OAuth App Client Secret
+	CallbackURL  string   // OAuth callback URL (e.g., "http://localhost:8080/auth/github/callback")
+	AllowedOrgs  []string // Optional: restrict login to members of these GitHub organizations
 }
 
 type RateLimitConfig struct {
@@ -202,6 +212,12 @@ func Load() (Config, error) {
 			JWTSecret: getEnv("JWT_SECRET", ""),
 			JWTExpiry: time.Duration(getEnvInt("JWT_EXPIRY_HOURS", 24)) * time.Hour,
 			CSRFKey:   getEnv("CSRF_KEY", ""),
+			GitHub: GitHubOAuthConfig{
+				ClientID:     getEnv("GITHUB_CLIENT_ID", ""),
+				ClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
+				CallbackURL:  getEnv("GITHUB_CALLBACK_URL", ""),
+				AllowedOrgs:  parseCommaSeparated(getEnv("GITHUB_ALLOWED_ORGS", "")),
+			},
 		},
 		RateLimit: RateLimitConfig{
 			PublicPerMinute:     getEnvInt("RATE_LIMIT_PUBLIC", 60),
@@ -355,18 +371,23 @@ func getEnvFloat(key string, fallback float64) float64 {
 
 // parseTrustedProxies parses a comma-separated list of CIDR ranges
 func parseTrustedProxies(value string) []string {
+	return parseCommaSeparated(value)
+}
+
+// parseCommaSeparated parses a comma-separated list of strings
+func parseCommaSeparated(value string) []string {
 	if value == "" {
 		return nil
 	}
 
-	var cidrs []string
-	for _, cidr := range strings.Split(value, ",") {
-		trimmed := strings.TrimSpace(cidr)
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		trimmed := strings.TrimSpace(item)
 		if trimmed != "" {
-			cidrs = append(cidrs, trimmed)
+			items = append(items, trimmed)
 		}
 	}
-	return cidrs
+	return items
 }
 
 // LoadEnvFile loads environment variables from a .env file
