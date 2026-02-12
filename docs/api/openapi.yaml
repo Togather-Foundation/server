@@ -73,6 +73,7 @@ paths:
       summary: List events
       description: Query events with optional filters. Returns paginated JSON-LD.
       tags: [Events]
+      security: []
       parameters:
         - $ref: '#/components/parameters/startDate'
         - $ref: '#/components/parameters/endDate'
@@ -146,6 +147,7 @@ paths:
       summary: Get event by ID
       description: Retrieve a single event by its ULID. Supports content negotiation.
       tags: [Events]
+      security: []
       parameters:
         - $ref: '#/components/parameters/eventId'
       responses:
@@ -230,6 +232,7 @@ paths:
         Retrieve the status and results of a batch event submission. Returns 404 if
         the batch is still processing or doesn't exist.
       tags: [Events]
+      security: []
       parameters:
         - name: id
           in: path
@@ -303,6 +306,7 @@ paths:
       summary: List places
       description: Query places (venues) with optional filters. Returns paginated JSON-LD.
       tags: [Places]
+      security: []
       parameters:
         - $ref: '#/components/parameters/city'
         - $ref: '#/components/parameters/query'
@@ -322,6 +326,7 @@ paths:
       summary: Get place by ID
       description: Retrieve a single place (venue) by its unique identifier. Returns JSON-LD.
       tags: [Places]
+      security: []
       parameters:
         - name: id
           in: path
@@ -345,6 +350,7 @@ paths:
       summary: List organizations
       description: Query organizations (event organizers) with optional filters. Returns paginated JSON-LD.
       tags: [Organizations]
+      security: []
       parameters:
         - $ref: '#/components/parameters/query'
         - $ref: '#/components/parameters/after'
@@ -363,6 +369,7 @@ paths:
       summary: Get organization by ID
       description: Retrieve a single organization by its unique identifier. Returns JSON-LD.
       tags: [Organizations]
+      security: []
       parameters:
         - name: id
           in: path
@@ -386,6 +393,7 @@ paths:
       summary: List events awaiting review
       description: Returns events flagged for admin review (low confidence, validation issues, etc.)
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -409,6 +417,7 @@ paths:
       summary: Update an event
       description: Admin endpoint to edit event details. Increments version and logs change.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -445,6 +454,7 @@ paths:
       summary: Delete an event
       description: Soft delete - returns 410 Gone with tombstone thereafter
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -470,6 +480,7 @@ paths:
         Note: Automatic duplicate detection (/admin/duplicates list endpoint) 
         is not yet implemented. Use this endpoint for manual merges.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       requestBody:
@@ -507,6 +518,7 @@ paths:
       summary: List API keys
       description: Retrieve all API keys (without secrets). Requires admin authentication.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       responses:
@@ -527,6 +539,7 @@ paths:
       summary: Create a new API key
       description: Generate a new API key for agent authentication. Returns the API key secret only once. Requires admin authentication.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       requestBody:
@@ -562,6 +575,7 @@ paths:
         Ordered stream of changes for federation sync. Returns events in 
         sequence order with action type and snapshot.
       tags: [Feeds]
+      security: []
       parameters:
         - name: since
           in: query
@@ -585,6 +599,7 @@ paths:
         Returns events awaiting admin review due to validation warnings or normalization changes.
         Supports filtering by status and pagination.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -630,6 +645,7 @@ paths:
         Retrieve detailed information for a specific review queue entry, including
         original payload, normalized payload, detected changes, and validation warnings.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -664,6 +680,7 @@ paths:
         Approve an event in the review queue and publish it. The event's lifecycle
         state will be updated to 'published' and it will appear in public listings.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -717,6 +734,7 @@ paths:
         Reject an event in the review queue and mark it as deleted. The event will
         return HTTP 410 Gone with a tombstone and will not appear in public listings.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -775,6 +793,7 @@ paths:
         Note: Currently this endpoint only marks the review as approved with correction notes.
         Full date correction implementation is tracked in srv-trg.
       tags: [Admin]
+      x-internal: true
       security:
         - bearerAuth: []
       parameters:
@@ -845,6 +864,7 @@ paths:
       summary: Admin login
       description: Authenticate admin user and receive JWT token
       tags: [Admin]
+      x-internal: true
       requestBody:
         description: Admin credentials (email and password) for authentication
         required: true
@@ -882,6 +902,7 @@ paths:
       summary: Liveness probe
       description: Check if the service is alive and running. Used by orchestrators (Kubernetes, etc.) to determine if the service should be restarted.
       tags: [Health]
+      security: []
       responses:
         '200':
           description: Service is alive
@@ -900,6 +921,7 @@ paths:
       summary: Readiness probe
       description: Check if the service is ready to accept traffic. Verifies database connectivity and other dependencies.
       tags: [Health]
+      security: []
       responses:
         '200':
           description: Service is ready
@@ -927,6 +949,7 @@ paths:
         Returns this node's SEL profile information for federation discovery.
         Required by SEL Interoperability Profile §1.7.
       tags: [Health]
+      security: []
       responses:
         '200':
           description: SEL profile information
@@ -957,6 +980,7 @@ paths:
       summary: OpenAPI specification
       description: Retrieve the OpenAPI 3.1 specification for this API in JSON format. Useful for API documentation and client generation.
       tags: [Health]
+      security: []
       responses:
         '200':
           description: OpenAPI 3.1 specification
