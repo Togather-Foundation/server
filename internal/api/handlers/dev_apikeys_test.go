@@ -198,6 +198,15 @@ func TestDevKeyList(t *testing.T) {
 	t.Run("only shows own keys", func(t *testing.T) {
 		mockRepo := new(MockDeveloperRepository)
 
+		// Mock GetDeveloperByID for MaxKeys lookup
+		mockRepo.On("GetDeveloperByID", mock.Anything, developer1ID).Return(&developers.Developer{
+			ID:       developer1ID,
+			Email:    "dev1@example.com",
+			Name:     "Developer 1",
+			MaxKeys:  5,
+			IsActive: true,
+		}, nil)
+
 		// Developer 1 has 2 keys
 		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, developer1ID).Return([]developers.APIKey{
 			{
@@ -262,6 +271,16 @@ func TestDevKeyList(t *testing.T) {
 
 	t.Run("empty list for developer with no keys", func(t *testing.T) {
 		mockRepo := new(MockDeveloperRepository)
+
+		// Mock GetDeveloperByID for MaxKeys lookup
+		mockRepo.On("GetDeveloperByID", mock.Anything, developer2ID).Return(&developers.Developer{
+			ID:       developer2ID,
+			Email:    "dev2@example.com",
+			Name:     "Developer 2",
+			MaxKeys:  5,
+			IsActive: true,
+		}, nil)
+
 		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, developer2ID).Return([]developers.APIKey{}, nil)
 
 		service := developers.NewService(mockRepo, zerolog.Nop())
@@ -402,15 +421,8 @@ func TestDevUsageStats(t *testing.T) {
 	t.Run("basic usage stats retrieval", func(t *testing.T) {
 		mockRepo := new(MockDeveloperRepository)
 
-		// Mock key ownership verification via ListOwnKeys -> ListDeveloperAPIKeys
-		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, developerID).Return([]developers.APIKey{
-			{
-				ID:          keyID,
-				DeveloperID: developerID,
-				Prefix:      "sel_dev",
-				Name:        "Test Key",
-			},
-		}, nil)
+		// Mock key ownership verification via CheckAPIKeyOwnership
+		mockRepo.On("CheckAPIKeyOwnership", mock.Anything, keyID, developerID).Return(true, nil)
 
 		// Mock usage stats for each key (called by ListOwnKeys)
 		mockRepo.On("GetAPIKeyUsageTotal", mock.Anything, keyID, mock.Anything, mock.Anything).
@@ -461,8 +473,8 @@ func TestDevUsageStats(t *testing.T) {
 		otherDevID := uuid.New()
 		mockRepo := new(MockDeveloperRepository)
 
-		// Mock key ownership - returns empty list (key doesn't belong to this developer)
-		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, otherDevID).Return([]developers.APIKey{}, nil)
+		// Mock key ownership - returns false (key doesn't belong to this developer)
+		mockRepo.On("CheckAPIKeyOwnership", mock.Anything, keyID, otherDevID).Return(false, nil)
 
 		service := developers.NewService(mockRepo, zerolog.Nop())
 		auditLogger := audit.NewLogger()
@@ -480,8 +492,8 @@ func TestDevUsageStats(t *testing.T) {
 
 		handler.GetAPIKeyUsage(rec, req)
 
-		assert.Equal(t, http.StatusForbidden, rec.Code)
-		assert.Contains(t, rec.Body.String(), "You do not own this API key")
+		assert.Equal(t, http.StatusNotFound, rec.Code)
+		assert.Contains(t, rec.Body.String(), "API key not found")
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -706,6 +718,16 @@ func TestAuthIsolation(t *testing.T) {
 
 	t.Run("developer endpoint requires developer claims in context", func(t *testing.T) {
 		mockRepo := new(MockDeveloperRepository)
+
+		// Mock GetDeveloperByID for MaxKeys lookup
+		mockRepo.On("GetDeveloperByID", mock.Anything, developerID).Return(&developers.Developer{
+			ID:       developerID,
+			Email:    "dev@example.com",
+			Name:     "Test Developer",
+			MaxKeys:  5,
+			IsActive: true,
+		}, nil)
+
 		// Successful case: proper developer claims
 		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, developerID).
 			Return([]developers.APIKey{}, nil)

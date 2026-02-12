@@ -81,7 +81,7 @@ func TestExchangeCode_Success(t *testing.T) {
 
 		// Return successful token response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": "gho_test_token_123",
 			"token_type":   "bearer",
 			"scope":        "user:email",
@@ -128,7 +128,7 @@ func TestExchangeCode_InvalidCode(t *testing.T) {
 	// Mock GitHub token endpoint returning error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":             "bad_verification_code",
 			"error_description": "The code passed is incorrect or expired.",
 		})
@@ -199,7 +199,7 @@ func TestFetchUserProfile_Success(t *testing.T) {
 
 		if r.URL.Path == "/user" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"id":    int64(12345),
 				"login": "testuser",
 				"email": "testuser@example.com",
@@ -252,7 +252,7 @@ func TestFetchUserProfile_NoEmail_FallbackToEmailsEndpoint(t *testing.T) {
 
 		if r.URL.Path == "/user" {
 			// User profile without email (private email setting)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"id":    int64(12345),
 				"login": "testuser",
 				"email": "", // Empty email
@@ -260,7 +260,7 @@ func TestFetchUserProfile_NoEmail_FallbackToEmailsEndpoint(t *testing.T) {
 			})
 		} else if r.URL.Path == "/user/emails" {
 			// Emails endpoint
-			json.NewEncoder(w).Encode([]map[string]interface{}{
+			_ = json.NewEncoder(w).Encode([]map[string]interface{}{
 				{
 					"email":    "secondary@example.com",
 					"primary":  false,

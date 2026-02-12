@@ -67,7 +67,7 @@ func TestUsageTracking_Success(t *testing.T) {
 	// Create handler chain
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 
 	middleware := UsageTracking(recorder, logger)
@@ -105,7 +105,7 @@ func TestUsageTracking_Error(t *testing.T) {
 	// Handler that returns an error
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("error"))
+		_, _ = w.Write([]byte("error"))
 	})
 
 	middleware := UsageTracking(recorder, logger)
@@ -249,7 +249,7 @@ func TestUsageTracking_ImplicitStatusOK(t *testing.T) {
 
 	// Handler that doesn't explicitly set status (should default to 200)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 
 	middleware := UsageTracking(recorder, logger)

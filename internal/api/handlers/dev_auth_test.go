@@ -173,6 +173,16 @@ func (m *MockDeveloperRepository) GetAPIKeyUsage(ctx context.Context, apiKeyID u
 	return args.Get(0).([]developers.DailyUsage), args.Error(1)
 }
 
+func (m *MockDeveloperRepository) RevokeAllDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) (int64, error) {
+	args := m.Called(ctx, developerID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockDeveloperRepository) CheckAPIKeyOwnership(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, keyID, developerID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockDeveloperRepository) BeginTx(ctx context.Context) (developers.Repository, developers.TxCommitter, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
@@ -340,7 +350,7 @@ func TestDevLogin(t *testing.T) {
 			handler := NewDeveloperAuthHandler(
 				service,
 				zerolog.Nop(),
-				"test-secret",
+				[]byte("test-secret"),
 				24*time.Hour,
 				"test-issuer",
 				"test",
@@ -390,7 +400,11 @@ func TestDevAcceptInvitation(t *testing.T) {
 					ExpiresAt: time.Now().Add(24 * time.Hour),
 				}
 				m.On("GetInvitationByTokenHash", mock.Anything, mock.Anything).Return(invitation, nil)
-				m.On("AcceptInvitation", mock.Anything, invitationID).Return(nil)
+				// BeginTx returns the same mock repo as the tx-scoped repo
+				txCommitter := new(MockTxCommitter)
+				txCommitter.On("Commit", mock.Anything).Return(nil)
+				txCommitter.On("Rollback", mock.Anything).Return(nil)
+				m.On("BeginTx", mock.Anything).Return(m, txCommitter, nil)
 				m.On("CreateDeveloper", mock.Anything, mock.MatchedBy(func(params developers.CreateDeveloperDBParams) bool {
 					return params.Email == "newdev@example.com" && params.Name == "New Developer"
 				})).Return(&developers.Developer{
@@ -398,6 +412,7 @@ func TestDevAcceptInvitation(t *testing.T) {
 					Email: "newdev@example.com",
 					Name:  "New Developer",
 				}, nil)
+				m.On("AcceptInvitation", mock.Anything, invitationID).Return(nil)
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -494,7 +509,7 @@ func TestDevAcceptInvitation(t *testing.T) {
 			handler := NewDeveloperAuthHandler(
 				service,
 				zerolog.Nop(),
-				"test-secret",
+				[]byte("test-secret"),
 				24*time.Hour,
 				"test-issuer",
 				"test",
@@ -526,7 +541,7 @@ func TestDevLogout(t *testing.T) {
 	handler := NewDeveloperAuthHandler(
 		service,
 		zerolog.Nop(),
-		"test-secret",
+		[]byte("test-secret"),
 		24*time.Hour,
 		"test-issuer",
 		"test",

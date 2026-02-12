@@ -2,7 +2,6 @@ package developers
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -217,13 +216,4 @@ func (r *UsageRecorder) Stats() (bufferSize int, totalRequests int64, totalError
 		totalErrors += delta.errors
 	}
 	return
-}
-
-// parseUUID converts a string UUID to uuid.UUID, returning an error if invalid
-func parseUUID(s string) (uuid.UUID, error) {
-	id, err := uuid.Parse(s)
-	if err != nil {
-		return uuid.UUID{}, fmt.Errorf("invalid uuid: %w", err)
-	}
-	return id, nil
 }

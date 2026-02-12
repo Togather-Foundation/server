@@ -50,12 +50,6 @@ func (m *mockUsageRepo) getCalls() []usageCall {
 	return append([]usageCall(nil), m.calls...)
 }
 
-func (m *mockUsageRepo) reset() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.calls = nil
-}
-
 func TestUsageRecorder_RecordRequest(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}

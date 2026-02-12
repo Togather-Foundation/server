@@ -37,6 +37,8 @@ type mockRepository struct {
 	getAPIKeyUsageFn            func(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) ([]DailyUsage, error)
 	getDeveloperUsageTotalFn    func(ctx context.Context, developerID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error)
 	validateDeveloperPasswordFn func(ctx context.Context, id uuid.UUID, password string) (bool, error)
+	revokeAllDeveloperAPIKeysFn func(ctx context.Context, developerID uuid.UUID) (int64, error)
+	checkAPIKeyOwnershipFn      func(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error)
 }
 
 func (m *mockRepository) CreateDeveloper(ctx context.Context, params CreateDeveloperDBParams) (*Developer, error) {
@@ -189,6 +191,20 @@ func (m *mockRepository) GetDeveloperUsageTotal(ctx context.Context, developerID
 func (m *mockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// Return self as transaction-scoped repository
 	return m, &mockTxCommitter{}, nil
+}
+
+func (m *mockRepository) RevokeAllDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) (int64, error) {
+	if m.revokeAllDeveloperAPIKeysFn != nil {
+		return m.revokeAllDeveloperAPIKeysFn(ctx, developerID)
+	}
+	return 0, nil
+}
+
+func (m *mockRepository) CheckAPIKeyOwnership(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error) {
+	if m.checkAPIKeyOwnershipFn != nil {
+		return m.checkAPIKeyOwnershipFn(ctx, keyID, developerID)
+	}
+	return false, nil
 }
 
 // mockTxCommitter implements TxCommitter for testing

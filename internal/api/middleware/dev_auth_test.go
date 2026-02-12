@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -201,7 +202,7 @@ func TestDevCookieAuth_RejectsAdminToken(t *testing.T) {
 }
 
 func TestDeveloperFromContext_NilContext(t *testing.T) {
-	claims := DeveloperFromContext(nil)
+	claims := DeveloperFromContext(context.Background())
 	if claims != nil {
 		t.Error("Expected nil claims for nil context")
 	}
