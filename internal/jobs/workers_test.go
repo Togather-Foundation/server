@@ -235,3 +235,33 @@ func TestEnrichmentWorker_WorkWithValidJob(t *testing.T) {
 		t.Errorf("Work() with valid job should not error, got: %v", err)
 	}
 }
+
+func TestUsageRollupArgs_Kind(t *testing.T) {
+	args := UsageRollupArgs{}
+	if args.Kind() != JobKindUsageRollup {
+		t.Errorf("Kind() = %q, want %q", args.Kind(), JobKindUsageRollup)
+	}
+}
+
+func TestUsageRollupWorker_Kind(t *testing.T) {
+	worker := UsageRollupWorker{}
+	if worker.Kind() != JobKindUsageRollup {
+		t.Errorf("Kind() = %q, want %q", worker.Kind(), JobKindUsageRollup)
+	}
+}
+
+func TestUsageRollupWorker_WorkWithNilPool(t *testing.T) {
+	worker := UsageRollupWorker{
+		Pool: nil,
+	}
+	ctx := context.Background()
+
+	job := &river.Job[UsageRollupArgs]{
+		Args: UsageRollupArgs{},
+	}
+
+	err := worker.Work(ctx, job)
+	if err == nil {
+		t.Error("Work() with nil pool should return error")
+	}
+}

@@ -372,5 +372,10 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 		Logger: logger,
 		Slot:   slot,
 	})
+	river.AddWorker[UsageRollupArgs](workers, UsageRollupWorker{
+		Pool:   pool,
+		Logger: logger,
+		Slot:   slot,
+	})
 	return workers
 }
