@@ -16,6 +16,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/auth/oauth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -153,16 +154,46 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		auditLogger,
 	)
 
+	// GitHub OAuth handler (srv-idczk) - only initialize if configured
+	var devOAuthHandler *handlers.DeveloperOAuthHandler
+	if cfg.Auth.GitHub.ClientID != "" {
+		githubClient := oauth.NewGitHubClient(oauth.GitHubConfig{
+			ClientID:     cfg.Auth.GitHub.ClientID,
+			ClientSecret: cfg.Auth.GitHub.ClientSecret,
+			CallbackURL:  cfg.Auth.GitHub.CallbackURL,
+			AllowedOrgs:  cfg.Auth.GitHub.AllowedOrgs,
+		})
+		devOAuthHandler = handlers.NewDeveloperOAuthHandler(
+			developerService,
+			githubClient,
+			logger,
+			cfg.Auth.JWTSecret,
+			cfg.Auth.JWTExpiry,
+			"sel.events",
+			cfg.Environment,
+			auditLogger,
+		)
+	}
+
 	// Load admin templates
-	templates, err := loadAdminTemplates(gitCommit)
+	adminTemplates, err := loadAdminTemplates(gitCommit)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to load admin templates, admin UI will be unavailable")
 	}
 
+	// Load developer templates (srv-7m0cf)
+	devTemplates, err := loadDevTemplates(gitCommit)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to load developer templates, developer portal UI will be unavailable")
+	}
+
 	// Admin handlers
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
-	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates, cfg.Auth.JWTExpiry)
-	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment, slogLogger)
+	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, adminTemplates, cfg.Auth.JWTExpiry)
+	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger)
+
+	// Developer HTML handler (srv-7m0cf)
+	devHTMLHandler := handlers.NewDevHTMLHandler(devTemplates, cfg.Environment, slogLogger)
 
 	// Admin user management handlers
 	adminUsersHandler := handlers.NewAdminUsersHandler(userService, auditLogger, cfg.Environment)
@@ -389,6 +420,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/dev/login", devLogin)
 	mux.Handle("POST /api/v1/dev/logout", devLogout)
 	mux.Handle("POST /api/v1/dev/accept-invitation", devAcceptInvitation)
+
+	// GitHub OAuth routes (srv-idczk) - only register if GitHub OAuth is configured
+	if devOAuthHandler != nil {
+		mux.Handle("GET /auth/github", rateLimitPublic(http.HandlerFunc(devOAuthHandler.GitHubLogin)))
+		mux.Handle("GET /auth/github/callback", rateLimitPublic(http.HandlerFunc(devOAuthHandler.GitHubCallback)))
+	}
 
 	// Developer API key management endpoints with DevCookieAuth middleware
 	devCookieAuth := middleware.DevCookieAuth(cfg.Auth.JWTSecret)

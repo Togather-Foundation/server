@@ -581,6 +581,45 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, name, password st
 	return developer, nil
 }
 
+// GetDeveloperByGitHubID retrieves a developer by their GitHub ID.
+// Returns ErrDeveloperNotFound if no developer exists with this GitHub ID.
+func (s *Service) GetDeveloperByGitHubID(ctx context.Context, githubID int64) (*Developer, error) {
+	developer, err := s.repo.GetDeveloperByGitHubID(ctx, githubID)
+	if err != nil {
+		return nil, ErrDeveloperNotFound
+	}
+	return developer, nil
+}
+
+// GetDeveloperByEmail retrieves a developer by their email address.
+// Returns ErrDeveloperNotFound if no developer exists with this email.
+func (s *Service) GetDeveloperByEmail(ctx context.Context, email string) (*Developer, error) {
+	developer, err := s.repo.GetDeveloperByEmail(ctx, email)
+	if err != nil {
+		return nil, ErrDeveloperNotFound
+	}
+	return developer, nil
+}
+
+// UpdateDeveloper updates a developer's profile information.
+// Only non-nil fields in params will be updated.
+func (s *Service) UpdateDeveloper(ctx context.Context, id uuid.UUID, params UpdateDeveloperParams) (*Developer, error) {
+	developer, err := s.repo.UpdateDeveloper(ctx, id, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update developer: %w", err)
+	}
+	return developer, nil
+}
+
+// UpdateDeveloperLastLogin updates the last_login_at timestamp for a developer.
+// This is typically called after successful authentication.
+func (s *Service) UpdateDeveloperLastLogin(ctx context.Context, id uuid.UUID) error {
+	if err := s.repo.UpdateDeveloperLastLogin(ctx, id); err != nil {
+		return fmt.Errorf("failed to update last login: %w", err)
+	}
+	return nil
+}
+
 // validatePassword enforces password length requirements:
 // - Minimum 8 characters (less strict than user accounts)
 // - Maximum 128 characters
