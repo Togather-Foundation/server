@@ -157,7 +157,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /events:batch:
+  /events/batch:
     post:
       operationId: createEventBatch
       summary: Submit multiple events in a batch
@@ -1069,6 +1069,7 @@ components:
   schemas:
     Event:
       type: object
+      description: A cultural event in Schema.org Event format with SEL extensions for provenance and federation
       required: ['@id', '@type', name, startDate, location]
       properties:
         '@context':
@@ -1146,6 +1147,7 @@ components:
 
     EventInput:
       type: object
+      description: Input schema for creating or updating an event. Minimal required fields with optional Schema.org properties
       required: [name, startDate]
       properties:
         name:
@@ -1194,6 +1196,7 @@ components:
           $ref: '#/components/schemas/SourceInput'
 
     EventUpdateInput:
+      description: Schema for updating an existing event with version control for optimistic locking
       allOf:
         - $ref: '#/components/schemas/EventInput'
         - type: object
@@ -1206,6 +1209,7 @@ components:
               enum: [draft, published, postponed, rescheduled, sold_out, cancelled, completed]
 
     Place:
+      description: A physical location or venue where events occur, using Schema.org Place vocabulary
       type: object
       required: ['@type', name]
       properties:
@@ -1233,6 +1237,7 @@ components:
             format: uri
 
     PlaceInput:
+      description: Input schema for specifying event locations with address and geographic coordinates
       type: object
       required: [name]
       properties:
@@ -1258,6 +1263,7 @@ components:
           type: number
 
     VirtualLocationInput:
+      description: Input schema for online/virtual event locations with URL
       type: object
       required: [url]
       properties:
@@ -1271,6 +1277,7 @@ components:
           type: string
 
     PostalAddress:
+      description: Physical mailing address using Schema.org PostalAddress vocabulary
       type: object
       properties:
         '@type':
@@ -1288,6 +1295,7 @@ components:
           type: string
 
     GeoCoordinates:
+      description: Geographic coordinates (latitude/longitude) using Schema.org GeoCoordinates vocabulary
       type: object
       properties:
         '@type':
@@ -1299,6 +1307,7 @@ components:
           type: number
 
     Organization:
+      description: An organization or person that organizes events, using Schema.org Organization vocabulary
       type: object
       required: ['@type', name]
       properties:
@@ -1322,6 +1331,7 @@ components:
             format: uri
 
     OrganizationInput:
+      description: Input schema for specifying event organizers
       type: object
       required: [name]
       properties:
@@ -1335,6 +1345,7 @@ components:
           format: uri
 
     Offer:
+      description: Ticketing or pricing information using Schema.org Offer vocabulary
       type: object
       properties:
         '@type':
@@ -1352,6 +1363,7 @@ components:
           format: uri
 
     OfferInput:
+      description: Input schema for ticket/pricing offers
       type: object
       properties:
         url:
@@ -1364,6 +1376,7 @@ components:
           default: CAD
 
     SourceInput:
+      description: Provenance metadata identifying the data source and attribution for submitted events
       type: object
       properties:
         url:
@@ -1375,6 +1388,7 @@ components:
           description: External system's event ID
 
     EventListResponse:
+      description: Paginated list of events with cursor-based pagination
       type: object
       required: [items]
       properties:
@@ -1387,6 +1401,7 @@ components:
           description: Cursor for next page
 
     PlaceListResponse:
+      description: Paginated list of places (venues) with cursor-based pagination
       type: object
       required: [items]
       properties:
@@ -1398,6 +1413,7 @@ components:
           type: string
 
     OrganizationListResponse:
+      description: Paginated list of organizations with cursor-based pagination
       type: object
       required: [items]
       properties:
@@ -1409,6 +1425,7 @@ components:
           type: string
 
     ChangeFeedResponse:
+      description: Federation change feed containing sequential updates for event synchronization
       type: object
       required: [cursor, changes]
       properties:
@@ -1424,6 +1441,7 @@ components:
           description: Cursor for next page
 
     ChangeEntry:
+      description: Single change record in the federation feed with action type and snapshot
       type: object
       required: [action, uri, changed_at]
       properties:
@@ -1443,18 +1461,8 @@ components:
         snapshot:
           $ref: '#/components/schemas/Event'
 
-    DuplicateListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/DuplicateCandidate'
-        next_cursor:
-          type: string
-
     DuplicateCandidate:
+      description: Pair of potentially duplicate events with similarity score and matching features
       type: object
       properties:
         eventA:
@@ -1471,6 +1479,7 @@ components:
             type: string
 
     ApiKeyInfo:
+      description: API key metadata (without secret) for agent authentication management
       type: object
       properties:
         id:
@@ -1497,6 +1506,7 @@ components:
           type: boolean
 
     ApiKeyCreated:
+      description: Response when creating a new API key, includes the secret (shown only once)
       allOf:
         - $ref: '#/components/schemas/ApiKeyInfo'
         - type: object
@@ -1507,6 +1517,7 @@ components:
               description: Full API key (shown only once)
 
     ReviewQueueListResponse:
+      description: Paginated list of events awaiting admin review
       type: object
       required: [items]
       properties:
@@ -1519,6 +1530,7 @@ components:
           description: Cursor for next page (review queue entry ID)
 
     ReviewQueueItem:
+      description: Summary of a review queue entry with event ID and reason for review
       type: object
       required: [id, eventId, warnings, status, createdAt]
       properties:
@@ -1561,6 +1573,7 @@ components:
           description: When the review was completed (if reviewed)
 
     ReviewQueueDetail:
+      description: Detailed review queue entry including original payload, normalized payload, and detected changes
       type: object
       required: [id, eventId, status, warnings, original, normalized, changes, createdAt]
       properties:
@@ -1609,6 +1622,7 @@ components:
           description: Reason for rejection (if rejected)
 
     ValidationWarning:
+      description: Warning message from event validation or normalization process
       type: object
       required: [code, message]
       properties:
@@ -1627,6 +1641,7 @@ components:
           description: Warning severity level
 
     ChangeDetail:
+      description: Record of a single field change made during event normalization
       type: object
       required: [field, original, corrected, reason]
       properties:
@@ -1634,9 +1649,11 @@ components:
           type: string
           description: Field that was changed (e.g., "endDate")
         original:
-          description: Original value before normalization
+          description: Original value before normalization (can be any type)
+          example: "2026-03-15T22:00:00Z"
         corrected:
-          description: Corrected value after normalization
+          description: Corrected value after normalization (can be any type)
+          example: "2026-03-16T22:00:00Z"
         reason:
           type: string
           description: Explanation of why the change was made
