@@ -107,6 +107,7 @@ paths:
         - apiKey: []
         - bearerAuth: []
       requestBody:
+        description: Event data in JSON-LD or JSON format
         required: true
         content:
           application/ld+json:
@@ -172,6 +173,7 @@ paths:
         - apiKey: []
         - bearerAuth: []
       requestBody:
+        description: Array of events for batch processing (max 100 events)
         required: true
         content:
           application/json:
@@ -412,6 +414,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/eventId'
       requestBody:
+        description: Updated event data with version for optimistic locking
         required: true
         content:
           application/json:
@@ -470,6 +473,7 @@ paths:
       security:
         - bearerAuth: []
       requestBody:
+        description: Source and target event IDs for merge operation
         required: true
         content:
           application/json:
@@ -526,6 +530,7 @@ paths:
       security:
         - bearerAuth: []
       requestBody:
+        description: API key name and optional metadata (sourceId, expiresAt)
         required: true
         content:
           application/json:
@@ -670,6 +675,7 @@ paths:
             type: integer
             minimum: 1
       requestBody:
+        description: Optional review notes for approval
         required: false
         content:
           application/json:
@@ -722,6 +728,7 @@ paths:
             type: integer
             minimum: 1
       requestBody:
+        description: Rejection reason (required) explaining why the event was rejected
         required: true
         content:
           application/json:
@@ -779,6 +786,7 @@ paths:
             type: integer
             minimum: 1
       requestBody:
+        description: Date corrections to apply to the event (startDate and/or endDate)
         required: true
         content:
           application/json:
@@ -838,6 +846,7 @@ paths:
       description: Authenticate admin user and receive JWT token
       tags: [Admin]
       requestBody:
+        description: Admin credentials (email and password) for authentication
         required: true
         content:
           application/json:
@@ -1461,23 +1470,6 @@ components:
         snapshot:
           $ref: '#/components/schemas/Event'
 
-    DuplicateCandidate:
-      description: Pair of potentially duplicate events with similarity score and matching features
-      type: object
-      properties:
-        eventA:
-          $ref: '#/components/schemas/Event'
-        eventB:
-          $ref: '#/components/schemas/Event'
-        similarity:
-          type: number
-          minimum: 0
-          maximum: 1
-        matchFeatures:
-          type: array
-          items:
-            type: string
-
     ApiKeyInfo:
       description: API key metadata (without secret) for agent authentication management
       type: object
@@ -1651,9 +1643,23 @@ components:
         original:
           description: Original value before normalization (can be any type)
           example: "2026-03-15T22:00:00Z"
+          anyOf:
+            - type: string
+            - type: number
+            - type: boolean
+            - type: object
+            - type: array
+            - type: "null"
         corrected:
           description: Corrected value after normalization (can be any type)
           example: "2026-03-16T22:00:00Z"
+          anyOf:
+            - type: string
+            - type: number
+            - type: boolean
+            - type: object
+            - type: array
+            - type: "null"
         reason:
           type: string
           description: Explanation of why the change was made
