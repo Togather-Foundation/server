@@ -37,8 +37,18 @@ type Repository interface {
 	GetAPIKeyByID(ctx context.Context, id uuid.UUID) (*APIKey, error)
 
 	// Usage operations
+	GetAPIKeyUsage(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) ([]DailyUsage, error)
 	GetAPIKeyUsageTotal(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error)
 	GetDeveloperUsageTotal(ctx context.Context, developerID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error)
+
+	// Transaction support
+	BeginTx(ctx context.Context) (Repository, TxCommitter, error)
+}
+
+// TxCommitter provides transaction commit/rollback functionality
+type TxCommitter interface {
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
 }
 
 // CreateDeveloperDBParams contains database-level parameters for creating a developer.

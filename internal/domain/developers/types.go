@@ -77,6 +77,13 @@ type UsageStats struct {
 	EndDate       time.Time
 }
 
+// DailyUsage represents usage statistics for a single day.
+type DailyUsage struct {
+	Date     time.Time
+	Requests int64
+	Errors   int64
+}
+
 // APIKey represents an API key in the domain layer.
 // This is a clean domain model without database implementation details.
 type APIKey struct {

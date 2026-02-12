@@ -416,9 +416,17 @@ func TestDevUsageStats(t *testing.T) {
 		mockRepo.On("GetAPIKeyUsageTotal", mock.Anything, keyID, mock.Anything, mock.Anything).
 			Return(int64(1000), int64(50), nil)
 
-		// Mock developer usage stats (called by GetUsageStats)
+		// Mock daily usage for the key (called by GetAPIKeyUsageStats)
+		mockRepo.On("GetAPIKeyUsage", mock.Anything, keyID, mock.Anything, mock.Anything).
+			Return([]developers.DailyUsage{
+				{Date: time.Now().AddDate(0, 0, -1), Requests: 500, Errors: 25},
+				{Date: time.Now(), Requests: 500, Errors: 25},
+			}, nil)
+
+		// Mock developer usage stats (called by GetUsageStats) - note: never actually called in this test
+		// but included for completeness if the handler changes
 		mockRepo.On("GetDeveloperUsageTotal", mock.Anything, developerID, mock.Anything, mock.Anything).
-			Return(int64(1000), int64(50), nil)
+			Return(int64(1000), int64(50), nil).Maybe()
 
 		service := developers.NewService(mockRepo, zerolog.Nop())
 		auditLogger := audit.NewLogger()
@@ -513,8 +521,12 @@ func TestAdminDeveloperInvite(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, "newdev@example.com", resp["email"])
 				assert.Equal(t, "invited", resp["status"])
-				assert.True(t, resp["invitation_sent"].(bool))
-				assert.NotEmpty(t, resp["invitation_token"])
+				assert.NotEmpty(t, resp["invitation_url"])
+				assert.NotEmpty(t, resp["invitation_expires_at"])
+				assert.NotEmpty(t, resp["note"])
+				// Verify raw token is NOT in the response (security fix)
+				_, hasToken := resp["invitation_token"]
+				assert.False(t, hasToken, "invitation_token should not be in response")
 			},
 		},
 		{

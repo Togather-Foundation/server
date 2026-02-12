@@ -350,35 +350,22 @@ func (h *DeveloperAPIKeyHandler) GetAPIKeyUsage(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Get usage statistics
-	stats, err := h.service.GetUsageStats(r.Context(), developerID, from, to)
+	// Get usage statistics for this specific API key
+	totalRequests, totalErrors, dailyRecords, err := h.service.GetAPIKeyUsageStats(r.Context(), keyID, from, to)
 	if err != nil {
 		h.logger.Error().Err(err).Str("developer_id", developerID.String()).Str("key_id", keyID.String()).Msg("failed to get usage stats")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.env)
 		return
 	}
 
-	// Build daily breakdown (placeholder - actual implementation would query daily stats)
-	// For now, we'll return a simplified response
-	daily := make([]dailyUsage, 0)
-
-	// TODO: Implement daily breakdown by querying api_key_usage table grouped by day
-	// For now, return total only
-	totalDays := int(to.Sub(from).Hours() / 24)
-	if totalDays > 0 {
-		avgPerDay := stats.TotalRequests / int64(totalDays)
-		avgErrorsPerDay := stats.TotalErrors / int64(totalDays)
-
-		// Generate placeholder daily data (in production, query actual daily data)
-		current := from
-		for current.Before(to) || current.Equal(to) {
-			daily = append(daily, dailyUsage{
-				Date:     current.Format("2006-01-02"),
-				Requests: avgPerDay,
-				Errors:   avgErrorsPerDay,
-			})
-			current = current.AddDate(0, 0, 1)
-		}
+	// Convert daily records to response format
+	daily := make([]dailyUsage, 0, len(dailyRecords))
+	for _, record := range dailyRecords {
+		daily = append(daily, dailyUsage{
+			Date:     record.Date.Format("2006-01-02"),
+			Requests: record.Requests,
+			Errors:   record.Errors,
+		})
 	}
 
 	resp := usageStatsResponse{
@@ -387,8 +374,8 @@ func (h *DeveloperAPIKeyHandler) GetAPIKeyUsage(w http.ResponseWriter, r *http.R
 			From: from.Format(time.RFC3339),
 			To:   to.Format(time.RFC3339),
 		},
-		TotalRequests: stats.TotalRequests,
-		TotalErrors:   stats.TotalErrors,
+		TotalRequests: totalRequests,
+		TotalErrors:   totalErrors,
 		Daily:         daily,
 	}
 

@@ -556,6 +556,10 @@ func (s *Service) InviteDeveloper(ctx context.Context, email string, invitedBy *
 // The token is validated against its SHA-256 hash. Tokens are single-use and
 // expire after 7 days. Password must be at least 8 characters.
 //
+// This operation is atomic: both developer creation and invitation acceptance
+// happen within a single database transaction. If either operation fails, both
+// are rolled back to prevent partial state.
+//
 // Parameters:
 //   - ctx: Context for cancellation and timeout
 //   - token: Plaintext invitation token from the email
@@ -567,8 +571,8 @@ func (s *Service) InviteDeveloper(ctx context.Context, email string, invitedBy *
 //   - ErrPasswordTooShort/TooLong: Password doesn't meet requirements
 //
 // Side effects:
-//   - Creates developer account with hashed password
-//   - Marks invitation as accepted with timestamp
+//   - Creates developer account with hashed password (transactional)
+//   - Marks invitation as accepted with timestamp (transactional)
 //   - Sets developer is_active=true
 func (s *Service) AcceptInvitation(ctx context.Context, token, name, password string) (*Developer, error) {
 	// Validate password
@@ -579,7 +583,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, name, password st
 	// Hash the token to look up invitation
 	tokenHash := hashToken(token)
 
-	// Get invitation
+	// Get invitation (outside transaction for validation)
 	invitation, err := s.repo.GetInvitationByTokenHash(ctx, tokenHash)
 	if err != nil {
 		return nil, ErrInvalidToken
@@ -602,7 +606,18 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, name, password st
 	}
 	passwordHashStr := string(hashedPassword)
 
-	// Create developer
+	// Begin transaction to ensure atomicity
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error (no-op after commit)
+	defer func() {
+		_ = txCommitter.Rollback(ctx)
+	}()
+
+	// Create developer within transaction
 	dbParams := CreateDeveloperDBParams{
 		Email:        invitation.Email,
 		Name:         name,
@@ -610,15 +625,19 @@ func (s *Service) AcceptInvitation(ctx context.Context, token, name, password st
 		MaxKeys:      DefaultMaxKeys,
 	}
 
-	developer, err := s.repo.CreateDeveloper(ctx, dbParams)
+	developer, err := txRepo.CreateDeveloper(ctx, dbParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create developer: %w", err)
 	}
 
-	// Mark invitation as accepted
-	if err := s.repo.AcceptInvitation(ctx, invitation.ID); err != nil {
-		s.logger.Warn().Err(err).Str("invitation_id", invitation.ID.String()).Msg("failed to mark invitation as accepted")
-		// Don't fail - developer was created successfully
+	// Mark invitation as accepted within the same transaction
+	if err := txRepo.AcceptInvitation(ctx, invitation.ID); err != nil {
+		return nil, fmt.Errorf("failed to mark invitation as accepted: %w", err)
+	}
+
+	// Commit transaction - all operations succeed or none do
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	s.logger.Info().

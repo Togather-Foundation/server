@@ -329,6 +329,61 @@ func (a *DeveloperRepositoryAdapter) GetDeveloperUsageTotal(ctx context.Context,
 	return row.TotalRequests, row.TotalErrors, nil
 }
 
+// GetAPIKeyUsage retrieves daily usage records for an API key in a date range
+func (a *DeveloperRepositoryAdapter) GetAPIKeyUsage(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) ([]developers.DailyUsage, error) {
+	queries := New(a.pool)
+	pgUUID := uuidToPgUUID(apiKeyID)
+
+	records, err := queries.GetAPIKeyUsage(ctx, GetAPIKeyUsageParams{
+		ApiKeyID: pgUUID,
+		Date:     pgtype.Date{Time: startDate, Valid: true},
+		Date_2:   pgtype.Date{Time: endDate, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to domain types
+	result := make([]developers.DailyUsage, 0, len(records))
+	for _, record := range records {
+		result = append(result, developers.DailyUsage{
+			Date:     record.Date.Time,
+			Requests: record.RequestCount,
+			Errors:   record.ErrorCount,
+		})
+	}
+
+	return result, nil
+}
+
+// BeginTx starts a new transaction and returns a transaction-scoped repository adapter
+func (a *DeveloperRepositoryAdapter) BeginTx(ctx context.Context) (developers.Repository, developers.TxCommitter, error) {
+	txRepo, txCommitter, err := a.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	txAdapter := &DeveloperRepositoryAdapter{
+		repo: txRepo,
+		pool: a.pool,
+	}
+
+	return txAdapter, &developerAdapterTxCommitter{txCommitter: txCommitter}, nil
+}
+
+// developerAdapterTxCommitter wraps the postgres TxCommitter to implement developers.TxCommitter
+type developerAdapterTxCommitter struct {
+	txCommitter TxCommitter
+}
+
+func (tc *developerAdapterTxCommitter) Commit(ctx context.Context) error {
+	return tc.txCommitter.Commit(ctx)
+}
+
+func (tc *developerAdapterTxCommitter) Rollback(ctx context.Context) error {
+	return tc.txCommitter.Rollback(ctx)
+}
+
 // Helper functions for type conversion
 
 // uuidToPgUUID converts uuid.UUID to pgtype.UUID

@@ -34,6 +34,7 @@ type mockRepository struct {
 	deactivateAPIKeyFn          func(ctx context.Context, id uuid.UUID) error
 	getAPIKeyByIDFn             func(ctx context.Context, id uuid.UUID) (*APIKey, error)
 	getAPIKeyUsageTotalFn       func(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error)
+	getAPIKeyUsageFn            func(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) ([]DailyUsage, error)
 	getDeveloperUsageTotalFn    func(ctx context.Context, developerID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error)
 	validateDeveloperPasswordFn func(ctx context.Context, id uuid.UUID, password string) (bool, error)
 }
@@ -171,11 +172,22 @@ func (m *mockRepository) GetAPIKeyUsageTotal(ctx context.Context, apiKeyID uuid.
 	return 0, 0, errors.New("not implemented")
 }
 
+func (m *mockRepository) GetAPIKeyUsage(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) ([]DailyUsage, error) {
+	if m.getAPIKeyUsageFn != nil {
+		return m.getAPIKeyUsageFn(ctx, apiKeyID, startDate, endDate)
+	}
+	return nil, errors.New("not implemented")
+}
+
 func (m *mockRepository) GetDeveloperUsageTotal(ctx context.Context, developerID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, err error) {
 	if m.getDeveloperUsageTotalFn != nil {
 		return m.getDeveloperUsageTotalFn(ctx, developerID, startDate, endDate)
 	}
 	return 0, 0, errors.New("not implemented")
+}
+
+func (m *mockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
+	return nil, nil, errors.New("not implemented")
 }
 
 func (m *mockRepository) ValidateDeveloperPassword(ctx context.Context, id uuid.UUID, password string) (bool, error) {
