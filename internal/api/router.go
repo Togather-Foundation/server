@@ -455,11 +455,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Developer API routes (srv-x7vv0)
 	// Developer auth endpoints with rate limiting and body size limits
 	devLogin := rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(devAuthHandler.Login)))
-	devLogout := http.HandlerFunc(devAuthHandler.Logout)
 	devAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(devAuthHandler.AcceptInvitation)))
 
 	mux.Handle("POST /api/v1/dev/login", devLogin)
-	mux.Handle("POST /api/v1/dev/logout", devLogout)
 	mux.Handle("POST /api/v1/dev/accept-invitation", devAcceptInvitation)
 
 	// GitHub OAuth routes (srv-idczk) - only register if GitHub OAuth is configured
@@ -470,11 +468,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Developer API key management endpoints with DevCookieAuth middleware
 	devCookieAuth := middleware.DevCookieAuth(developerJWTKey) // Use derived developer JWT key (srv-yuyg9)
+	devLogout := devCookieAuth(http.HandlerFunc(devAuthHandler.Logout))
 	devListKeys := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.ListAPIKeys))
 	devCreateKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.CreateAPIKey))
 	devRevokeKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.RevokeAPIKey))
 	devGetUsage := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.GetAPIKeyUsage))
 
+	mux.Handle("POST /api/v1/dev/logout", devLogout)
 	mux.Handle("GET /api/v1/dev/api-keys", devListKeys)
 	mux.Handle("POST /api/v1/dev/api-keys", devCreateKey)
 	mux.Handle("DELETE /api/v1/dev/api-keys/{id}", devRevokeKey)
@@ -665,10 +665,12 @@ func findShapesDirectory() string {
 	return "shapes"
 }
 
-// loadAdminTemplates loads HTML templates for the admin UI.
+// loadTemplates loads HTML templates from the specified directory.
 // The commitHash parameter should come from ldflags (the authoritative source baked into the binary at build time).
 // Falls back to BUILD_COMMIT env var, then "dev" if neither is available.
-func loadAdminTemplates(commitHash string) (*template.Template, error) {
+// The templatesSubPath should be a relative path like "web/admin/templates" or "web/dev/templates".
+// Optional additionalFiles can be provided to load extra template files (e.g., shared partials).
+func loadTemplates(commitHash string, templatesSubPath string, additionalFiles ...string) (*template.Template, error) {
 	// Use ldflags value as the authoritative commit hash source.
 	// Fall back to BUILD_COMMIT env var for backward compatibility,
 	// then "dev" for local development.
@@ -693,12 +695,13 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 	}
 
 	// Try common locations for the templates directory
+	systemInstallPath := filepath.Join("/usr/local/share/sel", templatesSubPath)
 	candidates := []string{
-		"web/admin/templates",                      // From project root
-		"../web/admin/templates",                   // One level up
-		"../../web/admin/templates",                // Two levels up
-		"/app/web/admin/templates",                 // Container deployment
-		"/usr/local/share/sel/web/admin/templates", // System-wide installation
+		templatesSubPath,                         // From project root
+		filepath.Join("..", templatesSubPath),    // One level up
+		filepath.Join("../..", templatesSubPath), // Two levels up
+		filepath.Join("/app", templatesSubPath),  // Container deployment
+		systemInstallPath,                        // System-wide installation
 	}
 
 	for _, candidate := range candidates {
@@ -707,6 +710,16 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 				// Found templates directory, parse all .html files
 				pattern := filepath.Join(absPath, "*.html")
 				tmpl := template.New("").Funcs(funcMap)
+
+				// Load any additional files first (e.g., shared partials)
+				for _, additionalFile := range additionalFiles {
+					// Try to resolve additional file path relative to the templates directory
+					additionalPath := filepath.Join(filepath.Dir(absPath), additionalFile)
+					if _, err := os.Stat(additionalPath); err == nil {
+						tmpl, _ = tmpl.ParseFiles(additionalPath)
+					}
+				}
+
 				if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 					return tmpl, nil
 				}
@@ -720,10 +733,19 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 		dir := wd
 		for i := 0; i < maxRouterRetries; i++ {
 			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				templatesPath := filepath.Join(dir, "web", "admin", "templates")
+				templatesPath := filepath.Join(dir, templatesSubPath)
 				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
 					pattern := filepath.Join(templatesPath, "*.html")
 					tmpl := template.New("").Funcs(funcMap)
+
+					// Load any additional files first (e.g., shared partials)
+					for _, additionalFile := range additionalFiles {
+						additionalPath := filepath.Join(dir, additionalFile)
+						if _, err := os.Stat(additionalPath); err == nil {
+							tmpl, _ = tmpl.ParseFiles(additionalPath)
+						}
+					}
+
 					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 						return tmpl, nil
 					}
@@ -740,89 +762,16 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 	return nil, os.ErrNotExist
 }
 
+// loadAdminTemplates loads HTML templates for the admin UI.
+// Thin wrapper around loadTemplates for backward compatibility.
+func loadAdminTemplates(commitHash string) (*template.Template, error) {
+	return loadTemplates(commitHash, "web/admin/templates")
+}
+
 // loadDevTemplates loads HTML templates for the developer portal UI.
-// The commitHash parameter should come from ldflags (the authoritative source baked into the binary at build time).
-// Falls back to BUILD_COMMIT env var, then "dev" if neither is available.
+// Thin wrapper around loadTemplates that also loads the shared _head_meta.html partial.
 func loadDevTemplates(commitHash string) (*template.Template, error) {
-	// Use ldflags value as the authoritative commit hash source.
-	// Fall back to BUILD_COMMIT env var for backward compatibility,
-	// then "dev" for local development.
-	gitCommit := commitHash
-	if gitCommit == "" || gitCommit == "unknown" {
-		gitCommit = os.Getenv("BUILD_COMMIT")
-	}
-	if gitCommit == "" {
-		gitCommit = "dev"
-	} else if len(gitCommit) > 7 {
-		gitCommit = gitCommit[:7] // Use short hash
-	}
-
-	// Create template with custom functions for cache-busting
-	funcMap := template.FuncMap{
-		"assetVersion": func() string {
-			return gitCommit
-		},
-		"gitCommit": func() string {
-			return gitCommit
-		},
-	}
-
-	// Try common locations for the templates directory
-	candidates := []string{
-		"web/dev/templates",                      // From project root
-		"../web/dev/templates",                   // One level up
-		"../../web/dev/templates",                // Two levels up
-		"/app/web/dev/templates",                 // Container deployment
-		"/usr/local/share/sel/web/dev/templates", // System-wide installation
-	}
-
-	for _, candidate := range candidates {
-		if absPath, err := filepath.Abs(candidate); err == nil {
-			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
-				// Found templates directory, parse all .html files
-				pattern := filepath.Join(absPath, "*.html")
-				tmpl := template.New("").Funcs(funcMap)
-				// Also need to include admin templates for _head_meta.html partial
-				adminPattern := filepath.Join(filepath.Dir(absPath), "../admin/templates/_head_meta.html")
-				if _, err := os.Stat(adminPattern); err == nil {
-					tmpl, _ = tmpl.ParseFiles(adminPattern)
-				}
-				if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
-					return tmpl, nil
-				}
-			}
-		}
-	}
-
-	// Try to find via working directory
-	if wd, err := os.Getwd(); err == nil {
-		// Walk up from working directory looking for go.mod (repo root)
-		dir := wd
-		for i := 0; i < maxRouterRetries; i++ {
-			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				templatesPath := filepath.Join(dir, "web", "dev", "templates")
-				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
-					pattern := filepath.Join(templatesPath, "*.html")
-					tmpl := template.New("").Funcs(funcMap)
-					// Also load admin _head_meta.html partial
-					adminHeadMetaPath := filepath.Join(dir, "web", "admin", "templates", "_head_meta.html")
-					if _, err := os.Stat(adminHeadMetaPath); err == nil {
-						tmpl, _ = tmpl.ParseFiles(adminHeadMetaPath)
-					}
-					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
-						return tmpl, nil
-					}
-				}
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-
-	return nil, os.ErrNotExist
+	return loadTemplates(commitHash, "web/dev/templates", "web/admin/templates/_head_meta.html")
 }
 
 // findRepoRoot locates the repository root by looking for go.mod
