@@ -101,7 +101,7 @@ COPY --from=builder /build/web/admin /app/web/admin
 COPY --from=builder /build/contexts /app/contexts
 
 # Copy OpenAPI specification from build stage (for /api/v1/openapi.json endpoint)
-COPY --from=builder /build/specs /app/specs
+COPY --from=builder /build/docs/api /app/docs/api
 
 # Set ownership to non-root user
 RUN chown -R togather:togather /app
