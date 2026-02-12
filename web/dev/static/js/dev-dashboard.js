@@ -14,10 +14,11 @@
     async function loadDashboardData() {
         try {
             // Load API keys to get count
-            const keys = await DevAPI.apiKeys.list();
-            updateKeyCount(keys);
+            const response = await DevAPI.apiKeys.list();
+            updateKeyCount(response);
             
-            // Calculate total usage stats
+            // Calculate total usage stats (use items array from response)
+            const keys = response.items || response;
             const stats = calculateUsageStats(keys);
             updateUsageStats(stats);
             
@@ -34,10 +35,14 @@
         }
     }
     
-    function updateKeyCount(keys) {
-        const activeKeys = keys.filter(k => k.status === 'active');
+    function updateKeyCount(response) {
+        // Extract items and metadata from response
+        const keys = response.items || response;
+        const activeKeys = keys.filter(k => k.is_active);
         const keyCount = activeKeys.length;
-        const maxKeys = 5; // Default limit
+        
+        // Read max_keys from API response, fall back to 5 for backward compatibility
+        const maxKeys = response.max_keys || 5;
         
         document.getElementById('key-count').textContent = keyCount;
         
