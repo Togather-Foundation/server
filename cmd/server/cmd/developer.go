@@ -293,29 +293,15 @@ func deactivateDeveloper(developerIDStr string) error {
 		return fmt.Errorf("developer not found: %s", developerIDStr)
 	}
 
-	// Get developer's API keys
-	keys, err := repo.ListDeveloperAPIKeys(ctx, developerID)
-	if err != nil {
-		return fmt.Errorf("failed to list developer keys: %w", err)
-	}
-
 	// Deactivate developer
 	if err := repo.DeactivateDeveloper(ctx, developerID); err != nil {
 		return fmt.Errorf("deactivate developer: %w", err)
 	}
 
-	// Revoke all active API keys using direct SQL
-	revokedCount := 0
-	for _, key := range keys {
-		if key.IsActive {
-			// Use direct SQL since DeactivateAPIKey isn't in the developer repository
-			_, err := pool.Exec(ctx, `UPDATE api_keys SET is_active = false WHERE id = $1`, key.ID)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to revoke key %v: %v\n", key.ID, err)
-			} else {
-				revokedCount++
-			}
-		}
+	// Revoke all active API keys atomically using the new query
+	revokedCount, err := repo.RevokeAllDeveloperAPIKeys(ctx, developerID)
+	if err != nil {
+		return fmt.Errorf("failed to revoke API keys: %w", err)
 	}
 
 	fmt.Printf("✓ Developer deactivated successfully!\n\n")

@@ -10,7 +10,7 @@ import (
 )
 
 func TestAdminAuthCookie_RejectsDeveloperToken(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
@@ -22,8 +22,12 @@ func TestAdminAuthCookie_RejectsDeveloperToken(t *testing.T) {
 		t.Fatalf("Failed to generate developer token: %v", err)
 	}
 
-	// Create admin middleware
-	manager := auth.NewJWTManager(secret, 24, issuer)
+	// Create admin middleware (using derived admin key for auth)
+	adminKey, err := auth.DeriveAdminJWTKey(secret)
+	if err != nil {
+		t.Fatalf("Failed to derive admin key: %v", err)
+	}
+	manager := auth.NewJWTManagerFromKey(adminKey, 24, issuer)
 	middleware := AdminAuthCookie(manager)
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +51,7 @@ func TestAdminAuthCookie_RejectsDeveloperToken(t *testing.T) {
 }
 
 func TestIsDeveloperToken(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	devID := uuid.New()
 	issuer := "https://test.togather.foundation"
 
@@ -88,7 +92,7 @@ func TestIsDeveloperToken(t *testing.T) {
 	}
 }
 
-func mustGenerateDeveloperToken(t *testing.T, devID uuid.UUID, email, name, secret, issuer string) string {
+func mustGenerateDeveloperToken(t *testing.T, devID uuid.UUID, email, name string, secret []byte, issuer string) string {
 	t.Helper()
 	token, _, err := auth.GenerateDeveloperToken(devID, email, name, secret, 24, issuer)
 	if err != nil {
@@ -97,9 +101,14 @@ func mustGenerateDeveloperToken(t *testing.T, devID uuid.UUID, email, name, secr
 	return token
 }
 
-func mustGenerateAdminToken(t *testing.T, subject, role, secret, issuer string) string {
+func mustGenerateAdminToken(t *testing.T, subject, role string, secret []byte, issuer string) string {
 	t.Helper()
-	manager := auth.NewJWTManager(secret, 24, issuer)
+	// Admin tokens are signed with derived admin key
+	adminKey, err := auth.DeriveAdminJWTKey(secret)
+	if err != nil {
+		t.Fatalf("Failed to derive admin key: %v", err)
+	}
+	manager := auth.NewJWTManagerFromKey(adminKey, 24, issuer)
 	token, err := manager.Generate(subject, role)
 	if err != nil {
 		t.Fatalf("Failed to generate admin token: %v", err)

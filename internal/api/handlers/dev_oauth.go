@@ -17,19 +17,20 @@ type DeveloperOAuthHandler struct {
 	service      *developers.Service
 	githubClient *oauth.GitHubClient
 	logger       zerolog.Logger
-	jwtSecret    string
+	jwtSecretKey []byte // Derived developer JWT signing key
 	jwtExpiry    time.Duration
 	issuer       string
 	env          string
 	auditLogger  AuditLogger
 }
 
-// NewDeveloperOAuthHandler creates a new developer OAuth handler
+// NewDeveloperOAuthHandler creates a new developer OAuth handler.
+// jwtSecretKey should be derived using DeriveDeveloperJWTKey for proper domain separation.
 func NewDeveloperOAuthHandler(
 	service *developers.Service,
 	githubClient *oauth.GitHubClient,
 	logger zerolog.Logger,
-	jwtSecret string,
+	jwtSecretKey []byte,
 	jwtExpiry time.Duration,
 	issuer string,
 	env string,
@@ -39,7 +40,7 @@ func NewDeveloperOAuthHandler(
 		service:      service,
 		githubClient: githubClient,
 		logger:       logger.With().Str("handler", "dev_oauth").Logger(),
-		jwtSecret:    jwtSecret,
+		jwtSecretKey: jwtSecretKey,
 		jwtExpiry:    jwtExpiry,
 		issuer:       issuer,
 		env:          env,
@@ -242,7 +243,7 @@ func (h *DeveloperOAuthHandler) GitHubCallback(w http.ResponseWriter, r *http.Re
 
 	// Generate JWT token
 	expiryHours := int(h.jwtExpiry.Hours())
-	token, expiresAt, err := auth.GenerateDeveloperToken(developer.ID, developer.Email, developer.Name, h.jwtSecret, expiryHours, h.issuer)
+	token, expiresAt, err := auth.GenerateDeveloperToken(developer.ID, developer.Email, developer.Name, h.jwtSecretKey, expiryHours, h.issuer)
 	if err != nil {
 		h.logger.Error().Err(err).Str("developer_id", developer.ID.String()).Msg("failed to generate JWT")
 		http.Redirect(w, r, "/dev/login?error=oauth_failed", http.StatusFound)

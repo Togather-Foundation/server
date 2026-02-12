@@ -413,16 +413,17 @@ func (h *AdminDevelopersHandler) DeactivateDeveloper(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Revoke all API keys
-	keys, _ := h.repo.ListDeveloperAPIKeys(r.Context(), developerID)
-	for _, key := range keys {
-		_ = h.repo.DeactivateAPIKey(r.Context(), key.ID)
+	// Revoke all API keys atomically
+	revokedCount, err := h.repo.RevokeAllDeveloperAPIKeys(r.Context(), developerID)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to revoke developer API keys", err, h.env)
+		return
 	}
 
 	// Audit log
 	h.auditLogger.LogFromRequest(r, "developer.deactivated", "developer", developerID.String(), "success", map[string]string{
 		"email":      dev.Email,
-		"keys_count": fmt.Sprintf("%d", len(keys)),
+		"keys_count": fmt.Sprintf("%d", revokedCount),
 	})
 
 	w.WriteHeader(http.StatusNoContent)

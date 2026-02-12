@@ -11,7 +11,7 @@ import (
 )
 
 func TestDevCookieAuth_Success(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
@@ -73,7 +73,7 @@ func TestDevCookieAuth_Success(t *testing.T) {
 }
 
 func TestDevCookieAuth_MissingCookie(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	middleware := DevCookieAuth(secret)
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +91,7 @@ func TestDevCookieAuth_MissingCookie(t *testing.T) {
 }
 
 func TestDevCookieAuth_InvalidToken(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	middleware := DevCookieAuth(secret)
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +113,7 @@ func TestDevCookieAuth_InvalidToken(t *testing.T) {
 }
 
 func TestDevCookieAuth_RejectsBearerToken(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
@@ -148,7 +148,7 @@ func TestDevCookieAuth_RejectsBearerToken(t *testing.T) {
 }
 
 func TestDevCookieAuth_EmptySecret(t *testing.T) {
-	middleware := DevCookieAuth("")
+	middleware := DevCookieAuth([]byte(""))
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("Handler should not be called")
@@ -169,10 +169,10 @@ func TestDevCookieAuth_EmptySecret(t *testing.T) {
 }
 
 func TestDevCookieAuth_RejectsAdminToken(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 
 	// Generate an admin token
-	manager := auth.NewJWTManager(secret, 24*time.Hour, "https://test.togather.foundation")
+	manager := auth.NewJWTManager("test-secret-key", 24*time.Hour, "https://test.togather.foundation")
 	adminToken, err := manager.Generate("admin-user", "admin")
 	if err != nil {
 		t.Fatalf("Failed to generate admin token: %v", err)

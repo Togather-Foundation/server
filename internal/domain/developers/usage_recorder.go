@@ -109,11 +109,16 @@ func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, isError bool) {
 	// Check if buffer size exceeded and trigger flush if needed
 	if len(r.counts) >= r.maxSize {
 		r.logger.Debug().Int("size", len(r.counts)).Msg("buffer size limit reached, triggering flush")
-		go r.flush()
+		// Swap the buffer under the lock to avoid race condition
+		snapshot := r.counts
+		r.counts = make(map[uuid.UUID]*usageDelta)
+		// Spawn goroutine with the swapped buffer (no lock needed)
+		go r.flushSnapshot(snapshot)
 	}
 }
 
-// flush writes all buffered usage data to the database and clears the buffer
+// flush writes all buffered usage data to the database and clears the buffer.
+// This method acquires the lock, swaps the buffer, and delegates to flushSnapshot.
 func (r *UsageRecorder) flush() {
 	r.mu.Lock()
 	if len(r.counts) == 0 {
@@ -125,6 +130,16 @@ func (r *UsageRecorder) flush() {
 	snapshot := r.counts
 	r.counts = make(map[uuid.UUID]*usageDelta)
 	r.mu.Unlock()
+
+	r.flushSnapshot(snapshot)
+}
+
+// flushSnapshot writes the given usage snapshot to the database without acquiring the lock.
+// This allows callers to swap the buffer before calling, avoiding lock contention.
+func (r *UsageRecorder) flushSnapshot(snapshot map[uuid.UUID]*usageDelta) {
+	if len(snapshot) == 0 {
+		return
+	}
 
 	// Use background context since the original request context is gone
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

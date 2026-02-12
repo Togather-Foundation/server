@@ -11,7 +11,7 @@ func TestGenerateDeveloperToken(t *testing.T) {
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	expiryHours := 24
 	issuer := "https://test.togather.foundation"
 
@@ -34,13 +34,13 @@ func TestGenerateDeveloperToken_ValidationErrors(t *testing.T) {
 		name        string
 		devID       uuid.UUID
 		email       string
-		secret      string
+		secret      []byte
 		expectError bool
 	}{
-		{"nil developer ID", uuid.Nil, "dev@example.com", "secret", true},
-		{"empty email", uuid.New(), "", "secret", true},
-		{"empty secret", uuid.New(), "dev@example.com", "", true},
-		{"valid inputs", uuid.New(), "dev@example.com", "secret", false},
+		{"nil developer ID", uuid.Nil, "dev@example.com", []byte("secret"), true},
+		{"empty email", uuid.New(), "", []byte("secret"), true},
+		{"empty secret", uuid.New(), "dev@example.com", []byte(""), true},
+		{"valid inputs", uuid.New(), "dev@example.com", []byte("secret"), false},
 	}
 
 	for _, tt := range tests {
@@ -60,7 +60,7 @@ func TestValidateDeveloperToken(t *testing.T) {
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	issuer := "https://test.togather.foundation"
 
 	token, _, err := GenerateDeveloperToken(devID, email, name, secret, 24, issuer)
@@ -95,7 +95,7 @@ func TestValidateDeveloperToken(t *testing.T) {
 }
 
 func TestValidateDeveloperToken_Invalid(t *testing.T) {
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 
 	tests := []struct {
 		name        string
@@ -121,7 +121,7 @@ func TestValidateDeveloperToken_WrongSecret(t *testing.T) {
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
-	secret := "correct-secret"
+	secret := []byte("correct-secret")
 	issuer := "https://test.togather.foundation"
 
 	token, _, err := GenerateDeveloperToken(devID, email, name, secret, 24, issuer)
@@ -129,7 +129,7 @@ func TestValidateDeveloperToken_WrongSecret(t *testing.T) {
 		t.Fatalf("GenerateDeveloperToken failed: %v", err)
 	}
 
-	_, err = ValidateDeveloperToken(token, "wrong-secret")
+	_, err = ValidateDeveloperToken(token, []byte("wrong-secret"))
 	if err != ErrInvalidToken {
 		t.Errorf("Expected ErrInvalidToken, got %v", err)
 	}
@@ -139,7 +139,7 @@ func TestValidateDeveloperToken_ExpiredToken(t *testing.T) {
 	devID := uuid.New()
 	email := "dev@example.com"
 	name := "Test Developer"
-	secret := "test-secret-key"
+	secret := []byte("test-secret-key")
 	issuer := "https://test.togather.foundation"
 
 	// Generate token with negative expiry (already expired)
@@ -164,7 +164,7 @@ func TestValidateDeveloperToken_RejectsAdminToken(t *testing.T) {
 	}
 
 	// Try to validate admin token as developer token - should fail
-	_, err = ValidateDeveloperToken(adminToken, "test-secret")
+	_, err = ValidateDeveloperToken(adminToken, []byte("test-secret"))
 	if err == nil {
 		t.Error("Expected error when validating admin token as developer token")
 	}

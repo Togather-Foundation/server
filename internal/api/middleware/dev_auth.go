@@ -18,10 +18,11 @@ const developerClaimsKey contextKeyDeveloper = "developerClaims"
 // DevCookieAuth validates developer JWT tokens from cookies.
 // This middleware is separate from AdminCookieAuth to prevent privilege escalation.
 // It explicitly rejects tokens where type != "developer".
-func DevCookieAuth(jwtSecret string) func(http.Handler) http.Handler {
+// jwtSecretKey should be derived using DeriveDeveloperJWTKey for proper domain separation.
+func DevCookieAuth(jwtSecretKey []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if jwtSecret == "" {
+			if len(jwtSecretKey) == 0 {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -40,7 +41,7 @@ func DevCookieAuth(jwtSecret string) func(http.Handler) http.Handler {
 			}
 
 			// Validate developer token
-			claims, err := auth.ValidateDeveloperToken(cookie.Value, jwtSecret)
+			claims, err := auth.ValidateDeveloperToken(cookie.Value, jwtSecretKey)
 			if err != nil {
 				w.WriteHeader(http.StatusUnauthorized)
 				return

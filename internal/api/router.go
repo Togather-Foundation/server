@@ -69,6 +69,27 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
 
+	// Derive separate JWT signing keys for admin and developer tokens (srv-yuyg9)
+	// IMPORTANT: This is a breaking change - existing tokens will be invalidated when deployed
+	// Using HKDF-SHA256 to derive cryptographically independent keys prevents token confusion attacks
+	masterSecret := []byte(cfg.Auth.JWTSecret)
+	adminJWTKey, err := auth.DeriveAdminJWTKey(masterSecret)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to derive admin JWT key")
+		return &RouterWithClient{
+			Handler:     http.NewServeMux(),
+			RiverClient: nil,
+		}
+	}
+	developerJWTKey, err := auth.DeriveDeveloperJWTKey(masterSecret)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to derive developer JWT key")
+		return &RouterWithClient{
+			Handler:     http.NewServeMux(),
+			RiverClient: nil,
+		}
+	}
+
 	// Get deployment slot for metrics labeling (blue/green)
 	slot := os.Getenv("SLOT")
 	if slot == "" {
@@ -141,7 +162,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	devAuthHandler := handlers.NewDeveloperAuthHandler(
 		developerService,
 		logger,
-		cfg.Auth.JWTSecret,
+		developerJWTKey, // Use derived developer JWT key (srv-yuyg9)
 		cfg.Auth.JWTExpiry,
 		"sel.events",
 		cfg.Environment,
@@ -167,7 +188,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			developerService,
 			githubClient,
 			logger,
-			cfg.Auth.JWTSecret,
+			developerJWTKey, // Use derived developer JWT key (srv-yuyg9)
 			cfg.Auth.JWTExpiry,
 			"sel.events",
 			cfg.Environment,
@@ -188,7 +209,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	// Admin handlers
-	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
+	jwtManager := auth.NewJWTManagerFromKey(adminJWTKey, cfg.Auth.JWTExpiry, "sel.events") // Use derived admin JWT key (srv-yuyg9)
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, adminTemplates, cfg.Auth.JWTExpiry)
 	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger)
 
@@ -432,10 +453,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
 
 	// Developer API routes (srv-x7vv0)
-	// Developer auth endpoints with rate limiting
-	devLogin := rateLimitLogin(http.HandlerFunc(devAuthHandler.Login))
+	// Developer auth endpoints with rate limiting and body size limits
+	devLogin := rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(devAuthHandler.Login)))
 	devLogout := http.HandlerFunc(devAuthHandler.Logout)
-	devAcceptInvitation := rateLimitPublic(http.HandlerFunc(devAuthHandler.AcceptInvitation))
+	devAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(devAuthHandler.AcceptInvitation)))
 
 	mux.Handle("POST /api/v1/dev/login", devLogin)
 	mux.Handle("POST /api/v1/dev/logout", devLogout)
@@ -448,7 +469,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	// Developer API key management endpoints with DevCookieAuth middleware
-	devCookieAuth := middleware.DevCookieAuth(cfg.Auth.JWTSecret)
+	devCookieAuth := middleware.DevCookieAuth(developerJWTKey) // Use derived developer JWT key (srv-yuyg9)
 	devListKeys := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.ListAPIKeys))
 	devCreateKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.CreateAPIKey))
 	devRevokeKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.RevokeAPIKey))

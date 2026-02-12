@@ -25,17 +25,18 @@ var (
 )
 
 // GenerateDeveloperToken creates a JWT token for a developer with specified expiry.
-// The token includes developer-specific claims and is signed with the provided secret.
+// The token includes developer-specific claims and is signed with the provided secret key.
 // developerID, email, and name should come from the developer domain object.
-func GenerateDeveloperToken(developerID uuid.UUID, email, name, jwtSecret string, expiryHours int, issuer string) (string, time.Time, error) {
+// jwtSecretKey should be derived using DeriveDeveloperJWTKey for proper domain separation.
+func GenerateDeveloperToken(developerID uuid.UUID, email, name string, jwtSecretKey []byte, expiryHours int, issuer string) (string, time.Time, error) {
 	if developerID == uuid.Nil {
 		return "", time.Time{}, errors.New("developer ID cannot be nil")
 	}
 	if email == "" {
 		return "", time.Time{}, errors.New("email cannot be empty")
 	}
-	if jwtSecret == "" {
-		return "", time.Time{}, errors.New("jwt secret cannot be empty")
+	if len(jwtSecretKey) == 0 {
+		return "", time.Time{}, errors.New("jwt secret key cannot be empty")
 	}
 
 	now := time.Now()
@@ -55,7 +56,7 @@ func GenerateDeveloperToken(developerID uuid.UUID, email, name, jwtSecret string
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(jwtSecret))
+	tokenString, err := token.SignedString(jwtSecretKey)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -65,12 +66,13 @@ func GenerateDeveloperToken(developerID uuid.UUID, email, name, jwtSecret string
 
 // ValidateDeveloperToken validates a JWT token and returns developer claims.
 // Returns an error if the token is invalid, expired, or not a developer token.
-func ValidateDeveloperToken(tokenString string, jwtSecret string) (*DeveloperClaims, error) {
+// jwtSecretKey should be derived using DeriveDeveloperJWTKey for proper domain separation.
+func ValidateDeveloperToken(tokenString string, jwtSecretKey []byte) (*DeveloperClaims, error) {
 	if strings.TrimSpace(tokenString) == "" {
 		return nil, ErrMissingToken
 	}
-	if jwtSecret == "" {
-		return nil, errors.New("jwt secret cannot be empty")
+	if len(jwtSecretKey) == 0 {
+		return nil, errors.New("jwt secret key cannot be empty")
 	}
 
 	// Parse and validate token
@@ -79,7 +81,7 @@ func ValidateDeveloperToken(tokenString string, jwtSecret string) (*DeveloperCla
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrInvalidToken
 		}
-		return []byte(jwtSecret), nil
+		return jwtSecretKey, nil
 	})
 	if err != nil {
 		return nil, ErrInvalidToken

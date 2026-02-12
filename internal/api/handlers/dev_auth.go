@@ -15,33 +15,34 @@ import (
 
 // DeveloperAuthHandler handles developer authentication endpoints
 type DeveloperAuthHandler struct {
-	service     *developers.Service
-	logger      zerolog.Logger
-	jwtSecret   string
-	jwtExpiry   time.Duration
-	issuer      string
-	env         string
-	auditLogger AuditLogger
+	service      *developers.Service
+	logger       zerolog.Logger
+	jwtSecretKey []byte // Derived developer JWT signing key
+	jwtExpiry    time.Duration
+	issuer       string
+	env          string
+	auditLogger  AuditLogger
 }
 
-// NewDeveloperAuthHandler creates a new developer auth handler
+// NewDeveloperAuthHandler creates a new developer auth handler.
+// jwtSecretKey should be derived using DeriveDeveloperJWTKey for proper domain separation.
 func NewDeveloperAuthHandler(
 	service *developers.Service,
 	logger zerolog.Logger,
-	jwtSecret string,
+	jwtSecretKey []byte,
 	jwtExpiry time.Duration,
 	issuer string,
 	env string,
 	auditLogger AuditLogger,
 ) *DeveloperAuthHandler {
 	return &DeveloperAuthHandler{
-		service:     service,
-		logger:      logger.With().Str("handler", "dev_auth").Logger(),
-		jwtSecret:   jwtSecret,
-		jwtExpiry:   jwtExpiry,
-		issuer:      issuer,
-		env:         env,
-		auditLogger: auditLogger,
+		service:      service,
+		logger:       logger.With().Str("handler", "dev_auth").Logger(),
+		jwtSecretKey: jwtSecretKey,
+		jwtExpiry:    jwtExpiry,
+		issuer:       issuer,
+		env:          env,
+		auditLogger:  auditLogger,
 	}
 }
 
@@ -114,7 +115,7 @@ func (h *DeveloperAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Generate JWT
 	expiryHours := int(h.jwtExpiry.Hours())
-	token, expiresAt, err := auth.GenerateDeveloperToken(developer.ID, developer.Email, developer.Name, h.jwtSecret, expiryHours, h.issuer)
+	token, expiresAt, err := auth.GenerateDeveloperToken(developer.ID, developer.Email, developer.Name, h.jwtSecretKey, expiryHours, h.issuer)
 	if err != nil {
 		h.logger.Error().Err(err).Str("developer_id", developer.ID.String()).Msg("failed to generate JWT")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.env)
@@ -262,7 +263,7 @@ func (h *DeveloperAuthHandler) AcceptInvitation(w http.ResponseWriter, r *http.R
 
 	// Generate JWT
 	expiryHours := int(h.jwtExpiry.Hours())
-	token, _, err := auth.GenerateDeveloperToken(developer.ID, developer.Email, developer.Name, h.jwtSecret, expiryHours, h.issuer)
+	token, _, err := auth.GenerateDeveloperToken(developer.ID, developer.Email, developer.Name, h.jwtSecretKey, expiryHours, h.issuer)
 	if err != nil {
 		h.logger.Error().Err(err).Str("developer_id", developer.ID.String()).Msg("failed to generate JWT")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.env)
