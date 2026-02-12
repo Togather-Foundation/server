@@ -43,7 +43,7 @@
         }
         
         // Show loading state
-        setLoading(submitBtn, true);
+        setLoading(submitBtn, true, 'Signing in...');
         
         try {
             const response = await fetch('/api/v1/dev/login', {
@@ -125,22 +125,6 @@
             const url = new URL(window.location);
             url.searchParams.delete('error');
             window.history.replaceState({}, '', url);
-        }
-    }
-    
-    /**
-     * Set loading state on button
-     * @param {HTMLElement} element - Button element
-     * @param {boolean} loading - Loading state
-     */
-    function setLoading(element, loading) {
-        if (loading) {
-            element.disabled = true;
-            element.dataset.originalText = element.innerHTML;
-            element.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Signing in...';
-        } else {
-            element.disabled = false;
-            element.innerHTML = element.dataset.originalText;
         }
     }
     
