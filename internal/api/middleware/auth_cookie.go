@@ -7,6 +7,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const AdminAuthCookieName = "auth_token"
@@ -34,6 +35,14 @@ func AdminAuthCookie(manager *auth.JWTManager) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Defense in depth: explicitly reject developer tokens to prevent privilege escalation
+			// Parse token without validation to check for type field
+			if isDeveloperToken(cookie.Value) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+
+			// Validate admin token
 			claims, err := manager.Validate(cookie.Value)
 			if err != nil {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -145,4 +154,29 @@ func AgentKey(r *http.Request) *auth.APIKey {
 		return key
 	}
 	return nil
+}
+
+// isDeveloperToken checks if a JWT token contains a "type": "developer" claim
+// without performing full validation. This is used to reject developer tokens
+// in admin-only contexts to prevent privilege escalation.
+func isDeveloperToken(tokenString string) bool {
+	if tokenString == "" {
+		return false
+	}
+
+	// Parse token without validation to inspect claims
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	token, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return false
+	}
+
+	// Check for type claim
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if tokenType, exists := claims["type"]; exists {
+			return tokenType == "developer"
+		}
+	}
+
+	return false
 }
