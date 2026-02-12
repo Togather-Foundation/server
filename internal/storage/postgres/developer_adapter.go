@@ -371,9 +371,9 @@ func (a *DeveloperRepositoryAdapter) BeginTx(ctx context.Context) (developers.Re
 	return txAdapter, &developerAdapterTxCommitter{txCommitter: txCommitter}, nil
 }
 
-// developerAdapterTxCommitter wraps the postgres TxCommitter to implement developers.TxCommitter
+// developerAdapterTxCommitter wraps the postgres developerTxCommitter to implement developers.TxCommitter
 type developerAdapterTxCommitter struct {
-	txCommitter TxCommitter
+	txCommitter *developerTxCommitter
 }
 
 func (tc *developerAdapterTxCommitter) Commit(ctx context.Context) error {

@@ -202,6 +202,38 @@ func (r *DeveloperRepository) WithTx(tx pgx.Tx) *DeveloperRepository {
 	}
 }
 
+// BeginTx starts a new transaction and returns a transaction-scoped repository
+func (r *DeveloperRepository) BeginTx(ctx context.Context) (*DeveloperRepository, *developerTxCommitter, error) {
+	if r.tx != nil {
+		return nil, nil, fmt.Errorf("repository already in transaction")
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
+	txRepo := &DeveloperRepository{
+		pool: r.pool,
+		tx:   tx,
+	}
+
+	return txRepo, &developerTxCommitter{tx: tx}, nil
+}
+
+// developerTxCommitter implements transaction commit/rollback for developer repository
+type developerTxCommitter struct {
+	tx pgx.Tx
+}
+
+func (tc *developerTxCommitter) Commit(ctx context.Context) error {
+	return tc.tx.Commit(ctx)
+}
+
+func (tc *developerTxCommitter) Rollback(ctx context.Context) error {
+	return tc.tx.Rollback(ctx)
+}
+
 // Helper functions for creating parameters with nullable types
 
 // NewUpdateDeveloperParams creates an UpdateDeveloperParams with only the ID set

@@ -187,7 +187,22 @@ func (m *mockRepository) GetDeveloperUsageTotal(ctx context.Context, developerID
 }
 
 func (m *mockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
-	return nil, nil, errors.New("not implemented")
+	// Return self as transaction-scoped repository
+	return m, &mockTxCommitter{}, nil
+}
+
+// mockTxCommitter implements TxCommitter for testing
+type mockTxCommitter struct {
+	commitErr   error
+	rollbackErr error
+}
+
+func (tc *mockTxCommitter) Commit(ctx context.Context) error {
+	return tc.commitErr
+}
+
+func (tc *mockTxCommitter) Rollback(ctx context.Context) error {
+	return tc.rollbackErr
 }
 
 func (m *mockRepository) ValidateDeveloperPassword(ctx context.Context, id uuid.UUID, password string) (bool, error) {
