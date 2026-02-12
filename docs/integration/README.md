@@ -11,6 +11,12 @@ You're building systems that submit events to or consume events from SEL:
 
 ## Quick Start
 
+### For Developers (API Key Self-Service)
+
+1. **[Developer Quick Start](DEVELOPER_QUICKSTART.md)** - Get started in 4 steps
+2. **[Authentication](AUTHENTICATION.md#developer-self-service)** - Invitation, login, key management
+3. **[API Guide](API_GUIDE.md)** - Practical guide with code examples
+
 ### For Event Scrapers
 
 1. **[API Guide](API_GUIDE.md)** - Practical guide with code examples

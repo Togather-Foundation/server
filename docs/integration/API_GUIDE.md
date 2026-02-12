@@ -14,10 +14,11 @@
 4. [Rate Limiting](#rate-limiting)
 5. [Event Submission (POST /api/v1/events)](#event-submission)
 6. [Event Retrieval (GET /api/v1/events)](#event-retrieval)
-7. [Idempotency](#idempotency)
-8. [Duplicate Detection](#duplicate-detection)
-9. [Error Handling](#error-handling)
-10. [Examples](#examples)
+7. [Developer Endpoints](#developer-endpoints)
+8. [Idempotency](#idempotency)
+9. [Duplicate Detection](#duplicate-detection)
+10. [Error Handling](#error-handling)
+11. [Examples](#examples)
 
 ---
 
@@ -83,6 +84,18 @@ Authorization: Bearer your-api-key-here
 ```
 
 **Obtaining an API Key:**
+
+**For Developers (Self-Service):**
+
+1. Request an invitation from an admin or contact [info@togather.foundation](mailto:info@togather.foundation)
+2. Accept the invitation via email and set your password
+3. Log in to the developer portal: `https://toronto.togather.foundation/dev/login`
+4. Navigate to API Keys and create a new key
+5. Copy the key immediately (shown only once)
+
+See [Developer Self-Service](AUTHENTICATION.md#developer-self-service) for complete details.
+
+**For Administrators:**
 
 API keys are created by administrators via the admin interface:
 
@@ -474,6 +487,206 @@ Content-Type: application/ld+json
   "sel:deletedAt": "2026-01-15T10:30:00Z"
 }
 ```
+
+---
+
+## Developer Endpoints
+
+Developers can manage their own API keys through self-service endpoints. All developer endpoints require authentication via developer JWT (obtained through login or invitation acceptance).
+
+### Developer Authentication
+
+#### POST /api/v1/dev/login
+
+Authenticate with email and password.
+
+**Request:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/dev/login \
+     -H "Content-Type: application/json" \
+     -d '{
+       "email": "alice@example.com",
+       "password": "secure_password"
+     }'
+```
+
+**Response (200):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_at": "2026-02-13T12:00:00Z",
+  "developer": {
+    "id": "uuid",
+    "email": "alice@example.com",
+    "name": "Alice"
+  }
+}
+```
+
+Sets `dev_auth_token` HttpOnly cookie for browser sessions.
+
+**Error (401):**
+```json
+{
+  "type": "https://sel.events/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Invalid email or password"
+}
+```
+
+**Rate Limit:** 5 attempts per 15 minutes per IP address.
+
+#### POST /api/v1/dev/logout
+
+Clear the developer session cookie.
+
+**Request:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/dev/logout \
+     -H "Authorization: Bearer $DEVELOPER_JWT"
+```
+
+**Response:** 204 No Content
+
+#### POST /api/v1/dev/accept-invitation
+
+Accept an invitation and create a developer account.
+
+**Request:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/dev/accept-invitation \
+     -H "Content-Type: application/json" \
+     -d '{
+       "token": "invitation-token-from-email",
+       "name": "Alice",
+       "password": "secure_password"
+     }'
+```
+
+**Response (200):**
+```json
+{
+  "token": "eyJhbGciOi...",
+  "developer": {
+    "id": "uuid",
+    "email": "alice@example.com",
+    "name": "Alice"
+  }
+}
+```
+
+**Error (400):**
+```json
+{
+  "type": "https://sel.events/problems/invitation-invalid",
+  "title": "Invalid invitation",
+  "status": 400,
+  "detail": "Invitation token has expired or is invalid"
+}
+```
+
+### API Key Management
+
+#### GET /api/v1/dev/api-keys
+
+List all API keys owned by the authenticated developer.
+
+**Request:**
+```bash
+curl https://toronto.togather.foundation/api/v1/dev/api-keys \
+     -H "Authorization: Bearer $DEVELOPER_JWT"
+```
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "name": "My Event Scraper",
+      "prefix": "01KGJZ40",
+      "role": "agent",
+      "is_active": true,
+      "created_at": "2026-02-12T12:00:00Z",
+      "last_used_at": "2026-02-12T15:30:00Z"
+    }
+  ],
+  "max_keys": 5,
+  "key_count": 1
+}
+```
+
+**Note:** Full API keys are never returned in list operations, only the prefix.
+
+#### POST /api/v1/dev/api-keys
+
+Create a new API key.
+
+**Request:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/dev/api-keys \
+     -H "Authorization: Bearer $DEVELOPER_JWT" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "My Event Scraper"}'
+```
+
+**Response (201):**
+```json
+{
+  "id": "uuid",
+  "name": "My Event Scraper",
+  "prefix": "01KGJZ40",
+  "key": "01KGJZ40ZG0WQ5SQKCKA6VEH79wKp8mN3vL9xR2qT4yB6nC5dE8fG",
+  "role": "agent",
+  "created_at": "2026-02-12T12:00:00Z"
+}
+```
+
+**⚠️ IMPORTANT:** The `key` field is returned only once. Store it securely.
+
+**Error (409) - Max Keys Exceeded:**
+```json
+{
+  "type": "https://sel.events/problems/max-keys-exceeded",
+  "title": "Maximum API keys exceeded",
+  "status": 409,
+  "detail": "You have reached your maximum of 5 API keys. Revoke an existing key or contact an admin to increase your limit."
+}
+```
+
+#### DELETE /api/v1/dev/api-keys/{id}
+
+Revoke an API key.
+
+**Request:**
+```bash
+curl -X DELETE https://toronto.togather.foundation/api/v1/dev/api-keys/$KEY_ID \
+     -H "Authorization: Bearer $DEVELOPER_JWT"
+```
+
+**Response:** 204 No Content
+
+**Error (404):**
+```json
+{
+  "type": "https://sel.events/problems/key-not-found",
+  "title": "API key not found",
+  "status": 404,
+  "detail": "API key not found or does not belong to you"
+}
+```
+
+### Developer Portal Routes
+
+The developer portal provides a web interface for key management:
+
+| Route | Description | Auth Required |
+|-------|-------------|---------------|
+| `/dev/login` | Login page with email/password | No |
+| `/dev/accept-invitation` | Accept invitation and set password | No (token in URL) |
+| `/dev/dashboard` | Developer dashboard with usage overview | Yes |
+| `/dev/api-keys` | Manage API keys (create, list, revoke) | Yes |
 
 ---
 

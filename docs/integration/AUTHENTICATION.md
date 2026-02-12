@@ -15,12 +15,13 @@ For API endpoint details, see [API_GUIDE.md](API_GUIDE.md). For security archite
 1. [Authentication Overview](#authentication-overview)
 2. [Roles and Permissions](#roles-and-permissions)
 3. [API Keys](#api-keys)
-4. [JWT Authentication](#jwt-authentication)
-5. [Rate Limiting](#rate-limiting)
-6. [Making Authenticated Requests](#making-authenticated-requests)
-7. [Error Handling](#error-handling)
-8. [Security Best Practices](#security-best-practices)
-9. [Troubleshooting](#troubleshooting)
+4. [Developer Self-Service](#developer-self-service)
+5. [JWT Authentication](#jwt-authentication)
+6. [Rate Limiting](#rate-limiting)
+7. [Making Authenticated Requests](#making-authenticated-requests)
+8. [Error Handling](#error-handling)
+9. [Security Best Practices](#security-best-practices)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -97,11 +98,238 @@ SEL uses **Role-Based Access Control (RBAC)** with three roles:
 
 ---
 
+## Developer Self-Service
+
+Developers can manage their own API keys through a self-service portal, reducing admin overhead while maintaining security controls.
+
+### Developer Onboarding
+
+There are two ways developers can join the platform:
+
+#### 1. Invitation-Based Onboarding (Primary Method)
+
+Admins invite developers by email:
+
+1. **Admin invites developer:**
+   ```bash
+   # Via CLI
+   ./server developer invite alice@example.com --name "Alice"
+   
+   # Or via Admin UI
+   # Navigate to /admin/developers and click "Invite Developer"
+   ```
+
+2. **Developer receives invitation email** with a secure link (valid for 7 days)
+
+3. **Developer accepts invitation:**
+   - Click link in email
+   - Set password and display name
+   - Redirected to developer dashboard
+
+4. **Developer can now:**
+   - Create API keys
+   - View usage statistics
+   - Manage their keys
+
+#### 2. GitHub OAuth (Future)
+
+Zero-friction onboarding for developers using GitHub authentication (Phase 2, not yet implemented).
+
+### Developer Authentication
+
+#### Email/Password Login
+
+**Endpoint:** `POST /api/v1/dev/login`
+
+**Request:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/dev/login \
+     -H "Content-Type: application/json" \
+     -d '{
+       "email": "alice@example.com",
+       "password": "secure_password"
+     }'
+```
+
+**Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_at": "2026-02-13T12:00:00Z",
+  "developer": {
+    "id": "uuid",
+    "email": "alice@example.com",
+    "name": "Alice"
+  }
+}
+```
+
+Sets `dev_auth_token` HttpOnly cookie for browser sessions.
+
+#### Developer JWT Claims
+
+Developer JWTs are separate from admin JWTs and include:
+
+```json
+{
+  "sub": "developer",
+  "developer_id": "uuid",
+  "email": "alice@example.com",
+  "name": "Alice",
+  "type": "developer",
+  "iat": 1640000000,
+  "exp": 1640086400,
+  "iss": "https://toronto.togather.foundation"
+}
+```
+
+**Note:** The `"type": "developer"` claim ensures developer JWTs cannot access admin endpoints and vice versa.
+
+### Self-Service API Key Management
+
+Developers can manage their API keys without admin intervention:
+
+#### Create API Key
+
+**Via Developer Portal:**
+1. Log in to developer portal: `/dev/login`
+2. Navigate to `/dev/api-keys`
+3. Click "Create New Key"
+4. Enter key name (e.g., "My Event Scraper")
+5. Copy the key immediately (shown only once)
+
+**Via API:**
+
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/dev/api-keys \
+     -H "Authorization: Bearer $DEVELOPER_JWT" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "My Event Scraper"}'
+```
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "name": "My Event Scraper",
+  "prefix": "01KGJZ40",
+  "key": "01KGJZ40ZG0WQ5SQKCKA6VEH79wKp8mN3vL9xR2qT4yB6nC5dE8fG",
+  "role": "agent",
+  "created_at": "2026-02-12T12:00:00Z"
+}
+```
+
+**⚠️ IMPORTANT:** The `key` field is returned only once. Store it securely.
+
+#### List API Keys
+
+```bash
+curl https://toronto.togather.foundation/api/v1/dev/api-keys \
+     -H "Authorization: Bearer $DEVELOPER_JWT"
+```
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "name": "My Event Scraper",
+      "prefix": "01KGJZ40",
+      "role": "agent",
+      "is_active": true,
+      "created_at": "2026-02-12T12:00:00Z",
+      "last_used_at": "2026-02-12T15:30:00Z"
+    }
+  ],
+  "max_keys": 5,
+  "key_count": 1
+}
+```
+
+**Note:** Full keys are never returned in list operations, only the prefix.
+
+#### Revoke API Key
+
+```bash
+curl -X DELETE https://toronto.togather.foundation/api/v1/dev/api-keys/$KEY_ID \
+     -H "Authorization: Bearer $DEVELOPER_JWT"
+```
+
+**Response:** 204 No Content
+
+Keys are revoked immediately and cannot be reactivated.
+
+### Key Limits
+
+Each developer has a maximum number of API keys they can create (default: 5). This limit can be adjusted by admins on a per-developer basis.
+
+If you reach your limit:
+1. Revoke unused keys in the developer portal
+2. Contact an admin to request a higher limit
+
+### Admin Developer Management
+
+Admins can manage developers through the CLI or admin UI:
+
+```bash
+# Invite a developer
+./server developer invite alice@example.com --name "Alice"
+
+# List all developers
+./server developer list
+
+# Deactivate a developer (revokes all their keys)
+./server developer deactivate <developer-id>
+```
+
+**Admin UI:** Navigate to `/admin/developers` to:
+- View all developers and their API usage
+- Invite new developers
+- Adjust key limits
+- Deactivate/activate accounts
+
+### Developer Portal Routes
+
+| Route | Description | Auth |
+|-------|-------------|------|
+| `/dev/login` | Login page | Public |
+| `/dev/accept-invitation` | Accept invitation and set password | Public (token required) |
+| `/dev/dashboard` | Usage overview | Developer JWT |
+| `/dev/api-keys` | Key management | Developer JWT |
+
+### Developer API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/dev/login` | Authenticate with email/password |
+| POST | `/api/v1/dev/logout` | Clear session cookie |
+| POST | `/api/v1/dev/accept-invitation` | Accept invitation |
+| GET | `/api/v1/dev/api-keys` | List own API keys |
+| POST | `/api/v1/dev/api-keys` | Create new API key |
+| DELETE | `/api/v1/dev/api-keys/{id}` | Revoke own API key |
+
+**Rate Limiting:** Developer authentication endpoints are rate-limited (5 attempts per 15 minutes for login).
+
+---
+
 ## API Keys
 
 API keys are the recommended authentication method for **long-lived integrations** like scrapers and batch jobs.
 
 ### Obtaining an API Key
+
+**For Developers (Recommended):**
+
+Use the self-service developer portal:
+
+1. Request an invitation from an admin or contact [info@togather.foundation](mailto:info@togather.foundation)
+2. Accept invitation via email link and set your password
+3. Log in to the developer portal at `/dev/login`
+4. Navigate to `/dev/api-keys` and create a new key
+5. Copy the key immediately (shown only once)
+
+See [Developer Self-Service](#developer-self-service) for detailed instructions.
 
 **For Local Development:**
 
