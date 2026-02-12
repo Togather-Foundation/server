@@ -170,7 +170,13 @@ func inviteDeveloper(email, name string) error {
 	if name != "" {
 		fmt.Printf("Name:         %s\n", name)
 	}
-	fmt.Printf("Invitation:   %s\n", invitation.ID.Bytes)
+	// Format pgtype.UUID as standard UUID string
+	invitationID := "unknown"
+	if invitation.ID.Valid {
+		b := invitation.ID.Bytes
+		invitationID = fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	}
+	fmt.Printf("Invitation:   %s\n", invitationID)
 	fmt.Printf("Token:        %s\n\n", token)
 	fmt.Printf("Invitation URL:\n%s\n\n", invitationURL)
 	fmt.Printf("⚠️  The invitation expires in 7 days and is single-use.\n")
