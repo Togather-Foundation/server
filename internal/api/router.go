@@ -540,9 +540,21 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", adminStaticFS))
 	}
 
-	// Developer HTML routes (srv-7m0cf) - public pages (no auth required)
+	// Developer HTML routes (srv-7m0cf)
+	// Public pages (no auth required)
 	mux.Handle("/dev/login", http.HandlerFunc(devHTMLHandler.ServeLogin))
 	mux.Handle("/dev/accept-invitation", http.HandlerFunc(devHTMLHandler.ServeAcceptInvitation))
+
+	// Authenticated pages with CSRF protection (srv-w2isc)
+	mux.Handle("/dev/dashboard", csrfMiddleware(devCookieAuth(http.HandlerFunc(devHTMLHandler.ServeDashboard))))
+	mux.Handle("/dev/api-keys", csrfMiddleware(devCookieAuth(http.HandlerFunc(devHTMLHandler.ServeAPIKeys))))
+
+	// Redirect /dev and /dev/ to dashboard
+	devRoot := csrfMiddleware(devCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dev/dashboard", http.StatusFound)
+	})))
+	mux.Handle("/dev", devRoot)
+	mux.Handle("/dev/", devRoot)
 
 	// Serve developer static files (JS only - reuses admin CSS/images via CDN)
 	devStaticSubFS, err := fs.Sub(web.DevStaticFiles, "dev/static")

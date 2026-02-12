@@ -69,3 +69,53 @@ func (h *DevHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.Re
 		return
 	}
 }
+
+// ServeDashboard renders the developer dashboard page
+func (h *DevHTMLHandler) ServeDashboard(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("developer HTML request",
+			slog.String("page", "dashboard"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Dashboard - SEL Developer Portal",
+		"ActivePage": "dashboard",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "dashboard.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// ServeAPIKeys renders the developer API keys management page
+func (h *DevHTMLHandler) ServeAPIKeys(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("developer HTML request",
+			slog.String("page", "api_keys"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "API Keys - SEL Developer Portal",
+		"ActivePage": "api-keys",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "api_keys.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "api_keys.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
