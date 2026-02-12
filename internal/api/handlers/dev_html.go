@@ -36,6 +36,11 @@ func (h *DevHTMLHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 			slog.String("remote_addr", r.RemoteAddr))
 	}
 
+	if h.Templates == nil {
+		http.Error(w, "Developer portal templates not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	data := map[string]interface{}{
@@ -60,6 +65,11 @@ func (h *DevHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.Re
 			slog.String("remote_addr", r.RemoteAddr))
 	}
 
+	if h.Templates == nil {
+		http.Error(w, "Developer portal templates not available", http.StatusServiceUnavailable)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	data := map[string]interface{}{
@@ -82,6 +92,11 @@ func (h *DevHTMLHandler) ServeDashboard(w http.ResponseWriter, r *http.Request) 
 			slog.String("page", "dashboard"),
 			slog.String("method", r.Method),
 			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	if h.Templates == nil {
+		http.Error(w, "Developer portal templates not available", http.StatusServiceUnavailable)
+		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -121,6 +136,11 @@ func (h *DevHTMLHandler) ServeAPIKeys(w http.ResponseWriter, r *http.Request) {
 			slog.String("page", "api_keys"),
 			slog.String("method", r.Method),
 			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	if h.Templates == nil {
+		http.Error(w, "Developer portal templates not available", http.StatusServiceUnavailable)
+		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
