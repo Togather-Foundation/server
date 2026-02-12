@@ -286,5 +286,29 @@ const API = {
             method: 'POST',
             body: JSON.stringify({ primary_event_id: primaryEventId })
         })
+    },
+    
+    // Developers API
+    developers: {
+        list: (params = {}, signal = null) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/admin/developers?${query}`, { signal });
+        },
+        
+        get: (id) => API.request(`/api/v1/admin/developers/${id}`),
+        
+        invite: (data) => API.request('/api/v1/admin/developers/invite', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        
+        update: (id, data) => API.request(`/api/v1/admin/developers/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        }),
+        
+        delete: (id) => API.request(`/api/v1/admin/developers/${id}`, {
+            method: 'DELETE'
+        })
     }
 };

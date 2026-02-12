@@ -119,21 +119,7 @@
             if (filters.status) params.status = filters.status;
             if (currentCursor) params.offset = currentCursor;
             
-            const response = await fetch('/api/v1/admin/developers?' + new URLSearchParams(params), {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                signal: abortController.signal
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Failed to load developers: ${response.status} ${response.statusText}`);
-            }
-            
-            const data = await response.json();
+            const data = await API.developers.list(params, abortController.signal);
             
             if (data.items && data.items.length > 0) {
                 currentDevelopers = data.items;
@@ -386,20 +372,7 @@
         setLoading(submitBtn, true);
         
         try {
-            const response = await fetch('/api/v1/admin/developers/invite', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ email, name, max_keys: maxKeys })
-            });
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Failed to invite developer: ${response.status}`);
-            }
+            await API.developers.invite({ email, name, max_keys: maxKeys });
             
             showToast('Developer invitation sent successfully', 'success');
             
@@ -434,19 +407,7 @@
         bsModal.show();
         
         try {
-            const response = await fetch(`/api/v1/admin/developers/${developerId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include'
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Failed to load developer: ${response.status}`);
-            }
-            
-            const dev = await response.json();
+            const dev = await API.developers.get(developerId);
             
             // Render developer details
             const keys = dev.keys || [];
@@ -530,19 +491,7 @@
         if (!modal || !form) return;
         
         try {
-            const response = await fetch(`/api/v1/admin/developers/${developerId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include'
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Failed to load developer: ${response.status}`);
-            }
-            
-            const dev = await response.json();
+            const dev = await API.developers.get(developerId);
             
             // Populate form
             document.getElementById('edit-developer-id').value = dev.id;
@@ -575,20 +524,7 @@
         setLoading(submitBtn, true);
         
         try {
-            const response = await fetch(`/api/v1/admin/developers/${developerId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ max_keys: maxKeys, is_active: isActive })
-            });
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Failed to update developer: ${response.status}`);
-            }
+            await API.developers.update(developerId, { max_keys: maxKeys, is_active: isActive });
             
             showToast('Developer updated successfully', 'success');
             
@@ -617,19 +553,7 @@
             `Are you sure you want to deactivate "${developerEmail}"? This will revoke all their API keys.`,
             async () => {
                 try {
-                    const response = await fetch(`/api/v1/admin/developers/${developerId}`, {
-                        method: 'DELETE',
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-                            'Content-Type': 'application/json'
-                        },
-                        credentials: 'include'
-                    });
-                    
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.detail || `Failed to deactivate developer: ${response.status}`);
-                    }
+                    await API.developers.delete(developerId);
                     
                     showToast('Developer deactivated successfully', 'success');
                     
