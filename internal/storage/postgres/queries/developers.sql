@@ -75,5 +75,11 @@ INSERT INTO api_keys (prefix, key_hash, hash_version, name, developer_id, role, 
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, prefix, name, role, rate_limit_tier, is_active, created_at, expires_at;
 
+-- name: RevokeAllDeveloperAPIKeys :execrows
+UPDATE api_keys SET is_active = false WHERE developer_id = $1 AND is_active = true;
+
+-- name: CheckAPIKeyOwnership :one
+SELECT EXISTS(SELECT 1 FROM api_keys WHERE id = $1 AND developer_id = $2) AS owned;
+
 -- name: GetAPIKeyByID :one
 SELECT * FROM api_keys WHERE id = $1;

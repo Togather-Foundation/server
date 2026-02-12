@@ -35,6 +35,8 @@ type Repository interface {
 	CreateAPIKey(ctx context.Context, params CreateAPIKeyDBParams) (*CreateAPIKeyResult, error)
 	DeactivateAPIKey(ctx context.Context, id uuid.UUID) error
 	GetAPIKeyByID(ctx context.Context, id uuid.UUID) (*APIKey, error)
+	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) (int64, error)
+	CheckAPIKeyOwnership(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error)
 
 	// Usage operations
 	GetAPIKeyUsage(ctx context.Context, apiKeyID uuid.UUID, startDate, endDate time.Time) ([]DailyUsage, error)

@@ -20,6 +20,22 @@ func (q *Queries) AcceptDeveloperInvitation(ctx context.Context, id pgtype.UUID)
 	return err
 }
 
+const checkAPIKeyOwnership = `-- name: CheckAPIKeyOwnership :one
+SELECT EXISTS(SELECT 1 FROM api_keys WHERE id = $1 AND developer_id = $2) AS owned
+`
+
+type CheckAPIKeyOwnershipParams struct {
+	ID          pgtype.UUID `json:"id"`
+	DeveloperID pgtype.UUID `json:"developer_id"`
+}
+
+func (q *Queries) CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkAPIKeyOwnership, arg.ID, arg.DeveloperID)
+	var owned bool
+	err := row.Scan(&owned)
+	return owned, err
+}
+
 const countDeveloperAPIKeys = `-- name: CountDeveloperAPIKeys :one
 SELECT COUNT(*) FROM api_keys 
 WHERE developer_id = $1 AND is_active = true
@@ -413,6 +429,18 @@ func (q *Queries) ListDevelopers(ctx context.Context, arg ListDevelopersParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeAllDeveloperAPIKeys = `-- name: RevokeAllDeveloperAPIKeys :execrows
+UPDATE api_keys SET is_active = false WHERE developer_id = $1 AND is_active = true
+`
+
+func (q *Queries) RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeAllDeveloperAPIKeys, developerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateDeveloper = `-- name: UpdateDeveloper :one

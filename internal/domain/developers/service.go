@@ -502,6 +502,21 @@ func (s *Service) GetAPIKeyUsageStats(ctx context.Context, keyID uuid.UUID, star
 	return totalRequests, totalErrors, daily, nil
 }
 
+// CheckAPIKeyOwnership verifies that a given API key belongs to a specific developer.
+// This is more efficient than fetching all keys or the full key object.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - keyID: UUID of the API key to check
+//   - developerID: UUID of the developer to verify ownership against
+//
+// Returns:
+//   - bool: true if the key is owned by the developer, false otherwise
+//   - error: Any database error that occurred (not returned for ownership mismatch)
+func (s *Service) CheckAPIKeyOwnership(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error) {
+	return s.repo.CheckAPIKeyOwnership(ctx, keyID, developerID)
+}
+
 // InviteDeveloper generates a secure invitation token, hashes it with SHA-256,
 // and stores the invitation record. Returns the plaintext token for sending via email.
 //

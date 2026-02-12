@@ -194,6 +194,29 @@ func (r *DeveloperRepository) CountDeveloperAPIKeys(ctx context.Context, develop
 	return count, nil
 }
 
+// RevokeAllDeveloperAPIKeys revokes all active API keys for a developer
+func (r *DeveloperRepository) RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error) {
+	q := r.queryer()
+	count, err := q.RevokeAllDeveloperAPIKeys(ctx, developerID)
+	if err != nil {
+		return 0, fmt.Errorf("revoke all developer api keys: %w", err)
+	}
+	return count, nil
+}
+
+// CheckAPIKeyOwnership verifies that a specific API key belongs to a developer
+func (r *DeveloperRepository) CheckAPIKeyOwnership(ctx context.Context, keyID, developerID pgtype.UUID) (bool, error) {
+	q := r.queryer()
+	owned, err := q.CheckAPIKeyOwnership(ctx, CheckAPIKeyOwnershipParams{
+		ID:          keyID,
+		DeveloperID: developerID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("check api key ownership: %w", err)
+	}
+	return owned, nil
+}
+
 // WithTx returns a new repository instance that will use the provided transaction
 func (r *DeveloperRepository) WithTx(tx pgx.Tx) *DeveloperRepository {
 	return &DeveloperRepository{

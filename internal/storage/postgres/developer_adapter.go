@@ -233,6 +233,19 @@ func (a *DeveloperRepositoryAdapter) CountDeveloperAPIKeys(ctx context.Context, 
 	return a.repo.CountDeveloperAPIKeys(ctx, pgUUID)
 }
 
+// RevokeAllDeveloperAPIKeys revokes all active API keys for a developer
+func (a *DeveloperRepositoryAdapter) RevokeAllDeveloperAPIKeys(ctx context.Context, developerID uuid.UUID) (int64, error) {
+	pgUUID := uuidToPgUUID(developerID)
+	return a.repo.RevokeAllDeveloperAPIKeys(ctx, pgUUID)
+}
+
+// CheckAPIKeyOwnership verifies that a specific API key belongs to a developer
+func (a *DeveloperRepositoryAdapter) CheckAPIKeyOwnership(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error) {
+	pgKeyID := uuidToPgUUID(keyID)
+	pgDeveloperID := uuidToPgUUID(developerID)
+	return a.repo.CheckAPIKeyOwnership(ctx, pgKeyID, pgDeveloperID)
+}
+
 // CreateAPIKey creates a new API key
 func (a *DeveloperRepositoryAdapter) CreateAPIKey(ctx context.Context, params developers.CreateAPIKeyDBParams) (*developers.CreateAPIKeyResult, error) {
 	queries := New(a.pool)

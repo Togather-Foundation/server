@@ -15,6 +15,7 @@ type Querier interface {
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
 	// Mark review as approved
 	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
+	CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error)
 	// Archive old approved/superseded/merged reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
 	// Delete rejected reviews for past events (7 day grace period)
@@ -163,6 +164,7 @@ type Querier interface {
 	// Uses a recursive CTE with a max depth of 10 to prevent infinite loops.
 	// Returns the ULID of the final canonical event (the one that is not itself merged).
 	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
+	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error

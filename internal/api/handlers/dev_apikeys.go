@@ -328,25 +328,16 @@ func (h *DeveloperAPIKeyHandler) GetAPIKeyUsage(w http.ResponseWriter, r *http.R
 		to = now
 	}
 
-	// Verify ownership of the key
+	// Verify ownership of the key using direct DB query
 	developerID := claims.DeveloperID
-	keys, err := h.service.ListOwnKeys(r.Context(), developerID)
+	owns, err := h.service.CheckAPIKeyOwnership(r.Context(), keyID, developerID)
 	if err != nil {
-		h.logger.Error().Err(err).Str("developer_id", developerID.String()).Msg("failed to list API keys")
+		h.logger.Error().Err(err).Str("developer_id", developerID.String()).Str("key_id", keyID.String()).Msg("failed to check API key ownership")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.env)
 		return
 	}
-
-	// Check if the key belongs to this developer
-	keyFound := false
-	for _, key := range keys {
-		if key.ID == keyID {
-			keyFound = true
-			break
-		}
-	}
-	if !keyFound {
-		problem.Write(w, r, http.StatusForbidden, "https://sel.events/problems/forbidden", "You do not own this API key", nil, h.env)
+	if !owns {
+		problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "API key not found", nil, h.env)
 		return
 	}
 
