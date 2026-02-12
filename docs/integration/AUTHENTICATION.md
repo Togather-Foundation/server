@@ -131,9 +131,27 @@ Admins invite developers by email:
    - View usage statistics
    - Manage their keys
 
-#### 2. GitHub OAuth (Future)
+#### 2. GitHub OAuth (Optional)
 
-Zero-friction onboarding for developers using GitHub authentication (Phase 2, not yet implemented).
+Zero-friction onboarding for developers using GitHub authentication. This is an optional alternative to invitation-based onboarding.
+
+**How it works:**
+
+1. Developer clicks "Sign in with GitHub" on the developer portal
+2. Redirected to GitHub for authorization
+3. On approval, developer is:
+   - **Auto-created** if new (email from GitHub profile)
+   - **Linked** to existing account if email matches (and no GitHub ID conflict)
+   - **Logged in** if already linked
+
+**Security:**
+- CSRF protection via cryptographic state parameter
+- Scopes: `user:email` (read email addresses)
+- Optional org restriction (see configuration below)
+
+**Setup Instructions:**
+
+See [Deployment Docs: GitHub OAuth Setup](../deploy/github-oauth-setup.md) for server configuration.
 
 ### Developer Authentication
 
@@ -165,6 +183,57 @@ curl -X POST https://toronto.togather.foundation/api/v1/dev/login \
 ```
 
 Sets `dev_auth_token` HttpOnly cookie for browser sessions.
+
+#### GitHub OAuth Login
+
+**Endpoints:**
+- **Start flow:** `GET /auth/github`
+- **Callback:** `GET /auth/github/callback`
+
+**Flow:**
+
+```bash
+# 1. User clicks "Sign in with GitHub" on /dev/login
+#    Browser redirects to:
+GET /auth/github
+
+# 2. Server generates state parameter and redirects to GitHub:
+#    Location: https://github.com/login/oauth/authorize?client_id=...&redirect_uri=...&scope=user:email&state=...
+
+# 3. User authorizes on GitHub
+
+# 4. GitHub redirects back with code:
+GET /auth/github/callback?code=abc123&state=xyz789
+
+# 5. Server validates state, exchanges code for token, fetches user profile
+
+# 6. Auto-creation/matching logic:
+#    - If github_id exists → log in
+#    - If email exists without github_id → link account
+#    - Otherwise → create new developer
+
+# 7. Sets dev_auth_token cookie and redirects to /dev/dashboard
+```
+
+**Account Linking:**
+
+If you have an existing email/password account:
+1. Log in with GitHub using the same email address
+2. Server automatically links your GitHub account
+3. You can now log in with either method
+
+**Organization Restrictions:**
+
+Optionally restrict GitHub OAuth to members of specific organizations:
+- Set `GITHUB_ALLOWED_ORGS=your-org,another-org` in environment
+- Only members of listed orgs can log in
+- Useful for private deployments
+
+**Security Features:**
+- **CSRF protection**: Random state parameter stored in `oauth_state` cookie (5-min expiry)
+- **Email verification**: Requires verified GitHub email
+- **Account conflict detection**: Prevents linking if email already has different GitHub account
+- **Secure cookies**: HttpOnly, Secure (production), SameSite=Lax
 
 #### Developer JWT Claims
 
