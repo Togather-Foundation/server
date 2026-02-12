@@ -45,7 +45,7 @@ This is a deployment infrastructure feature for the existing Go project at repos
 - [x] T007 Create multi-stage Dockerfile (build stage: Go 1.25+ builder, runtime stage: Alpine) with version metadata in deploy/docker/Dockerfile (per research.md:L735)
 - [x] T008 Create base docker-compose.yml for app + database in deploy/docker/docker-compose.yml
 - [x] T009 Create blue-green docker-compose.blue-green.yml orchestration in deploy/docker/docker-compose.blue-green.yml
-- [x] T010 [P] Create nginx reverse proxy configuration for blue-green traffic switching in deploy/docker/nginx.conf
+- [x] T010 [P] Create Caddy reverse proxy configuration for blue-green traffic switching in deploy/docker/Caddyfile.example
 - [x] T011 [P] Implement health check endpoint handler with database, migrations, http_endpoint, and job_queue checks in internal/api/health.go (per data-model.md:L275-L323)
 - [x] T012 [P] Implement version endpoint handler in internal/api/version.go
 - [x] T013 Create deployment state JSON schema and initialization in deploy/config/deployment-state.schema.json
@@ -71,7 +71,7 @@ This is a deployment infrastructure feature for the existing Go project at repos
 - [x] T018 [US1] Implement database migration execution with golang-migrate in deploy/scripts/deploy.sh
 - [x] T019 [US1] Implement blue-green deployment orchestration in deploy/scripts/deploy.sh
 - [x] T020 [US1] Implement health check validation script in deploy/scripts/health-check.sh
-- [x] T021 [US1] Implement traffic switching logic (nginx config reload) in deploy/scripts/deploy.sh
+- [x] T021 [US1] Implement traffic switching logic (Caddy config reload) in deploy/scripts/deploy.sh
 - [x] T022 [US1] Implement deployment state tracking (JSON updates) in deploy/scripts/deploy.sh
 - [x] T023 [US1] Implement structured deployment logging to /var/log/togather/deployments/ in deploy/scripts/deploy.sh
 - [x] T023a [US1] Implement secret sanitization in deployment logs (redact DATABASE_URL passwords, JWT_SECRET, API keys) in deploy/scripts/deploy.sh

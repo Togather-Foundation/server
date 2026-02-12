@@ -224,12 +224,12 @@ The `docker-compose.blue-green.yml` configuration enables zero-downtime deployme
 Blue-green deployment runs **two identical instances** of the application simultaneously:
 - **Blue slot**: First application instance
 - **Green slot**: Second application instance
-- **Nginx proxy**: Routes traffic to the active slot
+- **Caddy proxy**: Routes traffic to the active slot
 
 Only ONE slot receives traffic at a time. During deployment:
 1. Deploy new version to the **inactive slot**
 2. Run health checks on new version
-3. Switch traffic to new version (atomic cutover via nginx)
+3. Switch traffic to new version (atomic cutover via Caddy reload)
 4. Keep old version running briefly for rollback
 5. Stop old version after confirmation
 
@@ -244,10 +244,10 @@ Only ONE slot receives traffic at a time. During deployment:
 2. **Check service status**:
    ```bash
    docker compose -f docker-compose.blue-green.yml ps
-   # Should show: togather-db, togather-blue, togather-green, nginx
+   # Should show: togather-db, togather-blue, togather-green, caddy
    ```
 
-3. **Access the application** (via nginx proxy):
+3. **Access the application** (via Caddy proxy):
    ```bash
    curl http://localhost/health
    # Response includes X-Togather-Slot header showing active slot
@@ -273,34 +273,38 @@ Only ONE slot receives traffic at a time. During deployment:
 - Environment: `SLOT=green`
 - Inherits all settings from base `app` service
 
-**nginx** (reverse proxy):
+**caddy** (reverse proxy):
 - Container: `togather-proxy`
 - Public port: `80:80` (all client traffic)
-- Configuration: `nginx.conf` specifies active slot
+- Configuration: `Caddyfile` specifies active slot
 - Routes traffic to active slot upstream
+
+**See**: [`docs/deploy/caddy.md`](../../docs/deploy/caddy.md) for complete Caddy documentation.
 
 ### Manual Traffic Switching
 
 To switch traffic between slots manually:
 
-1. **Edit nginx.conf** and change the upstream server:
-   ```nginx
-   upstream togather_backend {
-       # Change this line:
-       server togather-server-blue:8080;   # To route to blue
-       # OR
-       server togather-server-green:8080;  # To route to green
+1. **Edit Caddyfile** and change the reverse_proxy target:
+   ```caddyfile
+   # Change this block:
+   reverse_proxy localhost:8081 {   # To route to blue
+       header_down X-Togather-Slot "blue"
+   }
+   # OR
+   reverse_proxy localhost:8082 {   # To route to green
+       header_down X-Togather-Slot "green"
    }
    ```
 
-2. **Test nginx configuration**:
+2. **Validate Caddy configuration**:
    ```bash
-   docker compose -f docker-compose.blue-green.yml exec nginx nginx -t
+   docker compose -f docker-compose.blue-green.yml exec caddy caddy validate --config /etc/caddy/Caddyfile
    ```
 
-3. **Reload nginx** (zero-downtime reload):
+3. **Reload Caddy** (zero-downtime reload):
    ```bash
-   docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+   docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile --force
    ```
 
 4. **Verify traffic switch**:
@@ -334,11 +338,12 @@ To switch traffic between slots manually:
 
 3. **Switch traffic to green**:
    ```bash
-   # Update nginx.conf to route to green
-   sed -i 's/server togather-server-blue:8080/server togather-server-green:8080/' nginx.conf
+   # Update Caddyfile to route to green
+   sed -i 's/reverse_proxy localhost:8081/reverse_proxy localhost:8082/' Caddyfile
+   sed -i 's/"blue"/"green"/' Caddyfile
    
-   # Reload nginx
-   docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+   # Reload Caddy
+   docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile --force
    ```
 
 4. **Verify traffic on green**:
@@ -362,11 +367,12 @@ To switch traffic between slots manually:
 If the new version has issues, rollback by switching traffic back:
 
 ```bash
-# Update nginx.conf to point to old slot
-sed -i 's/server togather-server-green:8080/server togather-server-blue:8080/' nginx.conf
+# Update Caddyfile to point to old slot
+sed -i 's/reverse_proxy localhost:8082/reverse_proxy localhost:8081/' Caddyfile
+sed -i 's/"green"/"blue"/' Caddyfile
 
-# Reload nginx (instant traffic switch)
-docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+# Reload Caddy (instant traffic switch)
+docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile --force
 
 # Verify rollback
 curl -I http://localhost/health
@@ -404,8 +410,8 @@ cd deploy/docker
 To check which slot is currently active:
 
 ```bash
-# Check nginx configuration
-grep "server togather-server-" nginx.conf | grep -v "^#"
+# Check Caddyfile configuration
+grep "reverse_proxy localhost:" Caddyfile
 
 # Or check via HTTP header
 curl -I http://localhost/health | grep X-Togather-Slot
@@ -421,8 +427,8 @@ docker compose -f docker-compose.blue-green.yml logs -f
 docker compose -f docker-compose.blue-green.yml logs -f togather-blue
 docker compose -f docker-compose.blue-green.yml logs -f togather-green
 
-# View nginx access logs (shows which slot handled requests)
-docker compose -f docker-compose.blue-green.yml logs -f nginx | grep upstream=
+# View Caddy access logs
+docker compose -f docker-compose.blue-green.yml logs -f caddy
 ```
 
 ### Resource Usage

@@ -22,7 +22,7 @@ deploy/
 │   ├── Dockerfile             # Multi-stage application image
 │   ├── docker-compose.yml     # Base compose configuration
 │   ├── docker-compose.blue-green.yml  # Blue-green orchestration
-│   └── nginx.conf             # Reverse proxy configuration
+│   └── Caddyfile.example      # Reverse proxy configuration template
 ├── scripts/                   # Deployment automation scripts
 └── docs/                      # Detailed deployment documentation
 ```
@@ -184,7 +184,7 @@ Environment-specific secrets and configuration:
 5. **Migrations**: Apply pending database migrations
 6. **Blue-Green Deploy**: Start new version in inactive slot
 7. **Health Check**: Validate new deployment health
-8. **Traffic Switch**: Update nginx to route to new version
+8. **Traffic Switch**: Update Caddy to route to new version
 9. **State Update**: Record deployment in state file
 10. **Cleanup**: Release lock, log completion
 

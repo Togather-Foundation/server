@@ -353,7 +353,7 @@ The deployment infrastructure prioritizes simplicity and maintainability over fe
 **MVP Technical Stack:**
 - **Deployment Engine**: Docker Compose v2 (standardized, works everywhere)
 - **Configuration**: YAML-based with .env file support
-- **Blue-Green Orchestration**: Docker networks + health checks + traffic switching via nginx/traefik
+- **Blue-Green Orchestration**: Docker networks + health checks + traffic switching via Caddy
 - **Database**: PostgreSQL 16+ in Docker container with volume persistence
 - **Migrations**: golang-migrate CLI (already in project dependencies)
 - **Snapshots**: pg_dump to local filesystem or S3-compatible storage

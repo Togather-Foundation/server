@@ -153,8 +153,8 @@ The deployment follows a zero-downtime blue-green strategy:
 Retries: 30 attempts with 2s intervals (60s total timeout)
 
 ### Phase 8: Traffic Switch
-- Update Nginx configuration to route to new slot
-- Reload Nginx (graceful, zero-downtime)
+- Update Caddy configuration to route to new slot
+- Reload Caddy (graceful, zero-downtime)
 - Old slot remains running (for rollback if needed)
 
 ### Phase 9: State Update
@@ -331,11 +331,17 @@ docker build -f deploy/docker/Dockerfile -t togather-server:test .
 2. **Switch traffic back to old slot:**
    ```bash
    # If blue is broken, switch back to green
-   # Edit deploy/docker/nginx.conf
-   # Change upstream from blue (port 8080) to green (port 8081)
+   # Edit Caddyfile (location depends on environment):
+   # - Local: deploy/docker/Caddyfile
+   # - Staging/Prod: /etc/caddy/Caddyfile
    
-   # Reload Nginx
-   docker-compose exec nginx nginx -s reload
+   # Change reverse_proxy from blue (port 8081) to green (port 8082)
+   
+   # Reload Caddy
+   # Local:
+   docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile --force
+   # Staging/Prod:
+   sudo caddy reload --config /etc/caddy/Caddyfile --force
    ```
 
 3. **Restore database if needed:**
@@ -362,122 +368,143 @@ docker build -f deploy/docker/Dockerfile -t togather-server:test .
 
 Zero-downtime deployment using two identical production environments:
 
-- **Blue slot:** Port 8080, service name `app-blue`
-- **Green slot:** Port 8081, service name `app-green`
-- **Nginx proxy:** Routes traffic to active slot
-- **Atomic switch:** Nginx config reload switches traffic instantly
+- **Blue slot:** Port 8081, service name `app-blue`
+- **Green slot:** Port 8082, service name `app-green`
+- **Caddy proxy:** Routes traffic to active slot
+- **Atomic switch:** Caddy config reload switches traffic instantly
 
-### Nginx Configuration Management
+**See**: [`docs/deploy/caddy.md`](../docs/deploy/caddy.md) for complete Caddy architecture and configuration details.
 
-The nginx reverse proxy is configured in `deploy/docker/nginx.conf` and handles traffic routing, rate limiting, TLS/SSL termination, and security headers.
+### Caddy Configuration Management
+
+The Caddy reverse proxy handles traffic routing, automatic HTTPS, and security headers. Configuration varies by environment:
+
+- **Local Development**: `deploy/docker/Caddyfile` (Docker container)
+- **Staging/Production**: `/etc/caddy/Caddyfile` (system service)
+
+**See**: [`docs/deploy/caddy.md`](../docs/deploy/caddy.md) for complete Caddy documentation.
 
 #### Testing Configuration Changes
 
-Always test configuration syntax before reloading:
+Always validate configuration syntax before reloading:
 
 ```bash
-# Test configuration syntax
-docker compose -f docker-compose.blue-green.yml exec nginx nginx -t
+# For local development (Docker)
+docker compose -f docker-compose.blue-green.yml exec caddy caddy validate --config /etc/caddy/Caddyfile
+
+# For staging/production (system Caddy)
+sudo caddy validate --config /etc/caddy/Caddyfile
 
 # Expected output:
-# nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
-# nginx: configuration file /etc/nginx/nginx.conf test is successful
+# Valid configuration
 ```
 
-#### Reloading Configuration (Graceful)
+#### Reloading Configuration (Graceful, Zero Downtime)
 
-After making changes to `nginx.conf`, reload without dropping connections:
+After making changes to the Caddyfile, reload without dropping connections:
 
 ```bash
-# Graceful reload (zero downtime)
-docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+# For local development (Docker)
+docker compose -f docker-compose.blue-green.yml exec caddy caddy reload --config /etc/caddy/Caddyfile --force
+
+# For staging/production (system Caddy) - RECOMMENDED
+sudo caddy reload --config /etc/caddy/Caddyfile --force
+
+# Alternative (less reliable, asynchronous)
+sudo systemctl reload caddy
 
 # Verify reload succeeded (check logs)
-docker compose -f docker-compose.blue-green.yml logs nginx --tail=20
+sudo journalctl -u caddy --tail=20
 ```
 
 **How Graceful Reload Works:**
-1. Nginx master process receives SIGHUP signal
-2. New worker processes start with updated configuration
-3. Old worker processes finish serving existing requests
-4. Old workers shut down gracefully after completing connections
-5. **No dropped connections or 502 errors**
+1. Caddy admin API receives reload request
+2. New configuration is validated and loaded
+3. Old connections continue being served
+4. New connections use updated configuration
+5. Old configuration is released after connections complete
+6. **No dropped connections or 502 errors**
+
+**Important**: Use `caddy reload` with `--force` flag for reliable, synchronous reloads. The `systemctl reload` method is asynchronous and may cause race conditions during traffic switches.
 
 #### Manual Traffic Switching
 
 To manually switch traffic between blue and green slots:
 
 ```bash
-# 1. Edit nginx.conf upstream configuration
-nano deploy/docker/nginx.conf
+# 1. Edit Caddyfile
+# For local development:
+nano deploy/docker/Caddyfile
+# For staging/production:
+sudo nano /etc/caddy/Caddyfile
 
-# Find the line (around line 77):
-#   server togather-server-blue:8080;
-# Change to:
-#   server togather-server-green:8080;
+# Find the reverse_proxy directive:
+# FROM:
+#   reverse_proxy localhost:8081 {
+#       header_down X-Togather-Slot "blue"
+#   }
+# TO:
+#   reverse_proxy localhost:8082 {
+#       header_down X-Togather-Slot "green"
+#   }
 
-# 2. Test configuration
-docker compose -f docker-compose.blue-green.yml exec nginx nginx -t
+# 2. Validate configuration
+sudo caddy validate --config /etc/caddy/Caddyfile
 
-# 3. Reload if test passes
-docker compose -f docker-compose.blue-green.yml exec nginx nginx -s reload
+# 3. Reload if validation passes
+sudo caddy reload --config /etc/caddy/Caddyfile --force
 
 # 4. Verify active slot
 curl -I http://localhost/health | grep X-Togather-Slot
-# Should show: X-Togather-Slot: togather-server-green:8080
+# Should show: X-Togather-Slot: green
 ```
 
-#### Nginx Configuration Features
+#### Caddy Configuration Features
 
-The nginx configuration includes production-ready features (see `nginx.conf` for details):
+**Automatic HTTPS:**
+- Obtains and renews SSL certificates automatically via Let's Encrypt
+- No manual certificate management required
+- HTTP-to-HTTPS redirect enabled by default
 
 **Rate Limiting:**
-- General API: 30 requests/minute per IP
-- Batch ingestion: 10 requests/minute per IP  
-- Auth endpoints: 5 requests/minute per IP
-- Health/metrics: No limits (for monitoring)
+- Rate limiting is implemented in the Togather application layer
+- Additional proxy-level rate limiting can be added via Caddy plugins if needed
 
-**TLS/SSL Support:**
-- TLS 1.2/1.3 with modern cipher suites
-- Let's Encrypt integration ready (commented out, enable for production)
-- OCSP stapling and SSL session caching
-- HTTP-to-HTTPS redirect (enable in production)
+**Security:**
+- Modern TLS defaults (TLS 1.2/1.3 with secure ciphers)
+- Security headers configured in Caddyfile
+- HTTP/2 enabled by default
 
-**Security Headers:**
-- Content-Security-Policy (CSP)
-- X-Frame-Options, X-Content-Type-Options
-- Strict-Transport-Security (HSTS when TLS enabled)
-- Permissions-Policy
+**Monitoring:**
+- Access logs: `/var/log/caddy/{environment}.log`
+- Admin API: `http://localhost:2019/config/`
+- Metrics endpoint: `/metrics` (localhost only)
 
-**To enable TLS/SSL in production:**
-1. Obtain certificates (recommended: Let's Encrypt)
-2. Uncomment HTTPS server block in `nginx.conf` (lines ~200-350)
-3. Update `ssl_certificate` and `ssl_certificate_key` paths
-4. Enable HTTP-to-HTTPS redirect
-5. Test and reload: `nginx -t && nginx -s reload`
-
-#### Common Nginx Operations
+#### Common Caddy Operations
 
 ```bash
-# View nginx logs
-docker compose logs nginx -f
+# View Caddy logs (system service)
+sudo journalctl -u caddy -f
 
-# Check nginx status
-docker compose exec nginx nginx -V  # Version and build info
+# View access logs
+sudo tail -f /var/log/caddy/staging.toronto.log
 
-# Check running nginx processes
-docker compose exec nginx ps aux | grep nginx
+# Check Caddy status
+sudo systemctl status caddy
 
-# Test if nginx is responding
-curl -I http://localhost/health
+# View running config via admin API
+curl http://localhost:2019/config/ | jq
 
-# Restart nginx (hard restart, brief downtime)
-docker compose restart nginx
+# Check certificate status
+sudo caddy list-certificates
+
+# Restart Caddy (hard restart, brief downtime)
+sudo systemctl restart caddy
 ```
 
 **When to use reload vs restart:**
-- **Reload (`nginx -s reload`)**: Configuration changes only. **Use this!**
-- **Restart (`docker compose restart`)**: nginx binary upgrade, debugging crashes. Causes brief downtime.
+- **Reload (`caddy reload`)**: Configuration changes only. **Use this!** Zero downtime.
+- **Restart (`systemctl restart`)**: Caddy binary upgrade, debugging crashes. Causes brief downtime.
 
 ### Database Snapshots
 
@@ -544,7 +571,7 @@ deploy/
 │   ├── Dockerfile.postgres     # Custom PostgreSQL with extensions
 │   ├── docker-compose.yml      # Base service definitions
 │   ├── docker-compose.blue-green.yml  # Blue-green slot configuration
-│   ├── nginx.conf              # Traffic routing configuration
+│   ├── Caddyfile.example      # Docker Caddy config template
 │   └── README.md               # Docker-specific documentation
 └── scripts/
     ├── deploy.sh               # Main deployment script (853 lines)
@@ -570,7 +597,7 @@ database:
 **docker-compose.yml** - Service definitions:
 - `app` - Togather server application
 - `db` - PostgreSQL 16 with PostGIS, pgvector, pg_trgm
-- `nginx` - Reverse proxy for blue-green routing
+- `caddy` - Reverse proxy for blue-green routing (local development only)
 
 **docker-compose.blue-green.yml** - Slot configuration:
 - `app-blue` - Blue deployment slot (port 8080)
@@ -635,7 +662,7 @@ Implementation: `sanitize_secrets()` function in deploy.sh
 - [ ] Enable PostgreSQL SSL mode (`sslmode=require`)
 - [ ] Configure firewall rules (allow only 80/443 inbound)
 - [ ] Use Docker network isolation (no `host` mode)
-- [ ] Enable rate limiting in Nginx
+- [ ] Configure rate limiting in application or via Caddy plugins
 - [ ] Set up fail2ban for brute force protection
 
 ## Environment-Specific Notes
@@ -712,15 +739,17 @@ docker-compose logs -f app-green
 docker-compose logs app | jq 'select(.level == "ERROR")'
 ```
 
-**Nginx logs:**
+**Caddy logs:**
 ```bash
-docker-compose logs -f nginx
+# System Caddy (staging/production)
+sudo journalctl -u caddy -f
 
-# Access log
-docker-compose exec nginx tail -f /var/log/nginx/access.log
+# Access logs
+sudo tail -f /var/log/caddy/staging.toronto.log  # Staging
+sudo tail -f /var/log/caddy/toronto.log          # Production
 
-# Error log
-docker-compose exec nginx tail -f /var/log/nginx/error.log
+# Docker Caddy (local development)
+docker compose logs -f caddy
 ```
 
 ### Metrics

@@ -4,6 +4,8 @@
 **Date**: 2026-01-28  
 **Phase**: 0 (Research & Technical Decisions)
 
+> **Note**: This document reflects the original research decisions. The project has since migrated from nginx to **Caddy** for the reverse proxy. See [`docs/deploy/caddy.md`](../../docs/deploy/caddy.md) for current implementation. Historical nginx references are preserved below for context.
+
 ## Research Questions
 
 This document resolves all technical unknowns from the specification and Technical Context. Each decision includes rationale and alternatives considered.
@@ -41,6 +43,8 @@ This document resolves all technical unknowns from the specification and Technic
 ## 2. Blue-Green Deployment Implementation
 
 ### Decision: Nginx Reverse Proxy with Dynamic Upstream Switching
+
+> **Implementation Update (2026-02-12)**: The project now uses **Caddy** instead of nginx. Caddy provides automatic HTTPS, simpler configuration, and graceful reloads. The architectural principles below still apply. See [`docs/deploy/caddy.md`](../../docs/deploy/caddy.md) for current implementation.
 
 **Rationale:**
 - **Zero downtime**: Traffic switches atomically after new version passes health checks
