@@ -711,10 +711,25 @@ func loadTemplates(commitHash string, templatesSubPath string, additionalFiles .
 				pattern := filepath.Join(absPath, "*.html")
 				tmpl := template.New("").Funcs(funcMap)
 
+				// Derive the base directory by stripping the templatesSubPath suffix.
+				// For example, if absPath is "/app/web/dev/templates" and
+				// templatesSubPath is "web/dev/templates", baseDir is "/app".
+				absSubPath, _ := filepath.Abs(templatesSubPath)
+				baseDir := filepath.Dir(absPath)
+				if rel, err := filepath.Rel(absSubPath, absPath); err == nil && rel == "." {
+					// candidate matched templatesSubPath directly — base is cwd
+					baseDir, _ = os.Getwd()
+				} else {
+					// Strip templatesSubPath suffix from absPath to get the base
+					suffix := string(filepath.Separator) + filepath.Clean(templatesSubPath)
+					if strings.HasSuffix(absPath, suffix) {
+						baseDir = strings.TrimSuffix(absPath, suffix)
+					}
+				}
+
 				// Load any additional files first (e.g., shared partials)
 				for _, additionalFile := range additionalFiles {
-					// Try to resolve additional file path relative to the templates directory
-					additionalPath := filepath.Join(filepath.Dir(absPath), additionalFile)
+					additionalPath := filepath.Join(baseDir, additionalFile)
 					if _, err := os.Stat(additionalPath); err == nil {
 						tmpl, _ = tmpl.ParseFiles(additionalPath)
 					}
