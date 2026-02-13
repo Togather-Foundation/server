@@ -173,8 +173,8 @@ func (s *Server) registerTools() {
 	// organizations tool - list organizations with filters OR get a specific organization by ULID
 	s.mcp.AddTool(organizationTools.OrganizationsTool(), organizationTools.OrganizationsHandler)
 
-	// add_organization tool - create new organizations
-	s.mcp.AddTool(organizationTools.AddOrganizationTool(), organizationTools.AddOrganizationHandler)
+	// TODO(srv-d7cnu): add_organization tool disabled - Organization creation broken after rebase
+	// s.mcp.AddTool(organizationTools.AddOrganizationTool(), organizationTools.AddOrganizationHandler)
 
 	// Register search tools (server-rupi)
 	searchTools := tools.NewSearchTools(s.eventsService, s.placesService, s.orgService, s.baseURL)
