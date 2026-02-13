@@ -2,6 +2,12 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- WORKAROUND: Some PostGIS Docker images don't populate spatial_ref_sys automatically
+-- Manually insert SRID 4326 (WGS 84) which is required for geography/geometry operations
+INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, proj4text, srtext)
+VALUES (4326, 'EPSG', 4326, '+proj=longlat +datum=WGS84 +no_defs', 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]')
+ON CONFLICT (srid) DO NOTHING;
+
 CREATE TABLE organizations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ulid TEXT NOT NULL UNIQUE,

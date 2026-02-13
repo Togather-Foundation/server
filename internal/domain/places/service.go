@@ -57,6 +57,15 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 	filters.City = strings.TrimSpace(values.Get("city"))
 	filters.Query = strings.TrimSpace(values.Get("q"))
 
+	// Parse proximity parameters
+	lat, lon, radius, err := parseProximityParams(values)
+	if err != nil {
+		return filters, pagination, err
+	}
+	filters.Latitude = lat
+	filters.Longitude = lon
+	filters.RadiusKm = radius
+
 	limit, err := parseLimit(values)
 	if err != nil {
 		return filters, pagination, err
@@ -82,6 +91,61 @@ func parseLimit(values url.Values) (int, error) {
 		return 0, FilterError{Field: "limit", Message: "must be between 1 and 200"}
 	}
 	return parsed, nil
+}
+
+func parseProximityParams(values url.Values) (*float64, *float64, *float64, error) {
+	rawLat := strings.TrimSpace(values.Get("near_lat"))
+	rawLon := strings.TrimSpace(values.Get("near_lon"))
+	rawRadius := strings.TrimSpace(values.Get("radius"))
+
+	// If none provided, no proximity search
+	if rawLat == "" && rawLon == "" && rawRadius == "" {
+		return nil, nil, nil, nil
+	}
+
+	// If any lat/lon provided, both must be provided
+	if (rawLat == "" && rawLon != "") || (rawLat != "" && rawLon == "") {
+		return nil, nil, nil, FilterError{
+			Field:   "near_lat,near_lon",
+			Message: "both near_lat and near_lon must be provided for proximity search",
+		}
+	}
+
+	// Parse latitude
+	lat, err := strconv.ParseFloat(rawLat, 64)
+	if err != nil {
+		return nil, nil, nil, FilterError{Field: "near_lat", Message: "must be a valid number"}
+	}
+	if lat < -90 || lat > 90 {
+		return nil, nil, nil, FilterError{Field: "near_lat", Message: "must be between -90 and 90"}
+	}
+
+	// Parse longitude
+	lon, err := strconv.ParseFloat(rawLon, 64)
+	if err != nil {
+		return nil, nil, nil, FilterError{Field: "near_lon", Message: "must be a valid number"}
+	}
+	if lon < -180 || lon > 180 {
+		return nil, nil, nil, FilterError{Field: "near_lon", Message: "must be between -180 and 180"}
+	}
+
+	// Parse radius (default 10km if not provided)
+	radius := 10.0
+	if rawRadius != "" {
+		parsed, err := strconv.ParseFloat(rawRadius, 64)
+		if err != nil {
+			return nil, nil, nil, FilterError{Field: "radius", Message: "must be a valid number"}
+		}
+		if parsed <= 0 {
+			return nil, nil, nil, FilterError{Field: "radius", Message: "must be greater than 0"}
+		}
+		if parsed > 100 {
+			return nil, nil, nil, FilterError{Field: "radius", Message: "must be 100km or less"}
+		}
+		radius = parsed
+	}
+
+	return &lat, &lon, &radius, nil
 }
 
 func ValidateULID(ulid string) error {

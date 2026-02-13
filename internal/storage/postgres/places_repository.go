@@ -41,6 +41,7 @@ type placeRow struct {
 	FederationURI           *string
 	DeletedAt               pgtype.Timestamptz
 	Reason                  pgtype.Text
+	DistanceKm              *float64
 	CreatedAt               pgtype.Timestamptz
 	UpdatedAt               pgtype.Timestamptz
 }
@@ -67,12 +68,70 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 	}
 	limitPlusOne := limit + 1
 
-	rows, err := queryer.Query(ctx, `
+	// Build query based on whether proximity search is active
+	useProximity := filters.Latitude != nil && filters.Longitude != nil
+	var query string
+	var args []interface{}
+
+	if useProximity {
+		// Proximity search query with distance calculation
+		radiusMeters := *filters.RadiusKm * 1000.0
+
+		// Build WHERE conditions dynamically based on filters
+		var whereClauses []string
+		var queryArgs []interface{}
+
+		// First 3 args are for proximity (lon, lat, radius)
+		whereClauses = append(whereClauses, "p.geo_point IS NOT NULL")
+		whereClauses = append(whereClauses, "ST_DWithin(p.geo_point::geography, ST_MakePoint($1, $2)::geography, $3)")
+		queryArgs = append(queryArgs, *filters.Longitude, *filters.Latitude, radiusMeters)
+		argPos := 4
+
+		// Add city filter if provided
+		if filters.City != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("p.address_locality ILIKE $%d", argPos))
+			queryArgs = append(queryArgs, "%"+filters.City+"%")
+			argPos++
+		}
+
+		// Add query filter if provided
+		if filters.Query != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("(p.name ILIKE $%d OR COALESCE(p.description, '') ILIKE $%d)", argPos, argPos+1))
+			queryArgs = append(queryArgs, "%"+filters.Query+"%", "%"+filters.Query+"%")
+			argPos += 2
+		}
+
+		// Add LIMIT
+		queryArgs = append(queryArgs, limitPlusOne)
+
+		whereClause := strings.Join(whereClauses, " AND ")
+
+		query = fmt.Sprintf(`
 SELECT p.id, p.ulid, p.name, p.description,
        p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
        p.latitude, p.longitude,
        p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type,
        p.federation_uri,
+       p.deleted_at, p.deletion_reason,
+       ST_Distance(p.geo_point::geography, ST_MakePoint($1, $2)::geography) / 1000.0 AS distance_km,
+       p.created_at, p.updated_at
+  FROM places p
+ WHERE %s
+ ORDER BY distance_km ASC, p.ulid ASC
+ LIMIT $%d
+`, whereClause, argPos)
+
+		args = queryArgs
+	} else {
+		// Standard query without proximity
+		query = `
+SELECT p.id, p.ulid, p.name, p.description,
+       p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
+       p.latitude, p.longitude,
+       p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type,
+       p.federation_uri,
+       p.deleted_at, p.deletion_reason,
+       NULL::numeric AS distance_km,
        p.created_at, p.updated_at
   FROM places p
  WHERE ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
@@ -84,13 +143,17 @@ SELECT p.id, p.ulid, p.name, p.description,
    )
  ORDER BY p.created_at ASC, p.ulid ASC
  LIMIT $5
-`,
-		filters.City,
-		filters.Query,
-		cursorTimestamp,
-		cursorULID,
-		limitPlusOne,
-	)
+`
+		args = []interface{}{
+			filters.City,
+			filters.Query,
+			cursorTimestamp,
+			cursorULID,
+			limitPlusOne,
+		}
+	}
+
+	rows, err := queryer.Query(ctx, query, args...)
 	if err != nil {
 		return places.ListResult{}, fmt.Errorf("list places: %w", err)
 	}
@@ -117,6 +180,9 @@ SELECT p.id, p.ulid, p.name, p.description,
 			&row.MaximumAttendeeCapacity,
 			&row.VenueType,
 			&row.FederationURI,
+			&row.DeletedAt,
+			&row.Reason,
+			&row.DistanceKm,
 			&row.CreatedAt,
 			&row.UpdatedAt,
 		); err != nil {
@@ -211,6 +277,7 @@ func placeRowToDomain(row *placeRow) places.Place {
 		MaximumAttendeeCapacity: int4Ptr(row.MaximumAttendeeCapacity),
 		VenueType:               derefString(row.VenueType),
 		FederationURI:           derefString(row.FederationURI),
+		DistanceKm:              row.DistanceKm,
 	}
 	if row.CreatedAt.Valid {
 		place.CreatedAt = row.CreatedAt.Time

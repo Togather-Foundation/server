@@ -68,6 +68,7 @@ type Place struct {
 	Email                   string          `json:"email,omitempty"`
 	URL                     string          `json:"url,omitempty"`
 	MaximumAttendeeCapacity int             `json:"maximumAttendeeCapacity,omitempty"`
+	DistanceKm              *float64        `json:"sel:distanceKm,omitempty"` // Custom SEL field for proximity search
 }
 
 // NewPlace creates a Place with @type pre-set.

@@ -113,11 +113,23 @@ func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// WORKAROUND: PostGIS extension doesn't always populate spatial_ref_sys automatically
+	// Manually insert SRID 4326 if not present to support geography/geometry operations
+	// Do this on every reset to ensure it's present even if container was just created
+	_, err := pool.Exec(ctx, `
+		INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, proj4text, srtext)
+		VALUES (4326, 'EPSG', 4326, '+proj=longlat +datum=WGS84 +no_defs',
+		'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]')
+		ON CONFLICT (srid) DO NOTHING
+	`)
+	require.NoError(t, err, "Failed to populate SRID 4326 in spatial_ref_sys")
+
 	rows, err := pool.Query(ctx, `
 SELECT tablename
   FROM pg_tables
  WHERE schemaname = 'public'
    AND tablename <> 'schema_migrations'
+   AND tablename <> 'spatial_ref_sys'
  ORDER BY tablename;
 `)
 	require.NoError(t, err)

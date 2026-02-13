@@ -35,7 +35,7 @@ func NewPlaceTools(placesService *places.Service, baseURL string) *PlaceTools {
 func (t *PlaceTools) PlacesTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "places",
-		Description: "List places with optional filters, or get a specific place by ULID. If 'id' is provided, returns a single JSON-LD formatted place. Otherwise, returns a JSON array of places matching the filter criteria.",
+		Description: "List places with optional filters, or get a specific place by ULID. If 'id' is provided, returns a single JSON-LD formatted place. Otherwise, returns a JSON array of places matching the filter criteria. Supports proximity search via near_lat, near_lon, and radius parameters.",
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
@@ -47,8 +47,19 @@ func (t *PlaceTools) PlacesTool() mcp.Tool {
 					"type":        "string",
 					"description": "Search query to filter places by name or description",
 				},
-				// TODO(srv-hsnt3): Add proximity search params (near_lat, near_lon, radius)
-				// once places.Filters supports geo filtering on main
+				"near_lat": map[string]interface{}{
+					"type":        "number",
+					"description": "Latitude for proximity search (requires near_lon, must be between -90 and 90)",
+				},
+				"near_lon": map[string]interface{}{
+					"type":        "number",
+					"description": "Longitude for proximity search (requires near_lat, must be between -180 and 180)",
+				},
+				"radius": map[string]interface{}{
+					"type":        "number",
+					"description": "Search radius in kilometers (default: 10, max: 100)",
+					"default":     10,
+				},
 				"limit": map[string]interface{}{
 					"type":        "integer",
 					"description": "Maximum number of places to return (default: 50, max: 200)",
@@ -71,10 +82,13 @@ func (t *PlaceTools) PlacesHandler(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	args := struct {
-		ID     string `json:"id"`
-		Query  string `json:"query"`
-		Limit  int    `json:"limit"`
-		Cursor string `json:"cursor"`
+		ID      string   `json:"id"`
+		Query   string   `json:"query"`
+		NearLat *float64 `json:"near_lat"`
+		NearLon *float64 `json:"near_lon"`
+		Radius  *float64 `json:"radius"`
+		Limit   int      `json:"limit"`
+		Cursor  string   `json:"cursor"`
 	}{
 		Limit: 50,
 	}
@@ -95,7 +109,7 @@ func (t *PlaceTools) PlacesHandler(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	// Otherwise, list places with filters
-	return t.listPlaces(ctx, args.Query, args.Limit, args.Cursor)
+	return t.listPlaces(ctx, args.Query, args.NearLat, args.NearLon, args.Radius, args.Limit, args.Cursor)
 }
 
 // getPlaceByID retrieves a single place by ULID.
@@ -161,9 +175,8 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 }
 
 // listPlaces retrieves a list of places with optional filters and pagination.
-// Supports filtering by query text.
-// TODO(srv-hsnt3): Add proximity search support once places.Filters supports geo filtering.
-func (t *PlaceTools) listPlaces(ctx context.Context, query string, limit int, cursor string) (*mcp.CallToolResult, error) {
+// Supports filtering by query text and proximity search (near_lat, near_lon, radius).
+func (t *PlaceTools) listPlaces(ctx context.Context, query string, nearLat *float64, nearLon *float64, radius *float64, limit int, cursor string) (*mcp.CallToolResult, error) {
 
 	const maxListLimit = 200
 
@@ -178,6 +191,15 @@ func (t *PlaceTools) listPlaces(ctx context.Context, query string, limit int, cu
 	values := url.Values{}
 	if strings.TrimSpace(query) != "" {
 		values.Set("q", strings.TrimSpace(query))
+	}
+	if nearLat != nil {
+		values.Set("near_lat", strconv.FormatFloat(*nearLat, 'f', -1, 64))
+	}
+	if nearLon != nil {
+		values.Set("near_lon", strconv.FormatFloat(*nearLon, 'f', -1, 64))
+	}
+	if radius != nil {
+		values.Set("radius", strconv.FormatFloat(*radius, 'f', -1, 64))
 	}
 	values.Set("limit", strconv.Itoa(limit))
 	if strings.TrimSpace(cursor) != "" {
@@ -196,7 +218,11 @@ func (t *PlaceTools) listPlaces(ctx context.Context, query string, limit int, cu
 
 	items := make([]map[string]any, 0, len(result.Places))
 	for _, place := range result.Places {
-		items = append(items, buildPlaceListItem(place, t.baseURL))
+		item := buildPlaceListItem(place, t.baseURL)
+		if place.DistanceKm != nil {
+			item["sel:distanceKm"] = *place.DistanceKm
+		}
+		items = append(items, item)
 	}
 
 	response := map[string]any{

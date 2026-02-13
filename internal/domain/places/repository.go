@@ -27,13 +27,17 @@ type Place struct {
 	VenueType               string
 	FederationURI           string
 	Lifecycle               string
+	DistanceKm              *float64
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
 }
 
 type Filters struct {
-	City  string
-	Query string
+	City      string
+	Query     string
+	Latitude  *float64
+	Longitude *float64
+	RadiusKm  *float64
 }
 
 type Pagination struct {

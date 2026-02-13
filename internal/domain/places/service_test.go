@@ -80,3 +80,133 @@ func assertFilterError(t *testing.T, err error, field string, message string) {
 
 	require.Failf(t, "unexpected error type", "err=%T %v", err, err)
 }
+
+func TestParseFiltersProximityValid(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+	values.Set("radius", "5")
+
+	filters, _, err := ParseFilters(values)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.Latitude)
+	require.NotNil(t, filters.Longitude)
+	require.NotNil(t, filters.RadiusKm)
+	require.Equal(t, 43.6532, *filters.Latitude)
+	require.Equal(t, -79.3832, *filters.Longitude)
+	require.Equal(t, 5.0, *filters.RadiusKm)
+}
+
+func TestParseFiltersProximityDefaultRadius(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+
+	filters, _, err := ParseFilters(values)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.RadiusKm)
+	require.Equal(t, 10.0, *filters.RadiusKm) // Default is 10km
+}
+
+func TestParseFiltersProximityLatOutOfRange(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "91")
+	values.Set("near_lon", "-79.3832")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_lat", "must be between -90 and 90")
+
+	values.Set("near_lat", "-91")
+	_, _, err = ParseFilters(values)
+
+	assertFilterError(t, err, "near_lat", "must be between -90 and 90")
+}
+
+func TestParseFiltersProximityLonOutOfRange(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "181")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_lon", "must be between -180 and 180")
+
+	values.Set("near_lon", "-181")
+	_, _, err = ParseFilters(values)
+
+	assertFilterError(t, err, "near_lon", "must be between -180 and 180")
+}
+
+func TestParseFiltersProximityRadiusTooLarge(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+	values.Set("radius", "101")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "radius", "must be 100km or less")
+}
+
+func TestParseFiltersProximityRadiusZero(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+	values.Set("radius", "0")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "radius", "must be greater than 0")
+}
+
+func TestParseFiltersProximityLatWithoutLon(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_lat,near_lon", "both near_lat and near_lon must be provided for proximity search")
+}
+
+func TestParseFiltersProximityLonWithoutLat(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lon", "-79.3832")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_lat,near_lon", "both near_lat and near_lon must be provided for proximity search")
+}
+
+func TestParseFiltersProximityInvalidLatNumber(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "not-a-number")
+	values.Set("near_lon", "-79.3832")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_lat", "must be a valid number")
+}
+
+func TestParseFiltersProximityInvalidLonNumber(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "not-a-number")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_lon", "must be a valid number")
+}
+
+func TestParseFiltersProximityInvalidRadiusNumber(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+	values.Set("radius", "not-a-number")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "radius", "must be a valid number")
+}

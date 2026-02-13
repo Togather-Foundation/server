@@ -50,6 +50,9 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		if place.Latitude != nil && place.Longitude != nil {
 			item.Geo = schema.NewGeoCoordinates(*place.Latitude, *place.Longitude)
 		}
+		if place.DistanceKm != nil {
+			item.DistanceKm = place.DistanceKm
+		}
 		items = append(items, item)
 	}
 
