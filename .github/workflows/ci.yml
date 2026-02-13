@@ -46,7 +46,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -119,7 +121,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run unit tests
         run: go test -v -race -coverprofile=coverage.out ./internal/...
@@ -163,7 +167,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run contract tests
         run: go test -v -race ./tests/contracts/...
@@ -228,7 +234,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run integration tests
         run: go test -v -race -p 1 -coverprofile=coverage-integration.out ./tests/integration/...
@@ -296,7 +304,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run batch integration tests
         run: go test -v -race -p 1 ./tests/integration_batch/...
@@ -357,7 +367,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run federation sync integration tests
         run: go test -v -race -p 1 ./tests/integration/... -run 'Federation|ChangeFeed|Sync'
@@ -421,7 +433,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Run E2E tests
         run: go test -v -race ./tests/e2e/...
@@ -502,7 +516,9 @@ jobs:
         run: |
           mkdir -p web
           echo "# robots.txt placeholder" > web/robots.txt
-          echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' > web/sitemap.xml
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
 
       - name: Build server
         run: make build
