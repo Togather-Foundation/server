@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
@@ -35,17 +36,18 @@ import (
 //	// Serve with configured transport
 //	err := mcp.Serve(ctx, srv.MCPServer(), transportCfg, authStore, rateLimitCfg)
 type Server struct {
-	mcp           *mcpserver.MCPServer
-	eventsService *events.Service
-	ingestService *events.IngestService
-	placesService *places.Service
-	orgService    *organizations.Service
-	baseURL       string
-	name          string
-	version       string
-	transport     string
-	contextDir    string // Directory containing JSON-LD context files
-	openAPIPath   string // Path to OpenAPI specification YAML file
+	mcp              *mcpserver.MCPServer
+	eventsService    *events.Service
+	ingestService    *events.IngestService
+	placesService    *places.Service
+	orgService       *organizations.Service
+	developerService *developers.Service
+	baseURL          string
+	name             string
+	version          string
+	transport        string
+	contextDir       string // Directory containing JSON-LD context files
+	openAPIPath      string // Path to OpenAPI specification YAML file
 }
 
 // Config holds configuration for the MCP server.
@@ -101,6 +103,7 @@ func NewServer(
 	ingestService *events.IngestService,
 	placesService *places.Service,
 	orgService *organizations.Service,
+	developerService *developers.Service,
 	baseURL string,
 ) *Server {
 	// Initialize MCP server with full capabilities
@@ -115,17 +118,18 @@ func NewServer(
 	)
 
 	srv := &Server{
-		mcp:           mcpServer,
-		eventsService: eventsService,
-		ingestService: ingestService,
-		placesService: placesService,
-		orgService:    orgService,
-		baseURL:       baseURL,
-		name:          cfg.Name,
-		version:       cfg.Version,
-		transport:     cfg.Transport,
-		contextDir:    cfg.ContextDir,
-		openAPIPath:   cfg.OpenAPIPath,
+		mcp:              mcpServer,
+		eventsService:    eventsService,
+		ingestService:    ingestService,
+		placesService:    placesService,
+		orgService:       orgService,
+		developerService: developerService,
+		baseURL:          baseURL,
+		name:             cfg.Name,
+		version:          cfg.Version,
+		transport:        cfg.Transport,
+		contextDir:       cfg.ContextDir,
+		openAPIPath:      cfg.OpenAPIPath,
 	}
 
 	// Register tools, resources, and prompts
@@ -177,6 +181,17 @@ func (s *Server) registerTools() {
 
 	// search tool - query events, places, and organizations
 	s.mcp.AddTool(searchTools.SearchTool(), searchTools.SearchHandler)
+
+	// Register developer tools (API key management)
+	if s.developerService != nil {
+		developerTools := tools.NewDeveloperTools(s.developerService, s.baseURL)
+
+		// api_keys tool - list all keys OR get specific key usage with daily breakdown
+		s.mcp.AddTool(developerTools.APIKeysTool(), developerTools.APIKeysHandler)
+
+		// manage_api_key tool - create or revoke API keys
+		s.mcp.AddTool(developerTools.ManageAPIKeyTool(), developerTools.ManageAPIKeyHandler)
+	}
 }
 
 // registerResources registers all MCP resources for events, places, and organizations.

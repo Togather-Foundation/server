@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
@@ -78,6 +79,7 @@ func run() error {
 	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
+	developerService := developers.NewService(repo.Developers(), repo.Auth().APIKeys())
 
 	log.Info().Msg("Domain services initialized")
 
@@ -94,6 +96,7 @@ func run() error {
 		ingestService,
 		placesService,
 		orgService,
+		developerService,
 		cfg.Base.Server.BaseURL,
 	)
 
