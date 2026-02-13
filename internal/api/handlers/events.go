@@ -122,7 +122,7 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 			problem.Write(w, r, http.StatusBadRequest,
 				"https://sel.events/problems/previously-rejected",
 				"Previously Rejected",
-				fmt.Errorf("This event was reviewed on %s and rejected: %s",
+				fmt.Errorf("this event was reviewed on %s and rejected: %s",
 					rejErr.ReviewedAt.Format(time.RFC3339), rejErr.Reason),
 				h.Env)
 			return

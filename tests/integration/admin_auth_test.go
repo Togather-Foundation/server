@@ -49,7 +49,10 @@ func TestAdminLoginSuccess(t *testing.T) {
 	require.NotEmpty(t, token, "expected non-empty token")
 
 	// Verify JWT can be validated
-	jwtManager := auth.NewJWTManager(env.Config.Auth.JWTSecret, env.Config.Auth.JWTExpiry, "togather")
+	// Server uses HKDF-derived key and issuer "sel.events" (not the raw secret)
+	adminKey, err := auth.DeriveAdminJWTKey([]byte(env.Config.Auth.JWTSecret))
+	require.NoError(t, err, "failed to derive admin JWT key")
+	jwtManager := auth.NewJWTManagerFromKey(adminKey, env.Config.Auth.JWTExpiry, "sel.events")
 	claims, err := jwtManager.Validate(token)
 	require.NoError(t, err, "expected valid JWT")
 	require.Equal(t, username, claims.Subject)
@@ -249,8 +252,10 @@ func TestAdminJWTCookie(t *testing.T) {
 func TestAdminJWTExpired(t *testing.T) {
 	env := setupTestEnv(t)
 
-	// Create an expired JWT manually
-	jwtManager := auth.NewJWTManager(env.Config.Auth.JWTSecret, -1, "togather") // negative expiry = expired
+	// Create an expired JWT manually using HKDF-derived key and correct issuer
+	adminKey, err := auth.DeriveAdminJWTKey([]byte(env.Config.Auth.JWTSecret))
+	require.NoError(t, err, "failed to derive admin JWT key")
+	jwtManager := auth.NewJWTManagerFromKey(adminKey, -1, "sel.events") // negative expiry = expired
 	expiredToken, err := jwtManager.Generate("admin", "admin")
 	require.NoError(t, err)
 

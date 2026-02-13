@@ -250,7 +250,8 @@ func TestFetchUserProfile_NoEmail_FallbackToEmailsEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		if r.URL.Path == "/user" {
+		switch r.URL.Path {
+		case "/user":
 			// User profile without email (private email setting)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"id":    int64(12345),
@@ -258,7 +259,7 @@ func TestFetchUserProfile_NoEmail_FallbackToEmailsEndpoint(t *testing.T) {
 				"email": "", // Empty email
 				"name":  "Test User",
 			})
-		} else if r.URL.Path == "/user/emails" {
+		case "/user/emails":
 			// Emails endpoint
 			_ = json.NewEncoder(w).Encode([]map[string]interface{}{
 				{
@@ -272,7 +273,7 @@ func TestFetchUserProfile_NoEmail_FallbackToEmailsEndpoint(t *testing.T) {
 					"verified": true,
 				},
 			})
-		} else {
+		default:
 			http.NotFound(w, r)
 		}
 	}))

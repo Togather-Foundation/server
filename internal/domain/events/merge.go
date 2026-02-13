@@ -14,35 +14,25 @@ import "strings"
 // plus a boolean indicating whether any changes were made.
 func AutoMergeFields(existing *Event, input EventInput, existingTrust int, newTrust int) (UpdateEventParams, bool) {
 	var params UpdateEventParams
-	changed := false
+	var changed bool
 
 	// We do NOT merge Name (dedup hash matched on name; changing it would change the hash)
 	// We do NOT merge LifecycleState
 
 	// Description: fill gap or overwrite with higher trust
-	if mergeStringField(existing.Description, input.Description, existingTrust, newTrust, &params.Description) {
-		changed = true
-	}
+	changed = mergeStringField(existing.Description, input.Description, existingTrust, newTrust, &params.Description) || changed
 
 	// ImageURL: fill gap or overwrite with higher trust
-	if mergeStringField(existing.ImageURL, input.Image, existingTrust, newTrust, &params.ImageURL) {
-		changed = true
-	}
+	changed = mergeStringField(existing.ImageURL, input.Image, existingTrust, newTrust, &params.ImageURL) || changed
 
 	// PublicURL: fill gap or overwrite with higher trust
-	if mergeStringField(existing.PublicURL, input.URL, existingTrust, newTrust, &params.PublicURL) {
-		changed = true
-	}
+	changed = mergeStringField(existing.PublicURL, input.URL, existingTrust, newTrust, &params.PublicURL) || changed
 
 	// EventDomain: fill gap or overwrite with higher trust
-	if mergeStringField(existing.EventDomain, input.EventDomain, existingTrust, newTrust, &params.EventDomain) {
-		changed = true
-	}
+	changed = mergeStringField(existing.EventDomain, input.EventDomain, existingTrust, newTrust, &params.EventDomain) || changed
 
 	// Keywords: fill gap or overwrite with higher trust
-	if mergeKeywordsField(existing.Keywords, input.Keywords, existingTrust, newTrust, &params.Keywords) {
-		changed = true
-	}
+	changed = mergeKeywordsField(existing.Keywords, input.Keywords, existingTrust, newTrust, &params.Keywords) || changed
 
 	return params, changed
 }

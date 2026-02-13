@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 var (
@@ -50,6 +51,12 @@ func initShared(t *testing.T) {
 			tcpostgres.WithUsername("togather"),
 			tcpostgres.WithPassword("togather-test-password"),
 			testcontainers.WithReuseByName(sharedContainerName),
+			// PostGIS restarts after initial extension loading, so wait for
+			// readiness log twice, then confirm the port is actually listening.
+			testcontainers.WithAdditionalWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(90*time.Second),
+				wait.ForListeningPort("5432/tcp"),
+			),
 		)
 		if err != nil {
 			sharedInitErr = err
@@ -70,8 +77,15 @@ func initShared(t *testing.T) {
 			return
 		}
 
-		// Verify connection
-		err = pool.Ping(ctx)
+		// Verify connection with retries — PostGIS may still be initializing
+		// extensions even after the port is listening.
+		for i := 0; i < 10; i++ {
+			err = pool.Ping(ctx)
+			if err == nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
 		if err != nil {
 			sharedInitErr = err
 			return

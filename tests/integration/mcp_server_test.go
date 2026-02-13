@@ -855,7 +855,9 @@ func TestMCPCreateOrganization(t *testing.T) {
 			"url":       "https://example.com",
 		}
 
-		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+		// add_organization tool is currently unregistered (commented out in server.go)
+		// so calling it should return an error from the MCP server
+		_, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
 				Name: "add_organization",
 				Arguments: map[string]any{
@@ -863,11 +865,9 @@ func TestMCPCreateOrganization(t *testing.T) {
 				},
 			},
 		})
-		require.NoError(t, err)
-
-		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
-		require.True(t, ok)
-		require.Contains(t, textContent.Text, "temporarily disabled")
+		require.Error(t, err, "expected error calling unregistered add_organization tool")
+		require.Contains(t, err.Error(), "add_organization",
+			"error should reference the tool name")
 	})
 }
 
