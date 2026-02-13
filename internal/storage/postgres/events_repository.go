@@ -1107,13 +1107,6 @@ func (tc *txCommitter) Rollback(ctx context.Context) error {
 	return tc.tx.Rollback(ctx)
 }
 
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
 func intPtr(value *int32) *int {
 	if value == nil {
 		return nil

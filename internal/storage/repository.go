@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -20,6 +21,7 @@ type Repository interface {
 	Provenance() ProvenanceRepository
 	Federation() FederationRepository
 	Auth() AuthRepository
+	Developers() DeveloperRepository
 
 	WithTx(ctx context.Context, fn func(context.Context, Repository) error) error
 }
@@ -35,6 +37,8 @@ type SourceRepository interface{}
 type ProvenanceRepository = provenance.Repository
 
 type FederationRepository = federation.Repository
+
+type DeveloperRepository = developers.Repository
 
 type AuthRepository interface {
 	APIKeys() APIKeyRepository

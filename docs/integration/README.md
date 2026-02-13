@@ -28,6 +28,10 @@ You're building systems that submit events to or consume events from SEL:
 1. **[API Guide](API_GUIDE.md)** - Event retrieval, filtering, pagination
 2. **[Authentication](AUTHENTICATION.md)** - Rate limits for public endpoints
 
+### For MCP Clients
+
+1. **[MCP Server](MCP_SERVER.md)** - Tools, resources, prompts, transports
+
 ## Minimal Scraper Example
 
 ```javascript

@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest
+.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -27,6 +27,7 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  make build         - Build the server binary"
+	@echo "  make webfiles      - Generate web/robots.txt and sitemap.xml"
 	@echo "  make test          - Run all tests"
 	@echo "  make test-ci       - Run tests exactly as CI does (race detector, verbose)"
 	@echo "  make lint          - Run golangci-lint"
@@ -97,11 +98,16 @@ LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VE
            -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=$(BUILD_DATE)'
 
 # Build the server
-build:
+build: webfiles
 	@echo "Building server..."
 	@mkdir -p bin
 	@$(RUN) go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
 	@ln -sf bin/togather-server server
+
+# Generate web files for embedding (robots.txt, sitemap.xml)
+webfiles:
+	@echo "Generating web files..."
+	@./server webfiles --domain localhost:8080 --output web/
 
 # Run all tests
 test:
@@ -364,7 +370,7 @@ docker-compose-lint:
 	@echo "✓ docker-compose.blue-green.yml is valid"
 
 # Run full CI pipeline locally
-ci: sqlc-generate lint-ci vulncheck
+ci: sqlc-generate lint-ci vulncheck webfiles
 	@echo ""
 	@echo "=========================================="
 	@echo "Starting CI pipeline at $$(date '+%H:%M:%S')"

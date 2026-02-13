@@ -20,6 +20,7 @@ type Repository struct {
 	provenance    *ProvenanceRepository
 	federation    *FederationRepository
 	auth          *AuthRepository
+	developers    *DeveloperRepositoryAdapter
 }
 
 // NewRepository creates a new PostgreSQL-backed repository
@@ -36,6 +37,7 @@ func NewRepository(pool *pgxpool.Pool) (*Repository, error) {
 		provenance:    &ProvenanceRepository{pool: pool},
 		federation:    NewFederationRepository(pool),
 		auth:          &AuthRepository{pool: pool},
+		developers:    NewDeveloperRepositoryAdapter(pool),
 	}, nil
 }
 
@@ -92,6 +94,13 @@ func (r *Repository) Auth() storage.AuthRepository {
 	return r.auth
 }
 
+// Developers returns the developers repository
+func (r *Repository) Developers() storage.DeveloperRepository {
+	// Note: Developer repository handles its own transactions via BeginTx
+	// so we don't need to support WithTx pattern here
+	return r.developers
+}
+
 // WithTx executes a function within a database transaction
 func (r *Repository) WithTx(ctx context.Context, fn func(context.Context, storage.Repository) error) error {
 	tx, err := r.pool.Begin(ctx)
@@ -108,6 +117,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(context.Context, storag
 		provenance:    &ProvenanceRepository{pool: r.pool, tx: tx},
 		federation:    NewFederationRepository(r.pool),
 		auth:          &AuthRepository{pool: r.pool, tx: tx},
+		developers:    r.developers, // Developer repo handles its own transactions
 	}
 
 	if err := fn(ctx, txRepo); err != nil {

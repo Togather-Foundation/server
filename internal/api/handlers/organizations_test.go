@@ -26,6 +26,10 @@ func (s stubOrganizationsRepo) GetByULID(_ context.Context, ulid string) (*organ
 	return s.getFn(ulid)
 }
 
+func (s stubOrganizationsRepo) Create(_ context.Context, _ organizations.CreateParams) (*organizations.Organization, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s stubOrganizationsRepo) SoftDelete(_ context.Context, _ string, _ string) error {
 	return errors.New("not implemented")
 }
