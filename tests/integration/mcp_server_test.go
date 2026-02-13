@@ -47,7 +47,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 
 	cli, err := client.NewInProcessClient(mcpServer.MCPServer())
 	require.NoError(t, err)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 	_, err = cli.Initialize(ctx, mcpTypes.InitializeRequest{
@@ -100,7 +100,7 @@ func TestMCPResources(t *testing.T) {
 
 	cli, err := client.NewInProcessClient(mcpServer.MCPServer())
 	require.NoError(t, err)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 	_, err = cli.Initialize(ctx, mcpTypes.InitializeRequest{
@@ -184,7 +184,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "Request without API key should be rejected")
 
@@ -196,7 +196,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 
 	resp2, err := http.DefaultClient.Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode, "Request with empty Authorization header should be rejected")
 
@@ -208,7 +208,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 
 	resp3, err := http.DefaultClient.Do(req3)
 	require.NoError(t, err)
-	defer resp3.Body.Close()
+	defer func() { _ = resp3.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp3.StatusCode, "Request with malformed Authorization should be rejected")
 }
@@ -259,7 +259,7 @@ func TestMCPAuthValidKey(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode, "Request with valid API key should succeed")
 
@@ -313,7 +313,7 @@ func TestMCPAuthInvalidKey(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "Request with invalid API key should be rejected")
 
@@ -325,7 +325,7 @@ func TestMCPAuthInvalidKey(t *testing.T) {
 
 	resp2, err := http.DefaultClient.Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode, "Request with too-short API key should be rejected")
 }
@@ -400,7 +400,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 
 	resp3, err := http.DefaultClient.Do(req3)
 	require.NoError(t, err)
-	defer resp3.Body.Close()
+	defer func() { _ = resp3.Body.Close() }()
 
 	require.Equal(t, http.StatusTooManyRequests, resp3.StatusCode, "Request 3 should be rate limited")
 	require.NotEmpty(t, resp3.Header.Get("Retry-After"), "Should include Retry-After header")
@@ -410,7 +410,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 func TestMCPCreateEvent(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -493,7 +493,7 @@ func TestMCPCreateEvent(t *testing.T) {
 func TestMCPGetEvent(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -594,7 +594,7 @@ func TestMCPGetEvent(t *testing.T) {
 func TestMCPListPlaces(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -654,7 +654,7 @@ func TestMCPListPlaces(t *testing.T) {
 func TestMCPGetPlace(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -715,7 +715,7 @@ func TestMCPGetPlace(t *testing.T) {
 func TestMCPCreatePlace(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -739,7 +739,7 @@ func TestMCPCreatePlace(t *testing.T) {
 func TestMCPListOrganizations(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -782,7 +782,7 @@ func TestMCPListOrganizations(t *testing.T) {
 func TestMCPGetOrganization(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -843,7 +843,7 @@ func TestMCPGetOrganization(t *testing.T) {
 func TestMCPCreateOrganization(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -875,7 +875,7 @@ func TestMCPCreateOrganization(t *testing.T) {
 func TestMCPSearch(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -1015,7 +1015,7 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 func TestMCPPrompts(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -1110,7 +1110,7 @@ func TestMCPPrompts(t *testing.T) {
 func TestMCPResourcesComplete(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -1180,7 +1180,7 @@ func TestMCPResourcesComplete(t *testing.T) {
 func TestMCPToolValidation(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -1242,7 +1242,7 @@ func TestMCPToolValidation(t *testing.T) {
 func TestMCPPagination(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 
@@ -1287,7 +1287,7 @@ func TestMCPPagination(t *testing.T) {
 func TestMCPErrorHandling(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 

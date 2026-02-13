@@ -21,7 +21,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
@@ -40,7 +40,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
@@ -52,7 +52,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Contains(t, resp.Header.Get("Content-Type"), "javascript")
@@ -68,7 +68,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 	})
@@ -80,7 +80,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, "no-cache, must-revalidate", resp.Header.Get("Cache-Control"))
 
@@ -90,7 +90,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 		resp, err = http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, "public, max-age=31536000, immutable", resp.Header.Get("Cache-Control"))
 	})
@@ -106,7 +106,7 @@ func TestAPIDocsDiscovery(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -126,7 +126,7 @@ func TestAPIDocsDiscovery(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 

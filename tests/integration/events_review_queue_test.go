@@ -41,7 +41,7 @@ func TestReviewQueue_HighConfidenceAutoFix(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body for debugging
 	var result map[string]any
@@ -97,7 +97,7 @@ func TestReviewQueue_LowConfidenceCorrection(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
@@ -153,7 +153,7 @@ func TestReviewQueue_OccurrenceReversedDates(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
@@ -235,7 +235,7 @@ func TestReviewQueue_FixedResubmit(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/ld+json")
 	resp2, err := env.Server.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	// Should auto-approve and return 201 Created (no longer needs review)
 	var result map[string]any
@@ -274,7 +274,7 @@ func TestReviewQueue_RejectedResubmit(t *testing.T) {
 	req1.Header.Set("Content-Type", "application/ld+json")
 	resp1, err1 := env.Server.Client().Do(req1)
 	require.NoError(t, err1)
-	defer resp1.Body.Close()
+	defer func() { _ = resp1.Body.Close() }()
 
 	require.Equal(t, http.StatusAccepted, resp1.StatusCode)
 
@@ -308,7 +308,7 @@ func TestReviewQueue_RejectedResubmit(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/ld+json")
 	resp2, err2 := env.Server.Client().Do(req2)
 	require.NoError(t, err2)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	var errResp map[string]any
 	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&errResp))
@@ -351,7 +351,7 @@ func TestReviewQueue_NormalEvent(t *testing.T) {
 	req.Header.Set("Content-Type", "application/ld+json")
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should receive 201 Created (NOT 202 Accepted)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
