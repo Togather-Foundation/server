@@ -24,7 +24,7 @@ func TestNewSchemaResources(t *testing.T) {
 		{
 			name:            "with empty path uses default",
 			openAPIPath:     "",
-			wantOpenAPIPath: "specs/001-sel-backend/contracts/openapi.yaml",
+			wantOpenAPIPath: "docs/api/openapi.yaml",
 		},
 	}
 

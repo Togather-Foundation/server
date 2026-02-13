@@ -64,7 +64,7 @@ type Server struct {
 //	    Version:     "1.0.0",
 //	    Transport:   "stdio", // or "sse", "http"
 //	    ContextDir:  "contexts",
-//	    OpenAPIPath: "specs/001-sel-backend/contracts/openapi.yaml",
+//	    OpenAPIPath: "docs/api/openapi.yaml",
 //	}
 type Config struct {
 	// Name is the human-readable server name (e.g., "Togather MCP Server").

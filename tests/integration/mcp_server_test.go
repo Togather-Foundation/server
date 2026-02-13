@@ -41,6 +41,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 
@@ -93,6 +94,7 @@ func TestMCPResources(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 
@@ -125,7 +127,7 @@ func TestMCPResources(t *testing.T) {
 
 func eventsIngestService(t *testing.T, repo *postgres.Repository, env *testEnv) *events.IngestService {
 	t.Helper()
-	return events.NewIngestService(repo.Events(), env.Config.Server.BaseURL)
+	return events.NewIngestService(repo.Events(), env.Config.Server.BaseURL, env.Config.Validation)
 }
 
 func decodeToolText(t *testing.T, result *mcpTypes.CallToolResult) map[string]any {
@@ -163,6 +165,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 
@@ -235,6 +238,7 @@ func TestMCPAuthValidKey(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 
@@ -289,6 +293,7 @@ func TestMCPAuthInvalidKey(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 
@@ -355,6 +360,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 
@@ -592,19 +598,9 @@ func TestMCPListPlaces(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create test places
-	repo, err := postgres.NewRepository(env.Pool)
-	require.NoError(t, err)
-
-	placesService := places.NewService(repo.Places())
-	lat1, lon1 := 43.65, -79.38
-	_, err = placesService.Create(ctx, places.CreateParams{
-		Name:            "Test Venue",
-		AddressLocality: "Toronto",
-		Latitude:        &lat1,
-		Longitude:       &lon1,
-	})
-	require.NoError(t, err)
+	// Create test places via direct SQL insert (Create was removed from places.Service)
+	testPlace := insertPlace(t, env, "Test Venue", "Toronto")
+	_ = testPlace
 
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
@@ -662,19 +658,8 @@ func TestMCPGetPlace(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create a test place
-	repo, err := postgres.NewRepository(env.Pool)
-	require.NoError(t, err)
-
-	placesService := places.NewService(repo.Places())
-	lat, lon := 43.65, -79.38
-	place, err := placesService.Create(ctx, places.CreateParams{
-		Name:            "Get Test Place",
-		AddressLocality: "Toronto",
-		Latitude:        &lat,
-		Longitude:       &lon,
-	})
-	require.NoError(t, err)
+	// Create a test place via direct SQL insert (Create was removed from places.Service)
+	place := insertPlace(t, env, "Get Test Place", "Toronto")
 
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
@@ -724,7 +709,9 @@ func TestMCPGetPlace(t *testing.T) {
 	})
 }
 
-// TestMCPCreatePlace tests the create_place tool.
+// TestMCPCreatePlace verifies that the add_place tool is currently disabled.
+// Place creation was removed from the repository during the schema.org refactor.
+// TODO(srv-d7cnu): Re-enable when place creation is restored.
 func TestMCPCreatePlace(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
@@ -732,57 +719,19 @@ func TestMCPCreatePlace(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("success", func(t *testing.T) {
-		placePayload := map[string]any{
-			"@type": "Place",
-			"name":  "New Test Venue",
-			"address": map[string]any{
-				"addressLocality": "Toronto",
-				"addressCountry":  "CA",
-			},
-			"geo": map[string]any{
-				"latitude":  43.65,
-				"longitude": -79.38,
-			},
-		}
-
-		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+	t.Run("tool_not_registered", func(t *testing.T) {
+		_, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
 				Name: "add_place",
 				Arguments: map[string]any{
-					"place": placePayload,
+					"place": map[string]any{
+						"@type": "Place",
+						"name":  "New Test Venue",
+					},
 				},
 			},
 		})
-		require.NoError(t, err)
-
-		payload := decodeToolText(t, result)
-		require.NotEmpty(t, payload["id"])
-		placeData := payload["place"].(map[string]any)
-		require.Equal(t, "New Test Venue", placeData["name"])
-	})
-
-	t.Run("missing_name", func(t *testing.T) {
-		placePayload := map[string]any{
-			"@type": "Place",
-			"address": map[string]any{
-				"addressLocality": "Toronto",
-			},
-		}
-
-		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
-			Params: mcpTypes.CallToolParams{
-				Name: "add_place",
-				Arguments: map[string]any{
-					"place": placePayload,
-				},
-			},
-		})
-		require.NoError(t, err)
-
-		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
-		require.True(t, ok)
-		require.Contains(t, textContent.Text, "name is required")
+		require.Error(t, err, "add_place tool should not be registered (place creation disabled)")
 	})
 }
 
@@ -794,16 +743,8 @@ func TestMCPListOrganizations(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create test organization
-	repo, err := postgres.NewRepository(env.Pool)
-	require.NoError(t, err)
-
-	orgService := organizations.NewService(repo.Organizations())
-	_, err = orgService.Create(ctx, organizations.CreateParams{
-		Name:      "Test Org",
-		LegalName: "Test Organization Inc.",
-	})
-	require.NoError(t, err)
+	// Create test organization via direct SQL insert (Create was removed from organizations.Service)
+	_ = insertOrganization(t, env, "Test Org")
 
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
@@ -845,16 +786,8 @@ func TestMCPGetOrganization(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create a test organization
-	repo, err := postgres.NewRepository(env.Pool)
-	require.NoError(t, err)
-
-	orgService := organizations.NewService(repo.Organizations())
-	org, err := orgService.Create(ctx, organizations.CreateParams{
-		Name:      "Get Test Org",
-		LegalName: "Get Test Organization Ltd.",
-	})
-	require.NoError(t, err)
+	// Create a test organization via direct SQL insert (Create was removed from organizations.Service)
+	org := insertOrganization(t, env, "Get Test Org")
 
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
@@ -904,7 +837,9 @@ func TestMCPGetOrganization(t *testing.T) {
 	})
 }
 
-// TestMCPCreateOrganization tests the create_organization tool.
+// TestMCPCreateOrganization verifies that the add_organization tool is currently disabled.
+// Organization creation was disabled during the schema.org rebase.
+// TODO(srv-d7cnu): Re-enable when organization creation is restored.
 func TestMCPCreateOrganization(t *testing.T) {
 	env := setupTestEnv(t)
 	cli := setupMCPClient(t, env)
@@ -912,7 +847,7 @@ func TestMCPCreateOrganization(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
 		orgPayload := map[string]any{
 			"@type":     "Organization",
 			"name":      "New Test Company",
@@ -930,31 +865,9 @@ func TestMCPCreateOrganization(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		payload := decodeToolText(t, result)
-		require.NotEmpty(t, payload["id"])
-		orgData := payload["organization"].(map[string]any)
-		require.Equal(t, "New Test Company", orgData["name"])
-	})
-
-	t.Run("missing_name", func(t *testing.T) {
-		orgPayload := map[string]any{
-			"@type": "Organization",
-			"url":   "https://example.com",
-		}
-
-		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
-			Params: mcpTypes.CallToolParams{
-				Name: "add_organization",
-				Arguments: map[string]any{
-					"organization": orgPayload,
-				},
-			},
-		})
-		require.NoError(t, err)
-
 		textContent, ok := mcpTypes.AsTextContent(result.Content[0])
 		require.True(t, ok)
-		require.Contains(t, textContent.Text, "name is required")
+		require.Contains(t, textContent.Text, "temporarily disabled")
 	})
 }
 
@@ -980,21 +893,9 @@ func TestMCPSearch(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	placesService := places.NewService(repo.Places())
-	lat, lon := 43.65, -79.38
-	_, err = placesService.Create(ctx, places.CreateParams{
-		Name:            "Music Hall",
-		AddressLocality: "Toronto",
-		Latitude:        &lat,
-		Longitude:       &lon,
-	})
-	require.NoError(t, err)
-
-	orgService := organizations.NewService(repo.Organizations())
-	_, err = orgService.Create(ctx, organizations.CreateParams{
-		Name: "Music Society",
-	})
-	require.NoError(t, err)
+	// Create test place and org via direct SQL insert (Create was removed from domain services)
+	_ = insertPlace(t, env, "Music Hall", "Toronto")
+	_ = insertOrganization(t, env, "Music Society")
 
 	t.Run("success_all_types", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
@@ -1081,12 +982,13 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 			Version:     "test",
 			Transport:   "inprocess",
 			ContextDir:  "../../contexts",
-			OpenAPIPath: "../../specs/001-sel-backend/contracts/openapi.yaml",
+			OpenAPIPath: "../../docs/api/openapi.yaml",
 		},
 		eventsService,
 		ingestService,
 		placesService,
 		orgService,
+		nil, // developerService
 		env.Config.Server.BaseURL,
 	)
 

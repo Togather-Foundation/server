@@ -49,7 +49,7 @@ type SchemaResources struct {
 // openAPIPath specifies where to find the OpenAPI YAML file.
 func NewSchemaResources(openAPIPath string) *SchemaResources {
 	if openAPIPath == "" {
-		openAPIPath = "specs/001-sel-backend/contracts/openapi.yaml" // Default fallback
+		openAPIPath = "docs/api/openapi.yaml" // Default fallback
 	}
 	return &SchemaResources{
 		openAPIPath: openAPIPath,
