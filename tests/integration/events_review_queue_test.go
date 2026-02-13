@@ -203,7 +203,11 @@ func TestReviewQueue_FixedResubmit(t *testing.T) {
 	req1.Header.Set("Content-Type", "application/ld+json")
 	resp1, err := env.Server.Client().Do(req1)
 	require.NoError(t, err)
-	defer resp1.Body.Close()
+	defer func() {
+		if closeErr := resp1.Body.Close(); closeErr != nil {
+			t.Logf("failed to close response body: %v", closeErr)
+		}
+	}()
 
 	require.Equal(t, http.StatusAccepted, resp1.StatusCode)
 

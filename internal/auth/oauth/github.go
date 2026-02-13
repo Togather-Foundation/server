@@ -82,7 +82,12 @@ func (c *GitHubClient) ExchangeCode(ctx context.Context, code string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("failed to exchange code: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// Log error but don't fail the request
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -150,7 +155,11 @@ func (c *GitHubClient) fetchUser(ctx context.Context, accessToken string) (*GitH
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user profile: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -192,7 +201,11 @@ func (c *GitHubClient) fetchPrimaryEmail(ctx context.Context, accessToken string
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch user emails: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			_ = closeErr
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

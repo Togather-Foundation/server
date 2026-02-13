@@ -546,7 +546,9 @@ func runSetup() error {
 		}
 
 		// Set DATABASE_URL for the create command
-		os.Setenv("DATABASE_URL", dbURL)
+		if err := os.Setenv("DATABASE_URL", dbURL); err != nil {
+			fmt.Printf("⚠️  Warning: failed to set DATABASE_URL: %v\n", err)
+		}
 
 		// Wait a moment for database to be ready if Docker
 		if useDocker {

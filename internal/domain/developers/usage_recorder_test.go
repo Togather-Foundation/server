@@ -110,7 +110,11 @@ func TestUsageRecorder_PeriodicFlush(t *testing.T) {
 
 	// Start the recorder
 	recorder.Start()
-	defer recorder.Close()
+	defer func() {
+		if err := recorder.Close(); err != nil {
+			t.Fatalf("failed to close recorder: %v", err)
+		}
+	}()
 
 	// Record some usage
 	recorder.RecordRequest(apiKeyID, false)
@@ -225,7 +229,9 @@ func TestUsageRecorder_MultipleStart(t *testing.T) {
 	recorder.Start()
 	recorder.Start()
 
-	recorder.Close()
+	if err := recorder.Close(); err != nil {
+		t.Fatalf("failed to close recorder: %v", err)
+	}
 }
 
 func TestUsageRecorder_MultipleAPIKeys(t *testing.T) {

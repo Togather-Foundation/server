@@ -190,7 +190,12 @@ func runMigrations(ctx context.Context, connStr string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		if closeErr := conn.Close(ctx); closeErr != nil {
+			// Log but don't fail if we're already returning an error
+			_ = closeErr
+		}
+	}()
 
 	// Create users table matching production schema
 	_, err = conn.Exec(ctx, `

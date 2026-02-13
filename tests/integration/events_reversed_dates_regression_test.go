@@ -549,7 +549,11 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 
 	getResp, err := env.Server.Client().Do(getReq)
 	require.NoError(t, err)
-	defer getResp.Body.Close()
+	defer func() {
+		if closeErr := getResp.Body.Close(); closeErr != nil {
+			t.Logf("failed to close response body: %v", closeErr)
+		}
+	}()
 	require.Equal(t, http.StatusOK, getResp.StatusCode)
 
 	var fullEvent map[string]any

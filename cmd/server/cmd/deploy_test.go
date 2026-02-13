@@ -417,7 +417,9 @@ func TestDeployRollbackValidation(t *testing.T) {
 			err := root.Execute()
 
 			// Restore stdout
-			w.Close()
+			if err := w.Close(); err != nil {
+				t.Fatalf("failed to close pipe: %v", err)
+			}
 			os.Stdout = oldStdout
 
 			// Read captured output
