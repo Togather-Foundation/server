@@ -110,7 +110,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), slogLogger, slot)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, slogLogger, slot)
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{
@@ -249,6 +249,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create Admin Review Queue handler (srv-bjo)
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
+	// Create Admin Geocoding handler (srv-qq7o1)
+	adminGeocodingHandler := handlers.NewAdminGeocodingHandler(pool, riverClient, slogLogger, cfg.Environment)
+
 	// Create Federation handlers (T111)
 	changeFeedRepo := postgres.NewChangeFeedRepository(queries)
 	changeFeedService := federation.NewChangeFeedService(changeFeedRepo, logger, cfg.Server.BaseURL)
@@ -376,9 +379,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/api/v1/organizations", publicOrgs)
 	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
 
-	// Geocoding endpoint (srv-28gtj)
+	// Geocoding endpoints (srv-28gtj, srv-4xnt8)
 	publicGeocode := rateLimitPublic(http.HandlerFunc(geocodingHandler.Geocode))
+	publicReverseGeocode := rateLimitPublic(http.HandlerFunc(geocodingHandler.ReverseGeocode))
 	mux.Handle("/api/v1/geocode", publicGeocode)
+	mux.Handle("/api/v1/reverse-geocode", publicReverseGeocode)
 
 	// Public HTML and Turtle placeholders for content negotiation tests
 	mux.Handle("/events/{id}", publicEventPage)
@@ -459,6 +464,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/reject", adminRejectReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/fix", adminFixReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/merge", adminMergeReview)
+
+	// Admin geocoding backfill (srv-qq7o1)
+	adminGeocodingBackfill := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminGeocodingHandler.Backfill))))
+	mux.Handle("POST /api/v1/admin/geocoding/backfill", adminGeocodingBackfill)
 
 	// Admin user management (user administration system)
 	adminCreateUser := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminUsersHandler.CreateUser))))

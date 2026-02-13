@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/rs/zerolog/log"
 )
 
 type EventsHandler struct {
@@ -139,6 +141,23 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	} else if result != nil && result.NeedsReview {
 		// Event queued for admin review - return 202 Accepted
 		status = http.StatusAccepted
+	}
+
+	// Enqueue geocoding job for event if it was created successfully (srv-qq7o1)
+	if result != nil && result.Event != nil && !result.IsDuplicate && h.RiverClient != nil {
+		// Enqueue in background, don't block event creation
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := h.RiverClient.Insert(ctx, jobs.GeocodeEventArgs{EventID: result.Event.ULID}, &river.InsertOpts{
+				Queue:       "geocoding",
+				MaxAttempts: jobs.GeocodingMaxAttempts,
+			})
+			if err != nil {
+				// Log error but don't fail event creation
+				log.Warn().Err(err).Str("event_ulid", result.Event.ULID).Msg("failed to enqueue geocoding job")
+			}
+		}()
 	}
 
 	location := createEventLocation(input)

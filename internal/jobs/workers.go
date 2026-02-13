@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -350,7 +351,7 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, logger *slog.Logger, slot string) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, logger *slog.Logger, slot string) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -383,5 +384,20 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 		Slot:             slot,
 		PreserveTopCount: 10000, // TODO: Read from config
 	})
+
+	// Geocoding enrichment workers (srv-qq7o1)
+	if geocodingService != nil {
+		river.AddWorker[GeocodePlaceArgs](workers, GeocodePlaceWorker{
+			Pool:             pool,
+			GeocodingService: geocodingService,
+			Logger:           logger,
+		})
+		river.AddWorker[GeocodeEventArgs](workers, GeocodeEventWorker{
+			Pool:             pool,
+			GeocodingService: geocodingService,
+			Logger:           logger,
+		})
+	}
+
 	return workers
 }

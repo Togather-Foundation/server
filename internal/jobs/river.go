@@ -21,6 +21,8 @@ const (
 	JobKindBatchResultsCleanup   = "batch_results_cleanup"
 	JobKindReviewQueueCleanup    = "review_queue_cleanup"
 	JobKindGeocodingCacheCleanup = "geocoding_cache_cleanup"
+	JobKindGeocodePlace          = "geocode_place"
+	JobKindGeocodeEvent          = "geocode_event"
 )
 
 const (
@@ -28,6 +30,7 @@ const (
 	ReconciliationMaxAttempts = 5
 	EnrichmentMaxAttempts     = 10
 	BatchIngestionMaxAttempts = 3
+	GeocodingMaxAttempts      = 3
 )
 
 // RetryConfig controls per-kind retry behavior.
@@ -71,6 +74,16 @@ func NewRetryPolicy() *RetryPolicy {
 				MaxAttempts: BatchIngestionMaxAttempts,
 				BaseDelay:   30 * time.Second,
 				MaxDelay:    5 * time.Minute,
+			},
+			JobKindGeocodePlace: {
+				MaxAttempts: GeocodingMaxAttempts,
+				BaseDelay:   1 * time.Minute,
+				MaxDelay:    30 * time.Minute,
+			},
+			JobKindGeocodeEvent: {
+				MaxAttempts: GeocodingMaxAttempts,
+				BaseDelay:   1 * time.Minute,
+				MaxDelay:    30 * time.Minute,
 			},
 		},
 	}
@@ -116,6 +129,7 @@ func NewClientConfig(workers *river.Workers, logger *slog.Logger, hooks []rivert
 		PeriodicJobs: periodicJobs,
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 10},
+			"geocoding":        {MaxWorkers: 1}, // Single worker for rate limiting
 		},
 		Hooks: hooks,
 	}
