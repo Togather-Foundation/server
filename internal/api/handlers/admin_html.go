@@ -264,6 +264,31 @@ func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// ServeDevelopersList renders the developers list page
+func (h *AdminHTMLHandler) ServeDevelopersList(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "developers_list"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Developers - SEL Admin",
+		"ActivePage": "developers",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "developers_list.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "developers_list.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
 // ServeAcceptInvitation renders the public invitation acceptance page
 func (h *AdminHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	if h.Logger != nil {

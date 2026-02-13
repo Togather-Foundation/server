@@ -30,6 +30,7 @@ IMPORTANT:
 - `server deploy` — Manage deployments and rollbacks
 - `server cleanup` — Clean up deployment artifacts (Docker images, snapshots, logs)
 - `server api-key` — API key management (create, list, revoke)
+- `server developer` — Developer account management (invite, list, deactivate)
 - `server webfiles` — Generate robots.txt and sitemap.xml for deployment
 - `server version` — Print version information
 

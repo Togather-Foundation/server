@@ -11,9 +11,11 @@ import (
 )
 
 type Querier interface {
+	AcceptDeveloperInvitation(ctx context.Context, id pgtype.UUID) error
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
 	// Mark review as approved
 	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
+	CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error)
 	// Archive old approved/superseded/merged reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
 	// Delete rejected reviews for past events (7 day grace period)
@@ -26,6 +28,8 @@ type Querier interface {
 	// SQLc queries for sources registry.
 	CountAllSources(ctx context.Context) (int64, error)
 	CountAllUsers(ctx context.Context) (int64, error)
+	CountDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
+	CountDevelopers(ctx context.Context) (int64, error)
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	CountPastEvents(ctx context.Context) (int64, error)
@@ -35,6 +39,12 @@ type Querier interface {
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
 	CreateBatchIngestionResult(ctx context.Context, arg CreateBatchIngestionResultParams) error
+	// SQLc queries for developer management and invitations.
+	// Developer CRUD operations
+	CreateDeveloper(ctx context.Context, arg CreateDeveloperParams) (Developer, error)
+	CreateDeveloperAPIKey(ctx context.Context, arg CreateDeveloperAPIKeyParams) (CreateDeveloperAPIKeyRow, error)
+	// Developer invitation operations
+	CreateDeveloperInvitation(ctx context.Context, arg CreateDeveloperInvitationParams) (DeveloperInvitation, error)
 	CreateEventTombstone(ctx context.Context, arg CreateEventTombstoneParams) error
 	CreateFederatedEventOccurrence(ctx context.Context, arg CreateFederatedEventOccurrenceParams) error
 	// SQLc queries for federation sync.
@@ -47,6 +57,7 @@ type Querier interface {
 	// User Invitation Queries
 	CreateUserInvitation(ctx context.Context, arg CreateUserInvitationParams) (CreateUserInvitationRow, error)
 	DeactivateAPIKey(ctx context.Context, id pgtype.UUID) error
+	DeactivateDeveloper(ctx context.Context, id pgtype.UUID) error
 	// User Management Queries
 	DeactivateUser(ctx context.Context, id pgtype.UUID) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
@@ -55,7 +66,10 @@ type Querier interface {
 	// See docs/architecture/event-review-workflow.md for complete design.
 	// Find existing review by deduplication keys (checks source_external_id or dedup_hash)
 	FindReviewByDedup(ctx context.Context, arg FindReviewByDedupParams) (FindReviewByDedupRow, error)
+	GetAPIKeyByID(ctx context.Context, id pgtype.UUID) (ApiKey, error)
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
+	GetAPIKeyUsage(ctx context.Context, arg GetAPIKeyUsageParams) ([]ApiKeyUsage, error)
+	GetAPIKeyUsageTotal(ctx context.Context, arg GetAPIKeyUsageTotalParams) (GetAPIKeyUsageTotalRow, error)
 	// Gets complete provenance history for a field, including superseded records
 	GetAllFieldProvenanceHistory(ctx context.Context, arg GetAllFieldProvenanceHistoryParams) ([]GetAllFieldProvenanceHistoryRow, error)
 	// SQLc queries for batch ingestion operations.
@@ -63,6 +77,11 @@ type Querier interface {
 	// Gets the canonical (winning) field value based on conflict resolution rules
 	// Priority: trust_level DESC, confidence DESC, observed_at DESC
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
+	GetDeveloperByEmail(ctx context.Context, email string) (Developer, error)
+	GetDeveloperByGitHubID(ctx context.Context, githubID pgtype.Int8) (Developer, error)
+	GetDeveloperByID(ctx context.Context, id pgtype.UUID) (Developer, error)
+	GetDeveloperInvitationByTokenHash(ctx context.Context, tokenHash string) (DeveloperInvitation, error)
+	GetDeveloperUsageTotal(ctx context.Context, arg GetDeveloperUsageTotalParams) (GetDeveloperUsageTotalRow, error)
 	// Federation Sync Queries
 	GetEventByFederationURI(ctx context.Context, federationUri pgtype.Text) (Event, error)
 	// SQLc queries for events domain.
@@ -115,6 +134,10 @@ type Querier interface {
 	// Uses canonical ordering to match regardless of argument order.
 	IsNotDuplicate(ctx context.Context, arg IsNotDuplicateParams) (bool, error)
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
+	ListActiveDeveloperInvitations(ctx context.Context) ([]DeveloperInvitation, error)
+	// Developer API key operations
+	ListDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) ([]ApiKey, error)
+	ListDevelopers(ctx context.Context, arg ListDevelopersParams) ([]Developer, error)
 	// SQLc queries for change feeds.
 	ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error)
 	ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error)
@@ -141,12 +164,15 @@ type Querier interface {
 	// Uses a recursive CTE with a max depth of 10 to prevent infinite loops.
 	// Returns the ULID of the final canonical event (the one that is not itself merged).
 	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
+	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
 	// Marks a field provenance record as superseded by a new record
 	SupersedeFieldProvenance(ctx context.Context, arg SupersedeFieldProvenanceParams) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
+	UpdateDeveloper(ctx context.Context, arg UpdateDeveloperParams) (Developer, error)
+	UpdateDeveloperLastLogin(ctx context.Context, id pgtype.UUID) error
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (UpdateEventRow, error)
 	UpdateFederationNode(ctx context.Context, arg UpdateFederationNodeParams) (FederationNode, error)
 	UpdateFederationNodeHealth(ctx context.Context, arg UpdateFederationNodeHealthParams) error
@@ -164,6 +190,8 @@ type Querier interface {
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
+	// SQLc queries for API key usage tracking.
+	UpsertAPIKeyUsage(ctx context.Context, arg UpsertAPIKeyUsageParams) error
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
 }
 

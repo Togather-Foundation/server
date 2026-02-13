@@ -16,11 +16,6 @@ func validFutureDate() string {
 	return time.Now().Add(48 * time.Hour).Format(time.RFC3339)
 }
 
-// validFutureTime returns a future time.Time.
-func validFutureTime() time.Time {
-	return time.Now().Add(48 * time.Hour)
-}
-
 // completeEventInput returns an EventInput that passes all quality checks:
 // has name, description, image, future start date, location, and license.
 func completeEventInput(name string) EventInput {

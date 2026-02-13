@@ -21,6 +21,14 @@ type ApiKey struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	DeveloperID   pgtype.UUID        `json:"developer_id"`
+}
+
+type ApiKeyUsage struct {
+	ApiKeyID     pgtype.UUID `json:"api_key_id"`
+	Date         pgtype.Date `json:"date"`
+	RequestCount int64       `json:"request_count"`
+	ErrorCount   int64       `json:"error_count"`
 }
 
 // Stores results of batch event ingestion jobs
@@ -32,6 +40,29 @@ type BatchIngestionResult struct {
 	// When the batch job completed
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Developer struct {
+	ID             pgtype.UUID        `json:"id"`
+	Email          string             `json:"email"`
+	Name           string             `json:"name"`
+	GithubID       pgtype.Int8        `json:"github_id"`
+	GithubUsername pgtype.Text        `json:"github_username"`
+	PasswordHash   pgtype.Text        `json:"password_hash"`
+	MaxKeys        int32              `json:"max_keys"`
+	IsActive       bool               `json:"is_active"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt    pgtype.Timestamptz `json:"last_login_at"`
+}
+
+type DeveloperInvitation struct {
+	ID         pgtype.UUID        `json:"id"`
+	Email      string             `json:"email"`
+	TokenHash  string             `json:"token_hash"`
+	InvitedBy  pgtype.UUID        `json:"invited_by"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	AcceptedAt pgtype.Timestamptz `json:"accepted_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type Event struct {

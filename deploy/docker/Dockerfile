@@ -97,6 +97,9 @@ COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 # Copy admin templates from build stage (for admin UI)
 COPY --from=builder /build/web/admin /app/web/admin
 
+# Copy developer portal templates from build stage (for developer portal UI)
+COPY --from=builder /build/web/dev /app/web/dev
+
 # Copy JSON-LD contexts from build stage (for JSON-LD export)
 COPY --from=builder /build/contexts /app/contexts
 

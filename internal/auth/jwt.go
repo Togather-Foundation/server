@@ -32,6 +32,16 @@ func NewJWTManager(secret string, expiry time.Duration, issuer string) *JWTManag
 	}
 }
 
+// NewJWTManagerFromKey creates a JWT manager using a pre-derived key (byte slice).
+// This is used when keys are derived from a master secret using HKDF for domain separation.
+func NewJWTManagerFromKey(secretKey []byte, expiry time.Duration, issuer string) *JWTManager {
+	return &JWTManager{
+		secret: secretKey,
+		expiry: expiry,
+		issuer: issuer,
+	}
+}
+
 func (m *JWTManager) Generate(subject, role string) (string, error) {
 	if subject == "" || role == "" {
 		return "", ErrInvalidToken

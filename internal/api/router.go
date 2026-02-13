@@ -16,7 +16,9 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/auth/oauth"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -66,6 +68,27 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
+
+	// Derive separate JWT signing keys for admin and developer tokens (srv-yuyg9)
+	// IMPORTANT: This is a breaking change - existing tokens will be invalidated when deployed
+	// Using HKDF-SHA256 to derive cryptographically independent keys prevents token confusion attacks
+	masterSecret := []byte(cfg.Auth.JWTSecret)
+	adminJWTKey, err := auth.DeriveAdminJWTKey(masterSecret)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to derive admin JWT key")
+		return &RouterWithClient{
+			Handler:     http.NewServeMux(),
+			RiverClient: nil,
+		}
+	}
+	developerJWTKey, err := auth.DeriveDeveloperJWTKey(masterSecret)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to derive developer JWT key")
+		return &RouterWithClient{
+			Handler:     http.NewServeMux(),
+			RiverClient: nil,
+		}
+	}
 
 	// Get deployment slot for metrics labeling (blue/green)
 	slot := os.Getenv("SLOT")
@@ -131,20 +154,74 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	baseURL := fmt.Sprintf("https://%s", cfg.Server.PublicURL) // For invitation links
 	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger)
 
+	// Initialize developer service (srv-x7vv0)
+	developerRepo := postgres.NewDeveloperRepositoryAdapter(pool)
+	developerService := developers.NewService(developerRepo, logger)
+
+	// Developer auth and API key handlers (srv-x7vv0)
+	devAuthHandler := handlers.NewDeveloperAuthHandler(
+		developerService,
+		logger,
+		developerJWTKey, // Use derived developer JWT key (srv-yuyg9)
+		cfg.Auth.JWTExpiry,
+		"sel.events",
+		cfg.Environment,
+		auditLogger,
+	)
+	devAPIKeyHandler := handlers.NewDeveloperAPIKeyHandler(
+		developerService,
+		logger,
+		cfg.Environment,
+		auditLogger,
+	)
+
+	// GitHub OAuth handler (srv-idczk) - only initialize if configured
+	var devOAuthHandler *handlers.DeveloperOAuthHandler
+	if cfg.Auth.GitHub.ClientID != "" {
+		githubClient := oauth.NewGitHubClient(oauth.GitHubConfig{
+			ClientID:     cfg.Auth.GitHub.ClientID,
+			ClientSecret: cfg.Auth.GitHub.ClientSecret,
+			CallbackURL:  cfg.Auth.GitHub.CallbackURL,
+			AllowedOrgs:  cfg.Auth.GitHub.AllowedOrgs,
+		})
+		devOAuthHandler = handlers.NewDeveloperOAuthHandler(
+			developerService,
+			githubClient,
+			logger,
+			developerJWTKey, // Use derived developer JWT key (srv-yuyg9)
+			cfg.Auth.JWTExpiry,
+			"sel.events",
+			cfg.Environment,
+			auditLogger,
+		)
+	}
+
 	// Load admin templates
-	templates, err := loadAdminTemplates(gitCommit)
+	adminTemplates, err := loadAdminTemplates(gitCommit)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to load admin templates, admin UI will be unavailable")
 	}
 
+	// Load developer templates (srv-7m0cf)
+	devTemplates, err := loadDevTemplates(gitCommit)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to load developer templates, developer portal UI will be unavailable")
+	}
+
 	// Admin handlers
-	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiry, "sel.events")
-	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, templates, cfg.Auth.JWTExpiry)
-	adminHTMLHandler := handlers.NewAdminHTMLHandler(templates, cfg.Environment, slogLogger)
+	jwtManager := auth.NewJWTManagerFromKey(adminJWTKey, cfg.Auth.JWTExpiry, "sel.events") // Use derived admin JWT key (srv-yuyg9)
+	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, adminTemplates, cfg.Auth.JWTExpiry)
+	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger)
+
+	// Developer HTML handler (srv-7m0cf)
+	devHTMLHandler := handlers.NewDevHTMLHandler(devTemplates, cfg.Environment, slogLogger, developerService)
 
 	// Admin user management handlers
 	adminUsersHandler := handlers.NewAdminUsersHandler(userService, auditLogger, cfg.Environment)
 	invitationsHandler := handlers.NewInvitationsHandler(userService, auditLogger, cfg.Environment)
+
+	// Admin developer management handlers (srv-2q4ic)
+	adminDevelopersHandler := handlers.NewAdminDevelopersHandler(developerService, developerRepo, auditLogger, cfg.Environment)
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
@@ -354,9 +431,54 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/admin/users/{id}/resend-invitation", adminResendInvitation)
 	mux.Handle("GET /api/v1/admin/users/{id}/activity", adminGetUserActivity)
 
+	// Admin developer management (srv-2q4ic)
+	adminInviteDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.InviteDeveloper))))
+	adminListDevelopers := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.ListDevelopers))))
+	adminGetDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.GetDeveloper))))
+	adminUpdateDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.UpdateDeveloper))))
+	adminDeactivateDeveloper := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminDevelopersHandler.DeactivateDeveloper))))
+
+	mux.Handle("POST /api/v1/admin/developers/invite", adminInviteDeveloper)
+	mux.Handle("/api/v1/admin/developers", methodMux(map[string]http.Handler{
+		http.MethodGet: adminListDevelopers,
+	}))
+	mux.Handle("/api/v1/admin/developers/{id}", methodMux(map[string]http.Handler{
+		http.MethodGet:    adminGetDeveloper,
+		http.MethodPut:    adminUpdateDeveloper,
+		http.MethodDelete: adminDeactivateDeveloper,
+	}))
+
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
 	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
+
+	// Developer API routes (srv-x7vv0)
+	// Developer auth endpoints with rate limiting and body size limits
+	devLogin := rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(devAuthHandler.Login)))
+	devAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(devAuthHandler.AcceptInvitation)))
+
+	mux.Handle("POST /api/v1/dev/login", devLogin)
+	mux.Handle("POST /api/v1/dev/accept-invitation", devAcceptInvitation)
+
+	// GitHub OAuth routes (srv-idczk) - only register if GitHub OAuth is configured
+	if devOAuthHandler != nil {
+		mux.Handle("GET /auth/github", rateLimitPublic(http.HandlerFunc(devOAuthHandler.GitHubLogin)))
+		mux.Handle("GET /auth/github/callback", rateLimitPublic(http.HandlerFunc(devOAuthHandler.GitHubCallback)))
+	}
+
+	// Developer API key management endpoints with DevCookieAuth middleware
+	devCookieAuth := middleware.DevCookieAuth(developerJWTKey) // Use derived developer JWT key (srv-yuyg9)
+	devLogout := devCookieAuth(http.HandlerFunc(devAuthHandler.Logout))
+	devListKeys := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.ListAPIKeys))
+	devCreateKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.CreateAPIKey))
+	devRevokeKey := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.RevokeAPIKey))
+	devGetUsage := devCookieAuth(http.HandlerFunc(devAPIKeyHandler.GetAPIKeyUsage))
+
+	mux.Handle("POST /api/v1/dev/logout", devLogout)
+	mux.Handle("GET /api/v1/dev/api-keys", devListKeys)
+	mux.Handle("POST /api/v1/dev/api-keys", devCreateKey)
+	mux.Handle("DELETE /api/v1/dev/api-keys/{id}", devRevokeKey)
+	mux.Handle("GET /api/v1/dev/api-keys/{id}/usage", devGetUsage)
 
 	// Admin federation node management (T081b)
 	adminCreateNode := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(federationHandler.CreateNode))))
@@ -414,6 +536,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
 	mux.Handle("/admin/users", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUsersList))))
 	mux.Handle("/admin/users/{id}/activity", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUserActivity))))
+	mux.Handle("/admin/developers", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDevelopersList))))
 
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -436,6 +559,31 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	} else {
 		adminStaticFS := http.FileServer(http.FS(adminStaticSubFS))
 		mux.Handle("/admin/static/", http.StripPrefix("/admin/static/", adminStaticFS))
+	}
+
+	// Developer HTML routes (srv-7m0cf)
+	// Public pages (no auth required)
+	mux.Handle("/dev/login", http.HandlerFunc(devHTMLHandler.ServeLogin))
+	mux.Handle("/dev/accept-invitation", http.HandlerFunc(devHTMLHandler.ServeAcceptInvitation))
+
+	// Authenticated pages with CSRF protection (srv-w2isc)
+	mux.Handle("/dev/dashboard", csrfMiddleware(devCookieAuth(http.HandlerFunc(devHTMLHandler.ServeDashboard))))
+	mux.Handle("/dev/api-keys", csrfMiddleware(devCookieAuth(http.HandlerFunc(devHTMLHandler.ServeAPIKeys))))
+
+	// Redirect /dev and /dev/ to dashboard
+	devRoot := csrfMiddleware(devCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dev/dashboard", http.StatusFound)
+	})))
+	mux.Handle("/dev", devRoot)
+	mux.Handle("/dev/", devRoot)
+
+	// Serve developer static files (JS only - reuses admin CSS/images via CDN)
+	devStaticSubFS, err := fs.Sub(web.DevStaticFiles, "dev/static")
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to create dev static sub-filesystem")
+	} else {
+		devStaticFS := http.FileServer(http.FS(devStaticSubFS))
+		mux.Handle("/dev/static/", http.StripPrefix("/dev/static/", devStaticFS))
 	}
 
 	// Wrap entire router with middleware stack
@@ -517,10 +665,12 @@ func findShapesDirectory() string {
 	return "shapes"
 }
 
-// loadAdminTemplates loads HTML templates for the admin UI.
+// loadTemplates loads HTML templates from the specified directory.
 // The commitHash parameter should come from ldflags (the authoritative source baked into the binary at build time).
 // Falls back to BUILD_COMMIT env var, then "dev" if neither is available.
-func loadAdminTemplates(commitHash string) (*template.Template, error) {
+// The templatesSubPath should be a relative path like "web/admin/templates" or "web/dev/templates".
+// Optional additionalFiles can be provided to load extra template files (e.g., shared partials).
+func loadTemplates(commitHash string, templatesSubPath string, additionalFiles ...string) (*template.Template, error) {
 	// Use ldflags value as the authoritative commit hash source.
 	// Fall back to BUILD_COMMIT env var for backward compatibility,
 	// then "dev" for local development.
@@ -545,12 +695,13 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 	}
 
 	// Try common locations for the templates directory
+	systemInstallPath := filepath.Join("/usr/local/share/sel", templatesSubPath)
 	candidates := []string{
-		"web/admin/templates",                      // From project root
-		"../web/admin/templates",                   // One level up
-		"../../web/admin/templates",                // Two levels up
-		"/app/web/admin/templates",                 // Container deployment
-		"/usr/local/share/sel/web/admin/templates", // System-wide installation
+		templatesSubPath,                         // From project root
+		filepath.Join("..", templatesSubPath),    // One level up
+		filepath.Join("../..", templatesSubPath), // Two levels up
+		filepath.Join("/app", templatesSubPath),  // Container deployment
+		systemInstallPath,                        // System-wide installation
 	}
 
 	for _, candidate := range candidates {
@@ -559,6 +710,31 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 				// Found templates directory, parse all .html files
 				pattern := filepath.Join(absPath, "*.html")
 				tmpl := template.New("").Funcs(funcMap)
+
+				// Derive the base directory by stripping the templatesSubPath suffix.
+				// For example, if absPath is "/app/web/dev/templates" and
+				// templatesSubPath is "web/dev/templates", baseDir is "/app".
+				absSubPath, _ := filepath.Abs(templatesSubPath)
+				baseDir := filepath.Dir(absPath)
+				if rel, err := filepath.Rel(absSubPath, absPath); err == nil && rel == "." {
+					// candidate matched templatesSubPath directly — base is cwd
+					baseDir, _ = os.Getwd()
+				} else {
+					// Strip templatesSubPath suffix from absPath to get the base
+					suffix := string(filepath.Separator) + filepath.Clean(templatesSubPath)
+					if strings.HasSuffix(absPath, suffix) {
+						baseDir = strings.TrimSuffix(absPath, suffix)
+					}
+				}
+
+				// Load any additional files first (e.g., shared partials)
+				for _, additionalFile := range additionalFiles {
+					additionalPath := filepath.Join(baseDir, additionalFile)
+					if _, err := os.Stat(additionalPath); err == nil {
+						tmpl, _ = tmpl.ParseFiles(additionalPath)
+					}
+				}
+
 				if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 					return tmpl, nil
 				}
@@ -572,10 +748,19 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 		dir := wd
 		for i := 0; i < maxRouterRetries; i++ {
 			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				templatesPath := filepath.Join(dir, "web", "admin", "templates")
+				templatesPath := filepath.Join(dir, templatesSubPath)
 				if info, err := os.Stat(templatesPath); err == nil && info.IsDir() {
 					pattern := filepath.Join(templatesPath, "*.html")
 					tmpl := template.New("").Funcs(funcMap)
+
+					// Load any additional files first (e.g., shared partials)
+					for _, additionalFile := range additionalFiles {
+						additionalPath := filepath.Join(dir, additionalFile)
+						if _, err := os.Stat(additionalPath); err == nil {
+							tmpl, _ = tmpl.ParseFiles(additionalPath)
+						}
+					}
+
 					if tmpl, err := tmpl.ParseGlob(pattern); err == nil {
 						return tmpl, nil
 					}
@@ -590,6 +775,18 @@ func loadAdminTemplates(commitHash string) (*template.Template, error) {
 	}
 
 	return nil, os.ErrNotExist
+}
+
+// loadAdminTemplates loads HTML templates for the admin UI.
+// Thin wrapper around loadTemplates for backward compatibility.
+func loadAdminTemplates(commitHash string) (*template.Template, error) {
+	return loadTemplates(commitHash, "web/admin/templates")
+}
+
+// loadDevTemplates loads HTML templates for the developer portal UI.
+// Thin wrapper around loadTemplates that also loads the shared _head_meta.html partial.
+func loadDevTemplates(commitHash string) (*template.Template, error) {
+	return loadTemplates(commitHash, "web/dev/templates", "web/admin/templates/_head_meta.html")
 }
 
 // findRepoRoot locates the repository root by looking for go.mod

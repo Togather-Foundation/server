@@ -10,6 +10,7 @@ info:
     - **Public**: No authentication required for read endpoints
     - **Agents**: API key in `Authorization: Bearer <key>` header
     - **Admins**: JWT token in `Authorization: Bearer <token>` header
+    - **Developers**: JWT token in `dev_auth_token` cookie or `Authorization: Bearer <token>` header
     
     ## Content Negotiation
     API endpoints return JSON/JSON-LD via `Accept` header:
@@ -55,12 +56,16 @@ servers:
 tags:
   - name: Admin
     description: Administrative operations (requires admin auth)
+  - name: Developer
+    description: Developer self-service API key management
   - name: Events
     description: Event discovery and submission
   - name: Feeds
     description: Change feeds for federation
   - name: Health
     description: Health check endpoints
+  - name: OAuth
+    description: GitHub OAuth authentication
   - name: Organizations
     description: Organizer information
   - name: Places
@@ -896,6 +901,551 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /admin/developers/invite:
+    post:
+      operationId: inviteDeveloper
+      summary: Invite a developer
+      description: Send an invitation to a developer by email. The developer receives an email with a link to accept the invitation.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: Developer invitation details
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Developer's email address
+                name:
+                  type: string
+                  description: Optional developer name
+                max_keys:
+                  type: integer
+                  default: 5
+                  minimum: 1
+                  maximum: 20
+                  description: Maximum API keys this developer can create
+      responses:
+        '201':
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  status:
+                    type: string
+                    enum: [invited]
+                  invitation_expires_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Email already registered
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/developers:
+    get:
+      operationId: listDevelopers
+      summary: List all developers
+      description: Retrieve a list of all developers with their API key count and usage statistics
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by developer status
+          schema:
+            type: string
+            enum: [active, invited, deactivated]
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: List of developers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Developer'
+                  next_cursor:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/developers/{id}:
+    get:
+      operationId: getDeveloper
+      summary: Get developer details
+      description: Retrieve details for a specific developer including their API keys
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Developer UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Developer details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Developer'
+                  - type: object
+                    properties:
+                      api_keys:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeveloperAPIKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      operationId: updateDeveloper
+      summary: Update developer settings
+      description: Update developer's max_keys or is_active status
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Developer UUID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: Developer settings to update
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_keys:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Developer updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Developer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: deleteDeveloper
+      summary: Deactivate developer
+      description: Deactivate developer and revoke all their API keys
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Developer UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Developer deactivated
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/dev/login:
+    post:
+      operationId: developerLogin
+      summary: Developer login
+      description: Authenticate developer with email/password and receive JWT token. Rate limited to prevent brute force attacks.
+      tags: [Developer]
+      security: []
+      requestBody:
+        description: Developer credentials
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for API access
+                  expires_at:
+                    type: string
+                    format: date-time
+                  developer:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      github_username:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Too many login attempts
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/dev/logout:
+    post:
+      operationId: developerLogout
+      summary: Developer logout
+      description: Clear dev_auth_token cookie
+      tags: [Developer]
+      security:
+        - devCookie: []
+      responses:
+        '204':
+          description: Logout successful
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/dev/api-keys:
+    get:
+      operationId: listDeveloperApiKeys
+      summary: List own API keys
+      description: Retrieve all API keys belonging to the authenticated developer with usage summary
+      tags: [Developer]
+      security:
+        - devCookie: []
+        - devJWT: []
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeveloperAPIKey'
+                  max_keys:
+                    type: integer
+                    description: Maximum keys allowed for this developer
+                  key_count:
+                    type: integer
+                    description: Current number of keys
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      operationId: createDeveloperApiKey
+      summary: Create a new API key
+      description: Create a new API key for the authenticated developer. Enforces max_keys limit.
+      tags: [Developer]
+      security:
+        - devCookie: []
+        - devJWT: []
+      requestBody:
+        description: API key details
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: Human-readable name for the key
+      responses:
+        '201':
+          description: API key created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeveloperAPIKeyCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Max keys exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/dev/api-keys/{id}:
+    delete:
+      operationId: revokeDeveloperApiKey
+      summary: Revoke own API key
+      description: Revoke an API key belonging to the authenticated developer
+      tags: [Developer]
+      security:
+        - devCookie: []
+        - devJWT: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: API key UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: API key revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Key not owned by developer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/dev/api-keys/{id}/usage:
+    get:
+      operationId: getDeveloperApiKeyUsage
+      summary: Get API key usage statistics
+      description: Retrieve usage statistics for a specific API key with daily breakdown
+      tags: [Developer]
+      security:
+        - devCookie: []
+        - devJWT: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: API key UUID
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          description: Start date for usage period (ISO 8601 date)
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          description: End date for usage period (ISO 8601 date)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: API key usage statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKeyUsage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Key not owned by developer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/dev/accept-invitation:
+    post:
+      operationId: acceptDeveloperInvitation
+      summary: Accept developer invitation
+      description: Accept an invitation by token and set up developer account with password
+      tags: [Developer]
+      security: []
+      requestBody:
+        description: Invitation acceptance details
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, name, password]
+              properties:
+                token:
+                  type: string
+                  description: Invitation token from email
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: Developer's full name
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  description: Password for future logins
+      responses:
+        '200':
+          description: Invitation accepted, developer account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for immediate access
+                  developer:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      email:
+                        type: string
+                      name:
+                        type: string
+        '400':
+          description: Invalid token or weak password
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Invitation expired or already used
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /auth/github:
+    get:
+      operationId: githubOAuthStart
+      summary: Initiate GitHub OAuth flow
+      description: Redirect to GitHub OAuth authorization page with proper state parameter for CSRF protection
+      tags: [OAuth]
+      security: []
+      responses:
+        '302':
+          description: Redirect to GitHub OAuth
+          headers:
+            Location:
+              description: GitHub OAuth authorization URL
+              schema:
+                type: string
+                format: uri
+
+  /auth/github/callback:
+    get:
+      operationId: githubOAuthCallback
+      summary: GitHub OAuth callback
+      description: Handle GitHub OAuth callback, exchange code for token, and create/login developer
+      tags: [OAuth]
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: Authorization code from GitHub
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          description: CSRF protection state parameter
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to developer dashboard on success
+          headers:
+            Location:
+              description: Developer dashboard URL
+              schema:
+                type: string
+                format: uri
+        '400':
+          description: Invalid state or GitHub error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /healthz:
     get:
       operationId: healthLiveness
@@ -1000,6 +1550,16 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: JWT token for admin access
+    devCookie:
+      type: apiKey
+      in: cookie
+      name: dev_auth_token
+      description: Developer JWT token in HttpOnly cookie
+    devJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Developer JWT token for API access
 
   parameters:
     eventId:
@@ -1696,14 +2256,177 @@ components:
         type:
           type: string
           format: uri
+          description: URI identifying the problem type
+          example: https://sel.events/problems/max-keys-exceeded
         title:
           type: string
+          description: Short, human-readable summary
+          example: Maximum API keys exceeded
         status:
           type: integer
+          description: HTTP status code
+          example: 409
         detail:
           type: string
+          description: Human-readable explanation
+          example: You have reached your maximum of 5 API keys. Revoke an existing key or contact an admin to increase your limit.
         instance:
           type: string
+          description: URI identifying the specific occurrence
+          example: /api/v1/dev/api-keys
+
+    Developer:
+      type: object
+      description: Developer account with API key management capabilities
+      required: [id, email, name, max_keys, is_active, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Developer UUID
+        email:
+          type: string
+          format: email
+          description: Developer's email address
+        name:
+          type: string
+          description: Developer's full name
+        github_username:
+          type: string
+          description: GitHub username if linked via OAuth
+        max_keys:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Maximum API keys this developer can create
+        is_active:
+          type: boolean
+          description: Whether the developer account is active
+        created_at:
+          type: string
+          format: date-time
+          description: When the developer account was created
+        last_login_at:
+          type: string
+          format: date-time
+          description: When the developer last logged in
+
+    DeveloperAPIKey:
+      type: object
+      description: Developer-owned API key with usage statistics (secret not included)
+      required: [id, name, prefix, role, is_active, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: API key UUID
+        name:
+          type: string
+          description: Human-readable name for the key
+        prefix:
+          type: string
+          description: First 8 characters of the key for identification
+          example: 01KGJZ40
+        role:
+          type: string
+          enum: [agent]
+          description: API key role (always 'agent' for developer keys)
+        is_active:
+          type: boolean
+          description: Whether the key is currently active
+        created_at:
+          type: string
+          format: date-time
+          description: When the key was created
+        last_used_at:
+          type: string
+          format: date-time
+          description: When the key was last used
+        usage_today:
+          type: integer
+          description: Number of requests made today
+          example: 1523
+        usage_7d:
+          type: integer
+          description: Number of requests in the last 7 days
+          example: 8420
+        usage_30d:
+          type: integer
+          description: Number of requests in the last 30 days
+          example: 34210
+
+    DeveloperAPIKeyCreated:
+      type: object
+      description: Response when creating a new API key, includes full secret (shown only once)
+      required: [id, name, prefix, key, role, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prefix:
+          type: string
+          example: 01KGJZ40
+        key:
+          type: string
+          description: Full API key secret (shown only once on creation)
+          example: 01KGJZ40ZG0WQ5SQ...
+        role:
+          type: string
+          enum: [agent]
+        created_at:
+          type: string
+          format: date-time
+
+    APIKeyUsage:
+      type: object
+      description: Detailed usage statistics for an API key over a date range
+      required: [api_key_id, api_key_name, period, total_requests, total_errors, daily]
+      properties:
+        api_key_id:
+          type: string
+          format: uuid
+          description: API key UUID
+        api_key_name:
+          type: string
+          description: API key name
+        period:
+          type: object
+          required: [from, to]
+          properties:
+            from:
+              type: string
+              format: date
+              description: Start date of usage period
+            to:
+              type: string
+              format: date
+              description: End date of usage period
+        total_requests:
+          type: integer
+          description: Total number of requests in the period
+          example: 34210
+        total_errors:
+          type: integer
+          description: Total number of errors (4xx/5xx) in the period
+          example: 142
+        daily:
+          type: array
+          description: Daily breakdown of usage statistics
+          items:
+            type: object
+            required: [date, request_count, error_count]
+            properties:
+              date:
+                type: string
+                format: date
+              request_count:
+                type: integer
+                example: 1523
+              error_count:
+                type: integer
+                example: 3
 
     Tombstone:
       type: object
