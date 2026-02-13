@@ -34,7 +34,7 @@ bd ready
 bd update <id> --status in_progress
 
 # 3. Implement with tests
-make test-ci
+make test
 
 # 4. Run full CI locally
 make ci
@@ -55,7 +55,8 @@ make ci
 make test
 make test-v        # verbose
 make test-race     # with race detector
-make test-ci       # CI configuration
+make test-ci       # all test suites (no race detector)
+make test-ci-race  # all test suites with race detector (~10min)
 
 # Linting
 make lint

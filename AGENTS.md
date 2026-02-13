@@ -184,7 +184,7 @@ AGENT=1 make build
 AGENT=1 make ci
 ```
 
-Supported Makefile targets with `AGENT=1`: `build`, `test`, `test-ci`, `test-v`,
+Supported Makefile targets with `AGENT=1`: `build`, `test`, `test-ci`, `test-ci-race`, `test-v`,
 `test-race`, `coverage`, `test-contracts`, `validate-shapes`.
 
 For compound targets (e.g., `lint`, `lint-ci`) that have multi-line shell blocks,
@@ -221,7 +221,8 @@ make build
 
 # Tests
 make test            # Run all tests
-make test-ci         # Tests exactly as CI does (race detector, verbose)
+make test-ci         # Run all test suites (fast, no race detector)
+make test-ci-race    # Tests exactly as CI does (with race detector, ~10min)
 make test-race       # Tests with race detector
 make test-v          # Tests with verbose output
 make coverage        # Tests with coverage report (enforces 35% min threshold)

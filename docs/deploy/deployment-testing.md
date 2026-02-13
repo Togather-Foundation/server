@@ -56,6 +56,8 @@ See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
   ```bash
   make test-ci
   ```
+  > Runs all test suites without the race detector for fast feedback.
+  > Use `make test-ci-race` for full CI parity with race detection (~10min).
 
 - [ ] **Linter passes**
   ```bash

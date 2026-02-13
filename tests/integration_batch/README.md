@@ -12,8 +12,11 @@ The batch ingestion tests are the **only** integration tests that require River 
 ## Running Tests
 
 ```bash
-# Run all integration tests (both regular and batch)
+# Run all integration tests (both regular and batch, no race detector)
 make test-ci
+
+# Run all integration tests with race detector (~10min)
+make test-ci-race
 
 # Run only regular integration tests (faster, no River workers)
 go test ./tests/integration/...

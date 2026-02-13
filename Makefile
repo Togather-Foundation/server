@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -29,7 +29,8 @@ help:
 	@echo "  make build         - Build the server binary"
 	@echo "  make webfiles      - Generate web/robots.txt and sitemap.xml"
 	@echo "  make test          - Run all tests"
-	@echo "  make test-ci       - Run tests exactly as CI does (race detector, verbose)"
+	@echo "  make test-ci       - Run all test suites (fast, no race detector)"
+	@echo "  make test-ci-race  - Run tests exactly as CI does (with race detector, ~10min)"
 	@echo "  make lint          - Run golangci-lint"
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
 	@echo "  make lint-openapi  - Validate OpenAPI specification"
@@ -114,9 +115,35 @@ test:
 	@echo "Running tests..."
 	@go test ./...
 
-# Run tests exactly as CI does
+# Run all test suites (fast, no race detector — use for local pre-push checks)
 test-ci:
-	@echo "Running tests as CI does (with race detector and verbose output)..."
+	@echo "Running all test suites..."
+	@echo ""
+	@echo "==> Running unit tests..."
+	@$(RUN) go test -v -coverprofile=coverage.out ./internal/...
+	@echo ""
+	@echo "==> Running contract tests..."
+	@if ! command -v pyshacl > /dev/null 2>&1; then \
+		echo "WARNING: pyshacl not found. SHACL validation will be skipped."; \
+		echo "Install with: make install-pyshacl"; \
+		echo ""; \
+	fi
+	@$(RUN) go test -v ./tests/contracts/...
+	@echo ""
+	@echo "==> Running integration tests..."
+	@$(RUN) go test -v ./tests/integration/...
+	@echo ""
+	@echo "==> Running batch integration tests (with River workers)..."
+	@$(RUN) go test -v ./tests/integration_batch/...
+	@echo ""
+	@echo "==> Running E2E tests..."
+	@$(RUN) go test -v ./tests/e2e/...
+	@echo ""
+	@echo "✓ All tests passed!"
+
+# Run tests exactly as CI does (with race detector — slow, ~10min)
+test-ci-race:
+	@echo "Running tests exactly as CI does (with race detector)..."
 	@echo ""
 	@echo "==> Running unit tests..."
 	@$(RUN) go test -v -race -coverprofile=coverage.out ./internal/...

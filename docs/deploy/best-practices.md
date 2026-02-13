@@ -27,7 +27,7 @@ Run through this checklist before deploying to production:
 # 1. Code Quality
 [ ] All tests pass locally: make test
 [ ] Linter passes: make lint
-[ ] Integration tests pass: make test-ci
+[ ] Full CI pipeline passes: make ci
 [ ] Code reviewed and approved
 
 # 2. Configuration
