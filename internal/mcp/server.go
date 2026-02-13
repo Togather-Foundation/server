@@ -197,12 +197,15 @@ func (s *Server) registerTools() {
 		s.mcp.AddTool(developerTools.ManageAPIKeyTool(), developerTools.ManageAPIKeyHandler)
 	}
 
-	// Register geocoding tools (srv-28gtj)
+	// Register geocoding tools (srv-28gtj, srv-4xnt8)
 	if s.geocodingService != nil {
 		geocodingTools := tools.NewGeocodingTools(s.geocodingService)
 
 		// geocode_address tool - convert addresses to coordinates
 		s.mcp.AddTool(geocodingTools.GeocodeAddressTool(), geocodingTools.GeocodeAddressHandler)
+
+		// reverse_geocode tool - convert coordinates to addresses
+		s.mcp.AddTool(geocodingTools.ReverseGeocodeTool(), geocodingTools.ReverseGeocodeHandler)
 	}
 }
 

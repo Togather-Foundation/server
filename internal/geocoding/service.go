@@ -43,6 +43,26 @@ type GeocodeResult struct {
 	Cached      bool
 }
 
+// ReverseGeocodeResult represents the result of a reverse geocoding operation.
+type ReverseGeocodeResult struct {
+	DisplayName string
+	Address     AddressComponents
+	Latitude    float64
+	Longitude   float64
+	Source      string // "cache" or "nominatim"
+	Cached      bool
+}
+
+// AddressComponents contains structured address fields from reverse geocoding.
+type AddressComponents struct {
+	Road     string `json:"road,omitempty"`
+	Suburb   string `json:"suburb,omitempty"`
+	City     string `json:"city,omitempty"`
+	State    string `json:"state,omitempty"`
+	Postcode string `json:"postcode,omitempty"`
+	Country  string `json:"country,omitempty"`
+}
+
 // ErrGeocodingFailed is returned when geocoding fails after all retries.
 var ErrGeocodingFailed = errors.New("geocoding failed")
 
@@ -210,6 +230,177 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 		Latitude:    lat,
 		Longitude:   lon,
 		DisplayName: result.DisplayName,
+		Source:      "nominatim",
+		Cached:      false,
+	}, nil
+}
+
+// ReverseGeocode performs reverse geocoding (coordinates -> address).
+// It checks the cache first (using ST_DWithin with 100m radius), then calls Nominatim if needed.
+func (s *GeocodingService) ReverseGeocode(ctx context.Context, lat, lon float64) (*ReverseGeocodeResult, error) {
+	// Validate coordinates
+	if lat < -90 || lat > 90 {
+		return nil, fmt.Errorf("invalid latitude: %f (must be between -90 and 90)", lat)
+	}
+	if lon < -180 || lon > 180 {
+		return nil, fmt.Errorf("invalid longitude: %f (must be between -180 and 180)", lon)
+	}
+
+	// Check cache for existing result (ST_DWithin 100m)
+	cached, err := s.cache.GetCachedReverse(ctx, lat, lon)
+	if err != nil {
+		s.logger.Warn().Err(err).Float64("lat", lat).Float64("lon", lon).Msg("failed to check reverse geocoding cache")
+	}
+
+	if cached != nil {
+		// Cache hit
+		metrics.GeocodingCacheHitsTotal.WithLabelValues("reverse").Inc()
+		metrics.GeocodingRequestsTotal.WithLabelValues("reverse", "cache").Inc()
+
+		// Increment hit count asynchronously (best effort)
+		go func() {
+			// Use background context to avoid cancellation
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := s.cache.IncrementHitCount(bgCtx, cached.ID, "reverse_geocoding_cache"); err != nil {
+				s.logger.Warn().Err(err).Int64("id", cached.ID).Msg("failed to increment reverse cache hit count")
+			}
+		}()
+
+		s.logger.Debug().
+			Float64("lat", lat).
+			Float64("lon", lon).
+			Float64("cached_lat", cached.Latitude).
+			Float64("cached_lon", cached.Longitude).
+			Msg("reverse geocoding cache hit")
+
+		// Build address components
+		address := AddressComponents{}
+		if cached.AddressRoad != nil {
+			address.Road = *cached.AddressRoad
+		}
+		if cached.AddressSuburb != nil {
+			address.Suburb = *cached.AddressSuburb
+		}
+		if cached.AddressCity != nil {
+			address.City = *cached.AddressCity
+		}
+		if cached.AddressState != nil {
+			address.State = *cached.AddressState
+		}
+		if cached.AddressPostcode != nil {
+			address.Postcode = *cached.AddressPostcode
+		}
+		if cached.AddressCountry != nil {
+			address.Country = *cached.AddressCountry
+		}
+
+		return &ReverseGeocodeResult{
+			DisplayName: cached.DisplayName,
+			Address:     address,
+			Latitude:    cached.Latitude,
+			Longitude:   cached.Longitude,
+			Source:      "cache",
+			Cached:      true,
+		}, nil
+	}
+
+	// Cache miss - call Nominatim API
+	metrics.GeocodingCacheMissesTotal.WithLabelValues("reverse").Inc()
+
+	s.logger.Debug().
+		Float64("lat", lat).
+		Float64("lon", lon).
+		Msg("reverse geocoding cache miss, calling Nominatim")
+
+	startTime := time.Now()
+	result, err := s.client.Reverse(ctx, lat, lon)
+	latency := time.Since(startTime).Seconds()
+
+	metrics.GeocodingNominatimLatency.WithLabelValues("reverse").Observe(latency)
+
+	if err != nil {
+		metrics.GeocodingNominatimRequestsTotal.WithLabelValues("reverse", "error").Inc()
+		metrics.GeocodingFailuresTotal.WithLabelValues("reverse", "error").Inc()
+
+		s.logger.Error().
+			Err(err).
+			Float64("lat", lat).
+			Float64("lon", lon).
+			Dur("latency", time.Since(startTime)).
+			Msg("nominatim reverse geocoding failed")
+
+		return nil, fmt.Errorf("%w: %v", ErrGeocodingFailed, err)
+	}
+
+	metrics.GeocodingNominatimRequestsTotal.WithLabelValues("reverse", "success").Inc()
+	metrics.GeocodingRequestsTotal.WithLabelValues("reverse", "nominatim").Inc()
+
+	// Parse lat/lon from string
+	resultLat, err := strconv.ParseFloat(result.Lat, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid latitude in nominatim result: %w", err)
+	}
+	resultLon, err := strconv.ParseFloat(result.Lon, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid longitude in nominatim result: %w", err)
+	}
+
+	s.logger.Info().
+		Float64("lat", lat).
+		Float64("lon", lon).
+		Float64("result_lat", resultLat).
+		Float64("result_lon", resultLon).
+		Str("display_name", result.DisplayName).
+		Dur("latency", time.Since(startTime)).
+		Msg("reverse geocoding successful")
+
+	// Cache the result
+	rawJSON, _ := json.Marshal(result)
+
+	// Helper function to convert string to *string
+	toPtr := func(s string) *string {
+		if s == "" {
+			return nil
+		}
+		return &s
+	}
+
+	cacheEntry := postgres.CachedReverse{
+		Latitude:        resultLat,
+		Longitude:       resultLon,
+		DisplayName:     result.DisplayName,
+		AddressRoad:     toPtr(result.Address.Road),
+		AddressSuburb:   toPtr(result.Address.Suburb),
+		AddressCity:     toPtr(result.Address.City),
+		AddressState:    toPtr(result.Address.State),
+		AddressPostcode: toPtr(result.Address.Postcode),
+		AddressCountry:  toPtr(result.Address.Country),
+		OSMID:           &result.OSMID,
+		RawResponse:     rawJSON,
+		HitCount:        0,
+		CreatedAt:       time.Now(),
+	}
+
+	if err := s.cache.CacheReverse(ctx, cacheEntry); err != nil {
+		s.logger.Warn().Err(err).Float64("lat", lat).Float64("lon", lon).Msg("failed to cache reverse geocoding result")
+	}
+
+	// Build address components from result
+	address := AddressComponents{
+		Road:     result.Address.Road,
+		Suburb:   result.Address.Suburb,
+		City:     result.Address.City,
+		State:    result.Address.State,
+		Postcode: result.Address.Postcode,
+		Country:  result.Address.Country,
+	}
+
+	return &ReverseGeocodeResult{
+		DisplayName: result.DisplayName,
+		Address:     address,
+		Latitude:    resultLat,
+		Longitude:   resultLon,
 		Source:      "nominatim",
 		Cached:      false,
 	}, nil

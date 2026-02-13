@@ -94,3 +94,74 @@ func (t *GeocodingTools) GeocodeAddressHandler(ctx context.Context, request mcp.
 
 	return toolResultJSON(response)
 }
+
+// ReverseGeocodeTool returns the MCP tool definition for reverse geocoding.
+func (t *GeocodingTools) ReverseGeocodeTool() mcp.Tool {
+	return mcp.Tool{
+		Name:        "reverse_geocode",
+		Description: "Reverse geocode geographic coordinates to a human-readable address. Converts latitude/longitude to an address with structured components (road, city, state, etc.). Uses OpenStreetMap Nominatim with caching.",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"latitude": map[string]interface{}{
+					"type":        "number",
+					"description": "Latitude coordinate (must be between -90 and 90)",
+				},
+				"longitude": map[string]interface{}{
+					"type":        "number",
+					"description": "Longitude coordinate (must be between -180 and 180)",
+				},
+			},
+			Required: []string{"latitude", "longitude"},
+		},
+	}
+}
+
+// ReverseGeocodeHandler handles the reverse_geocode tool call.
+func (t *GeocodingTools) ReverseGeocodeHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if t == nil || t.service == nil {
+		return mcp.NewToolResultError("geocoding service not configured"), nil
+	}
+
+	args := struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}{}
+
+	if request.Params.Arguments != nil {
+		data, err := json.Marshal(request.Params.Arguments)
+		if err != nil {
+			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
+		}
+		if err := json.Unmarshal(data, &args); err != nil {
+			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
+		}
+	}
+
+	// Validate coordinates
+	if args.Latitude < -90 || args.Latitude > 90 {
+		return mcp.NewToolResultError("latitude must be between -90 and 90"), nil
+	}
+	if args.Longitude < -180 || args.Longitude > 180 {
+		return mcp.NewToolResultError("longitude must be between -180 and 180"), nil
+	}
+
+	// Reverse geocode the coordinates
+	result, err := t.service.ReverseGeocode(ctx, args.Latitude, args.Longitude)
+	if err != nil {
+		if errors.Is(err, geocoding.ErrNoResults) {
+			return mcp.NewToolResultErrorf("no results found for coordinates: lat=%f, lon=%f", args.Latitude, args.Longitude), nil
+		}
+		return mcp.NewToolResultErrorFromErr("reverse geocoding failed", err), nil
+	}
+
+	// Build response
+	response := map[string]interface{}{
+		"display_name": result.DisplayName,
+		"address":      result.Address,
+		"latitude":     result.Latitude,
+		"longitude":    result.Longitude,
+	}
+
+	return toolResultJSON(response)
+}
