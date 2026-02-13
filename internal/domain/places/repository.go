@@ -35,6 +35,7 @@ type Place struct {
 type Filters struct {
 	City      string
 	Query     string
+	NearPlace *string // Place name for geocoding-based proximity search (mutually exclusive with Latitude/Longitude)
 	Latitude  *float64
 	Longitude *float64
 	RadiusKm  *float64

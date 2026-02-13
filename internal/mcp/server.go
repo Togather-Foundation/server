@@ -7,6 +7,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/mcp/prompts"
 	"github.com/Togather-Foundation/server/internal/mcp/resources"
 	"github.com/Togather-Foundation/server/internal/mcp/tools"
@@ -42,6 +43,7 @@ type Server struct {
 	placesService    *places.Service
 	orgService       *organizations.Service
 	developerService *developers.Service
+	geocodingService *geocoding.GeocodingService
 	baseURL          string
 	name             string
 	version          string
@@ -104,6 +106,7 @@ func NewServer(
 	placesService *places.Service,
 	orgService *organizations.Service,
 	developerService *developers.Service,
+	geocodingService *geocoding.GeocodingService,
 	baseURL string,
 ) *Server {
 	// Initialize MCP server with full capabilities
@@ -124,6 +127,7 @@ func NewServer(
 		placesService:    placesService,
 		orgService:       orgService,
 		developerService: developerService,
+		geocodingService: geocodingService,
 		baseURL:          baseURL,
 		name:             cfg.Name,
 		version:          cfg.Version,
@@ -191,6 +195,14 @@ func (s *Server) registerTools() {
 
 		// manage_api_key tool - create or revoke API keys
 		s.mcp.AddTool(developerTools.ManageAPIKeyTool(), developerTools.ManageAPIKeyHandler)
+	}
+
+	// Register geocoding tools (srv-28gtj)
+	if s.geocodingService != nil {
+		geocodingTools := tools.NewGeocodingTools(s.geocodingService)
+
+		// geocode_address tool - convert addresses to coordinates
+		s.mcp.AddTool(geocodingTools.GeocodeAddressTool(), geocodingTools.GeocodeAddressHandler)
 	}
 }
 

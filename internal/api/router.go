@@ -26,6 +26,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
 	"github.com/Togather-Foundation/server/internal/domain/users"
 	"github.com/Togather-Foundation/server/internal/email"
+	"github.com/Togather-Foundation/server/internal/geocoding"
+	"github.com/Togather-Foundation/server/internal/geocoding/nominatim"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/mcp"
@@ -66,6 +68,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 	provenanceService := provenance.NewService(repo.Provenance())
+
+	// Initialize geocoding service (srv-28gtj)
+	nominatimClient := nominatim.NewClient(
+		cfg.Geocoding.NominatimAPIURL,
+		cfg.Geocoding.NominatimUserEmail,
+		nominatim.WithRateLimit(cfg.Geocoding.NominatimRateLimitPerSec),
+	)
+	geocodingCache := postgres.NewGeocodingCacheRepository(pool)
+	geocodingService := geocoding.NewGeocodingService(nominatimClient, geocodingCache, logger)
 
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
@@ -121,8 +132,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// DO NOT call riverClient.Start() here - it's handled during server initialization for proper graceful shutdown
 
 	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL)
-	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL)
+	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL).WithGeocodingService(geocodingService)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
+
+	// Create geocoding handler (srv-28gtj)
+	geocodingHandler := handlers.NewGeocodingHandler(geocodingService, cfg.Environment)
 
 	// Create audit logger for admin operations
 	auditLogger := audit.NewLoggerWithZerolog(logger)
@@ -308,6 +322,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				placesService,
 				orgService,
 				developerService,
+				geocodingService,
 				cfg.Server.BaseURL,
 			)
 
@@ -360,6 +375,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/api/v1/places/{id}", publicPlaceGet)
 	mux.Handle("/api/v1/organizations", publicOrgs)
 	mux.Handle("/api/v1/organizations/{id}", publicOrgGet)
+
+	// Geocoding endpoint (srv-28gtj)
+	publicGeocode := rateLimitPublic(http.HandlerFunc(geocodingHandler.Geocode))
+	mux.Handle("/api/v1/geocode", publicGeocode)
 
 	// Public HTML and Turtle placeholders for content negotiation tests
 	mux.Handle("/events/{id}", publicEventPage)

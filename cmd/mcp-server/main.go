@@ -97,6 +97,7 @@ func run() error {
 		placesService,
 		orgService,
 		developerService,
+		nil, // geocodingService (not needed for MCP server)
 		cfg.Base.Server.BaseURL,
 	)
 

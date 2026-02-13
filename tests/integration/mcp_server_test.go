@@ -42,6 +42,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 
@@ -95,6 +96,7 @@ func TestMCPResources(t *testing.T) {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 
@@ -166,6 +168,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 
@@ -239,6 +242,7 @@ func TestMCPAuthValidKey(t *testing.T) {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 
@@ -294,6 +298,7 @@ func TestMCPAuthInvalidKey(t *testing.T) {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 
@@ -361,6 +366,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 
@@ -989,6 +995,7 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 		placesService,
 		orgService,
 		nil, // developerService
+		nil, // geocodingService
 		env.Config.Server.BaseURL,
 	)
 

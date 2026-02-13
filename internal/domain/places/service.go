@@ -57,6 +57,12 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 	filters.City = strings.TrimSpace(values.Get("city"))
 	filters.Query = strings.TrimSpace(values.Get("q"))
 
+	// Parse near_place parameter
+	nearPlace := strings.TrimSpace(values.Get("near_place"))
+	if nearPlace != "" {
+		filters.NearPlace = &nearPlace
+	}
+
 	// Parse proximity parameters
 	lat, lon, radius, err := parseProximityParams(values)
 	if err != nil {
@@ -65,6 +71,14 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 	filters.Latitude = lat
 	filters.Longitude = lon
 	filters.RadiusKm = radius
+
+	// Validate that near_place and near_lat/near_lon are mutually exclusive
+	if filters.NearPlace != nil && (filters.Latitude != nil || filters.Longitude != nil) {
+		return filters, pagination, FilterError{
+			Field:   "near_place,near_lat,near_lon",
+			Message: "cannot use both near_place and near_lat/near_lon - choose one proximity method",
+		}
+	}
 
 	limit, err := parseLimit(values)
 	if err != nil {

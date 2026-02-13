@@ -9,17 +9,25 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
 
 type PlacesHandler struct {
-	Service *places.Service
-	Env     string
-	BaseURL string
+	Service          *places.Service
+	GeocodingService *geocoding.GeocodingService
+	Env              string
+	BaseURL          string
 }
 
 func NewPlacesHandler(service *places.Service, env string, baseURL string) *PlacesHandler {
 	return &PlacesHandler{Service: service, Env: env, BaseURL: baseURL}
+}
+
+// WithGeocodingService adds geocoding capability to the handler (optional dependency).
+func (h *PlacesHandler) WithGeocodingService(service *geocoding.GeocodingService) *PlacesHandler {
+	h.GeocodingService = service
+	return h
 }
 
 func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +40,54 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
+	}
+
+	// If near_place is provided, geocode it to coordinates
+	var geocodingMeta map[string]interface{}
+	if filters.NearPlace != nil {
+		if h.GeocodingService == nil {
+			problem.Write(w, r, http.StatusServiceUnavailable,
+				"https://sel.events/problems/service-unavailable",
+				"Geocoding service unavailable",
+				errors.New("geocoding service not configured"),
+				h.Env)
+			return
+		}
+
+		// Get country codes from query param or use default
+		countryCodes := strings.TrimSpace(r.URL.Query().Get("countrycodes"))
+		if countryCodes == "" {
+			countryCodes = "ca"
+		}
+
+		geocodeResult, err := h.GeocodingService.Geocode(r.Context(), *filters.NearPlace, countryCodes)
+		if err != nil {
+			// Return 422 with helpful error suggesting near_lat/near_lon
+			detail := "Could not geocode the place name. Try using near_lat and near_lon with explicit coordinates instead."
+			if errors.Is(err, geocoding.ErrNoResults) {
+				detail = "No results found for the place name. Try a different query or use near_lat and near_lon with explicit coordinates."
+			}
+			problem.Write(w, r, http.StatusUnprocessableEntity,
+				"https://sel.events/problems/geocoding-failed",
+				"Geocoding failed",
+				err,
+				h.Env,
+				problem.WithDetail(detail))
+			return
+		}
+
+		// Set the geocoded coordinates on filters
+		filters.Latitude = &geocodeResult.Latitude
+		filters.Longitude = &geocodeResult.Longitude
+
+		// Build geocoding metadata for response
+		geocodingMeta = map[string]interface{}{
+			"query":              *filters.NearPlace,
+			"resolved_latitude":  geocodeResult.Latitude,
+			"resolved_longitude": geocodeResult.Longitude,
+			"display_name":       geocodeResult.DisplayName,
+			"source":             geocodeResult.Source,
+		}
 	}
 
 	result, err := h.Service.List(r.Context(), filters, pagination)
@@ -56,7 +112,16 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
+	// Build response with optional geocoding metadata
+	response := map[string]interface{}{
+		"items":       items,
+		"next_cursor": result.NextCursor,
+	}
+	if geocodingMeta != nil {
+		response["geocoding"] = geocodingMeta
+	}
+
+	writeJSON(w, http.StatusOK, response, contentTypeFromRequest(r))
 }
 
 func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
