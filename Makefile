@@ -98,7 +98,7 @@ LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VE
            -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=$(BUILD_DATE)'
 
 # Build the server
-build: webfiles
+build:
 	@echo "Building server..."
 	@mkdir -p bin
 	@$(RUN) go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
@@ -370,7 +370,7 @@ docker-compose-lint:
 	@echo "✓ docker-compose.blue-green.yml is valid"
 
 # Run full CI pipeline locally
-ci: sqlc-generate lint-ci vulncheck webfiles
+ci: sqlc-generate lint-ci vulncheck
 	@echo ""
 	@echo "=========================================="
 	@echo "Starting CI pipeline at $$(date '+%H:%M:%S')"
@@ -405,6 +405,10 @@ ci: sqlc-generate lint-ci vulncheck webfiles
 		exit 1; \
 	fi
 	@echo "✓ Build successful"
+	@echo ""
+	@echo "==> Generating web files..."
+	@$(MAKE) webfiles
+	@echo "✓ Web files generated"
 	@echo ""
 	@echo "==> Checking SQLc generation is up to date..."
 	@if [ -n "$$(git status --porcelain internal/storage/postgres/sqlc)" ]; then \
