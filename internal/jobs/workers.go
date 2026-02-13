@@ -377,5 +377,11 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 		Logger: logger,
 		Slot:   slot,
 	})
+	river.AddWorker[CleanupGeocodingCacheArgs](workers, CleanupGeocodingCacheWorker{
+		Pool:             pool,
+		Logger:           logger,
+		Slot:             slot,
+		PreserveTopCount: 10000, // TODO: Read from config
+	})
 	return workers
 }

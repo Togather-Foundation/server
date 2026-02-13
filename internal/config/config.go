@@ -22,6 +22,7 @@ type Config struct {
 	Validation     ValidationConfig
 	Tracing        TracingConfig
 	Dedup          DedupConfig
+	Geocoding      GeocodingConfig
 	Environment    string
 }
 
@@ -178,6 +179,26 @@ type ValidationConfig struct {
 	RequireImage bool
 }
 
+// GeocodingConfig holds configuration for the Nominatim geocoding client and cache.
+type GeocodingConfig struct {
+	// NominatimAPIURL is the base URL for the Nominatim API
+	NominatimAPIURL string
+	// NominatimUserEmail is included in User-Agent header per OSM usage policy
+	NominatimUserEmail string
+	// NominatimRateLimitPerSec controls max requests per second to Nominatim (default: 1.0)
+	NominatimRateLimitPerSec float64
+	// NominatimTimeoutSeconds is the HTTP request timeout in seconds (default: 5)
+	NominatimTimeoutSeconds int
+	// CacheTTLDays is the TTL for successful geocoding results (default: 30)
+	CacheTTLDays int
+	// FailureTTLDays is the TTL for failed geocoding attempts (default: 7)
+	FailureTTLDays int
+	// PopularPreserveCount is the number of top queries to preserve past TTL (default: 10000)
+	PopularPreserveCount int
+	// DefaultCountry is the default country code for geocoding queries (default: "ca")
+	DefaultCountry string
+}
+
 func Load() (Config, error) {
 	// Try to load .env files if DATABASE_URL not already set
 	if os.Getenv("DATABASE_URL") == "" {
@@ -266,6 +287,16 @@ func Load() (Config, error) {
 			PlaceAutoMergeThreshold: getEnvFloat("DEDUP_PLACE_AUTO_MERGE_THRESHOLD", 0.95),
 			OrgReviewThreshold:      getEnvFloat("DEDUP_ORG_REVIEW_THRESHOLD", 0.6),
 			OrgAutoMergeThreshold:   getEnvFloat("DEDUP_ORG_AUTO_MERGE_THRESHOLD", 0.95),
+		},
+		Geocoding: GeocodingConfig{
+			NominatimAPIURL:          getEnv("NOMINATIM_API_URL", "https://nominatim.openstreetmap.org"),
+			NominatimUserEmail:       getEnv("NOMINATIM_USER_EMAIL", "nominatim@togather.foundation"),
+			NominatimRateLimitPerSec: getEnvFloat("NOMINATIM_RATE_LIMIT_PER_SEC", 1.0),
+			NominatimTimeoutSeconds:  getEnvInt("NOMINATIM_TIMEOUT_SECONDS", 5),
+			CacheTTLDays:             getEnvInt("GEOCODING_CACHE_TTL_DAYS", 30),
+			FailureTTLDays:           getEnvInt("GEOCODING_FAILURE_TTL_DAYS", 7),
+			PopularPreserveCount:     getEnvInt("GEOCODING_POPULAR_PRESERVE_COUNT", 10000),
+			DefaultCountry:           getEnv("GEOCODING_DEFAULT_COUNTRY", "ca"),
 		},
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}

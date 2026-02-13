@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	JobKindDeduplication       = "deduplication"
-	JobKindReconciliation      = "reconciliation"
-	JobKindEnrichment          = "enrichment"
-	JobKindIdempotencyCleanup  = "idempotency_cleanup"
-	JobKindBatchIngestion      = "batch_ingestion"
-	JobKindBatchResultsCleanup = "batch_results_cleanup"
-	JobKindReviewQueueCleanup  = "review_queue_cleanup"
+	JobKindDeduplication         = "deduplication"
+	JobKindReconciliation        = "reconciliation"
+	JobKindEnrichment            = "enrichment"
+	JobKindIdempotencyCleanup    = "idempotency_cleanup"
+	JobKindBatchIngestion        = "batch_ingestion"
+	JobKindBatchResultsCleanup   = "batch_results_cleanup"
+	JobKindReviewQueueCleanup    = "review_queue_cleanup"
+	JobKindGeocodingCacheCleanup = "geocoding_cache_cleanup"
 )
 
 const (

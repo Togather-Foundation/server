@@ -95,6 +95,69 @@ var IdempotencyKeysTableSize = promauto.With(Registry).NewGaugeVec(
 	[]string{"slot"},
 )
 
+// Geocoding metrics
+
+// GeocodingRequestsTotal tracks total geocoding requests by type and source
+var GeocodingRequestsTotal = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "geocoding_requests_total",
+		Help:      "Total number of geocoding requests",
+	},
+	[]string{"type", "source"}, // type: forward|reverse, source: cache|nominatim
+)
+
+// GeocodingCacheHitsTotal tracks successful cache hits
+var GeocodingCacheHitsTotal = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "geocoding_cache_hits_total",
+		Help:      "Total number of geocoding cache hits",
+	},
+	[]string{"cache_type"}, // cache_type: forward|reverse
+)
+
+// GeocodingCacheMissesTotal tracks cache misses requiring API calls
+var GeocodingCacheMissesTotal = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "geocoding_cache_misses_total",
+		Help:      "Total number of geocoding cache misses",
+	},
+	[]string{"cache_type"}, // cache_type: forward|reverse
+)
+
+// GeocodingNominatimRequestsTotal tracks Nominatim API requests by endpoint and status
+var GeocodingNominatimRequestsTotal = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "geocoding_nominatim_requests_total",
+		Help:      "Total number of Nominatim API requests",
+	},
+	[]string{"endpoint", "status"}, // endpoint: search|reverse, status: success|error
+)
+
+// GeocodingNominatimLatency tracks Nominatim API request latency
+var GeocodingNominatimLatency = promauto.With(Registry).NewHistogramVec(
+	prometheus.HistogramOpts{
+		Namespace: namespace,
+		Name:      "geocoding_nominatim_latency_seconds",
+		Help:      "Nominatim API request latency in seconds",
+		Buckets:   []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+	},
+	[]string{"endpoint"}, // endpoint: search|reverse
+)
+
+// GeocodingFailuresTotal tracks failed geocoding attempts by type and reason
+var GeocodingFailuresTotal = promauto.With(Registry).NewCounterVec(
+	prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "geocoding_failures_total",
+		Help:      "Total number of failed geocoding attempts",
+	},
+	[]string{"type", "reason"}, // type: forward|reverse, reason: timeout|rate_limit|not_found|error
+)
+
 // Init initializes the metrics registry and sets version information
 func Init(version, commit, buildDate, activeSlot string) {
 	// Register default Go metrics (memory, goroutines, GC, etc.)
