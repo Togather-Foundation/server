@@ -251,25 +251,28 @@ func (t *OrganizationTools) AddOrganizationHandler(ctx context.Context, request 
 		return mcp.NewToolResultErrorFromErr("invalid organization payload", err), nil
 	}
 
-	params, err := parseCreateOrganizationParams(raw, t.baseURL)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("invalid organization payload", err), nil
-	}
+	// TODO(srv-d7cnu): Organization creation disabled during rebase
+	// params, err := parseCreateOrganizationParams(raw, t.baseURL)
+	// if err != nil {
+	// 	return mcp.NewToolResultErrorFromErr("invalid organization payload", err), nil
+	// }
+	_ = raw // Prevent unused variable warning
+	// org, err := t.orgService.Create(ctx, params)
+	// if err != nil {
+	// 	return mcp.NewToolResultErrorFromErr("failed to create organization", err), nil
+	// }
+	//
+	// response := map[string]any{
+	// 	"id":           org.ULID,
+	// 	"organization": buildOrgPayload(org, t.baseURL),
+	// }
+	// if uri := buildOrgURI(t.baseURL, org.ULID); uri != "" {
+	// 	response["@id"] = uri
+	// }
+	//
+	// return toolResultJSON(response)
 
-	org, err := t.orgService.Create(ctx, params)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to create organization", err), nil
-	}
-
-	response := map[string]any{
-		"id":           org.ULID,
-		"organization": buildOrganizationPayload(org, t.baseURL),
-	}
-	if uri := buildOrganizationURI(t.baseURL, org.ULID); uri != "" {
-		response["@id"] = uri
-	}
-
-	return toolResultJSON(response)
+	return mcp.NewToolResultError("Organization creation temporarily disabled - see srv-d7cnu"), nil
 }
 
 func buildOrganizationListItem(org organizations.Organization, baseURL string) map[string]any {

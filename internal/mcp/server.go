@@ -164,8 +164,8 @@ func (s *Server) registerTools() {
 	// places tool - list places with filters OR get a specific place by ULID
 	s.mcp.AddTool(placeTools.PlacesTool(), placeTools.PlacesHandler)
 
-	// add_place tool - create new places
-	s.mcp.AddTool(placeTools.AddPlaceTool(), placeTools.AddPlaceHandler)
+	// TODO: add_place tool disabled - Place creation removed from repository
+	// s.mcp.AddTool(placeTools.AddPlaceTool(), placeTools.AddPlaceHandler)
 
 	// Register organization tools (server-slhh, server-5yr5)
 	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL)

@@ -61,7 +61,8 @@ type ListResult struct {
 type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Organization, error)
-	Create(ctx context.Context, params CreateParams) (*Organization, error)
+	// TODO(srv-d7cnu): Create removed during rebase - check if needed
+	// Create(ctx context.Context, params CreateParams) (*Organization, error)
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)

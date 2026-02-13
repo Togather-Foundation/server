@@ -76,10 +76,10 @@ func run() error {
 
 	// Initialize domain services
 	eventsService := events.NewService(repo.Events())
-	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL)
+	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL, cfg.Base.Validation)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
-	developerService := developers.NewService(repo.Developers(), repo.Auth().APIKeys())
+	developerService := developers.NewService(repo.Developers(), log.Logger)
 
 	log.Info().Msg("Domain services initialized")
 

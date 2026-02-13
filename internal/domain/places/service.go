@@ -26,10 +26,6 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Place, error) {
 	return s.repo.GetByULID(ctx, ulid)
 }
 
-func (s *Service) Create(ctx context.Context, params CreateParams) (*Place, error) {
-	return s.repo.Create(ctx, params)
-}
-
 func (s *Service) SoftDelete(ctx context.Context, ulid string, reason string) error {
 	return s.repo.SoftDelete(ctx, ulid, reason)
 }
@@ -60,14 +56,6 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 
 	filters.City = strings.TrimSpace(values.Get("city"))
 	filters.Query = strings.TrimSpace(values.Get("q"))
-
-	if nearLat, nearLon, radius, ok, err := parseGeoFilters(values); err != nil {
-		return filters, pagination, err
-	} else if ok {
-		filters.NearLat = &nearLat
-		filters.NearLon = &nearLon
-		filters.RadiusMeters = radius
-	}
 
 	limit, err := parseLimit(values)
 	if err != nil {

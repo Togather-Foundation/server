@@ -275,25 +275,28 @@ func (t *PlaceTools) AddPlaceHandler(ctx context.Context, request mcp.CallToolRe
 		return mcp.NewToolResultErrorFromErr("invalid place payload", err), nil
 	}
 
-	params, err := parseCreatePlaceParams(raw, t.baseURL)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("invalid place payload", err), nil
-	}
+	// TODO(srv-d7cnu): Place creation removed from repository during rebase
+	// params, err := parseCreatePlaceParams(raw, t.baseURL)
+	// if err != nil {
+	// 	return mcp.NewToolResultErrorFromErr("invalid place payload", err), nil
+	// }
+	//
+	// place, err := t.placesService.Create(ctx, params)
+	// if err != nil {
+	// 	return mcp.NewToolResultErrorFromErr("failed to create place", err), nil
+	// }
+	//
+	// response := map[string]any{
+	// 	"id":    place.ULID,
+	// 	"place": buildPlacePayload(place, t.baseURL),
+	// }
+	// if uri := buildPlaceURI(t.baseURL, place.ULID); uri != "" {
+	// 	response["@id"] = uri
+	// }
+	//
+	// return toolResultJSON(response)
 
-	place, err := t.placesService.Create(ctx, params)
-	if err != nil {
-		return mcp.NewToolResultErrorFromErr("failed to create place", err), nil
-	}
-
-	response := map[string]any{
-		"id":    place.ULID,
-		"place": buildPlacePayload(place, t.baseURL),
-	}
-	if uri := buildPlaceURI(t.baseURL, place.ULID); uri != "" {
-		response["@id"] = uri
-	}
-
-	return toolResultJSON(response)
+	return mcp.NewToolResultError("Place creation temporarily disabled - see srv-d7cnu"), nil
 }
 
 func buildPlaceListItem(place places.Place, baseURL string) map[string]any {
@@ -394,7 +397,12 @@ func buildPlaceURI(baseURL, ulid string) string {
 	return uri
 }
 
-func parseCreatePlaceParams(raw map[string]any, baseURL string) (places.CreateParams, error) {
+// TODO(srv-d7cnu): Place creation removed - parseCreatePlaceParams disabled
+// func parseCreatePlaceParams(raw map[string]any, baseURL string) (places.CreateParams, error) {
+func parseCreatePlaceParams(raw map[string]any, baseURL string) (struct{}, error) {
+	return struct{}{}, fmt.Errorf("place creation disabled - see srv-d7cnu")
+
+	/* Original implementation commented out
 	var params places.CreateParams
 
 	name := strings.TrimSpace(getString(raw["name"]))
@@ -488,6 +496,7 @@ func parseCreatePlaceParams(raw map[string]any, baseURL string) (places.CreatePa
 	}
 
 	return params, nil
+	*/
 }
 
 func getString(value any) string {

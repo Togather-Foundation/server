@@ -307,6 +307,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				ingestService,
 				placesService,
 				orgService,
+				developerService,
 				cfg.Server.BaseURL,
 			)
 
