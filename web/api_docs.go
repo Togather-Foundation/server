@@ -77,7 +77,7 @@ func APIDocsHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		// Get file info for serving
 		stat, err := file.Stat()

@@ -99,7 +99,7 @@ func TestReversedDatesRegressions_srv629_NormalizationBypass(t *testing.T) {
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusAccepted {
 				var failure map[string]any
@@ -206,7 +206,7 @@ func TestReversedDatesRegressions_srv_oad_OccurrenceReversedDates(t *testing.T) 
 
 			resp, err := env.Server.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			require.Equal(t, http.StatusCreated, resp.StatusCode)
 
@@ -511,7 +511,7 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusAccepted, resp.StatusCode, "Events with warnings should return 202 Accepted")
 
