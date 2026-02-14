@@ -37,7 +37,7 @@ func NewGeocodingHandler(service GeocodingService, env string) *GeocodingHandler
 // Geocode handles GET /api/v1/geocode requests.
 // Query params:
 //   - q: address/place name to geocode (required)
-//   - countrycodes: comma-separated ISO country codes (optional, default: ca)
+//   - countrycodes: comma-separated ISO country codes (optional, defaults to config value)
 func (h *GeocodingHandler) Geocode(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Service == nil {
 		problem.Write(w, r, http.StatusInternalServerError,
@@ -69,11 +69,8 @@ func (h *GeocodingHandler) Geocode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get country codes parameter (optional, defaults to ca)
+	// Get country codes parameter (optional, defaults to service's configured default)
 	countryCodes := strings.TrimSpace(r.URL.Query().Get("countrycodes"))
-	if countryCodes == "" {
-		countryCodes = "ca"
-	}
 
 	// Perform geocoding
 	result, err := h.Service.Geocode(r.Context(), query, countryCodes)

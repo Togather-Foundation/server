@@ -64,7 +64,7 @@ func TestGeocode_MockNominatim(t *testing.T) {
 
 	// Create geocoding service
 	logger := zerolog.Nop()
-	service := NewGeocodingService(client, cache, logger)
+	service := NewGeocodingService(client, cache, logger, "ca")
 
 	// Test geocoding a known place
 	result, err := service.Geocode(ctx, "Toronto City Hall", "ca")
@@ -114,7 +114,7 @@ func TestGeocode_NoResults(t *testing.T) {
 
 	// Create geocoding service
 	logger := zerolog.Nop()
-	service := NewGeocodingService(client, cache, logger)
+	service := NewGeocodingService(client, cache, logger, "ca")
 
 	// Test geocoding a place that returns no results
 	result, err := service.Geocode(ctx, "Nonexistent Place", "ca")
@@ -209,7 +209,7 @@ func TestReverseGeocode_MockNominatim(t *testing.T) {
 
 	// Create geocoding service
 	logger := zerolog.Nop()
-	service := NewGeocodingService(client, cache, logger)
+	service := NewGeocodingService(client, cache, logger, "ca")
 
 	// Test reverse geocoding
 	result, err := service.ReverseGeocode(ctx, 43.6532, -79.3832)
@@ -287,7 +287,7 @@ func TestReverseGeocode_CacheBucketRadius(t *testing.T) {
 
 	// Create geocoding service
 	logger := zerolog.Nop()
-	service := NewGeocodingService(client, cache, logger)
+	service := NewGeocodingService(client, cache, logger, "ca")
 
 	// First request - cache miss
 	result1, err := service.ReverseGeocode(ctx, 43.6532, -79.3832)
@@ -342,7 +342,7 @@ func TestReverseGeocode_InvalidCoordinates(t *testing.T) {
 
 	// Create geocoding service
 	logger := zerolog.Nop()
-	service := NewGeocodingService(client, cache, logger)
+	service := NewGeocodingService(client, cache, logger, "ca")
 
 	// Test invalid latitude (> 90)
 	result, err := service.ReverseGeocode(ctx, 91.0, -79.3832)
@@ -400,7 +400,7 @@ func TestReverseGeocode_NominatimFailure(t *testing.T) {
 
 	// Create geocoding service
 	logger := zerolog.Nop()
-	service := NewGeocodingService(client, cache, logger)
+	service := NewGeocodingService(client, cache, logger, "ca")
 
 	// Test reverse geocoding with failing Nominatim (using coordinates not in cache)
 	result, err := service.ReverseGeocode(ctx, 43.95, -79.45)

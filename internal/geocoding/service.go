@@ -16,9 +16,10 @@ import (
 
 // GeocodingService orchestrates geocoding operations using cache and Nominatim API.
 type GeocodingService struct {
-	client *nominatim.Client
-	cache  *postgres.GeocodingCacheRepository
-	logger zerolog.Logger
+	client         *nominatim.Client
+	cache          *postgres.GeocodingCacheRepository
+	logger         zerolog.Logger
+	defaultCountry string
 }
 
 // NewGeocodingService creates a new geocoding service.
@@ -26,12 +27,22 @@ func NewGeocodingService(
 	client *nominatim.Client,
 	cache *postgres.GeocodingCacheRepository,
 	logger zerolog.Logger,
+	defaultCountry string,
 ) *GeocodingService {
-	return &GeocodingService{
-		client: client,
-		cache:  cache,
-		logger: logger,
+	if defaultCountry == "" {
+		defaultCountry = "ca"
 	}
+	return &GeocodingService{
+		client:         client,
+		cache:          cache,
+		logger:         logger,
+		defaultCountry: defaultCountry,
+	}
+}
+
+// DefaultCountry returns the configured default country code.
+func (s *GeocodingService) DefaultCountry() string {
+	return s.defaultCountry
 }
 
 // GeocodeResult represents the result of a geocoding operation.
@@ -80,7 +91,7 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 
 	// Default country codes if not provided
 	if countryCodes == "" {
-		countryCodes = "ca"
+		countryCodes = s.defaultCountry
 	}
 
 	// Check for recent failures to avoid hammering Nominatim

@@ -81,7 +81,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		nominatim.WithRateLimit(cfg.Geocoding.NominatimRateLimitPerSec),
 	)
 	geocodingCache := postgres.NewGeocodingCacheRepository(pool)
-	geocodingService := geocoding.NewGeocodingService(nominatimClient, geocodingCache, logger)
+	geocodingService := geocoding.NewGeocodingService(nominatimClient, geocodingCache, logger, cfg.Geocoding.DefaultCountry)
 
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
