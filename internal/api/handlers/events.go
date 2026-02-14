@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -144,20 +143,17 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enqueue geocoding job for event if it was created successfully (srv-qq7o1)
+	// Insert job synchronously - it's just a DB insert and should be fast.
+	// This ensures we know immediately if job insertion fails and prevents losing jobs on shutdown.
 	if result != nil && result.Event != nil && !result.IsDuplicate && h.RiverClient != nil {
-		// Enqueue in background, don't block event creation
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_, err := h.RiverClient.Insert(ctx, jobs.GeocodeEventArgs{EventID: result.Event.ULID}, &river.InsertOpts{
-				Queue:       "geocoding",
-				MaxAttempts: jobs.GeocodingMaxAttempts,
-			})
-			if err != nil {
-				// Log error but don't fail event creation
-				log.Warn().Err(err).Str("event_ulid", result.Event.ULID).Msg("failed to enqueue geocoding job")
-			}
-		}()
+		_, err := h.RiverClient.Insert(r.Context(), jobs.GeocodeEventArgs{EventID: result.Event.ULID}, &river.InsertOpts{
+			Queue:       "geocoding",
+			MaxAttempts: jobs.GeocodingMaxAttempts,
+		})
+		if err != nil {
+			// Log error but don't fail event creation - geocoding is not critical for event acceptance
+			log.Warn().Err(err).Str("event_ulid", result.Event.ULID).Msg("failed to enqueue geocoding job")
+		}
 	}
 
 	location := createEventLocation(input)
