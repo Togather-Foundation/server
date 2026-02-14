@@ -60,7 +60,7 @@ func (h *AdminGeocodingHandler) Backfill(w http.ResponseWriter, r *http.Request)
 		AND longitude IS NULL
 		AND (
 			street_address IS NOT NULL
-			OR city IS NOT NULL
+			OR address_locality IS NOT NULL
 			OR postal_code IS NOT NULL
 		)
 	`
@@ -102,7 +102,7 @@ func (h *AdminGeocodingHandler) Backfill(w http.ResponseWriter, r *http.Request)
 		AND p.longitude IS NULL
 		AND (
 			p.street_address IS NOT NULL
-			OR p.city IS NOT NULL
+			OR p.address_locality IS NOT NULL
 			OR p.postal_code IS NOT NULL
 		)
 	`
