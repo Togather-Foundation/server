@@ -75,7 +75,11 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 
 	if useProximity {
 		// Proximity search query with distance calculation
-		radiusMeters := *filters.RadiusKm * 1000.0
+		radiusKm := 10.0 // default 10km radius
+		if filters.RadiusKm != nil {
+			radiusKm = *filters.RadiusKm
+		}
+		radiusMeters := radiusKm * 1000.0
 
 		// Build WHERE conditions dynamically based on filters
 		var whereClauses []string
