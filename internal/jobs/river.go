@@ -151,6 +151,7 @@ func NewClient(pool *pgxpool.Pool, workers *river.Workers, logger *slog.Logger, 
 // - Batch results cleanup: daily at 3 AM UTC
 // - Review queue cleanup: daily at 4 AM UTC
 // - Usage rollup: daily at 5 AM UTC
+// - Geocoding cache cleanup: daily at 6 AM UTC
 func NewPeriodicJobs() []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		// Idempotency key cleanup - daily at 2 AM UTC
@@ -182,6 +183,14 @@ func NewPeriodicJobs() []*river.PeriodicJob {
 			river.PeriodicInterval(24*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) {
 				return UsageRollupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		// Geocoding cache cleanup - daily at 6 AM UTC
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return CleanupGeocodingCacheArgs{}, nil
 			},
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
