@@ -70,9 +70,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	provenanceService := provenance.NewService(repo.Provenance())
 
 	// Initialize geocoding service (srv-28gtj)
+	// Create HTTP client with configured timeout (srv-v89f4)
+	httpClient := &http.Client{
+		Timeout: time.Duration(cfg.Geocoding.NominatimTimeoutSeconds) * time.Second,
+	}
 	nominatimClient := nominatim.NewClient(
 		cfg.Geocoding.NominatimAPIURL,
 		cfg.Geocoding.NominatimUserEmail,
+		nominatim.WithHTTPClient(httpClient),
 		nominatim.WithRateLimit(cfg.Geocoding.NominatimRateLimitPerSec),
 	)
 	geocodingCache := postgres.NewGeocodingCacheRepository(pool)
