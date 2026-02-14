@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -13,9 +14,15 @@ import (
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
 
+// PlacesGeocodingService defines the minimal interface needed for place geocoding.
+// This follows the idiomatic Go principle: consumers define interfaces.
+type PlacesGeocodingService interface {
+	Geocode(ctx context.Context, query string, countryCodes string) (*geocoding.GeocodeResult, error)
+}
+
 type PlacesHandler struct {
 	Service          *places.Service
-	GeocodingService *geocoding.GeocodingService
+	GeocodingService PlacesGeocodingService
 	Env              string
 	BaseURL          string
 }
@@ -25,7 +32,7 @@ func NewPlacesHandler(service *places.Service, env string, baseURL string) *Plac
 }
 
 // WithGeocodingService adds geocoding capability to the handler (optional dependency).
-func (h *PlacesHandler) WithGeocodingService(service *geocoding.GeocodingService) *PlacesHandler {
+func (h *PlacesHandler) WithGeocodingService(service PlacesGeocodingService) *PlacesHandler {
 	h.GeocodingService = service
 	return h
 }
@@ -54,11 +61,8 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get country codes from query param or use default
+		// Get country codes from query param (optional, defaults to service's configured default)
 		countryCodes := strings.TrimSpace(r.URL.Query().Get("countrycodes"))
-		if countryCodes == "" {
-			countryCodes = "ca"
-		}
 
 		geocodeResult, err := h.GeocodingService.Geocode(r.Context(), *filters.NearPlace, countryCodes)
 		if err != nil {

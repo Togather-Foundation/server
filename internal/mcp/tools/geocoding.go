@@ -4,19 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// MCPGeocodingService defines the minimal interface needed for MCP geocoding tools.
+// This follows the idiomatic Go principle: consumers define interfaces.
+type MCPGeocodingService interface {
+	Geocode(ctx context.Context, query string, countryCodes string) (*geocoding.GeocodeResult, error)
+	ReverseGeocode(ctx context.Context, lat, lon float64) (*geocoding.ReverseGeocodeResult, error)
+	DefaultCountry() string
+}
+
 // GeocodingTools provides MCP tools for geocoding addresses and place names.
 type GeocodingTools struct {
-	service *geocoding.GeocodingService
+	service MCPGeocodingService
 }
 
 // NewGeocodingTools creates a new GeocodingTools instance.
-func NewGeocodingTools(service *geocoding.GeocodingService) *GeocodingTools {
+func NewGeocodingTools(service MCPGeocodingService) *GeocodingTools {
 	return &GeocodingTools{
 		service: service,
 	}
@@ -24,6 +33,11 @@ func NewGeocodingTools(service *geocoding.GeocodingService) *GeocodingTools {
 
 // GeocodeAddressTool returns the MCP tool definition for geocoding addresses.
 func (t *GeocodingTools) GeocodeAddressTool() mcp.Tool {
+	defaultCountry := "ca"
+	if t.service != nil {
+		defaultCountry = t.service.DefaultCountry()
+	}
+
 	return mcp.Tool{
 		Name:        "geocode_address",
 		Description: "Geocode an address or place name to geographic coordinates (latitude/longitude). Uses OpenStreetMap Nominatim with caching. Returns coordinates and a human-readable display name.",
@@ -36,8 +50,8 @@ func (t *GeocodingTools) GeocodeAddressTool() mcp.Tool {
 				},
 				"country_codes": map[string]interface{}{
 					"type":        "string",
-					"description": "Comma-separated ISO 3166-1 alpha-2 country codes to limit results (e.g., 'ca,us'). Default: 'ca'",
-					"default":     "ca",
+					"description": fmt.Sprintf("Comma-separated ISO 3166-1 alpha-2 country codes to limit results (e.g., 'ca,us'). Default: '%s'", defaultCountry),
+					"default":     defaultCountry,
 				},
 			},
 			Required: []string{"address"},
@@ -51,11 +65,12 @@ func (t *GeocodingTools) GeocodeAddressHandler(ctx context.Context, request mcp.
 		return mcp.NewToolResultError("geocoding service not configured"), nil
 	}
 
+	// Use the service's configured default country
 	args := struct {
 		Address      string `json:"address"`
 		CountryCodes string `json:"country_codes"`
 	}{
-		CountryCodes: "ca", // Default
+		CountryCodes: t.service.DefaultCountry(),
 	}
 
 	if request.Params.Arguments != nil {

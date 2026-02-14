@@ -19,6 +19,13 @@ type GeocodePlaceArgs struct {
 
 func (GeocodePlaceArgs) Kind() string { return JobKindGeocodePlace }
 
+// PlaceGeocodingService defines the minimal interface needed for place geocoding jobs.
+// This follows the idiomatic Go principle: consumers define interfaces.
+type PlaceGeocodingService interface {
+	Geocode(ctx context.Context, query string, countryCodes string) (*geocoding.GeocodeResult, error)
+	DefaultCountry() string
+}
+
 // GeocodePlaceWorker geocodes places that have address data but missing coordinates.
 // It queries the place, builds an address from available fields, calls the geocoding
 // service, and updates the place with resolved latitude/longitude.
@@ -33,7 +40,7 @@ func (GeocodePlaceArgs) Kind() string { return JobKindGeocodePlace }
 type GeocodePlaceWorker struct {
 	river.WorkerDefaults[GeocodePlaceArgs]
 	Pool             *pgxpool.Pool
-	GeocodingService *geocoding.GeocodingService
+	GeocodingService PlaceGeocodingService
 	Logger           *slog.Logger
 }
 
@@ -130,8 +137,8 @@ func (w GeocodePlaceWorker) Work(ctx context.Context, job *river.Job[GeocodePlac
 
 	query := strings.Join(addressParts, ", ")
 
-	// Determine country codes for geocoding (default to "ca" if not specified)
-	countryCodes := "ca"
+	// Determine country codes for geocoding (default from service config)
+	countryCodes := w.GeocodingService.DefaultCountry()
 	if country != nil && *country != "" {
 		// Map country names to ISO codes (simplified, could be extended)
 		switch strings.ToLower(*country) {

@@ -19,6 +19,13 @@ type GeocodeEventArgs struct {
 
 func (GeocodeEventArgs) Kind() string { return JobKindGeocodeEvent }
 
+// EventGeocodingService defines the minimal interface needed for event geocoding jobs.
+// This follows the idiomatic Go principle: consumers define interfaces.
+type EventGeocodingService interface {
+	Geocode(ctx context.Context, query string, countryCodes string) (*geocoding.GeocodeResult, error)
+	DefaultCountry() string
+}
+
 // GeocodeEventWorker geocodes events that have location/address data but missing coordinates.
 // It queries the event and its primary venue, builds an address from available fields,
 // calls the geocoding service, and updates the venue with resolved latitude/longitude.
@@ -33,7 +40,7 @@ func (GeocodeEventArgs) Kind() string { return JobKindGeocodeEvent }
 type GeocodeEventWorker struct {
 	river.WorkerDefaults[GeocodeEventArgs]
 	Pool             *pgxpool.Pool
-	GeocodingService *geocoding.GeocodingService
+	GeocodingService EventGeocodingService
 	Logger           *slog.Logger
 }
 
@@ -156,8 +163,8 @@ func (w GeocodeEventWorker) Work(ctx context.Context, job *river.Job[GeocodeEven
 
 	query := strings.Join(addressParts, ", ")
 
-	// Determine country codes for geocoding (default to "ca" if not specified)
-	countryCodes := "ca"
+	// Determine country codes for geocoding (default from service config)
+	countryCodes := w.GeocodingService.DefaultCountry()
 	if country != nil && *country != "" {
 		// Map country names to ISO codes (simplified, could be extended)
 		switch strings.ToLower(*country) {
