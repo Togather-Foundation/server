@@ -158,6 +158,57 @@ func TestPlaceRepositoryListProximityWithCityFilter(t *testing.T) {
 	require.Len(t, result.Places, 2) // Only Toronto places
 }
 
+func TestPlaceRepositoryListProximityWithPagination(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &PlaceRepository{pool: pool}
+
+	// Insert 3 places near Toronto City Hall at slightly different distances
+	// Toronto City Hall: 43.6534, -79.3839
+	place1 := insertPlaceWithCoords(t, ctx, pool, "Place 1", "Toronto", "ON", 43.6534, -79.3839)
+	time.Sleep(2 * time.Millisecond) // Ensure different ULIDs
+	place2 := insertPlaceWithCoords(t, ctx, pool, "Place 2", "Toronto", "ON", 43.6526, -79.3871)
+	time.Sleep(2 * time.Millisecond)
+	place3 := insertPlaceWithCoords(t, ctx, pool, "Place 3", "Toronto", "ON", 43.6426, -79.3871)
+
+	// Search within 5km with pagination
+	lat := 43.6534
+	lon := -79.3839
+	radius := 5.0
+	filters := places.Filters{
+		Latitude:  &lat,
+		Longitude: &lon,
+		RadiusKm:  &radius,
+	}
+
+	// Page 1: Get first 2 results
+	page1, err := repo.List(ctx, filters, places.Pagination{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, page1.Places, 2)
+	require.NotEmpty(t, page1.NextCursor, "Should have next cursor when more results available")
+
+	// Verify first page contains Place 1 and Place 2 (closest to search point)
+	require.Equal(t, place1.ULID, page1.Places[0].ULID)
+	require.Equal(t, place2.ULID, page1.Places[1].ULID)
+
+	// Page 2: Get next result using cursor
+	page2, err := repo.List(ctx, filters, places.Pagination{Limit: 2, After: page1.NextCursor})
+	require.NoError(t, err)
+	require.Len(t, page2.Places, 1, "Should have 1 result on second page")
+	require.Empty(t, page2.NextCursor, "Should not have next cursor on last page")
+
+	// Verify second page contains Place 3 (farthest)
+	require.Equal(t, place3.ULID, page2.Places[0].ULID)
+
+	// Verify no duplicate results between pages
+	page1ULIDs := map[string]bool{
+		page1.Places[0].ULID: true,
+		page1.Places[1].ULID: true,
+	}
+	require.NotContains(t, page1ULIDs, page2.Places[0].ULID, "Should not have duplicate results across pages")
+}
+
 // Helper to insert a place with geo coordinates
 func insertPlaceWithCoords(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, city string, region string, lat float64, lon float64) seededEntity {
 	t.Helper()

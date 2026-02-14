@@ -101,6 +101,16 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 			argPos += 2
 		}
 
+		// Add cursor condition if provided
+		// For proximity search sorted by (distance_km, ulid), we use ulid-only cursor.
+		// This works because ULIDs are unique and maintain consistent pagination
+		// even across items with the same distance.
+		if cursorULID != nil {
+			whereClauses = append(whereClauses, fmt.Sprintf("p.ulid > $%d", argPos))
+			queryArgs = append(queryArgs, *cursorULID)
+			argPos++
+		}
+
 		// Add LIMIT
 		queryArgs = append(queryArgs, limitPlusOne)
 
