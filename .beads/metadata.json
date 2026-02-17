@@ -1,5 +1,7 @@
 {
-  "database": "beads.db",
+  "database": "dolt",
   "jsonl_export": "issues.jsonl",
-  "last_bd_version": "0.49.4"
+  "backend": "dolt",
+  "dolt_database": "beads_srv",
+  "last_bd_version": "0.49.6"
 }
