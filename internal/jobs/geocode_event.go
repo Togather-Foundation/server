@@ -135,7 +135,12 @@ func (w GeocodeEventWorker) Work(ctx context.Context, job *river.Job[GeocodeEven
 	}
 
 	// Build address query from available fields
-	addressParts := make([]string, 0, 5)
+	addressParts := make([]string, 0, 6)
+	// Include venue name when no street address is available, as the venue name
+	// is often the best geocoding signal (e.g., "Art Gallery of Ontario, Toronto, ON")
+	if (streetAddress == nil || *streetAddress == "") && venueName != nil && *venueName != "" {
+		addressParts = append(addressParts, *venueName)
+	}
 	if streetAddress != nil && *streetAddress != "" {
 		addressParts = append(addressParts, *streetAddress)
 	}
