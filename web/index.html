@@ -220,7 +220,26 @@
         </p>
         
         <section>
+            <h2>Getting Started</h2>
+            <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
+                The SEL API provides read access to public event data without authentication. 
+                To submit events, you'll need an API key.
+            </p>
+            <ul>
+                <li><strong>Read Events (No Auth):</strong> <code>GET /api/v1/events</code> is publicly accessible</li>
+                <li><strong>Submit Events (Requires API Key):</strong> <code>POST /api/v1/events</code> requires authentication</li>
+                <li><strong>Get an API Key:</strong> Email <a href="mailto:info@togather.foundation">info@togather.foundation</a> to request an invitation</li>
+                <li><strong>Developer Portal:</strong> <a href="/dev/login">/dev/login</a> (manage keys after onboarding)</li>
+                <li><strong>GitHub OAuth:</strong> Available for invitation-based onboarding</li>
+                <li><strong>Comprehensive Guides:</strong> <a href="/api/docs">Interactive API Docs</a> with authentication details</li>
+            </ul>
+        </section>
+        
+        <section>
             <h2>For Coding Agents</h2>
+            <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
+                <strong>Note:</strong> Write endpoints require authentication. See <a href="#getting-started">Getting Started</a> for API key setup.
+            </p>
             <ul>
                 <li><strong>GitHub:</strong> <a href="https://github.com/Togather-Foundation/server">Togather-Foundation/server</a></li>
                 <li><strong>API Endpoints:</strong> <code>/api/v1/events</code>, <code>/api/v1/places</code>, <code>/api/v1/organizations</code></li>

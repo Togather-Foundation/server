@@ -6,6 +6,65 @@ info:
     RESTful API for the Shared Events Library, a federated events commons 
     enabling discovery, submission, and management of cultural events.
     
+    ## Getting an API Key
+    
+    **Public read access:** No authentication required for reading events, places, or organizations.
+    
+    **Authenticated write access:** To submit or manage events, you need an API key:
+    
+    ### Step 1: Request an Invitation
+    Email [info@togather.foundation](mailto:info@togather.foundation) with:
+    - Your name
+    - Email address
+    - Intended use case
+    
+    ### Step 2: Accept Invitation
+    - Check your email for the invitation link (valid for 7 days)
+    - Set your password and display name
+    - You'll be logged in to the developer dashboard at `/dev/login`
+    - Alternatively, use GitHub OAuth to authenticate during onboarding
+    
+    ### Step 3: Create an API Key
+    **Via Web Interface:**
+    1. Navigate to `/dev/api-keys`
+    2. Click "Create New Key"
+    3. Enter a descriptive name
+    4. Copy the key immediately (shown only once)
+    5. Store securely (environment variable or secret manager)
+    
+    **Via API:**
+    ```bash
+    # First, get your JWT token
+    curl -X POST https://toronto.togather.foundation/api/v1/dev/login \
+         -H "Content-Type: application/json" \
+         -d '{"email": "your-email@example.com", "password": "your-password"}'
+    
+    # Then create a key
+    curl -X POST https://toronto.togather.foundation/api/v1/dev/api-keys \
+         -H "Authorization: Bearer $YOUR_JWT_TOKEN" \
+         -H "Content-Type: application/json" \
+         -d '{"name": "My Event Scraper"}'
+    ```
+    
+    ### Step 4: Use Your API Key
+    **Reading events (no auth):**
+    ```bash
+    curl https://toronto.togather.foundation/api/v1/events
+    ```
+    
+    **Submitting events (with API key):**
+    ```bash
+    curl -X POST https://toronto.togather.foundation/api/v1/events \
+         -H "Authorization: Bearer your_api_key_here" \
+         -H "Content-Type: application/ld+json" \
+         -d @event.json
+    ```
+    
+    **For complete guidance**, see:
+    - [Developer Quick Start](https://github.com/Togather-Foundation/server/blob/main/docs/integration/DEVELOPER_QUICKSTART.md) (4-step onboarding)
+    - [Authentication Guide](https://github.com/Togather-Foundation/server/blob/main/docs/integration/AUTHENTICATION.md) (comprehensive auth docs)
+    - [API Guide](https://github.com/Togather-Foundation/server/blob/main/docs/integration/API_GUIDE.md) (endpoint reference)
+    
     ## Authentication
     - **Public**: No authentication required for read endpoints
     - **Agents**: API key in `Authorization: Bearer <key>` header

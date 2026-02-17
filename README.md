@@ -65,6 +65,53 @@ The [**Togather Foundation**](https://togather.foundation) is a coordination poi
 
 ---
 
+## Getting Started: Using the API
+
+The SEL API provides open access to event data and supports event submission from authenticated sources.
+
+### Reading Events (No Authentication Required)
+
+**Query public events:**
+```bash
+curl https://toronto.togather.foundation/api/v1/events
+```
+
+**Filter by date range:**
+```bash
+curl "https://toronto.togather.foundation/api/v1/events?start_date=2026-03-01&end_date=2026-03-31"
+```
+
+**Interactive API explorer:**
+- Web UI: [https://toronto.togather.foundation/api/docs](https://toronto.togather.foundation/api/docs)
+- OpenAPI specs: [JSON](https://toronto.togather.foundation/api/v1/openapi.json) | [YAML](https://toronto.togather.foundation/api/v1/openapi.yaml)
+
+### Submitting Events (Requires API Key)
+
+To submit or manage events, you need an API key. **Onboarding process:**
+
+1. **Request an invitation**: Email [info@togather.foundation](mailto:info@togather.foundation) with your name, email, and use case
+2. **Accept your invitation**: Check your email for the invitation link (valid for 7 days), set your password
+3. **Create an API key**: Log in to the developer portal at `/dev/login`, navigate to `/dev/api-keys`, and create a key
+4. **Use your key**: Include it in the `Authorization: Bearer <key>` header for write requests
+
+**Alternative:** GitHub OAuth is available for invitation-based onboarding.
+
+**Submit an event:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/events \
+     -H "Authorization: Bearer your_api_key_here" \
+     -H "Content-Type: application/ld+json" \
+     -d @event.json
+```
+
+### Comprehensive Guides
+
+- **[Developer Quick Start](docs/integration/DEVELOPER_QUICKSTART.md)** - 4-step onboarding guide
+- **[Authentication Guide](docs/integration/AUTHENTICATION.md)** - API keys, JWT tokens, and security
+- **[API Guide](docs/integration/API_GUIDE.md)** - Endpoint reference and examples
+
+---
+
 ## Quick Start: Deploying SEL
 
 **New server:** provision and install the base system (one-time).
