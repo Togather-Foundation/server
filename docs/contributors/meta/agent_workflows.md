@@ -118,3 +118,63 @@ Key themes:
 6. Documentation - 19 comprehensive deployment guides (quickstart, troubleshooting, migrations, monitoring, etc.)
 
 The project demonstrates that human-AI collaboration with proper workflow discipline (beads, spec kit, quality gates) can sustain high velocity while maintaining code quality and comprehensive test coverage.
+
+---
+
+## Sustained Development (Feb 17, 2026)
+
+As of February 17, 2026 — four weeks into the project — the Togather SEL server continues to show strong development velocity with increasingly sophisticated features.
+
+### Codebase Metrics
+- **860 total commits** (Jan 21 – Feb 17, 2026)
+  - 202 commits during the initial sprint (Jan 21–27)
+  - 319 commits in the consolidation phase (Jan 28 – Feb 3)
+  - 335 commits since Feb 4 (ongoing feature development)
+- **101,733 lines of Go code** across 48 packages
+  - 47,037 lines of production code
+  - 54,696 lines of test code (116% test-to-code ratio)
+- **3,017 Go functions** total, including **1,133 test functions**
+- **93 E2E test functions** (Python/Playwright)
+- **58 database migration files** managing PostgreSQL + PostGIS + pgvector schema
+- **416 markdown documentation files**
+- **Supporting code:**
+  - 72,453 lines of JavaScript (admin UI, dev portal)
+  - 34,473 lines of Python (E2E tests, tooling)
+  - 13,026 lines of shell scripts (16 deploy scripts + CI/tooling)
+  - 4,947 lines of HTML templates
+- **1,122 beads tracked** (1,115 closed, 6 open, 1 in progress, 0 blocked)
+
+### Key themes since last update (Feb 4–17)
+1. **Geocoding & Proximity Search** — Nominatim integration, background geocoding enrichment via River jobs, `near_place` search-time geocoding, reverse geocoding for map UI, proximity search with cursor pagination
+2. **Developer Self-Service Portal** — GitHub OAuth integration, API key management UI, usage sparklines, daily usage rollup jobs, per-key stats with daily breakdown
+3. **Deduplication System** — Four-layer dedup pipeline: exact match, near-duplicate via pg_trgm, place/org fuzzy dedup with auto-merge, review queue merge UI, `event_not_duplicates` to prevent re-flagging
+4. **Event Review Queue** — Full review workflow UI, rejection reasons, auto-linkify URLs, FixReview occurrence persistence, auto-merge enrichment
+5. **Schema.org & Federation** — Consolidated JSON-LD mapping, schema.org response types wired into API handlers, flexible input acceptance
+6. **Observability** — OpenTelemetry tracing instrumentation, MCP server for AI assistant integration
+7. **Security Hardening** — P3 security enhancements, email header injection fix, OpenAPI security markers
+8. **Sustained Quality** — 71 fix commits, 50 feature commits, 27 docs commits, 14 test commits, 8 refactor commits in this period
+
+### Commit breakdown by category (Feb 4–17)
+| Category | Count |
+|----------|-------|
+| fix      | 71    |
+| feat     | 50    |
+| docs     | 27    |
+| test     | 14    |
+| refactor | 8     |
+| other    | 165   |
+
+The 2:1 fix-to-feature ratio reflects a maturing codebase where new features are immediately hardened through integration testing and real deployment feedback from staging.
+
+### Growth since v0.1 snapshot (Feb 4)
+| Metric | Feb 4 | Feb 17 | Change |
+|--------|-------|--------|--------|
+| Commits | 534 | 860 | +61% |
+| Production Go (lines) | 24,821 | 47,037 | +89% |
+| Test Go (lines) | 29,280 | 54,696 | +87% |
+| Test functions (Go) | 642 | 1,133 | +77% |
+| Migrations | 34 | 58 | +71% |
+| Go packages | 38 | 48 | +26% |
+| Beads tracked | — | 1,122 | — |
+
+The project continues to demonstrate that spec-driven, human-directed AI collaboration with proper workflow discipline scales beyond the initial sprint into sustained feature delivery.
