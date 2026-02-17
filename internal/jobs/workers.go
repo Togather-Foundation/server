@@ -11,6 +11,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -295,6 +296,29 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 			itemResult["status"] = "created"
 			if result.Event != nil {
 				itemResult["event_id"] = result.Event.ULID
+
+				// Enqueue geocoding job for newly created events (srv-dlrfw)
+				// Uses ClientFromContext to get the River client within the worker.
+				// Geocoding is not critical — log and continue on failure.
+				if riverClient, err := river.ClientFromContextSafely[pgx.Tx](ctx); err != nil {
+					logger.Warn("river client not available for geocoding enqueue",
+						"batch_id", batchID,
+						"event_ulid", result.Event.ULID,
+						"error", err,
+					)
+				} else {
+					_, err := riverClient.Insert(ctx, GeocodeEventArgs{EventID: result.Event.ULID}, &river.InsertOpts{
+						Queue:       "geocoding",
+						MaxAttempts: GeocodingMaxAttempts,
+					})
+					if err != nil {
+						logger.Warn("failed to enqueue geocoding job for batch event",
+							"batch_id", batchID,
+							"event_ulid", result.Event.ULID,
+							"error", err,
+						)
+					}
+				}
 			}
 			successCount++
 		}
