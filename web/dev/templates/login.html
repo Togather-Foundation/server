@@ -36,6 +36,7 @@
                         </div>
                     </form>
                     
+                    {{ if .GitHubOAuthEnabled }}
                     <!-- GitHub OAuth -->
                     <div class="hr-text">or</div>
                     <div class="d-grid">
@@ -47,6 +48,7 @@
                             Sign in with GitHub
                         </a>
                     </div>
+                    {{ end }}
                 </div>
             </div>
             

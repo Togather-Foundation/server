@@ -11,19 +11,21 @@ import (
 
 // DevHTMLHandler handles developer portal HTML page rendering
 type DevHTMLHandler struct {
-	Templates *template.Template
-	Env       string
-	Logger    *slog.Logger
-	Service   *developers.Service
+	Templates          *template.Template
+	Env                string
+	Logger             *slog.Logger
+	Service            *developers.Service
+	GitHubOAuthEnabled bool
 }
 
 // NewDevHTMLHandler creates a new developer HTML handler
-func NewDevHTMLHandler(templates *template.Template, env string, logger *slog.Logger, service *developers.Service) *DevHTMLHandler {
+func NewDevHTMLHandler(templates *template.Template, env string, logger *slog.Logger, service *developers.Service, githubOAuthEnabled bool) *DevHTMLHandler {
 	return &DevHTMLHandler{
-		Templates: templates,
-		Env:       env,
-		Logger:    logger,
-		Service:   service,
+		Templates:          templates,
+		Env:                env,
+		Logger:             logger,
+		Service:            service,
+		GitHubOAuthEnabled: githubOAuthEnabled,
 	}
 }
 
