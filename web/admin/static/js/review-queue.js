@@ -249,7 +249,7 @@
         tbody.innerHTML = entries.map(entry => {
             const eventName = entry.eventName || 'Untitled Event';
             const startTime = entry.eventStartTime ? formatDate(entry.eventStartTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'No date';
-            const warningBadge = getWarningBadge(entry.warnings);
+            const warningBadge = getWarningBadge(entry.warnings, entry.status);
             const createdAgo = getRelativeTime(entry.createdAt);
             
             // Build rejection reason cell (only for rejected events)
@@ -1229,12 +1229,16 @@
      * Get warning badge HTML for table display
      * Shows actual warning messages inline so users know WHY events need review
      * @param {Array} warnings - Array of warning objects with code, message properties
+     * @param {string} status - Entry status (pending, approved, rejected, merged)
      * @returns {string} HTML string for warning display with badges and messages
      */
-    function getWarningBadge(warnings) {
+    function getWarningBadge(warnings, status) {
         if (!warnings || warnings.length === 0) {
             return '<span class="badge bg-success">No Issues</span>';
         }
+        
+        // For resolved entries (approved/rejected/merged), use muted styling
+        const isResolved = status && status !== 'pending';
         
         // Show first warning with descriptive message
         const firstWarning = warnings[0];
@@ -1244,45 +1248,67 @@
         let message = '';
         
         if (firstWarning.code === 'missing_image') {
-            badge = '<span class="badge bg-warning">Missing Image</span>';
+            badge = isResolved 
+                ? '<span class="badge bg-secondary">Missing Image</span>'
+                : '<span class="badge bg-warning">Missing Image</span>';
             message = 'No image provided';
         } else if (firstWarning.code === 'missing_description') {
-            badge = '<span class="badge bg-warning">Missing Description</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Missing Description</span>'
+                : '<span class="badge bg-warning">Missing Description</span>';
             message = 'No description provided';
         } else if (firstWarning.code === 'low_confidence') {
-            badge = '<span class="badge bg-warning">Low Quality</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Low Quality</span>'
+                : '<span class="badge bg-warning">Low Quality</span>';
             // Extract percentage from message if present
             const match = firstWarning.message && firstWarning.message.match(/(\d+)%/);
             message = match ? `Data quality: ${match[1]}%` : 'Low data quality score';
         } else if (firstWarning.code === 'too_far_future') {
-            badge = '<span class="badge bg-warning">Too Far Future</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Too Far Future</span>'
+                : '<span class="badge bg-warning">Too Far Future</span>';
             message = 'Event >2 years away';
         } else if (firstWarning.code === 'link_check_failed') {
-            badge = '<span class="badge bg-warning">Bad Link</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Bad Link</span>'
+                : '<span class="badge bg-warning">Bad Link</span>';
             message = 'Link check failed';
         } else if (firstWarning.code === 'reversed_dates_timezone_likely') {
             badge = '<span class="badge bg-info">Date Fixed</span>';
-            message = 'Timezone issue auto-corrected';
+            message = isResolved ? 'Timezone corrected' : 'Timezone issue auto-corrected';
         } else if (firstWarning.code === 'reversed_dates_corrected_needs_review') {
-            badge = '<span class="badge bg-warning">Date Issue</span>';
-            message = 'Dates corrected, review needed';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Date Fixed</span>'
+                : '<span class="badge bg-warning">Date Issue</span>';
+            message = isResolved ? 'Date corrected' : 'Dates corrected, review needed';
         } else if (firstWarning.code && firstWarning.code.includes('reversed_dates')) {
-            badge = '<span class="badge bg-warning">Date Issue</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Date Issue</span>'
+                : '<span class="badge bg-warning">Date Issue</span>';
             message = 'Date ordering problem';
         } else if (firstWarning.code === 'potential_duplicate') {
-            badge = '<span class="badge bg-purple">Possible Duplicate</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Possible Duplicate</span>'
+                : '<span class="badge bg-purple">Possible Duplicate</span>';
             message = firstWarning.message || 'May be a duplicate event';
         } else if (firstWarning.code === 'place_possible_duplicate') {
-            badge = '<span class="badge bg-purple">Place Duplicate</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Place Duplicate</span>'
+                : '<span class="badge bg-purple">Place Duplicate</span>';
             message = firstWarning.message || 'Similar place already exists';
         } else if (firstWarning.code === 'org_possible_duplicate') {
-            badge = '<span class="badge bg-purple">Org Duplicate</span>';
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Org Duplicate</span>'
+                : '<span class="badge bg-purple">Org Duplicate</span>';
             message = firstWarning.message || 'Similar organization already exists';
         } else {
             // Fallback: use field name or generic message
             const label = firstWarning.field || 'issue';
-            badge = `<span class="badge bg-warning">${escapeHtml(label)}</span>`;
-            message = firstWarning.message || 'Needs review';
+            badge = isResolved
+                ? `<span class="badge bg-secondary">${escapeHtml(label)}</span>`
+                : `<span class="badge bg-warning">${escapeHtml(label)}</span>`;
+            message = isResolved ? 'Resolved' : (firstWarning.message || 'Needs review');
         }
         
         // If multiple warnings, add count badge

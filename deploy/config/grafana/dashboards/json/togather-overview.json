@@ -103,7 +103,7 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "expr": "togather_app_info{slot=~\"$slot\", active_slot=\"true\"}",
+          "expr": "last_over_time(togather_app_info{active_slot=\"true\"}[5m])",
           "legendFormat": "{{slot}}",
           "refId": "A"
         }
@@ -202,7 +202,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "togather_app_info{slot=~\"$slot\"}",
+          "expr": "last_over_time(togather_app_info{active_slot=\"true\"}[5m])",
           "legendFormat": "{{version}}",
           "range": true,
           "refId": "A"
