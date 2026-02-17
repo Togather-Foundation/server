@@ -43,9 +43,15 @@ Comprehensive tests using testcontainers that validate the complete deployment p
 ## Prerequisites
 
 - Docker daemon running
-- `migrate` CLI tool installed (`go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`)
-- `psql` client (for migration rollback tests)
-- Go 1.25+
+- Go 1.24+
+- Optional: `migrate` CLI tool (`go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`) - only needed for the RunMigrations subtest, which will be skipped if not installed
+- Optional: `psql` client (for migration rollback tests)
+
+**Note on Migrations:** The deployment tests use two migration systems:
+1. **Application migrations** (`internal/storage/postgres/migrations/`) - Run via Go's `postgres.MigrateUp()`
+2. **River job queue migrations** - Run via Go's `rivermigrate.Migrate()` API
+
+Both are executed programmatically in the tests, so the `migrate` CLI is optional.
 
 ## Running Tests
 
@@ -240,9 +246,12 @@ test-migration-locks:
 - Check for port conflicts: `docker ps -a`
 
 ### "Migration failed"
-- Verify migrate CLI is installed: `which migrate`
-- Check migrations directory: `ls internal/storage/postgres/migrations/`
-- Test migrations manually: `migrate -path internal/storage/postgres/migrations -database $DATABASE_URL up`
+- The RunMigrations subtest requires `migrate` CLI: `which migrate`
+- If `migrate` is not installed, the subtest will be skipped (this is expected)
+- Application and River migrations are still run programmatically in the StartApplicationAndValidateHealth test
+- Check migrations directory exists: `ls internal/storage/postgres/migrations/`
+- To run migrations manually: `migrate -path internal/storage/postgres/migrations -database $DATABASE_URL up`
+- For River migrations: `make migrate-river` or use the Go API (`rivermigrate` package)
 
 ### "Health check request failed"
 - Check application logs: Look for errors in test output

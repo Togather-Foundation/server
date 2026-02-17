@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -14,11 +13,16 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
 // TestDeploymentFullFlow tests the complete deployment workflow:
@@ -35,6 +39,25 @@ func TestDeploymentFullFlow(t *testing.T) {
 	defer cancel()
 
 	projectRoot := getProjectRoot(t)
+
+	// Create a shared Docker network for containers to communicate
+	networkName := "deployment-test-network"
+	network, err := testcontainers.GenericNetwork(ctx, testcontainers.GenericNetworkRequest{
+		NetworkRequest: testcontainers.NetworkRequest{
+			Name:           networkName,
+			CheckDuplicate: true,
+		},
+	})
+	require.NoError(t, err, "Failed to create Docker network")
+	defer func() {
+		if err := network.Remove(ctx); err != nil {
+			t.Logf("Failed to remove network: %v", err)
+		}
+	}()
+
+	// Shared state across subtests
+	var dbURL string
+	var postgresContainer *tcpostgres.PostgresContainer
 
 	// Step 1: Build Docker image
 	t.Run("BuildDockerImage", func(t *testing.T) {
@@ -73,7 +96,8 @@ func TestDeploymentFullFlow(t *testing.T) {
 		t.Logf("Provisioning PostgreSQL database with PostGIS extensions")
 		provisionStart := time.Now()
 
-		postgresContainer, err := tcpostgres.Run(ctx,
+		var err error
+		postgresContainer, err = tcpostgres.Run(ctx,
 			"postgis/postgis:16-3.4",
 			tcpostgres.WithDatabase("togather_test"),
 			tcpostgres.WithUsername("togather"),
@@ -83,30 +107,43 @@ func TestDeploymentFullFlow(t *testing.T) {
 					WithOccurrence(2).
 					WithStartupTimeout(60*time.Second),
 			),
+			testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+				ContainerRequest: testcontainers.ContainerRequest{
+					Networks: []string{networkName},
+					NetworkAliases: map[string][]string{
+						networkName: {"postgres"},
+					},
+				},
+			}),
 		)
 		require.NoError(t, err, "Failed to start PostgreSQL container")
-		t.Cleanup(func() {
-			if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
-				t.Logf("Failed to terminate PostgreSQL container: %v", err)
-			}
-		})
 
 		provisionDuration := time.Since(provisionStart)
 		t.Logf("✓ PostgreSQL container started in %v", provisionDuration)
 
-		// Get connection string
-		dbURL, err := postgresContainer.ConnectionString(ctx)
+		// Get connection string for use from host (localhost)
+		dbURL, err = postgresContainer.ConnectionString(ctx)
 		require.NoError(t, err, "Failed to get database connection string")
-
-		// Store in context for next test
-		t.Setenv("DATABASE_URL", dbURL)
-		t.Logf("Database URL: %s", dbURL)
+		t.Logf("Database URL (host): %s", dbURL)
 	})
+	// Clean up database container at parent test level, after all subtests complete
+	defer func() {
+		if postgresContainer != nil {
+			if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
+				t.Logf("Failed to terminate PostgreSQL container: %v", err)
+			}
+		}
+	}()
 
 	// Step 3: Execute migrations
 	t.Run("RunMigrations", func(t *testing.T) {
-		dbURL := os.Getenv("DATABASE_URL")
 		require.NotEmpty(t, dbURL, "DATABASE_URL not set from previous test")
+
+		// Check if migrate is available
+		_, err := exec.LookPath("migrate")
+		if err != nil {
+			t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
+		}
 
 		t.Logf("Running database migrations")
 		migrationStart := time.Now()
@@ -144,7 +181,6 @@ func TestDeploymentFullFlow(t *testing.T) {
 
 	// Step 4: Start application container and validate health checks
 	t.Run("StartApplicationAndValidateHealth", func(t *testing.T) {
-		dbURL := os.Getenv("DATABASE_URL")
 		require.NotEmpty(t, dbURL, "DATABASE_URL not set")
 
 		imageName := "togather-server-test:deployment-test"
@@ -152,16 +188,57 @@ func TestDeploymentFullFlow(t *testing.T) {
 		t.Logf("Starting application container: %s", imageName)
 		startTime := time.Now()
 
+		// Create DATABASE_URL that uses the container network alias instead of localhost
+		containerDBURL := "postgres://togather:togather-test-password@postgres:5432/togather_test?sslmode=disable"
+
+		// Run migrations directly using the Go migration library
+		// Use the host dbURL since we're running from the test host
+		t.Logf("Running migrations using built-in migration library")
+		migrationStart := time.Now()
+		migrationsDir := filepath.Join(projectRoot, "internal/storage/postgres/migrations")
+		// Add sslmode=disable for test database
+		migrationDBURL := dbURL
+		if !strings.Contains(migrationDBURL, "sslmode=") {
+			migrationDBURL += "sslmode=disable"
+		}
+		err := postgres.MigrateUp(migrationDBURL, migrationsDir)
+		if err != nil {
+			t.Fatalf("Migration failed: %v", err)
+		}
+		t.Logf("✓ Application migrations completed in %v", time.Since(migrationStart))
+
+		// Run River migrations
+		t.Logf("Running River job queue migrations")
+		riverStart := time.Now()
+		pool, err := pgxpool.New(ctx, migrationDBURL)
+		if err != nil {
+			t.Fatalf("Failed to create pgxpool: %v", err)
+		}
+		defer pool.Close()
+
+		migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+		if err != nil {
+			t.Fatalf("Failed to create River migrator: %v", err)
+		}
+
+		_, err = migrator.Migrate(ctx, rivermigrate.DirectionUp, &rivermigrate.MigrateOpts{})
+		if err != nil {
+			t.Fatalf("River migration failed: %v", err)
+		}
+		t.Logf("✓ River migrations completed in %v", time.Since(riverStart))
+
 		// Create application container
 		req := testcontainers.ContainerRequest{
 			Image:        imageName,
 			ExposedPorts: []string{"8080/tcp"},
+			Networks:     []string{networkName},
 			Env: map[string]string{
-				"DATABASE_URL":     dbURL,
+				"DATABASE_URL":     containerDBURL,
 				"SERVER_PORT":      "8080",
 				"LOG_LEVEL":        "info",
 				"SHUTDOWN_TIMEOUT": "10s",
 				"DEPLOYMENT_ENV":   "test",
+				"JWT_SECRET":       "test-jwt-secret-for-deployment-testing-only",
 			},
 			WaitingFor: wait.ForHTTP("/health").
 				WithPort("8080/tcp").
@@ -217,6 +294,25 @@ func TestDeploymentPerformance(t *testing.T) {
 	projectRoot := getProjectRoot(t)
 	imageName := "togather-server-perf:test"
 
+	// Create a shared Docker network for containers to communicate
+	networkName := "deployment-perf-network"
+	network, err := testcontainers.GenericNetwork(ctx, testcontainers.GenericNetworkRequest{
+		NetworkRequest: testcontainers.NetworkRequest{
+			Name:           networkName,
+			CheckDuplicate: true,
+		},
+	})
+	require.NoError(t, err, "Failed to create Docker network")
+	defer func() {
+		if err := network.Remove(ctx); err != nil {
+			t.Logf("Failed to remove network: %v", err)
+		}
+	}()
+
+	// Shared state across subtests
+	var dbURL string
+	var postgresContainer *tcpostgres.PostgresContainer
+
 	// Measure: Docker build
 	t.Run("BuildTime", func(t *testing.T) {
 		start := time.Now()
@@ -239,44 +335,70 @@ func TestDeploymentPerformance(t *testing.T) {
 	// Measure: Database provisioning
 	t.Run("DatabaseProvisionTime", func(t *testing.T) {
 		start := time.Now()
-		postgresContainer, err := tcpostgres.Run(ctx,
+		var err error
+		postgresContainer, err = tcpostgres.Run(ctx,
 			"postgis/postgis:16-3.4",
 			tcpostgres.WithDatabase("togather_perf"),
 			tcpostgres.WithUsername("togather"),
 			tcpostgres.WithPassword("togather-perf-password"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(60*time.Second),
+			),
+			testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+				ContainerRequest: testcontainers.ContainerRequest{
+					Networks: []string{networkName},
+					NetworkAliases: map[string][]string{
+						networkName: {"postgres"},
+					},
+				},
+			}),
 		)
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
-				t.Logf("Failed to terminate PostgreSQL container: %v", err)
-			}
-		})
 
-		dbURL, err := postgresContainer.ConnectionString(ctx)
+		dbURL, err = postgresContainer.ConnectionString(ctx)
 		require.NoError(t, err)
-		t.Setenv("DATABASE_URL", dbURL)
 
 		timings["database_provision"] = time.Since(start)
 		t.Logf("Database provision time: %v", timings["database_provision"])
 	})
+	// Clean up database container at parent test level
+	defer func() {
+		if postgresContainer != nil {
+			if err := testcontainers.TerminateContainer(postgresContainer); err != nil {
+				t.Logf("Failed to terminate PostgreSQL container: %v", err)
+			}
+		}
+	}()
 
 	// Measure: Migration execution
 	t.Run("MigrationTime", func(t *testing.T) {
-		dbURL := os.Getenv("DATABASE_URL")
 		require.NotEmpty(t, dbURL)
 
 		start := time.Now()
 		migrationsDir := filepath.Join(projectRoot, "internal/storage/postgres/migrations")
-		cmd := exec.CommandContext(ctx, "migrate",
-			"-path", migrationsDir,
-			"-database", dbURL,
-			"up",
-		)
 
-		output, err := cmd.CombinedOutput()
-		if err != nil && !strings.Contains(string(output), "no change") {
-			require.NoError(t, err, "Migration failed: %s", string(output))
+		// Add sslmode=disable for test database
+		migrationDBURL := dbURL
+		if !strings.Contains(migrationDBURL, "sslmode=") {
+			migrationDBURL += "sslmode=disable"
 		}
+
+		// Run application migrations
+		err := postgres.MigrateUp(migrationDBURL, migrationsDir)
+		require.NoError(t, err, "Application migration failed")
+
+		// Run River migrations
+		pool, err := pgxpool.New(ctx, migrationDBURL)
+		require.NoError(t, err, "Failed to create pgxpool")
+		defer pool.Close()
+
+		migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+		require.NoError(t, err, "Failed to create River migrator")
+
+		_, err = migrator.Migrate(ctx, rivermigrate.DirectionUp, &rivermigrate.MigrateOpts{})
+		require.NoError(t, err, "River migration failed")
 
 		timings["migrations"] = time.Since(start)
 		t.Logf("Migration time: %v", timings["migrations"])
@@ -284,16 +406,21 @@ func TestDeploymentPerformance(t *testing.T) {
 
 	// Measure: Application startup
 	t.Run("ApplicationStartupTime", func(t *testing.T) {
-		dbURL := os.Getenv("DATABASE_URL")
 		require.NotEmpty(t, dbURL)
 
 		start := time.Now()
+
+		// Create DATABASE_URL that uses the container network alias
+		containerDBURL := "postgres://togather:togather-perf-password@postgres:5432/togather_perf?sslmode=disable"
+
 		req := testcontainers.ContainerRequest{
 			Image:        imageName,
 			ExposedPorts: []string{"8080/tcp"},
+			Networks:     []string{networkName},
 			Env: map[string]string{
-				"DATABASE_URL": dbURL,
+				"DATABASE_URL": containerDBURL,
 				"SERVER_PORT":  "8080",
+				"JWT_SECRET":   "test-jwt-secret-for-deployment-testing-only",
 			},
 			WaitingFor: wait.ForHTTP("/health").
 				WithPort("8080/tcp").
