@@ -217,17 +217,16 @@
 
         try {
             var place = await API.request('/api/v1/places/' + placeULID);
-            displayLocation(place, location);
+            displayLocation(place);
         } catch (err) {
             console.error('Failed to load place:', err);
-            // Still show the section with the URI even if fetch fails
+            // Show the section with an error message
             section.style.display = 'block';
             document.getElementById('location-name').textContent = '(Failed to load venue details)';
-            document.getElementById('location-uri').textContent = location;
         }
     }
 
-    function displayLocation(place, uri) {
+    function displayLocation(place) {
         var section = document.getElementById('location-section');
         section.style.display = 'block';
 
@@ -245,25 +244,25 @@
             document.getElementById('location-address').textContent = parts.join(', ') || '-';
         }
 
-        // Coordinates
+        // Coordinates with OpenStreetMap link
+        var coordsEl = document.getElementById('location-coords');
         var geo = place.geo;
         if (geo && geo.latitude != null && geo.longitude != null) {
-            document.getElementById('location-coords').textContent =
-                geo.latitude.toFixed(6) + ', ' + geo.longitude.toFixed(6);
+            var lat = geo.latitude.toFixed(6);
+            var lon = geo.longitude.toFixed(6);
+            coordsEl.textContent = '';
+            var coordText = document.createTextNode(lat + ', ' + lon + ' ');
+            coordsEl.appendChild(coordText);
+            var mapLink = document.createElement('a');
+            mapLink.href = 'https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=17/' + lat + '/' + lon;
+            mapLink.target = '_blank';
+            mapLink.rel = 'noopener';
+            mapLink.textContent = '(map)';
+            mapLink.className = 'text-muted';
+            coordsEl.appendChild(mapLink);
         } else {
-            document.getElementById('location-coords').textContent = 'Not geocoded';
+            coordsEl.textContent = 'Not geocoded';
         }
-
-        // Place URI (as a link)
-        var uriEl = document.getElementById('location-uri');
-        uriEl.textContent = '';
-        var link = document.createElement('a');
-        link.href = uri;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.textContent = uri;
-        link.className = 'text-reset';
-        uriEl.appendChild(link);
     }
 
     function renderOccurrences() {
