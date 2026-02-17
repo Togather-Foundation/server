@@ -58,7 +58,7 @@ func defaultValidationConfig() config.ValidationConfig {
 
 // newTestService creates an IngestService with the test repository and default configs.
 func newTestService(repo *MockRepository) *IngestService {
-	return NewIngestService(repo, "https://test.com", defaultValidationConfig()).
+	return NewIngestService(repo, "https://test.com", "America/Toronto", defaultValidationConfig()).
 		WithDedupConfig(defaultDedupConfig())
 }
 
@@ -985,7 +985,7 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 		}
 		repo.reviewQueue[1] = review
 
-		adminService := NewAdminService(repo, false)
+		adminService := NewAdminService(repo, false, "America/Toronto")
 
 		mergeResult, err := adminService.MergeEventsWithReview(context.Background(),
 			MergeEventsParams{PrimaryULID: primaryULID, DuplicateULID: dupULID},
@@ -1038,7 +1038,7 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 			Status:    "pending",
 		}
 
-		adminService := NewAdminService(repo, false)
+		adminService := NewAdminService(repo, false, "America/Toronto")
 
 		_, err := adminService.MergeEventsWithReview(context.Background(),
 			MergeEventsParams{PrimaryULID: primaryULID, DuplicateULID: dupULID},
@@ -1079,7 +1079,7 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 			Status:    "pending",
 		}
 
-		adminService := NewAdminService(repo, false)
+		adminService := NewAdminService(repo, false, "America/Toronto")
 
 		_, err := adminService.MergeEventsWithReview(context.Background(),
 			MergeEventsParams{PrimaryULID: primaryULID, DuplicateULID: dupULID},
@@ -1117,7 +1117,7 @@ func TestScenario_S11_MergeIntoDeletedEvent(t *testing.T) {
 			LifecycleState: "deleted",
 		}
 
-		adminService := NewAdminService(repo, false)
+		adminService := NewAdminService(repo, false, "America/Toronto")
 
 		err := adminService.MergeEvents(context.Background(), MergeEventsParams{
 			PrimaryULID:   bULID,
@@ -1141,7 +1141,7 @@ func TestScenario_S11_MergeIntoDeletedEvent(t *testing.T) {
 			LifecycleState: "published",
 		}
 
-		adminService := NewAdminService(repo, false)
+		adminService := NewAdminService(repo, false, "America/Toronto")
 
 		err := adminService.MergeEvents(context.Background(), MergeEventsParams{
 			PrimaryULID:   ulid,
@@ -1514,7 +1514,7 @@ func TestScenario_S14_ThresholdEdgeCases(t *testing.T) {
 			{ID: "should-not-appear", ULID: "place-ulid", Name: "Similar Place", Similarity: 0.9},
 		})
 
-		service := NewIngestService(repo, "https://test.com", defaultValidationConfig()).
+		service := NewIngestService(repo, "https://test.com", "America/Toronto", defaultValidationConfig()).
 			WithDedupConfig(config.DedupConfig{
 				NearDuplicateThreshold:  0,
 				PlaceReviewThreshold:    0,

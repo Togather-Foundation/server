@@ -16,12 +16,14 @@ import (
 type AdminService struct {
 	repo         Repository
 	requireHTTPS bool
+	defaultTZ    string
 }
 
-func NewAdminService(repo Repository, requireHTTPS bool) *AdminService {
+func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string) *AdminService {
 	return &AdminService{
 		repo:         repo,
 		requireHTTPS: requireHTTPS,
+		defaultTZ:    defaultTimezone,
 	}
 }
 
@@ -474,35 +476,62 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 		return nil, fmt.Errorf("get event: %w", err)
 	}
 
-	if len(existing.Occurrences) == 0 {
-		return nil, fmt.Errorf("event %s has no occurrences to fix", eventULID)
-	}
-
 	// Determine effective start and end times
 	var effectiveStart time.Time
 	var effectiveEnd *time.Time
 
-	if startDate != nil {
+	if len(existing.Occurrences) == 0 {
+		// Event was ingested with reversed dates — occurrence was intentionally
+		// skipped during ingest (ingest.go:713-715). Create one now with corrected dates.
+		// Both start and end dates MUST be provided when creating from scratch.
+		if startDate == nil || endDate == nil {
+			return nil, fmt.Errorf("both startDate and endDate are required to fix events without occurrences")
+		}
+
+		// Validate corrected dates
+		if endDate.Before(*startDate) {
+			return nil, FilterError{Field: "endDate", Message: "end date cannot be before start date"}
+		}
+
 		effectiveStart = *startDate
-	} else {
-		effectiveStart = existing.Occurrences[0].StartTime
-	}
-
-	if endDate != nil {
 		effectiveEnd = endDate
+
+		// Create the missing occurrence using event metadata (venue, timezone, etc.)
+		err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
+			EventID:    existing.ID,
+			StartTime:  effectiveStart,
+			EndTime:    effectiveEnd,
+			Timezone:   s.defaultTZ,
+			VenueID:    existing.PrimaryVenueID,
+			VirtualURL: nil, // Use event's VirtualURL if set
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create missing occurrence: %w", err)
+		}
 	} else {
-		effectiveEnd = existing.Occurrences[0].EndTime
-	}
+		// Event has existing occurrences - update them with corrected dates
+		if startDate != nil {
+			effectiveStart = *startDate
+		} else {
+			effectiveStart = existing.Occurrences[0].StartTime
+		}
 
-	// Validate: end must not be before start
-	if effectiveEnd != nil && effectiveEnd.Before(effectiveStart) {
-		return nil, FilterError{Field: "endDate", Message: "end date cannot be before start date"}
-	}
+		if endDate != nil {
+			effectiveEnd = endDate
+		} else {
+			effectiveEnd = existing.Occurrences[0].EndTime
+		}
 
-	// Fix occurrence dates within the transaction
-	err = txRepo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd)
-	if err != nil {
-		return nil, fmt.Errorf("fix occurrence dates: %w", err)
+		// Validate: end must not be before start
+		if effectiveEnd != nil && effectiveEnd.Before(effectiveStart) {
+			return nil, FilterError{Field: "endDate", Message: "end date cannot be before start date"}
+		}
+
+		// Fix occurrence dates within the transaction
+		err = txRepo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd)
+		if err != nil {
+			return nil, fmt.Errorf("fix occurrence dates: %w", err)
+		}
 	}
 
 	// Publish the event within the transaction

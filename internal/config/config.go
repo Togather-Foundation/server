@@ -10,20 +10,21 @@ import (
 )
 
 type Config struct {
-	Server         ServerConfig
-	Database       DatabaseConfig
-	Auth           AuthConfig
-	RateLimit      RateLimitConfig
-	CORS           CORSConfig
-	AdminBootstrap AdminBootstrapConfig
-	Jobs           JobsConfig
-	Logging        LoggingConfig
-	Email          EmailConfig
-	Validation     ValidationConfig
-	Tracing        TracingConfig
-	Dedup          DedupConfig
-	Geocoding      GeocodingConfig
-	Environment    string
+	Server          ServerConfig
+	Database        DatabaseConfig
+	Auth            AuthConfig
+	RateLimit       RateLimitConfig
+	CORS            CORSConfig
+	AdminBootstrap  AdminBootstrapConfig
+	Jobs            JobsConfig
+	Logging         LoggingConfig
+	Email           EmailConfig
+	Validation      ValidationConfig
+	Tracing         TracingConfig
+	Dedup           DedupConfig
+	Geocoding       GeocodingConfig
+	DefaultTimezone string
+	Environment     string
 }
 
 type ServerConfig struct {
@@ -298,7 +299,8 @@ func Load() (Config, error) {
 			PopularPreserveCount:     getEnvInt("GEOCODING_POPULAR_PRESERVE_COUNT", 10000),
 			DefaultCountry:           getEnv("GEOCODING_DEFAULT_COUNTRY", "ca"),
 		},
-		Environment: getEnv("ENVIRONMENT", "development"),
+		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
+		Environment:     getEnv("ENVIRONMENT", "development"),
 	}
 
 	// CORS configuration

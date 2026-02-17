@@ -64,7 +64,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	eventsService := events.NewService(repo.Events())
-	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.Validation).WithDedupConfig(cfg.Dedup)
+	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.DefaultTimezone, cfg.Validation).WithDedupConfig(cfg.Dedup)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 	provenanceService := provenance.NewService(repo.Provenance())
@@ -245,7 +245,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
-	adminService := events.NewAdminService(repo.Events(), requireHTTPS)
+	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create API Key handler

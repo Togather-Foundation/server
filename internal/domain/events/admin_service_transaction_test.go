@@ -28,7 +28,7 @@ func TestMergeEvents_AtomicRollback(t *testing.T) {
 		},
 	}
 
-	service := NewAdminService(repo, false)
+	service := NewAdminService(repo, false, "America/Toronto")
 
 	params := MergeEventsParams{
 		PrimaryULID:   "01HZTEST1",
@@ -74,7 +74,7 @@ func TestMergeEvents_AtomicCommit(t *testing.T) {
 		},
 	}
 
-	service := NewAdminService(repo, false)
+	service := NewAdminService(repo, false, "America/Toronto")
 
 	params := MergeEventsParams{
 		PrimaryULID:   "01HZTEST1",
@@ -118,7 +118,7 @@ func TestMergeEvents_RollbackOnMergeError(t *testing.T) {
 		},
 	}
 
-	service := NewAdminService(repo, false)
+	service := NewAdminService(repo, false, "America/Toronto")
 
 	params := MergeEventsParams{
 		PrimaryULID:   "01HZTEST1",

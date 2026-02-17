@@ -436,7 +436,7 @@ func hashEventInput(input events.EventInput) (string, error) {
 func TestIngestService_WithSyntheticFixtures(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("ingest random event", func(t *testing.T) {
 		input := gen.RandomEventInput()
@@ -513,7 +513,7 @@ func TestIngestService_WithSyntheticFixtures(t *testing.T) {
 func TestIngestService_BatchIngest(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("batch ingest multiple events", func(t *testing.T) {
 		inputs := gen.BatchEventInputs(5)
@@ -540,7 +540,7 @@ func TestIngestService_DuplicateDetection(t *testing.T) {
 	t.Run("detect duplicate by source external ID", func(t *testing.T) {
 		gen := NewDeterministicGenerator()
 		repo := NewIngestMockRepository()
-		service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+		service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 		input := gen.RandomEventInput()
 
 		// First ingest
@@ -560,7 +560,7 @@ func TestIngestService_DuplicateDetection(t *testing.T) {
 	t.Run("detect duplicate by dedup hash", func(t *testing.T) {
 		gen := NewDeterministicGenerator()
 		repo := NewIngestMockRepository()
-		service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+		service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 		first, second := gen.DuplicateCandidates()
 
 		// Ingest first event
@@ -581,7 +581,7 @@ func TestIngestService_DuplicateDetection(t *testing.T) {
 func TestIngestService_OccurrenceHandling(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("ingest event with multiple occurrences", func(t *testing.T) {
 		input := gen.EventInputWithOccurrences(4)
@@ -606,7 +606,7 @@ func TestIngestService_OccurrenceHandling(t *testing.T) {
 func TestIngestService_SourceTracking(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("track source for ingested events", func(t *testing.T) {
 		input := gen.RandomEventInput()
@@ -627,7 +627,7 @@ func TestIngestService_SourceTracking(t *testing.T) {
 func TestIngestService_VenueCreation(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("create venue from Toronto fixtures", func(t *testing.T) {
 		input := gen.RandomEventInput()
@@ -654,7 +654,7 @@ func TestIngestService_VenueCreation(t *testing.T) {
 func TestIngestService_OrganizerCreation(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("create organizer from fixtures", func(t *testing.T) {
 		input := gen.RandomEventInput()
@@ -681,7 +681,7 @@ func TestIngestService_OrganizerCreation(t *testing.T) {
 func TestIngestService_IdempotencyWithFixtures(t *testing.T) {
 	gen := NewDeterministicGenerator()
 	repo := NewIngestMockRepository()
-	service := events.NewIngestService(repo, "https://test.togather.events", config.ValidationConfig{RequireImage: true})
+	service := events.NewIngestService(repo, "https://test.togather.events", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	t.Run("idempotent ingest with same key returns same event", func(t *testing.T) {
 		input := gen.RandomEventInput()

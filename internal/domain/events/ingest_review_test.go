@@ -398,7 +398,7 @@ func TestHashInput(t *testing.T) {
 }
 
 func TestNewIngestService(t *testing.T) {
-	service := NewIngestService(nil, "https://example.com", config.ValidationConfig{RequireImage: true})
+	service := NewIngestService(nil, "https://example.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 	if service == nil {
 		t.Fatal("NewIngestService() returned nil")

@@ -32,11 +32,11 @@ type IngestService struct {
 	dedupConfig      config.DedupConfig
 }
 
-func NewIngestService(repo Repository, nodeDomain string, validationConfig config.ValidationConfig) *IngestService {
+func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig) *IngestService {
 	return &IngestService{
 		repo:             repo,
 		nodeDomain:       nodeDomain,
-		defaultTZ:        "America/Toronto",
+		defaultTZ:        defaultTimezone,
 		validationConfig: validationConfig,
 	}
 }

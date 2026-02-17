@@ -15,7 +15,7 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 	t.Run("RequireImage=false - event without image publishes directly", func(t *testing.T) {
 		repo := NewMockRepository()
 
-		service := NewIngestService(repo, "https://test.com", config.ValidationConfig{RequireImage: false})
+		service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: false})
 
 		input := EventInput{
 			Name:        "Event Without Image",
@@ -57,7 +57,7 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 	t.Run("RequireImage=true - event without image goes to review", func(t *testing.T) {
 		repo := NewMockRepository()
 
-		service := NewIngestService(repo, "https://test.com", config.ValidationConfig{RequireImage: true})
+		service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
 
 		input := EventInput{
 			Name:        "Event Without Image",
@@ -147,7 +147,7 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				repo := NewMockRepository()
 
-				service := NewIngestService(repo, "https://test.com", config.ValidationConfig{RequireImage: tc.requireImage})
+				service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: tc.requireImage})
 
 				input := EventInput{
 					Name:        "Event With Image",

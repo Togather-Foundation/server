@@ -129,7 +129,7 @@ func TestMCPResources(t *testing.T) {
 
 func eventsIngestService(t *testing.T, repo *postgres.Repository, env *testEnv) *events.IngestService {
 	t.Helper()
-	return events.NewIngestService(repo.Events(), env.Config.Server.BaseURL, env.Config.Validation)
+	return events.NewIngestService(repo.Events(), env.Config.Server.BaseURL, "America/Toronto", env.Config.Validation)
 }
 
 func decodeToolText(t *testing.T, result *mcpTypes.CallToolResult) map[string]any {

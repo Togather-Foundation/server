@@ -745,7 +745,7 @@ func TestApproveReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true)
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -905,7 +905,7 @@ func TestRejectReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true)
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1104,7 +1104,7 @@ func TestFixReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true)
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1130,7 +1130,7 @@ func TestFixReview(t *testing.T) {
 // TestApproveReview_InvalidJSON tests handling of malformed JSON
 func TestApproveReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1152,7 +1152,7 @@ func TestApproveReview_InvalidJSON(t *testing.T) {
 // TestRejectReview_InvalidJSON tests handling of malformed JSON
 func TestRejectReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1174,7 +1174,7 @@ func TestRejectReview_InvalidJSON(t *testing.T) {
 // TestFixReview_InvalidJSON tests handling of malformed JSON
 func TestFixReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
