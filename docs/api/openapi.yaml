@@ -10,21 +10,38 @@ info:
     
     **Public read access:** No authentication required for reading events, places, or organizations.
     
-    **Authenticated write access:** To submit or manage events, you need an API key:
+    **Authenticated write access:** To submit or manage events, you need an API key.
     
-    ### Step 1: Request an Invitation
-    Email [info@togather.foundation](mailto:info@togather.foundation) with:
-    - Your name
-    - Email address
-    - Intended use case
+    ### Two Onboarding Paths
     
-    ### Step 2: Accept Invitation
-    - Check your email for the invitation link (valid for 7 days)
-    - Set your password and display name
-    - You'll be logged in to the developer dashboard at `/dev/login`
-    - Alternatively, use GitHub OAuth to authenticate during onboarding
+    #### Option 1: Self-Service via GitHub OAuth (Instant)
     
-    ### Step 3: Create an API Key
+    1. Visit `/dev/login` and click "Sign in with GitHub"
+    2. Authorize the app on GitHub
+    3. Your developer account is automatically created
+    4. Navigate to `/dev/api-keys` to create your first API key
+    
+    #### Option 2: Email Invitation (Email/Password)
+    
+    1. **Request an invitation:** Email [info@togather.foundation](mailto:info@togather.foundation) with:
+       - Your name
+       - Email address
+       - Intended use case
+    
+    2. **Accept invitation:**
+       - Check your email for the invitation link (valid for 7 days)
+       - Set your password and display name
+       - You'll be logged in to the developer dashboard at `/dev/login`
+    
+    3. **Create an API key:**
+       - Navigate to `/dev/api-keys`
+       - Click "Create New Key"
+       - Enter a descriptive name
+       - Copy the key immediately (shown only once)
+       - Store securely (environment variable or secret manager)
+    
+    ### Using Your API Key
+    
     **Via Web Interface:**
     1. Navigate to `/dev/api-keys`
     2. Click "Create New Key"
@@ -34,7 +51,7 @@ info:
     
     **Via API:**
     ```bash
-    # First, get your JWT token
+    # First, get your JWT token (if using email/password)
     curl -X POST https://toronto.togather.foundation/api/v1/dev/login \
          -H "Content-Type: application/json" \
          -d '{"email": "your-email@example.com", "password": "your-password"}'
@@ -46,7 +63,8 @@ info:
          -d '{"name": "My Event Scraper"}'
     ```
     
-    ### Step 4: Use Your API Key
+    ### Making Authenticated Requests
+    
     **Reading events (no auth):**
     ```bash
     curl https://toronto.togather.foundation/api/v1/events

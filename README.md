@@ -87,14 +87,18 @@ curl "https://toronto.togather.foundation/api/v1/events?start_date=2026-03-01&en
 
 ### Submitting Events (Requires API Key)
 
-To submit or manage events, you need an API key. **Onboarding process:**
+To submit or manage events, you need an API key. **Two onboarding options:**
 
+**Option 1: Self-Service via GitHub OAuth (Instant)**
+1. Visit [/dev/login](https://toronto.togather.foundation/dev/login) and click "Sign in with GitHub"
+2. Authorize the app - your developer account is automatically created
+3. Navigate to `/dev/api-keys` and create your first API key
+
+**Option 2: Email Invitation (Email/Password)**
 1. **Request an invitation**: Email [info@togather.foundation](mailto:info@togather.foundation) with your name, email, and use case
 2. **Accept your invitation**: Check your email for the invitation link (valid for 7 days), set your password
 3. **Create an API key**: Log in to the developer portal at `/dev/login`, navigate to `/dev/api-keys`, and create a key
 4. **Use your key**: Include it in the `Authorization: Bearer <key>` header for write requests
-
-**Alternative:** GitHub OAuth is available for invitation-based onboarding.
 
 **Submit an event:**
 ```bash
