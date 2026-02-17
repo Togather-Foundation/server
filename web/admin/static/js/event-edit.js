@@ -118,8 +118,8 @@
         try {
             showLoading(true);
             
-            // Fetch event data from API using the centralized client
-            eventData = await API.events.get(eventId);
+            // Use the public events endpoint for reading (admin endpoint only supports PUT/DELETE)
+            eventData = await API.request(`/api/v1/events/${eventId}`);
             populateForm(eventData);
             showLoading(false);
         } catch (error) {
