@@ -12,11 +12,22 @@
     function init() {
         // Extract event ID from URL path
         const pathParts = window.location.pathname.split('/');
-        eventId = pathParts[pathParts.length - 1];
+        const rawId = pathParts[pathParts.length - 1];
         
-        if (!eventId || eventId === 'new') {
-            showError('Invalid event ID');
+        // Validate the ID looks like a ULID (26 alphanumeric characters)
+        if (!rawId || rawId === 'new' || rawId === 'undefined') {
+            showError('Invalid event ID. The event link may be broken — try returning to the events list.');
             return;
+        }
+        
+        // Extract ULID if the ID is a full URI, otherwise use as-is
+        const ulidMatch = rawId.match(/^([A-Z0-9]{26})$/i);
+        if (ulidMatch) {
+            eventId = ulidMatch[1];
+        } else {
+            // Try extracting from a URI path
+            const uriMatch = rawId.match(/events\/([A-Z0-9]{26})/i);
+            eventId = uriMatch ? uriMatch[1] : rawId;
         }
 
         // Check if we came from review queue
@@ -107,22 +118,13 @@
         try {
             showLoading(true);
             
-            // Fetch event data from API
-            const response = await fetch(`/api/v1/events/${eventId}`, {
-                credentials: 'include'
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || `Failed to load event: ${response.status}`);
-            }
-
-            eventData = await response.json();
+            // Fetch event data from API using the centralized client
+            eventData = await API.events.get(eventId);
             populateForm(eventData);
             showLoading(false);
         } catch (error) {
             console.error('Failed to load event:', error);
-            showError(error.message);
+            showError(error.message || 'Failed to load event. The event may not exist or you may not have permission to view it.');
             showLoading(false);
         }
     }
@@ -281,22 +283,8 @@
                 payload.quality_score = parseInt(qualityScore, 10);
             }
 
-            // Send PUT request
-            const response = await fetch(`/api/v1/admin/events/${eventId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || error.title || `Update failed: ${response.status}`);
-            }
-
-            const result = await response.json();
+            // Send PUT request using centralized API client
+            const result = await API.events.update(eventId, payload);
             showToast('Event updated successfully', 'success');
             
             // Reload the event data to reflect changes

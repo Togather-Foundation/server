@@ -147,6 +147,31 @@
     }
     
     /**
+     * Extract event ULID from event object
+     * The API returns @id as a full URI (e.g., "/api/v1/events/01ABC..."),
+     * so we need to extract the 26-character ULID from it.
+     * @param {Object} event - Event object from API
+     * @returns {string|null} Event ULID or null
+     */
+    function extractEventId(event) {
+        if (!event) return null;
+        
+        // Try @id first (full URI)
+        if (event['@id']) {
+            const match = event['@id'].match(/events\/([A-Z0-9]{26})/i);
+            if (match) return match[1];
+        }
+        
+        // Fallback to id field
+        if (event.id) return event.id;
+        
+        // Fallback to ulid field
+        if (event.ulid) return event.ulid;
+        
+        return null;
+    }
+    
+    /**
      * Render events into table
      * @param {Array} events - Array of event objects
      */
@@ -154,17 +179,20 @@
         const tbody = document.getElementById('events-table');
         
         tbody.innerHTML = events.map(event => {
+            const eventId = extractEventId(event);
             const eventName = event.name || 'Untitled Event';
             const startDate = event.start_date ? formatDate(event.start_date, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No date';
             const lifecycleState = event.lifecycle_state || 'draft';
             const statusColor = getStatusColor(lifecycleState);
             
+            if (!eventId) {
+                console.warn('Could not extract event ID from event:', event);
+            }
+            
             return `
-                <tr data-event-id="${event.id}">
+                <tr data-event-id="${eventId || ''}">
                     <td>
-                        <a href="/admin/events/${event.id}" class="text-reset">
-                            ${escapeHtml(eventName)}
-                        </a>
+                        ${eventId ? `<a href="/admin/events/${eventId}" class="text-reset">${escapeHtml(eventName)}</a>` : `<span class="text-muted">${escapeHtml(eventName)} <small>(missing ID)</small></span>`}
                     </td>
                     <td class="text-muted">${startDate}</td>
                     <td>
@@ -172,12 +200,8 @@
                     </td>
                     <td>
                         <div class="btn-list flex-nowrap">
-                            <a href="/admin/events/${event.id}" class="btn btn-sm">
-                                Edit
-                            </a>
-                            <button class="btn btn-sm btn-ghost-danger delete-event-btn" data-event-id="${event.id}" data-event-name="${escapeHtml(eventName)}">
-                                Delete
-                            </button>
+                            ${eventId ? `<a href="/admin/events/${eventId}" class="btn btn-sm">Edit</a>` : ''}
+                            ${eventId ? `<button class="btn btn-sm btn-ghost-danger delete-event-btn" data-event-id="${eventId}" data-event-name="${escapeHtml(eventName)}">Delete</button>` : ''}
                         </div>
                     </td>
                 </tr>
