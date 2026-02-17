@@ -71,7 +71,7 @@ func (w GeocodePlaceWorker) Work(ctx context.Context, job *river.Job[GeocodePlac
 
 	// Query place by ULID
 	const getPlaceQuery = `
-		SELECT ulid, name, street_address, city, region, postal_code, country, latitude, longitude
+		SELECT ulid, name, street_address, address_locality, address_region, postal_code, address_country, latitude, longitude
 		FROM places
 		WHERE ulid = $1 AND deleted_at IS NULL
 	`
@@ -187,9 +187,11 @@ func (w GeocodePlaceWorker) Work(ctx context.Context, job *river.Job[GeocodePlac
 	)
 
 	// Update place with resolved coordinates
+	// Note: geo_point is a GENERATED ALWAYS column computed from latitude/longitude,
+	// so we only need to set the coordinate values.
 	const updatePlaceQuery = `
 		UPDATE places
-		SET latitude = $1, longitude = $2, geo_point = ST_SetSRID(ST_MakePoint($2, $1), 4326)
+		SET latitude = $1, longitude = $2
 		WHERE ulid = $3
 	`
 

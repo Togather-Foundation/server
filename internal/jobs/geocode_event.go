@@ -77,10 +77,10 @@ func (w GeocodeEventWorker) Work(ctx context.Context, job *river.Job[GeocodeEven
 			p.ulid as venue_ulid,
 			p.name as venue_name,
 			p.street_address,
-			p.city,
-			p.region,
+			p.address_locality,
+			p.address_region,
 			p.postal_code,
-			p.country,
+			p.address_country,
 			p.latitude,
 			p.longitude
 		FROM events e
@@ -216,9 +216,11 @@ func (w GeocodeEventWorker) Work(ctx context.Context, job *river.Job[GeocodeEven
 	)
 
 	// Update venue (place) with resolved coordinates
+	// Note: geo_point is a GENERATED ALWAYS column computed from latitude/longitude,
+	// so we only need to set the coordinate values.
 	const updatePlaceQuery = `
 		UPDATE places
-		SET latitude = $1, longitude = $2, geo_point = ST_SetSRID(ST_MakePoint($2, $1), 4326)
+		SET latitude = $1, longitude = $2
 		WHERE ulid = $3
 	`
 
