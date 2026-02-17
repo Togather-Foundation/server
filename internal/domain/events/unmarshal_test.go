@@ -108,6 +108,54 @@ func TestPlaceInput_UnmarshalJSON_IDOnly(t *testing.T) {
 	assert.Equal(t, "https://example.com/places/01ARZ3NDEKTSV4RRFFQ69G5FAV", place.ID)
 }
 
+func TestPlaceInput_UnmarshalJSON_StringLatLon(t *testing.T) {
+	data := `{
+		"name": "String Coords Venue",
+		"latitude": "43.6532",
+		"longitude": "-79.3832"
+	}`
+
+	var place PlaceInput
+	err := json.Unmarshal([]byte(data), &place)
+	require.NoError(t, err)
+	assert.Equal(t, "String Coords Venue", place.Name)
+	assert.InDelta(t, 43.6532, place.Latitude, 0.0001)
+	assert.InDelta(t, -79.3832, place.Longitude, 0.0001)
+}
+
+func TestPlaceInput_UnmarshalJSON_NestedGeoStringLatLon(t *testing.T) {
+	data := `{
+		"@type": "Place",
+		"name": "String Geo Venue",
+		"geo": {
+			"@type": "GeoCoordinates",
+			"latitude": "40.7306",
+			"longitude": "-73.9996"
+		}
+	}`
+
+	var place PlaceInput
+	err := json.Unmarshal([]byte(data), &place)
+	require.NoError(t, err)
+	assert.Equal(t, "String Geo Venue", place.Name)
+	assert.InDelta(t, 40.7306, place.Latitude, 0.0001)
+	assert.InDelta(t, -73.9996, place.Longitude, 0.0001)
+}
+
+func TestPlaceInput_UnmarshalJSON_EmptyStringLatLon(t *testing.T) {
+	data := `{
+		"name": "Empty Coords Venue",
+		"latitude": "",
+		"longitude": ""
+	}`
+
+	var place PlaceInput
+	err := json.Unmarshal([]byte(data), &place)
+	require.NoError(t, err)
+	assert.Equal(t, float64(0), place.Latitude)
+	assert.Equal(t, float64(0), place.Longitude)
+}
+
 // --- OrganizationInput tests ---
 
 func TestOrganizationInput_WithEmailTelephone(t *testing.T) {

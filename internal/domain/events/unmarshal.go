@@ -3,6 +3,7 @@ package events
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -216,13 +217,13 @@ func (p *PlaceInput) UnmarshalJSON(data []byte) error {
 		Type string `json:"@type,omitempty"`
 		Name string `json:"name,omitempty"`
 		// Flat format fields
-		StreetAddress   string  `json:"streetAddress,omitempty"`
-		AddressLocality string  `json:"addressLocality,omitempty"`
-		AddressRegion   string  `json:"addressRegion,omitempty"`
-		PostalCode      string  `json:"postalCode,omitempty"`
-		AddressCountry  string  `json:"addressCountry,omitempty"`
-		Latitude        float64 `json:"latitude,omitempty"`
-		Longitude       float64 `json:"longitude,omitempty"`
+		StreetAddress   string          `json:"streetAddress,omitempty"`
+		AddressLocality string          `json:"addressLocality,omitempty"`
+		AddressRegion   string          `json:"addressRegion,omitempty"`
+		PostalCode      string          `json:"postalCode,omitempty"`
+		AddressCountry  string          `json:"addressCountry,omitempty"`
+		Latitude        json.RawMessage `json:"latitude,omitempty"`
+		Longitude       json.RawMessage `json:"longitude,omitempty"`
 		// Nested schema.org format
 		Address json.RawMessage `json:"address,omitempty"`
 		Geo     json.RawMessage `json:"geo,omitempty"`
@@ -242,8 +243,22 @@ func (p *PlaceInput) UnmarshalJSON(data []byte) error {
 	p.AddressRegion = raw.AddressRegion
 	p.PostalCode = raw.PostalCode
 	p.AddressCountry = raw.AddressCountry
-	p.Latitude = raw.Latitude
-	p.Longitude = raw.Longitude
+
+	// Parse flexible lat/lon (number or string)
+	if len(raw.Latitude) > 0 {
+		lat, err := unmarshalFlexibleFloat(raw.Latitude)
+		if err != nil {
+			return fmt.Errorf("unmarshal latitude: %w", err)
+		}
+		p.Latitude = lat
+	}
+	if len(raw.Longitude) > 0 {
+		lon, err := unmarshalFlexibleFloat(raw.Longitude)
+		if err != nil {
+			return fmt.Errorf("unmarshal longitude: %w", err)
+		}
+		p.Longitude = lon
+	}
 
 	// Override with nested address if present
 	if len(raw.Address) > 0 {
@@ -287,17 +302,29 @@ func (p *PlaceInput) UnmarshalJSON(data []byte) error {
 	// Override with nested geo if present
 	if len(raw.Geo) > 0 {
 		var geo struct {
-			Latitude  float64 `json:"latitude,omitempty"`
-			Longitude float64 `json:"longitude,omitempty"`
+			Latitude  json.RawMessage `json:"latitude,omitempty"`
+			Longitude json.RawMessage `json:"longitude,omitempty"`
 		}
 		if err := json.Unmarshal(raw.Geo, &geo); err != nil {
 			return fmt.Errorf("unmarshal geo: %w", err)
 		}
-		if geo.Latitude != 0 {
-			p.Latitude = geo.Latitude
+		if len(geo.Latitude) > 0 {
+			lat, err := unmarshalFlexibleFloat(geo.Latitude)
+			if err != nil {
+				return fmt.Errorf("unmarshal geo.latitude: %w", err)
+			}
+			if lat != 0 {
+				p.Latitude = lat
+			}
 		}
-		if geo.Longitude != 0 {
-			p.Longitude = geo.Longitude
+		if len(geo.Longitude) > 0 {
+			lon, err := unmarshalFlexibleFloat(geo.Longitude)
+			if err != nil {
+				return fmt.Errorf("unmarshal geo.longitude: %w", err)
+			}
+			if lon != 0 {
+				p.Longitude = lon
+			}
 		}
 	}
 
@@ -374,4 +401,34 @@ func unmarshalFlexibleOffer(data json.RawMessage) (*OfferInput, error) {
 		return nil, nil
 	}
 	return &offers[0], nil
+}
+
+// unmarshalFlexibleFloat parses a JSON value that may be a number or a string
+// containing a number (e.g., 43.65 or "43.65"). Returns 0 if the data is empty
+// or cannot be parsed.
+func unmarshalFlexibleFloat(data json.RawMessage) (float64, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+
+	// Try number first
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		return n, nil
+	}
+
+	// Try string containing a number
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return 0, fmt.Errorf("must be a number or numeric string: %w", err)
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid numeric string %q: %w", s, err)
+	}
+	return f, nil
 }
