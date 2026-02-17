@@ -84,6 +84,12 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		filters.Latitude = &geocodeResult.Latitude
 		filters.Longitude = &geocodeResult.Longitude
 
+		// Apply default radius if not explicitly provided
+		if filters.RadiusKm == nil {
+			defaultRadius := 10.0
+			filters.RadiusKm = &defaultRadius
+		}
+
 		// Build geocoding metadata for response
 		geocodingMeta = map[string]interface{}{
 			"query":              *filters.NearPlace,

@@ -210,3 +210,46 @@ func TestParseFiltersProximityInvalidRadiusNumber(t *testing.T) {
 
 	assertFilterError(t, err, "radius", "must be a valid number")
 }
+
+func TestParseFiltersNearPlaceWithRadiusOnly(t *testing.T) {
+	// When near_place is used with radius but no lat/lon,
+	// radius should be parsed and returned without error.
+	values := url.Values{}
+	values.Set("near_place", "Toronto City Hall")
+	values.Set("radius", "5")
+
+	filters, _, err := ParseFilters(values)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.NearPlace)
+	require.Equal(t, "Toronto City Hall", *filters.NearPlace)
+	require.Nil(t, filters.Latitude)
+	require.Nil(t, filters.Longitude)
+	require.NotNil(t, filters.RadiusKm)
+	require.Equal(t, 5.0, *filters.RadiusKm)
+}
+
+func TestParseFiltersNearPlaceWithoutRadius(t *testing.T) {
+	// When near_place is used without radius, no proximity params returned.
+	values := url.Values{}
+	values.Set("near_place", "Toronto City Hall")
+
+	filters, _, err := ParseFilters(values)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.NearPlace)
+	require.Nil(t, filters.Latitude)
+	require.Nil(t, filters.Longitude)
+	require.Nil(t, filters.RadiusKm)
+}
+
+func TestParseFiltersNearPlaceConflictsWithLatLon(t *testing.T) {
+	values := url.Values{}
+	values.Set("near_place", "Toronto City Hall")
+	values.Set("near_lat", "43.6532")
+	values.Set("near_lon", "-79.3832")
+
+	_, _, err := ParseFilters(values)
+
+	assertFilterError(t, err, "near_place,near_lat,near_lon", "cannot use both near_place and near_lat/near_lon - choose one proximity method")
+}

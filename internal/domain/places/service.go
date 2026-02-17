@@ -117,6 +117,22 @@ func parseProximityParams(values url.Values) (*float64, *float64, *float64, erro
 		return nil, nil, nil, nil
 	}
 
+	// If only radius is provided (no lat/lon), parse and return just the radius.
+	// This supports near_place + radius where coordinates come from geocoding.
+	if rawLat == "" && rawLon == "" && rawRadius != "" {
+		parsed, err := strconv.ParseFloat(rawRadius, 64)
+		if err != nil {
+			return nil, nil, nil, FilterError{Field: "radius", Message: "must be a valid number"}
+		}
+		if parsed <= 0 {
+			return nil, nil, nil, FilterError{Field: "radius", Message: "must be greater than 0"}
+		}
+		if parsed > 100 {
+			return nil, nil, nil, FilterError{Field: "radius", Message: "must be 100km or less"}
+		}
+		return nil, nil, &parsed, nil
+	}
+
 	// If any lat/lon provided, both must be provided
 	if (rawLat == "" && rawLon != "") || (rawLat != "" && rawLon == "") {
 		return nil, nil, nil, FilterError{
