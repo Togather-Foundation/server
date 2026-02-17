@@ -258,6 +258,33 @@ type FieldProvenance struct {
 	SupersededByID     pgtype.UUID        `json:"superseded_by_id"`
 }
 
+type GeocodingCache struct {
+	ID              int64              `json:"id"`
+	QueryNormalized string             `json:"query_normalized"`
+	CountryCodes    string             `json:"country_codes"`
+	Latitude        float64            `json:"latitude"`
+	Longitude       float64            `json:"longitude"`
+	DisplayName     string             `json:"display_name"`
+	PlaceType       string             `json:"place_type"`
+	OsmID           pgtype.Int8        `json:"osm_id"`
+	RawResponse     []byte             `json:"raw_response"`
+	Source          string             `json:"source"`
+	HitCount        int32              `json:"hit_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+}
+
+type GeocodingFailure struct {
+	ID              int64              `json:"id"`
+	QueryNormalized string             `json:"query_normalized"`
+	CountryCodes    string             `json:"country_codes"`
+	FailureReason   string             `json:"failure_reason"`
+	AttemptCount    int32              `json:"attempt_count"`
+	RetryAfter      pgtype.Timestamptz `json:"retry_after"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+}
+
 type IdempotencyKey struct {
 	Key         string             `json:"key"`
 	RequestHash string             `json:"request_hash"`
@@ -344,6 +371,25 @@ type PlaceTombstone struct {
 	DeletionReason  pgtype.Text        `json:"deletion_reason"`
 	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
 	Payload         []byte             `json:"payload"`
+}
+
+type ReverseGeocodingCache struct {
+	ID              int64              `json:"id"`
+	Latitude        float64            `json:"latitude"`
+	Longitude       float64            `json:"longitude"`
+	GeoPoint        interface{}        `json:"geo_point"`
+	DisplayName     string             `json:"display_name"`
+	AddressRoad     pgtype.Text        `json:"address_road"`
+	AddressSuburb   pgtype.Text        `json:"address_suburb"`
+	AddressCity     pgtype.Text        `json:"address_city"`
+	AddressState    pgtype.Text        `json:"address_state"`
+	AddressPostcode pgtype.Text        `json:"address_postcode"`
+	AddressCountry  pgtype.Text        `json:"address_country"`
+	OsmID           pgtype.Int8        `json:"osm_id"`
+	RawResponse     []byte             `json:"raw_response"`
+	HitCount        int32              `json:"hit_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 }
 
 type Source struct {

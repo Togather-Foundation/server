@@ -59,8 +59,8 @@ type CachedReverse struct {
 	ExpiresAt       *time.Time
 }
 
-// GeocodingFailure represents a tracked geocoding failure.
-type GeocodingFailure struct {
+// CachedGeocodingFailure represents a tracked geocoding failure.
+type CachedGeocodingFailure struct {
 	ID              int64
 	QueryNormalized string
 	CountryCodes    string
@@ -316,7 +316,7 @@ func (r *GeocodingCacheRepository) RecordFailure(ctx context.Context, queryNorma
 
 // GetRecentFailure checks if a query has recently failed.
 // Returns nil if no recent failure found or failure has expired.
-func (r *GeocodingCacheRepository) GetRecentFailure(ctx context.Context, queryNormalized, countryCodes string) (*GeocodingFailure, error) {
+func (r *GeocodingCacheRepository) GetRecentFailure(ctx context.Context, queryNormalized, countryCodes string) (*CachedGeocodingFailure, error) {
 	queryer := r.queryer()
 
 	const query = `
@@ -329,7 +329,7 @@ func (r *GeocodingCacheRepository) GetRecentFailure(ctx context.Context, queryNo
 		LIMIT 1
 	`
 
-	var failure GeocodingFailure
+	var failure CachedGeocodingFailure
 	var retryAfter, expiresAt sql.NullTime
 
 	err := queryer.QueryRow(ctx, query, queryNormalized, countryCodes).Scan(
