@@ -1,6 +1,7 @@
 package events
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -9,8 +10,9 @@ import (
 // normalizeURL fixes common URL issues in external data sources:
 // - Adds https:// prefix to URLs starting with "www."
 // - Adds https:// to domain-like strings without protocol
+// - Strips query parameters and fragments from http/https URLs (per SEL spec)
 // - Normalizes social media shorthand (@username patterns)
-// - Preserves mailto: URLs
+// - Preserves mailto: and other non-http schemes unchanged
 // - Returns empty string if input is empty
 func normalizeURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
@@ -18,13 +20,8 @@ func normalizeURL(raw string) string {
 		return ""
 	}
 
-	// Preserve mailto: and other non-http schemes
+	// Preserve mailto: and other non-http schemes unchanged (no query stripping)
 	if strings.HasPrefix(trimmed, "mailto:") {
-		return trimmed
-	}
-
-	// Already has protocol
-	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
 		return trimmed
 	}
 
@@ -34,22 +31,45 @@ func normalizeURL(raw string) string {
 		return trimmed // Let validation handle @mentions in URL fields
 	}
 
-	// Starts with www. -> add https://
-	if strings.HasPrefix(trimmed, "www.") {
-		return "https://" + trimmed
-	}
+	rawURL := trimmed
 
-	// Looks like a domain without protocol (has dot and doesn't start with special chars)
-	// Examples: example.com, sub.example.com, short.link
-	if len(trimmed) > 0 && !strings.ContainsAny(trimmed[:1], "/@#") {
-		// Simple heuristic: if it has a dot and looks domain-like, add https://
-		if strings.Contains(trimmed, ".") && !strings.Contains(trimmed, " ") {
-			return "https://" + trimmed
+	// Check if URL has protocol
+	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+		// Starts with www. or looks like a domain -> add https://
+		if strings.HasPrefix(trimmed, "www.") {
+			rawURL = "https://" + trimmed
+		} else if len(trimmed) > 0 && !strings.ContainsAny(trimmed[:1], "/@#") {
+			// Looks like a domain without protocol (has dot and doesn't start with special chars)
+			if strings.Contains(trimmed, ".") && !strings.Contains(trimmed, " ") {
+				rawURL = "https://" + trimmed
+			} else {
+				// Not a URL-like string, return as-is
+				return trimmed
+			}
+		} else {
+			// Not a URL-like string, return as-is
+			return trimmed
 		}
 	}
 
-	// Otherwise return as-is (will be caught by validation if invalid)
-	return trimmed
+	// Strip query parameters and fragments from http/https URLs
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		// If parsing fails, return original (validation will catch invalid URLs)
+		return trimmed
+	}
+
+	// Clear query string and fragment
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+
+	result := parsed.String()
+
+	// Handle edge case: url.Parse preserves trailing ? for empty queries
+	// Example: "https://example.com/page?" becomes "https://example.com/page?" instead of "https://example.com/page"
+	result = strings.TrimSuffix(result, "?")
+
+	return result
 }
 
 // eventSubtypeDomains maps schema.org Event subtypes to SEL event_domain values.

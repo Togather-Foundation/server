@@ -75,9 +75,34 @@ func TestNormalizeURL(t *testing.T) {
 			expected: "https://example.com/path/to/page",
 		},
 		{
-			name:     "handles domain with query params",
+			name:     "strips query params from bare domain",
 			input:    "example.com?param=value",
-			expected: "https://example.com?param=value",
+			expected: "https://example.com",
+		},
+		{
+			name:     "strips query params from full URL",
+			input:    "https://example.com?param=value",
+			expected: "https://example.com",
+		},
+		{
+			name:     "strips UTM tracking parameters",
+			input:    "https://example.com/event?utm_campaign=spring&utm_source=facebook&fbclid=abc123",
+			expected: "https://example.com/event",
+		},
+		{
+			name:     "strips fragment from URL",
+			input:    "https://example.com/page#section",
+			expected: "https://example.com/page",
+		},
+		{
+			name:     "strips both query and fragment",
+			input:    "https://example.com/page?foo=bar#section",
+			expected: "https://example.com/page",
+		},
+		{
+			name:     "handles complex tracking params",
+			input:    "www.eventbrite.ca/e/event-123?utm_source=google&gclid=xyz&ref=share",
+			expected: "https://www.eventbrite.ca/e/event-123",
 		},
 		{
 			name:     "does not add protocol to relative paths",
@@ -138,6 +163,41 @@ func TestNormalizeURL(t *testing.T) {
 			name:     "handles YouTube URLs",
 			input:    "www.youtube.com/@channel",
 			expected: "https://www.youtube.com/@channel",
+		},
+		{
+			name:     "preserves path when stripping query",
+			input:    "https://example.com/events/123?source=homepage",
+			expected: "https://example.com/events/123",
+		},
+		{
+			name:     "handles domain-only URL",
+			input:    "https://example.com",
+			expected: "https://example.com",
+		},
+		{
+			name:     "handles domain with trailing slash",
+			input:    "https://example.com/",
+			expected: "https://example.com/",
+		},
+		{
+			name:     "strips fragment with special chars",
+			input:    "https://example.com/page#top-section",
+			expected: "https://example.com/page",
+		},
+		{
+			name:     "handles empty query string",
+			input:    "https://example.com/page?",
+			expected: "https://example.com/page",
+		},
+		{
+			name:     "preserves port number",
+			input:    "https://example.com:8080/page?foo=bar",
+			expected: "https://example.com:8080/page",
+		},
+		{
+			name:     "preserves mailto URLs unchanged (no stripping)",
+			input:    "mailto:test@example.com?subject=Hello",
+			expected: "mailto:test@example.com?subject=Hello",
 		},
 	}
 
