@@ -414,13 +414,13 @@ func buildEventPayload(event *events.Event, baseURL string) map[string]any {
 }
 
 func buildEventLocation(event events.Event, baseURL string) any {
-	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueID != nil {
-		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", *event.Occurrences[0].VenueID); err == nil {
+	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueULID != nil {
+		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", *event.Occurrences[0].VenueULID); err == nil {
 			return placeURI
 		}
 	}
-	if event.PrimaryVenueID != nil {
-		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", *event.PrimaryVenueID); err == nil {
+	if event.PrimaryVenueULID != nil {
+		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", *event.PrimaryVenueULID); err == nil {
 			return placeURI
 		}
 	}

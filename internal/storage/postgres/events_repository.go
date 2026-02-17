@@ -49,6 +49,7 @@ type eventRow struct {
 	EventDomain         string
 	OrganizerID         *string
 	PrimaryVenueID      *string
+	PrimaryVenueULID    *string
 	VirtualURL          *string
 	ImageURL            *string
 	PublicURL           *string
@@ -64,6 +65,7 @@ type eventRow struct {
 	EndTime             pgtype.Timestamptz
 	Timezone            *string
 	OccVenueID          *string
+	OccVenueULID        *string
 	OccVirtualURL       *string
 }
 
@@ -102,24 +104,27 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 	rows, err := queryer.Query(ctx, `
 SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	   lifecycle_state, event_status, attendance_mode, event_domain,
-	   organizer_id, primary_venue_id,
+	   organizer_id, primary_venue_id, primary_venue_ulid,
 	   virtual_url, image_url, public_url, confidence, quality_score,
 	   keywords, in_language, is_accessible_for_free,
 	   created_at, updated_at, published_at,
-	   start_time, end_time, timezone, occ_venue_id, occ_virtual_url
+	   start_time, end_time, timezone, occ_venue_id, occ_venue_ulid, occ_virtual_url
   FROM (
     SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	       e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
 	       e.organizer_id, e.primary_venue_id,
+	       pv.ulid AS primary_venue_ulid,
 	       e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
 	       e.keywords, e.in_language, e.is_accessible_for_free,
 	       e.created_at, e.updated_at, e.published_at,
 	       o.start_time, o.end_time, o.timezone,
-	       o.venue_id AS occ_venue_id, o.virtual_url AS occ_virtual_url,
+	       o.venue_id AS occ_venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url AS occ_virtual_url,
 	       row_number() OVER (PARTITION BY e.id ORDER BY o.start_time ASC, e.ulid ASC) AS row_num
 	  FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
   LEFT JOIN places p ON p.id = COALESCE(o.venue_id, e.primary_venue_id)
+  LEFT JOIN places pv ON pv.id = e.primary_venue_id
+  LEFT JOIN places ov ON ov.id = o.venue_id
   LEFT JOIN organizations org ON org.id = e.organizer_id
   WHERE e.deleted_at IS NULL
     AND ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
@@ -178,6 +183,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.EventDomain,
 			&row.OrganizerID,
 			&row.PrimaryVenueID,
+			&row.PrimaryVenueULID,
 			&row.VirtualURL,
 			&row.ImageURL,
 			&row.PublicURL,
@@ -193,6 +199,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.EndTime,
 			&row.Timezone,
 			&row.OccVenueID,
+			&row.OccVenueULID,
 			&row.OccVirtualURL,
 		); err != nil {
 			return events.ListResult{}, fmt.Errorf("scan events: %w", err)
@@ -211,6 +218,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			EventDomain:         row.EventDomain,
 			OrganizerID:         row.OrganizerID,
 			PrimaryVenueID:      row.PrimaryVenueID,
+			PrimaryVenueULID:    row.PrimaryVenueULID,
 			VirtualURL:          derefString(row.VirtualURL),
 			ImageURL:            derefString(row.ImageURL),
 			PublicURL:           derefString(row.PublicURL),
@@ -237,6 +245,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 				StartTime:  row.StartTime.Time,
 				Timezone:   derefString(row.Timezone),
 				VenueID:    row.OccVenueID,
+				VenueULID:  row.OccVenueULID,
 				VirtualURL: row.OccVirtualURL,
 			}
 			if row.EndTime.Valid {
@@ -269,14 +278,16 @@ func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.E
 	rows, err := queryer.Query(ctx, `
 SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	   e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
-	   e.organizer_id, e.primary_venue_id,
+	   e.organizer_id, e.primary_venue_id, pv.ulid AS primary_venue_ulid,
 	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
 	   e.keywords, e.in_language, e.is_accessible_for_free,
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
-	   o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, o.virtual_url,
+	   o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
 	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability
 	  FROM events e
 	  LEFT JOIN event_occurrences o ON o.event_id = e.id
+	  LEFT JOIN places pv ON pv.id = e.primary_venue_id
+	  LEFT JOIN places ov ON ov.id = o.venue_id
 	 WHERE e.ulid = $1
  ORDER BY o.start_time ASC
 `, ulid)
@@ -301,6 +312,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			eventDomain         string
 			organizerID         *string
 			primaryVenueID      *string
+			primaryVenueULID    *string
 			virtualURL          *string
 			imageURL            *string
 			publicURL           *string
@@ -319,6 +331,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			timezone            *string
 			doorTime            pgtype.Timestamptz
 			venueID             *string
+			venueULID           *string
 			occurrenceURL       *string
 			ticketURL           *string
 			priceMin            *float64
@@ -340,6 +353,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&eventDomain,
 			&organizerID,
 			&primaryVenueID,
+			&primaryVenueULID,
 			&virtualURL,
 			&imageURL,
 			&publicURL,
@@ -358,6 +372,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&timezone,
 			&doorTime,
 			&venueID,
+			&venueULID,
 			&occurrenceURL,
 			&ticketURL,
 			&priceMin,
@@ -383,6 +398,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 				EventDomain:         eventDomain,
 				OrganizerID:         organizerID,
 				PrimaryVenueID:      primaryVenueID,
+				PrimaryVenueULID:    primaryVenueULID,
 				VirtualURL:          derefString(virtualURL),
 				ImageURL:            derefString(imageURL),
 				PublicURL:           derefString(publicURL),
@@ -412,6 +428,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 				ID:            *occurrenceID,
 				Timezone:      derefString(timezone),
 				VenueID:       venueID,
+				VenueULID:     venueULID,
 				VirtualURL:    occurrenceURL,
 				TicketURL:     derefString(ticketURL),
 				PriceMin:      priceMin,

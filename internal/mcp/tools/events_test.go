@@ -172,7 +172,7 @@ func TestBuildEventLocation(t *testing.T) {
 			event: events.Event{
 				ULID: "01HX1234567890ABCDEFGHJKMN",
 				Occurrences: []events.Occurrence{
-					{VenueID: &venueID},
+					{VenueULID: &venueID},
 				},
 			},
 			baseURL:   "https://test.example.com",
@@ -181,8 +181,8 @@ func TestBuildEventLocation(t *testing.T) {
 		{
 			name: "primary venue ID",
 			event: events.Event{
-				ULID:           "01HX1234567890ABCDEFGHJKMN",
-				PrimaryVenueID: &venueID,
+				ULID:             "01HX1234567890ABCDEFGHJKMN",
+				PrimaryVenueULID: &venueID,
 			},
 			baseURL:   "https://test.example.com",
 			expectStr: "https://test.example.com/places/01HX5678901234ABCDEFGHJKMN",

@@ -353,11 +353,11 @@ func buildEventPayload(event *events.Event, baseURL string) map[string]any {
 		ev.StartDate = event.Occurrences[0].StartTime.Format(time.RFC3339)
 	}
 
-	// Add location if venue ID is available
-	if event.PrimaryVenueID != nil && *event.PrimaryVenueID != "" {
+	// Add location if venue ULID is available (use ULID for URI building)
+	if event.PrimaryVenueULID != nil && *event.PrimaryVenueULID != "" {
 		ev.Location = map[string]any{
 			"@type": "Place",
-			"@id":   schema.BuildPlaceURI(baseURL, *event.PrimaryVenueID),
+			"@id":   schema.BuildPlaceURI(baseURL, *event.PrimaryVenueULID),
 		}
 	}
 

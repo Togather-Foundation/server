@@ -40,7 +40,8 @@ type Event struct {
 	AttendanceMode      string
 	EventDomain         string
 	OrganizerID         *string
-	PrimaryVenueID      *string
+	PrimaryVenueID      *string // UUID from events.primary_venue_id (for DB operations)
+	PrimaryVenueULID    *string // ULID from places.ulid (for URI building)
 	VirtualURL          string
 	ImageURL            string
 	PublicURL           string
@@ -62,7 +63,8 @@ type Occurrence struct {
 	EndTime       *time.Time
 	Timezone      string
 	DoorTime      *time.Time
-	VenueID       *string
+	VenueID       *string // UUID from event_occurrences.venue_id (for DB operations)
+	VenueULID     *string // ULID from places.ulid (for URI building)
 	VirtualURL    *string
 	TicketURL     string
 	PriceMin      *float64

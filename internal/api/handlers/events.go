@@ -380,15 +380,15 @@ func eventURI(baseURL string, result *events.IngestResult) string {
 // buildEventLocation determines the location value for an event.
 // Returns a Place URI string, a VirtualLocation struct, or nil.
 func buildEventLocation(baseURL string, event *events.Event) any {
-	// Prefer occurrence-level venue
-	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueID != nil {
-		if uri := schema.BuildPlaceURI(baseURL, *event.Occurrences[0].VenueID); uri != "" {
+	// Prefer occurrence-level venue (use ULID for URI building)
+	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueULID != nil {
+		if uri := schema.BuildPlaceURI(baseURL, *event.Occurrences[0].VenueULID); uri != "" {
 			return uri
 		}
 	}
-	// Fall back to primary venue
-	if event.PrimaryVenueID != nil {
-		if uri := schema.BuildPlaceURI(baseURL, *event.PrimaryVenueID); uri != "" {
+	// Fall back to primary venue (use ULID for URI building)
+	if event.PrimaryVenueULID != nil {
+		if uri := schema.BuildPlaceURI(baseURL, *event.PrimaryVenueULID); uri != "" {
 			return uri
 		}
 	}
