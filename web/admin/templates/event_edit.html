@@ -119,6 +119,40 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Location Section (read-only, loaded from API) -->
+                            <div id="location-section" style="display: none;">
+                                <hr class="my-4">
+                                <h3 class="card-title">Location</h3>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Venue Name</label>
+                                            <div class="form-control-plaintext fw-bold" id="location-name">-</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Address</label>
+                                            <div class="form-control-plaintext" id="location-address">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Coordinates</label>
+                                            <div class="form-control-plaintext" id="location-coords">-</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Place URI</label>
+                                            <div class="form-control-plaintext" id="location-uri">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             
                             <!-- Hidden fields for federation metadata (not shown to users) -->
                             <input type="hidden" id="confidence" name="confidence">

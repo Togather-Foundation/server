@@ -182,6 +182,9 @@
 
         renderOccurrences();
 
+        // Load location data if available
+        loadLocation(event.location);
+
         // Show the form
         document.getElementById('event-form').style.display = 'block';
     }
@@ -191,6 +194,76 @@
         if (field) {
             field.value = value || '';
         }
+    }
+
+    async function loadLocation(location) {
+        if (!location) return;
+
+        var section = document.getElementById('location-section');
+        if (!section) return;
+
+        // If location is a VirtualLocation object, skip (already shown via virtual_url field)
+        if (typeof location === 'object' && location['@type'] === 'VirtualLocation') {
+            return;
+        }
+
+        // Location should be a place URI string
+        if (typeof location !== 'string') return;
+
+        // Extract the place ULID from the URI (last path segment)
+        var parts = location.replace(/\/+$/, '').split('/');
+        var placeULID = parts[parts.length - 1];
+        if (!placeULID || !/^[A-Z0-9]{26}$/i.test(placeULID)) return;
+
+        try {
+            var place = await API.request('/api/v1/places/' + placeULID);
+            displayLocation(place, location);
+        } catch (err) {
+            console.error('Failed to load place:', err);
+            // Still show the section with the URI even if fetch fails
+            section.style.display = 'block';
+            document.getElementById('location-name').textContent = '(Failed to load venue details)';
+            document.getElementById('location-uri').textContent = location;
+        }
+    }
+
+    function displayLocation(place, uri) {
+        var section = document.getElementById('location-section');
+        section.style.display = 'block';
+
+        // Venue name
+        document.getElementById('location-name').textContent = place.name || '-';
+
+        // Address
+        var address = place.address;
+        if (address) {
+            var parts = [];
+            if (address.streetAddress) parts.push(address.streetAddress);
+            if (address.addressLocality) parts.push(address.addressLocality);
+            if (address.addressRegion) parts.push(address.addressRegion);
+            if (address.addressCountry) parts.push(address.addressCountry);
+            document.getElementById('location-address').textContent = parts.join(', ') || '-';
+        }
+
+        // Coordinates
+        var geo = place.geo;
+        if (geo && geo.latitude != null && geo.longitude != null) {
+            document.getElementById('location-coords').textContent =
+                geo.latitude.toFixed(6) + ', ' + geo.longitude.toFixed(6);
+        } else {
+            document.getElementById('location-coords').textContent = 'Not geocoded';
+        }
+
+        // Place URI (as a link)
+        var uriEl = document.getElementById('location-uri');
+        uriEl.textContent = '';
+        var link = document.createElement('a');
+        link.href = uri;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = uri;
+        link.className = 'text-reset';
+        uriEl.appendChild(link);
     }
 
     function renderOccurrences() {
