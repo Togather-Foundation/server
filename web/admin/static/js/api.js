@@ -73,14 +73,19 @@ const API = {
         // Get JWT token from localStorage
         const token = localStorage.getItem('admin_token');
         
+        // Build headers: only set Content-Type when there's a request body
+        const headers = {
+            'Accept': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...options.headers
+        };
+        if (options.body) {
+            headers['Content-Type'] = 'application/json';
+        }
+        
         const response = await fetch(url, {
             ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                // Send Bearer token for API authentication
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                ...options.headers
-            },
+            headers,
             credentials: 'include', // Include cookies for HTML page auth
             signal: options.signal // Pass AbortSignal for cancellation
         });
@@ -100,10 +105,16 @@ const API = {
             
             let error;
             try {
-                // Parse RFC 7807 Problem Details error response
-                error = await response.json();
+                // Try to parse body as text first, then as JSON
+                // This handles non-JSON error pages from reverse proxies
+                const text = await response.text();
+                try {
+                    error = JSON.parse(text);
+                } catch {
+                    error = { detail: text.substring(0, 200) || ('Request failed with status ' + response.status) };
+                }
             } catch {
-                error = { detail: 'Request failed' };
+                error = { detail: 'Request failed with status ' + response.status };
             }
             // Throw an Error with the detail field (specific error message)
             // Fall back to title or generic message if detail is missing
@@ -117,9 +128,9 @@ const API = {
             return null;
         }
         
-        // Parse JSON response
+        // Parse JSON response (covers application/json, application/ld+json, application/problem+json)
         const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
+        if (contentType && contentType.includes('json')) {
             return response.json();
         }
         
