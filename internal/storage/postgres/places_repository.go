@@ -51,6 +51,7 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 
 	var cursorTimestamp *time.Time
 	var cursorULID *string
+	var cursorName *string
 	if strings.TrimSpace(paginationArgs.After) != "" {
 		cursor, err := pagination.DecodeEventCursor(paginationArgs.After)
 		if err != nil {
@@ -60,6 +61,15 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 		cursorTimestamp = &value
 		ulid := strings.ToUpper(cursor.ULID)
 		cursorULID = &ulid
+
+		// For name-based sorting, look up the cursor name from the ULID
+		if filters.Sort == "name" {
+			var name string
+			err := queryer.QueryRow(ctx, "SELECT name FROM places WHERE ulid = $1", ulid).Scan(&name)
+			if err == nil {
+				cursorName = &name
+			}
+		}
 	}
 
 	limit := paginationArgs.Limit
@@ -138,84 +148,112 @@ SELECT p.id, p.ulid, p.name, p.description,
 
 		args = queryArgs
 	} else {
-		// Standard query without proximity
-		// Determine sort column and order (whitelist to prevent SQL injection)
-		sortCol := "p.created_at"
+		// Standard query without proximity - use SQLc queries
+		queries := Queries{db: queryer}
+
+		// Prepare common parameters
+		var cityParam, queryParam, cursorULIDParam, cursorNameParam pgtype.Text
+		var cursorTimestampParam pgtype.Timestamptz
+
+		if filters.City != "" {
+			cityParam = pgtype.Text{String: filters.City, Valid: true}
+		}
+		if filters.Query != "" {
+			queryParam = pgtype.Text{String: filters.Query, Valid: true}
+		}
+		if cursorULID != nil {
+			cursorULIDParam = pgtype.Text{String: *cursorULID, Valid: true}
+		}
+		if cursorTimestamp != nil {
+			cursorTimestampParam = pgtype.Timestamptz{Time: *cursorTimestamp, Valid: true}
+		}
+		if cursorName != nil {
+			cursorNameParam = pgtype.Text{String: *cursorName, Valid: true}
+		}
+
+		// Select the appropriate query based on sort and order, and convert rows to domain objects
+		var items []places.Place
+
 		if filters.Sort == "name" {
-			sortCol = "p.name"
-		}
-		orderDir := "ASC"
-		if filters.Order == "desc" {
-			orderDir = "DESC"
-		}
-
-		// Build cursor comparison operator based on sort direction
-		cursorOp := ">"
-		if orderDir == "DESC" {
-			cursorOp = "<"
-		}
-
-		// For name-based sorting, look up the cursor name from the ULID
-		var cursorName *string
-		if filters.Sort == "name" && cursorULID != nil {
-			var name string
-			err := queryer.QueryRow(ctx, "SELECT name FROM places WHERE ulid = $1", *cursorULID).Scan(&name)
-			if err == nil {
-				cursorName = &name
+			if filters.Order == "desc" {
+				params := ListPlacesByNameDescParams{
+					City:       cityParam,
+					Query:      queryParam,
+					CursorName: cursorNameParam,
+					CursorUlid: cursorULIDParam,
+					Limit:      int32(limitPlusOne),
+				}
+				rows, err := queries.ListPlacesByNameDesc(ctx, params)
+				if err != nil {
+					return places.ListResult{}, fmt.Errorf("list places: %w", err)
+				}
+				items = make([]places.Place, 0, len(rows))
+				for _, row := range rows {
+					items = append(items, sqlcPlaceRowToDomain(&row))
+				}
+			} else {
+				params := ListPlacesByNameParams{
+					City:       cityParam,
+					Query:      queryParam,
+					CursorName: cursorNameParam,
+					CursorUlid: cursorULIDParam,
+					Limit:      int32(limitPlusOne),
+				}
+				rows, err := queries.ListPlacesByName(ctx, params)
+				if err != nil {
+					return places.ListResult{}, fmt.Errorf("list places: %w", err)
+				}
+				items = make([]places.Place, 0, len(rows))
+				for _, row := range rows {
+					items = append(items, sqlcPlaceRowToDomain(&row))
+				}
+			}
+		} else {
+			if filters.Order == "desc" {
+				params := ListPlacesByCreatedAtDescParams{
+					City:            cityParam,
+					Query:           queryParam,
+					CursorTimestamp: cursorTimestampParam,
+					CursorUlid:      cursorULIDParam,
+					Limit:           int32(limitPlusOne),
+				}
+				rows, err := queries.ListPlacesByCreatedAtDesc(ctx, params)
+				if err != nil {
+					return places.ListResult{}, fmt.Errorf("list places: %w", err)
+				}
+				items = make([]places.Place, 0, len(rows))
+				for _, row := range rows {
+					items = append(items, sqlcPlaceRowToDomain(&row))
+				}
+			} else {
+				params := ListPlacesByCreatedAtParams{
+					City:            cityParam,
+					Query:           queryParam,
+					CursorTimestamp: cursorTimestampParam,
+					CursorUlid:      cursorULIDParam,
+					Limit:           int32(limitPlusOne),
+				}
+				rows, err := queries.ListPlacesByCreatedAt(ctx, params)
+				if err != nil {
+					return places.ListResult{}, fmt.Errorf("list places: %w", err)
+				}
+				items = make([]places.Place, 0, len(rows))
+				for _, row := range rows {
+					items = append(items, sqlcPlaceRowToDomain(&row))
+				}
 			}
 		}
 
-		// Build WHERE clauses dynamically
-		var whereClauses []string
-		var queryArgs []interface{}
-		argPos := 1
-
-		whereClauses = append(whereClauses, "p.deleted_at IS NULL")
-
-		// City filter
-		if filters.City != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("p.address_locality ILIKE '%%' || $%d || '%%'", argPos))
-			queryArgs = append(queryArgs, filters.City)
-			argPos++
+		result := places.ListResult{}
+		if len(items) > limit {
+			items = items[:limit]
+			last := items[len(items)-1]
+			if !last.CreatedAt.IsZero() {
+				result.NextCursor = pagination.EncodeEventCursor(last.CreatedAt, last.ULID)
+			}
 		}
-
-		// Query filter
-		if filters.Query != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("(p.name ILIKE '%%' || $%d || '%%' OR p.description ILIKE '%%' || $%d || '%%')", argPos, argPos))
-			queryArgs = append(queryArgs, filters.Query)
-			argPos++
-		}
-
-		// Cursor condition
-		if filters.Sort == "name" && cursorName != nil && cursorULID != nil {
-			whereClauses = append(whereClauses, fmt.Sprintf("(p.name %s $%d OR (p.name = $%d AND p.ulid > $%d))", cursorOp, argPos, argPos, argPos+1))
-			queryArgs = append(queryArgs, *cursorName, *cursorULID)
-			argPos += 2
-		} else if cursorTimestamp != nil && cursorULID != nil {
-			whereClauses = append(whereClauses, fmt.Sprintf("(p.created_at %s $%d::timestamptz OR (p.created_at = $%d::timestamptz AND p.ulid > $%d))", cursorOp, argPos, argPos, argPos+1))
-			queryArgs = append(queryArgs, *cursorTimestamp, *cursorULID)
-			argPos += 2
-		}
-
-		whereClause := strings.Join(whereClauses, " AND ")
-		queryArgs = append(queryArgs, limitPlusOne)
-
-		query = fmt.Sprintf(`
-SELECT p.id, p.ulid, p.name, p.description,
-       p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
-       p.latitude, p.longitude,
-       p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type,
-       p.federation_uri,
-       p.deleted_at, p.deletion_reason,
-       NULL::numeric AS distance_km,
-       p.created_at, p.updated_at
-  FROM places p
- WHERE %s
- ORDER BY %s %s, p.ulid ASC
- LIMIT $%d
-`, whereClause, sortCol, orderDir, argPos)
-
-		args = queryArgs
+		result.Places = items
+		return result, nil
 	}
 
 	rows, err := queryer.Query(ctx, query, args...)
@@ -349,6 +387,137 @@ func placeRowToDomain(row *placeRow) places.Place {
 	}
 	if row.UpdatedAt.Valid {
 		place.UpdatedAt = row.UpdatedAt.Time
+	}
+	return place
+}
+
+// sqlcPlaceRowToDomain converts a SQLc-generated row to a places.Place domain struct.
+// This works with any of the ListPlacesByXXX row types since they all have the same structure.
+func sqlcPlaceRowToDomain(row interface{}) places.Place {
+	// Extract fields based on concrete type
+	var id pgtype.UUID
+	var ulid, name string
+	var description, streetAddress, addressLocality, addressRegion, postalCode, addressCountry pgtype.Text
+	var latitude, longitude pgtype.Numeric
+	var telephone, email, url pgtype.Text
+	var maximumAttendeeCapacity pgtype.Int4
+	var venueType, federationURI pgtype.Text
+	var createdAt, updatedAt pgtype.Timestamptz
+
+	switch r := row.(type) {
+	case *ListPlacesByCreatedAtRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		description = r.Description
+		streetAddress = r.StreetAddress
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		postalCode = r.PostalCode
+		addressCountry = r.AddressCountry
+		latitude = r.Latitude
+		longitude = r.Longitude
+		telephone = r.Telephone
+		email = r.Email
+		url = r.Url
+		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
+		venueType = r.VenueType
+		federationURI = r.FederationUri
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *ListPlacesByCreatedAtDescRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		description = r.Description
+		streetAddress = r.StreetAddress
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		postalCode = r.PostalCode
+		addressCountry = r.AddressCountry
+		latitude = r.Latitude
+		longitude = r.Longitude
+		telephone = r.Telephone
+		email = r.Email
+		url = r.Url
+		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
+		venueType = r.VenueType
+		federationURI = r.FederationUri
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *ListPlacesByNameRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		description = r.Description
+		streetAddress = r.StreetAddress
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		postalCode = r.PostalCode
+		addressCountry = r.AddressCountry
+		latitude = r.Latitude
+		longitude = r.Longitude
+		telephone = r.Telephone
+		email = r.Email
+		url = r.Url
+		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
+		venueType = r.VenueType
+		federationURI = r.FederationUri
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *ListPlacesByNameDescRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		description = r.Description
+		streetAddress = r.StreetAddress
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		postalCode = r.PostalCode
+		addressCountry = r.AddressCountry
+		latitude = r.Latitude
+		longitude = r.Longitude
+		telephone = r.Telephone
+		email = r.Email
+		url = r.Url
+		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
+		venueType = r.VenueType
+		federationURI = r.FederationUri
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	}
+
+	var placeID string
+	if err := id.Scan(&placeID); err != nil {
+		// Should never happen with valid database UUIDs
+		// Using empty string as fallback
+		placeID = ""
+	}
+
+	place := places.Place{
+		ID:                      placeID,
+		ULID:                    ulid,
+		Name:                    name,
+		Description:             pgtextToString(description),
+		StreetAddress:           pgtextToString(streetAddress),
+		City:                    pgtextToString(addressLocality),
+		Region:                  pgtextToString(addressRegion),
+		PostalCode:              pgtextToString(postalCode),
+		Country:                 pgtextToString(addressCountry),
+		Latitude:                numericToFloat64Ptr(latitude),
+		Longitude:               numericToFloat64Ptr(longitude),
+		Telephone:               pgtextToString(telephone),
+		Email:                   pgtextToString(email),
+		URL:                     pgtextToString(url),
+		MaximumAttendeeCapacity: int4Ptr(maximumAttendeeCapacity),
+		VenueType:               pgtextToString(venueType),
+		FederationURI:           pgtextToString(federationURI),
+	}
+	if createdAt.Valid {
+		place.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		place.UpdatedAt = updatedAt.Time
 	}
 	return place
 }

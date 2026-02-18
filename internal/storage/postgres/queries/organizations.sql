@@ -1,6 +1,6 @@
 -- SQLc queries for organizations domain.
 
--- name: ListOrganizations :many
+-- name: ListOrganizationsByCreatedAt :many
 SELECT o.id,
        o.ulid,
        o.name,
@@ -21,14 +21,108 @@ SELECT o.id,
        o.updated_at
   FROM organizations o
  WHERE o.deleted_at IS NULL
-   AND ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
+   AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR o.name ILIKE '%' || sqlc.narg('query') || '%' OR o.legal_name ILIKE '%' || sqlc.narg('query') || '%')
    AND (
-     $2::timestamptz IS NULL OR
-     o.created_at > $2::timestamptz OR
-     (o.created_at = $2::timestamptz AND o.ulid > $3)
+     sqlc.narg('cursor_timestamp')::timestamptz IS NULL OR
+     o.created_at > sqlc.narg('cursor_timestamp')::timestamptz OR
+     (o.created_at = sqlc.narg('cursor_timestamp')::timestamptz AND o.ulid > sqlc.narg('cursor_ulid'))
    )
  ORDER BY o.created_at ASC, o.ulid ASC
- LIMIT $4;
+ LIMIT sqlc.arg('limit');
+
+-- name: ListOrganizationsByCreatedAtDesc :many
+SELECT o.id,
+       o.ulid,
+       o.name,
+       o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
+       o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
+       o.created_at,
+       o.updated_at
+  FROM organizations o
+ WHERE o.deleted_at IS NULL
+   AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR o.name ILIKE '%' || sqlc.narg('query') || '%' OR o.legal_name ILIKE '%' || sqlc.narg('query') || '%')
+   AND (
+     sqlc.narg('cursor_timestamp')::timestamptz IS NULL OR
+     o.created_at < sqlc.narg('cursor_timestamp')::timestamptz OR
+     (o.created_at = sqlc.narg('cursor_timestamp')::timestamptz AND o.ulid > sqlc.narg('cursor_ulid'))
+   )
+ ORDER BY o.created_at DESC, o.ulid ASC
+ LIMIT sqlc.arg('limit');
+
+-- name: ListOrganizationsByName :many
+SELECT o.id,
+       o.ulid,
+       o.name,
+       o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
+       o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
+       o.created_at,
+       o.updated_at
+  FROM organizations o
+ WHERE o.deleted_at IS NULL
+   AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR o.name ILIKE '%' || sqlc.narg('query') || '%' OR o.legal_name ILIKE '%' || sqlc.narg('query') || '%')
+   AND (
+     sqlc.narg('cursor_name')::text IS NULL OR
+     o.name > sqlc.narg('cursor_name') OR
+     (o.name = sqlc.narg('cursor_name') AND o.ulid > sqlc.narg('cursor_ulid'))
+   )
+ ORDER BY o.name ASC, o.ulid ASC
+ LIMIT sqlc.arg('limit');
+
+-- name: ListOrganizationsByNameDesc :many
+SELECT o.id,
+       o.ulid,
+       o.name,
+       o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
+       o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
+       o.created_at,
+       o.updated_at
+  FROM organizations o
+ WHERE o.deleted_at IS NULL
+   AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR o.name ILIKE '%' || sqlc.narg('query') || '%' OR o.legal_name ILIKE '%' || sqlc.narg('query') || '%')
+   AND (
+     sqlc.narg('cursor_name')::text IS NULL OR
+     o.name < sqlc.narg('cursor_name') OR
+     (o.name = sqlc.narg('cursor_name') AND o.ulid > sqlc.narg('cursor_ulid'))
+   )
+ ORDER BY o.name DESC, o.ulid ASC
+ LIMIT sqlc.arg('limit');
 
 -- name: GetOrganizationByULID :one
 SELECT o.id,

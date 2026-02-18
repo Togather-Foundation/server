@@ -157,7 +157,7 @@ func (q *Queries) GetPlaceTombstoneByULID(ctx context.Context, ulid string) (Pla
 	return i, err
 }
 
-const listPlaces = `-- name: ListPlaces :many
+const listPlacesByCreatedAt = `-- name: ListPlacesByCreatedAt :many
 
 SELECT p.id,
        p.ulid,
@@ -180,8 +180,8 @@ SELECT p.id,
        p.updated_at
   FROM places p
  WHERE p.deleted_at IS NULL
-   AND ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
-   AND ($2 = '' OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
+   AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
    AND (
      $3::timestamptz IS NULL OR
      p.created_at > $3::timestamptz OR
@@ -191,15 +191,15 @@ SELECT p.id,
  LIMIT $5
 `
 
-type ListPlacesParams struct {
-	Column1 interface{}        `json:"column_1"`
-	Column2 interface{}        `json:"column_2"`
-	Column3 pgtype.Timestamptz `json:"column_3"`
-	Ulid    string             `json:"ulid"`
-	Limit   int32              `json:"limit"`
+type ListPlacesByCreatedAtParams struct {
+	City            pgtype.Text        `json:"city"`
+	Query           pgtype.Text        `json:"query"`
+	CursorTimestamp pgtype.Timestamptz `json:"cursor_timestamp"`
+	CursorUlid      pgtype.Text        `json:"cursor_ulid"`
+	Limit           int32              `json:"limit"`
 }
 
-type ListPlacesRow struct {
+type ListPlacesByCreatedAtRow struct {
 	ID                      pgtype.UUID        `json:"id"`
 	Ulid                    string             `json:"ulid"`
 	Name                    string             `json:"name"`
@@ -222,21 +222,348 @@ type ListPlacesRow struct {
 }
 
 // SQLc queries for places domain.
-func (q *Queries) ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error) {
-	rows, err := q.db.Query(ctx, listPlaces,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Ulid,
+func (q *Queries) ListPlacesByCreatedAt(ctx context.Context, arg ListPlacesByCreatedAtParams) ([]ListPlacesByCreatedAtRow, error) {
+	rows, err := q.db.Query(ctx, listPlacesByCreatedAt,
+		arg.City,
+		arg.Query,
+		arg.CursorTimestamp,
+		arg.CursorUlid,
 		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListPlacesRow{}
+	items := []ListPlacesByCreatedAtRow{}
 	for rows.Next() {
-		var i ListPlacesRow
+		var i ListPlacesByCreatedAtRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ulid,
+			&i.Name,
+			&i.Description,
+			&i.StreetAddress,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.PostalCode,
+			&i.AddressCountry,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Telephone,
+			&i.Email,
+			&i.Url,
+			&i.MaximumAttendeeCapacity,
+			&i.VenueType,
+			&i.FederationUri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlacesByCreatedAtDesc = `-- name: ListPlacesByCreatedAtDesc :many
+SELECT p.id,
+       p.ulid,
+       p.name,
+       p.description,
+       p.street_address,
+       p.address_locality,
+       p.address_region,
+       p.postal_code,
+       p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
+       p.created_at,
+       p.updated_at
+  FROM places p
+ WHERE p.deleted_at IS NULL
+   AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
+   AND (
+     $3::timestamptz IS NULL OR
+     p.created_at < $3::timestamptz OR
+     (p.created_at = $3::timestamptz AND p.ulid > $4)
+   )
+ ORDER BY p.created_at DESC, p.ulid ASC
+ LIMIT $5
+`
+
+type ListPlacesByCreatedAtDescParams struct {
+	City            pgtype.Text        `json:"city"`
+	Query           pgtype.Text        `json:"query"`
+	CursorTimestamp pgtype.Timestamptz `json:"cursor_timestamp"`
+	CursorUlid      pgtype.Text        `json:"cursor_ulid"`
+	Limit           int32              `json:"limit"`
+}
+
+type ListPlacesByCreatedAtDescRow struct {
+	ID                      pgtype.UUID        `json:"id"`
+	Ulid                    string             `json:"ulid"`
+	Name                    string             `json:"name"`
+	Description             pgtype.Text        `json:"description"`
+	StreetAddress           pgtype.Text        `json:"street_address"`
+	AddressLocality         pgtype.Text        `json:"address_locality"`
+	AddressRegion           pgtype.Text        `json:"address_region"`
+	PostalCode              pgtype.Text        `json:"postal_code"`
+	AddressCountry          pgtype.Text        `json:"address_country"`
+	Latitude                pgtype.Numeric     `json:"latitude"`
+	Longitude               pgtype.Numeric     `json:"longitude"`
+	Telephone               pgtype.Text        `json:"telephone"`
+	Email                   pgtype.Text        `json:"email"`
+	Url                     pgtype.Text        `json:"url"`
+	MaximumAttendeeCapacity pgtype.Int4        `json:"maximum_attendee_capacity"`
+	VenueType               pgtype.Text        `json:"venue_type"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesByCreatedAtDescParams) ([]ListPlacesByCreatedAtDescRow, error) {
+	rows, err := q.db.Query(ctx, listPlacesByCreatedAtDesc,
+		arg.City,
+		arg.Query,
+		arg.CursorTimestamp,
+		arg.CursorUlid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlacesByCreatedAtDescRow{}
+	for rows.Next() {
+		var i ListPlacesByCreatedAtDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ulid,
+			&i.Name,
+			&i.Description,
+			&i.StreetAddress,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.PostalCode,
+			&i.AddressCountry,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Telephone,
+			&i.Email,
+			&i.Url,
+			&i.MaximumAttendeeCapacity,
+			&i.VenueType,
+			&i.FederationUri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlacesByName = `-- name: ListPlacesByName :many
+SELECT p.id,
+       p.ulid,
+       p.name,
+       p.description,
+       p.street_address,
+       p.address_locality,
+       p.address_region,
+       p.postal_code,
+       p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
+       p.created_at,
+       p.updated_at
+  FROM places p
+ WHERE p.deleted_at IS NULL
+   AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
+   AND (
+     $3::text IS NULL OR
+     p.name > $3 OR
+     (p.name = $3 AND p.ulid > $4)
+   )
+ ORDER BY p.name ASC, p.ulid ASC
+ LIMIT $5
+`
+
+type ListPlacesByNameParams struct {
+	City       pgtype.Text `json:"city"`
+	Query      pgtype.Text `json:"query"`
+	CursorName pgtype.Text `json:"cursor_name"`
+	CursorUlid pgtype.Text `json:"cursor_ulid"`
+	Limit      int32       `json:"limit"`
+}
+
+type ListPlacesByNameRow struct {
+	ID                      pgtype.UUID        `json:"id"`
+	Ulid                    string             `json:"ulid"`
+	Name                    string             `json:"name"`
+	Description             pgtype.Text        `json:"description"`
+	StreetAddress           pgtype.Text        `json:"street_address"`
+	AddressLocality         pgtype.Text        `json:"address_locality"`
+	AddressRegion           pgtype.Text        `json:"address_region"`
+	PostalCode              pgtype.Text        `json:"postal_code"`
+	AddressCountry          pgtype.Text        `json:"address_country"`
+	Latitude                pgtype.Numeric     `json:"latitude"`
+	Longitude               pgtype.Numeric     `json:"longitude"`
+	Telephone               pgtype.Text        `json:"telephone"`
+	Email                   pgtype.Text        `json:"email"`
+	Url                     pgtype.Text        `json:"url"`
+	MaximumAttendeeCapacity pgtype.Int4        `json:"maximum_attendee_capacity"`
+	VenueType               pgtype.Text        `json:"venue_type"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListPlacesByName(ctx context.Context, arg ListPlacesByNameParams) ([]ListPlacesByNameRow, error) {
+	rows, err := q.db.Query(ctx, listPlacesByName,
+		arg.City,
+		arg.Query,
+		arg.CursorName,
+		arg.CursorUlid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlacesByNameRow{}
+	for rows.Next() {
+		var i ListPlacesByNameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ulid,
+			&i.Name,
+			&i.Description,
+			&i.StreetAddress,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.PostalCode,
+			&i.AddressCountry,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Telephone,
+			&i.Email,
+			&i.Url,
+			&i.MaximumAttendeeCapacity,
+			&i.VenueType,
+			&i.FederationUri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlacesByNameDesc = `-- name: ListPlacesByNameDesc :many
+SELECT p.id,
+       p.ulid,
+       p.name,
+       p.description,
+       p.street_address,
+       p.address_locality,
+       p.address_region,
+       p.postal_code,
+       p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
+       p.created_at,
+       p.updated_at
+  FROM places p
+ WHERE p.deleted_at IS NULL
+   AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
+   AND (
+     $3::text IS NULL OR
+     p.name < $3 OR
+     (p.name = $3 AND p.ulid > $4)
+   )
+ ORDER BY p.name DESC, p.ulid ASC
+ LIMIT $5
+`
+
+type ListPlacesByNameDescParams struct {
+	City       pgtype.Text `json:"city"`
+	Query      pgtype.Text `json:"query"`
+	CursorName pgtype.Text `json:"cursor_name"`
+	CursorUlid pgtype.Text `json:"cursor_ulid"`
+	Limit      int32       `json:"limit"`
+}
+
+type ListPlacesByNameDescRow struct {
+	ID                      pgtype.UUID        `json:"id"`
+	Ulid                    string             `json:"ulid"`
+	Name                    string             `json:"name"`
+	Description             pgtype.Text        `json:"description"`
+	StreetAddress           pgtype.Text        `json:"street_address"`
+	AddressLocality         pgtype.Text        `json:"address_locality"`
+	AddressRegion           pgtype.Text        `json:"address_region"`
+	PostalCode              pgtype.Text        `json:"postal_code"`
+	AddressCountry          pgtype.Text        `json:"address_country"`
+	Latitude                pgtype.Numeric     `json:"latitude"`
+	Longitude               pgtype.Numeric     `json:"longitude"`
+	Telephone               pgtype.Text        `json:"telephone"`
+	Email                   pgtype.Text        `json:"email"`
+	Url                     pgtype.Text        `json:"url"`
+	MaximumAttendeeCapacity pgtype.Int4        `json:"maximum_attendee_capacity"`
+	VenueType               pgtype.Text        `json:"venue_type"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByNameDescParams) ([]ListPlacesByNameDescRow, error) {
+	rows, err := q.db.Query(ctx, listPlacesByNameDesc,
+		arg.City,
+		arg.Query,
+		arg.CursorName,
+		arg.CursorUlid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlacesByNameDescRow{}
+	for rows.Next() {
+		var i ListPlacesByNameDescRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Ulid,
