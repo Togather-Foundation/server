@@ -71,7 +71,8 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.email, o.telephone, 
        o.address_locality, o.address_region, o.address_country, o.street_address, o.postal_code,
        o.organization_type, o.federation_uri, o.alternate_name, o.created_at, o.updated_at
   FROM organizations o
- WHERE ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
+ WHERE o.deleted_at IS NULL
+   AND ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
    AND (
      $2::timestamptz IS NULL OR
      o.created_at > $2::timestamptz OR

@@ -175,7 +175,8 @@ SELECT o.id,
        o.created_at,
        o.updated_at
   FROM organizations o
- WHERE ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
+ WHERE o.deleted_at IS NULL
+   AND ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
    AND (
      $2::timestamptz IS NULL OR
      o.created_at > $2::timestamptz OR

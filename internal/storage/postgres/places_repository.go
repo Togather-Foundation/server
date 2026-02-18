@@ -86,6 +86,7 @@ func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, pagi
 		var queryArgs []interface{}
 
 		// First 3 args are for proximity (lon, lat, radius)
+		whereClauses = append(whereClauses, "p.deleted_at IS NULL")
 		whereClauses = append(whereClauses, "p.geo_point IS NOT NULL")
 		whereClauses = append(whereClauses, "ST_DWithin(p.geo_point::geography, ST_MakePoint($1, $2)::geography, $3)")
 		queryArgs = append(queryArgs, *filters.Longitude, *filters.Latitude, radiusMeters)
@@ -148,7 +149,8 @@ SELECT p.id, p.ulid, p.name, p.description,
        NULL::numeric AS distance_km,
        p.created_at, p.updated_at
   FROM places p
- WHERE ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
+ WHERE p.deleted_at IS NULL
+   AND ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
    AND ($2 = '' OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
    AND (
      $3::timestamptz IS NULL OR
