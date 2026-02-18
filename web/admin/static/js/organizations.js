@@ -311,8 +311,12 @@
             }
 
         } catch (error) {
-            console.error('Error loading organization for edit:', error);
-            showToast(error.message || 'Failed to load organization details', 'error');
+            if (error.status === 410) {
+                showToast('This organization has been deleted or merged and cannot be edited', 'error');
+            } else {
+                console.error('Error loading organization for edit:', error);
+                showToast(error.message || 'Failed to load organization details', 'error');
+            }
         }
     }
 

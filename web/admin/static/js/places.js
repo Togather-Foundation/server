@@ -299,8 +299,12 @@
             }
 
         } catch (error) {
-            console.error('Error loading place for edit:', error);
-            showToast(error.message || 'Failed to load place details', 'error');
+            if (error.status === 410) {
+                showToast('This place has been deleted or merged and cannot be edited', 'error');
+            } else {
+                console.error('Error loading place for edit:', error);
+                showToast(error.message || 'Failed to load place details', 'error');
+            }
         }
     }
 
