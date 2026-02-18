@@ -313,6 +313,56 @@ func (h *AdminHTMLHandler) ServeAcceptInvitation(w http.ResponseWriter, r *http.
 	}
 }
 
+// ServePlacesList renders the places list page
+func (h *AdminHTMLHandler) ServePlacesList(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "places_list"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Places - SEL Admin",
+		"ActivePage": "places",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "places_list.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "places_list.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// ServeOrganizationsList renders the organizations list page
+func (h *AdminHTMLHandler) ServeOrganizationsList(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "organizations_list"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Organizations - SEL Admin",
+		"ActivePage": "organizations",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "organizations_list.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "organizations_list.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
 // AdminHTMLPlaceholder returns a basic handler for admin HTML routes.
 // Deprecated: Use AdminHTMLHandler methods instead
 func AdminHTMLPlaceholder(_ string) http.HandlerFunc {

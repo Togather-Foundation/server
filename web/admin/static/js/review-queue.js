@@ -387,7 +387,46 @@
                 ${warnings.map(w => {
                     const badge = getWarningBadgeForDetail(w.code);
                     const message = w.message || '(no message)';
-                    return `<div class="mb-2">${badge} ${escapeHtml(message)}</div>`;
+                    let warningHtml = `<div class="mb-2">${badge} ${escapeHtml(message)}`;
+                    
+                    // Show match details for duplicate warnings
+                    if (w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0) {
+                        const isEventDuplicate = w.code === 'potential_duplicate';
+                        warningHtml += `<div class="ms-4 mt-2">`;
+                        w.details.matches.forEach(match => {
+                            const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
+                            const matchName = escapeHtml(match.name || 'Unknown');
+                            const matchUlid = escapeHtml(match.ulid || '');
+                            if (isEventDuplicate && matchUlid) {
+                                warningHtml += `
+                                    <div class="mb-1">
+                                        <a href="/admin/events/${matchUlid}" class="text-reset">${matchName}</a>
+                                        <span class="badge bg-purple-lt ms-1">${similarity}%</span>
+                                    </div>
+                                `;
+                            } else {
+                                warningHtml += `
+                                    <div class="mb-1">
+                                        <span>${matchName}</span>
+                                        <code class="ms-1 small">${matchUlid}</code>
+                                        <span class="badge bg-purple-lt ms-1">${similarity}%</span>
+                                    </div>
+                                `;
+                            }
+                        });
+                        
+                        // Show new place/org name for place/org duplicates
+                        if (w.code === 'place_possible_duplicate' && w.details.new_place_name) {
+                            warningHtml += `<div class="text-muted small mt-1">New place: ${escapeHtml(w.details.new_place_name)}</div>`;
+                        } else if (w.code === 'org_possible_duplicate' && w.details.new_org_name) {
+                            warningHtml += `<div class="text-muted small mt-1">New org: ${escapeHtml(w.details.new_org_name)}</div>`;
+                        }
+                        
+                        warningHtml += `</div>`;
+                    }
+                    
+                    warningHtml += `</div>`;
+                    return warningHtml;
                 }).join('')}
             </div>
         ` : '';
@@ -475,7 +514,12 @@
         
         // Extract duplicate event ID from warnings details if available
         const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
-        const duplicateEventId = duplicateWarning ? duplicateWarning.details : (detail.duplicateOfEventId || '');
+        let duplicateEventId = '';
+        if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
+            duplicateEventId = duplicateWarning.details.matches[0].ulid || '';
+        } else if (detail.duplicateOfEventId) {
+            duplicateEventId = detail.duplicateOfEventId;
+        }
         
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings

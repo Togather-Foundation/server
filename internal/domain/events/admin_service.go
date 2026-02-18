@@ -736,3 +736,33 @@ func buildTombstonePayload(ulid, name string, supersededBy *string, reason strin
 
 	return payload, nil
 }
+
+// FindSimilarPlaces returns places with similar names in the same locality/region.
+func (s *AdminService) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
+	return s.repo.FindSimilarPlaces(ctx, name, locality, region, threshold)
+}
+
+// FindSimilarOrganizations returns organizations with similar names in the same locality/region.
+func (s *AdminService) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
+	return s.repo.FindSimilarOrganizations(ctx, name, locality, region, threshold)
+}
+
+// MergePlaces merges a duplicate place into a primary place.
+// Parameters are internal UUIDs (not ULIDs). The handler must resolve ULIDs to UUIDs
+// via Places.GetByULID() before calling this method.
+func (s *AdminService) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	if duplicateID == primaryID {
+		return nil, fmt.Errorf("cannot merge place with itself")
+	}
+	return s.repo.MergePlaces(ctx, duplicateID, primaryID)
+}
+
+// MergeOrganizations merges a duplicate organization into a primary organization.
+// Parameters are internal UUIDs (not ULIDs). The handler must resolve ULIDs to UUIDs
+// via Organizations.GetByULID() before calling this method.
+func (s *AdminService) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
+	if duplicateID == primaryID {
+		return nil, fmt.Errorf("cannot merge organization with itself")
+	}
+	return s.repo.MergeOrganizations(ctx, duplicateID, primaryID)
+}
