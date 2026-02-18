@@ -288,7 +288,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, params CreateAPIKeyParams) (
 	if _, err := rand.Read(keyBytes); err != nil {
 		return "", nil, fmt.Errorf("failed to generate random key: %w", err)
 	}
-	plainKey = base64.URLEncoding.EncodeToString(keyBytes)
+	plainKey = base64.RawURLEncoding.EncodeToString(keyBytes)
 	prefix := plainKey[:8]
 
 	// Hash the key using bcrypt
