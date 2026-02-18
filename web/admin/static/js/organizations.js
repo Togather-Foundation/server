@@ -280,7 +280,7 @@
         if (!ulid) return;
 
         try {
-            var org = await API.organizations.get(ulid);
+            var org = await API.organizations.adminGet(ulid);
             if (!org) {
                 showToast('Organization not found', 'error');
                 return;
@@ -288,21 +288,18 @@
 
             state.editUlid = ulid;
 
-            // Populate form fields from JSON-LD response
+            // Populate form fields from flat admin response
             if (els.editUlid) els.editUlid.value = ulid;
             if (els.editName) els.editName.value = org.name || '';
             if (els.editDescription) els.editDescription.value = org.description || '';
             if (els.editUrl) els.editUrl.value = org.url || '';
             if (els.editTelephone) els.editTelephone.value = org.telephone || '';
             if (els.editEmail) els.editEmail.value = org.email || '';
-
-            // Address fields are nested under org.address
-            var addr = org.address || {};
-            if (els.editStreetAddress) els.editStreetAddress.value = addr.streetAddress || '';
-            if (els.editCity) els.editCity.value = addr.addressLocality || '';
-            if (els.editRegion) els.editRegion.value = addr.addressRegion || '';
-            if (els.editPostalCode) els.editPostalCode.value = addr.postalCode || '';
-            if (els.editCountry) els.editCountry.value = addr.addressCountry || '';
+            if (els.editStreetAddress) els.editStreetAddress.value = org.street_address || '';
+            if (els.editCity) els.editCity.value = org.address_locality || '';
+            if (els.editRegion) els.editRegion.value = org.address_region || '';
+            if (els.editPostalCode) els.editPostalCode.value = org.postal_code || '';
+            if (els.editCountry) els.editCountry.value = org.address_country || '';
 
             // Show modal
             if (els.editModal) {

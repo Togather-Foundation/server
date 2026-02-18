@@ -45,6 +45,10 @@ func (s stubOrganizationsRepo) GetTombstoneByULID(_ context.Context, ulid string
 	return s.tombstoneFn(ulid)
 }
 
+func (s stubOrganizationsRepo) Update(_ context.Context, _ string, _ organizations.UpdateOrganizationParams) (*organizations.Organization, error) {
+	return nil, errors.New("not implemented")
+}
+
 func TestOrganizationsHandlerListSuccess(t *testing.T) {
 	repo := stubOrganizationsRepo{
 		listFn: func(filters organizations.Filters, pagination organizations.Pagination) (organizations.ListResult, error) {

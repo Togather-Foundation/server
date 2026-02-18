@@ -211,6 +211,8 @@ const API = {
         
         get: (id) => API.request(`/api/v1/places/${id}`),
         
+        adminGet: (id) => API.request(`/api/v1/admin/places/${id}`),
+        
         similar: (id) => API.request(`/api/v1/admin/places/${id}/similar`),
         
         merge: (primaryId, duplicateId) => API.request('/api/v1/admin/places/merge', {
@@ -237,6 +239,8 @@ const API = {
         },
         
         get: (id) => API.request(`/api/v1/organizations/${id}`),
+        
+        adminGet: (id) => API.request(`/api/v1/admin/organizations/${id}`),
         
         similar: (id) => API.request(`/api/v1/admin/organizations/${id}/similar`),
         

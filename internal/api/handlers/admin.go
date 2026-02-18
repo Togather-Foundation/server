@@ -1299,3 +1299,127 @@ func mapToOrgUpdateParams(updates map[string]any) organizations.UpdateOrganizati
 
 	return params
 }
+
+// GetPlace handles GET /api/v1/admin/places/{id}
+// Returns flat JSON with field names matching the update handler expectations.
+func (h *AdminHandler) GetPlace(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Places == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	place, err := h.Places.GetByULID(r.Context(), ulidValue)
+	if err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	type adminPlaceResponse struct {
+		ULID          string   `json:"ulid"`
+		Name          string   `json:"name"`
+		Description   string   `json:"description,omitempty"`
+		StreetAddress string   `json:"street_address,omitempty"`
+		City          string   `json:"city,omitempty"`
+		Region        string   `json:"region,omitempty"`
+		PostalCode    string   `json:"postal_code,omitempty"`
+		Country       string   `json:"country,omitempty"`
+		Latitude      *float64 `json:"latitude,omitempty"`
+		Longitude     *float64 `json:"longitude,omitempty"`
+		Telephone     string   `json:"telephone,omitempty"`
+		Email         string   `json:"email,omitempty"`
+		URL           string   `json:"url,omitempty"`
+		Lifecycle     string   `json:"lifecycle,omitempty"`
+		CreatedAt     string   `json:"created_at"`
+		UpdatedAt     string   `json:"updated_at"`
+	}
+
+	resp := adminPlaceResponse{
+		ULID:          place.ULID,
+		Name:          place.Name,
+		Description:   place.Description,
+		StreetAddress: place.StreetAddress,
+		City:          place.City,
+		Region:        place.Region,
+		PostalCode:    place.PostalCode,
+		Country:       place.Country,
+		Latitude:      place.Latitude,
+		Longitude:     place.Longitude,
+		Telephone:     place.Telephone,
+		Email:         place.Email,
+		URL:           place.URL,
+		Lifecycle:     place.Lifecycle,
+		CreatedAt:     place.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:     place.UpdatedAt.Format(time.RFC3339),
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}
+
+// GetOrganization handles GET /api/v1/admin/organizations/{id}
+// Returns flat JSON with field names matching the update handler expectations.
+func (h *AdminHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Organizations == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	org, err := h.Organizations.GetByULID(r.Context(), ulidValue)
+	if err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	type adminOrgResponse struct {
+		ULID            string `json:"ulid"`
+		Name            string `json:"name"`
+		Description     string `json:"description,omitempty"`
+		StreetAddress   string `json:"street_address,omitempty"`
+		AddressLocality string `json:"address_locality,omitempty"`
+		AddressRegion   string `json:"address_region,omitempty"`
+		PostalCode      string `json:"postal_code,omitempty"`
+		AddressCountry  string `json:"address_country,omitempty"`
+		Telephone       string `json:"telephone,omitempty"`
+		Email           string `json:"email,omitempty"`
+		URL             string `json:"url,omitempty"`
+		Lifecycle       string `json:"lifecycle,omitempty"`
+		CreatedAt       string `json:"created_at"`
+		UpdatedAt       string `json:"updated_at"`
+	}
+
+	resp := adminOrgResponse{
+		ULID:            org.ULID,
+		Name:            org.Name,
+		Description:     org.Description,
+		StreetAddress:   org.StreetAddress,
+		AddressLocality: org.AddressLocality,
+		AddressRegion:   org.AddressRegion,
+		PostalCode:      org.PostalCode,
+		AddressCountry:  org.AddressCountry,
+		Telephone:       org.Telephone,
+		Email:           org.Email,
+		URL:             org.URL,
+		Lifecycle:       org.Lifecycle,
+		CreatedAt:       org.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:       org.UpdatedAt.Format(time.RFC3339),
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}

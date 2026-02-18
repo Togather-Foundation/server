@@ -41,6 +41,10 @@ func (s stubPlacesRepo) GetTombstoneByULID(_ context.Context, ulid string) (*pla
 	return s.tombstoneFn(ulid)
 }
 
+func (s stubPlacesRepo) Update(_ context.Context, _ string, _ places.UpdatePlaceParams) (*places.Place, error) {
+	return nil, errors.New("not implemented")
+}
+
 func TestPlacesHandlerListSuccess(t *testing.T) {
 	repo := stubPlacesRepo{
 		listFn: func(filters places.Filters, pagination places.Pagination) (places.ListResult, error) {

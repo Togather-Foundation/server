@@ -268,7 +268,7 @@
         if (!ulid) return;
 
         try {
-            var place = await API.places.get(ulid);
+            var place = await API.places.adminGet(ulid);
             if (!place) {
                 showToast('Place not found', 'error');
                 return;
@@ -276,21 +276,18 @@
 
             state.editUlid = ulid;
 
-            // Populate form fields from JSON-LD response
+            // Populate form fields from flat admin response
             if (els.editUlid) els.editUlid.value = ulid;
             if (els.editName) els.editName.value = place.name || '';
             if (els.editDescription) els.editDescription.value = place.description || '';
             if (els.editUrl) els.editUrl.value = place.url || '';
             if (els.editTelephone) els.editTelephone.value = place.telephone || '';
             if (els.editEmail) els.editEmail.value = place.email || '';
-
-            // Address fields are nested under place.address
-            var addr = place.address || {};
-            if (els.editStreetAddress) els.editStreetAddress.value = addr.streetAddress || '';
-            if (els.editCity) els.editCity.value = addr.addressLocality || '';
-            if (els.editRegion) els.editRegion.value = addr.addressRegion || '';
-            if (els.editPostalCode) els.editPostalCode.value = addr.postalCode || '';
-            if (els.editCountry) els.editCountry.value = addr.addressCountry || '';
+            if (els.editStreetAddress) els.editStreetAddress.value = place.street_address || '';
+            if (els.editCity) els.editCity.value = place.city || '';
+            if (els.editRegion) els.editRegion.value = place.region || '';
+            if (els.editPostalCode) els.editPostalCode.value = place.postal_code || '';
+            if (els.editCountry) els.editCountry.value = place.country || '';
 
             // Show modal
             if (els.editModal) {
