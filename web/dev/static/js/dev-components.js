@@ -85,3 +85,29 @@ function showToast(message, type = 'success') {
         setTimeout(() => toast.remove(), 300);
     }, 5000);
 }
+
+/**
+ * Setup logout button handler
+ * Handles developer logout by calling the logout endpoint and redirecting to login
+ */
+function setupLogout() {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                // Call logout endpoint
+                await fetch('/api/v1/dev/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
+            // Clear localStorage regardless of API success
+            localStorage.removeItem('dev_token');
+            // Redirect to login
+            window.location.href = '/dev/login';
+        });
+    }
+}
