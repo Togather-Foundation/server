@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Places - SEL Admin</title>
+    {{ template "_head_meta.html" . }}
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css?v={{ assetVersion }}">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v={{ assetVersion }}">
+</head>
+<body>
+    {{ template "_header.html" . }}
+    
+    <!-- Page Content -->
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <h2 class="page-title">Places</h2>
+                            <div class="text-muted mt-1">Manage and merge duplicate places</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Page body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    <!-- Search -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-auto flex-grow-1">
+                                    <div class="input-icon">
+                                        <span class="input-icon-addon">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                                <circle cx="10" cy="10" r="7" />
+                                                <line x1="21" y1="21" x2="15" y2="15" />
+                                            </svg>
+                                        </span>
+                                        <input type="text" id="search-input" class="form-control" placeholder="Search places by name, city, or region...">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Loading state -->
+                    <div id="loading-state" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-3">Loading places...</p>
+                    </div>
+                    
+                    <!-- Empty state -->
+                    <div id="empty-state" class="empty text-center py-5" style="display: none;">
+                        <div class="empty-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-lg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <circle cx="12" cy="11" r="3" />
+                                <path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" />
+                            </svg>
+                        </div>
+                        <p class="empty-title">No Places Found</p>
+                        <p class="empty-subtitle text-muted">Try a different search term or clear filters</p>
+                    </div>
+                    
+                    <!-- Places table -->
+                    <div id="places-table-container" style="display: none;">
+                        <div class="card">
+                            <div class="table-responsive">
+                                <table class="table table-vcenter">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>City</th>
+                                            <th>Region</th>
+                                            <th>Status</th>
+                                            <th class="w-1">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="places-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Load More -->
+                        <div class="text-center mt-3" id="load-more-container" style="display: none;">
+                            <button class="btn btn-secondary" data-action="load-more">Load More</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Merge Confirmation Modal -->
+    <div class="modal fade" id="merge-modal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Place Merge</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This will merge the duplicate place into the primary place:</p>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <strong>Keep (Primary):</strong>
+                            <div id="merge-primary-name" class="text-muted"></div>
+                        </div>
+                        <div class="col-6">
+                            <strong>Remove (Duplicate):</strong>
+                            <div id="merge-duplicate-name" class="text-muted"></div>
+                        </div>
+                    </div>
+                    <div class="alert alert-warning mb-0">
+                        <strong>What happens:</strong>
+                        <ul class="mb-0">
+                            <li>Events at the duplicate will be moved to the primary</li>
+                            <li>Empty fields on the primary will be filled from the duplicate</li>
+                            <li>The duplicate will be soft-deleted</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirm-merge-btn" data-action="confirm-merge">
+                        Merge Places
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/places.js?v={{ assetVersion }}"></script>
+</body>
+</html>

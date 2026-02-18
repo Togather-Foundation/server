@@ -626,6 +626,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/federation", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeFederation))))
 	mux.Handle("/admin/users", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUsersList))))
 	mux.Handle("/admin/users/{id}/activity", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeUserActivity))))
+	mux.Handle("/admin/places", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServePlacesList))))
+	mux.Handle("/admin/organizations", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeOrganizationsList))))
 	mux.Handle("/admin/developers", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDevelopersList))))
 
 	// Redirect /admin and /admin/ to dashboard
