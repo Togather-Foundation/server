@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,6 +19,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,11 +34,12 @@ import (
 )
 
 type testEnv struct {
-	Context context.Context
-	DBURL   string
-	Pool    *pgxpool.Pool
-	Server  *httptest.Server
-	Config  config.Config
+	Context       context.Context
+	DBURL         string
+	Pool          *pgxpool.Pool
+	Server        *httptest.Server
+	Config        config.Config
+	UsageRecorder *developers.UsageRecorder
 }
 
 var (
@@ -76,12 +77,21 @@ func setupTestEnv(t *testing.T) *testEnv {
 	server := httptest.NewServer(routerWithClient.Handler)
 	t.Cleanup(server.Close)
 
+	// Start usage recorder for integration tests (srv-8r58k)
+	if routerWithClient.UsageRecorder != nil {
+		routerWithClient.UsageRecorder.Start()
+		t.Cleanup(func() {
+			_ = routerWithClient.UsageRecorder.Close()
+		})
+	}
+
 	return &testEnv{
-		Context: ctx,
-		DBURL:   sharedDBURL,
-		Pool:    sharedPool,
-		Server:  server,
-		Config:  sharedConfig,
+		Context:       ctx,
+		DBURL:         sharedDBURL,
+		Pool:          sharedPool,
+		Server:        server,
+		Config:        sharedConfig,
+		UsageRecorder: routerWithClient.UsageRecorder,
 	}
 }
 
@@ -199,7 +209,7 @@ SELECT tablename
 }
 
 func testLogger() zerolog.Logger {
-	return zerolog.New(io.Discard)
+	return zerolog.Nop()
 }
 
 func testConfig(dbURL string) config.Config {
@@ -233,7 +243,8 @@ func testConfig(dbURL string) config.Config {
 			Level:  "debug",
 			Format: "json",
 		},
-		Environment: "test",
+		Environment:     "test",
+		DefaultTimezone: "America/Toronto",
 	}
 }
 

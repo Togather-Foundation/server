@@ -137,6 +137,20 @@ func runServer() error {
 		logger.Warn().Msg("river client not initialized, batch processing will not work")
 	}
 
+	// Start API key usage recorder (srv-8r58k)
+	// Records developer API key usage metrics (request counts, error counts) and periodically flushes to database
+	if routerWithClient.UsageRecorder != nil {
+		routerWithClient.UsageRecorder.Start()
+		logger.Info().Msg("API key usage recorder started")
+		defer func() {
+			if err := routerWithClient.UsageRecorder.Close(); err != nil {
+				logger.Error().Err(err).Msg("usage recorder shutdown error")
+			} else {
+				logger.Info().Msg("usage recorder stopped")
+			}
+		}()
+	}
+
 	// Create HTTP server
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
