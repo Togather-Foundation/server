@@ -75,6 +75,11 @@
     color: #ffffff !important;
 }
 
+.badge.bg-purple {
+    background-color: #8b2fa5 !important; /* Darker purple for readability */
+    color: #ffffff !important;
+}
+
 /* Dark mode adjustments - slightly lighter for contrast */
 [data-bs-theme="dark"] .badge.bg-success {
     background-color: #37a349 !important; /* Slightly lighter green in dark mode */
@@ -90,6 +95,10 @@
 
 [data-bs-theme="dark"] .badge.bg-danger {
     background-color: #e03131 !important; /* Slightly lighter red in dark mode */
+}
+
+[data-bs-theme="dark"] .badge.bg-purple {
+    background-color: #be4bdb !important; /* Slightly lighter purple in dark mode */
 }
 
 /* Loading skeleton for tables */
@@ -298,9 +307,13 @@
     cursor: default;
 }
 
-/* Links in review queue detail cards should have pointer cursor */
+/* Links and buttons in review queue detail cards should have pointer cursor */
 .review-detail-card a,
-#review-queue-table tr[id^="detail-"] a {
+.review-detail-card button,
+.review-detail-card .btn,
+#review-queue-table tr[id^="detail-"] a,
+#review-queue-table tr[id^="detail-"] button,
+#review-queue-table tr[id^="detail-"] .btn {
     cursor: pointer !important;
 }
 
