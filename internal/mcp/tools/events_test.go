@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 )
 
 // Test buildEventURI
@@ -153,22 +156,66 @@ func TestAddMCPProvenance(t *testing.T) {
 	}
 }
 
-// Test buildEventLocation
-func TestBuildEventLocation(t *testing.T) {
+// mockPlaceResolver implements PlaceResolver for tests.
+type mockPlaceResolver struct {
+	places map[string]*places.Place
+}
+
+func (m *mockPlaceResolver) GetByULID(_ context.Context, ulid string) (*places.Place, error) {
+	if p, ok := m.places[ulid]; ok {
+		return p, nil
+	}
+	return nil, nil
+}
+
+// mockOrgResolver implements OrgResolver for tests.
+type mockOrgResolver struct {
+	orgs map[string]*organizations.Organization
+}
+
+func (m *mockOrgResolver) GetByULID(_ context.Context, ulid string) (*organizations.Organization, error) {
+	if o, ok := m.orgs[ulid]; ok {
+		return o, nil
+	}
+	return nil, nil
+}
+
+// Test resolveEventLocation
+func TestResolveEventLocation(t *testing.T) {
 	venueID := "01HX5678901234ABCDEFGHJKMN"
 	virtualURL := "https://zoom.us/meeting"
+
+	lat := 43.65
+	lng := -79.38
+	resolver := &mockPlaceResolver{
+		places: map[string]*places.Place{
+			venueID: {
+				ULID:          venueID,
+				Name:          "Test Venue",
+				StreetAddress: "123 Main St",
+				City:          "Toronto",
+				Region:        "ON",
+				PostalCode:    "M5V 1A1",
+				Country:       "CA",
+				Latitude:      &lat,
+				Longitude:     &lng,
+			},
+		},
+	}
 
 	tests := []struct {
 		name       string
 		event      events.Event
 		baseURL    string
+		resolver   PlaceResolver
 		expectNil  bool
 		expectStr  string
 		expectVirt bool
 		expectVURL string
+		expectEmb  bool // expect embedded Place object
 	}{
 		{
-			name: "venue ID in occurrence",
+			name: "venue resolved to embedded Place",
 			event: events.Event{
 				ULID: "01HX1234567890ABCDEFGHJKMN",
 				Occurrences: []events.Occurrence{
@@ -176,16 +223,30 @@ func TestBuildEventLocation(t *testing.T) {
 				},
 			},
 			baseURL:   "https://test.example.com",
+			resolver:  resolver,
+			expectEmb: true,
+		},
+		{
+			name: "venue falls back to URI without resolver",
+			event: events.Event{
+				ULID: "01HX1234567890ABCDEFGHJKMN",
+				Occurrences: []events.Occurrence{
+					{VenueULID: &venueID},
+				},
+			},
+			baseURL:   "https://test.example.com",
+			resolver:  nil,
 			expectStr: "https://test.example.com/places/01HX5678901234ABCDEFGHJKMN",
 		},
 		{
-			name: "primary venue ID",
+			name: "primary venue resolved to embedded Place",
 			event: events.Event{
 				ULID:             "01HX1234567890ABCDEFGHJKMN",
 				PrimaryVenueULID: &venueID,
 			},
 			baseURL:   "https://test.example.com",
-			expectStr: "https://test.example.com/places/01HX5678901234ABCDEFGHJKMN",
+			resolver:  resolver,
+			expectEmb: true,
 		},
 		{
 			name: "virtual URL in occurrence",
@@ -221,7 +282,7 @@ func TestBuildEventLocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildEventLocation(tt.event, tt.baseURL)
+			result := resolveEventLocation(context.Background(), tt.event, tt.baseURL, tt.resolver)
 
 			if tt.expectNil {
 				if result != nil {
@@ -241,6 +302,37 @@ func TestBuildEventLocation(t *testing.T) {
 				}
 			}
 
+			if tt.expectEmb {
+				m, ok := result.(map[string]any)
+				if !ok {
+					t.Errorf("expected map, got %T: %v", result, result)
+					return
+				}
+				if m["@type"] != "Place" {
+					t.Errorf("expected @type Place, got %v", m["@type"])
+				}
+				if m["name"] != "Test Venue" {
+					t.Errorf("expected name 'Test Venue', got %v", m["name"])
+				}
+				if m["@id"] != "https://test.example.com/places/01HX5678901234ABCDEFGHJKMN" {
+					t.Errorf("expected @id URI, got %v", m["@id"])
+				}
+				addr, ok := m["address"].(map[string]any)
+				if !ok {
+					t.Fatal("expected address map")
+				}
+				if addr["streetAddress"] != "123 Main St" {
+					t.Errorf("expected streetAddress '123 Main St', got %v", addr["streetAddress"])
+				}
+				geo, ok := m["geo"].(map[string]any)
+				if !ok {
+					t.Fatal("expected geo map")
+				}
+				if geo["latitude"] != 43.65 {
+					t.Errorf("expected latitude 43.65, got %v", geo["latitude"])
+				}
+			}
+
 			if tt.expectVirt {
 				m, ok := result.(map[string]any)
 				if !ok {
@@ -256,6 +348,108 @@ func TestBuildEventLocation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test resolveEventOrganizer
+func TestResolveEventOrganizer(t *testing.T) {
+	orgID := "01HX9876543210ABCDEFGHJKMN"
+	resolver := &mockOrgResolver{
+		orgs: map[string]*organizations.Organization{
+			orgID: {
+				ULID:            orgID,
+				Name:            "Test Org",
+				URL:             "https://testorg.com",
+				AddressLocality: "Toronto",
+				AddressRegion:   "ON",
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		orgID     *string
+		resolver  OrgResolver
+		expectNil bool
+		expectStr string
+		expectEmb bool
+	}{
+		{
+			name:      "nil org ID returns nil",
+			orgID:     nil,
+			resolver:  resolver,
+			expectNil: true,
+		},
+		{
+			name:      "empty org ID returns nil",
+			orgID:     strPtr(""),
+			resolver:  resolver,
+			expectNil: true,
+		},
+		{
+			name:      "resolved to embedded Organization",
+			orgID:     &orgID,
+			resolver:  resolver,
+			expectEmb: true,
+		},
+		{
+			name:      "falls back to URI without resolver",
+			orgID:     &orgID,
+			resolver:  nil,
+			expectStr: "https://test.example.com/organizations/01HX9876543210ABCDEFGHJKMN",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := resolveEventOrganizer(context.Background(), "https://test.example.com", tt.orgID, tt.resolver)
+
+			if tt.expectNil {
+				if result != nil {
+					t.Errorf("expected nil, got %v", result)
+				}
+				return
+			}
+
+			if tt.expectStr != "" {
+				str, ok := result.(string)
+				if !ok {
+					t.Errorf("expected string, got %T: %v", result, result)
+					return
+				}
+				if str != tt.expectStr {
+					t.Errorf("expected %q, got %q", tt.expectStr, str)
+				}
+			}
+
+			if tt.expectEmb {
+				m, ok := result.(map[string]any)
+				if !ok {
+					t.Errorf("expected map, got %T: %v", result, result)
+					return
+				}
+				if m["@type"] != "Organization" {
+					t.Errorf("expected @type Organization, got %v", m["@type"])
+				}
+				if m["name"] != "Test Org" {
+					t.Errorf("expected name 'Test Org', got %v", m["name"])
+				}
+				if m["url"] != "https://testorg.com" {
+					t.Errorf("expected url 'https://testorg.com', got %v", m["url"])
+				}
+				addr, ok := m["address"].(map[string]any)
+				if !ok {
+					t.Fatal("expected address map")
+				}
+				if addr["addressLocality"] != "Toronto" {
+					t.Errorf("expected addressLocality 'Toronto', got %v", addr["addressLocality"])
+				}
+			}
+		})
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
 }
 
 // Test buildListItem
@@ -296,7 +490,7 @@ func TestBuildListItem(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildListItem(tt.event, tt.baseURL)
+			result := buildListItem(tt.event, tt.baseURL, nil, nil)
 
 			if result["@type"] != "Event" {
 				t.Errorf("expected @type Event, got %v", result["@type"])

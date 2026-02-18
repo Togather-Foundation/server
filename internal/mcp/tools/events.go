@@ -13,13 +13,28 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/rs/zerolog/log"
 )
+
+// PlaceResolver looks up a place by ULID for embedding in event responses.
+type PlaceResolver interface {
+	GetByULID(ctx context.Context, ulid string) (*places.Place, error)
+}
+
+// OrgResolver looks up an organization by ULID for embedding in event responses.
+type OrgResolver interface {
+	GetByULID(ctx context.Context, ulid string) (*organizations.Organization, error)
+}
 
 // EventTools provides MCP tools for querying and managing events.
 type EventTools struct {
 	eventsService *events.Service
 	ingestService *events.IngestService
+	placeResolver PlaceResolver
+	orgResolver   OrgResolver
 	baseURL       string
 }
 
@@ -30,6 +45,18 @@ func NewEventTools(eventsService *events.Service, ingestService *events.IngestSe
 		ingestService: ingestService,
 		baseURL:       strings.TrimSpace(baseURL),
 	}
+}
+
+// WithPlaceResolver adds place resolution for embedding location in event responses.
+func (t *EventTools) WithPlaceResolver(resolver PlaceResolver) *EventTools {
+	t.placeResolver = resolver
+	return t
+}
+
+// WithOrgResolver adds organization resolution for embedding organizer in event responses.
+func (t *EventTools) WithOrgResolver(resolver OrgResolver) *EventTools {
+	t.orgResolver = resolver
+	return t
 }
 
 // EventsTool returns the MCP tool definition for listing or getting events.
@@ -196,7 +223,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 		return resultJSON, nil
 	}
 
-	payload := buildEventPayload(event, t.baseURL)
+	payload := buildEventPayload(ctx, event, t.baseURL, t.placeResolver, t.orgResolver)
 	resultJSON, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
@@ -256,7 +283,7 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		items = append(items, buildListItem(event, t.baseURL))
+		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver))
 	}
 
 	response := map[string]any{
@@ -357,7 +384,7 @@ func (t *EventTools) AddEventHandler(ctx context.Context, request mcp.CallToolRe
 	return resultJSON, nil
 }
 
-func buildListItem(event events.Event, baseURL string) map[string]any {
+func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver) map[string]any {
 	item := map[string]any{
 		"@context": defaultContext(),
 		"@type":    "Event",
@@ -371,15 +398,20 @@ func buildListItem(event events.Event, baseURL string) map[string]any {
 		item["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
 	}
 
-	location := buildEventLocation(event, baseURL)
+	location := resolveEventLocation(context.Background(), event, baseURL, placeRes)
 	if location != nil {
 		item["location"] = location
+	}
+
+	organizer := resolveEventOrganizer(context.Background(), baseURL, event.OrganizerID, orgRes)
+	if organizer != nil {
+		item["organizer"] = organizer
 	}
 
 	return item
 }
 
-func buildEventPayload(event *events.Event, baseURL string) map[string]any {
+func buildEventPayload(ctx context.Context, event *events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver) map[string]any {
 	if event == nil {
 		return map[string]any{}
 	}
@@ -395,9 +427,14 @@ func buildEventPayload(event *events.Event, baseURL string) map[string]any {
 		payload["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
 	}
 
-	location := buildEventLocation(*event, baseURL)
+	location := resolveEventLocation(ctx, *event, baseURL, placeRes)
 	if location != nil {
 		payload["location"] = location
+	}
+
+	organizer := resolveEventOrganizer(ctx, baseURL, event.OrganizerID, orgRes)
+	if organizer != nil {
+		payload["organizer"] = organizer
 	}
 
 	if event.LicenseURL != "" {
@@ -413,17 +450,74 @@ func buildEventPayload(event *events.Event, baseURL string) map[string]any {
 	return payload
 }
 
-func buildEventLocation(event events.Event, baseURL string) any {
+// resolveEventLocation resolves the event's venue to an embedded Place object.
+// Falls back to URI string if the resolver is nil or the lookup fails.
+// Falls back to VirtualLocation if no physical venue is set.
+func resolveEventLocation(ctx context.Context, event events.Event, baseURL string, resolver PlaceResolver) any {
+	// Determine the venue ULID (prefer occurrence-level, fall back to primary)
+	var venueULID string
 	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueULID != nil {
-		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", *event.Occurrences[0].VenueULID); err == nil {
+		venueULID = *event.Occurrences[0].VenueULID
+	} else if event.PrimaryVenueULID != nil {
+		venueULID = *event.PrimaryVenueULID
+	}
+
+	if venueULID != "" {
+		// Try to resolve to an embedded Place object
+		if resolver != nil {
+			place, err := resolver.GetByULID(ctx, venueULID)
+			if err == nil && place != nil {
+				result := map[string]any{
+					"@type": "Place",
+					"name":  place.Name,
+				}
+				if uri, uriErr := ids.BuildCanonicalURI(baseURL, "places", place.ULID); uriErr == nil {
+					result["@id"] = uri
+				}
+				address := map[string]any{"@type": "PostalAddress"}
+				hasAddr := false
+				if place.StreetAddress != "" {
+					address["streetAddress"] = place.StreetAddress
+					hasAddr = true
+				}
+				if place.City != "" {
+					address["addressLocality"] = place.City
+					hasAddr = true
+				}
+				if place.Region != "" {
+					address["addressRegion"] = place.Region
+					hasAddr = true
+				}
+				if place.PostalCode != "" {
+					address["postalCode"] = place.PostalCode
+					hasAddr = true
+				}
+				if place.Country != "" {
+					address["addressCountry"] = place.Country
+					hasAddr = true
+				}
+				if hasAddr {
+					result["address"] = address
+				}
+				if place.Latitude != nil && place.Longitude != nil {
+					result["geo"] = map[string]any{
+						"@type":     "GeoCoordinates",
+						"latitude":  *place.Latitude,
+						"longitude": *place.Longitude,
+					}
+				}
+				return result
+			}
+			// Lookup failed — fall back to URI
+			log.Warn().Err(err).Str("venue_ulid", venueULID).Msg("MCP: failed to resolve venue for event, falling back to URI")
+		}
+		// No resolver or lookup failed — return URI
+		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", venueULID); err == nil {
 			return placeURI
 		}
 	}
-	if event.PrimaryVenueULID != nil {
-		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", *event.PrimaryVenueULID); err == nil {
-			return placeURI
-		}
-	}
+
+	// Virtual location fallback
 	if len(event.Occurrences) > 0 && event.Occurrences[0].VirtualURL != nil && *event.Occurrences[0].VirtualURL != "" {
 		return map[string]any{
 			"@type": "VirtualLocation",
@@ -435,6 +529,65 @@ func buildEventLocation(event events.Event, baseURL string) any {
 			"@type": "VirtualLocation",
 			"url":   event.VirtualURL,
 		}
+	}
+	return nil
+}
+
+// resolveEventOrganizer resolves the organizer ULID to an embedded Organization object.
+// Falls back to URI string if the resolver is nil or the lookup fails.
+func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, resolver OrgResolver) any {
+	if orgID == nil || *orgID == "" {
+		return nil
+	}
+
+	// Try to resolve to an embedded Organization object
+	if resolver != nil {
+		org, err := resolver.GetByULID(ctx, *orgID)
+		if err == nil && org != nil {
+			result := map[string]any{
+				"@type": "Organization",
+				"name":  org.Name,
+			}
+			if uri, uriErr := ids.BuildCanonicalURI(baseURL, "organizations", org.ULID); uriErr == nil {
+				result["@id"] = uri
+			}
+			if org.URL != "" {
+				result["url"] = org.URL
+			}
+			address := map[string]any{"@type": "PostalAddress"}
+			hasAddr := false
+			if org.StreetAddress != "" {
+				address["streetAddress"] = org.StreetAddress
+				hasAddr = true
+			}
+			if org.AddressLocality != "" {
+				address["addressLocality"] = org.AddressLocality
+				hasAddr = true
+			}
+			if org.AddressRegion != "" {
+				address["addressRegion"] = org.AddressRegion
+				hasAddr = true
+			}
+			if org.PostalCode != "" {
+				address["postalCode"] = org.PostalCode
+				hasAddr = true
+			}
+			if org.AddressCountry != "" {
+				address["addressCountry"] = org.AddressCountry
+				hasAddr = true
+			}
+			if hasAddr {
+				result["address"] = address
+			}
+			return result
+		}
+		// Lookup failed — fall back to URI
+		log.Warn().Err(err).Str("org_ulid", *orgID).Msg("MCP: failed to resolve organizer for event, falling back to URI")
+	}
+
+	// No resolver or lookup failed — return URI
+	if uri, err := ids.BuildCanonicalURI(baseURL, "organizations", *orgID); err == nil {
+		return uri
 	}
 	return nil
 }

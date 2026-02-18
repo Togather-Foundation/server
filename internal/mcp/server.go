@@ -154,7 +154,9 @@ func (s *Server) MCPServer() *mcpserver.MCPServer {
 // Tools are operations that can be executed by the MCP client.
 func (s *Server) registerTools() {
 	// Register event tools (server-gau4, server-wako)
-	eventTools := tools.NewEventTools(s.eventsService, s.ingestService, s.baseURL)
+	eventTools := tools.NewEventTools(s.eventsService, s.ingestService, s.baseURL).
+		WithPlaceResolver(s.placesService).
+		WithOrgResolver(s.orgService)
 
 	// events tool - list events with filters OR get a specific event by ULID
 	s.mcp.AddTool(eventTools.EventsTool(), eventTools.EventsHandler)
