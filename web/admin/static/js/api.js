@@ -191,6 +191,50 @@ const API = {
         list: () => API.request('/api/v1/admin/duplicates')
     },
     
+    // Places
+    places: {
+        list: (params = {}) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/places?${query}`);
+        },
+        
+        get: (id) => API.request(`/api/v1/places/${id}`),
+        
+        similar: (id) => API.request(`/api/v1/admin/places/${id}/similar`),
+        
+        merge: (primaryId, duplicateId) => API.request('/api/v1/admin/places/merge', {
+            method: 'POST',
+            body: JSON.stringify({ primary_id: primaryId, duplicate_id: duplicateId })
+        }),
+        
+        delete: (id, reason) => API.request(`/api/v1/admin/places/${id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ reason: reason })
+        })
+    },
+    
+    // Organizations
+    organizations: {
+        list: (params = {}) => {
+            const query = new URLSearchParams(params);
+            return API.request(`/api/v1/organizations?${query}`);
+        },
+        
+        get: (id) => API.request(`/api/v1/organizations/${id}`),
+        
+        similar: (id) => API.request(`/api/v1/admin/organizations/${id}/similar`),
+        
+        merge: (primaryId, duplicateId) => API.request('/api/v1/admin/organizations/merge', {
+            method: 'POST',
+            body: JSON.stringify({ primary_id: primaryId, duplicate_id: duplicateId })
+        }),
+        
+        delete: (id, reason) => API.request(`/api/v1/admin/organizations/${id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ reason: reason })
+        })
+    },
+    
     // Federation Nodes
     federation: {
         list: () => API.request('/api/v1/admin/federation/nodes'),

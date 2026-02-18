@@ -450,6 +450,20 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodDelete: adminDeleteOrganization,
 	}))
 
+	// Admin place similarity and merge endpoints
+	adminFindSimilarPlaces := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.FindSimilarPlaces))))
+	mux.Handle("GET /api/v1/admin/places/{id}/similar", adminFindSimilarPlaces)
+
+	adminMergePlaces := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergePlaces))))
+	mux.Handle("POST /api/v1/admin/places/merge", adminMergePlaces)
+
+	// Admin organization similarity and merge endpoints
+	adminFindSimilarOrgs := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.FindSimilarOrganizations))))
+	mux.Handle("GET /api/v1/admin/organizations/{id}/similar", adminFindSimilarOrgs)
+
+	adminMergeOrgs := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergeOrganizations))))
+	mux.Handle("POST /api/v1/admin/organizations/merge", adminMergeOrgs)
+
 	// Admin API key management (T078)
 	adminCreateAPIKey := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(apiKeyHandler.CreateAPIKey))))
 	adminListAPIKeys := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(apiKeyHandler.ListAPIKeys))))

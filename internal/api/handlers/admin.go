@@ -753,3 +753,289 @@ func (h *AdminHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, stats, contentTypeFromRequest(r))
 }
+
+// FindSimilarPlaces handles GET /api/v1/admin/places/{id}/similar
+// Returns similar places based on name and location matching
+func (h *AdminHandler) FindSimilarPlaces(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil || h.Places == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Extract and validate place ULID
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	// Look up the place to get its details
+	place, err := h.Places.GetByULID(r.Context(), ulidValue)
+	if err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Call AdminService to find similar places
+	candidates, err := h.AdminService.FindSimilarPlaces(r.Context(), place.Name, place.City, place.Region, 0.3)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Filter out the place itself from results
+	filtered := make([]map[string]any, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.ULID != ulidValue {
+			filtered = append(filtered, map[string]any{
+				"ulid":       candidate.ULID,
+				"name":       candidate.Name,
+				"similarity": candidate.Similarity,
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, filtered, contentTypeFromRequest(r))
+}
+
+// FindSimilarOrganizations handles GET /api/v1/admin/organizations/{id}/similar
+// Returns similar organizations based on name and location matching
+func (h *AdminHandler) FindSimilarOrganizations(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil || h.Organizations == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Extract and validate organization ULID
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	// Look up the organization to get its details
+	org, err := h.Organizations.GetByULID(r.Context(), ulidValue)
+	if err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Use AddressLocality and AddressRegion fields from Organization struct
+	locality := org.AddressLocality
+	region := org.AddressRegion
+
+	// Call AdminService to find similar organizations
+	candidates, err := h.AdminService.FindSimilarOrganizations(r.Context(), org.Name, locality, region, 0.3)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Filter out the organization itself from results
+	filtered := make([]map[string]any, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.ULID != ulidValue {
+			filtered = append(filtered, map[string]any{
+				"ulid":       candidate.ULID,
+				"name":       candidate.Name,
+				"similarity": candidate.Similarity,
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, filtered, contentTypeFromRequest(r))
+}
+
+// MergePlaces handles POST /api/v1/admin/places/merge
+// Merges a duplicate place into a primary place
+func (h *AdminHandler) MergePlaces(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil || h.Places == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Parse merge request
+	var req struct {
+		PrimaryID   string `json:"primary_id"`
+		DuplicateID string `json:"duplicate_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	// Validate ULIDs
+	if req.PrimaryID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing primary_id", nil, h.Env)
+		return
+	}
+	if req.DuplicateID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing duplicate_id", nil, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.PrimaryID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid primary_id", err, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.DuplicateID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid duplicate_id", err, h.Env)
+		return
+	}
+	if req.PrimaryID == req.DuplicateID {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge place with itself", nil, h.Env)
+		return
+	}
+
+	// Look up both places to get their internal UUIDs
+	primaryPlace, err := h.Places.GetByULID(r.Context(), req.PrimaryID)
+	if err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Primary place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	duplicatePlace, err := h.Places.GetByULID(r.Context(), req.DuplicateID)
+	if err != nil {
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Duplicate place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Call AdminService to merge places (using internal UUIDs)
+	result, err := h.AdminService.MergePlaces(r.Context(), duplicatePlace.ID, primaryPlace.ID)
+	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.place.merge", "place", req.PrimaryID, "failure", map[string]string{
+				"error":        err.Error(),
+				"duplicate_id": req.DuplicateID,
+			})
+		}
+
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.place.merge", "place", req.PrimaryID, "success", map[string]string{
+			"duplicate_id": req.DuplicateID,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":         "merged",
+		"canonical_id":   result.CanonicalID,
+		"already_merged": result.AlreadyMerged,
+	}, contentTypeFromRequest(r))
+}
+
+// MergeOrganizations handles POST /api/v1/admin/organizations/merge
+// Merges a duplicate organization into a primary organization
+func (h *AdminHandler) MergeOrganizations(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil || h.Organizations == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	// Parse merge request
+	var req struct {
+		PrimaryID   string `json:"primary_id"`
+		DuplicateID string `json:"duplicate_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	// Validate ULIDs
+	if req.PrimaryID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing primary_id", nil, h.Env)
+		return
+	}
+	if req.DuplicateID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing duplicate_id", nil, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.PrimaryID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid primary_id", err, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.DuplicateID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid duplicate_id", err, h.Env)
+		return
+	}
+	if req.PrimaryID == req.DuplicateID {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge organization with itself", nil, h.Env)
+		return
+	}
+
+	// Look up both organizations to get their internal UUIDs
+	primaryOrg, err := h.Organizations.GetByULID(r.Context(), req.PrimaryID)
+	if err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Primary organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	duplicateOrg, err := h.Organizations.GetByULID(r.Context(), req.DuplicateID)
+	if err != nil {
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Duplicate organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Call AdminService to merge organizations (using internal UUIDs)
+	result, err := h.AdminService.MergeOrganizations(r.Context(), duplicateOrg.ID, primaryOrg.ID)
+	if err != nil {
+		// Log failure
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.organization.merge", "organization", req.PrimaryID, "failure", map[string]string{
+				"error":        err.Error(),
+				"duplicate_id": req.DuplicateID,
+			})
+		}
+
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	// Log success
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.organization.merge", "organization", req.PrimaryID, "success", map[string]string{
+			"duplicate_id": req.DuplicateID,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":         "merged",
+		"canonical_id":   result.CanonicalID,
+		"already_merged": result.AlreadyMerged,
+	}, contentTypeFromRequest(r))
+}
