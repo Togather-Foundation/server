@@ -1,0 +1,7 @@
+{
+  "last_failure": "2026-02-14T09:04:40.460654532-05:00",
+  "failure_count": 1,
+  "backoff_until": "2026-02-14T09:05:10.460655175-05:00",
+  "needs_manual_sync": false,
+  "failure_reason": "failed to pull from sync branch: git fetch failed in worktree: exit status 128\nfatal: unable to access 'https://github.com/Togather-Foundation/server.git/': Could not resolve host: github.com\n"
+}
