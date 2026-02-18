@@ -394,29 +394,6 @@ func placeRowToDomain(row *placeRow) places.Place {
 // sqlcPlaceRowToDomain converts a SQLc-generated row to a places.Place domain struct.
 // This works with any of the ListPlacesByXXX row types since they all have the same structure.
 func sqlcPlaceRowToDomain(row interface{}) places.Place {
-	// Type assertion helper to extract common fields
-	type commonPlaceRow interface {
-		getID() pgtype.UUID
-		getULID() string
-		getName() string
-		getDescription() pgtype.Text
-		getStreetAddress() pgtype.Text
-		getAddressLocality() pgtype.Text
-		getAddressRegion() pgtype.Text
-		getPostalCode() pgtype.Text
-		getAddressCountry() pgtype.Text
-		getLatitude() pgtype.Numeric
-		getLongitude() pgtype.Numeric
-		getTelephone() pgtype.Text
-		getEmail() pgtype.Text
-		getURL() pgtype.Text
-		getMaximumAttendeeCapacity() pgtype.Int4
-		getVenueType() pgtype.Text
-		getFederationURI() pgtype.Text
-		getCreatedAt() pgtype.Timestamptz
-		getUpdatedAt() pgtype.Timestamptz
-	}
-
 	// Extract fields based on concrete type
 	var id pgtype.UUID
 	var ulid, name string
