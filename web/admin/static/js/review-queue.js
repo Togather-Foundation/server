@@ -1043,67 +1043,158 @@
         }
         
         const data = currentEntryDetail.normalized;
-        container.innerHTML = renderMergeEventSummary(data);
+        container.innerHTML = renderMergeEventSummary(data, null);
     }
     
     /**
-     * Render a compact event summary for the merge comparison panels
-     * Shows name, date, venue, and description excerpt
-     * @param {Object} data - Event data object with name, startDate, location, description
+     * Render a compact event summary for the merge comparison panels.
+     * Shows name, date, venue, organizer, and description excerpt.
+     * When compareData is provided, highlights fields that differ.
+     * @param {Object} data - Event data object with name, startDate, location, description, organizer
+     * @param {Object|null} compareData - Optional data to compare against for diff highlighting
      * @returns {string} HTML string
      */
-    function renderMergeEventSummary(data) {
+    function renderMergeEventSummary(data, compareData) {
         if (!data) return '<p class="text-muted">No data available</p>';
         
-        const name = data.name || 'Untitled Event';
-        const startDate = data.startDate ? formatDateValue(data.startDate) : 'No date';
-        const endDate = data.endDate ? formatDateValue(data.endDate) : '';
+        var fields = extractMergeFields(data);
+        var compareFields = compareData ? extractMergeFields(compareData) : null;
         
-        // Extract venue name from location object
-        const venue = extractVenueName(data.location);
-        
-        // Truncate description
-        const description = data.description || '';
-        const descriptionExcerpt = description.length > 120
-            ? description.substring(0, 120) + '...'
-            : description;
-        
-        return `
-            <div class="mb-2">
-                <strong class="d-block">${escapeHtml(name)}</strong>
-            </div>
-            <div class="mb-2">
-                <small class="text-muted">Date:</small>
-                <span class="d-block">${escapeHtml(startDate)}${endDate ? ' &ndash; ' + escapeHtml(endDate) : ''}</span>
-            </div>
-            ${venue ? `
-                <div class="mb-2">
-                    <small class="text-muted">Venue:</small>
-                    <span class="d-block">${escapeHtml(venue)}</span>
-                </div>
-            ` : ''}
-            ${descriptionExcerpt ? `
-                <div class="mb-0">
-                    <small class="text-muted">Description:</small>
-                    <span class="d-block small">${escapeHtml(descriptionExcerpt)}</span>
-                </div>
-            ` : ''}
-        `;
+        return renderMergeFieldRows(fields, compareFields);
     }
     
     /**
-     * Extract venue name from a location object
-     * Handles both normalized payload format and JSON-LD format
+     * Extract display fields from an event data object for merge comparison.
+     * Normalizes both normalized-payload and JSON-LD response shapes.
+     * @param {Object} data - Event data
+     * @returns {Object} Extracted fields: name, startDate, endDate, venue, organizer, description
+     */
+    function extractMergeFields(data) {
+        if (!data) return {};
+        
+        return {
+            name: data.name || 'Untitled Event',
+            startDate: data.startDate ? formatDateValue(data.startDate) : 'No date',
+            endDate: data.endDate ? formatDateValue(data.endDate) : '',
+            venue: extractVenueName(data.location),
+            organizer: extractOrganizerName(data.organizer),
+            description: data.description || ''
+        };
+    }
+    
+    /**
+     * Render merge field rows with optional diff highlighting.
+     * When compareFields is provided, matching values get green, different values get amber.
+     * @param {Object} fields - Primary fields to render
+     * @param {Object|null} compareFields - Fields to compare against (null = no highlighting)
+     * @returns {string} HTML string
+     */
+    function renderMergeFieldRows(fields, compareFields) {
+        var rows = [];
+        
+        // Name
+        rows.push(renderMergeField('', fields.name, compareFields ? compareFields.name : null, true));
+        
+        // Date
+        var dateStr = fields.startDate + (fields.endDate ? ' \u2013 ' + fields.endDate : '');
+        var compareDateStr = compareFields
+            ? compareFields.startDate + (compareFields.endDate ? ' \u2013 ' + compareFields.endDate : '')
+            : null;
+        rows.push(renderMergeField('Date', dateStr, compareDateStr, false));
+        
+        // Venue
+        if (fields.venue || (compareFields && compareFields.venue)) {
+            rows.push(renderMergeField('Venue', fields.venue, compareFields ? compareFields.venue : null, false));
+        }
+        
+        // Organizer
+        if (fields.organizer || (compareFields && compareFields.organizer)) {
+            rows.push(renderMergeField('Organizer', fields.organizer, compareFields ? compareFields.organizer : null, false));
+        }
+        
+        // Description excerpt
+        var desc = fields.description;
+        var descExcerpt = desc.length > 120 ? desc.substring(0, 120) + '...' : desc;
+        var compareDescExcerpt = null;
+        if (compareFields && compareFields.description) {
+            var cd = compareFields.description;
+            compareDescExcerpt = cd.length > 120 ? cd.substring(0, 120) + '...' : cd;
+        }
+        if (descExcerpt || compareDescExcerpt) {
+            rows.push(renderMergeField('Description', descExcerpt, compareDescExcerpt, false, true));
+        }
+        
+        return rows.join('');
+    }
+    
+    /**
+     * Render a single merge comparison field with optional diff highlighting.
+     * @param {string} label - Field label (empty for title row)
+     * @param {string} value - Field value to display
+     * @param {string|null} compareValue - Value to compare against (null = no highlighting)
+     * @param {boolean} isTitle - Whether this is the title/name row (rendered as bold)
+     * @param {boolean} isSmall - Whether to render value in small text
+     * @returns {string} HTML string
+     */
+    function renderMergeField(label, value, compareValue, isTitle, isSmall) {
+        if (!value && !compareValue) return '';
+        
+        var displayValue = value || '';
+        
+        // Determine diff class
+        var diffClass = '';
+        if (compareValue !== null && compareValue !== undefined) {
+            if (displayValue === compareValue) {
+                diffClass = 'bg-success-lt';
+            } else {
+                diffClass = 'bg-warning-lt';
+            }
+        }
+        
+        var classStr = 'mb-2' + (diffClass ? ' p-1 rounded ' + diffClass : '');
+        var valueClass = isSmall ? 'small' : '';
+        
+        if (isTitle) {
+            return '<div class="' + classStr + '">' +
+                '<strong class="d-block">' + escapeHtml(displayValue) + '</strong>' +
+                '</div>';
+        }
+        
+        return '<div class="' + classStr + '">' +
+            (label ? '<small class="text-muted">' + escapeHtml(label) + ':</small>' : '') +
+            '<span class="d-block ' + valueClass + '">' + escapeHtml(displayValue) + '</span>' +
+            '</div>';
+    }
+    
+    /**
+     * Extract venue name from a location object or string.
+     * Handles normalized payload format, JSON-LD embedded Place, and URI strings.
      * @param {Object|string} location - Location data
      * @returns {string} Venue name or empty string
      */
     function extractVenueName(location) {
         if (!location) return '';
-        if (typeof location === 'string') return location;
+        if (typeof location === 'string') {
+            // URI string fallback — shouldn't happen with embedded objects, but handle gracefully
+            return '';
+        }
         if (typeof location === 'object') {
-            // Normalized payload format: { name: "Venue" }
-            // JSON-LD format: { name: "Venue", "@type": "Place" }
             return location.name || '';
+        }
+        return '';
+    }
+    
+    /**
+     * Extract organizer name from an organizer object or string.
+     * Handles both embedded Organization objects and URI strings.
+     * @param {Object|string} organizer - Organizer data
+     * @returns {string} Organizer name or empty string
+     */
+    function extractOrganizerName(organizer) {
+        if (!organizer) return '';
+        if (typeof organizer === 'string') return '';
+        if (typeof organizer === 'object') {
+            return organizer.name || '';
         }
         return '';
     }
@@ -1178,7 +1269,18 @@
         try {
             // Use public events endpoint (admin GET doesn't exist)
             const event = await API.request('/api/v1/events/' + encodeURIComponent(ulid));
-            primaryInfo.innerHTML = renderMergeEventSummary(event);
+            
+            // Get duplicate data for comparison highlighting
+            var duplicateData = (currentEntryDetail && currentEntryDetail.normalized) ? currentEntryDetail.normalized : null;
+            
+            // Render primary event with diff highlighting against duplicate
+            primaryInfo.innerHTML = renderMergeEventSummary(event, duplicateData);
+            
+            // Also re-render duplicate panel with diff highlighting against primary
+            var duplicateInfo = document.getElementById('merge-duplicate-info');
+            if (duplicateInfo && duplicateData) {
+                duplicateInfo.innerHTML = renderMergeEventSummary(duplicateData, event);
+            }
         } catch (err) {
             console.error('Failed to fetch primary event:', err);
             primaryInfo.innerHTML = `

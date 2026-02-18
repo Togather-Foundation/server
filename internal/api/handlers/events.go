@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
@@ -20,10 +23,22 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// EventPlaceResolver looks up a place by ULID for embedding in event responses.
+type EventPlaceResolver interface {
+	GetByULID(ctx context.Context, ulid string) (*places.Place, error)
+}
+
+// EventOrgResolver looks up an organization by ULID for embedding in event responses.
+type EventOrgResolver interface {
+	GetByULID(ctx context.Context, ulid string) (*organizations.Organization, error)
+}
+
 type EventsHandler struct {
 	Service           *events.Service
 	Ingest            *events.IngestService
 	ProvenanceService *provenance.Service
+	PlaceResolver     EventPlaceResolver
+	OrgResolver       EventOrgResolver
 	RiverClient       *river.Client[pgx.Tx]
 	Queries           *postgres.Queries
 	Env               string
@@ -40,6 +55,18 @@ func NewEventsHandler(service *events.Service, ingest *events.IngestService, pro
 		Env:               env,
 		BaseURL:           baseURL,
 	}
+}
+
+// WithPlaceResolver adds place resolution for embedding location in event responses.
+func (h *EventsHandler) WithPlaceResolver(resolver EventPlaceResolver) *EventsHandler {
+	h.PlaceResolver = resolver
+	return h
+}
+
+// WithOrgResolver adds organization resolution for embedding organizer in event responses.
+func (h *EventsHandler) WithOrgResolver(resolver EventOrgResolver) *EventsHandler {
+	h.OrgResolver = resolver
+	return h
 }
 
 type listResponse struct {
@@ -82,7 +109,8 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Add location (required per Interop Profile §3.1)
-		item.Location = buildEventLocation(h.BaseURL, &event)
+		// Resolve to embedded Place object when possible
+		item.Location = resolveEventLocation(r.Context(), h.BaseURL, &event, h.PlaceResolver)
 
 		items = append(items, item)
 	}
@@ -283,12 +311,11 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add location (required per Interop Profile §3.1)
-	event.Location = buildEventLocation(h.BaseURL, item)
+	// Resolve to embedded Place object when possible for richer consumer experience
+	event.Location = resolveEventLocation(r.Context(), h.BaseURL, item, h.PlaceResolver)
 
-	// Add organizer as URI reference if present
-	if item.OrganizerID != nil && *item.OrganizerID != "" {
-		event.Organizer = schema.BuildOrganizationURI(h.BaseURL, *item.OrganizerID)
-	}
+	// Add organizer as embedded Organization when possible, URI reference as fallback
+	event.Organizer = resolveEventOrganizer(r.Context(), h.BaseURL, item.OrganizerID, h.OrgResolver)
 
 	// Add license information per FR-024
 	if item.LicenseURL != "" {
@@ -377,30 +404,72 @@ func eventURI(baseURL string, result *events.IngestResult) string {
 	return schema.BuildEventURI(baseURL, result.Event.ULID)
 }
 
-// buildEventLocation determines the location value for an event.
-// Returns a Place URI string, a VirtualLocation struct, or nil.
-func buildEventLocation(baseURL string, event *events.Event) any {
-	// Prefer occurrence-level venue (use ULID for URI building)
+// resolveEventLocation resolves the venue ULID to an embedded Place object.
+// Falls back to URI string if the resolver is nil or the lookup fails.
+func resolveEventLocation(ctx context.Context, baseURL string, event *events.Event, resolver EventPlaceResolver) any {
+	// Determine the venue ULID (prefer occurrence-level, fall back to primary)
+	var venueULID string
 	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueULID != nil {
-		if uri := schema.BuildPlaceURI(baseURL, *event.Occurrences[0].VenueULID); uri != "" {
+		venueULID = *event.Occurrences[0].VenueULID
+	} else if event.PrimaryVenueULID != nil {
+		venueULID = *event.PrimaryVenueULID
+	}
+
+	if venueULID != "" {
+		// Try to resolve to an embedded Place object
+		if resolver != nil {
+			place, err := resolver.GetByULID(ctx, venueULID)
+			if err == nil && place != nil {
+				p := schema.NewPlace(place.Name)
+				p.ID = schema.BuildPlaceURI(baseURL, place.ULID)
+				p.Address = schema.NewPostalAddress(place.StreetAddress, place.City, place.Region, place.PostalCode, place.Country)
+				if place.Latitude != nil && place.Longitude != nil {
+					p.Geo = schema.NewGeoCoordinates(*place.Latitude, *place.Longitude)
+				}
+				return p
+			}
+			// Lookup failed — fall back to URI
+			log.Warn().Err(err).Str("venue_ulid", venueULID).Msg("failed to resolve venue for event, falling back to URI")
+		}
+		// No resolver or lookup failed — return URI
+		if uri := schema.BuildPlaceURI(baseURL, venueULID); uri != "" {
 			return uri
 		}
 	}
-	// Fall back to primary venue (use ULID for URI building)
-	if event.PrimaryVenueULID != nil {
-		if uri := schema.BuildPlaceURI(baseURL, *event.PrimaryVenueULID); uri != "" {
-			return uri
-		}
-	}
-	// Occurrence-level virtual URL
+
+	// Virtual location fallback
 	if len(event.Occurrences) > 0 && event.Occurrences[0].VirtualURL != nil && *event.Occurrences[0].VirtualURL != "" {
 		return schema.NewVirtualLocation(*event.Occurrences[0].VirtualURL)
 	}
-	// Event-level virtual URL
 	if event.VirtualURL != "" {
 		return schema.NewVirtualLocation(event.VirtualURL)
 	}
 	return nil
+}
+
+// resolveEventOrganizer resolves the organizer ULID to an embedded Organization object.
+// Falls back to URI string if the resolver is nil or the lookup fails.
+func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, resolver EventOrgResolver) any {
+	if orgID == nil || *orgID == "" {
+		return nil
+	}
+
+	// Try to resolve to an embedded Organization object
+	if resolver != nil {
+		org, err := resolver.GetByULID(ctx, *orgID)
+		if err == nil && org != nil {
+			o := schema.NewOrganization(org.Name)
+			o.ID = schema.BuildOrganizationURI(baseURL, org.ULID)
+			o.URL = org.URL
+			o.Address = schema.NewPostalAddress(org.StreetAddress, org.AddressLocality, org.AddressRegion, org.PostalCode, org.AddressCountry)
+			return o
+		}
+		// Lookup failed — fall back to URI
+		log.Warn().Err(err).Str("org_ulid", *orgID).Msg("failed to resolve organizer for event, falling back to URI")
+	}
+
+	// No resolver or lookup failed — return URI
+	return schema.BuildOrganizationURI(baseURL, *orgID)
 }
 
 // createEventLocation builds a location value for event creation responses.
