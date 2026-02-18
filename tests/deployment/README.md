@@ -44,7 +44,7 @@ Comprehensive tests using testcontainers that validate the complete deployment p
 
 - Docker daemon running
 - Go 1.24+
-- Optional: `migrate` CLI tool (`go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`) - only needed for the RunMigrations subtest, which will be skipped if not installed
+- Optional: `migrate` CLI tool (`go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`) - only needed for the RunMigrations subtest and TestMigrationRollback, which will be skipped if not installed
 - Optional: `psql` client (for migration rollback tests)
 
 **Note on Migrations:** The deployment tests use two migration systems:

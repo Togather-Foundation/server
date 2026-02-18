@@ -465,6 +465,12 @@ func TestMigrationRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	// Check if migrate CLI is available
+	_, err := exec.LookPath("migrate")
+	if err != nil {
+		t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
+	}
+
 	projectRoot := getProjectRoot(t)
 
 	// Start PostgreSQL
