@@ -221,7 +221,8 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 
 	// Parse request body
 	var req struct {
-		Notes string `json:"notes,omitempty"`
+		Notes               string `json:"notes,omitempty"`
+		RecordNotDuplicates bool   `json:"record_not_duplicates,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
@@ -276,11 +277,19 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// If requested, record duplicate warning pairs as not-duplicates so future
+	// ingestion won't re-flag them. This is used by the "Not a Duplicate" action
+	// which approves/publishes the event while acknowledging the duplicate warning.
+	if req.RecordNotDuplicates {
+		h.recordNotDuplicatesFromWarnings(r.Context(), review, reviewedBy)
+	}
+
 	// Log success
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogFromRequest(r, "admin.review.approve", "review", strconv.Itoa(id), "success", map[string]string{
-			"event_id":    eventULID,
-			"reviewed_by": reviewedBy,
+			"event_id":                eventULID,
+			"reviewed_by":             reviewedBy,
+			"not_duplicates_recorded": strconv.FormatBool(req.RecordNotDuplicates),
 		})
 	}
 

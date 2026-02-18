@@ -129,6 +129,10 @@
                     e.preventDefault();
                     applyFix(id);
                     break;
+                case 'not-a-duplicate':
+                    e.preventDefault();
+                    notADuplicate(id);
+                    break;
                 case 'merge':
                     e.preventDefault();
                     showMergeModal(id);
@@ -553,6 +557,13 @@
                         </svg>
                         Merge Duplicate
                     </button>
+                    <button class="btn btn-outline-success" data-action="not-a-duplicate" data-id="${id}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <path d="M5 12l5 5l10 -10"/>
+                        </svg>
+                        Not a Duplicate
+                    </button>
                 ` : ''}
                 ${hasDateWarnings ? `
                     <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
@@ -891,6 +902,45 @@
         } catch (err) {
             console.error('Failed to approve entry:', err);
             showToast(err.message || 'Failed to approve entry', 'error');
+            setLoading(button, false);
+        }
+    }
+    
+    /**
+     * Mark a review entry as "Not a Duplicate" — approves/publishes the event
+     * and records the duplicate warning pairs as not-duplicates so future
+     * ingestion won't re-flag them.
+     * @async
+     * @param {string} id - Review queue entry ID
+     * @throws {Error} If API request fails
+     */
+    async function notADuplicate(id) {
+        const button = document.querySelector(`[data-action="not-a-duplicate"][data-id="${id}"]`);
+        if (!button) return;
+        
+        setLoading(button, true);
+        
+        try {
+            await API.reviewQueue.approve(id, { record_not_duplicates: true });
+            showToast('Approved as not a duplicate', 'success');
+            
+            // Remove from list if filtering by pending
+            if (currentFilter === 'pending') {
+                removeEntryFromList(id);
+                
+                // Increment approved count badge
+                const approvedBadge = document.querySelector(`[data-action="filter-status"][data-status="approved"] .badge`);
+                if (approvedBadge) {
+                    const currentCount = parseInt(approvedBadge.textContent) || 0;
+                    approvedBadge.textContent = currentCount + 1;
+                }
+            } else {
+                // Reload to show updated status
+                loadEntries();
+            }
+        } catch (err) {
+            console.error('Failed to mark as not a duplicate:', err);
+            showToast(err.message || 'Failed to mark as not a duplicate', 'error');
             setLoading(button, false);
         }
     }
