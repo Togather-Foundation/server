@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
@@ -67,7 +68,15 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 	}
 	pagination.Limit = limit
 
-	pagination.After = strings.TrimSpace(values.Get("after"))
+	after := strings.TrimSpace(values.Get("after"))
+	if after != "" {
+		// Validate cursor format by attempting to decode it
+		_, err := paginationpkg.DecodeEventCursor(after)
+		if err != nil {
+			return filters, pagination, FilterError{Field: "after", Message: "must be a valid cursor"}
+		}
+	}
+	pagination.After = after
 
 	return filters, pagination, nil
 }
