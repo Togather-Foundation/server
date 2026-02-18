@@ -154,7 +154,7 @@ func (q *Queries) GetOrganizationTombstoneByULID(ctx context.Context, ulid strin
 	return i, err
 }
 
-const listOrganizations = `-- name: ListOrganizations :many
+const listOrganizationsByCreatedAt = `-- name: ListOrganizationsByCreatedAt :many
 
 SELECT o.id,
        o.ulid,
@@ -176,24 +176,26 @@ SELECT o.id,
        o.updated_at
   FROM organizations o
  WHERE o.deleted_at IS NULL
-   AND ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
+   AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR o.name ILIKE '%' || $2 || '%' OR o.legal_name ILIKE '%' || $2 || '%')
    AND (
-     $2::timestamptz IS NULL OR
-     o.created_at > $2::timestamptz OR
-     (o.created_at = $2::timestamptz AND o.ulid > $3)
+     $3::timestamptz IS NULL OR
+     o.created_at > $3::timestamptz OR
+     (o.created_at = $3::timestamptz AND o.ulid > $4)
    )
  ORDER BY o.created_at ASC, o.ulid ASC
- LIMIT $4
+ LIMIT $5
 `
 
-type ListOrganizationsParams struct {
-	Column1 interface{}        `json:"column_1"`
-	Column2 pgtype.Timestamptz `json:"column_2"`
-	Ulid    string             `json:"ulid"`
-	Limit   int32              `json:"limit"`
+type ListOrganizationsByCreatedAtParams struct {
+	City            pgtype.Text        `json:"city"`
+	Query           pgtype.Text        `json:"query"`
+	CursorTimestamp pgtype.Timestamptz `json:"cursor_timestamp"`
+	CursorUlid      pgtype.Text        `json:"cursor_ulid"`
+	Limit           int32              `json:"limit"`
 }
 
-type ListOrganizationsRow struct {
+type ListOrganizationsByCreatedAtRow struct {
 	ID               pgtype.UUID        `json:"id"`
 	Ulid             string             `json:"ulid"`
 	Name             string             `json:"name"`
@@ -215,20 +217,339 @@ type ListOrganizationsRow struct {
 }
 
 // SQLc queries for organizations domain.
-func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error) {
-	rows, err := q.db.Query(ctx, listOrganizations,
-		arg.Column1,
-		arg.Column2,
-		arg.Ulid,
+func (q *Queries) ListOrganizationsByCreatedAt(ctx context.Context, arg ListOrganizationsByCreatedAtParams) ([]ListOrganizationsByCreatedAtRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationsByCreatedAt,
+		arg.City,
+		arg.Query,
+		arg.CursorTimestamp,
+		arg.CursorUlid,
 		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListOrganizationsRow{}
+	items := []ListOrganizationsByCreatedAtRow{}
 	for rows.Next() {
-		var i ListOrganizationsRow
+		var i ListOrganizationsByCreatedAtRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ulid,
+			&i.Name,
+			&i.LegalName,
+			&i.Description,
+			&i.Email,
+			&i.Telephone,
+			&i.Url,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.AddressCountry,
+			&i.StreetAddress,
+			&i.PostalCode,
+			&i.OrganizationType,
+			&i.FederationUri,
+			&i.AlternateName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationsByCreatedAtDesc = `-- name: ListOrganizationsByCreatedAtDesc :many
+SELECT o.id,
+       o.ulid,
+       o.name,
+       o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
+       o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
+       o.created_at,
+       o.updated_at
+  FROM organizations o
+ WHERE o.deleted_at IS NULL
+   AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR o.name ILIKE '%' || $2 || '%' OR o.legal_name ILIKE '%' || $2 || '%')
+   AND (
+     $3::timestamptz IS NULL OR
+     o.created_at < $3::timestamptz OR
+     (o.created_at = $3::timestamptz AND o.ulid > $4)
+   )
+ ORDER BY o.created_at DESC, o.ulid ASC
+ LIMIT $5
+`
+
+type ListOrganizationsByCreatedAtDescParams struct {
+	City            pgtype.Text        `json:"city"`
+	Query           pgtype.Text        `json:"query"`
+	CursorTimestamp pgtype.Timestamptz `json:"cursor_timestamp"`
+	CursorUlid      pgtype.Text        `json:"cursor_ulid"`
+	Limit           int32              `json:"limit"`
+}
+
+type ListOrganizationsByCreatedAtDescRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	Ulid             string             `json:"ulid"`
+	Name             string             `json:"name"`
+	LegalName        pgtype.Text        `json:"legal_name"`
+	Description      pgtype.Text        `json:"description"`
+	Email            pgtype.Text        `json:"email"`
+	Telephone        pgtype.Text        `json:"telephone"`
+	Url              pgtype.Text        `json:"url"`
+	AddressLocality  pgtype.Text        `json:"address_locality"`
+	AddressRegion    pgtype.Text        `json:"address_region"`
+	AddressCountry   pgtype.Text        `json:"address_country"`
+	StreetAddress    pgtype.Text        `json:"street_address"`
+	PostalCode       pgtype.Text        `json:"postal_code"`
+	OrganizationType pgtype.Text        `json:"organization_type"`
+	FederationUri    pgtype.Text        `json:"federation_uri"`
+	AlternateName    pgtype.Text        `json:"alternate_name"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListOrganizationsByCreatedAtDesc(ctx context.Context, arg ListOrganizationsByCreatedAtDescParams) ([]ListOrganizationsByCreatedAtDescRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationsByCreatedAtDesc,
+		arg.City,
+		arg.Query,
+		arg.CursorTimestamp,
+		arg.CursorUlid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationsByCreatedAtDescRow{}
+	for rows.Next() {
+		var i ListOrganizationsByCreatedAtDescRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ulid,
+			&i.Name,
+			&i.LegalName,
+			&i.Description,
+			&i.Email,
+			&i.Telephone,
+			&i.Url,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.AddressCountry,
+			&i.StreetAddress,
+			&i.PostalCode,
+			&i.OrganizationType,
+			&i.FederationUri,
+			&i.AlternateName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationsByName = `-- name: ListOrganizationsByName :many
+SELECT o.id,
+       o.ulid,
+       o.name,
+       o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
+       o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
+       o.created_at,
+       o.updated_at
+  FROM organizations o
+ WHERE o.deleted_at IS NULL
+   AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR o.name ILIKE '%' || $2 || '%' OR o.legal_name ILIKE '%' || $2 || '%')
+   AND (
+     $3::text IS NULL OR
+     o.name > $3 OR
+     (o.name = $3 AND o.ulid > $4)
+   )
+ ORDER BY o.name ASC, o.ulid ASC
+ LIMIT $5
+`
+
+type ListOrganizationsByNameParams struct {
+	City       pgtype.Text `json:"city"`
+	Query      pgtype.Text `json:"query"`
+	CursorName pgtype.Text `json:"cursor_name"`
+	CursorUlid pgtype.Text `json:"cursor_ulid"`
+	Limit      int32       `json:"limit"`
+}
+
+type ListOrganizationsByNameRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	Ulid             string             `json:"ulid"`
+	Name             string             `json:"name"`
+	LegalName        pgtype.Text        `json:"legal_name"`
+	Description      pgtype.Text        `json:"description"`
+	Email            pgtype.Text        `json:"email"`
+	Telephone        pgtype.Text        `json:"telephone"`
+	Url              pgtype.Text        `json:"url"`
+	AddressLocality  pgtype.Text        `json:"address_locality"`
+	AddressRegion    pgtype.Text        `json:"address_region"`
+	AddressCountry   pgtype.Text        `json:"address_country"`
+	StreetAddress    pgtype.Text        `json:"street_address"`
+	PostalCode       pgtype.Text        `json:"postal_code"`
+	OrganizationType pgtype.Text        `json:"organization_type"`
+	FederationUri    pgtype.Text        `json:"federation_uri"`
+	AlternateName    pgtype.Text        `json:"alternate_name"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListOrganizationsByName(ctx context.Context, arg ListOrganizationsByNameParams) ([]ListOrganizationsByNameRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationsByName,
+		arg.City,
+		arg.Query,
+		arg.CursorName,
+		arg.CursorUlid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationsByNameRow{}
+	for rows.Next() {
+		var i ListOrganizationsByNameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ulid,
+			&i.Name,
+			&i.LegalName,
+			&i.Description,
+			&i.Email,
+			&i.Telephone,
+			&i.Url,
+			&i.AddressLocality,
+			&i.AddressRegion,
+			&i.AddressCountry,
+			&i.StreetAddress,
+			&i.PostalCode,
+			&i.OrganizationType,
+			&i.FederationUri,
+			&i.AlternateName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationsByNameDesc = `-- name: ListOrganizationsByNameDesc :many
+SELECT o.id,
+       o.ulid,
+       o.name,
+       o.legal_name,
+       o.description,
+       o.email,
+       o.telephone,
+       o.url,
+       o.address_locality,
+       o.address_region,
+       o.address_country,
+       o.street_address,
+       o.postal_code,
+       o.organization_type,
+       o.federation_uri,
+       o.alternate_name,
+       o.created_at,
+       o.updated_at
+  FROM organizations o
+ WHERE o.deleted_at IS NULL
+   AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
+   AND ($2::text IS NULL OR o.name ILIKE '%' || $2 || '%' OR o.legal_name ILIKE '%' || $2 || '%')
+   AND (
+     $3::text IS NULL OR
+     o.name < $3 OR
+     (o.name = $3 AND o.ulid > $4)
+   )
+ ORDER BY o.name DESC, o.ulid ASC
+ LIMIT $5
+`
+
+type ListOrganizationsByNameDescParams struct {
+	City       pgtype.Text `json:"city"`
+	Query      pgtype.Text `json:"query"`
+	CursorName pgtype.Text `json:"cursor_name"`
+	CursorUlid pgtype.Text `json:"cursor_ulid"`
+	Limit      int32       `json:"limit"`
+}
+
+type ListOrganizationsByNameDescRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	Ulid             string             `json:"ulid"`
+	Name             string             `json:"name"`
+	LegalName        pgtype.Text        `json:"legal_name"`
+	Description      pgtype.Text        `json:"description"`
+	Email            pgtype.Text        `json:"email"`
+	Telephone        pgtype.Text        `json:"telephone"`
+	Url              pgtype.Text        `json:"url"`
+	AddressLocality  pgtype.Text        `json:"address_locality"`
+	AddressRegion    pgtype.Text        `json:"address_region"`
+	AddressCountry   pgtype.Text        `json:"address_country"`
+	StreetAddress    pgtype.Text        `json:"street_address"`
+	PostalCode       pgtype.Text        `json:"postal_code"`
+	OrganizationType pgtype.Text        `json:"organization_type"`
+	FederationUri    pgtype.Text        `json:"federation_uri"`
+	AlternateName    pgtype.Text        `json:"alternate_name"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListOrganizationsByNameDesc(ctx context.Context, arg ListOrganizationsByNameDescParams) ([]ListOrganizationsByNameDescRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationsByNameDesc,
+		arg.City,
+		arg.Query,
+		arg.CursorName,
+		arg.CursorUlid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationsByNameDescRow{}
+	for rows.Next() {
+		var i ListOrganizationsByNameDescRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Ulid,

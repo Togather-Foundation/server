@@ -46,15 +46,9 @@ type organizationRow struct {
 
 func (r *OrganizationRepository) List(ctx context.Context, filters organizations.Filters, paginationArgs organizations.Pagination) (organizations.ListResult, error) {
 	queryer := r.queryer()
-	query := strings.TrimSpace(filters.Query)
-	city := strings.TrimSpace(filters.City)
-	limit := paginationArgs.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	limitPlusOne := limit + 1
+	queries := Queries{db: queryer}
 
-	var cursorTime *time.Time
+	var cursorTimestamp *time.Time
 	var cursorULID *string
 	var cursorName *string
 	if strings.TrimSpace(paginationArgs.After) != "" {
@@ -63,124 +57,117 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 			return organizations.ListResult{}, err
 		}
 		value := cursor.Timestamp.UTC()
-		cursorTime = &value
-		ulid := strings.ToUpper(strings.TrimSpace(cursor.ULID))
+		cursorTimestamp = &value
+		ulid := strings.ToUpper(cursor.ULID)
 		cursorULID = &ulid
+
+		// For name-based sorting, look up the cursor name from the ULID
+		if filters.Sort == "name" {
+			var name string
+			err := queryer.QueryRow(ctx, "SELECT name FROM organizations WHERE ulid = $1", ulid).Scan(&name)
+			if err == nil {
+				cursorName = &name
+			}
+		}
 	}
 
-	// Determine sort column and order (whitelist to prevent SQL injection)
-	sortCol := "o.created_at"
+	limit := paginationArgs.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	limitPlusOne := limit + 1
+
+	// Prepare common parameters
+	var cityParam, queryParam, cursorULIDParam, cursorNameParam pgtype.Text
+	var cursorTimestampParam pgtype.Timestamptz
+
+	if filters.City != "" {
+		cityParam = pgtype.Text{String: filters.City, Valid: true}
+	}
+	if filters.Query != "" {
+		queryParam = pgtype.Text{String: filters.Query, Valid: true}
+	}
+	if cursorULID != nil {
+		cursorULIDParam = pgtype.Text{String: *cursorULID, Valid: true}
+	}
+	if cursorTimestamp != nil {
+		cursorTimestampParam = pgtype.Timestamptz{Time: *cursorTimestamp, Valid: true}
+	}
+	if cursorName != nil {
+		cursorNameParam = pgtype.Text{String: *cursorName, Valid: true}
+	}
+
+	// Select the appropriate query based on sort and order, and convert rows to domain objects
+	var items []organizations.Organization
+
 	if filters.Sort == "name" {
-		sortCol = "o.name"
-	}
-	orderDir := "ASC"
-	if filters.Order == "desc" {
-		orderDir = "DESC"
-	}
-
-	// Build cursor comparison operator based on sort direction
-	cursorOp := ">"
-	if orderDir == "DESC" {
-		cursorOp = "<"
-	}
-
-	// For name-based sorting, we need to look up the cursor name from the ULID
-	if filters.Sort == "name" && cursorULID != nil {
-		var name string
-		err := queryer.QueryRow(ctx, "SELECT name FROM organizations WHERE ulid = $1", *cursorULID).Scan(&name)
-		if err == nil {
-			cursorName = &name
+		if filters.Order == "desc" {
+			params := ListOrganizationsByNameDescParams{
+				City:       cityParam,
+				Query:      queryParam,
+				CursorName: cursorNameParam,
+				CursorUlid: cursorULIDParam,
+				Limit:      int32(limitPlusOne),
+			}
+			rows, err := queries.ListOrganizationsByNameDesc(ctx, params)
+			if err != nil {
+				return organizations.ListResult{}, fmt.Errorf("list organizations: %w", err)
+			}
+			items = make([]organizations.Organization, 0, len(rows))
+			for _, row := range rows {
+				items = append(items, sqlcOrganizationRowToDomain(&row))
+			}
+		} else {
+			params := ListOrganizationsByNameParams{
+				City:       cityParam,
+				Query:      queryParam,
+				CursorName: cursorNameParam,
+				CursorUlid: cursorULIDParam,
+				Limit:      int32(limitPlusOne),
+			}
+			rows, err := queries.ListOrganizationsByName(ctx, params)
+			if err != nil {
+				return organizations.ListResult{}, fmt.Errorf("list organizations: %w", err)
+			}
+			items = make([]organizations.Organization, 0, len(rows))
+			for _, row := range rows {
+				items = append(items, sqlcOrganizationRowToDomain(&row))
+			}
 		}
-		// If lookup fails, skip cursor (start from beginning)
-	}
-
-	// Build query dynamically based on sort column
-	var cursorCondition string
-	var args []interface{}
-	argPos := 1
-
-	// Start building WHERE clauses
-	whereClauses := []string{"o.deleted_at IS NULL"}
-
-	// Query filter
-	if query != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf("(o.name ILIKE '%%' || $%d || '%%' OR o.legal_name ILIKE '%%' || $%d || '%%')", argPos, argPos))
-		args = append(args, query)
-		argPos++
-	}
-
-	// City filter
-	if city != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf("o.address_locality ILIKE '%%' || $%d || '%%'", argPos))
-		args = append(args, city)
-		argPos++
-	}
-
-	// Cursor condition
-	if filters.Sort == "name" && cursorName != nil && cursorULID != nil {
-		cursorCondition = fmt.Sprintf("(o.name %s $%d OR (o.name = $%d AND o.ulid > $%d))", cursorOp, argPos, argPos, argPos+1)
-		args = append(args, *cursorName, *cursorULID)
-		argPos += 2
-	} else if cursorTime != nil && cursorULID != nil {
-		cursorCondition = fmt.Sprintf("(o.created_at %s $%d::timestamptz OR (o.created_at = $%d::timestamptz AND o.ulid > $%d))", cursorOp, argPos, argPos, argPos+1)
-		args = append(args, *cursorTime, *cursorULID)
-		argPos += 2
-	}
-
-	if cursorCondition != "" {
-		whereClauses = append(whereClauses, cursorCondition)
-	}
-
-	// Build final query
-	whereClause := strings.Join(whereClauses, " AND ")
-	args = append(args, limitPlusOne)
-
-	sqlQuery := fmt.Sprintf(`
-SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.email, o.telephone, o.url,
-       o.address_locality, o.address_region, o.address_country, o.street_address, o.postal_code,
-       o.organization_type, o.federation_uri, o.alternate_name, o.created_at, o.updated_at
-  FROM organizations o
- WHERE %s
- ORDER BY %s %s, o.ulid ASC
- LIMIT $%d
-`, whereClause, sortCol, orderDir, argPos)
-
-	rows, err := queryer.Query(ctx, sqlQuery, args...)
-	if err != nil {
-		return organizations.ListResult{}, fmt.Errorf("list organizations: %w", err)
-	}
-	defer rows.Close()
-
-	items := make([]organizations.Organization, 0, limitPlusOne)
-	for rows.Next() {
-		var row organizationRow
-		if err := rows.Scan(
-			&row.ID,
-			&row.ULID,
-			&row.Name,
-			&row.LegalName,
-			&row.Description,
-			&row.Email,
-			&row.Telephone,
-			&row.URL,
-			&row.AddressLocality,
-			&row.AddressRegion,
-			&row.AddressCountry,
-			&row.StreetAddress,
-			&row.PostalCode,
-			&row.OrganizationType,
-			&row.FederationURI,
-			&row.AlternateName,
-			&row.CreatedAt,
-			&row.UpdatedAt,
-		); err != nil {
-			return organizations.ListResult{}, fmt.Errorf("scan organizations: %w", err)
+	} else {
+		if filters.Order == "desc" {
+			params := ListOrganizationsByCreatedAtDescParams{
+				City:            cityParam,
+				Query:           queryParam,
+				CursorTimestamp: cursorTimestampParam,
+				CursorUlid:      cursorULIDParam,
+				Limit:           int32(limitPlusOne),
+			}
+			rows, err := queries.ListOrganizationsByCreatedAtDesc(ctx, params)
+			if err != nil {
+				return organizations.ListResult{}, fmt.Errorf("list organizations: %w", err)
+			}
+			items = make([]organizations.Organization, 0, len(rows))
+			for _, row := range rows {
+				items = append(items, sqlcOrganizationRowToDomain(&row))
+			}
+		} else {
+			params := ListOrganizationsByCreatedAtParams{
+				City:            cityParam,
+				Query:           queryParam,
+				CursorTimestamp: cursorTimestampParam,
+				CursorUlid:      cursorULIDParam,
+				Limit:           int32(limitPlusOne),
+			}
+			rows, err := queries.ListOrganizationsByCreatedAt(ctx, params)
+			if err != nil {
+				return organizations.ListResult{}, fmt.Errorf("list organizations: %w", err)
+			}
+			items = make([]organizations.Organization, 0, len(rows))
+			for _, row := range rows {
+				items = append(items, sqlcOrganizationRowToDomain(&row))
+			}
 		}
-		org := organizationRowToDomain(row)
-		items = append(items, org)
-	}
-	if err := rows.Err(); err != nil {
-		return organizations.ListResult{}, fmt.Errorf("iterate organizations: %w", err)
 	}
 
 	result := organizations.ListResult{}
@@ -390,6 +377,125 @@ func (r *OrganizationRepository) GetTombstoneByULID(ctx context.Context, ulid st
 	}
 
 	return tombstone, nil
+}
+
+// sqlcOrganizationRowToDomain converts SQLc-generated row types to organizations.Organization domain struct.
+func sqlcOrganizationRowToDomain(row interface{}) organizations.Organization {
+	// Extract fields based on concrete type
+	var id pgtype.UUID
+	var ulid, name string
+	var legalName, description, email, telephone, url pgtype.Text
+	var addressLocality, addressRegion, addressCountry, streetAddress, postalCode pgtype.Text
+	var organizationType, federationURI, alternateName pgtype.Text
+	var createdAt, updatedAt pgtype.Timestamptz
+
+	switch r := row.(type) {
+	case *ListOrganizationsByCreatedAtRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		legalName = r.LegalName
+		description = r.Description
+		email = r.Email
+		telephone = r.Telephone
+		url = r.Url
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		addressCountry = r.AddressCountry
+		streetAddress = r.StreetAddress
+		postalCode = r.PostalCode
+		organizationType = r.OrganizationType
+		federationURI = r.FederationUri
+		alternateName = r.AlternateName
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *ListOrganizationsByCreatedAtDescRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		legalName = r.LegalName
+		description = r.Description
+		email = r.Email
+		telephone = r.Telephone
+		url = r.Url
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		addressCountry = r.AddressCountry
+		streetAddress = r.StreetAddress
+		postalCode = r.PostalCode
+		organizationType = r.OrganizationType
+		federationURI = r.FederationUri
+		alternateName = r.AlternateName
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *ListOrganizationsByNameRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		legalName = r.LegalName
+		description = r.Description
+		email = r.Email
+		telephone = r.Telephone
+		url = r.Url
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		addressCountry = r.AddressCountry
+		streetAddress = r.StreetAddress
+		postalCode = r.PostalCode
+		organizationType = r.OrganizationType
+		federationURI = r.FederationUri
+		alternateName = r.AlternateName
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *ListOrganizationsByNameDescRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		legalName = r.LegalName
+		description = r.Description
+		email = r.Email
+		telephone = r.Telephone
+		url = r.Url
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		addressCountry = r.AddressCountry
+		streetAddress = r.StreetAddress
+		postalCode = r.PostalCode
+		organizationType = r.OrganizationType
+		federationURI = r.FederationUri
+		alternateName = r.AlternateName
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	}
+
+	var orgID string
+	_ = id.Scan(&orgID)
+
+	org := organizations.Organization{
+		ID:               orgID,
+		ULID:             ulid,
+		Name:             name,
+		LegalName:        pgtextToString(legalName),
+		Description:      pgtextToString(description),
+		Email:            pgtextToString(email),
+		Telephone:        pgtextToString(telephone),
+		URL:              pgtextToString(url),
+		AddressLocality:  pgtextToString(addressLocality),
+		AddressRegion:    pgtextToString(addressRegion),
+		AddressCountry:   pgtextToString(addressCountry),
+		StreetAddress:    pgtextToString(streetAddress),
+		PostalCode:       pgtextToString(postalCode),
+		OrganizationType: pgtextToString(organizationType),
+		FederationURI:    pgtextToString(federationURI),
+		AlternateName:    pgtextToString(alternateName),
+	}
+	if createdAt.Valid {
+		org.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		org.UpdatedAt = updatedAt.Time
+	}
+	return org
 }
 
 // organizationRowToDomain converts an organizationRow to an organizations.Organization domain struct.
