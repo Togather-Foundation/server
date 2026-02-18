@@ -91,13 +91,30 @@ function showToast(message, type = 'success') {
  * Handles developer logout by calling the logout endpoint and redirecting to login
  */
 function setupLogout() {
-    const logoutBtn = document.getElementById('logout-btn');
+    setupLogoutButton({
+        buttonId: 'logout-btn',
+        logoutEndpoint: '/api/v1/dev/logout',
+        tokenKey: 'dev_token',
+        redirectUrl: '/dev/login'
+    });
+}
+
+/**
+ * Generic logout button setup
+ * @param {Object} config - Logout configuration
+ * @param {string} config.buttonId - ID of logout button
+ * @param {string} config.logoutEndpoint - Logout API endpoint
+ * @param {string} config.tokenKey - localStorage key for token
+ * @param {string} config.redirectUrl - URL to redirect after logout
+ */
+function setupLogoutButton(config) {
+    const logoutBtn = document.getElementById(config.buttonId);
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             try {
                 // Call logout endpoint
-                await fetch('/api/v1/dev/logout', {
+                await fetch(config.logoutEndpoint, {
                     method: 'POST',
                     credentials: 'include'
                 });
@@ -105,9 +122,9 @@ function setupLogout() {
                 console.error('Logout error:', err);
             }
             // Clear localStorage regardless of API success
-            localStorage.removeItem('dev_token');
+            localStorage.removeItem(config.tokenKey);
             // Redirect to login
-            window.location.href = '/dev/login';
+            window.location.href = config.redirectUrl;
         });
     }
 }
