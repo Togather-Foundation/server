@@ -199,7 +199,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 
 		_, _, err := ParseFilters(values)
 
-		assertFilterError(t, err, "after", "invalid ULID")
+		assertFilterError(t, err, "after", "must be a valid ULID (e.g., 01HQZX3Y4K6F7G8H9J0K1M2N3P)")
 	})
 
 	t.Run("invalid cursor - arbitrary string", func(t *testing.T) {
@@ -208,7 +208,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 
 		_, _, err := ParseFilters(values)
 
-		assertFilterError(t, err, "after", "invalid ULID")
+		assertFilterError(t, err, "after", "must be a valid ULID (e.g., 01HQZX3Y4K6F7G8H9J0K1M2N3P)")
 	})
 
 	t.Run("invalid cursor - too short", func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 
 		_, _, err := ParseFilters(values)
 
-		assertFilterError(t, err, "after", "invalid ULID")
+		assertFilterError(t, err, "after", "must be a valid ULID (e.g., 01HQZX3Y4K6F7G8H9J0K1M2N3P)")
 	})
 }
 
