@@ -46,7 +46,8 @@ func (h *DevHTMLHandler) ServeLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	data := map[string]interface{}{
-		"Title": "Developer Login - SEL Events",
+		"Title":              "Developer Login - SEL Events",
+		"GitHubOAuthEnabled": h.GitHubOAuthEnabled,
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "login.html", data); err != nil {
