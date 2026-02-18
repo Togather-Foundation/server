@@ -1,6 +1,6 @@
 -- SQLc queries for places domain.
 
--- name: ListPlaces :many
+-- name: ListPlacesByCreatedAt :many
 SELECT p.id,
        p.ulid,
        p.name,
@@ -22,15 +22,111 @@ SELECT p.id,
        p.updated_at
   FROM places p
  WHERE p.deleted_at IS NULL
-   AND ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
-   AND ($2 = '' OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
+   AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR p.name ILIKE '%' || sqlc.narg('query') || '%' OR p.description ILIKE '%' || sqlc.narg('query') || '%')
    AND (
-     $3::timestamptz IS NULL OR
-     p.created_at > $3::timestamptz OR
-     (p.created_at = $3::timestamptz AND p.ulid > $4)
+     sqlc.narg('cursor_timestamp')::timestamptz IS NULL OR
+     p.created_at > sqlc.narg('cursor_timestamp')::timestamptz OR
+     (p.created_at = sqlc.narg('cursor_timestamp')::timestamptz AND p.ulid > sqlc.narg('cursor_ulid'))
    )
  ORDER BY p.created_at ASC, p.ulid ASC
- LIMIT $5;
+ LIMIT sqlc.arg('limit');
+
+-- name: ListPlacesByCreatedAtDesc :many
+SELECT p.id,
+       p.ulid,
+       p.name,
+       p.description,
+       p.street_address,
+       p.address_locality,
+       p.address_region,
+       p.postal_code,
+       p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
+       p.created_at,
+       p.updated_at
+  FROM places p
+ WHERE p.deleted_at IS NULL
+   AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR p.name ILIKE '%' || sqlc.narg('query') || '%' OR p.description ILIKE '%' || sqlc.narg('query') || '%')
+   AND (
+     sqlc.narg('cursor_timestamp')::timestamptz IS NULL OR
+     p.created_at < sqlc.narg('cursor_timestamp')::timestamptz OR
+     (p.created_at = sqlc.narg('cursor_timestamp')::timestamptz AND p.ulid > sqlc.narg('cursor_ulid'))
+   )
+ ORDER BY p.created_at DESC, p.ulid ASC
+ LIMIT sqlc.arg('limit');
+
+-- name: ListPlacesByName :many
+SELECT p.id,
+       p.ulid,
+       p.name,
+       p.description,
+       p.street_address,
+       p.address_locality,
+       p.address_region,
+       p.postal_code,
+       p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
+       p.created_at,
+       p.updated_at
+  FROM places p
+ WHERE p.deleted_at IS NULL
+   AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR p.name ILIKE '%' || sqlc.narg('query') || '%' OR p.description ILIKE '%' || sqlc.narg('query') || '%')
+   AND (
+     sqlc.narg('cursor_name')::text IS NULL OR
+     p.name > sqlc.narg('cursor_name') OR
+     (p.name = sqlc.narg('cursor_name') AND p.ulid > sqlc.narg('cursor_ulid'))
+   )
+ ORDER BY p.name ASC, p.ulid ASC
+ LIMIT sqlc.arg('limit');
+
+-- name: ListPlacesByNameDesc :many
+SELECT p.id,
+       p.ulid,
+       p.name,
+       p.description,
+       p.street_address,
+       p.address_locality,
+       p.address_region,
+       p.postal_code,
+       p.address_country,
+       p.latitude,
+       p.longitude,
+       p.telephone,
+       p.email,
+       p.url,
+       p.maximum_attendee_capacity,
+       p.venue_type,
+       p.federation_uri,
+       p.created_at,
+       p.updated_at
+  FROM places p
+ WHERE p.deleted_at IS NULL
+   AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
+   AND (sqlc.narg('query')::text IS NULL OR p.name ILIKE '%' || sqlc.narg('query') || '%' OR p.description ILIKE '%' || sqlc.narg('query') || '%')
+   AND (
+     sqlc.narg('cursor_name')::text IS NULL OR
+     p.name < sqlc.narg('cursor_name') OR
+     (p.name = sqlc.narg('cursor_name') AND p.ulid > sqlc.narg('cursor_ulid'))
+   )
+ ORDER BY p.name DESC, p.ulid ASC
+ LIMIT sqlc.arg('limit');
 
 -- name: GetPlaceByULID :one
 SELECT p.id,

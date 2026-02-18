@@ -149,7 +149,10 @@ type Querier interface {
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error)
 	ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error)
 	// SQLc queries for places domain.
-	ListPlaces(ctx context.Context, arg ListPlacesParams) ([]ListPlacesRow, error)
+	ListPlacesByCreatedAt(ctx context.Context, arg ListPlacesByCreatedAtParams) ([]ListPlacesByCreatedAtRow, error)
+	ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesByCreatedAtDescParams) ([]ListPlacesByCreatedAtDescRow, error)
+	ListPlacesByName(ctx context.Context, arg ListPlacesByNameParams) ([]ListPlacesByNameRow, error)
+	ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByNameDescParams) ([]ListPlacesByNameDescRow, error)
 	// List reviews with pagination and status filter
 	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
