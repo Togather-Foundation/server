@@ -1039,3 +1039,263 @@ func (h *AdminHandler) MergeOrganizations(w http.ResponseWriter, r *http.Request
 		"already_merged": result.AlreadyMerged,
 	}, contentTypeFromRequest(r))
 }
+
+// UpdatePlace handles PUT /api/v1/admin/places/{id}
+// Allows admin to update place fields
+func (h *AdminHandler) UpdatePlace(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Places == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	var updates map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	params := mapToPlaceUpdateParams(updates)
+
+	updated, err := h.Places.Update(r.Context(), ulidValue, params)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.place.update", "place", ulidValue, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
+		if errors.Is(err, places.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Place not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.place.update", "place", ulidValue, "success", nil)
+	}
+
+	resp := map[string]any{
+		"@id":   buildPlaceURI(h.BaseURL, updated.ULID),
+		"@type": "Place",
+		"name":  updated.Name,
+	}
+	if updated.Description != "" {
+		resp["description"] = updated.Description
+	}
+	if updated.URL != "" {
+		resp["url"] = updated.URL
+	}
+	if updated.Telephone != "" {
+		resp["telephone"] = updated.Telephone
+	}
+	if updated.Email != "" {
+		resp["email"] = updated.Email
+	}
+	address := map[string]string{"@type": "PostalAddress"}
+	if updated.StreetAddress != "" {
+		address["streetAddress"] = updated.StreetAddress
+	}
+	if updated.City != "" {
+		address["addressLocality"] = updated.City
+	}
+	if updated.Region != "" {
+		address["addressRegion"] = updated.Region
+	}
+	if updated.PostalCode != "" {
+		address["postalCode"] = updated.PostalCode
+	}
+	if updated.Country != "" {
+		address["addressCountry"] = updated.Country
+	}
+	if len(address) > 1 {
+		resp["address"] = address
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}
+
+// mapToPlaceUpdateParams converts a map[string]any to UpdatePlaceParams.
+// All text fields are sanitized to prevent XSS attacks.
+func mapToPlaceUpdateParams(updates map[string]any) places.UpdatePlaceParams {
+	params := places.UpdatePlaceParams{}
+
+	if name, ok := updates["name"].(string); ok {
+		sanitized := sanitize.Text(name)
+		params.Name = &sanitized
+	}
+	if description, ok := updates["description"].(string); ok {
+		sanitized := sanitize.HTML(description)
+		params.Description = &sanitized
+	}
+	if street, ok := updates["street_address"].(string); ok {
+		sanitized := sanitize.Text(street)
+		params.StreetAddress = &sanitized
+	}
+	if city, ok := updates["city"].(string); ok {
+		sanitized := sanitize.Text(city)
+		params.City = &sanitized
+	}
+	if region, ok := updates["region"].(string); ok {
+		sanitized := sanitize.Text(region)
+		params.Region = &sanitized
+	}
+	if postalCode, ok := updates["postal_code"].(string); ok {
+		sanitized := sanitize.Text(postalCode)
+		params.PostalCode = &sanitized
+	}
+	if country, ok := updates["country"].(string); ok {
+		sanitized := sanitize.Text(country)
+		params.Country = &sanitized
+	}
+	if telephone, ok := updates["telephone"].(string); ok {
+		sanitized := sanitize.Text(telephone)
+		params.Telephone = &sanitized
+	}
+	if email, ok := updates["email"].(string); ok {
+		sanitized := sanitize.Text(email)
+		params.Email = &sanitized
+	}
+	if url, ok := updates["url"].(string); ok {
+		sanitized := sanitize.Text(url)
+		params.URL = &sanitized
+	}
+
+	return params
+}
+
+// UpdateOrganization handles PUT /api/v1/admin/organizations/{id}
+// Allows admin to update organization fields
+func (h *AdminHandler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Organizations == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	ulidValue, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	var updates map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
+
+	params := mapToOrgUpdateParams(updates)
+
+	updated, err := h.Organizations.Update(r.Context(), ulidValue, params)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.organization.update", "organization", ulidValue, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
+		if errors.Is(err, organizations.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Organization not found", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.organization.update", "organization", ulidValue, "success", nil)
+	}
+
+	resp := map[string]any{
+		"@id":   buildOrganizationURI(h.BaseURL, updated.ULID),
+		"@type": "Organization",
+		"name":  updated.Name,
+	}
+	if updated.Description != "" {
+		resp["description"] = updated.Description
+	}
+	if updated.URL != "" {
+		resp["url"] = updated.URL
+	}
+	if updated.Telephone != "" {
+		resp["telephone"] = updated.Telephone
+	}
+	if updated.Email != "" {
+		resp["email"] = updated.Email
+	}
+	address := map[string]string{"@type": "PostalAddress"}
+	if updated.StreetAddress != "" {
+		address["streetAddress"] = updated.StreetAddress
+	}
+	if updated.AddressLocality != "" {
+		address["addressLocality"] = updated.AddressLocality
+	}
+	if updated.AddressRegion != "" {
+		address["addressRegion"] = updated.AddressRegion
+	}
+	if updated.PostalCode != "" {
+		address["postalCode"] = updated.PostalCode
+	}
+	if updated.AddressCountry != "" {
+		address["addressCountry"] = updated.AddressCountry
+	}
+	if len(address) > 1 {
+		resp["address"] = address
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}
+
+// mapToOrgUpdateParams converts a map[string]any to UpdateOrganizationParams.
+// All text fields are sanitized to prevent XSS attacks.
+func mapToOrgUpdateParams(updates map[string]any) organizations.UpdateOrganizationParams {
+	params := organizations.UpdateOrganizationParams{}
+
+	if name, ok := updates["name"].(string); ok {
+		sanitized := sanitize.Text(name)
+		params.Name = &sanitized
+	}
+	if description, ok := updates["description"].(string); ok {
+		sanitized := sanitize.HTML(description)
+		params.Description = &sanitized
+	}
+	if street, ok := updates["street_address"].(string); ok {
+		sanitized := sanitize.Text(street)
+		params.StreetAddress = &sanitized
+	}
+	if locality, ok := updates["address_locality"].(string); ok {
+		sanitized := sanitize.Text(locality)
+		params.AddressLocality = &sanitized
+	}
+	if region, ok := updates["address_region"].(string); ok {
+		sanitized := sanitize.Text(region)
+		params.AddressRegion = &sanitized
+	}
+	if postalCode, ok := updates["postal_code"].(string); ok {
+		sanitized := sanitize.Text(postalCode)
+		params.PostalCode = &sanitized
+	}
+	if country, ok := updates["address_country"].(string); ok {
+		sanitized := sanitize.Text(country)
+		params.AddressCountry = &sanitized
+	}
+	if telephone, ok := updates["telephone"].(string); ok {
+		sanitized := sanitize.Text(telephone)
+		params.Telephone = &sanitized
+	}
+	if email, ok := updates["email"].(string); ok {
+		sanitized := sanitize.Text(email)
+		params.Email = &sanitized
+	}
+	if url, ok := updates["url"].(string); ok {
+		sanitized := sanitize.Text(url)
+		params.URL = &sanitized
+	}
+
+	return params
+}

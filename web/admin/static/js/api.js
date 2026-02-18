@@ -210,6 +210,11 @@ const API = {
         delete: (id, reason) => API.request(`/api/v1/admin/places/${id}`, {
             method: 'DELETE',
             body: JSON.stringify({ reason: reason })
+        }),
+        
+        update: (id, data) => API.request(`/api/v1/admin/places/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
         })
     },
     
@@ -232,6 +237,11 @@ const API = {
         delete: (id, reason) => API.request(`/api/v1/admin/organizations/${id}`, {
             method: 'DELETE',
             body: JSON.stringify({ reason: reason })
+        }),
+        
+        update: (id, data) => API.request(`/api/v1/admin/organizations/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
         })
     },
     

@@ -58,11 +58,27 @@ type ListResult struct {
 	NextCursor    string
 }
 
+// UpdateOrganizationParams contains fields that can be updated by admins.
+// Nil pointer fields are not changed (COALESCE pattern).
+type UpdateOrganizationParams struct {
+	Name            *string
+	Description     *string
+	StreetAddress   *string
+	AddressLocality *string
+	AddressRegion   *string
+	PostalCode      *string
+	AddressCountry  *string
+	Telephone       *string
+	Email           *string
+	URL             *string
+}
+
 type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Organization, error)
 	// TODO(srv-d7cnu): Create removed during rebase - check if needed
 	// Create(ctx context.Context, params CreateParams) (*Organization, error)
+	Update(ctx context.Context, ulid string, params UpdateOrganizationParams) (*Organization, error)
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)

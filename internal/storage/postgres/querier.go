@@ -186,6 +186,8 @@ type Querier interface {
 	// Update the start_time and end_time of all occurrences for an event identified by ULID.
 	// Used by the FixReview workflow to correct occurrence dates during admin review.
 	UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error
+	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (UpdateOrganizationRow, error)
+	UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error)
 	// Update existing review entry (for resubmissions with same issues)
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error

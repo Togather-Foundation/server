@@ -324,6 +324,81 @@ func int4Ptr(n pgtype.Int4) *int {
 	return &v
 }
 
+// Update updates a place's fields. Nil pointer fields in params are not changed (COALESCE pattern).
+func (r *PlaceRepository) Update(ctx context.Context, ulid string, params places.UpdatePlaceParams) (*places.Place, error) {
+	queries := Queries{db: r.queryer()}
+
+	updateParams := UpdatePlaceParams{
+		Ulid: ulid,
+	}
+
+	if params.Name != nil {
+		updateParams.Name = pgtype.Text{String: *params.Name, Valid: true}
+	}
+	if params.Description != nil {
+		updateParams.Description = pgtype.Text{String: *params.Description, Valid: true}
+	}
+	if params.StreetAddress != nil {
+		updateParams.StreetAddress = pgtype.Text{String: *params.StreetAddress, Valid: true}
+	}
+	if params.City != nil {
+		updateParams.AddressLocality = pgtype.Text{String: *params.City, Valid: true}
+	}
+	if params.Region != nil {
+		updateParams.AddressRegion = pgtype.Text{String: *params.Region, Valid: true}
+	}
+	if params.PostalCode != nil {
+		updateParams.PostalCode = pgtype.Text{String: *params.PostalCode, Valid: true}
+	}
+	if params.Country != nil {
+		updateParams.AddressCountry = pgtype.Text{String: *params.Country, Valid: true}
+	}
+	if params.Telephone != nil {
+		updateParams.Telephone = pgtype.Text{String: *params.Telephone, Valid: true}
+	}
+	if params.Email != nil {
+		updateParams.Email = pgtype.Text{String: *params.Email, Valid: true}
+	}
+	if params.URL != nil {
+		updateParams.Url = pgtype.Text{String: *params.URL, Valid: true}
+	}
+
+	row, err := queries.UpdatePlace(ctx, updateParams)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, places.ErrNotFound
+		}
+		return nil, fmt.Errorf("update place: %w", err)
+	}
+
+	var placeID string
+	_ = row.ID.Scan(&placeID)
+
+	place := &places.Place{
+		ID:                      placeID,
+		ULID:                    row.Ulid,
+		Name:                    row.Name,
+		Description:             row.Description.String,
+		StreetAddress:           row.StreetAddress.String,
+		City:                    row.AddressLocality.String,
+		Region:                  row.AddressRegion.String,
+		PostalCode:              row.PostalCode.String,
+		Country:                 row.AddressCountry.String,
+		Latitude:                numericToFloat64Ptr(row.Latitude),
+		Longitude:               numericToFloat64Ptr(row.Longitude),
+		Telephone:               row.Telephone.String,
+		Email:                   row.Email.String,
+		URL:                     row.Url.String,
+		MaximumAttendeeCapacity: int4Ptr(row.MaximumAttendeeCapacity),
+		VenueType:               row.VenueType.String,
+		FederationURI:           row.FederationUri.String,
+		CreatedAt:               row.CreatedAt.Time,
+		UpdatedAt:               row.UpdatedAt.Time,
+	}
+
+	return place, nil
+}
+
 // SoftDelete marks a place as deleted
 func (r *PlaceRepository) SoftDelete(ctx context.Context, ulid string, reason string) error {
 	queries := Queries{db: r.queryer()}

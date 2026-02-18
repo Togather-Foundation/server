@@ -443,11 +443,17 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("GET /api/v1/admin/duplicates", adminListDuplicates)
 
 	adminDeletePlace := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeletePlace))))
-	mux.Handle("DELETE /api/v1/admin/places/{id}", adminDeletePlace)
+	adminUpdatePlace := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UpdatePlace))))
+	mux.Handle("/api/v1/admin/places/{id}", methodMux(map[string]http.Handler{
+		http.MethodDelete: adminDeletePlace,
+		http.MethodPut:    adminUpdatePlace,
+	}))
 
 	adminDeleteOrganization := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeleteOrganization))))
+	adminUpdateOrganization := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UpdateOrganization))))
 	mux.Handle("/api/v1/admin/organizations/{id}", methodMux(map[string]http.Handler{
 		http.MethodDelete: adminDeleteOrganization,
+		http.MethodPut:    adminUpdateOrganization,
 	}))
 
 	// Admin place similarity and merge endpoints

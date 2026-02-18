@@ -27,6 +27,10 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Organization, er
 	return s.repo.GetByULID(ctx, ulid)
 }
 
+func (s *Service) Update(ctx context.Context, ulid string, params UpdateOrganizationParams) (*Organization, error) {
+	return s.repo.Update(ctx, ulid, params)
+}
+
 // TODO(srv-d7cnu): Create removed during rebase
 // func (s *Service) Create(ctx context.Context, params CreateParams) (*Organization, error) {
 // 	return s.repo.Create(ctx, params)

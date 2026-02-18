@@ -51,9 +51,25 @@ type ListResult struct {
 	NextCursor string
 }
 
+// UpdatePlaceParams contains fields that can be updated by admins.
+// Nil pointer fields are not changed (COALESCE pattern).
+type UpdatePlaceParams struct {
+	Name          *string
+	Description   *string
+	StreetAddress *string
+	City          *string
+	Region        *string
+	PostalCode    *string
+	Country       *string
+	Telephone     *string
+	Email         *string
+	URL           *string
+}
+
 type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Place, error)
+	Update(ctx context.Context, ulid string, params UpdatePlaceParams) (*Place, error)
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)

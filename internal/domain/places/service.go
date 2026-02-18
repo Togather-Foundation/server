@@ -27,6 +27,10 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Place, error) {
 	return s.repo.GetByULID(ctx, ulid)
 }
 
+func (s *Service) Update(ctx context.Context, ulid string, params UpdatePlaceParams) (*Place, error) {
+	return s.repo.Update(ctx, ulid, params)
+}
+
 func (s *Service) SoftDelete(ctx context.Context, ulid string, reason string) error {
 	return s.repo.SoftDelete(ctx, ulid, reason)
 }

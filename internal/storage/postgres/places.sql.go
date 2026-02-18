@@ -285,3 +285,96 @@ func (q *Queries) SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams
 	_, err := q.db.Exec(ctx, softDeletePlace, arg.Ulid, arg.DeletionReason)
 	return err
 }
+
+const updatePlace = `-- name: UpdatePlace :one
+UPDATE places
+   SET name = COALESCE($2, name),
+       description = COALESCE($3, description),
+       street_address = COALESCE($4, street_address),
+       address_locality = COALESCE($5, address_locality),
+       address_region = COALESCE($6, address_region),
+       postal_code = COALESCE($7, postal_code),
+       address_country = COALESCE($8, address_country),
+       telephone = COALESCE($9, telephone),
+       email = COALESCE($10, email),
+       url = COALESCE($11, url),
+       updated_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL
+RETURNING id, ulid, name, description, street_address, address_locality, address_region, postal_code, address_country, latitude, longitude, telephone, email, url, maximum_attendee_capacity, venue_type, federation_uri, created_at, updated_at
+`
+
+type UpdatePlaceParams struct {
+	Ulid            string      `json:"ulid"`
+	Name            pgtype.Text `json:"name"`
+	Description     pgtype.Text `json:"description"`
+	StreetAddress   pgtype.Text `json:"street_address"`
+	AddressLocality pgtype.Text `json:"address_locality"`
+	AddressRegion   pgtype.Text `json:"address_region"`
+	PostalCode      pgtype.Text `json:"postal_code"`
+	AddressCountry  pgtype.Text `json:"address_country"`
+	Telephone       pgtype.Text `json:"telephone"`
+	Email           pgtype.Text `json:"email"`
+	Url             pgtype.Text `json:"url"`
+}
+
+type UpdatePlaceRow struct {
+	ID                      pgtype.UUID        `json:"id"`
+	Ulid                    string             `json:"ulid"`
+	Name                    string             `json:"name"`
+	Description             pgtype.Text        `json:"description"`
+	StreetAddress           pgtype.Text        `json:"street_address"`
+	AddressLocality         pgtype.Text        `json:"address_locality"`
+	AddressRegion           pgtype.Text        `json:"address_region"`
+	PostalCode              pgtype.Text        `json:"postal_code"`
+	AddressCountry          pgtype.Text        `json:"address_country"`
+	Latitude                pgtype.Numeric     `json:"latitude"`
+	Longitude               pgtype.Numeric     `json:"longitude"`
+	Telephone               pgtype.Text        `json:"telephone"`
+	Email                   pgtype.Text        `json:"email"`
+	Url                     pgtype.Text        `json:"url"`
+	MaximumAttendeeCapacity pgtype.Int4        `json:"maximum_attendee_capacity"`
+	VenueType               pgtype.Text        `json:"venue_type"`
+	FederationUri           pgtype.Text        `json:"federation_uri"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error) {
+	row := q.db.QueryRow(ctx, updatePlace,
+		arg.Ulid,
+		arg.Name,
+		arg.Description,
+		arg.StreetAddress,
+		arg.AddressLocality,
+		arg.AddressRegion,
+		arg.PostalCode,
+		arg.AddressCountry,
+		arg.Telephone,
+		arg.Email,
+		arg.Url,
+	)
+	var i UpdatePlaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.Ulid,
+		&i.Name,
+		&i.Description,
+		&i.StreetAddress,
+		&i.AddressLocality,
+		&i.AddressRegion,
+		&i.PostalCode,
+		&i.AddressCountry,
+		&i.Latitude,
+		&i.Longitude,
+		&i.Telephone,
+		&i.Email,
+		&i.Url,
+		&i.MaximumAttendeeCapacity,
+		&i.VenueType,
+		&i.FederationUri,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

@@ -1,7 +1,7 @@
 /**
  * Organizations Management Page
  * 
- * Handles organization listing, search, similarity detection, and merging.
+ * Handles organization listing, search, similarity detection, merging, and editing.
  */
 (function() {
     'use strict';
@@ -12,6 +12,7 @@
         nextCursor: null,
         expandedUlid: null,
         isLoading: false,
+        editUlid: null,
         mergeContext: {
             primaryId: null,
             duplicateId: null,
@@ -46,7 +47,20 @@
             mergeModal: document.getElementById('merge-modal'),
             mergePrimaryName: document.getElementById('merge-primary-name'),
             mergeDuplicateName: document.getElementById('merge-duplicate-name'),
-            confirmMergeBtn: document.getElementById('confirm-merge-btn')
+            confirmMergeBtn: document.getElementById('confirm-merge-btn'),
+            editModal: document.getElementById('edit-modal'),
+            editUlid: document.getElementById('edit-ulid'),
+            editName: document.getElementById('edit-name'),
+            editDescription: document.getElementById('edit-description'),
+            editStreetAddress: document.getElementById('edit-street-address'),
+            editCity: document.getElementById('edit-city'),
+            editRegion: document.getElementById('edit-region'),
+            editPostalCode: document.getElementById('edit-postal-code'),
+            editCountry: document.getElementById('edit-country'),
+            editTelephone: document.getElementById('edit-telephone'),
+            editEmail: document.getElementById('edit-email'),
+            editUrl: document.getElementById('edit-url'),
+            saveEditBtn: document.getElementById('save-edit-btn')
         };
     }
 
@@ -83,6 +97,12 @@
                 break;
             case 'confirm-merge':
                 handleConfirmMerge();
+                break;
+            case 'edit':
+                handleEdit(ulid);
+                break;
+            case 'save-edit':
+                handleSaveEdit();
                 break;
         }
     }
@@ -220,7 +240,13 @@
         tr.innerHTML =
             '<td><strong>' + name + '</strong></td>' +
             '<td>' + location + '</td>' +
-            '<td>' +
+            '<td class="text-nowrap">' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary me-1"' +
+                    ' data-action="edit"' +
+                    ' data-ulid="' + escapeHtml(ulid || '') + '"' +
+                    ' title="Edit organization">' +
+                    'Edit' +
+                '</button>' +
                 '<button type="button" class="btn btn-sm btn-outline-primary"' +
                     ' data-action="find-similar"' +
                     ' data-ulid="' + escapeHtml(ulid || '') + '">' +
@@ -245,6 +271,100 @@
             if (org.address.addressRegion) parts.push(escapeHtml(org.address.addressRegion));
         }
         return parts.length > 0 ? parts.join(', ') : '—';
+    }
+
+    /**
+     * Handle "Edit" button click — load organization data into edit modal
+     */
+    async function handleEdit(ulid) {
+        if (!ulid) return;
+
+        try {
+            var org = await API.organizations.get(ulid);
+            if (!org) {
+                showToast('Organization not found', 'error');
+                return;
+            }
+
+            state.editUlid = ulid;
+
+            // Populate form fields from JSON-LD response
+            if (els.editUlid) els.editUlid.value = ulid;
+            if (els.editName) els.editName.value = org.name || '';
+            if (els.editDescription) els.editDescription.value = org.description || '';
+            if (els.editUrl) els.editUrl.value = org.url || '';
+            if (els.editTelephone) els.editTelephone.value = org.telephone || '';
+            if (els.editEmail) els.editEmail.value = org.email || '';
+
+            // Address fields are nested under org.address
+            var addr = org.address || {};
+            if (els.editStreetAddress) els.editStreetAddress.value = addr.streetAddress || '';
+            if (els.editCity) els.editCity.value = addr.addressLocality || '';
+            if (els.editRegion) els.editRegion.value = addr.addressRegion || '';
+            if (els.editPostalCode) els.editPostalCode.value = addr.postalCode || '';
+            if (els.editCountry) els.editCountry.value = addr.addressCountry || '';
+
+            // Show modal
+            if (els.editModal) {
+                var modal = new bootstrap.Modal(els.editModal);
+                modal.show();
+            }
+
+        } catch (error) {
+            console.error('Error loading organization for edit:', error);
+            showToast(error.message || 'Failed to load organization details', 'error');
+        }
+    }
+
+    /**
+     * Handle save edit — send update to API
+     */
+    async function handleSaveEdit() {
+        var ulid = state.editUlid;
+        if (!ulid) return;
+
+        var payload = {};
+
+        // Collect form values — field names must match what the handler expects
+        if (els.editName) payload.name = els.editName.value.trim();
+        if (els.editDescription) payload.description = els.editDescription.value.trim();
+        if (els.editStreetAddress) payload.street_address = els.editStreetAddress.value.trim();
+        if (els.editCity) payload.address_locality = els.editCity.value.trim();
+        if (els.editRegion) payload.address_region = els.editRegion.value.trim();
+        if (els.editPostalCode) payload.postal_code = els.editPostalCode.value.trim();
+        if (els.editCountry) payload.address_country = els.editCountry.value.trim();
+        if (els.editTelephone) payload.telephone = els.editTelephone.value.trim();
+        if (els.editEmail) payload.email = els.editEmail.value.trim();
+        if (els.editUrl) payload.url = els.editUrl.value.trim();
+
+        // Validate name is not empty
+        if (!payload.name) {
+            showToast('Name is required', 'error');
+            return;
+        }
+
+        try {
+            setLoading(els.saveEditBtn, true);
+
+            await API.organizations.update(ulid, payload);
+
+            showToast('Organization updated successfully', 'success');
+
+            // Close modal
+            var modal = bootstrap.Modal.getInstance(els.editModal);
+            if (modal) modal.hide();
+
+            // Reload the list
+            state.nextCursor = null;
+            state.expandedUlid = null;
+            loadOrganizations();
+
+        } catch (error) {
+            console.error('Error updating organization:', error);
+            showToast(error.message || 'Failed to update organization', 'error');
+        } finally {
+            setLoading(els.saveEditBtn, false);
+        }
     }
 
     /**

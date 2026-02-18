@@ -180,6 +180,80 @@ SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.email, o.telephone, 
 	return &org, nil
 }
 
+// Update updates an organization's fields. Nil pointer fields in params are not changed (COALESCE pattern).
+func (r *OrganizationRepository) Update(ctx context.Context, ulid string, params organizations.UpdateOrganizationParams) (*organizations.Organization, error) {
+	queries := Queries{db: r.queryer()}
+
+	updateParams := UpdateOrganizationParams{
+		Ulid: ulid,
+	}
+
+	if params.Name != nil {
+		updateParams.Name = pgtype.Text{String: *params.Name, Valid: true}
+	}
+	if params.Description != nil {
+		updateParams.Description = pgtype.Text{String: *params.Description, Valid: true}
+	}
+	if params.StreetAddress != nil {
+		updateParams.StreetAddress = pgtype.Text{String: *params.StreetAddress, Valid: true}
+	}
+	if params.AddressLocality != nil {
+		updateParams.AddressLocality = pgtype.Text{String: *params.AddressLocality, Valid: true}
+	}
+	if params.AddressRegion != nil {
+		updateParams.AddressRegion = pgtype.Text{String: *params.AddressRegion, Valid: true}
+	}
+	if params.PostalCode != nil {
+		updateParams.PostalCode = pgtype.Text{String: *params.PostalCode, Valid: true}
+	}
+	if params.AddressCountry != nil {
+		updateParams.AddressCountry = pgtype.Text{String: *params.AddressCountry, Valid: true}
+	}
+	if params.Telephone != nil {
+		updateParams.Telephone = pgtype.Text{String: *params.Telephone, Valid: true}
+	}
+	if params.Email != nil {
+		updateParams.Email = pgtype.Text{String: *params.Email, Valid: true}
+	}
+	if params.URL != nil {
+		updateParams.Url = pgtype.Text{String: *params.URL, Valid: true}
+	}
+
+	row, err := queries.UpdateOrganization(ctx, updateParams)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, organizations.ErrNotFound
+		}
+		return nil, fmt.Errorf("update organization: %w", err)
+	}
+
+	var orgID string
+	_ = row.ID.Scan(&orgID)
+
+	org := &organizations.Organization{
+		ID:               orgID,
+		ULID:             row.Ulid,
+		Name:             row.Name,
+		LegalName:        row.LegalName.String,
+		Description:      row.Description.String,
+		URL:              row.Url.String,
+		Email:            row.Email.String,
+		Telephone:        row.Telephone.String,
+		AddressLocality:  row.AddressLocality.String,
+		AddressRegion:    row.AddressRegion.String,
+		AddressCountry:   row.AddressCountry.String,
+		StreetAddress:    row.StreetAddress.String,
+		PostalCode:       row.PostalCode.String,
+		OrganizationType: row.OrganizationType.String,
+		FederationURI:    row.FederationUri.String,
+		AlternateName:    row.AlternateName.String,
+		CreatedAt:        row.CreatedAt.Time,
+		UpdatedAt:        row.UpdatedAt.Time,
+	}
+
+	return org, nil
+}
+
 // SoftDelete marks an organization as deleted
 func (r *OrganizationRepository) SoftDelete(ctx context.Context, ulid string, reason string) error {
 	queries := Queries{db: r.queryer()}
