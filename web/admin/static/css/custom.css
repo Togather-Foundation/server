@@ -163,7 +163,7 @@
 /* Button list spacing */
 .btn-list {
     display: flex;
-    gap: 0.5rem;
+    gap: 2rem;
 }
 
 /* Responsive table helpers */
