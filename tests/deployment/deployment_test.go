@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -41,19 +42,14 @@ func TestDeploymentFullFlow(t *testing.T) {
 	projectRoot := getProjectRoot(t)
 
 	// Create a shared Docker network for containers to communicate
-	networkName := "deployment-test-network"
-	network, err := testcontainers.GenericNetwork(ctx, testcontainers.GenericNetworkRequest{
-		NetworkRequest: testcontainers.NetworkRequest{
-			Name:           networkName,
-			CheckDuplicate: true,
-		},
-	})
+	net, err := network.New(ctx)
 	require.NoError(t, err, "Failed to create Docker network")
 	defer func() {
-		if err := network.Remove(ctx); err != nil {
+		if err := net.Remove(ctx); err != nil {
 			t.Logf("Failed to remove network: %v", err)
 		}
 	}()
+	networkName := net.Name
 
 	// Shared state across subtests
 	var dbURL string
@@ -295,19 +291,14 @@ func TestDeploymentPerformance(t *testing.T) {
 	imageName := "togather-server-perf:test"
 
 	// Create a shared Docker network for containers to communicate
-	networkName := "deployment-perf-network"
-	network, err := testcontainers.GenericNetwork(ctx, testcontainers.GenericNetworkRequest{
-		NetworkRequest: testcontainers.NetworkRequest{
-			Name:           networkName,
-			CheckDuplicate: true,
-		},
-	})
+	net, err := network.New(ctx)
 	require.NoError(t, err, "Failed to create Docker network")
 	defer func() {
-		if err := network.Remove(ctx); err != nil {
+		if err := net.Remove(ctx); err != nil {
 			t.Logf("Failed to remove network: %v", err)
 		}
 	}()
+	networkName := net.Name
 
 	// Shared state across subtests
 	var dbURL string
