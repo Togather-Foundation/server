@@ -47,6 +47,25 @@ function formatNumber(num) {
 }
 
 /**
+ * Format date string to locale format
+ * @param {string} dateString - ISO date string
+ * @param {Object} options - Intl.DateTimeFormat options
+ * @returns {string} Formatted date
+ */
+function formatDate(dateString, options = null) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    const defaultOptions = {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    };
+    return date.toLocaleDateString('en-US', options || defaultOptions);
+}
+
+/**
  * Show toast notification
  * @param {string} message - Toast message
  * @param {string} type - Toast type (success, error, warning, info)
