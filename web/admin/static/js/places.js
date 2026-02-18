@@ -9,6 +9,9 @@
     // State management
     let state = {
         currentSearch: '',
+        currentCity: '',
+        currentSort: 'created_at',
+        currentOrder: 'asc',
         nextCursor: null,
         expandedUlid: null,
         isLoading: false,
@@ -39,6 +42,8 @@
     function cacheElements() {
         els = {
             searchInput: document.getElementById('search-input'),
+            cityFilter: document.getElementById('city-filter'),
+            sortSelect: document.getElementById('sort-select'),
             loadingState: document.getElementById('loading-state'),
             emptyState: document.getElementById('empty-state'),
             tableContainer: document.getElementById('places-table-container'),
@@ -71,6 +76,16 @@
         // Search input with debounce
         if (els.searchInput) {
             els.searchInput.addEventListener('input', debounce(handleSearch, 300));
+        }
+
+        // City filter with debounce
+        if (els.cityFilter) {
+            els.cityFilter.addEventListener('input', debounce(handleCityFilter, 300));
+        }
+
+        // Sort select
+        if (els.sortSelect) {
+            els.sortSelect.addEventListener('change', handleSortChange);
         }
 
         // Delegated click handlers for dynamic content
@@ -120,6 +135,28 @@
     }
 
     /**
+     * Handle city filter input
+     */
+    function handleCityFilter(e) {
+        state.currentCity = e.target.value.trim();
+        state.nextCursor = null;
+        state.expandedUlid = null;
+        loadPlaces();
+    }
+
+    /**
+     * Handle sort select change
+     */
+    function handleSortChange(e) {
+        var parts = e.target.value.split(':');
+        state.currentSort = parts[0] || 'created_at';
+        state.currentOrder = parts[1] || 'asc';
+        state.nextCursor = null;
+        state.expandedUlid = null;
+        loadPlaces();
+    }
+
+    /**
      * Load places from API
      */
     async function loadPlaces(append) {
@@ -137,8 +174,20 @@
                 params.q = state.currentSearch;
             }
 
+            if (state.currentCity) {
+                params.city = state.currentCity;
+            }
+
+            if (state.currentSort && state.currentSort !== 'created_at') {
+                params.sort = state.currentSort;
+            }
+
+            if (state.currentOrder && state.currentOrder !== 'asc') {
+                params.order = state.currentOrder;
+            }
+
             if (append && state.nextCursor) {
-                params.cursor = state.nextCursor;
+                params.after = state.nextCursor;
             }
 
             var response = await API.places.list(params);

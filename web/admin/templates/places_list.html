@@ -29,11 +29,11 @@
             <!-- Page body -->
             <div class="page-body">
                 <div class="container-xl">
-                    <!-- Search -->
+                    <!-- Search and Filters -->
                     <div class="card mb-3">
                         <div class="card-body">
                             <div class="row g-2">
-                                <div class="col-auto flex-grow-1">
+                                <div class="col-sm-6 col-lg">
                                     <div class="input-icon">
                                         <span class="input-icon-addon">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -42,8 +42,19 @@
                                                 <line x1="21" y1="21" x2="15" y2="15" />
                                             </svg>
                                         </span>
-                                        <input type="text" id="search-input" class="form-control" placeholder="Search places by name, city, or region...">
+                                        <input type="text" id="search-input" class="form-control" placeholder="Search places by name...">
                                     </div>
+                                </div>
+                                <div class="col-sm-6 col-lg-auto" style="min-width: 180px;">
+                                    <input type="text" id="city-filter" class="form-control" placeholder="Filter by city...">
+                                </div>
+                                <div class="col-sm-6 col-lg-auto" style="min-width: 180px;">
+                                    <select id="sort-select" class="form-select">
+                                        <option value="created_at:asc">Date (oldest first)</option>
+                                        <option value="created_at:desc">Date (newest first)</option>
+                                        <option value="name:asc">Name (A-Z)</option>
+                                        <option value="name:desc">Name (Z-A)</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>

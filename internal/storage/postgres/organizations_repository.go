@@ -47,6 +47,7 @@ type organizationRow struct {
 func (r *OrganizationRepository) List(ctx context.Context, filters organizations.Filters, paginationArgs organizations.Pagination) (organizations.ListResult, error) {
 	queryer := r.queryer()
 	query := strings.TrimSpace(filters.Query)
+	city := strings.TrimSpace(filters.City)
 	limit := paginationArgs.Limit
 	if limit <= 0 {
 		limit = 50
@@ -55,6 +56,7 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 
 	var cursorTime *time.Time
 	var cursorULID *string
+	var cursorName *string
 	if strings.TrimSpace(paginationArgs.After) != "" {
 		cursor, err := pagination.DecodeEventCursor(paginationArgs.After)
 		if err != nil {
@@ -66,26 +68,84 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 		cursorULID = &ulid
 	}
 
-	rows, err := queryer.Query(ctx, `
+	// Determine sort column and order (whitelist to prevent SQL injection)
+	sortCol := "o.created_at"
+	if filters.Sort == "name" {
+		sortCol = "o.name"
+	}
+	orderDir := "ASC"
+	if filters.Order == "desc" {
+		orderDir = "DESC"
+	}
+
+	// Build cursor comparison operator based on sort direction
+	cursorOp := ">"
+	if orderDir == "DESC" {
+		cursorOp = "<"
+	}
+
+	// For name-based sorting, we need to look up the cursor name from the ULID
+	if filters.Sort == "name" && cursorULID != nil {
+		var name string
+		err := queryer.QueryRow(ctx, "SELECT name FROM organizations WHERE ulid = $1", *cursorULID).Scan(&name)
+		if err == nil {
+			cursorName = &name
+		}
+		// If lookup fails, skip cursor (start from beginning)
+	}
+
+	// Build query dynamically based on sort column
+	var cursorCondition string
+	var args []interface{}
+	argPos := 1
+
+	// Start building WHERE clauses
+	whereClauses := []string{"o.deleted_at IS NULL"}
+
+	// Query filter
+	if query != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(o.name ILIKE '%%' || $%d || '%%' OR o.legal_name ILIKE '%%' || $%d || '%%')", argPos, argPos))
+		args = append(args, query)
+		argPos++
+	}
+
+	// City filter
+	if city != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("o.address_locality ILIKE '%%' || $%d || '%%'", argPos))
+		args = append(args, city)
+		argPos++
+	}
+
+	// Cursor condition
+	if filters.Sort == "name" && cursorName != nil && cursorULID != nil {
+		cursorCondition = fmt.Sprintf("(o.name %s $%d OR (o.name = $%d AND o.ulid > $%d))", cursorOp, argPos, argPos, argPos+1)
+		args = append(args, *cursorName, *cursorULID)
+		argPos += 2
+	} else if cursorTime != nil && cursorULID != nil {
+		cursorCondition = fmt.Sprintf("(o.created_at %s $%d::timestamptz OR (o.created_at = $%d::timestamptz AND o.ulid > $%d))", cursorOp, argPos, argPos, argPos+1)
+		args = append(args, *cursorTime, *cursorULID)
+		argPos += 2
+	}
+
+	if cursorCondition != "" {
+		whereClauses = append(whereClauses, cursorCondition)
+	}
+
+	// Build final query
+	whereClause := strings.Join(whereClauses, " AND ")
+	args = append(args, limitPlusOne)
+
+	sqlQuery := fmt.Sprintf(`
 SELECT o.id, o.ulid, o.name, o.legal_name, o.description, o.email, o.telephone, o.url,
        o.address_locality, o.address_region, o.address_country, o.street_address, o.postal_code,
        o.organization_type, o.federation_uri, o.alternate_name, o.created_at, o.updated_at
   FROM organizations o
- WHERE o.deleted_at IS NULL
-   AND ($1 = '' OR o.name ILIKE '%' || $1 || '%' OR o.legal_name ILIKE '%' || $1 || '%')
-   AND (
-     $2::timestamptz IS NULL OR
-     o.created_at > $2::timestamptz OR
-     (o.created_at = $2::timestamptz AND o.ulid > $3)
-   )
- ORDER BY o.created_at ASC, o.ulid ASC
- LIMIT $4
-`,
-		query,
-		cursorTime,
-		cursorULID,
-		limitPlusOne,
-	)
+ WHERE %s
+ ORDER BY %s %s, o.ulid ASC
+ LIMIT $%d
+`, whereClause, sortCol, orderDir, argPos)
+
+	rows, err := queryer.Query(ctx, sqlQuery, args...)
 	if err != nil {
 		return organizations.ListResult{}, fmt.Errorf("list organizations: %w", err)
 	}

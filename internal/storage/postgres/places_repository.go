@@ -139,7 +139,68 @@ SELECT p.id, p.ulid, p.name, p.description,
 		args = queryArgs
 	} else {
 		// Standard query without proximity
-		query = `
+		// Determine sort column and order (whitelist to prevent SQL injection)
+		sortCol := "p.created_at"
+		if filters.Sort == "name" {
+			sortCol = "p.name"
+		}
+		orderDir := "ASC"
+		if filters.Order == "desc" {
+			orderDir = "DESC"
+		}
+
+		// Build cursor comparison operator based on sort direction
+		cursorOp := ">"
+		if orderDir == "DESC" {
+			cursorOp = "<"
+		}
+
+		// For name-based sorting, look up the cursor name from the ULID
+		var cursorName *string
+		if filters.Sort == "name" && cursorULID != nil {
+			var name string
+			err := queryer.QueryRow(ctx, "SELECT name FROM places WHERE ulid = $1", *cursorULID).Scan(&name)
+			if err == nil {
+				cursorName = &name
+			}
+		}
+
+		// Build WHERE clauses dynamically
+		var whereClauses []string
+		var queryArgs []interface{}
+		argPos := 1
+
+		whereClauses = append(whereClauses, "p.deleted_at IS NULL")
+
+		// City filter
+		if filters.City != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("p.address_locality ILIKE '%%' || $%d || '%%'", argPos))
+			queryArgs = append(queryArgs, filters.City)
+			argPos++
+		}
+
+		// Query filter
+		if filters.Query != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("(p.name ILIKE '%%' || $%d || '%%' OR p.description ILIKE '%%' || $%d || '%%')", argPos, argPos))
+			queryArgs = append(queryArgs, filters.Query)
+			argPos++
+		}
+
+		// Cursor condition
+		if filters.Sort == "name" && cursorName != nil && cursorULID != nil {
+			whereClauses = append(whereClauses, fmt.Sprintf("(p.name %s $%d OR (p.name = $%d AND p.ulid > $%d))", cursorOp, argPos, argPos, argPos+1))
+			queryArgs = append(queryArgs, *cursorName, *cursorULID)
+			argPos += 2
+		} else if cursorTimestamp != nil && cursorULID != nil {
+			whereClauses = append(whereClauses, fmt.Sprintf("(p.created_at %s $%d::timestamptz OR (p.created_at = $%d::timestamptz AND p.ulid > $%d))", cursorOp, argPos, argPos, argPos+1))
+			queryArgs = append(queryArgs, *cursorTimestamp, *cursorULID)
+			argPos += 2
+		}
+
+		whereClause := strings.Join(whereClauses, " AND ")
+		queryArgs = append(queryArgs, limitPlusOne)
+
+		query = fmt.Sprintf(`
 SELECT p.id, p.ulid, p.name, p.description,
        p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
        p.latitude, p.longitude,
@@ -149,24 +210,12 @@ SELECT p.id, p.ulid, p.name, p.description,
        NULL::numeric AS distance_km,
        p.created_at, p.updated_at
   FROM places p
- WHERE p.deleted_at IS NULL
-   AND ($1 = '' OR p.address_locality ILIKE '%' || $1 || '%')
-   AND ($2 = '' OR p.name ILIKE '%' || $2 || '%' OR p.description ILIKE '%' || $2 || '%')
-   AND (
-     $3::timestamptz IS NULL OR
-     p.created_at > $3::timestamptz OR
-     (p.created_at = $3::timestamptz AND p.ulid > $4)
-   )
- ORDER BY p.created_at ASC, p.ulid ASC
- LIMIT $5
-`
-		args = []interface{}{
-			filters.City,
-			filters.Query,
-			cursorTimestamp,
-			cursorULID,
-			limitPlusOne,
-		}
+ WHERE %s
+ ORDER BY %s %s, p.ulid ASC
+ LIMIT $%d
+`, whereClause, sortCol, orderDir, argPos)
+
+		args = queryArgs
 	}
 
 	rows, err := queryer.Query(ctx, query, args...)

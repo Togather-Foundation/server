@@ -35,6 +35,8 @@ type Place struct {
 type Filters struct {
 	City      string
 	Query     string
+	Sort      string  // "name" or "created_at" (default: "created_at")
+	Order     string  // "asc" or "desc" (default: "asc")
 	NearPlace *string // Place name for geocoding-based proximity search (mutually exclusive with Latitude/Longitude)
 	Latitude  *float64
 	Longitude *float64

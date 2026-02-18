@@ -62,6 +62,28 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 	filters.City = strings.TrimSpace(values.Get("city"))
 	filters.Query = strings.TrimSpace(values.Get("q"))
 
+	// Parse sort parameter (default: created_at)
+	sort := strings.ToLower(strings.TrimSpace(values.Get("sort")))
+	switch sort {
+	case "name", "created_at":
+		filters.Sort = sort
+	case "":
+		filters.Sort = "created_at"
+	default:
+		return filters, pagination, FilterError{Field: "sort", Message: "must be 'name' or 'created_at'"}
+	}
+
+	// Parse order parameter (default: asc)
+	order := strings.ToLower(strings.TrimSpace(values.Get("order")))
+	switch order {
+	case "asc", "desc":
+		filters.Order = order
+	case "":
+		filters.Order = "asc"
+	default:
+		return filters, pagination, FilterError{Field: "order", Message: "must be 'asc' or 'desc'"}
+	}
+
 	// Parse near_place parameter
 	nearPlace := strings.TrimSpace(values.Get("near_place"))
 	if nearPlace != "" {

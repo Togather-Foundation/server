@@ -9,6 +9,9 @@
     // State management
     var state = {
         currentSearch: '',
+        currentCity: '',
+        currentSort: 'created_at',
+        currentOrder: 'asc',
         nextCursor: null,
         expandedUlid: null,
         isLoading: false,
@@ -39,6 +42,8 @@
     function cacheElements() {
         els = {
             searchInput: document.getElementById('search-input'),
+            cityFilter: document.getElementById('city-filter'),
+            sortSelect: document.getElementById('sort-select'),
             loadingState: document.getElementById('loading-state'),
             emptyState: document.getElementById('empty-state'),
             tableContainer: document.getElementById('orgs-table-container'),
@@ -70,6 +75,16 @@
     function attachEventListeners() {
         if (els.searchInput) {
             els.searchInput.addEventListener('input', debounce(handleSearch, 300));
+        }
+
+        // City filter with debounce
+        if (els.cityFilter) {
+            els.cityFilter.addEventListener('input', debounce(handleCityFilter, 300));
+        }
+
+        // Sort select
+        if (els.sortSelect) {
+            els.sortSelect.addEventListener('change', handleSortChange);
         }
 
         document.addEventListener('click', handleClick);
@@ -118,6 +133,28 @@
     }
 
     /**
+     * Handle city filter input
+     */
+    function handleCityFilter(e) {
+        state.currentCity = e.target.value.trim();
+        state.nextCursor = null;
+        state.expandedUlid = null;
+        loadOrganizations();
+    }
+
+    /**
+     * Handle sort select change
+     */
+    function handleSortChange(e) {
+        var parts = e.target.value.split(':');
+        state.currentSort = parts[0] || 'created_at';
+        state.currentOrder = parts[1] || 'asc';
+        state.nextCursor = null;
+        state.expandedUlid = null;
+        loadOrganizations();
+    }
+
+    /**
      * Load organizations from API
      */
     async function loadOrganizations(append) {
@@ -135,8 +172,20 @@
                 params.q = state.currentSearch;
             }
 
+            if (state.currentCity) {
+                params.city = state.currentCity;
+            }
+
+            if (state.currentSort && state.currentSort !== 'created_at') {
+                params.sort = state.currentSort;
+            }
+
+            if (state.currentOrder && state.currentOrder !== 'asc') {
+                params.order = state.currentOrder;
+            }
+
             if (append && state.nextCursor) {
-                params.cursor = state.nextCursor;
+                params.after = state.nextCursor;
             }
 
             var response = await API.organizations.list(params);
@@ -235,11 +284,21 @@
         tr.dataset.ulid = ulid || '';
 
         var name = escapeHtml(org.name || 'Unnamed Organization');
-        var location = buildLocationText(org);
+        var city = '';
+        var region = '';
+
+        // Extract city and region from JSON-LD address or flat fields
+        if (org.address) {
+            city = escapeHtml(org.address.addressLocality || '');
+            region = escapeHtml(org.address.addressRegion || '');
+        }
+        if (!city && org.addressLocality) city = escapeHtml(org.addressLocality);
+        if (!region && org.addressRegion) region = escapeHtml(org.addressRegion);
 
         tr.innerHTML =
             '<td><strong>' + name + '</strong></td>' +
-            '<td>' + location + '</td>' +
+            '<td>' + (city || '\u2014') + '</td>' +
+            '<td>' + (region || '\u2014') + '</td>' +
             '<td class="text-nowrap">' +
                 '<button type="button" class="btn btn-sm btn-outline-secondary me-1"' +
                     ' data-action="edit"' +
@@ -255,22 +314,6 @@
             '</td>';
 
         return tr;
-    }
-
-    /**
-     * Build location text from organization fields.
-     * Organizations use addressLocality/addressRegion (not city/region).
-     */
-    function buildLocationText(org) {
-        var parts = [];
-        if (org.addressLocality) parts.push(escapeHtml(org.addressLocality));
-        if (org.addressRegion) parts.push(escapeHtml(org.addressRegion));
-        // Fallback: some API responses may use address.addressLocality
-        if (parts.length === 0 && org.address) {
-            if (org.address.addressLocality) parts.push(escapeHtml(org.address.addressLocality));
-            if (org.address.addressRegion) parts.push(escapeHtml(org.address.addressRegion));
-        }
-        return parts.length > 0 ? parts.join(', ') : '—';
     }
 
     /**
@@ -443,7 +486,7 @@
             '</div>';
         }).join('');
 
-        tr.innerHTML = '<td colspan="3" class="bg-light">' +
+        tr.innerHTML = '<td colspan="4" class="bg-light">' +
             '<div class="p-3">' +
                 '<h6 class="mb-3">Similar Organizations Found:</h6>' +
                 matchesHtml +
