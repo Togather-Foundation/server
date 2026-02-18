@@ -146,7 +146,10 @@ type Querier interface {
 	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
 	ListNotDuplicatesForEvent(ctx context.Context, eventID string) ([]EventNotDuplicate, error)
 	// SQLc queries for organizations domain.
-	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error)
+	ListOrganizationsByCreatedAt(ctx context.Context, arg ListOrganizationsByCreatedAtParams) ([]ListOrganizationsByCreatedAtRow, error)
+	ListOrganizationsByCreatedAtDesc(ctx context.Context, arg ListOrganizationsByCreatedAtDescParams) ([]ListOrganizationsByCreatedAtDescRow, error)
+	ListOrganizationsByName(ctx context.Context, arg ListOrganizationsByNameParams) ([]ListOrganizationsByNameRow, error)
+	ListOrganizationsByNameDesc(ctx context.Context, arg ListOrganizationsByNameDescParams) ([]ListOrganizationsByNameDescRow, error)
 	ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error)
 	// SQLc queries for places domain.
 	ListPlacesByCreatedAt(ctx context.Context, arg ListPlacesByCreatedAtParams) ([]ListPlacesByCreatedAtRow, error)
