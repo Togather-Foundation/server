@@ -288,7 +288,7 @@
                             ${occ.virtual_url ? `<div class="text-muted small">Virtual: ${escapeHtml(occ.virtual_url)}</div>` : ''}
                         </div>
                         <div class="col-auto">
-                            <div class="btn-list" style="gap: 0.5rem;">
+                            <div class="btn-list">
                                 <button type="button" class="btn btn-sm btn-icon" data-action="edit-occurrence" data-index="${index}" title="Edit">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>

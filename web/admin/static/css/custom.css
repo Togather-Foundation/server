@@ -160,12 +160,17 @@
     word-wrap: break-word;
 }
 
+/* Button list spacing */
+.btn-list {
+    display: flex;
+    gap: 0.5rem;
+}
+
 /* Responsive table helpers */
 @media (max-width: 768px) {
     /* Stack action buttons vertically on mobile */
     .btn-list {
         flex-direction: column;
-        gap: 0.5rem;
     }
     
     .btn-list .btn {

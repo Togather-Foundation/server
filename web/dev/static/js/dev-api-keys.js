@@ -129,7 +129,7 @@
                         </div>
                     </td>
                     <td>
-                        <div class="btn-list" style="gap: 0.5rem;">
+                        <div class="btn-list">
                             <button class="btn btn-sm btn-icon" 
                                     data-action="copy-prefix" 
                                     data-key-id="${key.id}"
