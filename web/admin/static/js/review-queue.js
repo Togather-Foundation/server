@@ -32,6 +32,14 @@
     let expandedId = null;
     let pagination = null;
     let cursor = null;
+    let currentEntryDetail = null; // Cached detail for the currently expanded entry
+    
+    /** Debounce delay for primary event ULID lookup */
+    const MERGE_LOOKUP_DEBOUNCE_MS = 400;
+    /** ULID character length */
+    const ULID_LENGTH = 26;
+    /** Regex for valid ULID format */
+    const ULID_PATTERN = /^[0-9A-Z]{26}$/i;
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
@@ -347,6 +355,7 @@
         // Fetch detail from API
         try {
             const detail = await API.reviewQueue.get(id);
+            currentEntryDetail = detail;
             renderDetailCard(id, detail);
         } catch (err) {
             console.error('Failed to load detail:', err);
@@ -814,7 +823,7 @@
             detailRow.remove();
         }
         
-        // Change arrow direction back to down (expanded → collapsed)
+        // Change arrow direction back to down (expanded -> collapsed)
         const entryRow = document.querySelector(`tr[data-entry-id="${expandedId}"]`);
         if (entryRow) {
             const arrowButton = entryRow.querySelector('.expand-arrow');
@@ -827,6 +836,7 @@
         }
         
         expandedId = null;
+        currentEntryDetail = null;
     }
     
     /**
@@ -973,7 +983,9 @@
     
     /**
      * Show merge modal dialog
-     * Opens Bootstrap modal for confirming merge of duplicate event
+     * Opens Bootstrap modal for confirming merge of duplicate event.
+     * Populates comparison panels: duplicate event from cached detail,
+     * primary event fetched via API when ULID is entered.
      * @param {string} id - Review queue entry ID
      */
     function showMergeModal(id) {
@@ -995,9 +1007,192 @@
         // Store entry ID on confirm button
         confirmBtn.dataset.id = id;
         
+        // Populate duplicate event panel from cached detail
+        renderMergeDuplicatePanel();
+        
+        // Clear primary event panel
+        const primaryInfo = document.getElementById('merge-primary-info');
+        if (primaryInfo) {
+            primaryInfo.innerHTML = '<p class="text-muted">Enter a ULID below to load the primary event</p>';
+        }
+        
+        // Setup input handler for ULID lookup (debounced)
+        setupMergeUlidInput(input);
+        
         // Show modal
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
+        
+        // If ULID is pre-filled, fetch the primary event immediately
+        if (duplicateEventId && ULID_PATTERN.test(duplicateEventId)) {
+            fetchAndRenderPrimaryEvent(duplicateEventId);
+        }
+    }
+    
+    /**
+     * Render the duplicate event panel in the merge modal
+     * Uses cached detail from the expanded entry
+     */
+    function renderMergeDuplicatePanel() {
+        const container = document.getElementById('merge-duplicate-info');
+        if (!container) return;
+        
+        if (!currentEntryDetail || !currentEntryDetail.normalized) {
+            container.innerHTML = '<p class="text-muted">No event data available</p>';
+            return;
+        }
+        
+        const data = currentEntryDetail.normalized;
+        container.innerHTML = renderMergeEventSummary(data);
+    }
+    
+    /**
+     * Render a compact event summary for the merge comparison panels
+     * Shows name, date, venue, and description excerpt
+     * @param {Object} data - Event data object with name, startDate, location, description
+     * @returns {string} HTML string
+     */
+    function renderMergeEventSummary(data) {
+        if (!data) return '<p class="text-muted">No data available</p>';
+        
+        const name = data.name || 'Untitled Event';
+        const startDate = data.startDate ? formatDateValue(data.startDate) : 'No date';
+        const endDate = data.endDate ? formatDateValue(data.endDate) : '';
+        
+        // Extract venue name from location object
+        const venue = extractVenueName(data.location);
+        
+        // Truncate description
+        const description = data.description || '';
+        const descriptionExcerpt = description.length > 120
+            ? description.substring(0, 120) + '...'
+            : description;
+        
+        return `
+            <div class="mb-2">
+                <strong class="d-block">${escapeHtml(name)}</strong>
+            </div>
+            <div class="mb-2">
+                <small class="text-muted">Date:</small>
+                <span class="d-block">${escapeHtml(startDate)}${endDate ? ' &ndash; ' + escapeHtml(endDate) : ''}</span>
+            </div>
+            ${venue ? `
+                <div class="mb-2">
+                    <small class="text-muted">Venue:</small>
+                    <span class="d-block">${escapeHtml(venue)}</span>
+                </div>
+            ` : ''}
+            ${descriptionExcerpt ? `
+                <div class="mb-0">
+                    <small class="text-muted">Description:</small>
+                    <span class="d-block small">${escapeHtml(descriptionExcerpt)}</span>
+                </div>
+            ` : ''}
+        `;
+    }
+    
+    /**
+     * Extract venue name from a location object
+     * Handles both normalized payload format and JSON-LD format
+     * @param {Object|string} location - Location data
+     * @returns {string} Venue name or empty string
+     */
+    function extractVenueName(location) {
+        if (!location) return '';
+        if (typeof location === 'string') return location;
+        if (typeof location === 'object') {
+            // Normalized payload format: { name: "Venue" }
+            // JSON-LD format: { name: "Venue", "@type": "Place" }
+            return location.name || '';
+        }
+        return '';
+    }
+    
+    /**
+     * Setup debounced input handler for the ULID field in merge modal
+     * Fetches and renders the primary event when a valid ULID is entered
+     * @param {HTMLInputElement} input - The ULID input element
+     */
+    function setupMergeUlidInput(input) {
+        // Remove any existing handler by cloning the element
+        const newInput = input.cloneNode(true);
+        input.parentNode.replaceChild(newInput, input);
+        
+        let debounceTimer = null;
+        
+        newInput.addEventListener('input', function() {
+            const value = this.value.trim();
+            
+            // Clear any pending lookup
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                debounceTimer = null;
+            }
+            
+            // Reset validation state
+            this.classList.remove('is-invalid');
+            const errorDiv = document.getElementById('merge-event-error');
+            if (errorDiv) errorDiv.textContent = '';
+            
+            // Check if it's a valid ULID
+            if (value.length === ULID_LENGTH && ULID_PATTERN.test(value)) {
+                debounceTimer = setTimeout(function() {
+                    fetchAndRenderPrimaryEvent(value);
+                }, MERGE_LOOKUP_DEBOUNCE_MS);
+            } else if (value.length === 0) {
+                // Clear the primary panel
+                const primaryInfo = document.getElementById('merge-primary-info');
+                if (primaryInfo) {
+                    primaryInfo.innerHTML = '<p class="text-muted">Enter a ULID below to load the primary event</p>';
+                }
+            } else if (value.length >= ULID_LENGTH) {
+                // Invalid format
+                const primaryInfo = document.getElementById('merge-primary-info');
+                if (primaryInfo) {
+                    primaryInfo.innerHTML = '<p class="text-warning">Invalid ULID format</p>';
+                }
+            }
+        });
+    }
+    
+    /**
+     * Fetch a primary event by ULID and render it in the merge modal
+     * Uses the public events API endpoint
+     * @async
+     * @param {string} ulid - Event ULID to fetch
+     */
+    async function fetchAndRenderPrimaryEvent(ulid) {
+        const primaryInfo = document.getElementById('merge-primary-info');
+        if (!primaryInfo) return;
+        
+        // Show loading
+        primaryInfo.innerHTML = `
+            <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <small class="text-muted d-block mt-1">Loading event...</small>
+            </div>
+        `;
+        
+        try {
+            // Use public events endpoint (admin GET doesn't exist)
+            const event = await API.request('/api/v1/events/' + encodeURIComponent(ulid));
+            primaryInfo.innerHTML = renderMergeEventSummary(event);
+        } catch (err) {
+            console.error('Failed to fetch primary event:', err);
+            primaryInfo.innerHTML = `
+                <div class="text-danger">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <circle cx="12" cy="12" r="9"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span class="ms-1">${escapeHtml(err.message || 'Event not found')}</span>
+                </div>
+            `;
+        }
     }
     
     /**

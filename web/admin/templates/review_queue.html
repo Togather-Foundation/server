@@ -134,7 +134,7 @@
     
     <!-- Merge Modal -->
     <div class="modal fade" id="merge-modal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Merge Duplicate Event</h5>
@@ -142,6 +142,33 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-muted">This will merge the duplicate event into the primary event. The duplicate will be soft-deleted and its source provenance preserved.</p>
+                    
+                    <!-- Side-by-side comparison -->
+                    <div class="row mb-3" id="merge-comparison">
+                        <!-- Duplicate Event (this review) -->
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title mb-0">This Event <span class="badge bg-danger-lt ms-1">Duplicate</span></h4>
+                                </div>
+                                <div class="card-body" id="merge-duplicate-info">
+                                    <p class="text-muted">No event data available</p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Primary Event (merge into) -->
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title mb-0">Primary Event <span class="badge bg-success-lt ms-1">Keep</span></h4>
+                                </div>
+                                <div class="card-body" id="merge-primary-info">
+                                    <p class="text-muted">Enter a ULID below to load the primary event</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="mb-3">
                         <label class="form-label">Primary Event ID (merge into)</label>
                         <input type="text" class="form-control" id="merge-primary-event-id" placeholder="Enter the ULID of the event to keep">
