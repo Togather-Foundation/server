@@ -583,7 +583,7 @@
                         <line x1="18" y1="6" x2="6" y2="18"/>
                         <line x1="6" y1="6" x2="18" y2="18"/>
                     </svg>
-                    Reject
+                    Delete Event
                 </button>
             </div>
             <div id="fix-form-${id}" style="display: none;">
@@ -1007,7 +1007,7 @@
                 bsModal.hide();
             }
             
-            showToast('Entry rejected', 'success');
+            showToast('Event deleted', 'success');
             
             // Remove from list if filtering by pending
             if (currentFilter === 'pending') {
@@ -1024,8 +1024,8 @@
                 loadEntries();
             }
         } catch (err) {
-            console.error('Failed to reject entry:', err);
-            showToast(err.message || 'Failed to reject entry', 'error');
+            console.error('Failed to delete event:', err);
+            showToast(err.message || 'Failed to delete event', 'error');
         } finally {
             setLoading(confirmBtn, false);
         }
