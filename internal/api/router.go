@@ -49,8 +49,9 @@ const (
 
 // RouterWithClient bundles the HTTP handler with the River client for graceful shutdown.
 type RouterWithClient struct {
-	Handler     http.Handler
-	RiverClient *river.Client[pgx.Tx]
+	Handler       http.Handler
+	RiverClient   *river.Client[pgx.Tx]
+	UsageRecorder *developers.UsageRecorder
 }
 
 func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string) *RouterWithClient {
@@ -177,6 +178,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Initialize developer service (srv-x7vv0)
 	developerRepo := postgres.NewDeveloperRepositoryAdapter(pool)
 	developerService := developers.NewService(developerRepo, logger)
+
+	// Initialize API key usage recorder (srv-8r58k)
+	usageRepo := postgres.NewUsageRepository(pool)
+	usageRecorder := developers.NewUsageRecorder(usageRepo, logger)
+	// Note: usageRecorder.Start() is called in cmd/server/cmd/serve.go for proper lifecycle management
+	// DO NOT call usageRecorder.Start() here
 
 	// Developer auth and API key handlers (srv-x7vv0)
 	devAuthHandler := handlers.NewDeveloperAuthHandler(
@@ -352,6 +359,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	apiKeyAuth := middleware.AgentAuth(apiKeyRepo)
 	rateLimitPublic := middleware.WithRateLimitTierHandler(middleware.TierPublic)
 	rateLimitAgent := middleware.WithRateLimitTierHandler(middleware.TierAgent)
+	usageTracking := middleware.UsageTracking(usageRecorder, logger)
 
 	// Apply rate limiting to public read endpoints
 	publicEvents := rateLimitPublic(http.HandlerFunc(eventsHandler.List))
@@ -366,8 +374,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	publicOrgPage := rateLimitPublic(http.HandlerFunc(publicPages.GetOrganization))
 
 	// Authenticated write endpoints with agent rate limiting
-	createEvents := apiKeyAuth(rateLimitAgent(middleware.EventRequestSize()(http.HandlerFunc(eventsHandler.Create))))
-	createBatch := apiKeyAuth(rateLimitAgent(middleware.FederationRequestSize()(http.HandlerFunc(eventsHandler.CreateBatch))))
+	createEvents := apiKeyAuth(usageTracking(rateLimitAgent(middleware.EventRequestSize()(http.HandlerFunc(eventsHandler.Create)))))
+	createBatch := apiKeyAuth(usageTracking(rateLimitAgent(middleware.FederationRequestSize()(http.HandlerFunc(eventsHandler.CreateBatch)))))
 	batchStatus := rateLimitPublic(http.HandlerFunc(eventsHandler.GetBatchStatus))
 
 	mux.Handle("/api/v1/events", methodMux(map[string]http.Handler{
@@ -571,7 +579,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Federation sync endpoint (T111 - requires API key auth, federation rate limit, idempotency support)
 	rateLimitFederation := middleware.WithRateLimitTierHandler(middleware.TierFederation)
-	federationSync := apiKeyAuth(rateLimitFederation(middleware.Idempotency(middleware.FederationRequestSize()(http.HandlerFunc(federationHandler.Sync)))))
+	federationSync := apiKeyAuth(usageTracking(rateLimitFederation(middleware.Idempotency(middleware.FederationRequestSize()(http.HandlerFunc(federationHandler.Sync))))))
 	mux.Handle("/api/v1/federation/sync", methodMux(map[string]http.Handler{
 		http.MethodPost: federationSync,
 	}))
@@ -666,8 +674,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	handler = metrics.HTTPMiddleware(handler)
 
 	return &RouterWithClient{
-		Handler:     handler,
-		RiverClient: riverClient,
+		Handler:       handler,
+		RiverClient:   riverClient,
+		UsageRecorder: usageRecorder,
 	}
 }
 
