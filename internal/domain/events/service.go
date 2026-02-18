@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
@@ -104,8 +105,10 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 
 	after := strings.TrimSpace(values.Get("after"))
 	if after != "" {
-		if err := ids.ValidateULID(after); err != nil {
-			return filters, pagination, FilterError{Field: "after", Message: "must be a valid ULID (e.g., 01HQZX3Y4K6F7G8H9J0K1M2N3P)"}
+		// Validate cursor format by attempting to decode it
+		_, err := paginationpkg.DecodeEventCursor(after)
+		if err != nil {
+			return filters, pagination, FilterError{Field: "after", Message: "must be a valid cursor"}
 		}
 	}
 	pagination.After = after
