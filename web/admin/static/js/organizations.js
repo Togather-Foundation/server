@@ -184,24 +184,46 @@
     }
 
     /**
+     * Extract organization ULID from org object.
+     * The API returns @id as a full URI (e.g., "https://host/organizations/01ABC..."),
+     * so we need to extract the 26-character ULID from it.
+     * @param {Object} org - Organization object from API
+     * @returns {string|null} Organization ULID or null
+     */
+    function extractOrgId(org) {
+        if (!org) return null;
+
+        // Try @id first (full URI)
+        if (org['@id']) {
+            var match = org['@id'].match(/organizations\/([A-Z0-9]{26})/i);
+            if (match) return match[1];
+        }
+
+        // Fallback to id or ulid field
+        if (org.id) return org.id;
+        if (org.ulid) return org.ulid;
+
+        return null;
+    }
+
+    /**
      * Create a table row for an organization
      */
     function createOrgRow(org) {
         var tr = document.createElement('tr');
-        tr.dataset.ulid = org.ulid;
+        var ulid = extractOrgId(org);
+        tr.dataset.ulid = ulid || '';
 
-        var statusBadge = getStatusBadge(org.lifecycle);
         var name = escapeHtml(org.name || 'Unnamed Organization');
         var location = buildLocationText(org);
 
         tr.innerHTML =
             '<td><strong>' + name + '</strong></td>' +
             '<td>' + location + '</td>' +
-            '<td>' + statusBadge + '</td>' +
             '<td>' +
                 '<button type="button" class="btn btn-sm btn-outline-primary"' +
                     ' data-action="find-similar"' +
-                    ' data-ulid="' + escapeHtml(org.ulid) + '">' +
+                    ' data-ulid="' + escapeHtml(ulid || '') + '">' +
                     'Find Similar' +
                 '</button>' +
             '</td>';
@@ -223,22 +245,6 @@
             if (org.address.addressRegion) parts.push(escapeHtml(org.address.addressRegion));
         }
         return parts.length > 0 ? parts.join(', ') : '—';
-    }
-
-    /**
-     * Get status badge HTML
-     */
-    function getStatusBadge(lifecycle) {
-        var statusMap = {
-            'active': { cls: 'success', text: 'Active' },
-            'published': { cls: 'success', text: 'Published' },
-            'draft': { cls: 'warning', text: 'Draft' },
-            'deleted': { cls: 'danger', text: 'Deleted' },
-            'merged': { cls: 'secondary', text: 'Merged' }
-        };
-
-        var status = statusMap[lifecycle] || { cls: 'secondary', text: lifecycle || 'Unknown' };
-        return '<span class="badge bg-' + status.cls + '">' + escapeHtml(status.text) + '</span>';
     }
 
     /**
@@ -316,7 +322,7 @@
             '</div>';
         }).join('');
 
-        tr.innerHTML = '<td colspan="4" class="bg-light">' +
+        tr.innerHTML = '<td colspan="3" class="bg-light">' +
             '<div class="p-3">' +
                 '<h6 class="mb-3">Similar Organizations Found:</h6>' +
                 matchesHtml +

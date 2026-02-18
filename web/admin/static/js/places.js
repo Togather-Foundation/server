@@ -186,47 +186,53 @@
     }
 
     /**
+     * Extract place ULID from place object.
+     * The API returns @id as a full URI (e.g., "https://host/places/01ABC..."),
+     * so we need to extract the 26-character ULID from it.
+     * @param {Object} place - Place object from API
+     * @returns {string|null} Place ULID or null
+     */
+    function extractPlaceId(place) {
+        if (!place) return null;
+
+        // Try @id first (full URI)
+        if (place['@id']) {
+            var match = place['@id'].match(/places\/([A-Z0-9]{26})/i);
+            if (match) return match[1];
+        }
+
+        // Fallback to id or ulid field
+        if (place.id) return place.id;
+        if (place.ulid) return place.ulid;
+
+        return null;
+    }
+
+    /**
      * Create a table row for a place
      */
     function createPlaceRow(place) {
         var tr = document.createElement('tr');
-        tr.dataset.ulid = place.ulid;
+        var ulid = extractPlaceId(place);
+        tr.dataset.ulid = ulid || '';
 
-        var statusBadge = getStatusBadge(place.lifecycle);
         var name = escapeHtml(place.name || 'Unnamed Place');
-        var city = escapeHtml(place.city || '—');
-        var region = escapeHtml(place.region || '—');
+        var city = escapeHtml((place.address && place.address.addressLocality) || '—');
+        var region = escapeHtml((place.address && place.address.addressRegion) || '—');
 
         tr.innerHTML =
             '<td><strong>' + name + '</strong></td>' +
             '<td>' + city + '</td>' +
             '<td>' + region + '</td>' +
-            '<td>' + statusBadge + '</td>' +
             '<td>' +
                 '<button type="button" class="btn btn-sm btn-outline-primary"' +
                     ' data-action="find-similar"' +
-                    ' data-ulid="' + escapeHtml(place.ulid) + '">' +
+                    ' data-ulid="' + escapeHtml(ulid || '') + '">' +
                     'Find Similar' +
                 '</button>' +
             '</td>';
 
         return tr;
-    }
-
-    /**
-     * Get status badge HTML
-     */
-    function getStatusBadge(lifecycle) {
-        var statusMap = {
-            'active': { cls: 'success', text: 'Active' },
-            'published': { cls: 'success', text: 'Published' },
-            'draft': { cls: 'warning', text: 'Draft' },
-            'deleted': { cls: 'danger', text: 'Deleted' },
-            'merged': { cls: 'secondary', text: 'Merged' }
-        };
-
-        var status = statusMap[lifecycle] || { cls: 'secondary', text: lifecycle || 'Unknown' };
-        return '<span class="badge bg-' + status.cls + '">' + escapeHtml(status.text) + '</span>';
     }
 
     /**
@@ -305,7 +311,7 @@
             '</div>';
         }).join('');
 
-        tr.innerHTML = '<td colspan="5" class="bg-light">' +
+        tr.innerHTML = '<td colspan="4" class="bg-light">' +
             '<div class="p-3">' +
                 '<h6 class="mb-3">Similar Places Found:</h6>' +
                 matchesHtml +

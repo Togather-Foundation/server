@@ -53,6 +53,8 @@ web/
 │   │       ├── events.js               # Events list page
 │   │       ├── event-edit.js           # Event editor page
 │   │       ├── duplicates.js           # Duplicate review page
+│   │       ├── places.js               # Places management page (list, search, merge)
+│   │       ├── organizations.js        # Organizations management page (list, search, merge)
 │   │       ├── api-keys.js             # API key management page
 │   │       ├── review-queue.js         # Review queue page
 │   │       ├── federation.js           # Federation page
@@ -72,6 +74,8 @@ web/
 │       ├── events_list.html            # Events management
 │       ├── event_edit.html             # Event edit form
 │       ├── duplicates.html             # Duplicate review
+│       ├── places_list.html            # Places management (list, search, merge)
+│       ├── organizations_list.html     # Organizations management (list, search, merge)
 │       ├── review_queue.html           # Review queue
 │       ├── api_keys.html               # API key management
 │       ├── federation.html             # Federation management
@@ -148,6 +152,99 @@ const events = await API.events.list({ limit: 100 });
 
 // Never use direct fetch (bypasses auth, error handling)
 ```
+
+**Available API sections:**
+- `API.events.*` — list, get, update, delete, retry, bulkRetry, stats
+- `API.places.*` — list, get, similar (admin), merge (admin), delete (admin)
+- `API.organizations.*` — list, get, similar (admin), merge (admin), delete (admin)
+- `API.duplicates.*` — list
+- `API.federation.*` — list, get, create, update, delete, sync, status
+- `API.users.*` — list, get, create, update, delete, activity
+- `API.apiKeys.*` — list, create, revoke
+- `API.reviewQueue.*` — list, approve, reject, bulkApprove
+
+Note: `places.list()` and `organizations.list()` hit the **public** API (`/api/v1/places`, `/api/v1/organizations`), while `similar()` and `merge()` hit **admin** endpoints (`/api/v1/admin/...`) that require JWT auth.
+
+### Public API Response Shapes (JSON-LD)
+
+**Critical:** The public API returns JSON-LD objects, NOT flat objects. Field names differ from what you might expect. Always verify response shapes against the actual API before writing JS that reads them.
+
+**Events** (`GET /api/v1/events`):
+```json
+{
+  "@context": "...",
+  "@id": "https://host/api/v1/events/01ABCDEF...",
+  "@type": "Event",
+  "name": "Event Name",
+  "startDate": "2026-03-15T19:00:00-04:00",
+  "location": { "@type": "Place", "name": "Venue", ... },
+  "organizer": { "@type": "Organization", "name": "Org", ... }
+}
+```
+
+**Places** (`GET /api/v1/places`):
+```json
+{
+  "@id": "https://host/places/01ABCDEF...",
+  "@type": "Place",
+  "name": "Venue Name",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "123 Main St",
+    "addressLocality": "Toronto",
+    "addressRegion": "ON",
+    "postalCode": "M5V 1A1",
+    "addressCountry": "CA"
+  },
+  "geo": { "latitude": 43.65, "longitude": -79.38 }
+}
+```
+
+**Organizations** (`GET /api/v1/organizations`):
+```json
+{
+  "@id": "https://host/organizations/01ABCDEF...",
+  "@type": "Organization",
+  "name": "Org Name",
+  "address": {
+    "@type": "PostalAddress",
+    "addressLocality": "Toronto",
+    "addressRegion": "ON"
+  }
+}
+```
+
+**Key gotchas:**
+- **No `ulid` field** — The ULID is embedded in the `@id` URI. Extract it with a regex (see [ULID Extraction](#ulid-extraction-from-id)).
+- **No `city`/`region` fields** — Location is nested under `address.addressLocality` / `address.addressRegion`.
+- **No `lifecycle`/`status` field** — The public API does not expose lifecycle state. Only non-deleted items are returned.
+- **`@id` is a full URI**, not a relative path — e.g., `https://staging.toronto.togather.foundation/places/01KHP...`
+
+### ULID Extraction from `@id`
+
+All entities in the public API use `@id` (a full URI) instead of a bare `ulid` field. Use this pattern to extract the ULID:
+
+```javascript
+/**
+ * Extract ULID from an entity's @id URI.
+ * @param {Object} entity - API response object with @id field
+ * @param {string} pathSegment - URL path segment (e.g., 'events', 'places', 'organizations')
+ * @returns {string|null} 26-character ULID or null
+ */
+function extractId(entity, pathSegment) {
+    if (!entity) return null;
+    if (entity['@id']) {
+        var match = entity['@id'].match(new RegExp(pathSegment + '/([A-Z0-9]{26})', 'i'));
+        if (match) return match[1];
+    }
+    // Fallbacks for admin API responses that may use flat fields
+    if (entity.id) return entity.id;
+    if (entity.ulid) return entity.ulid;
+    return null;
+}
+```
+
+See `events.js:156-172` for the reference implementation (`extractEventId`).
 
 ### Shared Utilities (`components.js`)
 
@@ -281,6 +378,8 @@ http://localhost:8080/admin/dashboard
 http://localhost:8080/admin/events
 http://localhost:8080/admin/review-queue
 http://localhost:8080/admin/duplicates
+http://localhost:8080/admin/places
+http://localhost:8080/admin/organizations
 http://localhost:8080/admin/federation
 http://localhost:8080/admin/users
 http://localhost:8080/admin/api-keys
@@ -297,6 +396,10 @@ http://localhost:8080/admin/api-keys
 
 ## Common Pitfalls
 
+- **Wrong API field names** — Public API returns JSON-LD with `@id`, `address.addressLocality`, etc. NOT `ulid`, `city`, `region`. Always check [API Response Shapes](#public-api-response-shapes-json-ld) before writing rendering code.
+- **Missing ULID extraction** — Never assume `entity.ulid` exists. Use `extractId(entity, 'places')` pattern to get ULID from `@id` URI. See [ULID Extraction](#ulid-extraction-from-id).
+- **Assuming lifecycle/status exists** — The public API does not return `lifecycle` or `status` fields. Don't add Status columns for data from public endpoints.
+- **Public vs admin API confusion** — `API.places.list()` hits `/api/v1/places` (public, JSON-LD). `API.places.similar()` hits `/api/v1/admin/places/{id}/similar` (admin, flat JSON). Response shapes differ.
 - **Duplicated code** — Use `components.js` utilities, not per-page copies
 - **Hardcoded URLs** — Use `API.*` methods, not direct `fetch()` calls
 - **Silent errors** — Always `try/catch` with `showToast()` feedback
