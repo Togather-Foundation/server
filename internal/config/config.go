@@ -87,10 +87,12 @@ type CORSConfig struct {
 	AllowedOrigins  []string // Production mode: whitelist of allowed origins
 }
 
-// EmailConfig holds email service configuration for Gmail SMTP
+// EmailConfig holds email service configuration
 type EmailConfig struct {
 	Enabled      bool   // Enable/disable email sending (useful for dev/test)
+	Provider     string // Provider selects the email backend ("smtp" or "resend", default "resend")
 	From         string // From email address (e.g., "noreply@togather.foundation")
+	ResendAPIKey string // Resend API key (required when provider is "resend")
 	SMTPHost     string // SMTP server hostname (default: "smtp.gmail.com")
 	SMTPPort     int    // SMTP server port (default: 587 for TLS)
 	SMTPUser     string // SMTP username (Gmail address)
@@ -265,7 +267,9 @@ func Load() (Config, error) {
 		},
 		Email: EmailConfig{
 			Enabled:      getEnvBool("EMAIL_ENABLED", false),
+			Provider:     getEnv("EMAIL_PROVIDER", "resend"),
 			From:         getEnv("EMAIL_FROM", "noreply@togather.foundation"),
+			ResendAPIKey: getEnv("RESEND_API_KEY", ""),
 			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
 			SMTPPort:     getEnvInt("SMTP_PORT", 587),
 			SMTPUser:     getEnv("SMTP_USER", ""),

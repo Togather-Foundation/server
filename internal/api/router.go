@@ -152,7 +152,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Initialize email service
 	emailConfig := config.EmailConfig{
 		Enabled:      cfg.Email.Enabled,
+		Provider:     cfg.Email.Provider,
 		From:         cfg.Email.From,
+		ResendAPIKey: cfg.Email.ResendAPIKey,
 		SMTPHost:     cfg.Email.SMTPHost,
 		SMTPPort:     cfg.Email.SMTPPort,
 		SMTPUser:     cfg.Email.SMTPUser,
