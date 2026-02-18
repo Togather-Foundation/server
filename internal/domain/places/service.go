@@ -86,7 +86,13 @@ func ParseFilters(values url.Values) (Filters, Pagination, error) {
 	}
 	pagination.Limit = limit
 
-	pagination.After = strings.TrimSpace(values.Get("after"))
+	after := strings.TrimSpace(values.Get("after"))
+	if after != "" {
+		if err := ids.ValidateULID(after); err != nil {
+			return filters, pagination, FilterError{Field: "after", Message: "must be a valid ULID (e.g., 01HQZX3Y4K6F7G8H9J0K1M2N3P)"}
+		}
+	}
+	pagination.After = after
 
 	return filters, pagination, nil
 }
