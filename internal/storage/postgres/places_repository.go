@@ -488,7 +488,11 @@ func sqlcPlaceRowToDomain(row interface{}) places.Place {
 	}
 
 	var placeID string
-	_ = id.Scan(&placeID)
+	if err := id.Scan(&placeID); err != nil {
+		// Should never happen with valid database UUIDs
+		// Using empty string as fallback
+		placeID = ""
+	}
 
 	place := places.Place{
 		ID:                      placeID,

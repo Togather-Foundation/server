@@ -469,7 +469,11 @@ func sqlcOrganizationRowToDomain(row interface{}) organizations.Organization {
 	}
 
 	var orgID string
-	_ = id.Scan(&orgID)
+	if err := id.Scan(&orgID); err != nil {
+		// Should never happen with valid database UUIDs
+		// Using empty string as fallback
+		orgID = ""
+	}
 
 	org := organizations.Organization{
 		ID:               orgID,
