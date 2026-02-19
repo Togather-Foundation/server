@@ -37,10 +37,10 @@ type InvitationData struct {
 // NewService creates a new email service instance
 // templatesDir should point to the directory containing HTML email templates (e.g., "web/email/templates")
 func NewService(cfg config.EmailConfig, templatesDir string, logger zerolog.Logger) (*Service, error) {
-	// Determine provider (default to "resend" if empty)
+	// Determine provider (default to "smtp" for backward compatibility)
 	provider := cfg.Provider
 	if provider == "" {
-		provider = "resend"
+		provider = "smtp"
 	}
 
 	// Validate provider

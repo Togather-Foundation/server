@@ -631,6 +631,7 @@ func TestSendInvitation_E2E_WithMailHog(t *testing.T) {
 	// docker run -d -p 1025:1025 -p 8025:8025 mailhog/mailhog
 	cfg := config.EmailConfig{
 		Enabled:      true,
+		Provider:     "smtp", // Explicitly use SMTP for MailHog
 		From:         "test@example.com",
 		SMTPHost:     "localhost",
 		SMTPPort:     1025,
@@ -745,13 +746,12 @@ func TestNewService_SMTPProvider(t *testing.T) {
 	}
 }
 
-// TestNewService_DefaultProvider verifies default provider is resend
+// TestNewService_DefaultProvider verifies default provider is smtp for backward compatibility
 func TestNewService_DefaultProvider(t *testing.T) {
 	cfg := config.EmailConfig{
-		Enabled:      true,
-		Provider:     "", // Empty provider should default to resend
-		From:         "test@example.com",
-		ResendAPIKey: "test-api-key-123",
+		Enabled:  false,
+		Provider: "", // Empty provider should default to smtp for backward compat
+		From:     "test@example.com",
 	}
 
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -765,12 +765,8 @@ func TestNewService_DefaultProvider(t *testing.T) {
 		t.Fatal("Expected non-nil service")
 	}
 
-	if svc.provider != "resend" {
-		t.Errorf("Expected default provider='resend', got %q", svc.provider)
-	}
-
-	if svc.resendClient == nil {
-		t.Error("Expected non-nil Resend client")
+	if svc.provider != "smtp" {
+		t.Errorf("Expected default provider='smtp', got %q", svc.provider)
 	}
 }
 

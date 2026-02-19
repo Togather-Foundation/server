@@ -60,7 +60,7 @@ func TestSendViaResend_Success(t *testing.T) {
 		// Return successful response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"id": "mock-email-id-123",
 		})
 	}))
@@ -103,7 +103,7 @@ func TestSendViaResend_RateLimitError(t *testing.T) {
 		w.Header().Set("X-RateLimit-Remaining", "0")
 		w.Header().Set("X-RateLimit-Reset", "60")
 		w.WriteHeader(http.StatusTooManyRequests)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message": "Rate limit exceeded",
 		})
 	}))
@@ -232,7 +232,7 @@ func TestSendViaResend_GenericAPIError(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message": "Invalid request",
 			"name":    "validation_error",
 		})

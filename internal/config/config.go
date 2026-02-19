@@ -267,7 +267,7 @@ func Load() (Config, error) {
 		},
 		Email: EmailConfig{
 			Enabled:      getEnvBool("EMAIL_ENABLED", false),
-			Provider:     getEnv("EMAIL_PROVIDER", "resend"),
+			Provider:     getEnv("EMAIL_PROVIDER", "smtp"),
 			From:         getEnv("EMAIL_FROM", "noreply@togather.foundation"),
 			ResendAPIKey: getEnv("RESEND_API_KEY", ""),
 			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
