@@ -372,12 +372,10 @@ func TestExtractSameAsURIs(t *testing.T) {
 		},
 	}
 
-	client := NewClient(DefaultEndpoint)
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			entity := &EntityData{SameAs: tt.sameAs}
-			uris := client.ExtractSameAsURIs(entity)
+			uris := ExtractSameAsURIs(entity)
 
 			if tt.wantURIs == nil {
 				assert.Nil(t, uris)
@@ -389,8 +387,7 @@ func TestExtractSameAsURIs(t *testing.T) {
 }
 
 func TestExtractSameAsURIs_NilEntity(t *testing.T) {
-	client := NewClient(DefaultEndpoint)
-	uris := client.ExtractSameAsURIs(nil)
+	uris := ExtractSameAsURIs(nil)
 	assert.Nil(t, uris)
 }
 
@@ -552,7 +549,7 @@ func TestDereference_ComplexJSONLD(t *testing.T) {
 	assert.Equal(t, "Toronto", entity.Address.AddressLocality)
 
 	// Verify sameAs extraction (object with @id)
-	uris := client.ExtractSameAsURIs(entity)
+	uris := ExtractSameAsURIs(entity)
 	require.Len(t, uris, 1)
 	assert.Equal(t, "http://www.wikidata.org/entity/Q2937014", uris[0])
 

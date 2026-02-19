@@ -161,7 +161,6 @@ func TestReconciliationServiceDirectly(t *testing.T) {
 	service := kg.NewReconciliationService(
 		artsdataClient,
 		queries,
-		env.Pool,
 		slog.Default(),
 		30*24*time.Hour, // 30 days cache TTL
 		7*24*time.Hour,  // 7 days failure TTL
@@ -258,7 +257,6 @@ func TestReconciliationCacheHit(t *testing.T) {
 	service := kg.NewReconciliationService(
 		artsdataClient,
 		queries,
-		env.Pool,
 		slog.Default(),
 		30*24*time.Hour,
 		7*24*time.Hour,
@@ -328,7 +326,6 @@ func TestReconciliationNegativeCache(t *testing.T) {
 	service := kg.NewReconciliationService(
 		artsdataClient,
 		queries,
-		env.Pool,
 		slog.Default(),
 		30*24*time.Hour,
 		7*24*time.Hour,
@@ -438,9 +435,11 @@ func TestReconciliationViaEventIngestion(t *testing.T) {
 	).Scan(&jobCount)
 	require.NoError(t, err)
 
-	// We should have at least 2 jobs: one for the place, one for the organization
-	// (The exact count depends on the ingestion triggers)
-	assert.GreaterOrEqual(t, jobCount, 0, "reconciliation jobs should be enqueued")
+	// Note: This test inserts directly into the DB, bypassing the HTTP handler/ingest service
+	// which is where River jobs are enqueued. We verify the river_job table is queryable
+	// and the schema supports reconciliation job tracking.
+	// Full job enqueue testing requires going through the ingest pipeline (see handler tests).
+	assert.GreaterOrEqual(t, jobCount, 0, "river_job table should be queryable for reconciliation jobs")
 
 	// Note: To fully test job execution, use tests/integration_batch/ which starts River workers
 	t.Log("reconciliation job enqueue test completed - job execution requires River workers (see tests/integration_batch/)")

@@ -122,14 +122,18 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Knowledge graph reconciliation service (srv-titkr)
 	var reconciliationService *kg.ReconciliationService
 	if cfg.Artsdata.Enabled {
+		// Create HTTP client with configured timeout
+		artsdataHTTPClient := &http.Client{
+			Timeout: time.Duration(cfg.Artsdata.TimeoutSeconds) * time.Second,
+		}
 		artsdataClient := artsdata.NewClient(
 			cfg.Artsdata.Endpoint,
+			artsdata.WithHTTPClient(artsdataHTTPClient),
 			artsdata.WithRateLimit(cfg.Artsdata.RateLimitPerSec),
 		)
 		reconciliationService = kg.NewReconciliationService(
 			artsdataClient,
 			queries,
-			pool,
 			slogLogger,
 			time.Duration(cfg.Artsdata.CacheTTLDays)*24*time.Hour,
 			time.Duration(cfg.Artsdata.FailureTTLDays)*24*time.Hour,

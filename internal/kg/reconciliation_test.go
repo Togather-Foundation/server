@@ -1,12 +1,10 @@
 package kg
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -311,33 +309,9 @@ func TestInferAuthorityCode(t *testing.T) {
 	}
 }
 
-// MockArtsdataClient implements a mock Artsdata client for testing.
-type MockArtsdataClient struct {
-	reconcileFunc   func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error)
-	dereferenceFunc func(ctx context.Context, uri string) (*artsdata.EntityData, error)
-	extractFunc     func(data *artsdata.EntityData) []string
-}
-
-func (m *MockArtsdataClient) Reconcile(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
-	if m.reconcileFunc != nil {
-		return m.reconcileFunc(ctx, queries)
-	}
-	return map[string][]artsdata.ReconciliationResult{}, nil
-}
-
-func (m *MockArtsdataClient) Dereference(ctx context.Context, uri string) (*artsdata.EntityData, error) {
-	if m.dereferenceFunc != nil {
-		return m.dereferenceFunc(ctx, uri)
-	}
-	return &artsdata.EntityData{}, nil
-}
-
-func (m *MockArtsdataClient) ExtractSameAsURIs(data *artsdata.EntityData) []string {
-	if m.extractFunc != nil {
-		return m.extractFunc(data)
-	}
-	return []string{}
-}
+// Note: MockArtsdataClient was removed because ReconciliationService takes a concrete
+// *artsdata.Client, not an interface. For unit testing the service, consider introducing
+// a reconciler interface (see follow-up bead). Integration tests use real HTTP mock servers.
 
 func TestReconcileEntity_CacheHit(t *testing.T) {
 	// This test would require database mocking, which is complex.
@@ -421,7 +395,6 @@ func TestNewReconciliationService(t *testing.T) {
 	service := NewReconciliationService(
 		nil, // artsdataClient (would be real client in production)
 		nil, // queries
-		nil, // pool
 		nil, // logger
 		30*24*time.Hour,
 		7*24*time.Hour,

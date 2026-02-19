@@ -337,13 +337,13 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 
 	if validated.Location != nil && validated.Location.Name != "" {
-		placeULID, err := ids.NewULID()
+		generatedPlaceULID, err := ids.NewULID()
 		if err != nil {
 			return nil, fmt.Errorf("generate place ulid: %w", err)
 		}
 		place, err := s.repo.UpsertPlace(ctx, PlaceCreateParams{
 			EntityCreateFields: EntityCreateFields{
-				ULID:            placeULID,
+				ULID:            generatedPlaceULID,
 				Name:            validated.Location.Name,
 				StreetAddress:   validated.Location.StreetAddress,
 				PostalCode:      validated.Location.PostalCode,
@@ -363,7 +363,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		// Layer 3: Fuzzy place dedup. Only check when a NEW place was just created
 		// (returned ULID matches our generated one) — if UpsertPlace returned an
 		// existing record, the names already matched exactly under normalization.
-		if place.ULID == placeULID && s.dedupConfig.PlaceReviewThreshold > 0 {
+		if place.ULID == generatedPlaceULID && s.dedupConfig.PlaceReviewThreshold > 0 {
 			placeCandidates, err := s.repo.FindSimilarPlaces(ctx,
 				validated.Location.Name,
 				validated.Location.AddressLocality,
@@ -492,7 +492,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	}
 
 	if validated.Organizer != nil && validated.Organizer.Name != "" {
-		orgULID, err := ids.NewULID()
+		generatedOrgULID, err := ids.NewULID()
 		if err != nil {
 			return nil, fmt.Errorf("generate organizer ulid: %w", err)
 		}
@@ -506,7 +506,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 		org, err := s.repo.UpsertOrganization(ctx, OrganizationCreateParams{
 			EntityCreateFields: EntityCreateFields{
-				ULID:            orgULID,
+				ULID:            generatedOrgULID,
 				Name:            validated.Organizer.Name,
 				AddressLocality: addressLocality,
 				AddressRegion:   addressRegion,
@@ -522,7 +522,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 		// Layer 3: Fuzzy organization dedup. Same pattern as places — only check
 		// when a NEW org was just created (returned ULID matches our generated one).
-		if org.ULID == orgULID && s.dedupConfig.OrgReviewThreshold > 0 {
+		if org.ULID == generatedOrgULID && s.dedupConfig.OrgReviewThreshold > 0 {
 			orgCandidates, err := s.repo.FindSimilarOrganizations(ctx,
 				validated.Organizer.Name,
 				addressLocality,

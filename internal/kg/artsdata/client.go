@@ -110,11 +110,6 @@ type reconciliationRequest struct {
 	Queries map[string]ReconciliationQuery `json:"queries"`
 }
 
-// reconciliationResponse is the top-level response structure.
-type reconciliationResponse struct {
-	Results map[string]resultWrapper `json:",inline"`
-}
-
 // resultWrapper wraps the result array.
 type resultWrapper struct {
 	Result []ReconciliationResult `json:"result"`
@@ -217,7 +212,7 @@ func (c *Client) Dereference(ctx context.Context, uri string) (*EntityData, erro
 
 // ExtractSameAsURIs extracts sameAs URIs from JSON-LD entity data.
 // Handles string, []string, and []map[string]interface{} variants.
-func (c *Client) ExtractSameAsURIs(data *EntityData) []string {
+func ExtractSameAsURIs(data *EntityData) []string {
 	if data == nil || data.SameAs == nil {
 		return nil
 	}

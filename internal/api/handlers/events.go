@@ -187,7 +187,7 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Enqueue reconciliation jobs for places and organizations (srv-titkr)
 	// This matches places/orgs against Artsdata's knowledge graph to establish sameAs links.
 	// Like geocoding, reconciliation is non-critical — log failures but don't block event creation.
-	if result != nil && !result.IsDuplicate && h.RiverClient != nil {
+	if result != nil && result.Event != nil && !result.IsDuplicate && h.RiverClient != nil {
 		if result.PlaceULID != "" {
 			_, err := h.RiverClient.Insert(r.Context(), jobs.ReconciliationArgs{
 				EntityType: "place",

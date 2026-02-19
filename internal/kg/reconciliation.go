@@ -5,20 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ReconciliationService orchestrates entity reconciliation against knowledge graphs.
 type ReconciliationService struct {
 	artsdataClient *artsdata.Client
 	queries        *postgres.Queries
-	pool           *pgxpool.Pool
 	logger         *slog.Logger
 	cacheTTL       time.Duration // positive cache TTL (default 30 days)
 	failureTTL     time.Duration // negative cache TTL (default 7 days)
@@ -28,7 +28,6 @@ type ReconciliationService struct {
 func NewReconciliationService(
 	artsdataClient *artsdata.Client,
 	queries *postgres.Queries,
-	pool *pgxpool.Pool,
 	logger *slog.Logger,
 	cacheTTL time.Duration,
 	failureTTL time.Duration,
@@ -36,7 +35,6 @@ func NewReconciliationService(
 	return &ReconciliationService{
 		artsdataClient: artsdataClient,
 		queries:        queries,
-		pool:           pool,
 		logger:         logger,
 		cacheTTL:       cacheTTL,
 		failureTTL:     failureTTL,
@@ -54,11 +52,11 @@ type ReconcileRequest struct {
 
 // MatchResult represents a matched identifier from reconciliation.
 type MatchResult struct {
-	AuthorityCode string   // e.g., "artsdata"
-	IdentifierURI string   // e.g., "http://kg.artsdata.ca/resource/K11-211"
-	Confidence    float64  // 0.0-1.0
-	Method        string   // "auto_high", "auto_low"
-	SameAsURIs    []string // transitive sameAs from the matched entity
+	AuthorityCode string   `json:"authority_code"` // e.g., "artsdata"
+	IdentifierURI string   `json:"identifier_uri"` // e.g., "http://kg.artsdata.ca/resource/K11-211"
+	Confidence    float64  `json:"confidence"`     // 0.0-1.0
+	Method        string   `json:"method"`         // "auto_high", "auto_low"
+	SameAsURIs    []string `json:"same_as_uris"`   // transitive sameAs from the matched entity
 }
 
 // ReconcileEntity reconciles an entity against Artsdata.
@@ -94,6 +92,9 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 		}
 
 		return cachedResults, nil
+	} else if err != pgx.ErrNoRows {
+		// Actual DB error (not just cache miss) - return it
+		return nil, fmt.Errorf("check reconciliation cache: %w", err)
 	}
 
 	// 3. Build W3C query
@@ -155,9 +156,14 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 				"error", err,
 			)
 		} else {
-			sameAsURIs := s.artsdataClient.ExtractSameAsURIs(entity)
-			// Add sameAs to top match
-			matches[0].SameAsURIs = sameAsURIs
+			sameAsURIs := artsdata.ExtractSameAsURIs(entity)
+			// Find the match corresponding to topResult and assign sameAs to it
+			for i := range matches {
+				if matches[i].IdentifierURI == topResult.ID {
+					matches[i].SameAsURIs = sameAsURIs
+					break
+				}
+			}
 
 			s.logger.DebugContext(ctx, "extracted sameAs URIs",
 				"uri", topResult.ID,
@@ -335,14 +341,8 @@ func NormalizeLookupKey(entityType, name string, props map[string]string) string
 		}
 	}
 
-	// Simple sort (for small maps, bubble sort is fine)
-	for i := 0; i < len(propParts); i++ {
-		for j := i + 1; j < len(propParts); j++ {
-			if propParts[i] > propParts[j] {
-				propParts[i], propParts[j] = propParts[j], propParts[i]
-			}
-		}
-	}
+	// Sort properties for consistent cache keys
+	sort.Strings(propParts)
 
 	parts = append(parts, propParts...)
 	return strings.Join(parts, "|")

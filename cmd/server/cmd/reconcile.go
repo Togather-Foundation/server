@@ -11,6 +11,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
@@ -218,7 +219,7 @@ func setupReconciliation() (*pgxpool.Pool, *kg.ReconciliationService, error) {
 	artsdataClient := artsdata.NewClient(endpoint, artsdata.WithRateLimit(rateLimit))
 
 	// Create reconciliation service
-	service := kg.NewReconciliationService(artsdataClient, queries, pool, logger, cacheTTL, failureTTL)
+	service := kg.NewReconciliationService(artsdataClient, queries, logger, cacheTTL, failureTTL)
 
 	return pool, service, nil
 }
@@ -249,13 +250,15 @@ func reconcilePlaces(pool *pgxpool.Pool, service *kg.ReconciliationService) erro
 		`
 	}
 
-	// Apply limit if specified
+	// Apply limit if specified (use parameterized query for safety)
+	var rows pgx.Rows
+	var err error
 	if reconcileLimit > 0 {
-		query = fmt.Sprintf("%s LIMIT %d", query, reconcileLimit)
+		query = query + " LIMIT $1"
+		rows, err = pool.Query(ctx, query, reconcileLimit)
+	} else {
+		rows, err = pool.Query(ctx, query)
 	}
-
-	// Query places
-	rows, err := pool.Query(ctx, query)
 	if err != nil {
 		return fmt.Errorf("query places: %w", err)
 	}
@@ -375,13 +378,15 @@ func reconcileOrganizations(pool *pgxpool.Pool, service *kg.ReconciliationServic
 		`
 	}
 
-	// Apply limit if specified
+	// Apply limit if specified (use parameterized query for safety)
+	var rows pgx.Rows
+	var err error
 	if reconcileLimit > 0 {
-		query = fmt.Sprintf("%s LIMIT %d", query, reconcileLimit)
+		query = query + " LIMIT $1"
+		rows, err = pool.Query(ctx, query, reconcileLimit)
+	} else {
+		rows, err = pool.Query(ctx, query)
 	}
-
-	// Query organizations
-	rows, err := pool.Query(ctx, query)
 	if err != nil {
 		return fmt.Errorf("query organizations: %w", err)
 	}
