@@ -116,9 +116,22 @@ const API = {
             } catch {
                 error = { detail: 'Request failed with status ' + response.status };
             }
-            // Throw an Error with the detail field (specific error message)
-            // Fall back to title or generic message if detail is missing
-            const err = new Error(error.detail || error.title || error.message || 'Request failed');
+            // Throw an Error with the best available human-readable message.
+            // RFC 7807: `detail` is occurrence-specific, `title` is the category.
+            // In non-dev environments, `detail` may be a generic HTTP status text
+            // (e.g. "Conflict") while `title` has the useful message (e.g. "Email already taken").
+            // Prefer `detail` only when it's more specific than `title`.
+            var message = error.detail || error.title || error.message || 'Request failed';
+            if (error.title && error.detail && error.title !== error.detail) {
+                // If title is more specific than a generic HTTP status text, prefer it
+                var genericTexts = ['Bad Request', 'Unauthorized', 'Forbidden', 'Not Found',
+                    'Conflict', 'Gone', 'Unprocessable Entity', 'Too Many Requests',
+                    'Internal Server Error', 'Bad Gateway', 'Service Unavailable'];
+                if (genericTexts.indexOf(error.detail) !== -1) {
+                    message = error.title;
+                }
+            }
+            const err = new Error(message);
             err.status = response.status; // Preserve status code for error handling
             throw err;
         }

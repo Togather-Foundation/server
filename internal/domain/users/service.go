@@ -315,7 +315,9 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 	}
 
 	// Send invitation email after commit (idempotent, can retry via ResendInvitation)
-	if err := s.emailSvc.SendInvitation(ctx, params.Email, inviteLink, invitedBy); err != nil {
+	if s.emailSvc == nil {
+		s.logger.Warn().Str("email", params.Email).Msg("email service not available, skipping invitation email (admin can resend later)")
+	} else if err := s.emailSvc.SendInvitation(ctx, params.Email, inviteLink, invitedBy); err != nil {
 		s.logger.Error().Err(err).Str("email", params.Email).Msg("failed to send invitation email")
 		// User + invitation exist, admin can resend via ResendInvitation
 	}
@@ -925,6 +927,9 @@ func (s *Service) ResendInvitation(ctx context.Context, userID pgtype.UUID, rese
 	inviteLink := fmt.Sprintf("%s/accept-invitation?token=%s", s.baseURL, token)
 
 	// Send invitation email
+	if s.emailSvc == nil {
+		return fmt.Errorf("email service not available, cannot send invitation")
+	}
 	if err := s.emailSvc.SendInvitation(ctx, user.Email, inviteLink, resentBy); err != nil {
 		return fmt.Errorf("failed to send invitation email: %w", err)
 	}

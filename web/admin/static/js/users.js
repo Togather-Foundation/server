@@ -463,6 +463,7 @@
         // Clear validation classes and data attributes
         const usernameInput = document.getElementById('user-username');
         const emailInput = document.getElementById('modal-user-email');
+        const modalError = document.getElementById('user-modal-error');
         if (usernameInput) {
             usernameInput.classList.remove('is-invalid', 'is-valid');
             delete usernameInput.dataset.validationSetup;
@@ -473,6 +474,10 @@
         }
         document.getElementById('username-error').textContent = '';
         document.getElementById('modal-email-error').textContent = '';
+        if (modalError) {
+            modalError.textContent = '';
+            modalError.classList.add('d-none');
+        }
         
         if (user) {
             // Edit mode
@@ -678,7 +683,17 @@
             await loadUsers();
         } catch (error) {
             console.error('Failed to save user:', error);
-            showToast(error.message || 'Failed to save user', 'error');
+            var errorMsg = error.message || 'Failed to save user';
+            
+            // Show error inline in the modal so it's visible above the backdrop
+            var modalError = document.getElementById('user-modal-error');
+            if (modalError) {
+                modalError.textContent = errorMsg;
+                modalError.classList.remove('d-none');
+            } else {
+                // Fallback to toast if modal error element not found
+                showToast(errorMsg, 'error');
+            }
         } finally {
             setLoading(submitBtn, false);
         }
