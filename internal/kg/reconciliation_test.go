@@ -220,6 +220,59 @@ func TestClassifyConfidence(t *testing.T) {
 	}
 }
 
+func TestNormalizeArtsdataScore(t *testing.T) {
+	tests := []struct {
+		name           string
+		score          float64
+		match          bool
+		wantConfidence float64
+	}{
+		{
+			name:           "exact match returns 0.99",
+			score:          1247.4,
+			match:          true,
+			wantConfidence: 0.99,
+		},
+		{
+			name:           "exact match with low score still 0.99",
+			score:          5.0,
+			match:          true,
+			wantConfidence: 0.99,
+		},
+		{
+			name:           "partial match normalized",
+			score:          6.0,
+			match:          false,
+			wantConfidence: 0.4,
+		},
+		{
+			name:           "high partial match capped at 0.95",
+			score:          20.0,
+			match:          false,
+			wantConfidence: 0.95,
+		},
+		{
+			name:           "low partial match",
+			score:          3.0,
+			match:          false,
+			wantConfidence: 0.2,
+		},
+		{
+			name:           "zero score",
+			score:          0.0,
+			match:          false,
+			wantConfidence: 0.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			confidence := normalizeArtsdataScore(tt.score, tt.match)
+			assert.InDelta(t, tt.wantConfidence, confidence, 0.01)
+		})
+	}
+}
+
 func TestInferAuthorityCode(t *testing.T) {
 	tests := []struct {
 		name     string

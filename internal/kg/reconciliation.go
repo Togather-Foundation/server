@@ -126,7 +126,10 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 
 	for i := range apiResults {
 		result := &apiResults[i]
-		confidence := result.Score / 100.0 // API returns 0-100, we use 0.0-1.0
+		// Artsdata scores are unbounded (exact matches ~1000+, partial ~3-6).
+		// Normalize to 0.0-1.0: exact matches (match=true) get 0.99,
+		// others are capped based on score relative to a reference threshold.
+		confidence := normalizeArtsdataScore(result.Score, result.Match)
 		method := ClassifyConfidence(confidence, result.Match)
 
 		if method == "reject" {
@@ -326,6 +329,26 @@ func NormalizeLookupKey(entityType, name string, props map[string]string) string
 
 	parts = append(parts, propParts...)
 	return strings.Join(parts, "|")
+}
+
+// normalizeArtsdataScore converts Artsdata's unbounded score to a 0.0-1.0 confidence value.
+// Artsdata exact matches have match=true with scores in the ~1000+ range.
+// Partial matches have match=false with scores in the ~3-12 range.
+// We map: match=true → 0.99, otherwise normalize relative to observed score ranges.
+func normalizeArtsdataScore(score float64, match bool) float64 {
+	if match {
+		return 0.99 // Exact match confirmed by Artsdata
+	}
+	// For non-exact matches, normalize relative to observed score ranges.
+	// Typical partial match scores range from ~3 to ~12.
+	normalized := score / 15.0
+	if normalized > 0.95 {
+		normalized = 0.95 // Cap below exact-match threshold
+	}
+	if normalized < 0.0 {
+		normalized = 0.0
+	}
+	return normalized
 }
 
 // ClassifyConfidence determines the reconciliation method based on confidence score and match flag.
