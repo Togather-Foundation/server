@@ -135,11 +135,7 @@ func TestDeploymentFullFlow(t *testing.T) {
 	t.Run("RunMigrations", func(t *testing.T) {
 		require.NotEmpty(t, dbURL, "DATABASE_URL not set from previous test")
 
-		// Check if migrate is available
-		_, err := exec.LookPath("migrate")
-		if err != nil {
-			t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
-		}
+		requireMigrateCLI(t)
 
 		t.Logf("Running database migrations")
 		migrationStart := time.Now()
@@ -465,11 +461,7 @@ func TestMigrationRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Check if migrate CLI is available
-	_, err := exec.LookPath("migrate")
-	if err != nil {
-		t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
-	}
+	requireMigrateCLI(t)
 
 	projectRoot := getProjectRoot(t)
 
@@ -566,6 +558,14 @@ func getProjectRoot(t *testing.T) string {
 	require.NoError(t, err, "Failed to get absolute path")
 
 	return abs
+}
+
+func requireMigrateCLI(t *testing.T) {
+	t.Helper()
+	_, err := exec.LookPath("migrate")
+	if err != nil {
+		t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
+	}
 }
 
 func validateHealthCheck(t *testing.T, ctx context.Context, healthURL string) {
