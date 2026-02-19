@@ -109,6 +109,8 @@ TRUNCATE TABLE
   event_changes,
   event_sources,
   idempotency_keys,
+  entity_identifiers,
+  reconciliation_cache,
   events,
   places,
   organizations,
@@ -140,6 +142,8 @@ TRUNCATE TABLE
   event_sources,     -- Links between events and sources (delete this)
   idempotency_keys,
   event_review_queue,  -- Review queue for events
+  entity_identifiers,  -- Knowledge graph entity identifiers
+  reconciliation_cache, -- Reconciliation API cache
   events,
   places,
   organizations

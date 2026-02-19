@@ -7,6 +7,7 @@ package postgres
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,6 +19,8 @@ type Querier interface {
 	CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error)
 	// Archive old approved/superseded/merged reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
+	// Delete expired cache entries
+	CleanupExpiredCache(ctx context.Context) (pgconn.CommandTag, error)
 	// Delete rejected reviews for past events (7 day grace period)
 	CleanupExpiredRejections(ctx context.Context) error
 	// Delete pending reviews for events that have already started (too late to review)
@@ -35,6 +38,8 @@ type Querier interface {
 	CountPastEvents(ctx context.Context) (int64, error)
 	// Count total reviews by status (for badge display)
 	CountReviewQueueByStatus(ctx context.Context, status pgtype.Text) (int64, error)
+	// Count entities of a type that have no external identifiers
+	CountUnreconciledEntities(ctx context.Context) (int64, error)
 	CountUpcomingEvents(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error)
@@ -60,6 +65,8 @@ type Querier interface {
 	DeactivateDeveloper(ctx context.Context, id pgtype.UUID) error
 	// User Management Queries
 	DeactivateUser(ctx context.Context, id pgtype.UUID) error
+	// Delete a specific entity identifier
+	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	// Expires all pending (non-accepted, non-expired) invitations for a user by
@@ -76,8 +83,14 @@ type Querier interface {
 	GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error)
 	GetAPIKeyUsage(ctx context.Context, arg GetAPIKeyUsageParams) ([]ApiKeyUsage, error)
 	GetAPIKeyUsageTotal(ctx context.Context, arg GetAPIKeyUsageTotalParams) (GetAPIKeyUsageTotalRow, error)
+	// SQLc queries for knowledge graph reconciliation.
+	// Get active knowledge graph authorities ordered by priority
+	GetActiveAuthorities(ctx context.Context) ([]KnowledgeGraphAuthority, error)
 	// Gets complete provenance history for a field, including superseded records
 	GetAllFieldProvenanceHistory(ctx context.Context, arg GetAllFieldProvenanceHistoryParams) ([]GetAllFieldProvenanceHistoryRow, error)
+	// Get active authorities applicable to a given event domain
+	GetAuthoritiesForDomain(ctx context.Context, domain string) ([]KnowledgeGraphAuthority, error)
+	GetAuthorityByCode(ctx context.Context, authorityCode string) (KnowledgeGraphAuthority, error)
 	// SQLc queries for batch ingestion operations.
 	GetBatchIngestionResult(ctx context.Context, batchID string) (BatchIngestionResult, error)
 	// Gets the canonical (winning) field value based on conflict resolution rules
@@ -88,6 +101,10 @@ type Querier interface {
 	GetDeveloperByID(ctx context.Context, id pgtype.UUID) (Developer, error)
 	GetDeveloperInvitationByTokenHash(ctx context.Context, tokenHash string) (DeveloperInvitation, error)
 	GetDeveloperUsageTotal(ctx context.Context, arg GetDeveloperUsageTotalParams) (GetDeveloperUsageTotalRow, error)
+	// Get all external identifiers for an entity
+	GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentifiersParams) ([]EntityIdentifier, error)
+	// Get identifiers for an entity from a specific authority
+	GetEntityIdentifiersByAuthority(ctx context.Context, arg GetEntityIdentifiersByAuthorityParams) ([]EntityIdentifier, error)
 	// Federation Sync Queries
 	GetEventByFederationURI(ctx context.Context, federationUri pgtype.Text) (Event, error)
 	// SQLc queries for events domain.
@@ -113,6 +130,8 @@ type Querier interface {
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
+	// Check cache for a previous reconciliation result
+	GetReconciliationCache(ctx context.Context, arg GetReconciliationCacheParams) (ReconciliationCache, error)
 	// Get single review by ID
 	GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error)
 	// Retrieves source metadata by ID
@@ -164,6 +183,10 @@ type Querier interface {
 	ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByNameDescParams) ([]ListPlacesByNameDescRow, error)
 	// List reviews with pagination and status filter
 	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
+	// Get organizations that have no external identifiers, ordered by creation date
+	ListUnreconciledOrganizations(ctx context.Context, maxResults int32) ([]ListUnreconciledOrganizationsRow, error)
+	// Get places that have no external identifiers, ordered by creation date
+	ListUnreconciledPlaces(ctx context.Context, maxResults int32) ([]ListUnreconciledPlacesRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
 	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error
@@ -206,7 +229,11 @@ type Querier interface {
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	// SQLc queries for API key usage tracking.
 	UpsertAPIKeyUsage(ctx context.Context, arg UpsertAPIKeyUsageParams) error
+	// Insert or update an entity identifier (sameAs link)
+	UpsertEntityIdentifier(ctx context.Context, arg UpsertEntityIdentifierParams) (EntityIdentifier, error)
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
+	// Insert or update a cache entry
+	UpsertReconciliationCache(ctx context.Context, arg UpsertReconciliationCacheParams) (ReconciliationCache, error)
 }
 
 var _ Querier = (*Queries)(nil)

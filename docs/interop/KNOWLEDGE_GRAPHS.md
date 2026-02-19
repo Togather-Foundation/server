@@ -485,13 +485,17 @@ Run regression tests to ensure reconciliation accuracy doesn't degrade.
 
 ### 8.2 Phase 2: Adapter Implementation
 
-- [ ] Implement reconciliation adapters for each authority
-- [ ] Create domain routing logic
-- [ ] Add caching layer
-- [ ] Implement rate limiting
+- ✅ Implement Artsdata reconciliation adapter (`internal/kg/artsdata/client.go`)
+- ✅ Create reconciliation service with cache→API→threshold→store pipeline (`internal/kg/reconciliation.go`)
+- ✅ Add caching layer (PostgreSQL `reconciliation_cache` table with TTL)
+- ✅ Implement rate limiting (token bucket in HTTP client + single-worker River queue)
+- [ ] Implement domain routing logic (currently Artsdata-only, routing to multiple graphs pending)
+- [ ] Add adapters for Wikidata, MusicBrainz, ISNI, OpenStreetMap
 
 ### 8.3 Phase 3: Testing & Validation
 
+- ✅ Unit tests for client (18 cases) and service (13 cases)
+- ✅ Integration tests with testcontainers (4 test functions)
 - [ ] Run golden dataset tests
 - [ ] Validate against SHACL shapes
 - [ ] Performance testing with realistic loads
