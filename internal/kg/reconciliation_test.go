@@ -15,35 +15,24 @@ func TestBuildPlaceQuery(t *testing.T) {
 		placeName  string
 		city       string
 		postalCode string
-		wantProps  int
 	}{
 		{
 			name:       "full address",
 			placeName:  "Massey Hall",
 			city:       "Toronto",
 			postalCode: "M5B",
-			wantProps:  2,
 		},
 		{
 			name:       "city only",
 			placeName:  "Arts Centre",
 			city:       "Ottawa",
 			postalCode: "",
-			wantProps:  1,
-		},
-		{
-			name:       "postal code only",
-			placeName:  "Community Hall",
-			city:       "",
-			postalCode: "K1A",
-			wantProps:  1,
 		},
 		{
 			name:       "name only",
 			placeName:  "Unknown Venue",
 			city:       "",
 			postalCode: "",
-			wantProps:  0,
 		},
 	}
 
@@ -53,51 +42,28 @@ func TestBuildPlaceQuery(t *testing.T) {
 
 			assert.Equal(t, tt.placeName, query.Query)
 			assert.Equal(t, "schema:Place", query.Type)
-			assert.Len(t, query.Properties, tt.wantProps)
-
-			if tt.city != "" {
-				found := false
-				for _, prop := range query.Properties {
-					if prop.P == "schema:address/schema:addressLocality" && prop.V == tt.city {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "city property not found")
-			}
-
-			if tt.postalCode != "" {
-				found := false
-				for _, prop := range query.Properties {
-					if prop.P == "schema:address/schema:postalCode" && prop.V == tt.postalCode {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "postal code property not found")
-			}
+			// Properties are intentionally omitted because Artsdata's API returns 500
+			// when any properties are included. See BuildPlaceQuery doc comment.
+			assert.Empty(t, query.Properties)
 		})
 	}
 }
 
 func TestBuildOrgQuery(t *testing.T) {
 	tests := []struct {
-		name      string
-		orgName   string
-		url       string
-		wantProps int
+		name    string
+		orgName string
+		url     string
 	}{
 		{
-			name:      "with URL",
-			orgName:   "Canadian Opera Company",
-			url:       "https://coc.ca",
-			wantProps: 1,
+			name:    "with URL",
+			orgName: "Canadian Opera Company",
+			url:     "https://coc.ca",
 		},
 		{
-			name:      "without URL",
-			orgName:   "Local Theatre",
-			url:       "",
-			wantProps: 0,
+			name:    "without URL",
+			orgName: "Local Theatre",
+			url:     "",
 		},
 	}
 
@@ -107,18 +73,9 @@ func TestBuildOrgQuery(t *testing.T) {
 
 			assert.Equal(t, tt.orgName, query.Query)
 			assert.Equal(t, "schema:Organization", query.Type)
-			assert.Len(t, query.Properties, tt.wantProps)
-
-			if tt.url != "" {
-				found := false
-				for _, prop := range query.Properties {
-					if prop.P == "schema:url" && prop.V == tt.url {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found, "url property not found")
-			}
+			// Properties are intentionally omitted because Artsdata's API returns 500
+			// when any properties are included. See BuildOrgQuery doc comment.
+			assert.Empty(t, query.Properties)
 		})
 	}
 }

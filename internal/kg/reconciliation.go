@@ -280,46 +280,26 @@ func (s *ReconciliationService) storeIdentifier(ctx context.Context, entityID, e
 }
 
 // BuildPlaceQuery builds a W3C reconciliation query for a Place.
+// Note: city and postalCode are accepted for cache key differentiation but NOT sent
+// as W3C properties because Artsdata's reconciliation endpoint returns HTTP 500 when
+// any properties are included in the query. When Artsdata adds property support, these
+// can be sent as schema:address/schema:addressLocality and schema:address/schema:postalCode.
 func BuildPlaceQuery(name, city, postalCode string) artsdata.ReconciliationQuery {
-	query := artsdata.ReconciliationQuery{
-		Query:      name,
-		Type:       "schema:Place",
-		Properties: []artsdata.QueryProperty{},
+	return artsdata.ReconciliationQuery{
+		Query: name,
+		Type:  "schema:Place",
 	}
-
-	if city != "" {
-		query.Properties = append(query.Properties, artsdata.QueryProperty{
-			P: "schema:address/schema:addressLocality",
-			V: city,
-		})
-	}
-
-	if postalCode != "" {
-		query.Properties = append(query.Properties, artsdata.QueryProperty{
-			P: "schema:address/schema:postalCode",
-			V: postalCode,
-		})
-	}
-
-	return query
 }
 
 // BuildOrgQuery builds a W3C reconciliation query for an Organization.
+// Note: url is accepted for cache key differentiation but NOT sent as a W3C property
+// because Artsdata's reconciliation endpoint returns HTTP 500 when any properties are
+// included in the query. When Artsdata adds property support, this can be sent as schema:url.
 func BuildOrgQuery(name, url string) artsdata.ReconciliationQuery {
-	query := artsdata.ReconciliationQuery{
-		Query:      name,
-		Type:       "schema:Organization",
-		Properties: []artsdata.QueryProperty{},
+	return artsdata.ReconciliationQuery{
+		Query: name,
+		Type:  "schema:Organization",
 	}
-
-	if url != "" {
-		query.Properties = append(query.Properties, artsdata.QueryProperty{
-			P: "schema:url",
-			V: url,
-		})
-	}
-
-	return query
 }
 
 // NormalizeLookupKey creates a normalized cache key from entity properties.
