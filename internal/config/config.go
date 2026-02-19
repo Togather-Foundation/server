@@ -23,6 +23,7 @@ type Config struct {
 	Tracing         TracingConfig
 	Dedup           DedupConfig
 	Geocoding       GeocodingConfig
+	Artsdata        ArtsdataConfig
 	DefaultTimezone string
 	Environment     string
 }
@@ -202,6 +203,22 @@ type GeocodingConfig struct {
 	DefaultCountry string
 }
 
+// ArtsdataConfig holds configuration for Artsdata knowledge graph reconciliation.
+type ArtsdataConfig struct {
+	// Endpoint is the W3C Reconciliation API endpoint (default: "https://api.artsdata.ca/recon")
+	Endpoint string
+	// Enabled controls whether Artsdata reconciliation is active (default: false)
+	Enabled bool
+	// RateLimitPerSec is the max requests per second (default: 1.0)
+	RateLimitPerSec float64
+	// TimeoutSeconds is the HTTP request timeout in seconds (default: 10)
+	TimeoutSeconds int
+	// CacheTTLDays is the TTL for successful reconciliation results (default: 30)
+	CacheTTLDays int
+	// FailureTTLDays is the TTL for negative/failed reconciliation attempts (default: 7)
+	FailureTTLDays int
+}
+
 func Load() (Config, error) {
 	// Try to load .env files if DATABASE_URL not already set
 	if os.Getenv("DATABASE_URL") == "" {
@@ -302,6 +319,14 @@ func Load() (Config, error) {
 			FailureTTLDays:           getEnvInt("GEOCODING_FAILURE_TTL_DAYS", 7),
 			PopularPreserveCount:     getEnvInt("GEOCODING_POPULAR_PRESERVE_COUNT", 10000),
 			DefaultCountry:           getEnv("GEOCODING_DEFAULT_COUNTRY", "ca"),
+		},
+		Artsdata: ArtsdataConfig{
+			Endpoint:        getEnv("ARTSDATA_ENDPOINT", "https://api.artsdata.ca/recon"),
+			Enabled:         getEnvBool("ARTSDATA_ENABLED", false),
+			RateLimitPerSec: getEnvFloat("ARTSDATA_RATE_LIMIT_PER_SEC", 1.0),
+			TimeoutSeconds:  getEnvInt("ARTSDATA_TIMEOUT_SECONDS", 10),
+			CacheTTLDays:    getEnvInt("ARTSDATA_CACHE_TTL_DAYS", 30),
+			FailureTTLDays:  getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
 		},
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),
