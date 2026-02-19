@@ -3,6 +3,7 @@ package kg
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,12 +18,12 @@ import (
 type mockArtsdataClient struct {
 	reconcileFunc    func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error)
 	dereferenceFunc  func(ctx context.Context, uri string) (*artsdata.EntityData, error)
-	reconcileCalls   int
-	dereferenceCalls int
+	reconcileCalls   atomic.Int32
+	dereferenceCalls atomic.Int32
 }
 
 func (m *mockArtsdataClient) Reconcile(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
-	m.reconcileCalls++
+	m.reconcileCalls.Add(1)
 	if m.reconcileFunc != nil {
 		return m.reconcileFunc(ctx, queries)
 	}
@@ -30,7 +31,7 @@ func (m *mockArtsdataClient) Reconcile(ctx context.Context, queries map[string]a
 }
 
 func (m *mockArtsdataClient) Dereference(ctx context.Context, uri string) (*artsdata.EntityData, error) {
-	m.dereferenceCalls++
+	m.dereferenceCalls.Add(1)
 	if m.dereferenceFunc != nil {
 		return m.dereferenceFunc(ctx, uri)
 	}
@@ -42,13 +43,13 @@ type mockReconciliationCacheStore struct {
 	getFunc               func(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error)
 	upsertCacheFunc       func(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error)
 	upsertIdentifierFunc  func(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
-	getCalls              int
-	upsertCacheCalls      int
-	upsertIdentifierCalls int
+	getCalls              atomic.Int32
+	upsertCacheCalls      atomic.Int32
+	upsertIdentifierCalls atomic.Int32
 }
 
 func (m *mockReconciliationCacheStore) GetReconciliationCache(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error) {
-	m.getCalls++
+	m.getCalls.Add(1)
 	if m.getFunc != nil {
 		return m.getFunc(ctx, arg)
 	}
@@ -56,7 +57,7 @@ func (m *mockReconciliationCacheStore) GetReconciliationCache(ctx context.Contex
 }
 
 func (m *mockReconciliationCacheStore) UpsertReconciliationCache(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error) {
-	m.upsertCacheCalls++
+	m.upsertCacheCalls.Add(1)
 	if m.upsertCacheFunc != nil {
 		return m.upsertCacheFunc(ctx, arg)
 	}
@@ -64,7 +65,7 @@ func (m *mockReconciliationCacheStore) UpsertReconciliationCache(ctx context.Con
 }
 
 func (m *mockReconciliationCacheStore) UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error) {
-	m.upsertIdentifierCalls++
+	m.upsertIdentifierCalls.Add(1)
 	if m.upsertIdentifierFunc != nil {
 		return m.upsertIdentifierFunc(ctx, arg)
 	}
@@ -115,9 +116,11 @@ func TestReconcileEntities_WithMockClient(t *testing.T) {
 	assert.Equal(t, artsdataURI, results[0].IdentifierURI)
 	assert.Equal(t, "artsdata", results[0].AuthorityCode)
 	assert.Equal(t, "auto_high", results[0].Method)
-	assert.Equal(t, 1, mockClient.reconcileCalls)
-	assert.Equal(t, 1, mockCache.getCalls)
-	assert.Equal(t, 1, mockCache.upsertCacheCalls)
+	assert.Equal(t, int32(1), mockClient.reconcileCalls.Load())
+	assert.Equal(t, int32(1), mockClient.dereferenceCalls.Load())
+	assert.Equal(t, int32(1), mockCache.getCalls.Load())
+	assert.Equal(t, int32(1), mockCache.upsertCacheCalls.Load())
+	assert.Equal(t, int32(1), mockCache.upsertIdentifierCalls.Load())
 }
 
 func TestBuildPlaceQuery(t *testing.T) {
@@ -473,13 +476,8 @@ func TestReconcileEntity_CacheHit(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, artsdataURI, results[0].IdentifierURI)
 	// Client should never be called on a cache hit
-	assert.Equal(t, 0, mockClient.reconcileCalls)
-	assert.Equal(t, 1, mockCache.getCalls)
-}
-
-func TestReconcileEntity_HighConfidenceMatch(t *testing.T) {
-	// Covered by TestReconcileEntities_WithMockClient.
-	// This stub is kept intentionally empty to document that the scenario is tested above.
+	assert.Equal(t, int32(0), mockClient.reconcileCalls.Load())
+	assert.Equal(t, int32(1), mockCache.getCalls.Load())
 }
 
 func TestReconcileEntity_NegativeCache(t *testing.T) {
@@ -515,8 +513,8 @@ func TestReconcileEntity_NegativeCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, results)
 	// Client must NOT be called when there is a negative cache entry
-	assert.Equal(t, 0, mockClient.reconcileCalls)
-	assert.Equal(t, 1, mockCache.getCalls)
+	assert.Equal(t, int32(0), mockClient.reconcileCalls.Load())
+	assert.Equal(t, int32(1), mockCache.getCalls.Load())
 }
 
 func TestMatchResult_JSON(t *testing.T) {
