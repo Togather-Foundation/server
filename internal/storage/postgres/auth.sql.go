@@ -229,6 +229,22 @@ func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const expirePendingInvitationsForUser = `-- name: ExpirePendingInvitationsForUser :exec
+UPDATE user_invitations
+SET accepted_at = now()
+WHERE user_id = $1 AND accepted_at IS NULL
+`
+
+// Expires all pending (non-accepted, non-expired) invitations for a user by
+// setting accepted_at. This satisfies the unique partial index
+// idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new
+// invitation to be created. These rows are distinguishable from genuinely
+// accepted invitations because they will not have a corresponding password set.
+func (q *Queries) ExpirePendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, expirePendingInvitationsForUser, userID)
+	return err
+}
+
 const getAPIKeyByPrefix = `-- name: GetAPIKeyByPrefix :one
 SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, last_used_at, expires_at
 FROM api_keys

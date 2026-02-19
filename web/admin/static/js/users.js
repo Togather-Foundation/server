@@ -14,11 +14,18 @@
     };
     let currentUsers = [];
     let abortController = null; // For cancelling in-flight requests
+    let emailEnabled = true; // Whether server has email configured
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
     
     function init() {
+        // Read email enabled status from page data attribute
+        var pageEl = document.querySelector('.page[data-email-enabled]');
+        if (pageEl) {
+            emailEnabled = pageEl.dataset.emailEnabled === 'true';
+        }
+
         setupEventListeners();
         loadUsers();
     }
@@ -206,9 +213,10 @@
                     </button>
                 `;
             } else if (status === 'pending') {
+                var resendLabel = emailEnabled ? 'Resend Invitation' : 'Resend Invitation (no email)';
                 actionButtons += `
-                    <button class="btn btn-sm btn-info resend-invitation-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">
-                        Resend Invitation
+                    <button class="btn btn-sm btn-info resend-invitation-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}"${emailEnabled ? '' : ' title="Email is disabled — invitation will be regenerated but no email sent"'}>
+                        ${resendLabel}
                     </button>
                 `;
             }
@@ -463,6 +471,7 @@
         // Clear validation classes and data attributes
         const usernameInput = document.getElementById('user-username');
         const emailInput = document.getElementById('modal-user-email');
+        const modalError = document.getElementById('user-modal-error');
         if (usernameInput) {
             usernameInput.classList.remove('is-invalid', 'is-valid');
             delete usernameInput.dataset.validationSetup;
@@ -473,6 +482,10 @@
         }
         document.getElementById('username-error').textContent = '';
         document.getElementById('modal-email-error').textContent = '';
+        if (modalError) {
+            modalError.textContent = '';
+            modalError.classList.add('d-none');
+        }
         
         if (user) {
             // Edit mode
@@ -494,13 +507,14 @@
         } else {
             // Create mode
             title.textContent = 'Invite User';
+            var sendLabel = emailEnabled ? 'Send Invitation' : 'Create User (no email)';
             submitBtn.innerHTML = `
                 <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                     <line x1="12" y1="5" x2="12" y2="19"/>
                     <line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
-                Send Invitation
+                ${sendLabel}
             `;
         }
         
@@ -657,7 +671,11 @@
             } else {
                 // Create new user
                 await API.users.create(data);
-                showToast('User invited successfully. Invitation email sent.', 'success');
+                if (emailEnabled) {
+                    showToast('User invited successfully. Invitation email sent.', 'success');
+                } else {
+                    showToast('User created successfully. Email is disabled — no invitation was sent.', 'warning');
+                }
             }
             
             // Close modal
@@ -678,7 +696,17 @@
             await loadUsers();
         } catch (error) {
             console.error('Failed to save user:', error);
-            showToast(error.message || 'Failed to save user', 'error');
+            var errorMsg = error.message || 'Failed to save user';
+            
+            // Show error inline in the modal so it's visible above the backdrop
+            var modalError = document.getElementById('user-modal-error');
+            if (modalError) {
+                modalError.textContent = errorMsg;
+                modalError.classList.remove('d-none');
+            } else {
+                // Fallback to toast if modal error element not found
+                showToast(errorMsg, 'error');
+            }
         } finally {
             setLoading(submitBtn, false);
         }
@@ -859,7 +887,7 @@
                 if (toast) toast.remove();
             }
             
-            showToast(`Invitation resent to "${username}"`, 'success');
+            showToast(`Invitation resent to "${username}"${emailEnabled ? '' : ' (email disabled — no email sent)'}`, emailEnabled ? 'success' : 'warning');
         } catch (error) {
             console.error('Failed to resend invitation:', error);
             

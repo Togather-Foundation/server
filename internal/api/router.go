@@ -152,7 +152,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Initialize email service
 	emailConfig := config.EmailConfig{
 		Enabled:      cfg.Email.Enabled,
+		Provider:     cfg.Email.Provider,
 		From:         cfg.Email.From,
+		ResendAPIKey: cfg.Email.ResendAPIKey,
 		SMTPHost:     cfg.Email.SMTPHost,
 		SMTPPort:     cfg.Email.SMTPPort,
 		SMTPUser:     cfg.Email.SMTPUser,
@@ -240,7 +242,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Admin handlers
 	jwtManager := auth.NewJWTManagerFromKey(adminJWTKey, cfg.Auth.JWTExpiry, "sel.events") // Use derived admin JWT key (srv-yuyg9)
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, adminTemplates, cfg.Auth.JWTExpiry)
-	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger)
+	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger, cfg.Email.Enabled)
 
 	// Developer HTML handler (srv-7m0cf)
 	devHTMLHandler := handlers.NewDevHTMLHandler(devTemplates, cfg.Environment, slogLogger, developerService, devOAuthHandler != nil)

@@ -1,6 +1,7 @@
 package email
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -373,7 +374,7 @@ func TestNewService_EmailDisabled(t *testing.T) {
 func TestSendInvitation_EmailDisabled(t *testing.T) {
 	svc := setupTestService(t) // Enabled=false
 
-	err := svc.SendInvitation("user@example.com", "https://example.com/invite?token=abc123", "Admin User")
+	err := svc.SendInvitation(context.Background(), "user@example.com", "https://example.com/invite?token=abc123", "Admin User")
 
 	if err != nil {
 		t.Errorf("SendInvitation should succeed (log only) when disabled, got error: %v", err)
@@ -399,7 +400,7 @@ func TestSendInvitation_InvalidRecipient(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := svc.SendInvitation(tc.email, "https://example.com/invite", "Admin")
+			err := svc.SendInvitation(context.Background(), tc.email, "https://example.com/invite", "Admin")
 
 			if err == nil {
 				t.Errorf("Expected error for invalid email: %s", tc.email)
@@ -430,7 +431,7 @@ func TestSendInvitation_InvalidURL(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := svc.SendInvitation("user@example.com", tc.url, "Admin")
+			err := svc.SendInvitation(context.Background(), "user@example.com", tc.url, "Admin")
 
 			if err == nil {
 				t.Errorf("Expected error for invalid URL: %s", tc.url)
@@ -592,7 +593,7 @@ func TestSend_ValidatesRecipient(t *testing.T) {
 	svc := setupTestService(t)
 
 	// Test with header injection in recipient
-	err := svc.send("user@example.com\r\nBcc: attacker@evil.com", "Test Subject", "<p>Test Body</p>")
+	err := svc.send(context.Background(), "user@example.com\r\nBcc: attacker@evil.com", "Test Subject", "<p>Test Body</p>")
 
 	if err == nil {
 		t.Error("Expected error for invalid recipient in send()")
@@ -608,6 +609,7 @@ func TestSendInvitation_ValidInputs_Disabled(t *testing.T) {
 	svc := setupTestService(t)
 
 	err := svc.SendInvitation(
+		context.Background(),
 		"newuser@example.com",
 		"https://togather.foundation/invite?token=abc123def456",
 		"Admin User",
@@ -629,6 +631,7 @@ func TestSendInvitation_E2E_WithMailHog(t *testing.T) {
 	// docker run -d -p 1025:1025 -p 8025:8025 mailhog/mailhog
 	cfg := config.EmailConfig{
 		Enabled:      true,
+		Provider:     "smtp", // Explicitly use SMTP for MailHog
 		From:         "test@example.com",
 		SMTPHost:     "localhost",
 		SMTPPort:     1025,
@@ -643,6 +646,7 @@ func TestSendInvitation_E2E_WithMailHog(t *testing.T) {
 	}
 
 	err = svc.SendInvitation(
+		context.Background(),
 		"recipient@example.com",
 		"https://togather.foundation/invite?token=test123",
 		"Admin User",
@@ -658,4 +662,130 @@ func TestSendInvitation_E2E_WithMailHog(t *testing.T) {
 
 	t.Log("✓ Email sent successfully to MailHog")
 	t.Log("Check http://localhost:8025 to view the email")
+}
+
+// TestNewService_ResendProvider verifies Resend provider initialization
+func TestNewService_ResendProvider(t *testing.T) {
+	cfg := config.EmailConfig{
+		Enabled:      true,
+		Provider:     "resend",
+		From:         "test@example.com",
+		ResendAPIKey: "test-api-key-123",
+	}
+
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	svc, err := NewService(cfg, "testdata/templates", logger)
+
+	if err != nil {
+		t.Errorf("Expected successful service creation with Resend provider, got error: %v", err)
+	}
+
+	if svc == nil {
+		t.Fatal("Expected non-nil service")
+	}
+
+	if svc.provider != "resend" {
+		t.Errorf("Expected provider='resend', got %q", svc.provider)
+	}
+
+	if svc.resendClient == nil {
+		t.Error("Expected non-nil Resend client")
+	}
+}
+
+// TestNewService_ResendProvider_MissingAPIKey verifies error when API key is missing
+func TestNewService_ResendProvider_MissingAPIKey(t *testing.T) {
+	cfg := config.EmailConfig{
+		Enabled:      true,
+		Provider:     "resend",
+		From:         "test@example.com",
+		ResendAPIKey: "", // Missing API key
+	}
+
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	_, err := NewService(cfg, "testdata/templates", logger)
+
+	if err == nil {
+		t.Fatal("Expected error for missing Resend API key, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "ResendAPIKey") {
+		t.Errorf("Expected error about missing ResendAPIKey, got: %v", err)
+	}
+}
+
+// TestNewService_SMTPProvider verifies SMTP provider works as before
+func TestNewService_SMTPProvider(t *testing.T) {
+	cfg := config.EmailConfig{
+		Enabled:      false, // Disabled to avoid SMTP validation
+		Provider:     "smtp",
+		From:         "test@example.com",
+		SMTPHost:     "smtp.test.com",
+		SMTPPort:     587,
+		SMTPUser:     "testuser",
+		SMTPPassword: "testpass",
+	}
+
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	svc, err := NewService(cfg, "testdata/templates", logger)
+
+	if err != nil {
+		t.Errorf("Expected successful service creation with SMTP provider, got error: %v", err)
+	}
+
+	if svc == nil {
+		t.Fatal("Expected non-nil service")
+	}
+
+	if svc.provider != "smtp" {
+		t.Errorf("Expected provider='smtp', got %q", svc.provider)
+	}
+
+	if svc.resendClient != nil {
+		t.Error("Expected nil Resend client for SMTP provider")
+	}
+}
+
+// TestNewService_DefaultProvider verifies default provider is smtp for backward compatibility
+func TestNewService_DefaultProvider(t *testing.T) {
+	cfg := config.EmailConfig{
+		Enabled:  false,
+		Provider: "", // Empty provider should default to smtp for backward compat
+		From:     "test@example.com",
+	}
+
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	svc, err := NewService(cfg, "testdata/templates", logger)
+
+	if err != nil {
+		t.Errorf("Expected successful service creation with default provider, got error: %v", err)
+	}
+
+	if svc == nil {
+		t.Fatal("Expected non-nil service")
+	}
+
+	if svc.provider != "smtp" {
+		t.Errorf("Expected default provider='smtp', got %q", svc.provider)
+	}
+}
+
+// TestNewService_InvalidProvider verifies error for invalid provider
+func TestNewService_InvalidProvider(t *testing.T) {
+	cfg := config.EmailConfig{
+		Enabled:  true,
+		Provider: "sendgrid", // Invalid provider
+		From:     "test@example.com",
+	}
+
+	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	_, err := NewService(cfg, "testdata/templates", logger)
+
+	if err == nil {
+		t.Fatal("Expected error for invalid provider, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "invalid provider") && !strings.Contains(err.Error(), "unknown provider") {
+		t.Errorf("Expected error about invalid/unknown provider, got: %v", err)
+	}
 }

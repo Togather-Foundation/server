@@ -62,6 +62,12 @@ type Querier interface {
 	DeactivateUser(ctx context.Context, id pgtype.UUID) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
+	// Expires all pending (non-accepted, non-expired) invitations for a user by
+	// setting accepted_at. This satisfies the unique partial index
+	// idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new
+	// invitation to be created. These rows are distinguishable from genuinely
+	// accepted invitations because they will not have a corresponding password set.
+	ExpirePendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) error
 	// SQLc queries for event_review_queue domain.
 	// See docs/architecture/event-review-workflow.md for complete design.
 	// Find existing review by deduplication keys (checks source_external_id or dedup_hash)

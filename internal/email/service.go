@@ -2,6 +2,7 @@ package email
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"html/template"
@@ -13,14 +14,17 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/resend/resend-go/v2"
 	"github.com/rs/zerolog"
 )
 
-// Service handles email sending with SMTP
+// Service handles email sending with multiple provider support (SMTP or Resend)
 type Service struct {
-	config    config.EmailConfig
-	templates *template.Template
-	logger    zerolog.Logger
+	config       config.EmailConfig
+	provider     string // "smtp" or "resend"
+	resendClient *resend.Client
+	templates    *template.Template
+	logger       zerolog.Logger
 }
 
 // InvitationData holds data for rendering the invitation email template
@@ -33,11 +37,30 @@ type InvitationData struct {
 // NewService creates a new email service instance
 // templatesDir should point to the directory containing HTML email templates (e.g., "web/email/templates")
 func NewService(cfg config.EmailConfig, templatesDir string, logger zerolog.Logger) (*Service, error) {
+	// Determine provider (default to "smtp" for backward compatibility)
+	provider := cfg.Provider
+	if provider == "" {
+		provider = "smtp"
+	}
+
+	// Validate provider
+	if provider != "smtp" && provider != "resend" {
+		return nil, fmt.Errorf("invalid provider %q: must be 'smtp' or 'resend'", provider)
+	}
+
 	// Validate sender email address if email is enabled
 	if cfg.Enabled {
 		if err := validateEmailAddress(cfg.From); err != nil {
 			return nil, fmt.Errorf("invalid sender email in config: %w", err)
 		}
+
+		// Provider-specific validation
+		if provider == "resend" {
+			if cfg.ResendAPIKey == "" {
+				return nil, fmt.Errorf("ResendAPIKey is required when provider is 'resend'")
+			}
+		}
+		// Note: SMTP validation is handled at send time (connection errors)
 	}
 
 	// Parse all HTML templates in the directory
@@ -47,15 +70,23 @@ func NewService(cfg config.EmailConfig, templatesDir string, logger zerolog.Logg
 		return nil, fmt.Errorf("failed to parse email templates: %w", err)
 	}
 
+	// Initialize provider-specific clients
+	var resendClient *resend.Client
+	if provider == "resend" && cfg.Enabled {
+		resendClient = resend.NewClient(cfg.ResendAPIKey)
+	}
+
 	return &Service{
-		config:    cfg,
-		templates: templates,
-		logger:    logger.With().Str("component", "email").Logger(),
+		config:       cfg,
+		provider:     provider,
+		resendClient: resendClient,
+		templates:    templates,
+		logger:       logger.With().Str("component", "email").Logger(),
 	}, nil
 }
 
 // SendInvitation sends an invitation email to a new user
-func (s *Service) SendInvitation(to, inviteLink, invitedBy string) error {
+func (s *Service) SendInvitation(ctx context.Context, to, inviteLink, invitedBy string) error {
 	// Validate recipient email address early
 	if err := validateEmailAddress(to); err != nil {
 		return fmt.Errorf("invalid recipient email: %w", err)
@@ -88,7 +119,7 @@ func (s *Service) SendInvitation(to, inviteLink, invitedBy string) error {
 	}
 
 	subject := "Welcome to Togather - Set Up Your Account"
-	if err := s.send(to, subject, htmlBody); err != nil {
+	if err := s.send(ctx, to, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send invitation email: %w", err)
 	}
 
@@ -137,12 +168,25 @@ func validateInviteURL(link string) error {
 	return nil
 }
 
-// send sends an email with the given subject and HTML body via Gmail SMTP
-func (s *Service) send(to, subject, htmlBody string) error {
+// send dispatches email sending to the appropriate provider
+func (s *Service) send(ctx context.Context, to, subject, htmlBody string) error {
 	// Validate recipient email address to prevent header injection
 	if err := validateEmailAddress(to); err != nil {
 		return fmt.Errorf("invalid recipient email: %w", err)
 	}
+
+	switch s.provider {
+	case "resend":
+		return s.sendViaResend(ctx, to, subject, htmlBody)
+	case "smtp":
+		return s.sendViaSMTP(to, subject, htmlBody)
+	default:
+		return fmt.Errorf("unknown email provider: %s", s.provider)
+	}
+}
+
+// sendViaSMTP sends an email via SMTP (extracted from original send method)
+func (s *Service) sendViaSMTP(to, subject, htmlBody string) error {
 
 	// Build email message with MIME headers
 	from := s.config.From

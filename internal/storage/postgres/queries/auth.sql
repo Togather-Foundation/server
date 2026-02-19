@@ -90,6 +90,16 @@ UPDATE user_invitations
 SET accepted_at = now()
 WHERE id = $1;
 
+-- name: ExpirePendingInvitationsForUser :exec
+-- Expires all pending (non-accepted, non-expired) invitations for a user by
+-- setting accepted_at. This satisfies the unique partial index
+-- idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new
+-- invitation to be created. These rows are distinguishable from genuinely
+-- accepted invitations because they will not have a corresponding password set.
+UPDATE user_invitations
+SET accepted_at = now()
+WHERE user_id = $1 AND accepted_at IS NULL;
+
 -- name: ListPendingInvitationsForUser :many
 SELECT id, token_hash, email, expires_at, created_at
 FROM user_invitations
