@@ -720,17 +720,47 @@ func requireMigrateCLI(t *testing.T) {
 func validateHealthCheck(t *testing.T, ctx context.Context, healthURL string) {
 	t.Helper()
 
-	// No need to sleep - the container's wait strategy already ensures
-	// the health endpoint is responding before the container is marked as started
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 5 * time.Second,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
-	require.NoError(t, err, "Failed to create health check request")
+	// Retry health check with exponential backoff (max ~3.1 seconds total)
+	// This handles race condition where container logs "starting" but HTTP server isn't ready yet
+	var resp *http.Response
+	var err error
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+		if reqErr != nil {
+			err = reqErr
+			break
+		}
 
-	resp, err := client.Do(req)
-	require.NoError(t, err, "Health check request failed")
+		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		// Clean up response body if we got one
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+
+		if i < maxRetries-1 {
+			backoff := time.Duration(100*(1<<i)) * time.Millisecond // 100ms, 200ms, 400ms, 800ms, 1600ms
+			t.Logf("Health check attempt %d failed (err=%v, status=%v), retrying in %v...",
+				i+1, err, func() int {
+					if resp != nil {
+						return resp.StatusCode
+					}
+					return 0
+				}(), backoff)
+			time.Sleep(backoff)
+		}
+	}
+
+	require.NoError(t, err, "Health check request failed after %d attempts", maxRetries)
+	require.NotNil(t, resp, "No response received after %d attempts", maxRetries)
 	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "Health check returned non-200 status")
