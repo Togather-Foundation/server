@@ -232,7 +232,8 @@ func testConfig(dbURL string) config.Config {
 			AgentPerMinute:  1000,
 			AdminPerMinute:  0,
 		},
-		AdminBootstrap: config.AdminBootstrapConfig{},
+		AdminBootstrap:  config.AdminBootstrapConfig{},
+		DefaultTimezone: "America/Toronto",
 		Jobs: config.JobsConfig{
 			RetryDeduplication:  1,
 			RetryReconciliation: 1,
