@@ -59,14 +59,11 @@
                     <li class="nav-item{{ if eq .ActivePage "dashboard" }} active{{ end }}">
                         <a class="nav-link" href="/admin/dashboard">Dashboard</a>
                     </li>
+                    <li class="nav-item{{ if eq .ActivePage "review-queue" }} active{{ end }}">
+                        <a class="nav-link" href="/admin/review-queue">Review</a>
+                    </li>
                     <li class="nav-item{{ if eq .ActivePage "events" }} active{{ end }}">
                         <a class="nav-link" href="/admin/events">Events</a>
-                    </li>
-                    <li class="nav-item{{ if eq .ActivePage "users" }} active{{ end }}">
-                        <a class="nav-link" href="/admin/users">Users</a>
-                    </li>
-                    <li class="nav-item{{ if eq .ActivePage "developers" }} active{{ end }}">
-                        <a class="nav-link" href="/admin/developers">Developers</a>
                     </li>
                     <li class="nav-item{{ if eq .ActivePage "places" }} active{{ end }}">
                         <a class="nav-link" href="/admin/places">Places</a>
@@ -74,8 +71,11 @@
                     <li class="nav-item{{ if eq .ActivePage "organizations" }} active{{ end }}">
                         <a class="nav-link" href="/admin/organizations">Organizations</a>
                     </li>
-                    <li class="nav-item{{ if eq .ActivePage "review-queue" }} active{{ end }}">
-                        <a class="nav-link" href="/admin/review-queue">Review</a>
+                    <li class="nav-item{{ if eq .ActivePage "users" }} active{{ end }}">
+                        <a class="nav-link" href="/admin/users">Users</a>
+                    </li>
+                    <li class="nav-item{{ if eq .ActivePage "developers" }} active{{ end }}">
+                        <a class="nav-link" href="/admin/developers">Developers</a>
                     </li>
                     <li class="nav-item{{ if eq .ActivePage "api-keys" }} active{{ end }}">
                         <a class="nav-link" href="/admin/api-keys">API Keys</a>

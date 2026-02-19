@@ -4,13 +4,13 @@ Interactive admin UI testing with Playwright
 Tests the live admin UI on localhost:8080
 """
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 import sys
-import time
+import os
 
-BASE_URL = "http://localhost:8080"
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "test123"
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "XXKokg60kd8hLXgq")
 
 
 def main():
@@ -52,8 +52,8 @@ def main():
             page.click('button[type="submit"]')
             print("   Clicked submit button")
 
-            # Wait for response
-            time.sleep(2)
+            # Wait for login redirect to dashboard
+            page.wait_for_url("**/admin/dashboard", timeout=5000)
             page.wait_for_load_state("networkidle")
 
             print(f"\n   Current URL: {page.url}")
@@ -67,8 +67,8 @@ def main():
                 print("3. Testing Dashboard page...")
                 print(f"   Title: {page.title()}")
 
-                # Wait for JavaScript to load stats
-                time.sleep(2)
+                # Wait for JavaScript to load stats elements
+                page.wait_for_selector("#pending-count, #total-events", timeout=5000)
 
                 page.screenshot(path="/tmp/admin_dashboard.png", full_page=True)
                 print(f"   ✓ Screenshot: /tmp/admin_dashboard.png")
@@ -96,7 +96,8 @@ def main():
                 print("\n4. Testing Events List page...")
                 page.goto(f"{BASE_URL}/admin/events")
                 page.wait_for_load_state("networkidle")
-                time.sleep(1)
+                # Wait for page heading to ensure content is rendered
+                page.wait_for_selector("h2", timeout=5000)
 
                 page.screenshot(path="/tmp/admin_events.png", full_page=True)
                 print(f"   ✓ Screenshot: /tmp/admin_events.png")
@@ -110,7 +111,8 @@ def main():
                 print("\n5. Testing Duplicates page...")
                 page.goto(f"{BASE_URL}/admin/duplicates")
                 page.wait_for_load_state("networkidle")
-                time.sleep(1)
+                # Wait for page heading to ensure content is rendered
+                page.wait_for_selector("h2", timeout=5000)
 
                 page.screenshot(path="/tmp/admin_duplicates.png", full_page=True)
                 print(f"   ✓ Screenshot: /tmp/admin_duplicates.png")
@@ -119,7 +121,8 @@ def main():
                 print("\n6. Testing API Keys page...")
                 page.goto(f"{BASE_URL}/admin/api-keys")
                 page.wait_for_load_state("networkidle")
-                time.sleep(1)
+                # Wait for page heading to ensure content is rendered
+                page.wait_for_selector("h2", timeout=5000)
 
                 page.screenshot(path="/tmp/admin_api_keys.png", full_page=True)
                 print(f"   ✓ Screenshot: /tmp/admin_api_keys.png")
@@ -137,7 +140,8 @@ def main():
                     )
 
                     logout_btn.first.click()
-                    time.sleep(1)
+                    # Wait for logout redirect to login page
+                    page.wait_for_url("**/admin/login", timeout=5000)
                     page.wait_for_load_state("networkidle")
 
                     print(f"   After logout URL: {page.url}")

@@ -612,71 +612,78 @@ func TestDockerEmailServiceInit(t *testing.T) {
 	t.Run("StartContainerAndVerifyEmailInit", func(t *testing.T) {
 		t.Logf("Starting container with email service enabled")
 
-		// Use a container with minimal config
-		// We don't need a real database for this test - just verify the email service initializes
-		containerName := fmt.Sprintf("email-test-%d", time.Now().Unix())
+		// Use testcontainers to properly wait for container initialization
+		req := testcontainers.ContainerRequest{
+			Image: fullImageName,
+			Env: map[string]string{
+				"EMAIL_ENABLED":  "true",
+				"EMAIL_PROVIDER": "smtp",
+				"EMAIL_FROM":     "test@example.com",
+				"SMTP_HOST":      "smtp.example.com",
+				"SMTP_PORT":      "587",
+				"SMTP_USER":      "testuser",
+				"SMTP_PASSWORD":  "testpass",
+				"DATABASE_URL":   "postgres://user:pass@localhost:5432/db?sslmode=disable",
+				"LOG_LEVEL":      "info",
+				"JWT_SECRET":     "test-secret-for-email-init-test-minimum-32-chars",
+			},
+			// Wait for either server startup attempt or database connection error
+			// The key is that email service initializes before database connection
+			WaitingFor: wait.ForLog("starting SEL server").
+				WithStartupTimeout(60 * time.Second).
+				WithPollInterval(1 * time.Second),
+		}
 
-		// Start container in detached mode - it will fail to connect to database but email service should init first
-		cmd := exec.CommandContext(ctx, "docker", "run",
-			"--name", containerName,
-			"-d",
-			"-e", "EMAIL_ENABLED=true",
-			"-e", "EMAIL_PROVIDER=smtp",
-			"-e", "EMAIL_FROM=test@example.com",
-			"-e", "SMTP_HOST=smtp.example.com",
-			"-e", "SMTP_PORT=587",
-			"-e", "SMTP_USER=testuser",
-			"-e", "SMTP_PASSWORD=testpass",
-			"-e", "DATABASE_URL=postgres://user:pass@localhost:5432/db?sslmode=disable",
-			"-e", "LOG_LEVEL=info",
-			"-e", "JWT_SECRET=test-secret-for-email-init-test-minimum-32-chars",
-			fullImageName,
-		)
-
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, "Failed to start container: %s", string(output))
-
-		containerID := strings.TrimSpace(string(output))
-		t.Logf("✓ Container started: %s", containerID)
+		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: req,
+			Started:          true,
+		})
+		require.NoError(t, err, "Failed to start container")
 
 		// Ensure container is cleaned up after test
 		defer func() {
-			// Stop and remove container
-			stopCmd := exec.CommandContext(context.Background(), "docker", "rm", "-f", containerName)
-			_ = stopCmd.Run()
+			if err := container.Terminate(ctx); err != nil {
+				t.Logf("Failed to terminate container: %v", err)
+			}
 		}()
 
-		// Wait a few seconds for initialization and failure (due to no database)
-		time.Sleep(3 * time.Second)
-
-		// Get container logs - use containerID instead of containerName
-		logsCmd := exec.CommandContext(ctx, "docker", "logs", containerID)
-		logsOutput, err := logsCmd.CombinedOutput()
-		// Don't fail if we can't get logs - container might have exited
+		// Get container logs using testcontainers API
+		logReader, err := container.Logs(ctx)
 		if err != nil {
 			t.Logf("Warning: failed to get container logs: %v", err)
-			// Try with container name as fallback
-			logsCmd = exec.CommandContext(ctx, "docker", "logs", containerName)
-			logsOutput, _ = logsCmd.CombinedOutput()
-		}
-
-		logs := string(logsOutput)
-		if logs == "" {
-			t.Logf("Warning: No logs captured from container")
-			// This is not a failure - the important thing is checking the build
 		} else {
-			t.Logf("Container logs:\n%s", logs)
+			defer func() { _ = logReader.Close() }()
+			logsOutput, err := io.ReadAll(logReader)
+			logs := string(logsOutput)
 
-			// Verify email service initialized successfully
-			// Check for the absence of "failed to initialize email service" error
-			assert.NotContains(t, logs, "failed to initialize email service",
-				"Email service failed to initialize - templates may be missing")
+			if err != nil || logs == "" {
+				t.Logf("Warning: No logs captured from container")
+				// This is not a failure - the important thing is checking the build
+			} else {
+				t.Logf("Container logs:\n%s", logs)
 
-			// Also check for the absence of template parsing errors
-			assert.NotContains(t, logs, "failed to parse email templates",
-				"Email template parsing failed")
+				// Verify email service initialized successfully
+				// Negative assertions: Check for absence of errors
+				assert.NotContains(t, logs, "failed to initialize email service",
+					"Email service failed to initialize - templates may be missing")
+				assert.NotContains(t, logs, "failed to parse email templates",
+					"Email template parsing failed")
 
-			t.Logf("✓ Email service initialized without errors")
+				// Positive assertions: Verify email service actually initialized
+				assert.Contains(t, logs, "email service initialized successfully",
+					"Expected to find success message for email service initialization")
+
+				// Verify the server started up (email init happens during startup)
+				assert.Contains(t, logs, "starting SEL server",
+					"Expected to find server startup message")
+
+				// Verify initialization progressed past email service to metrics
+				// (confirms email init didn't block startup)
+				assert.Contains(t, logs, "metrics initialized",
+					"Expected to find metrics initialization message after email service init")
+
+				t.Logf("✓ Email service initialized successfully with positive confirmation")
+			}
 		}
 	})
 
@@ -713,18 +720,47 @@ func requireMigrateCLI(t *testing.T) {
 func validateHealthCheck(t *testing.T, ctx context.Context, healthURL string) {
 	t.Helper()
 
-	// Wait a bit for application to fully initialize
-	time.Sleep(2 * time.Second)
-
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 5 * time.Second,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
-	require.NoError(t, err, "Failed to create health check request")
+	// Retry health check with exponential backoff (max ~3.1 seconds total)
+	// This handles race condition where container logs "starting" but HTTP server isn't ready yet
+	var resp *http.Response
+	var err error
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+		if reqErr != nil {
+			err = reqErr
+			break
+		}
 
-	resp, err := client.Do(req)
-	require.NoError(t, err, "Health check request failed")
+		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		// Clean up response body if we got one
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+
+		if i < maxRetries-1 {
+			backoff := time.Duration(100*(1<<i)) * time.Millisecond // 100ms, 200ms, 400ms, 800ms, 1600ms
+			t.Logf("Health check attempt %d failed (err=%v, status=%v), retrying in %v...",
+				i+1, err, func() int {
+					if resp != nil {
+						return resp.StatusCode
+					}
+					return 0
+				}(), backoff)
+			time.Sleep(backoff)
+		}
+	}
+
+	require.NoError(t, err, "Health check request failed after %d attempts", maxRetries)
+	require.NotNil(t, resp, "No response received after %d attempts", maxRetries)
 	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "Health check returned non-200 status")

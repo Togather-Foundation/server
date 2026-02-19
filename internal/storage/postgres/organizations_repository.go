@@ -8,6 +8,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -468,11 +469,11 @@ func sqlcOrganizationRowToDomain(row interface{}) organizations.Organization {
 		updatedAt = r.UpdatedAt
 	}
 
-	var orgID string
-	if err := id.Scan(&orgID); err != nil {
-		// Should never happen with valid database UUIDs
-		// Using empty string as fallback
-		orgID = ""
+	// Extract UUID string representation
+	// Note: Use String() method, not Scan() which reads FROM source not TO destination
+	orgID := ""
+	if id.Valid {
+		orgID = uuid.UUID(id.Bytes).String()
 	}
 
 	org := organizations.Organization{

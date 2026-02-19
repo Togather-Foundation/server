@@ -4,7 +4,6 @@ Tests that tabs can be clicked and switched between without errors.
 """
 
 import os
-import time
 from playwright.sync_api import sync_playwright, expect
 
 
@@ -38,8 +37,8 @@ def test_tab_switching():
             page.goto("http://localhost:8080/admin/review-queue")
             page.wait_for_selector('[data-action="filter-status"]', timeout=10000)
 
-            # Wait for initial load
-            time.sleep(2)
+            # Wait for page to fully load and tabs to be interactive
+            page.wait_for_load_state("networkidle")
 
             # Verify no console errors on page load
             if console_errors:
@@ -62,7 +61,8 @@ def test_tab_switching():
             # Test clicking Approved tab
             print("Testing Approved tab click...")
             approved_tab.click()
-            time.sleep(1)
+            # Wait for tab to become active after click
+            expect(approved_tab).to_have_class("nav-link active", timeout=2000)
 
             if console_errors:
                 print(f"❌ Console errors after clicking Approved: {console_errors}")
@@ -75,7 +75,8 @@ def test_tab_switching():
             # Test clicking Rejected tab
             print("Testing Rejected tab click...")
             rejected_tab.click()
-            time.sleep(1)
+            # Wait for tab to become active after click
+            expect(rejected_tab).to_have_class("nav-link active", timeout=2000)
 
             if console_errors:
                 print(f"❌ Console errors after clicking Rejected: {console_errors}")
@@ -88,7 +89,8 @@ def test_tab_switching():
             # Test clicking back to Pending tab
             print("Testing Pending tab click...")
             pending_tab.click()
-            time.sleep(1)
+            # Wait for tab to become active after click
+            expect(pending_tab).to_have_class("nav-link active", timeout=2000)
 
             if console_errors:
                 print(f"❌ Console errors after clicking Pending: {console_errors}")

@@ -86,13 +86,22 @@ func NewService(cfg config.EmailConfig, templatesDir string, logger zerolog.Logg
 		resendClient = resend.NewClient(cfg.ResendAPIKey)
 	}
 
-	return &Service{
+	svc := &Service{
 		config:       cfg,
 		provider:     provider,
 		resendClient: resendClient,
 		templates:    templates,
 		logger:       logger.With().Str("component", "email").Logger(),
-	}, nil
+	}
+
+	// Log successful initialization
+	svc.logger.Info().
+		Str("provider", provider).
+		Bool("enabled", cfg.Enabled).
+		Str("templates_dir", templatesDir).
+		Msg("email service initialized successfully")
+
+	return svc, nil
 }
 
 // SendInvitation sends an invitation email to a new user

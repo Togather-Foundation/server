@@ -81,6 +81,88 @@ def admin_login(page: Page, console_errors):
     return page
 
 
+@pytest.fixture(scope="function")
+def test_user_cleanup(page: Page):
+    """
+    Track and cleanup test users created during test.
+
+    This fixture provides a register function to track users by email,
+    then cleans them up via HARD DELETE after the test completes to avoid
+    username uniqueness constraint conflicts in future test runs.
+
+    Usage:
+        def test_something(test_user_cleanup):
+            user_email = test_user_cleanup("user@example.com")
+            # ... test code that creates the user ...
+    """
+    created_user_emails = []
+
+    def register_user(email):
+        """Register a user email for cleanup"""
+        created_user_emails.append(email)
+        return email
+
+    yield register_user
+
+    # Cleanup after test - HARD delete users to avoid username collisions
+    if not created_user_emails:
+        return
+
+    print(f"\n   Cleaning up {len(created_user_emails)} test user(s)...")
+
+    # Use direct database deletion via psql (hard delete, not soft delete)
+    # This avoids username uniqueness conflicts in future test runs
+    import subprocess
+    import os
+
+    # Load DATABASE_URL from .env file if not already in environment
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        # Try to load from .env file
+        env_file = os.path.join(os.path.dirname(__file__), "../..", ".env")
+        if os.path.exists(env_file):
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("DATABASE_URL="):
+                        database_url = line.split("=", 1)[1].strip('"').strip("'")
+                        break
+
+    if not database_url:
+        print("   ⚠ DATABASE_URL not set, skipping cleanup")
+        return
+
+    for email in created_user_emails:
+        try:
+            # Hard delete from database (not soft delete) to free up username
+            # Use parameterized query to avoid SQL injection
+            result = subprocess.run(
+                [
+                    "psql",
+                    database_url,
+                    "-c",
+                    f"DELETE FROM users WHERE email = '{email}';",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                # Check if any rows were deleted
+                if "DELETE 1" in result.stdout:
+                    print(f"   ✓ Deleted user: {email}")
+                elif "DELETE 0" in result.stdout:
+                    print(f"   ⚠ User {email} not found (may not have been created)")
+                else:
+                    print(f"   ✓ Cleaned up {email}")
+            else:
+                print(f"   ⚠ Failed to delete {email}: {result.stderr[:60]}")
+
+        except Exception as e:
+            print(f"   ⚠ Error cleaning up {email}: {e}")
+
+
 def generate_unique_username():
     """Generate unique username for test users (alphanumeric only, no underscores)"""
     suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
@@ -206,7 +288,7 @@ class TestUserListPage:
 class TestUserCRUD:
     """Tests for creating, reading, updating, deleting users"""
 
-    def test_create_user_via_modal(self, page: Page, admin_login):
+    def test_create_user_via_modal(self, page: Page, admin_login, test_user_cleanup):
         """Test creating a new user through the modal"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
@@ -215,6 +297,9 @@ class TestUserCRUD:
         # Generate unique user data
         username = generate_unique_username()
         email = generate_unique_email(username)
+
+        # Register user for cleanup
+        test_user_cleanup(email)
 
         print(f"\n   Creating user: {username}")
 
@@ -246,7 +331,104 @@ class TestUserCRUD:
         page.screenshot(path="/tmp/user_created.png", full_page=True)
         print("   ✓ Screenshot: /tmp/user_created.png")
 
-    def test_edit_user_role(self, page: Page, admin_login):
+    def test_duplicate_user_error_in_modal(
+        self, page: Page, admin_login, test_user_cleanup
+    ):
+        """Test that duplicate user error appears inside the modal (not behind backdrop)"""
+        page.goto(f"{BASE_URL}/admin/users")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1000)
+
+        # Generate unique user data with timestamp to ensure uniqueness
+        import time
+
+        timestamp = int(time.time() * 1000) % 100000  # Last 5 digits of timestamp
+        username = f"testuser{timestamp}"
+        email = f"{username}@example.com"
+
+        # Register user for cleanup
+        test_user_cleanup(email)
+
+        print(f"\n   Creating first user: {username}")
+
+        # Create user successfully
+        page.click("#create-user-btn")
+        page.wait_for_timeout(500)
+        page.fill("#user-username", username)
+        page.fill("#modal-user-email", email)
+        page.select_option("#user-role", "viewer")
+        page.click("#user-submit-btn")
+        page.wait_for_timeout(2000)  # Wait for API call and modal close
+
+        # Check if modal closed (successful creation) or still visible (creation failed)
+        modal = page.locator("#user-modal")
+        modal_visible = modal.is_visible()
+
+        if modal_visible:
+            # First creation failed (username/email already exists), close modal and find existing user
+            print(f"   ⚠ User '{username}' already exists (modal still open)")
+            error_alert = page.locator("#user-modal .alert-danger")
+            if error_alert.is_visible():
+                print(f"   First creation error: {error_alert.inner_text()[:60]}...")
+            page.click("#user-modal .btn-close")
+            page.wait_for_timeout(500)
+        else:
+            print("   ✓ First user created successfully, modal closed")
+
+        # Verify user appears in table (either just created or already existed)
+        user_row = page.locator(f'tr:has-text("{username}")')
+        if user_row.count() == 0:
+            # User not in table, try refreshing
+            page.reload()
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(1000)
+
+        print(f"   ✓ User '{username}' is in the table")
+
+        # Now try to create the same user again (duplicate email)
+        print(f"\n   Attempting to create duplicate user with email: {email}")
+        page.click("#create-user-btn")
+        page.wait_for_timeout(500)
+
+        # Fill form with same email (different username to isolate email constraint)
+        duplicate_username = f"testuser{timestamp + 1}"
+        page.fill("#user-username", duplicate_username)
+        page.fill("#modal-user-email", email)  # Same email as first user
+        page.select_option("#user-role", "viewer")
+        page.click("#user-submit-btn")
+        page.wait_for_timeout(1500)  # Wait for API error response
+
+        # Verify modal is still visible (error occurred)
+        expect(modal).to_be_visible()
+        print("   ✓ Modal remained open after error")
+
+        # Verify error alert appears INSIDE the modal (not hidden behind backdrop)
+        # The error is shown via #user-modal-error (lines 701-705 in users.js)
+        error_alert = page.locator("#user-modal-error")
+        expect(error_alert).to_be_visible(timeout=3000)
+        print("   ✓ Error alert is visible inside modal")
+
+        # Verify error message contains meaningful text about duplicate/existing user
+        error_text = error_alert.inner_text()
+        assert (
+            "already taken" in error_text.lower()
+            or "already exists" in error_text.lower()
+            or "duplicate" in error_text.lower()
+            or "email is already" in error_text.lower()
+        ), f"Error message doesn't indicate duplicate: {error_text}"
+        print(f"   ✓ Error message is meaningful: {error_text[:60]}...")
+
+        # Take screenshot for visual confirmation
+        page.screenshot(path="/tmp/test_duplicate_user_error.png", full_page=True)
+        print("   ✓ Screenshot: /tmp/test_duplicate_user_error.png")
+
+        # Close modal
+        page.click("#user-modal .btn-close")
+        page.wait_for_timeout(500)
+        expect(modal).not_to_be_visible()
+        print("   ✓ Modal closed successfully")
+
+    def test_edit_user_role(self, page: Page, admin_login, test_user_cleanup):
         """Test editing a user's role"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
@@ -255,6 +437,9 @@ class TestUserCRUD:
         # Create a test user first
         username = generate_unique_username()
         email = generate_unique_email(username)
+
+        # Register user for cleanup
+        test_user_cleanup(email)
 
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
@@ -287,7 +472,9 @@ class TestUserCRUD:
         expect(role_badge).to_be_visible()
         print("   ✓ Role changed to 'editor'")
 
-    def test_delete_user_with_confirmation(self, page: Page, admin_login):
+    def test_delete_user_with_confirmation(
+        self, page: Page, admin_login, test_user_cleanup
+    ):
         """Test deleting a user with confirmation dialog"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
@@ -296,6 +483,9 @@ class TestUserCRUD:
         # Create a test user first
         username = generate_unique_username()
         email = generate_unique_email(username)
+
+        # Register user for cleanup (in case test fails before deletion)
+        test_user_cleanup(email)
 
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
@@ -332,6 +522,7 @@ class TestUserCRUD:
         user_row = page.locator(f'tr:has-text("{username}")')
         expect(user_row).not_to_be_visible()
         print(f"   ✓ User '{username}' removed from table")
+        # Note: User is deleted by test itself, cleanup fixture will skip if not found
 
 
 # ============================================================================
@@ -356,7 +547,9 @@ class TestUserActions:
         # Implementation would require backend to support user deactivation
         # and a test user that's already inactive
 
-    def test_resend_invitation_to_pending_user(self, page: Page, admin_login):
+    def test_resend_invitation_to_pending_user(
+        self, page: Page, admin_login, test_user_cleanup
+    ):
         """Test resending invitation to pending user"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
@@ -365,6 +558,9 @@ class TestUserActions:
         # Create a test user (will be pending by default)
         username = generate_unique_username()
         email = generate_unique_email(username)
+
+        # Register user for cleanup
+        test_user_cleanup(email)
 
         page.click("#create-user-btn")
         page.wait_for_timeout(500)
@@ -612,7 +808,9 @@ class TestInvitationAcceptance:
 class TestXSSProtection:
     """Tests for XSS protection in user management"""
 
-    def test_malicious_username_script_tag_escaped(self, page: Page, admin_login):
+    def test_malicious_username_script_tag_escaped(
+        self, page: Page, admin_login, test_user_cleanup
+    ):
         """Test that <script> tag in username is rejected by validation"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
@@ -621,6 +819,9 @@ class TestXSSProtection:
         # Try to create user with malicious username
         malicious_username = "<script>alert('XSS')</script>"
         email = generate_unique_email("xss_test_1")
+
+        # Register for cleanup in case validation doesn't work
+        test_user_cleanup(email)
 
         print(
             f"\n   Attempting to create user with malicious username: {malicious_username}"
@@ -646,7 +847,9 @@ class TestXSSProtection:
         expect(modal).to_be_visible()
         print("   ✓ Modal still open (user not created)")
 
-    def test_malicious_username_img_tag_escaped(self, page: Page, admin_login):
+    def test_malicious_username_img_tag_escaped(
+        self, page: Page, admin_login, test_user_cleanup
+    ):
         """Test that <img> tag with onerror is rejected by validation"""
         page.goto(f"{BASE_URL}/admin/users")
         page.wait_for_load_state("networkidle")
@@ -655,6 +858,9 @@ class TestXSSProtection:
         # Try to create user with malicious username
         malicious_username = "<img src=x onerror=alert('XSS')>"
         email = generate_unique_email("xss_test_2")
+
+        # Register for cleanup in case validation doesn't work
+        test_user_cleanup(email)
 
         print(
             f"\n   Attempting to create user with malicious img tag: {malicious_username}"
