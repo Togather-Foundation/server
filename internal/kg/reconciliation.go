@@ -15,9 +15,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// ArtsdataClient defines the subset of the Artsdata client API used by ReconciliationService.
+// This interface is defined by the consumer (idiomatic Go), allowing the concrete
+// *artsdata.Client to be swapped with a mock in tests.
+type ArtsdataClient interface {
+	Reconcile(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error)
+	Dereference(ctx context.Context, uri string) (*artsdata.EntityData, error)
+}
+
+// compile-time assertion: *artsdata.Client must satisfy ArtsdataClient.
+var _ ArtsdataClient = (*artsdata.Client)(nil)
+
 // ReconciliationService orchestrates entity reconciliation against knowledge graphs.
 type ReconciliationService struct {
-	artsdataClient *artsdata.Client
+	artsdataClient ArtsdataClient
 	queries        *postgres.Queries
 	logger         *slog.Logger
 	cacheTTL       time.Duration // positive cache TTL (default 30 days)
@@ -26,7 +37,7 @@ type ReconciliationService struct {
 
 // NewReconciliationService creates a new reconciliation service.
 func NewReconciliationService(
-	artsdataClient *artsdata.Client,
+	artsdataClient ArtsdataClient,
 	queries *postgres.Queries,
 	logger *slog.Logger,
 	cacheTTL time.Duration,

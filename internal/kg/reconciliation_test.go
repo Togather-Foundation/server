@@ -1,13 +1,84 @@
 package kg
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mockArtsdataClient is a test double for ArtsdataClient.
+type mockArtsdataClient struct {
+	reconcileFunc    func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error)
+	dereferenceFunc  func(ctx context.Context, uri string) (*artsdata.EntityData, error)
+	reconcileCalls   int
+	dereferenceCalls int
+}
+
+func (m *mockArtsdataClient) Reconcile(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
+	m.reconcileCalls++
+	if m.reconcileFunc != nil {
+		return m.reconcileFunc(ctx, queries)
+	}
+	return nil, nil
+}
+
+func (m *mockArtsdataClient) Dereference(ctx context.Context, uri string) (*artsdata.EntityData, error) {
+	m.dereferenceCalls++
+	if m.dereferenceFunc != nil {
+		return m.dereferenceFunc(ctx, uri)
+	}
+	return nil, nil
+}
+
+// TestReconcileEntities_WithMockClient tests ReconcileEntity with a mock client,
+// verifying that the service correctly processes results returned by the client.
+func TestReconcileEntities_WithMockClient(t *testing.T) {
+	t.Skip("requires database: ReconcileEntity calls queries.GetReconciliationCache which panics on nil queries")
+
+	mockClient := &mockArtsdataClient{
+		reconcileFunc: func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
+			return map[string][]artsdata.ReconciliationResult{
+				"q0": {
+					{
+						ID:    "http://kg.artsdata.ca/resource/K11-211",
+						Name:  "Massey Hall",
+						Score: 1247.4,
+						Match: true,
+					},
+				},
+			}, nil
+		},
+		dereferenceFunc: func(ctx context.Context, uri string) (*artsdata.EntityData, error) {
+			return &artsdata.EntityData{
+				ID:     uri,
+				SameAs: "http://www.wikidata.org/entity/Q1234567",
+			}, nil
+		},
+	}
+
+	svc := NewReconciliationService(mockClient, nil, nil, 30*24*time.Hour, 7*24*time.Hour)
+	require.NotNil(t, svc)
+
+	ctx := context.Background()
+	results, err := svc.ReconcileEntity(ctx, ReconcileRequest{
+		EntityType: "place",
+		EntityID:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Name:       "Massey Hall",
+		Properties: map[string]string{"addressLocality": "Toronto"},
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "http://kg.artsdata.ca/resource/K11-211", results[0].IdentifierURI)
+	assert.Equal(t, "artsdata", results[0].AuthorityCode)
+	assert.Equal(t, "auto_high", results[0].Method)
+	assert.Equal(t, 1, mockClient.reconcileCalls)
+	assert.Equal(t, 1, mockClient.dereferenceCalls)
+}
 
 func TestBuildPlaceQuery(t *testing.T) {
 	tests := []struct {
@@ -318,10 +389,6 @@ func TestInferAuthorityCode(t *testing.T) {
 		})
 	}
 }
-
-// Note: MockArtsdataClient was removed because ReconciliationService takes a concrete
-// *artsdata.Client, not an interface. For unit testing the service, consider introducing
-// a reconciler interface (see follow-up bead). Integration tests use real HTTP mock servers.
 
 func TestReconcileEntity_CacheHit(t *testing.T) {
 	// This test would require database mocking, which is complex.
