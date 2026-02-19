@@ -846,81 +846,43 @@ func (s *Service) ResendInvitation(ctx context.Context, userID pgtype.UUID, rese
 		return ErrUserAlreadyActive
 	}
 
-	// Get pending invitations
-	invitations, err := s.queries.ListPendingInvitationsForUser(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to get pending invitations: %w", err)
+	// Expire any existing pending invitations so the unique partial index
+	// (idx_user_invitations_active) allows a new row.
+	if err := s.queries.ExpirePendingInvitationsForUser(ctx, userID); err != nil {
+		return fmt.Errorf("failed to expire pending invitations: %w", err)
 	}
 
-	// If there are existing valid invitations, use the first one
-	var token string
-	if len(invitations) > 0 {
-		// Cannot reuse existing token - it was sent once and we don't store plaintext
-		// Generate a new token instead
-		token, err = generateSecureToken()
-		if err != nil {
-			return fmt.Errorf("failed to generate token: %w", err)
-		}
+	// Generate a fresh invitation token (we never store plaintext, so
+	// existing tokens cannot be reused).
+	token, err := generateSecureToken()
+	if err != nil {
+		return fmt.Errorf("failed to generate token: %w", err)
+	}
 
-		tokenHash := hashToken(token)
+	tokenHash := hashToken(token)
 
-		expiresAt := pgtype.Timestamptz{
-			Time:  time.Now().Add(DefaultInvitationExpiry),
-			Valid: true,
-		}
+	expiresAt := pgtype.Timestamptz{
+		Time:  time.Now().Add(DefaultInvitationExpiry),
+		Valid: true,
+	}
 
-		var createdBy pgtype.UUID
-		if resentBy != "" {
-			// Try to get the admin user ID
-			admin, err := s.queries.GetUserByUsername(ctx, resentBy)
-			if err == nil {
-				createdBy = admin.ID
-			}
+	var createdBy pgtype.UUID
+	if resentBy != "" {
+		admin, adminErr := s.queries.GetUserByUsername(ctx, resentBy)
+		if adminErr == nil {
+			createdBy = admin.ID
 		}
+	}
 
-		_, err = s.queries.CreateUserInvitation(ctx, postgres.CreateUserInvitationParams{
-			UserID:    userID,
-			TokenHash: tokenHash,
-			Email:     user.Email,
-			ExpiresAt: expiresAt,
-			CreatedBy: createdBy,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create invitation: %w", err)
-		}
-	} else {
-		// Generate new invitation
-		token, err = generateSecureToken()
-		if err != nil {
-			return fmt.Errorf("failed to generate token: %w", err)
-		}
-
-		tokenHash := hashToken(token)
-
-		expiresAt := pgtype.Timestamptz{
-			Time:  time.Now().Add(DefaultInvitationExpiry),
-			Valid: true,
-		}
-
-		var createdBy pgtype.UUID
-		if resentBy != "" {
-			// Try to get the admin user ID
-			admin, err := s.queries.GetUserByUsername(ctx, resentBy)
-			if err == nil {
-				createdBy = admin.ID
-			}
-		}
-
-		_, err = s.queries.CreateUserInvitation(ctx, postgres.CreateUserInvitationParams{
-			UserID:    userID,
-			TokenHash: tokenHash,
-			Email:     user.Email,
-			ExpiresAt: expiresAt,
-			CreatedBy: createdBy,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create invitation: %w", err)
-		}
+	_, err = s.queries.CreateUserInvitation(ctx, postgres.CreateUserInvitationParams{
+		UserID:    userID,
+		TokenHash: tokenHash,
+		Email:     user.Email,
+		ExpiresAt: expiresAt,
+		CreatedBy: createdBy,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create invitation: %w", err)
 	}
 
 	// Generate invitation link
