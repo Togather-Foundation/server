@@ -205,7 +205,8 @@ func testConfig(dbURL string) config.Config {
 			Level:  "debug",
 			Format: "json",
 		},
-		Environment: "test",
+		DefaultTimezone: "America/Toronto",
+		Environment:     "test",
 	}
 }
 
