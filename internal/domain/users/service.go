@@ -33,6 +33,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -99,7 +100,7 @@ const (
 type Service struct {
 	db          *pgxpool.Pool
 	queries     *postgres.Queries
-	emailSvc    *email.Service
+	emailSvc    email.Sender
 	auditLogger *audit.Logger
 	baseURL     string
 	logger      zerolog.Logger
@@ -110,7 +111,7 @@ type Service struct {
 //
 // Parameters:
 //   - db: PostgreSQL connection pool for database operations
-//   - emailSvc: Service for sending invitation and notification emails
+//   - emailSvc: Sender for sending invitation and notification emails (may be nil if email is disabled)
 //   - auditLogger: Logger for recording all user management operations
 //   - baseURL: Base URL for the application, used to construct invitation links
 //   - logger: Structured logger for service-level logging
@@ -118,7 +119,7 @@ type Service struct {
 // Returns a fully initialized Service ready to handle user management operations.
 func NewService(
 	db *pgxpool.Pool,
-	emailSvc *email.Service,
+	emailSvc email.Sender,
 	auditLogger *audit.Logger,
 	baseURL string,
 	logger zerolog.Logger,
