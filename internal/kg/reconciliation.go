@@ -26,10 +26,21 @@ type ArtsdataClient interface {
 // compile-time assertion: *artsdata.Client must satisfy ArtsdataClient.
 var _ ArtsdataClient = (*artsdata.Client)(nil)
 
+// ReconciliationCacheStore defines the cache persistence methods used by ReconciliationService.
+// Defined by the consumer (idiomatic Go); *postgres.Queries satisfies it.
+type ReconciliationCacheStore interface {
+	GetReconciliationCache(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error)
+	UpsertReconciliationCache(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error)
+	UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
+}
+
+// compile-time assertion: *postgres.Queries must satisfy ReconciliationCacheStore.
+var _ ReconciliationCacheStore = (*postgres.Queries)(nil)
+
 // ReconciliationService orchestrates entity reconciliation against knowledge graphs.
 type ReconciliationService struct {
 	artsdataClient ArtsdataClient
-	queries        *postgres.Queries
+	cache          ReconciliationCacheStore
 	logger         *slog.Logger
 	cacheTTL       time.Duration // positive cache TTL (default 30 days)
 	failureTTL     time.Duration // negative cache TTL (default 7 days)
@@ -38,14 +49,17 @@ type ReconciliationService struct {
 // NewReconciliationService creates a new reconciliation service.
 func NewReconciliationService(
 	artsdataClient ArtsdataClient,
-	queries *postgres.Queries,
+	cache ReconciliationCacheStore,
 	logger *slog.Logger,
 	cacheTTL time.Duration,
 	failureTTL time.Duration,
 ) *ReconciliationService {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &ReconciliationService{
 		artsdataClient: artsdataClient,
-		queries:        queries,
+		cache:          cache,
 		logger:         logger,
 		cacheTTL:       cacheTTL,
 		failureTTL:     failureTTL,
@@ -77,7 +91,7 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 	lookupKey := NormalizeLookupKey(req.EntityType, req.Name, req.Properties)
 
 	// 2. Check reconciliation_cache
-	cached, err := s.queries.GetReconciliationCache(ctx, postgres.GetReconciliationCacheParams{
+	cached, err := s.cache.GetReconciliationCache(ctx, postgres.GetReconciliationCacheParams{
 		EntityType:    req.EntityType,
 		AuthorityCode: "artsdata",
 		LookupKey:     lookupKey,
@@ -237,7 +251,7 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 	}
 
 	expiresAt := pgtype.Timestamptz{Time: time.Now().Add(cacheTTL), Valid: true}
-	_, err = s.queries.UpsertReconciliationCache(ctx, postgres.UpsertReconciliationCacheParams{
+	_, err = s.cache.UpsertReconciliationCache(ctx, postgres.UpsertReconciliationCacheParams{
 		EntityType:    req.EntityType,
 		AuthorityCode: "artsdata",
 		LookupKey:     lookupKey,
@@ -279,7 +293,7 @@ func (s *ReconciliationService) storeIdentifier(ctx context.Context, entityID, e
 	// For now, use the highest confidence match as canonical
 	isCanonical := match.Method == "auto_high"
 
-	_, err = s.queries.UpsertEntityIdentifier(ctx, postgres.UpsertEntityIdentifierParams{
+	_, err = s.cache.UpsertEntityIdentifier(ctx, postgres.UpsertEntityIdentifierParams{
 		EntityType:           entityType,
 		EntityID:             entityID,
 		AuthorityCode:        match.AuthorityCode,
