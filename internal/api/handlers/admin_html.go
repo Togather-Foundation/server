@@ -8,17 +8,19 @@ import (
 
 // AdminHTMLHandler handles admin HTML page rendering
 type AdminHTMLHandler struct {
-	Templates *template.Template
-	Env       string
-	Logger    *slog.Logger
+	Templates    *template.Template
+	Env          string
+	Logger       *slog.Logger
+	EmailEnabled bool
 }
 
 // NewAdminHTMLHandler creates a new admin HTML handler
-func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.Logger) *AdminHTMLHandler {
+func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.Logger, emailEnabled bool) *AdminHTMLHandler {
 	return &AdminHTMLHandler{
-		Templates: templates,
-		Env:       env,
-		Logger:    logger,
+		Templates:    templates,
+		Env:          env,
+		Logger:       logger,
+		EmailEnabled: emailEnabled,
 	}
 }
 
@@ -192,8 +194,9 @@ func (h *AdminHTMLHandler) ServeUsersList(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	data := map[string]interface{}{
-		"Title":      "Users - SEL Admin",
-		"ActivePage": "users",
+		"Title":        "Users - SEL Admin",
+		"ActivePage":   "users",
+		"EmailEnabled": h.EmailEnabled,
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "users_list.html", data); err != nil {
