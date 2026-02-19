@@ -150,18 +150,6 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	auditLogger := audit.NewLoggerWithZerolog(logger)
 
 	// Initialize email service
-	emailConfig := config.EmailConfig{
-		Enabled:      cfg.Email.Enabled,
-		Provider:     cfg.Email.Provider,
-		From:         cfg.Email.From,
-		ResendAPIKey: cfg.Email.ResendAPIKey,
-		SMTPHost:     cfg.Email.SMTPHost,
-		SMTPPort:     cfg.Email.SMTPPort,
-		SMTPUser:     cfg.Email.SMTPUser,
-		SMTPPassword: cfg.Email.SMTPPassword,
-		TemplatesDir: cfg.Email.TemplatesDir,
-	}
-
 	// Resolve template directory path (config may be relative, make it absolute if needed)
 	templateDir := cfg.Email.TemplatesDir
 	if !filepath.IsAbs(templateDir) {
@@ -170,7 +158,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		templateDir = filepath.Join(repoRoot, templateDir)
 	}
 
-	emailService, err := email.NewService(emailConfig, templateDir, logger)
+	emailService, err := email.NewService(cfg.Email, templateDir, logger)
 	if err != nil {
 		logger.Warn().Err(err).Msg("failed to initialize email service, user invitations will not be sent")
 	}

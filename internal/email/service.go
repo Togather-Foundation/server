@@ -18,6 +18,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// Sender is the interface for sending emails. Consumers (e.g., users.Service)
+// should depend on this interface rather than *Service directly, enabling
+// easier testing and reduced coupling between packages.
+type Sender interface {
+	SendInvitation(ctx context.Context, to, inviteLink, invitedBy string) error
+}
+
+// Verify that *Service implements Sender at compile time.
+var _ Sender = (*Service)(nil)
+
 // Service handles email sending with multiple provider support (SMTP or Resend)
 type Service struct {
 	config       config.EmailConfig
