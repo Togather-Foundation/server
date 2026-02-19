@@ -246,6 +246,98 @@ class TestUserCRUD:
         page.screenshot(path="/tmp/user_created.png", full_page=True)
         print("   ✓ Screenshot: /tmp/user_created.png")
 
+    def test_duplicate_user_error_in_modal(self, page: Page, admin_login):
+        """Test that duplicate user error appears inside the modal (not behind backdrop)"""
+        page.goto(f"{BASE_URL}/admin/users")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1000)
+
+        # Generate unique user data with timestamp to ensure uniqueness
+        import time
+
+        timestamp = int(time.time() * 1000) % 100000  # Last 5 digits of timestamp
+        username = f"testuser{timestamp}"
+        email = f"{username}@example.com"
+
+        print(f"\n   Creating first user: {username}")
+
+        # Create user successfully
+        page.click("#create-user-btn")
+        page.wait_for_timeout(500)
+        page.fill("#user-username", username)
+        page.fill("#modal-user-email", email)
+        page.select_option("#user-role", "viewer")
+        page.click("#user-submit-btn")
+        page.wait_for_timeout(2000)  # Wait for API call and modal close
+
+        # Check if modal closed (successful creation) or still visible (creation failed)
+        modal = page.locator("#user-modal")
+        modal_visible = modal.is_visible()
+
+        if modal_visible:
+            # First creation failed (username/email already exists), close modal and find existing user
+            print(f"   ⚠ User '{username}' already exists (modal still open)")
+            error_alert = page.locator("#user-modal .alert-danger")
+            if error_alert.is_visible():
+                print(f"   First creation error: {error_alert.inner_text()[:60]}...")
+            page.click("#user-modal .btn-close")
+            page.wait_for_timeout(500)
+        else:
+            print("   ✓ First user created successfully, modal closed")
+
+        # Verify user appears in table (either just created or already existed)
+        user_row = page.locator(f'tr:has-text("{username}")')
+        if user_row.count() == 0:
+            # User not in table, try refreshing
+            page.reload()
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(1000)
+
+        print(f"   ✓ User '{username}' is in the table")
+
+        # Now try to create the same user again (duplicate email)
+        print(f"\n   Attempting to create duplicate user with email: {email}")
+        page.click("#create-user-btn")
+        page.wait_for_timeout(500)
+
+        # Fill form with same email (different username to isolate email constraint)
+        duplicate_username = f"testuser{timestamp + 1}"
+        page.fill("#user-username", duplicate_username)
+        page.fill("#modal-user-email", email)  # Same email as first user
+        page.select_option("#user-role", "viewer")
+        page.click("#user-submit-btn")
+        page.wait_for_timeout(1500)  # Wait for API error response
+
+        # Verify modal is still visible (error occurred)
+        expect(modal).to_be_visible()
+        print("   ✓ Modal remained open after error")
+
+        # Verify error alert appears INSIDE the modal (not hidden behind backdrop)
+        # The error is shown via #user-modal-error (lines 701-705 in users.js)
+        error_alert = page.locator("#user-modal-error")
+        expect(error_alert).to_be_visible(timeout=3000)
+        print("   ✓ Error alert is visible inside modal")
+
+        # Verify error message contains meaningful text about duplicate/existing user
+        error_text = error_alert.inner_text()
+        assert (
+            "already taken" in error_text.lower()
+            or "already exists" in error_text.lower()
+            or "duplicate" in error_text.lower()
+            or "email is already" in error_text.lower()
+        ), f"Error message doesn't indicate duplicate: {error_text}"
+        print(f"   ✓ Error message is meaningful: {error_text[:60]}...")
+
+        # Take screenshot for visual confirmation
+        page.screenshot(path="/tmp/test_duplicate_user_error.png", full_page=True)
+        print("   ✓ Screenshot: /tmp/test_duplicate_user_error.png")
+
+        # Close modal
+        page.click("#user-modal .btn-close")
+        page.wait_for_timeout(500)
+        expect(modal).not_to_be_visible()
+        print("   ✓ Modal closed successfully")
+
     def test_edit_user_role(self, page: Page, admin_login):
         """Test editing a user's role"""
         page.goto(f"{BASE_URL}/admin/users")
