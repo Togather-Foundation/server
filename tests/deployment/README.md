@@ -110,6 +110,7 @@ go test -v
 go test -v -run TestDeploymentFullFlow
 go test -v -run TestDeploymentPerformance
 go test -v -run TestMigrationRollback
+go test -v -run TestDockerEmailServiceInit
 ```
 
 ### Skip long-running tests
@@ -187,6 +188,23 @@ Tests:
 - Migrations apply successfully (`up`)
 - Migrations can be rolled back (`down 1`)
 - Migrations can be reapplied after rollback
+
+### TestDockerEmailServiceInit
+**Duration:** ~30 seconds (uses cached Docker layers)  
+**Purpose:** Regression prevention for email service initialization
+
+Tests:
+- Email templates (`web/email/templates/*.html`) are copied into Docker image
+- Email service initializes successfully without panicking
+- Container logs contain no "failed to initialize email service" errors
+- Container logs contain no "failed to parse email templates" errors
+
+**Background:** This test prevents regression of **srv-jakhq** (staging panic due to missing email templates). The Dockerfile must include `COPY --from=builder /build/web/email /app/web/email` (line 104). Local development doesn't catch this issue because templates exist on disk.
+
+**What it catches:**
+- Missing `COPY web/email` statement in Dockerfile
+- Template parsing errors during service initialization
+- Email service panics on container startup
 
 ## CI/CD Integration
 
@@ -306,10 +324,11 @@ These tests ensure that each step works correctly in isolation and as a complete
 
 ---
 
-**Last Updated:** 2026-01-30  
+**Last Updated:** 2026-02-19  
 **Related Tasks:** 
 - T079 - Automated Deployment Validation Tests
 - T080 - Deployment Smoke Tests
 - server-ndu4 - Migration Lock Race Condition Tests
 - server-ytc5 - Atomic Migration Locking Implementation
+- srv-jakhq - Email Service Docker Regression Test (staging panic fix)
 
