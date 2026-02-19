@@ -120,9 +120,43 @@ Docs + UI test bench: https://docs.artsdata.ca/architecture/reconciliation.html
 
 (Artsdata says it follows this spec.)
 
+**Request format (important)**
+
+Per W3C Reconciliation API v0.2 section 4.3, queries MUST be sent as `application/x-www-form-urlencoded` POST with the JSON batch in a `queries` form parameter. Sending a JSON body with `Content-Type: application/json` will fail.
+
+```bash
+# Correct: form-encoded
+curl -X POST "https://api.artsdata.ca/recon" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode 'queries={"q0":{"query":"Massey Hall","type":"schema:Place"}}'
+
+# Wrong: JSON body (will fail)
+curl -X POST "https://api.artsdata.ca/recon" \
+  -H "Content-Type: application/json" \
+  -d '{"queries":{"q0":{"query":"Massey Hall","type":"schema:Place"}}}'
+```
+
+**Properties NOT supported (as of Feb 2026)**
+
+Despite W3C spec support for property-based disambiguation and Artsdata docs mentioning property paths like `schema:address/schema:postalCode`, the Artsdata `/recon` endpoint returns **HTTP 500** when any `properties` array is included in the query. This affects all property types (`schema:address/schema:addressLocality`, `schema:url`, etc.) and all entity types.
+
+Current workaround: send only `query` + `type` fields. Properties are omitted from queries but still used locally for cache key differentiation.
+
+**Score semantics (important)**
+
+Artsdata scores are **unbounded** — they are NOT on a 0-100 or 0-1 scale:
+- **Exact matches**: score ~1000+ with `match: true` (e.g., "Bad Dog Theatre Company" → score 1247.4)
+- **Partial matches**: score ~3-12 with `match: false` (e.g., "Royal Theatre" → score 4.0-6.5)
+
+The `match` boolean is the primary signal for exact matches. Our implementation normalizes scores to 0.0-1.0: `match=true` → 0.99, others → `score/15.0` (capped at 0.95).
+
+**Type values**
+
+Use CURIE-prefixed types (e.g., `schema:Place`, `schema:Organization`). Full URIs (e.g., `http://schema.org/Place`) also work.
+
 **Extra disambiguation via properties**
 
-- Artsdata supports additional properties (property paths like `schema:address/schema:postalCode`) to filter candidates.
+- Artsdata docs mention additional properties (property paths like `schema:address/schema:postalCode`) to filter candidates. However, **this does not work in practice** — see note above.
 
 See docs: https://docs.artsdata.ca/architecture/reconciliation.html
 
@@ -262,7 +296,7 @@ https://docs.artsdata.ca/sameas.html
 - Always attempt in this order:
 
 1. If you already have an Artsdata URI → use it.
-2. Else reconcile (`/recon`) using strongest signals available (url, postalCode, addressLocality, startDate, etc.).
+2. Else reconcile (`/recon`) using name + type (property-based disambiguation is not currently supported by Artsdata — see §3.1).
 3. Only if reconcile yields no match → mint (if policy allows) or store as unresolved.
 
 ### 6.2 Graph scoping and provenance
@@ -364,10 +398,11 @@ The Artsdata reconciliation adapter is implemented in the following locations:
 
 1. Event ingested via API → handler enqueues `ReconciliationArgs` job for place and/or organization
 2. `ReconciliationWorker` picks up job → queries entity from DB → calls `ReconciliationService.ReconcileEntity()`
-3. Service checks `reconciliation_cache` → if miss, calls Artsdata W3C Reconciliation API
-4. Results classified by confidence: >=95% `auto_high`, 80-94% `auto_low`, <80% rejected
-5. Matches stored in `entity_identifiers`, results cached in `reconciliation_cache`
-6. High-confidence matches enqueue `EnrichmentArgs` job (enrichment is a TODO placeholder)
+3. Service checks `reconciliation_cache` → if miss, builds query (name + type only, no properties) and sends form-encoded POST to Artsdata W3C Reconciliation API
+4. Raw Artsdata scores (unbounded, e.g. 1247 for exact match) are normalized to 0.0-1.0 via `normalizeArtsdataScore()` — `match=true` → 0.99, others → `score/15.0` capped at 0.95
+5. Results classified by confidence: >=0.95 with `match=true` → `auto_high`, >=0.80 → `auto_low`, <0.80 → rejected
+6. Matches stored in `entity_identifiers`, results cached in `reconciliation_cache` (both positive and negative)
+7. High-confidence matches enqueue `EnrichmentArgs` job (enrichment is a TODO placeholder)
 
 ### Bulk Reconciliation
 
@@ -383,19 +418,21 @@ server reconcile all --force                 # Force re-reconcile everything (by
 |----------|---------|-------------|
 | `ARTSDATA_ENABLED` | `false` | Enable Artsdata reconciliation |
 | `ARTSDATA_ENDPOINT` | `https://api.artsdata.ca/recon` | W3C Reconciliation API endpoint |
-| `ARTSDATA_TIMEOUT_SECONDS` | `30` | HTTP client timeout |
-| `ARTSDATA_RATE_LIMIT_PER_SECOND` | `2` | Max API calls per second |
-| `ARTSDATA_HIGH_CONFIDENCE_THRESHOLD` | `0.95` | Threshold for auto_high classification |
-| `ARTSDATA_LOW_CONFIDENCE_THRESHOLD` | `0.80` | Threshold for auto_low classification |
+| `ARTSDATA_TIMEOUT_SECONDS` | `10` | HTTP client timeout (seconds) |
+| `ARTSDATA_RATE_LIMIT_PER_SEC` | `1.0` | Max API calls per second |
+| `ARTSDATA_CACHE_TTL_DAYS` | `30` | Cache TTL for successful reconciliation results |
+| `ARTSDATA_FAILURE_TTL_DAYS` | `7` | Cache TTL for negative/failed reconciliation attempts |
+
+Confidence thresholds are hardcoded: >=0.95 with `match=true` → `auto_high`, >=0.80 → `auto_low`, <0.80 → rejected.
 
 
 ## 9) Minimal test suite
 
 ### 9.1 Reconciliation correctness
 
-- Place by name + postalCode should return stable Artsdata URI.
-- Organization by official site URL should return stable Artsdata URI.
-- Person by name + disambiguator property should reduce false positives.
+- Place by name + type (`schema:Place`) should return stable Artsdata URI (properties like `postalCode` cannot be used for disambiguation — see §3.1).
+- Organization by name + type (`schema:Organization`) should return stable Artsdata URI.
+- The `match` boolean flag is the primary signal for exact matches; raw scores are unbounded and must be normalized before storage.
 
 ### 9.2 SPARQL smoke tests
 
@@ -408,6 +445,15 @@ server reconcile all --force                 # Force re-reconcile everything (by
 - Any Wikidata URI must match `^http://www\.wikidata\.org/entity/Q\d+$`
 
 
+## 10) Known Limitations (as of Feb 2026)
+
+1. **Properties not supported**: The Artsdata `/recon` endpoint returns HTTP 500 when any `properties` array is included. Disambiguation relies solely on `query` (name) + `type` fields.
+2. **Scores are unbounded**: Artsdata scores are not 0-100 or 0-1. Exact matches score ~1000+, partial matches ~3-12. Must normalize before storage.
+3. **Form-encoded requests only**: W3C Reconciliation API requires `application/x-www-form-urlencoded` POST with queries in a `queries` form parameter. JSON body requests fail silently or error.
+4. **No enrichment yet**: The `EnrichmentWorker` is a placeholder. It logs the job and completes without fetching additional data.
+5. **Rate limiting**: Artsdata API has no documented rate limits, but we default to 1 req/sec and use a single-worker queue to be conservative.
+
+
 ## 11) Primary standards
 
 - JSON-LD 1.1: [https://www.w3.org/TR/json-ld11/](https://www.w3.org/TR/json-ld11/)
@@ -417,7 +463,7 @@ server reconcile all --force                 # Force re-reconcile everything (by
 - Schema.org: [https://schema.org/](https://schema.org/)
 - W3C Entity Reconciliation CG (spec used by Artsdata): https://reconciliation-api.github.io/specs/latest/
 
-## 11) “If you only remember 7 rules”
+## 12) “If you only remember 7 rules”
 
 1. Prefer `sameAs` with global URIs (Wikidata/ISNI/VIAF/etc.) for people/orgs/places; use Artsdata IDs where available.
 2. Use reconciliation (`/recon`) before minting.
