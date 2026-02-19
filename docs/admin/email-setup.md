@@ -18,6 +18,7 @@ This guide explains how to configure email sending for the Togather SEL Backend.
 - [Troubleshooting](#troubleshooting)
 - [Alternative SMTP Providers](#alternative-smtp-providers)
 - [Production Deployment](#production-deployment)
+- [API Changes](#api-changes)
 
 ---
 
@@ -970,6 +971,36 @@ For high-volume deployments:
 
 ---
 
+## API Changes
+
+### Context Parameter Addition (Breaking Change)
+
+**Change Date:** February 2026
+
+The internal `email.Sender` interface was updated to support context-aware operations:
+
+**Old API:**
+```go
+SendInvitation(to, inviteLink, invitedBy string) error
+```
+
+**New API:**
+```go
+SendInvitation(ctx context.Context, to, inviteLink, invitedBy string) error
+```
+
+**Impact:** Internal package only - this change does not affect server administrators or end users. The email configuration and behavior remain unchanged.
+
+**Why This Changed:** The addition of `context.Context` enables:
+- Proper timeout control for Resend API operations
+- Request cancellation support
+- Request tracing and correlation IDs
+- Go best practices for I/O operations
+
+For complete details, see `CHANGELOG.md` in the project root.
+
+---
+
 ## Support
 
 For email configuration issues:
@@ -991,5 +1022,5 @@ For email configuration issues:
 
 ---
 
-**Last Updated:** February 18, 2026  
-**Version:** 2.0
+**Last Updated:** February 19, 2026  
+**Version:** 2.1
