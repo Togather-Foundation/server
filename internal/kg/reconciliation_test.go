@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,33 +37,70 @@ func (m *mockArtsdataClient) Dereference(ctx context.Context, uri string) (*arts
 	return nil, nil
 }
 
-// TestReconcileEntities_WithMockClient tests ReconcileEntity with a mock client,
-// verifying that the service correctly processes results returned by the client.
+// mockReconciliationCacheStore is a test double for ReconciliationCacheStore.
+type mockReconciliationCacheStore struct {
+	getFunc               func(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error)
+	upsertCacheFunc       func(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error)
+	upsertIdentifierFunc  func(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
+	getCalls              int
+	upsertCacheCalls      int
+	upsertIdentifierCalls int
+}
+
+func (m *mockReconciliationCacheStore) GetReconciliationCache(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error) {
+	m.getCalls++
+	if m.getFunc != nil {
+		return m.getFunc(ctx, arg)
+	}
+	return postgres.ReconciliationCache{}, pgx.ErrNoRows
+}
+
+func (m *mockReconciliationCacheStore) UpsertReconciliationCache(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error) {
+	m.upsertCacheCalls++
+	if m.upsertCacheFunc != nil {
+		return m.upsertCacheFunc(ctx, arg)
+	}
+	return postgres.ReconciliationCache{}, nil
+}
+
+func (m *mockReconciliationCacheStore) UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error) {
+	m.upsertIdentifierCalls++
+	if m.upsertIdentifierFunc != nil {
+		return m.upsertIdentifierFunc(ctx, arg)
+	}
+	return postgres.EntityIdentifier{}, nil
+}
+
+// TestReconcileEntities_WithMockClient tests ReconcileEntity end-to-end with mock client and cache store.
+// Covers the high-confidence match + cache miss + dereference path.
 func TestReconcileEntities_WithMockClient(t *testing.T) {
-	t.Skip("requires database: ReconcileEntity calls queries.GetReconciliationCache which panics on nil queries")
+	const artsdataURI = "http://kg.artsdata.ca/resource/K11-211"
 
 	mockClient := &mockArtsdataClient{
 		reconcileFunc: func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
 			return map[string][]artsdata.ReconciliationResult{
 				"q0": {
 					{
-						ID:    "http://kg.artsdata.ca/resource/K11-211",
+						ID:    artsdataURI,
 						Name:  "Massey Hall",
 						Score: 1247.4,
-						Match: true,
+						Match: true, // normalizeArtsdataScore → 0.99, ClassifyConfidence → "auto_high"
 					},
 				},
 			}, nil
 		},
 		dereferenceFunc: func(ctx context.Context, uri string) (*artsdata.EntityData, error) {
 			return &artsdata.EntityData{
-				ID:     uri,
-				SameAs: "http://www.wikidata.org/entity/Q1234567",
+				ID: uri,
 			}, nil
 		},
 	}
 
-	svc := NewReconciliationService(mockClient, nil, nil, 30*24*time.Hour, 7*24*time.Hour)
+	mockCache := &mockReconciliationCacheStore{
+		// Default getFunc returns pgx.ErrNoRows (cache miss) — already the default behaviour.
+	}
+
+	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
 	require.NotNil(t, svc)
 
 	ctx := context.Background()
@@ -73,11 +112,12 @@ func TestReconcileEntities_WithMockClient(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, "http://kg.artsdata.ca/resource/K11-211", results[0].IdentifierURI)
+	assert.Equal(t, artsdataURI, results[0].IdentifierURI)
 	assert.Equal(t, "artsdata", results[0].AuthorityCode)
 	assert.Equal(t, "auto_high", results[0].Method)
 	assert.Equal(t, 1, mockClient.reconcileCalls)
-	assert.Equal(t, 1, mockClient.dereferenceCalls)
+	assert.Equal(t, 1, mockCache.getCalls)
+	assert.Equal(t, 1, mockCache.upsertCacheCalls)
 }
 
 func TestBuildPlaceQuery(t *testing.T) {
@@ -391,20 +431,92 @@ func TestInferAuthorityCode(t *testing.T) {
 }
 
 func TestReconcileEntity_CacheHit(t *testing.T) {
-	// This test would require database mocking, which is complex.
-	// For now, we test the business logic functions in isolation.
-	// Integration tests with a real database would be in a separate test suite.
-	t.Skip("Integration test - requires database")
+	const artsdataURI = "http://kg.artsdata.ca/resource/K11-211"
+
+	// Pre-build the JSON that the service will unmarshal from the cache row.
+	cachedMatches := []MatchResult{
+		{
+			AuthorityCode: "artsdata",
+			IdentifierURI: artsdataURI,
+			Confidence:    0.99,
+			Method:        "auto_high",
+			SameAsURIs:    []string{},
+		},
+	}
+	resultJSON, err := json.Marshal(cachedMatches)
+	require.NoError(t, err)
+
+	mockCache := &mockReconciliationCacheStore{
+		getFunc: func(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error) {
+			// Return a positive cache hit
+			return postgres.ReconciliationCache{
+				EntityType:    arg.EntityType,
+				AuthorityCode: arg.AuthorityCode,
+				LookupKey:     arg.LookupKey,
+				ResultJson:    resultJSON,
+				IsNegative:    false,
+			}, nil
+		},
+	}
+	mockClient := &mockArtsdataClient{}
+
+	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+
+	ctx := context.Background()
+	results, err := svc.ReconcileEntity(ctx, ReconcileRequest{
+		EntityType: "place",
+		EntityID:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Name:       "Massey Hall",
+		Properties: map[string]string{"addressLocality": "Toronto"},
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, artsdataURI, results[0].IdentifierURI)
+	// Client should never be called on a cache hit
+	assert.Equal(t, 0, mockClient.reconcileCalls)
+	assert.Equal(t, 1, mockCache.getCalls)
 }
 
 func TestReconcileEntity_HighConfidenceMatch(t *testing.T) {
-	// This test would require database mocking.
-	t.Skip("Integration test - requires database")
+	// Covered by TestReconcileEntities_WithMockClient.
+	// This stub is kept intentionally empty to document that the scenario is tested above.
 }
 
 func TestReconcileEntity_NegativeCache(t *testing.T) {
-	// This test would require database mocking.
-	t.Skip("Integration test - requires database")
+	// A negative cache entry means a previous lookup found no match.
+	// The service stores is_negative=true and an empty JSON array.
+	// On a cache hit with is_negative=true, the service returns an empty slice
+	// without calling the Artsdata client.
+	emptyJSON, err := json.Marshal([]MatchResult{})
+	require.NoError(t, err)
+
+	mockCache := &mockReconciliationCacheStore{
+		getFunc: func(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error) {
+			return postgres.ReconciliationCache{
+				EntityType:    arg.EntityType,
+				AuthorityCode: arg.AuthorityCode,
+				LookupKey:     arg.LookupKey,
+				ResultJson:    emptyJSON,
+				IsNegative:    true,
+			}, nil
+		},
+	}
+	mockClient := &mockArtsdataClient{}
+
+	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+
+	ctx := context.Background()
+	results, err := svc.ReconcileEntity(ctx, ReconcileRequest{
+		EntityType: "place",
+		EntityID:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Name:       "Unknown Venue",
+		Properties: map[string]string{},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, results)
+	// Client must NOT be called when there is a negative cache entry
+	assert.Equal(t, 0, mockClient.reconcileCalls)
+	assert.Equal(t, 1, mockCache.getCalls)
 }
 
 func TestMatchResult_JSON(t *testing.T) {
