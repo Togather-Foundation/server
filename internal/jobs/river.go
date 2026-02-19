@@ -130,6 +130,7 @@ func NewClientConfig(workers *river.Workers, logger *slog.Logger, hooks []rivert
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 10},
 			"geocoding":        {MaxWorkers: 1}, // Single worker for rate limiting
+			"reconciliation":   {MaxWorkers: 1}, // Single worker for rate limiting
 		},
 		Hooks: hooks,
 	}

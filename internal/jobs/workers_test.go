@@ -15,14 +15,14 @@ func TestDeduplicationArgs_Kind(t *testing.T) {
 }
 
 func TestReconciliationArgs_Kind(t *testing.T) {
-	args := ReconciliationArgs{EventID: "test-event-456"}
+	args := ReconciliationArgs{EntityType: "place", EntityID: "test-place-123"}
 	if args.Kind() != JobKindReconciliation {
 		t.Errorf("Kind() = %q, want %q", args.Kind(), JobKindReconciliation)
 	}
 }
 
 func TestEnrichmentArgs_Kind(t *testing.T) {
-	args := EnrichmentArgs{EventID: "test-event-789"}
+	args := EnrichmentArgs{EntityType: "place", EntityID: "test-place-789", IdentifierURI: "http://example.org/123"}
 	if args.Kind() != JobKindEnrichment {
 		t.Errorf("Kind() = %q, want %q", args.Kind(), JobKindEnrichment)
 	}
@@ -210,13 +210,15 @@ func TestReconciliationWorker_WorkWithValidJob(t *testing.T) {
 
 	job := &river.Job[ReconciliationArgs]{
 		Args: ReconciliationArgs{
-			EventID: "test-event-id",
+			EntityType: "place",
+			EntityID:   "test-place-id",
 		},
 	}
 
 	err := worker.Work(ctx, job)
-	if err != nil {
-		t.Errorf("Work() with valid job should not error, got: %v", err)
+	// Expect error because Pool and ReconciliationService are nil
+	if err == nil {
+		t.Error("Work() should return error when dependencies are nil")
 	}
 }
 
@@ -226,13 +228,16 @@ func TestEnrichmentWorker_WorkWithValidJob(t *testing.T) {
 
 	job := &river.Job[EnrichmentArgs]{
 		Args: EnrichmentArgs{
-			EventID: "test-event-id",
+			EntityType:    "place",
+			EntityID:      "test-place-id",
+			IdentifierURI: "http://example.org/123",
 		},
 	}
 
 	err := worker.Work(ctx, job)
-	if err != nil {
-		t.Errorf("Work() with valid job should not error, got: %v", err)
+	// Expect error because Pool and ReconciliationService are nil
+	if err == nil {
+		t.Error("Work() should return error when dependencies are nil")
 	}
 }
 

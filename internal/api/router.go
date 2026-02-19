@@ -30,6 +30,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/geocoding/nominatim"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
+	"github.com/Togather-Foundation/server/internal/kg"
+	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/mcp"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -116,7 +118,25 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, slogLogger, slot)
+
+	// Knowledge graph reconciliation service (srv-titkr)
+	var reconciliationService *kg.ReconciliationService
+	if cfg.Artsdata.Enabled {
+		artsdataClient := artsdata.NewClient(
+			cfg.Artsdata.Endpoint,
+			artsdata.WithRateLimit(cfg.Artsdata.RateLimitPerSec),
+		)
+		reconciliationService = kg.NewReconciliationService(
+			artsdataClient,
+			queries,
+			pool,
+			slogLogger,
+			time.Duration(cfg.Artsdata.CacheTTLDays)*24*time.Hour,
+			time.Duration(cfg.Artsdata.FailureTTLDays)*24*time.Hour,
+		)
+	}
+
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, slogLogger, slot)
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{

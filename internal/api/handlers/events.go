@@ -184,6 +184,36 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Enqueue reconciliation jobs for places and organizations (srv-titkr)
+	// This matches places/orgs against Artsdata's knowledge graph to establish sameAs links.
+	// Like geocoding, reconciliation is non-critical — log failures but don't block event creation.
+	if result != nil && !result.IsDuplicate && h.RiverClient != nil {
+		if result.PlaceULID != "" {
+			_, err := h.RiverClient.Insert(r.Context(), jobs.ReconciliationArgs{
+				EntityType: "place",
+				EntityID:   result.PlaceULID,
+			}, &river.InsertOpts{
+				Queue:       "reconciliation",
+				MaxAttempts: jobs.ReconciliationMaxAttempts,
+			})
+			if err != nil {
+				log.Warn().Err(err).Str("place_ulid", result.PlaceULID).Msg("failed to enqueue place reconciliation job")
+			}
+		}
+		if result.OrganizerULID != "" {
+			_, err := h.RiverClient.Insert(r.Context(), jobs.ReconciliationArgs{
+				EntityType: "organization",
+				EntityID:   result.OrganizerULID,
+			}, &river.InsertOpts{
+				Queue:       "reconciliation",
+				MaxAttempts: jobs.ReconciliationMaxAttempts,
+			})
+			if err != nil {
+				log.Warn().Err(err).Str("org_ulid", result.OrganizerULID).Msg("failed to enqueue org reconciliation job")
+			}
+		}
+	}
+
 	location := createEventLocation(input)
 	event := schema.NewEvent(input.Name)
 	event.Context = loadDefaultContext()

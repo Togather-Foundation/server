@@ -9,6 +9,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/geocoding"
+	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
@@ -24,13 +25,16 @@ type DeduplicationArgs struct {
 func (DeduplicationArgs) Kind() string { return JobKindDeduplication }
 
 type ReconciliationArgs struct {
-	EventID string `json:"event_id"`
+	EntityType string `json:"entity_type"` // "place" or "organization"
+	EntityID   string `json:"entity_id"`   // ULID
 }
 
 func (ReconciliationArgs) Kind() string { return JobKindReconciliation }
 
 type EnrichmentArgs struct {
-	EventID string `json:"event_id"`
+	EntityType    string `json:"entity_type"`    // "place" or "organization"
+	EntityID      string `json:"entity_id"`      // ULID
+	IdentifierURI string `json:"identifier_uri"` // Artsdata URI to dereference
 }
 
 func (EnrichmentArgs) Kind() string { return JobKindEnrichment }
@@ -50,27 +54,250 @@ func (DeduplicationWorker) Work(ctx context.Context, job *river.Job[Deduplicatio
 
 type ReconciliationWorker struct {
 	river.WorkerDefaults[ReconciliationArgs]
+	Pool                  *pgxpool.Pool
+	ReconciliationService *kg.ReconciliationService
+	Logger                *slog.Logger
 }
 
 func (ReconciliationWorker) Kind() string { return JobKindReconciliation }
 
-func (ReconciliationWorker) Work(ctx context.Context, job *river.Job[ReconciliationArgs]) error {
+func (w ReconciliationWorker) Work(ctx context.Context, job *river.Job[ReconciliationArgs]) error {
+	// Validate dependencies
+	if w.Pool == nil {
+		return fmt.Errorf("database pool not configured")
+	}
+	if w.ReconciliationService == nil {
+		return fmt.Errorf("reconciliation service not configured")
+	}
 	if job == nil {
 		return fmt.Errorf("reconciliation job missing")
 	}
+
+	logger := w.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	args := job.Args
+	if args.EntityType == "" || args.EntityID == "" {
+		return fmt.Errorf("entity_type and entity_id are required")
+	}
+
+	logger.Info("starting reconciliation job",
+		"entity_type", args.EntityType,
+		"entity_id", args.EntityID,
+		"attempt", job.Attempt,
+	)
+
+	// Query entity from database based on type
+	var name string
+	var properties map[string]string
+	var url string
+
+	switch args.EntityType {
+	case "place":
+		const getPlaceQuery = `
+			SELECT ulid, name, street_address, address_locality, address_region, postal_code, address_country
+			FROM places
+			WHERE ulid = $1 AND deleted_at IS NULL
+		`
+
+		var (
+			ulid          string
+			streetAddress *string
+			city          *string
+			region        *string
+			postalCode    *string
+			country       *string
+		)
+
+		err := w.Pool.QueryRow(ctx, getPlaceQuery, args.EntityID).Scan(
+			&ulid, &name, &streetAddress, &city, &region, &postalCode, &country,
+		)
+		if err != nil {
+			logger.Warn("failed to query place",
+				"entity_id", args.EntityID,
+				"error", err,
+			)
+			return fmt.Errorf("query place %s: %w", args.EntityID, err)
+		}
+
+		// Build properties map for reconciliation
+		properties = make(map[string]string)
+		if city != nil {
+			properties["addressLocality"] = *city
+		}
+		if postalCode != nil {
+			properties["postalCode"] = *postalCode
+		}
+
+	case "organization":
+		const getOrgQuery = `
+			SELECT ulid, name, url
+			FROM organizations
+			WHERE ulid = $1 AND deleted_at IS NULL
+		`
+
+		var ulid string
+		var urlPtr *string
+
+		err := w.Pool.QueryRow(ctx, getOrgQuery, args.EntityID).Scan(
+			&ulid, &name, &urlPtr,
+		)
+		if err != nil {
+			logger.Warn("failed to query organization",
+				"entity_id", args.EntityID,
+				"error", err,
+			)
+			return fmt.Errorf("query organization %s: %w", args.EntityID, err)
+		}
+
+		if urlPtr != nil {
+			url = *urlPtr
+		}
+		properties = make(map[string]string)
+
+	default:
+		return fmt.Errorf("unsupported entity type: %s", args.EntityType)
+	}
+
+	// Build reconciliation request
+	req := kg.ReconcileRequest{
+		EntityType: args.EntityType,
+		EntityID:   args.EntityID,
+		Name:       name,
+		Properties: properties,
+		URL:        url,
+	}
+
+	// Call reconciliation service
+	matches, err := w.ReconciliationService.ReconcileEntity(ctx, req)
+	if err != nil {
+		logger.Error("reconciliation failed",
+			"entity_type", args.EntityType,
+			"entity_id", args.EntityID,
+			"error", err,
+		)
+		return fmt.Errorf("reconcile entity: %w", err)
+	}
+
+	logger.Info("reconciliation completed",
+		"entity_type", args.EntityType,
+		"entity_id", args.EntityID,
+		"match_count", len(matches),
+	)
+
+	// If high-confidence matches found, enqueue enrichment jobs
+	for _, match := range matches {
+		if match.Method == "auto_high" {
+			// Get River client from context
+			riverClient, err := river.ClientFromContextSafely[pgx.Tx](ctx)
+			if err != nil {
+				logger.Warn("river client not available for enrichment enqueue",
+					"entity_id", args.EntityID,
+					"identifier_uri", match.IdentifierURI,
+					"error", err,
+				)
+				continue
+			}
+
+			// Enqueue enrichment job on reconciliation queue
+			_, err = riverClient.Insert(ctx, EnrichmentArgs{
+				EntityType:    args.EntityType,
+				EntityID:      args.EntityID,
+				IdentifierURI: match.IdentifierURI,
+			}, &river.InsertOpts{
+				Queue:       "reconciliation",
+				MaxAttempts: EnrichmentMaxAttempts,
+			})
+
+			if err != nil {
+				logger.Warn("failed to enqueue enrichment job",
+					"entity_id", args.EntityID,
+					"identifier_uri", match.IdentifierURI,
+					"error", err,
+				)
+			} else {
+				logger.Info("enrichment job enqueued",
+					"entity_id", args.EntityID,
+					"identifier_uri", match.IdentifierURI,
+				)
+			}
+		}
+	}
+
+	// Log top match details if available
+	if len(matches) > 0 {
+		topMatch := matches[0]
+		logger.Info("top reconciliation match",
+			"entity_type", args.EntityType,
+			"entity_id", args.EntityID,
+			"identifier_uri", topMatch.IdentifierURI,
+			"confidence", topMatch.Confidence,
+			"method", topMatch.Method,
+		)
+	}
+
 	return nil
 }
 
 type EnrichmentWorker struct {
 	river.WorkerDefaults[EnrichmentArgs]
+	Pool                  *pgxpool.Pool
+	ReconciliationService *kg.ReconciliationService
+	Logger                *slog.Logger
 }
 
 func (EnrichmentWorker) Kind() string { return JobKindEnrichment }
 
-func (EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArgs]) error {
+func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArgs]) error {
+	// Validate dependencies
+	if w.Pool == nil {
+		return fmt.Errorf("database pool not configured")
+	}
+	if w.ReconciliationService == nil {
+		return fmt.Errorf("reconciliation service not configured")
+	}
 	if job == nil {
 		return fmt.Errorf("enrichment job missing")
 	}
+
+	logger := w.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	args := job.Args
+	if args.EntityType == "" || args.EntityID == "" || args.IdentifierURI == "" {
+		return fmt.Errorf("entity_type, entity_id, and identifier_uri are required")
+	}
+
+	logger.Info("enrichment job triggered",
+		"entity_type", args.EntityType,
+		"entity_id", args.EntityID,
+		"identifier_uri", args.IdentifierURI,
+		"attempt", job.Attempt,
+	)
+
+	// TODO(srv-titkr): Implement full enrichment logic
+	// This requires:
+	// 1. Dereferencing the identifier URI to get entity data
+	// 2. Parsing the returned JSON-LD
+	// 3. Mapping relevant fields to our entity model
+	// 4. Updating the entity in the database
+	// 5. Handling conflicts with existing data
+	//
+	// For now, we just log that enrichment was triggered.
+	// The reconciliation service already stores the identifier in entity_identifiers,
+	// which enables future manual or automated enrichment workflows.
+
+	logger.Info("enrichment completed (placeholder)",
+		"entity_type", args.EntityType,
+		"entity_id", args.EntityID,
+		"identifier_uri", args.IdentifierURI,
+		"note", "Full enrichment implementation pending",
+	)
+
 	return nil
 }
 
@@ -318,6 +545,40 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 							"error", err,
 						)
 					}
+
+					// Enqueue reconciliation jobs for place and org (srv-titkr)
+					if result.PlaceULID != "" {
+						_, err := riverClient.Insert(ctx, ReconciliationArgs{
+							EntityType: "place",
+							EntityID:   result.PlaceULID,
+						}, &river.InsertOpts{
+							Queue:       "reconciliation",
+							MaxAttempts: ReconciliationMaxAttempts,
+						})
+						if err != nil {
+							logger.Warn("failed to enqueue place reconciliation for batch event",
+								"batch_id", batchID,
+								"place_ulid", result.PlaceULID,
+								"error", err,
+							)
+						}
+					}
+					if result.OrganizerULID != "" {
+						_, err := riverClient.Insert(ctx, ReconciliationArgs{
+							EntityType: "organization",
+							EntityID:   result.OrganizerULID,
+						}, &river.InsertOpts{
+							Queue:       "reconciliation",
+							MaxAttempts: ReconciliationMaxAttempts,
+						})
+						if err != nil {
+							logger.Warn("failed to enqueue org reconciliation for batch event",
+								"batch_id", batchID,
+								"org_ulid", result.OrganizerULID,
+								"error", err,
+							)
+						}
+					}
 				}
 			}
 			successCount++
@@ -369,13 +630,11 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 func NewWorkers() *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker[DeduplicationArgs](workers, DeduplicationWorker{})
-	river.AddWorker[ReconciliationArgs](workers, ReconciliationWorker{})
-	river.AddWorker[EnrichmentArgs](workers, EnrichmentWorker{})
 	return workers
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, logger *slog.Logger, slot string) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService *kg.ReconciliationService, logger *slog.Logger, slot string) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -420,6 +679,20 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 			Pool:             pool,
 			GeocodingService: geocodingService,
 			Logger:           logger,
+		})
+	}
+
+	// Knowledge graph reconciliation workers (srv-titkr)
+	if reconciliationService != nil {
+		river.AddWorker[ReconciliationArgs](workers, ReconciliationWorker{
+			Pool:                  pool,
+			ReconciliationService: reconciliationService,
+			Logger:                logger,
+		})
+		river.AddWorker[EnrichmentArgs](workers, EnrichmentWorker{
+			Pool:                  pool,
+			ReconciliationService: reconciliationService,
+			Logger:                logger,
 		})
 	}
 

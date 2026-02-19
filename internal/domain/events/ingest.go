@@ -17,11 +17,13 @@ import (
 )
 
 type IngestResult struct {
-	Event       *Event
-	IsDuplicate bool
-	IsMerged    bool // true when auto-merged with existing event
-	NeedsReview bool
-	Warnings    []ValidationWarning
+	Event         *Event
+	IsDuplicate   bool
+	IsMerged      bool // true when auto-merged with existing event
+	NeedsReview   bool
+	Warnings      []ValidationWarning
+	PlaceULID     string // ULID of created/matched place (for reconciliation)
+	OrganizerULID string // ULID of created/matched organization (for reconciliation)
 }
 
 type IngestService struct {
@@ -300,6 +302,9 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		return nil, fmt.Errorf("generate ulid: %w", err)
 	}
 
+	// Track place/org ULIDs for downstream reconciliation jobs
+	var placeULID, orgULID string
+
 	// Determine lifecycle state based on whether review is needed
 	lifecycleState := "published"
 	if needsReview {
@@ -353,6 +358,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			return nil, err
 		}
 		params.PrimaryVenueID = &place.ID
+		placeULID = place.ULID
 
 		// Layer 3: Fuzzy place dedup. Only check when a NEW place was just created
 		// (returned ULID matches our generated one) — if UpsertPlace returned an
@@ -512,6 +518,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			return nil, err
 		}
 		params.OrganizerID = &org.ID
+		orgULID = org.ULID
 
 		// Layer 3: Fuzzy organization dedup. Same pattern as places — only check
 		// when a NEW org was just created (returned ULID matches our generated one).
@@ -688,7 +695,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
-	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings}, nil
+	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings, PlaceULID: placeULID, OrganizerULID: orgULID}, nil
 }
 
 // createOccurrencesWithRepo creates occurrences using the provided repository (supports transactions)
