@@ -524,6 +524,14 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 			if result.Event != nil {
 				itemResult["event_id"] = result.Event.ULID
 
+				// Log reconciliation-relevant result fields for debugging (srv-titkr)
+				logger.Info("batch event created, checking reconciliation fields",
+					"batch_id", batchID,
+					"event_ulid", result.Event.ULID,
+					"place_ulid", result.PlaceULID,
+					"org_ulid", result.OrganizerULID,
+				)
+
 				// Enqueue geocoding job for newly created events (srv-dlrfw)
 				// Uses ClientFromContext to get the River client within the worker.
 				// Geocoding is not critical — log and continue on failure.
@@ -561,6 +569,11 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 								"place_ulid", result.PlaceULID,
 								"error", err,
 							)
+						} else {
+							logger.Info("enqueued place reconciliation job",
+								"batch_id", batchID,
+								"place_ulid", result.PlaceULID,
+							)
 						}
 					}
 					if result.OrganizerULID != "" {
@@ -576,6 +589,11 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 								"batch_id", batchID,
 								"org_ulid", result.OrganizerULID,
 								"error", err,
+							)
+						} else {
+							logger.Info("enqueued org reconciliation job",
+								"batch_id", batchID,
+								"org_ulid", result.OrganizerULID,
 							)
 						}
 					}

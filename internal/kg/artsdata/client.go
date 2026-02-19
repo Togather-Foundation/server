@@ -1,12 +1,13 @@
 package artsdata
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -105,11 +106,6 @@ type ResultType struct {
 	Name string `json:"name"`
 }
 
-// reconciliationRequest is the top-level request structure.
-type reconciliationRequest struct {
-	Queries map[string]ReconciliationQuery `json:"queries"`
-}
-
 // resultWrapper wraps the result array.
 type resultWrapper struct {
 	Result []ReconciliationResult `json:"result"`
@@ -117,24 +113,27 @@ type resultWrapper struct {
 
 // Reconcile performs entity reconciliation against Artsdata.
 // Returns a map of query IDs to their result arrays.
+//
+// Per W3C Reconciliation API v0.2 §4.3, queries are sent as form-encoded
+// POST with the JSON batch in a "queries" form parameter.
 func (c *Client) Reconcile(ctx context.Context, queries map[string]ReconciliationQuery) (map[string][]ReconciliationResult, error) {
 	if len(queries) == 0 {
 		return nil, fmt.Errorf("queries cannot be empty")
 	}
 
-	// Build request
-	reqBody := reconciliationRequest{
-		Queries: queries,
-	}
-
-	reqJSON, err := json.Marshal(reqBody)
+	// W3C Reconciliation API v0.2 expects queries as a flat batch object
+	// (not wrapped in {"queries": ...}), serialized as the "queries" form parameter.
+	reqJSON, err := json.Marshal(queries)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
+	// Build form-encoded body: queries=<url-encoded-json>
+	formData := "queries=" + url.QueryEscape(string(reqJSON))
+
 	// Execute request with retry
 	var respBody []byte
-	respBody, err = c.doWithRetry(ctx, http.MethodPost, c.endpoint, bytes.NewReader(reqJSON), "application/json")
+	respBody, err = c.doWithRetry(ctx, http.MethodPost, c.endpoint, strings.NewReader(formData), "application/x-www-form-urlencoded", "application/json")
 	if err != nil {
 		return nil, fmt.Errorf("reconciliation request: %w", err)
 	}
@@ -193,7 +192,7 @@ func (c *Client) Dereference(ctx context.Context, uri string) (*EntityData, erro
 	}
 
 	// Execute request with Accept: application/ld+json
-	respBody, err := c.doWithRetry(ctx, http.MethodGet, uri, nil, "application/ld+json")
+	respBody, err := c.doWithRetry(ctx, http.MethodGet, uri, nil, "", "application/ld+json")
 	if err != nil {
 		return nil, fmt.Errorf("dereference %s: %w", uri, err)
 	}
@@ -248,7 +247,9 @@ func ExtractSameAsURIs(data *EntityData) []string {
 }
 
 // doWithRetry executes an HTTP request with exponential backoff retry logic.
-func (c *Client) doWithRetry(ctx context.Context, method, url string, body io.Reader, accept string) ([]byte, error) {
+// For POST requests, contentType specifies the Content-Type header.
+// The accept parameter sets the Accept header.
+func (c *Client) doWithRetry(ctx context.Context, method, reqURL string, body io.Reader, contentType, accept string) ([]byte, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= MaxRetries; attempt++ {
@@ -282,14 +283,14 @@ func (c *Client) doWithRetry(ctx context.Context, method, url string, body io.Re
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
 		if err != nil {
 			return nil, fmt.Errorf("create request: %w", err)
 		}
 
 		req.Header.Set("User-Agent", c.userAgent)
-		if method == http.MethodPost {
-			req.Header.Set("Content-Type", "application/json")
+		if method == http.MethodPost && contentType != "" {
+			req.Header.Set("Content-Type", contentType)
 		}
 		if accept != "" {
 			req.Header.Set("Accept", accept)

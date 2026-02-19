@@ -123,7 +123,7 @@ func TestReconcile_Success(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, http.MethodPost, r.Method)
-				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+				assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
 				assert.Contains(t, r.Header.Get("User-Agent"), "Togather")
 
 				w.Header().Set("Content-Type", "application/json")
@@ -446,13 +446,20 @@ func TestReconcile_RealWorldResponse(t *testing.T) {
 	}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request structure
-		var req reconciliationRequest
-		err := json.NewDecoder(r.Body).Decode(&req)
+		// Verify request is form-encoded per W3C Reconciliation API v0.2 §4.3
+		assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
+		err := r.ParseForm()
 		require.NoError(t, err)
 
-		assert.Contains(t, req.Queries, "q0")
-		assert.Contains(t, req.Queries, "q1")
+		queriesParam := r.FormValue("queries")
+		require.NotEmpty(t, queriesParam)
+
+		var queries map[string]ReconciliationQuery
+		err = json.Unmarshal([]byte(queriesParam), &queries)
+		require.NoError(t, err)
+
+		assert.Contains(t, queries, "q0")
+		assert.Contains(t, queries, "q1")
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(serverResp))

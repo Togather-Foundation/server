@@ -58,17 +58,22 @@ func newMockArtsdataServer(t *testing.T, callCounter *atomic.Int32) *httptest.Se
 				callCounter.Add(1)
 			}
 
-			// Parse request to determine response
-			var reqBody map[string]interface{}
-			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			// Parse form-encoded request per W3C Reconciliation API v0.2 §4.3
+			if err := r.ParseForm(); err != nil {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
 
-			// Check if this is a query that should return no results
-			queries, ok := reqBody["queries"].(map[string]interface{})
-			if !ok {
-				http.Error(w, "invalid queries", http.StatusBadRequest)
+			queriesParam := r.FormValue("queries")
+			if queriesParam == "" {
+				http.Error(w, "missing queries parameter", http.StatusBadRequest)
+				return
+			}
+
+			// The queries parameter is a JSON batch object (flat, not wrapped)
+			var queries map[string]interface{}
+			if err := json.Unmarshal([]byte(queriesParam), &queries); err != nil {
+				http.Error(w, "invalid queries JSON", http.StatusBadRequest)
 				return
 			}
 
