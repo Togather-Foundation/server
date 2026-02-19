@@ -8,6 +8,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -487,11 +488,11 @@ func sqlcPlaceRowToDomain(row interface{}) places.Place {
 		updatedAt = r.UpdatedAt
 	}
 
-	var placeID string
-	if err := id.Scan(&placeID); err != nil {
-		// Should never happen with valid database UUIDs
-		// Using empty string as fallback
-		placeID = ""
+	// Extract UUID string representation
+	// Note: Use String() method, not Scan() which reads FROM source not TO destination
+	placeID := ""
+	if id.Valid {
+		placeID = uuid.UUID(id.Bytes).String()
 	}
 
 	place := places.Place{

@@ -127,11 +127,8 @@ func TestSqlcPlaceRowToDomain_AllRowTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			place := sqlcPlaceRowToDomain(tt.row)
 
-			// NOTE: UUID extraction via id.Scan(&placeID) has a bug (srv-4in2s)
-			// It always returns empty string because Scan expects to scan FROM a source, not TO a destination
-			// The correct fix would be to use id.String() instead of id.Scan(&placeID)
-			// For now, tests verify the buggy behavior matches expectations
-			require.Equal(t, "", place.ID, "ID is empty due to UUID scan bug")
+			// Verify UUID is correctly extracted
+			require.Equal(t, testUUID.String(), place.ID)
 
 			// Verify non-nullable fields
 			require.Equal(t, "01HQZX12345678901234567890", place.ULID)
@@ -282,8 +279,8 @@ func TestSqlcPlaceRowToDomain_NullFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			place := sqlcPlaceRowToDomain(tt.row)
 
-			// NOTE: UUID extraction bug (see above test for details)
-			require.Equal(t, "", place.ID, "ID is empty due to UUID scan bug")
+			// Verify UUID is correctly extracted
+			require.Equal(t, testUUID.String(), place.ID)
 
 			// Verify non-nullable fields
 			require.Equal(t, "01HQZX12345678901234567890", place.ULID)
@@ -429,8 +426,8 @@ func TestSqlcOrganizationRowToDomain_AllRowTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			org := sqlcOrganizationRowToDomain(tt.row)
 
-			// NOTE: UUID extraction bug (same as places converter)
-			require.Equal(t, "", org.ID, "ID is empty due to UUID scan bug")
+			// Verify UUID is correctly extracted
+			require.Equal(t, testUUID.String(), org.ID)
 
 			// Verify non-nullable fields
 			require.Equal(t, "01HQZX12345678901234567890", org.ULID)
@@ -569,8 +566,8 @@ func TestSqlcOrganizationRowToDomain_NullFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			org := sqlcOrganizationRowToDomain(tt.row)
 
-			// NOTE: UUID extraction bug (same as places converter)
-			require.Equal(t, "", org.ID, "ID is empty due to UUID scan bug")
+			// Verify UUID is correctly extracted
+			require.Equal(t, testUUID.String(), org.ID)
 
 			// Verify non-nullable fields
 			require.Equal(t, "01HQZX12345678901234567890", org.ULID)
