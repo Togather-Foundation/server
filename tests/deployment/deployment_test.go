@@ -135,11 +135,7 @@ func TestDeploymentFullFlow(t *testing.T) {
 	t.Run("RunMigrations", func(t *testing.T) {
 		require.NotEmpty(t, dbURL, "DATABASE_URL not set from previous test")
 
-		// Check if migrate is available
-		_, err := exec.LookPath("migrate")
-		if err != nil {
-			t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
-		}
+		requireMigrateCLI(t)
 
 		t.Logf("Running database migrations")
 		migrationStart := time.Now()
@@ -465,11 +461,7 @@ func TestMigrationRollback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Check if migrate CLI is available
-	_, err := exec.LookPath("migrate")
-	if err != nil {
-		t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
-	}
+	requireMigrateCLI(t)
 
 	projectRoot := getProjectRoot(t)
 
@@ -553,6 +545,148 @@ func TestMigrationRollback(t *testing.T) {
 	}
 }
 
+// TestDockerEmailServiceInit verifies that email templates are included in the Docker image
+// and that the email service initializes successfully without panicking.
+// This test prevents regression of srv-jakhq (missing COPY web/email in Dockerfile).
+func TestDockerEmailServiceInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping Docker email service test in short mode")
+	}
+
+	// Check if Docker is available
+	_, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("Docker not available - skipping test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	projectRoot := getProjectRoot(t)
+	imageName := "togather-server-email-test"
+	imageTag := "email-init-test"
+	fullImageName := fmt.Sprintf("%s:%s", imageName, imageTag)
+
+	// Step 1: Build Docker image
+	t.Run("BuildDockerImage", func(t *testing.T) {
+		t.Logf("Building Docker image: %s", fullImageName)
+		buildStart := time.Now()
+
+		cmd := exec.CommandContext(ctx, "docker", "build",
+			"-f", filepath.Join(projectRoot, "deploy/docker/Dockerfile"),
+			"-t", fullImageName,
+			"--build-arg", "GIT_COMMIT=email-test-commit",
+			"--build-arg", "GIT_SHORT_COMMIT=emailtest",
+			"--build-arg", "BUILD_TIMESTAMP="+time.Now().UTC().Format(time.RFC3339),
+			"--build-arg", "VERSION=email-test-version",
+			projectRoot,
+		)
+		cmd.Dir = projectRoot
+
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "Docker build failed: %s", string(output))
+
+		buildDuration := time.Since(buildStart)
+		t.Logf("✓ Docker image built successfully in %v", buildDuration)
+	})
+
+	// Step 2: Verify email templates exist in image
+	t.Run("VerifyEmailTemplatesInImage", func(t *testing.T) {
+		t.Logf("Checking if email templates are present in Docker image")
+
+		// Override entrypoint to run ls command
+		cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--entrypoint", "ls",
+			fullImageName, "-la", "/app/web/email/templates/")
+
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "Failed to list email templates in image: %s", string(output))
+
+		// Verify invitation.html exists
+		outputStr := string(output)
+		assert.Contains(t, outputStr, "invitation.html", "invitation.html template not found in image")
+
+		t.Logf("✓ Email templates found in image:\n%s", outputStr)
+	})
+
+	// Step 3: Start container with minimal email config and verify no panic
+	t.Run("StartContainerAndVerifyEmailInit", func(t *testing.T) {
+		t.Logf("Starting container with email service enabled")
+
+		// Use a container with minimal config
+		// We don't need a real database for this test - just verify the email service initializes
+		containerName := fmt.Sprintf("email-test-%d", time.Now().Unix())
+
+		// Start container in detached mode - it will fail to connect to database but email service should init first
+		cmd := exec.CommandContext(ctx, "docker", "run",
+			"--name", containerName,
+			"-d",
+			"-e", "EMAIL_ENABLED=true",
+			"-e", "EMAIL_PROVIDER=smtp",
+			"-e", "EMAIL_FROM=test@example.com",
+			"-e", "SMTP_HOST=smtp.example.com",
+			"-e", "SMTP_PORT=587",
+			"-e", "SMTP_USER=testuser",
+			"-e", "SMTP_PASSWORD=testpass",
+			"-e", "DATABASE_URL=postgres://user:pass@localhost:5432/db?sslmode=disable",
+			"-e", "LOG_LEVEL=info",
+			"-e", "JWT_SECRET=test-secret-for-email-init-test-minimum-32-chars",
+			fullImageName,
+		)
+
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "Failed to start container: %s", string(output))
+
+		containerID := strings.TrimSpace(string(output))
+		t.Logf("✓ Container started: %s", containerID)
+
+		// Ensure container is cleaned up after test
+		defer func() {
+			// Stop and remove container
+			stopCmd := exec.CommandContext(context.Background(), "docker", "rm", "-f", containerName)
+			_ = stopCmd.Run()
+		}()
+
+		// Wait a few seconds for initialization and failure (due to no database)
+		time.Sleep(3 * time.Second)
+
+		// Get container logs - use containerID instead of containerName
+		logsCmd := exec.CommandContext(ctx, "docker", "logs", containerID)
+		logsOutput, err := logsCmd.CombinedOutput()
+		// Don't fail if we can't get logs - container might have exited
+		if err != nil {
+			t.Logf("Warning: failed to get container logs: %v", err)
+			// Try with container name as fallback
+			logsCmd = exec.CommandContext(ctx, "docker", "logs", containerName)
+			logsOutput, _ = logsCmd.CombinedOutput()
+		}
+
+		logs := string(logsOutput)
+		if logs == "" {
+			t.Logf("Warning: No logs captured from container")
+			// This is not a failure - the important thing is checking the build
+		} else {
+			t.Logf("Container logs:\n%s", logs)
+
+			// Verify email service initialized successfully
+			// Check for the absence of "failed to initialize email service" error
+			assert.NotContains(t, logs, "failed to initialize email service",
+				"Email service failed to initialize - templates may be missing")
+
+			// Also check for the absence of template parsing errors
+			assert.NotContains(t, logs, "failed to parse email templates",
+				"Email template parsing failed")
+
+			t.Logf("✓ Email service initialized without errors")
+		}
+	})
+
+	// Cleanup: Remove Docker image
+	t.Cleanup(func() {
+		cmd := exec.Command("docker", "rmi", "-f", fullImageName)
+		_ = cmd.Run()
+	})
+}
+
 // Helper functions
 
 func getProjectRoot(t *testing.T) string {
@@ -566,6 +700,14 @@ func getProjectRoot(t *testing.T) string {
 	require.NoError(t, err, "Failed to get absolute path")
 
 	return abs
+}
+
+func requireMigrateCLI(t *testing.T) {
+	t.Helper()
+	_, err := exec.LookPath("migrate")
+	if err != nil {
+		t.Skip("migrate CLI not installed - install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest")
+	}
 }
 
 func validateHealthCheck(t *testing.T, ctx context.Context, healthURL string) {
