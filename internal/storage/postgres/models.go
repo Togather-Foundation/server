@@ -65,6 +65,20 @@ type DeveloperInvitation struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type EntityIdentifier struct {
+	ID                   int32              `json:"id"`
+	EntityType           string             `json:"entity_type"`
+	EntityID             string             `json:"entity_id"`
+	AuthorityCode        string             `json:"authority_code"`
+	IdentifierUri        string             `json:"identifier_uri"`
+	Confidence           pgtype.Numeric     `json:"confidence"`
+	ReconciliationMethod string             `json:"reconciliation_method"`
+	IsCanonical          bool               `json:"is_canonical"`
+	Metadata             []byte             `json:"metadata"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Event struct {
 	ID                    pgtype.UUID        `json:"id"`
 	Ulid                  string             `json:"ulid"`
@@ -294,6 +308,23 @@ type IdempotencyKey struct {
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 }
 
+type KnowledgeGraphAuthority struct {
+	ID                     int32              `json:"id"`
+	AuthorityCode          string             `json:"authority_code"`
+	AuthorityName          string             `json:"authority_name"`
+	BaseUriPattern         string             `json:"base_uri_pattern"`
+	ReconciliationEndpoint pgtype.Text        `json:"reconciliation_endpoint"`
+	ApplicableDomains      []string           `json:"applicable_domains"`
+	TrustLevel             int32              `json:"trust_level"`
+	PriorityOrder          int32              `json:"priority_order"`
+	RateLimitPerMinute     int32              `json:"rate_limit_per_minute"`
+	RateLimitPerDay        int32              `json:"rate_limit_per_day"`
+	IsActive               bool               `json:"is_active"`
+	DocumentationUrl       pgtype.Text        `json:"documentation_url"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Organization struct {
 	ID               pgtype.UUID        `json:"id"`
 	Ulid             string             `json:"ulid"`
@@ -371,6 +402,19 @@ type PlaceTombstone struct {
 	DeletionReason  pgtype.Text        `json:"deletion_reason"`
 	SupersededByUri pgtype.Text        `json:"superseded_by_uri"`
 	Payload         []byte             `json:"payload"`
+}
+
+type ReconciliationCache struct {
+	ID            int32              `json:"id"`
+	EntityType    string             `json:"entity_type"`
+	AuthorityCode string             `json:"authority_code"`
+	LookupKey     string             `json:"lookup_key"`
+	ResultJson    []byte             `json:"result_json"`
+	HitCount      int32              `json:"hit_count"`
+	IsNegative    bool               `json:"is_negative"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ReverseGeocodingCache struct {
