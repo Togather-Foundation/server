@@ -18,11 +18,13 @@ import (
 // ArtsdataClient defines the subset of the Artsdata client API used by ReconciliationService.
 // This interface is defined by the consumer (idiomatic Go), allowing the concrete
 // *artsdata.Client to be swapped with a mock in tests.
-// *artsdata.Client satisfies this interface.
 type ArtsdataClient interface {
 	Reconcile(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error)
 	Dereference(ctx context.Context, uri string) (*artsdata.EntityData, error)
 }
+
+// compile-time assertion: *artsdata.Client must satisfy ArtsdataClient.
+var _ ArtsdataClient = (*artsdata.Client)(nil)
 
 // ReconciliationService orchestrates entity reconciliation against knowledge graphs.
 type ReconciliationService struct {

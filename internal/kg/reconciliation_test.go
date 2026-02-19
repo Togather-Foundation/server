@@ -35,18 +35,10 @@ func (m *mockArtsdataClient) Dereference(ctx context.Context, uri string) (*arts
 	return nil, nil
 }
 
-// TestReconciliationService_MockClientInterface verifies at compile-time that
-// *artsdata.Client satisfies the ArtsdataClient interface defined in this package.
-func TestReconciliationService_MockClientInterface(t *testing.T) {
-	// Compile-time assertion: if *artsdata.Client does not implement ArtsdataClient,
-	// this assignment will fail to compile.
-	var _ ArtsdataClient = (*artsdata.Client)(nil)
-}
-
 // TestReconcileEntities_WithMockClient tests ReconcileEntity with a mock client,
 // verifying that the service correctly processes results returned by the client.
 func TestReconcileEntities_WithMockClient(t *testing.T) {
-	t.Skip("Integration test - requires database for cache layer")
+	t.Skip("requires database: ReconcileEntity calls queries.GetReconciliationCache which panics on nil queries")
 
 	mockClient := &mockArtsdataClient{
 		reconcileFunc: func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
@@ -397,10 +389,6 @@ func TestInferAuthorityCode(t *testing.T) {
 		})
 	}
 }
-
-// Note: MockArtsdataClient was removed because ReconciliationService takes a concrete
-// *artsdata.Client, not an interface. For unit testing the service, consider introducing
-// a reconciler interface (see follow-up bead). Integration tests use real HTTP mock servers.
 
 func TestReconcileEntity_CacheHit(t *testing.T) {
 	// This test would require database mocking, which is complex.
