@@ -344,26 +344,71 @@ Create tools that map cleanly to Artsdata capabilities.
 - When generating JSON-LD for contribution, validate against SHACL (when possible).
 
 
-## 8) Minimal test suite
+## 8) SEL Implementation Reference
 
-### 8.1 Reconciliation correctness
+The Artsdata reconciliation adapter is implemented in the following locations:
+
+### Code
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| HTTP Client | `internal/kg/artsdata/client.go` | W3C Reconciliation API client with rate limiting, retries, entity dereference |
+| Reconciliation Service | `internal/kg/reconciliation.go` | Cache→API→threshold→store pipeline |
+| Workers | `internal/jobs/workers.go` | `ReconciliationWorker` (River job) and `EnrichmentWorker` (placeholder) |
+| CLI Command | `cmd/server/cmd/reconcile.go` | `server reconcile places\|organizations\|all` with `--dry-run`, `--limit`, `--force` |
+| Configuration | `internal/config/config.go` | `ArtsdataConfig` struct (env vars: `ARTSDATA_ENABLED`, `ARTSDATA_ENDPOINT`, etc.) |
+| DB Migration | `internal/storage/postgres/migrations/000030_*` | `knowledge_graph_authorities`, `entity_identifiers`, `reconciliation_cache` tables |
+| SQLc Queries | `internal/storage/postgres/queries/knowledge_graph.sql` | 13 queries for CRUD on KG tables |
+
+### Pipeline Flow
+
+1. Event ingested via API → handler enqueues `ReconciliationArgs` job for place and/or organization
+2. `ReconciliationWorker` picks up job → queries entity from DB → calls `ReconciliationService.ReconcileEntity()`
+3. Service checks `reconciliation_cache` → if miss, calls Artsdata W3C Reconciliation API
+4. Results classified by confidence: >=95% `auto_high`, 80-94% `auto_low`, <80% rejected
+5. Matches stored in `entity_identifiers`, results cached in `reconciliation_cache`
+6. High-confidence matches enqueue `EnrichmentArgs` job (enrichment is a TODO placeholder)
+
+### Bulk Reconciliation
+
+```bash
+server reconcile places --limit 100          # Reconcile up to 100 unreconciled places
+server reconcile organizations --dry-run     # Preview what would be reconciled
+server reconcile all --force                 # Force re-reconcile everything (bypass cache)
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ARTSDATA_ENABLED` | `false` | Enable Artsdata reconciliation |
+| `ARTSDATA_ENDPOINT` | `https://api.artsdata.ca/recon` | W3C Reconciliation API endpoint |
+| `ARTSDATA_TIMEOUT_SECONDS` | `30` | HTTP client timeout |
+| `ARTSDATA_RATE_LIMIT_PER_SECOND` | `2` | Max API calls per second |
+| `ARTSDATA_HIGH_CONFIDENCE_THRESHOLD` | `0.95` | Threshold for auto_high classification |
+| `ARTSDATA_LOW_CONFIDENCE_THRESHOLD` | `0.80` | Threshold for auto_low classification |
+
+
+## 9) Minimal test suite
+
+### 9.1 Reconciliation correctness
 
 - Place by name + postalCode should return stable Artsdata URI.
 - Organization by official site URL should return stable Artsdata URI.
 - Person by name + disambiguator property should reduce false positives.
 
-### 8.2 SPARQL smoke tests
+### 9.2 SPARQL smoke tests
 
 - Core endpoint returns 200 and a small result set for a known-safe query.
 - All-graphs endpoint returns superset (or equal) vs core, for same query pattern.
 
-### 8.3 Identifier validation
+### 9.3 Identifier validation
 
 - Any Artsdata ID accepted must match `^http://kg\.artsdata\.ca/resource/K\d+-\d+$`
 - Any Wikidata URI must match `^http://www\.wikidata\.org/entity/Q\d+$`
 
 
-## 9) Primary standards
+## 11) Primary standards
 
 - JSON-LD 1.1: [https://www.w3.org/TR/json-ld11/](https://www.w3.org/TR/json-ld11/)
 - RDF 1.1 Concepts: [https://www.w3.org/TR/rdf11-concepts/](https://www.w3.org/TR/rdf11-concepts/)
@@ -372,7 +417,7 @@ Create tools that map cleanly to Artsdata capabilities.
 - Schema.org: [https://schema.org/](https://schema.org/)
 - W3C Entity Reconciliation CG (spec used by Artsdata): https://reconciliation-api.github.io/specs/latest/
 
-## 10) “If you only remember 7 rules”
+## 11) “If you only remember 7 rules”
 
 1. Prefer `sameAs` with global URIs (Wikidata/ISNI/VIAF/etc.) for people/orgs/places; use Artsdata IDs where available.
 2. Use reconciliation (`/recon`) before minting.
