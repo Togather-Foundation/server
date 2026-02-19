@@ -663,15 +663,26 @@ func TestDockerEmailServiceInit(t *testing.T) {
 				t.Logf("Container logs:\n%s", logs)
 
 				// Verify email service initialized successfully
-				// Check for the absence of "failed to initialize email service" error
+				// Negative assertions: Check for absence of errors
 				assert.NotContains(t, logs, "failed to initialize email service",
 					"Email service failed to initialize - templates may be missing")
-
-				// Also check for the absence of template parsing errors
 				assert.NotContains(t, logs, "failed to parse email templates",
 					"Email template parsing failed")
 
-				t.Logf("✓ Email service initialized without errors")
+				// Positive assertions: Verify email service actually initialized
+				assert.Contains(t, logs, "email service initialized successfully",
+					"Expected to find success message for email service initialization")
+
+				// Verify the server started up (email init happens during startup)
+				assert.Contains(t, logs, "starting SEL server",
+					"Expected to find server startup message")
+
+				// Verify initialization progressed past email service to metrics
+				// (confirms email init didn't block startup)
+				assert.Contains(t, logs, "metrics initialized",
+					"Expected to find metrics initialization message after email service init")
+
+				t.Logf("✓ Email service initialized successfully with positive confirmation")
 			}
 		}
 	})
