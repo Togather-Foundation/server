@@ -311,51 +311,18 @@ SELECT p.id, p.ulid, p.name, p.description,
 }
 
 func (r *PlaceRepository) GetByULID(ctx context.Context, ulid string) (*places.Place, error) {
-	queryer := r.queryer()
+	queries := Queries{db: r.queryer()}
 
-	row := queryer.QueryRow(ctx, `
-SELECT p.id, p.ulid, p.name, p.description,
-       p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country,
-       p.latitude, p.longitude,
-       p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type,
-       p.federation_uri,
-       p.deleted_at, p.deletion_reason, p.created_at, p.updated_at
-  FROM places p
- WHERE p.ulid = $1
-`, ulid)
-
-	var data placeRow
-	if err := row.Scan(
-		&data.ID,
-		&data.ULID,
-		&data.Name,
-		&data.Description,
-		&data.StreetAddress,
-		&data.City,
-		&data.Region,
-		&data.PostalCode,
-		&data.Country,
-		&data.Latitude,
-		&data.Longitude,
-		&data.Telephone,
-		&data.Email,
-		&data.URL,
-		&data.MaximumAttendeeCapacity,
-		&data.VenueType,
-		&data.FederationURI,
-		&data.DeletedAt,
-		&data.Reason,
-		&data.CreatedAt,
-		&data.UpdatedAt,
-	); err != nil {
+	row, err := queries.GetPlaceByULID(ctx, ulid)
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, places.ErrNotFound
 		}
 		return nil, fmt.Errorf("get place: %w", err)
 	}
 
-	place := placeRowToDomain(&data)
-	if data.DeletedAt.Valid {
+	place := sqlcPlaceRowToDomain(&row)
+	if row.DeletedAt.Valid {
 		place.Lifecycle = "deleted"
 	}
 	return &place, nil
@@ -467,6 +434,26 @@ func sqlcPlaceRowToDomain(row interface{}) places.Place {
 		createdAt = r.CreatedAt
 		updatedAt = r.UpdatedAt
 	case *ListPlacesByNameDescRow:
+		id = r.ID
+		ulid = r.Ulid
+		name = r.Name
+		description = r.Description
+		streetAddress = r.StreetAddress
+		addressLocality = r.AddressLocality
+		addressRegion = r.AddressRegion
+		postalCode = r.PostalCode
+		addressCountry = r.AddressCountry
+		latitude = r.Latitude
+		longitude = r.Longitude
+		telephone = r.Telephone
+		email = r.Email
+		url = r.Url
+		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
+		venueType = r.VenueType
+		federationURI = r.FederationUri
+		createdAt = r.CreatedAt
+		updatedAt = r.UpdatedAt
+	case *GetPlaceByULIDRow:
 		id = r.ID
 		ulid = r.Ulid
 		name = r.Name
