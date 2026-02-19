@@ -612,71 +612,67 @@ func TestDockerEmailServiceInit(t *testing.T) {
 	t.Run("StartContainerAndVerifyEmailInit", func(t *testing.T) {
 		t.Logf("Starting container with email service enabled")
 
-		// Use a container with minimal config
-		// We don't need a real database for this test - just verify the email service initializes
-		containerName := fmt.Sprintf("email-test-%d", time.Now().Unix())
+		// Use testcontainers to properly wait for container initialization
+		req := testcontainers.ContainerRequest{
+			Image: fullImageName,
+			Env: map[string]string{
+				"EMAIL_ENABLED":  "true",
+				"EMAIL_PROVIDER": "smtp",
+				"EMAIL_FROM":     "test@example.com",
+				"SMTP_HOST":      "smtp.example.com",
+				"SMTP_PORT":      "587",
+				"SMTP_USER":      "testuser",
+				"SMTP_PASSWORD":  "testpass",
+				"DATABASE_URL":   "postgres://user:pass@localhost:5432/db?sslmode=disable",
+				"LOG_LEVEL":      "info",
+				"JWT_SECRET":     "test-secret-for-email-init-test-minimum-32-chars",
+			},
+			// Wait for either server startup attempt or database connection error
+			// The key is that email service initializes before database connection
+			WaitingFor: wait.ForLog("starting SEL server").
+				WithStartupTimeout(60 * time.Second).
+				WithPollInterval(1 * time.Second),
+		}
 
-		// Start container in detached mode - it will fail to connect to database but email service should init first
-		cmd := exec.CommandContext(ctx, "docker", "run",
-			"--name", containerName,
-			"-d",
-			"-e", "EMAIL_ENABLED=true",
-			"-e", "EMAIL_PROVIDER=smtp",
-			"-e", "EMAIL_FROM=test@example.com",
-			"-e", "SMTP_HOST=smtp.example.com",
-			"-e", "SMTP_PORT=587",
-			"-e", "SMTP_USER=testuser",
-			"-e", "SMTP_PASSWORD=testpass",
-			"-e", "DATABASE_URL=postgres://user:pass@localhost:5432/db?sslmode=disable",
-			"-e", "LOG_LEVEL=info",
-			"-e", "JWT_SECRET=test-secret-for-email-init-test-minimum-32-chars",
-			fullImageName,
-		)
-
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, "Failed to start container: %s", string(output))
-
-		containerID := strings.TrimSpace(string(output))
-		t.Logf("✓ Container started: %s", containerID)
+		container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: req,
+			Started:          true,
+		})
+		require.NoError(t, err, "Failed to start container")
 
 		// Ensure container is cleaned up after test
 		defer func() {
-			// Stop and remove container
-			stopCmd := exec.CommandContext(context.Background(), "docker", "rm", "-f", containerName)
-			_ = stopCmd.Run()
+			if err := container.Terminate(ctx); err != nil {
+				t.Logf("Failed to terminate container: %v", err)
+			}
 		}()
 
-		// Wait a few seconds for initialization and failure (due to no database)
-		time.Sleep(3 * time.Second)
-
-		// Get container logs - use containerID instead of containerName
-		logsCmd := exec.CommandContext(ctx, "docker", "logs", containerID)
-		logsOutput, err := logsCmd.CombinedOutput()
-		// Don't fail if we can't get logs - container might have exited
+		// Get container logs using testcontainers API
+		logReader, err := container.Logs(ctx)
 		if err != nil {
 			t.Logf("Warning: failed to get container logs: %v", err)
-			// Try with container name as fallback
-			logsCmd = exec.CommandContext(ctx, "docker", "logs", containerName)
-			logsOutput, _ = logsCmd.CombinedOutput()
-		}
-
-		logs := string(logsOutput)
-		if logs == "" {
-			t.Logf("Warning: No logs captured from container")
-			// This is not a failure - the important thing is checking the build
 		} else {
-			t.Logf("Container logs:\n%s", logs)
+			defer func() { _ = logReader.Close() }()
+			logsOutput, err := io.ReadAll(logReader)
+			logs := string(logsOutput)
 
-			// Verify email service initialized successfully
-			// Check for the absence of "failed to initialize email service" error
-			assert.NotContains(t, logs, "failed to initialize email service",
-				"Email service failed to initialize - templates may be missing")
+			if err != nil || logs == "" {
+				t.Logf("Warning: No logs captured from container")
+				// This is not a failure - the important thing is checking the build
+			} else {
+				t.Logf("Container logs:\n%s", logs)
 
-			// Also check for the absence of template parsing errors
-			assert.NotContains(t, logs, "failed to parse email templates",
-				"Email template parsing failed")
+				// Verify email service initialized successfully
+				// Check for the absence of "failed to initialize email service" error
+				assert.NotContains(t, logs, "failed to initialize email service",
+					"Email service failed to initialize - templates may be missing")
 
-			t.Logf("✓ Email service initialized without errors")
+				// Also check for the absence of template parsing errors
+				assert.NotContains(t, logs, "failed to parse email templates",
+					"Email template parsing failed")
+
+				t.Logf("✓ Email service initialized without errors")
+			}
 		}
 	})
 
@@ -713,9 +709,8 @@ func requireMigrateCLI(t *testing.T) {
 func validateHealthCheck(t *testing.T, ctx context.Context, healthURL string) {
 	t.Helper()
 
-	// Wait a bit for application to fully initialize
-	time.Sleep(2 * time.Second)
-
+	// No need to sleep - the container's wait strategy already ensures
+	// the health endpoint is responding before the container is marked as started
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
