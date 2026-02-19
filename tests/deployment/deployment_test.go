@@ -657,7 +657,7 @@ func TestDockerEmailServiceInit(t *testing.T) {
 			t.Logf("Warning: failed to get container logs: %v", err)
 			// Try with container name as fallback
 			logsCmd = exec.CommandContext(ctx, "docker", "logs", containerName)
-			logsOutput, err = logsCmd.CombinedOutput()
+			logsOutput, _ = logsCmd.CombinedOutput()
 		}
 
 		logs := string(logsOutput)
