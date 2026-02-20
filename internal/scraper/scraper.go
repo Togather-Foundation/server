@@ -143,7 +143,7 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 	case 0:
 		return s.scrapeTier0(ctx, *found, opts)
 	case 1:
-		return ScrapeResult{}, fmt.Errorf("tier 1 not yet implemented")
+		return s.scrapeTier1(ctx, *found, opts)
 	default:
 		return ScrapeResult{}, fmt.Errorf("unknown tier %d for source %s", found.Tier, sourceName)
 	}
@@ -175,6 +175,70 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 	}
 
 	return results, nil
+}
+
+// scrapeTier1 fetches and processes a Tier 1 (Colly CSS-selector) source.
+func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
+	result := ScrapeResult{
+		SourceName: source.Name,
+		SourceURL:  source.URL,
+		Tier:       1,
+		DryRun:     opts.DryRun,
+	}
+
+	extractor := NewCollyExtractor(s.logger)
+	rawEvents, err := extractor.ScrapeWithSelectors(ctx, source)
+	if err != nil {
+		result.Error = err
+		return result, nil
+	}
+
+	result.EventsFound = len(rawEvents)
+
+	limit := opts.Limit
+	var validEvents []events.EventInput
+	skipped := 0
+
+	for i, raw := range rawEvents {
+		if limit > 0 && i >= limit {
+			break
+		}
+		input, normErr := NormalizeRawEvent(raw, source)
+		if normErr != nil {
+			s.logger.Warn().
+				Str("source", source.Name).
+				Err(normErr).
+				Msg("scraper: skipping raw event that failed normalisation")
+			skipped++
+			continue
+		}
+		validEvents = append(validEvents, input)
+	}
+
+	result.EventsSubmitted = len(validEvents)
+
+	if skipped > 0 {
+		s.logger.Warn().
+			Str("source", source.Name).
+			Int("skipped", skipped).
+			Msg("scraper: tier 1 events skipped during normalisation")
+	}
+
+	if len(validEvents) == 0 {
+		return result, nil
+	}
+
+	ingestResult, err := s.submitEvents(ctx, validEvents, opts.DryRun)
+	if err != nil {
+		result.Error = err
+		return result, nil
+	}
+
+	result.EventsCreated = ingestResult.EventsCreated
+	result.EventsDuplicate = ingestResult.EventsDuplicate
+	result.EventsFailed = ingestResult.EventsFailed
+
+	return result, nil
 }
 
 // scrapeTier0 fetches and processes a Tier 0 (JSON-LD) source.
