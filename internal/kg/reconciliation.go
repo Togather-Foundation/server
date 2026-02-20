@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,27 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// artsdataResourceBase is the canonical base URL for Artsdata knowledge graph resources.
+// The W3C Reconciliation API may return short IDs (e.g. "K2-183") that must be
+// expanded to full URIs before storage or HTTP dereferencing.
+const artsdataResourceBase = "https://kg.artsdata.ca/resource/"
+
+// artsdataShortIDPattern matches Artsdata short IDs of the form "K<digits>-<digits>".
+var artsdataShortIDPattern = regexp.MustCompile(`^K\d+-\d+$`)
+
+// expandArtsdataID converts a short Artsdata ID (e.g. "K2-183") to its full
+// canonical URI (e.g. "https://kg.artsdata.ca/resource/K2-183").
+// IDs that already start with "http" are returned unchanged.
+func expandArtsdataID(id string) string {
+	if strings.HasPrefix(id, "http") {
+		return id
+	}
+	if artsdataShortIDPattern.MatchString(id) {
+		return artsdataResourceBase + id
+	}
+	return id
+}
 
 // ArtsdataClient defines the subset of the Artsdata client API used by ReconciliationService.
 // This interface is defined by the consumer (idiomatic Go), allowing the concrete
@@ -168,7 +190,7 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 
 		matches = append(matches, MatchResult{
 			AuthorityCode: "artsdata",
-			IdentifierURI: result.ID,
+			IdentifierURI: expandArtsdataID(result.ID),
 			Confidence:    confidence,
 			Method:        method,
 			SameAsURIs:    []string{}, // Will be populated from dereference
@@ -177,24 +199,25 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 
 	// 6. For high confidence matches, dereference to get sameAs links
 	if topResult != nil && len(matches) > 0 {
-		entity, err := s.artsdataClient.Dereference(ctx, topResult.ID)
+		topResultURI := expandArtsdataID(topResult.ID)
+		entity, err := s.artsdataClient.Dereference(ctx, topResultURI)
 		if err != nil {
 			s.logger.WarnContext(ctx, "failed to dereference entity",
-				"uri", topResult.ID,
+				"uri", topResultURI,
 				"error", err,
 			)
 		} else {
 			sameAsURIs := artsdata.ExtractSameAsURIs(entity)
 			// Find the match corresponding to topResult and assign sameAs to it
 			for i := range matches {
-				if matches[i].IdentifierURI == topResult.ID {
+				if matches[i].IdentifierURI == topResultURI {
 					matches[i].SameAsURIs = sameAsURIs
 					break
 				}
 			}
 
 			s.logger.DebugContext(ctx, "extracted sameAs URIs",
-				"uri", topResult.ID,
+				"uri", topResultURI,
 				"same_as", sameAsURIs,
 			)
 		}
