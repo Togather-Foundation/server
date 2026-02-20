@@ -72,6 +72,91 @@ func (m *mockReconciliationCacheStore) UpsertEntityIdentifier(ctx context.Contex
 	return postgres.EntityIdentifier{}, nil
 }
 
+// TestExpandArtsdataID verifies that short IDs returned by the W3C Reconciliation
+// API are expanded to full HTTPS URIs before being stored or dereferenced.
+func TestExpandArtsdataID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "short ID is expanded",
+			input: "K2-183",
+			want:  "https://kg.artsdata.ca/resource/K2-183",
+		},
+		{
+			name:  "short ID with larger numbers",
+			input: "K11-211",
+			want:  "https://kg.artsdata.ca/resource/K11-211",
+		},
+		{
+			name:  "full https URI is unchanged",
+			input: "https://kg.artsdata.ca/resource/K2-183",
+			want:  "https://kg.artsdata.ca/resource/K2-183",
+		},
+		{
+			name:  "full http URI is unchanged",
+			input: "http://kg.artsdata.ca/resource/K11-211",
+			want:  "http://kg.artsdata.ca/resource/K11-211",
+		},
+		{
+			name:  "unrecognised string is unchanged",
+			input: "some-other-id",
+			want:  "some-other-id",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := expandArtsdataID(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestReconcileEntities_ShortIDExpanded verifies that when the Artsdata API
+// returns a short ID (e.g. "K2-183"), ReconcileEntity stores the full URI
+// in MatchResult.IdentifierURI and passes the full URI to Dereference.
+func TestReconcileEntities_ShortIDExpanded(t *testing.T) {
+	t.Parallel()
+	const shortID = "K2-183"
+	const fullURI = "https://kg.artsdata.ca/resource/K2-183"
+
+	var dereferencedURI string
+	mockClient := &mockArtsdataClient{
+		reconcileFunc: func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
+			return map[string][]artsdata.ReconciliationResult{
+				"q0": {
+					{
+						ID:    shortID, // API returns short form
+						Name:  "Some Venue",
+						Score: 1000.0,
+						Match: true,
+					},
+				},
+			}, nil
+		},
+		dereferenceFunc: func(ctx context.Context, uri string) (*artsdata.EntityData, error) {
+			dereferencedURI = uri // capture what was passed
+			return &artsdata.EntityData{ID: uri}, nil
+		},
+	}
+	mockCache := &mockReconciliationCacheStore{}
+
+	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+	results, err := svc.ReconcileEntity(context.Background(), ReconcileRequest{
+		EntityType: "place",
+		EntityID:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Name:       "Some Venue",
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, fullURI, results[0].IdentifierURI, "IdentifierURI must be the expanded full URI, not the short ID")
+	assert.Equal(t, fullURI, dereferencedURI, "Dereference must be called with the expanded full URI, not the short ID")
+}
+
 // TestReconcileEntities_WithMockClient tests ReconcileEntity end-to-end with mock client and cache store.
 // Covers the high-confidence match + cache miss + dereference path.
 func TestReconcileEntities_WithMockClient(t *testing.T) {
