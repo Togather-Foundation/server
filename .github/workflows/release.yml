@@ -184,7 +184,8 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           cd bin
           tar -czf "togather-server-${VERSION}-linux-amd64.tar.gz" togather-server-linux-amd64
-          sha256sum "togather-server-${VERSION}-linux-amd64.tar.gz" > "togather-server-${VERSION}-linux-amd64.tar.gz.sha256"
+          ARCHIVE="togather-server-${VERSION}-linux-amd64.tar.gz"
+          sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
           ls -lh
 
       - name: Upload binary artifacts
