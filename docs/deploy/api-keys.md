@@ -301,6 +301,6 @@ psql "$DATABASE_URL" -c "SELECT * FROM api_keys WHERE prefix = '<prefix>';"
 - [Developer Self-Service](../integration/authentication.md#developer-self-service) - How developers create and manage their own API keys
 - [Authentication Guide](../integration/authentication.md) - Complete authentication documentation
 - [Deployment Guide](deployment-testing.md)
-- [Performance Testing](../testing/performance-testing.md)
+- [Performance Testing](performance-testing.md)
 - [Security Review](../../.opencode/skill/security-review/SKILL.md)
 - [Environment Configuration](deploy-conf.md)

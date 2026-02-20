@@ -146,7 +146,7 @@ Events MAY include `sameAs` links to **multiple authorities** simultaneously. Fo
 
 **Domain-Based Reconciliation:**
 
-SEL uses domain-aware reconciliation routing (see [Knowledge Graph Integration Strategy](./knowledge_graph_integration_strategy.md)):
+SEL uses domain-aware reconciliation routing (see [Knowledge Graphs](./interop/knowledge-graphs.md)):
 - **Arts/Culture/Music events**: Reconcile with Artsdata first, fall back to Wikidata
 - **Sports/Community/Education events**: Reconcile with Wikidata directly
 - **Places**: Attempt multiple graphs (Artsdata, OpenStreetMap, Wikidata) and merge results
