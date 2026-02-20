@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/kg"
+	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
@@ -241,10 +245,48 @@ func (w ReconciliationWorker) Work(ctx context.Context, job *river.Job[Reconcili
 	return nil
 }
 
+// EntityDereferencer is the subset of kg.ReconciliationService used by EnrichmentWorker.
+// Defined here by the consumer to allow mock injection in tests.
+type EntityDereferencer interface {
+	DereferenceEntity(ctx context.Context, uri string) (*artsdata.EntityData, error)
+}
+
+// compile-time assertion: *kg.ReconciliationService must satisfy EntityDereferencer.
+var _ EntityDereferencer = (*kg.ReconciliationService)(nil)
+
+// IdentifierUpserter handles upsert of entity identifiers for EnrichmentWorker.
+// Defined here by the consumer to allow mock injection in tests.
+type IdentifierUpserter interface {
+	UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
+}
+
+// compile-time assertion: *postgres.Queries must satisfy IdentifierUpserter.
+var _ IdentifierUpserter = (*postgres.Queries)(nil)
+
+// PlaceUpdater is the subset of places.Service used by EnrichmentWorker.
+// Defined here by the consumer to allow mock injection in tests.
+type PlaceUpdater interface {
+	GetByULID(ctx context.Context, ulid string) (*places.Place, error)
+	Update(ctx context.Context, ulid string, params places.UpdatePlaceParams) (*places.Place, error)
+}
+
+// OrgUpdater is the subset of organizations.Service used by EnrichmentWorker.
+type OrgUpdater interface {
+	GetByULID(ctx context.Context, ulid string) (*organizations.Organization, error)
+	Update(ctx context.Context, ulid string, params organizations.UpdateOrganizationParams) (*organizations.Organization, error)
+}
+
+// compile-time assertions: the concrete services must satisfy the interfaces.
+var _ PlaceUpdater = (*places.Service)(nil)
+var _ OrgUpdater = (*organizations.Service)(nil)
+
 type EnrichmentWorker struct {
 	river.WorkerDefaults[EnrichmentArgs]
 	Pool                  *pgxpool.Pool
-	ReconciliationService *kg.ReconciliationService
+	ReconciliationService EntityDereferencer
+	IdentifierStore       IdentifierUpserter // optional: defaults to postgres.New(Pool) if nil
+	PlaceService          PlaceUpdater
+	OrgService            OrgUpdater
 	Logger                *slog.Logger
 }
 
@@ -272,30 +314,222 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		return fmt.Errorf("entity_type, entity_id, and identifier_uri are required")
 	}
 
-	logger.Info("enrichment job triggered",
+	logger.Info("enrichment started",
 		"entity_type", args.EntityType,
 		"entity_id", args.EntityID,
 		"identifier_uri", args.IdentifierURI,
 		"attempt", job.Attempt,
 	)
 
-	// TODO(srv-titkr): Implement full enrichment logic
-	// This requires:
-	// 1. Dereferencing the identifier URI to get entity data
-	// 2. Parsing the returned JSON-LD
-	// 3. Mapping relevant fields to our entity model
-	// 4. Updating the entity in the database
-	// 5. Handling conflicts with existing data
-	//
-	// For now, we just log that enrichment was triggered.
-	// The reconciliation service already stores the identifier in entity_identifiers,
-	// which enables future manual or automated enrichment workflows.
+	// 1. Dereference the identifier URI via the Artsdata client.
+	entity, err := w.ReconciliationService.DereferenceEntity(ctx, args.IdentifierURI)
+	if err != nil {
+		// Non-retryable: 404 / entity not found.
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+			logger.Warn("entity not found at URI, skipping enrichment",
+				"entity_type", args.EntityType,
+				"entity_id", args.EntityID,
+				"identifier_uri", args.IdentifierURI,
+				"error", err,
+			)
+			return nil // Non-retryable – drop the job.
+		}
+		return fmt.Errorf("dereference %s: %w", args.IdentifierURI, err)
+	}
 
-	logger.Info("enrichment completed (placeholder)",
+	// 2. Extract and store additional sameAs identifiers.
+	sameAsURIs := artsdata.ExtractSameAsURIs(entity)
+
+	// Resolve identifier store: prefer injected stub (for tests), fall back to pool.
+	var identifierStore IdentifierUpserter
+	if w.IdentifierStore != nil {
+		identifierStore = w.IdentifierStore
+	} else {
+		identifierStore = postgres.New(w.Pool)
+	}
+
+	var confidence pgtype.Numeric
+	if err := confidence.Scan("1.000000"); err != nil {
+		return fmt.Errorf("build confidence value: %w", err)
+	}
+
+	metadataJSON, err := json.Marshal(map[string]interface{}{"source": "enrichment_sameas"})
+	if err != nil {
+		return fmt.Errorf("marshal sameAs metadata: %w", err)
+	}
+
+	storedSameAs := 0
+	for _, uri := range sameAsURIs {
+		authCode := kg.InferAuthorityCode(uri)
+		if authCode == "" {
+			continue // Unknown authority – skip.
+		}
+		_, err := identifierStore.UpsertEntityIdentifier(ctx, postgres.UpsertEntityIdentifierParams{
+			EntityType:           args.EntityType,
+			EntityID:             args.EntityID,
+			AuthorityCode:        authCode,
+			IdentifierUri:        uri,
+			Confidence:           confidence,
+			ReconciliationMethod: "enrichment_sameas",
+			IsCanonical:          false,
+			Metadata:             metadataJSON,
+		})
+		if err != nil {
+			logger.Warn("failed to store sameAs identifier",
+				"entity_id", args.EntityID,
+				"uri", uri,
+				"error", err,
+			)
+			continue
+		}
+		storedSameAs++
+	}
+
+	// 3. Build metadata update from Artsdata fields (conservative: only fill empty fields).
+	description := kg.ExtractStringValue(entity.Description)
+	urlValue := kg.ExtractStringValue(entity.URL)
+
+	var streetAddress, city, region, postalCode, country string
+	if entity.Address != nil {
+		streetAddress = entity.Address.StreetAddress
+		city = entity.Address.AddressLocality
+		region = entity.Address.AddressRegion
+		postalCode = entity.Address.PostalCode
+		country = entity.Address.AddressCountry
+	}
+
+	// Check whether there is anything to update at all before querying the entity.
+	hasArtsdataFields := description != "" || urlValue != "" ||
+		streetAddress != "" || city != "" || region != "" || postalCode != "" || country != ""
+
+	if !hasArtsdataFields {
+		logger.Info("enrichment completed – no metadata fields to update",
+			"entity_type", args.EntityType,
+			"entity_id", args.EntityID,
+			"same_as_stored", storedSameAs,
+		)
+		return nil
+	}
+
+	// 4. Apply metadata update conservatively (only set pointer where Artsdata has a
+	// value AND the current entity field is empty).
+	switch args.EntityType {
+	case "place":
+		if w.PlaceService == nil {
+			logger.Warn("place service not configured, skipping metadata update",
+				"entity_id", args.EntityID,
+			)
+			break
+		}
+		current, err := w.PlaceService.GetByULID(ctx, args.EntityID)
+		if err != nil {
+			logger.Warn("failed to fetch current place for enrichment",
+				"entity_id", args.EntityID,
+				"error", err,
+			)
+			break
+		}
+
+		params := places.UpdatePlaceParams{}
+		setIfEmpty := func(current, artsdata string) *string {
+			if current == "" && artsdata != "" {
+				return &artsdata
+			}
+			return nil
+		}
+
+		params.Description = setIfEmpty(current.Description, description)
+		params.URL = setIfEmpty(current.URL, urlValue)
+		params.StreetAddress = setIfEmpty(current.StreetAddress, streetAddress)
+		params.City = setIfEmpty(current.City, city)
+		params.Region = setIfEmpty(current.Region, region)
+		params.PostalCode = setIfEmpty(current.PostalCode, postalCode)
+		params.Country = setIfEmpty(current.Country, country)
+
+		if params.Description == nil && params.URL == nil && params.StreetAddress == nil &&
+			params.City == nil && params.Region == nil && params.PostalCode == nil && params.Country == nil {
+			logger.Info("no new place fields to update (all already populated)",
+				"entity_id", args.EntityID,
+			)
+			break
+		}
+
+		if _, err := w.PlaceService.Update(ctx, args.EntityID, params); err != nil {
+			logger.Warn("failed to update place from enrichment",
+				"entity_id", args.EntityID,
+				"error", err,
+			)
+		} else {
+			logger.Info("place updated from enrichment",
+				"entity_id", args.EntityID,
+			)
+		}
+
+	case "organization":
+		if w.OrgService == nil {
+			logger.Warn("organization service not configured, skipping metadata update",
+				"entity_id", args.EntityID,
+			)
+			break
+		}
+		current, err := w.OrgService.GetByULID(ctx, args.EntityID)
+		if err != nil {
+			logger.Warn("failed to fetch current organization for enrichment",
+				"entity_id", args.EntityID,
+				"error", err,
+			)
+			break
+		}
+
+		params := organizations.UpdateOrganizationParams{}
+		setIfEmpty := func(current, artsdata string) *string {
+			if current == "" && artsdata != "" {
+				return &artsdata
+			}
+			return nil
+		}
+
+		params.Description = setIfEmpty(current.Description, description)
+		params.URL = setIfEmpty(current.URL, urlValue)
+		params.StreetAddress = setIfEmpty(current.StreetAddress, streetAddress)
+		params.AddressLocality = setIfEmpty(current.AddressLocality, city)
+		params.AddressRegion = setIfEmpty(current.AddressRegion, region)
+		params.PostalCode = setIfEmpty(current.PostalCode, postalCode)
+		params.AddressCountry = setIfEmpty(current.AddressCountry, country)
+
+		if params.Description == nil && params.URL == nil && params.StreetAddress == nil &&
+			params.AddressLocality == nil && params.AddressRegion == nil &&
+			params.PostalCode == nil && params.AddressCountry == nil {
+			logger.Info("no new organization fields to update (all already populated)",
+				"entity_id", args.EntityID,
+			)
+			break
+		}
+
+		if _, err := w.OrgService.Update(ctx, args.EntityID, params); err != nil {
+			logger.Warn("failed to update organization from enrichment",
+				"entity_id", args.EntityID,
+				"error", err,
+			)
+		} else {
+			logger.Info("organization updated from enrichment",
+				"entity_id", args.EntityID,
+			)
+		}
+
+	default:
+		logger.Warn("unsupported entity type for enrichment metadata update",
+			"entity_type", args.EntityType,
+			"entity_id", args.EntityID,
+		)
+	}
+
+	logger.Info("enrichment completed",
 		"entity_type", args.EntityType,
 		"entity_id", args.EntityID,
 		"identifier_uri", args.IdentifierURI,
-		"note", "Full enrichment implementation pending",
+		"same_as_stored", storedSameAs,
 	)
 
 	return nil
@@ -642,7 +876,7 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService *kg.ReconciliationService, logger *slog.Logger, slot string) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService *kg.ReconciliationService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -700,6 +934,8 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 		river.AddWorker[EnrichmentArgs](workers, EnrichmentWorker{
 			Pool:                  pool,
 			ReconciliationService: reconciliationService,
+			PlaceService:          placeService,
+			OrgService:            orgService,
 			Logger:                logger,
 		})
 	}
