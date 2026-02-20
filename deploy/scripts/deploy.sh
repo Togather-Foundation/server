@@ -15,6 +15,7 @@
 #   --dry-run          Validate configuration without deploying
 #   --skip-migrations  Skip database migration step
 #   --force            Force deployment even if validations fail
+#   --env-diff         Run environment variable audit only (no deploy)
 #   --version          Show script version
 #   --help             Show usage information
 #
@@ -446,6 +447,47 @@ validate_config() {
         log "ERROR" "  4. Verify no placeholders remain:"
         log "ERROR" "     grep -v '^#' ${env_file} | grep CHANGE_ME"
         return 1
+    fi
+    
+    # T040: Run environment variable audit against template
+    # Detects missing/extra vars between .env.example and actual .env file
+    local audit_script="${SCRIPT_DIR}/env-audit.sh"
+    if [[ -x "${audit_script}" ]]; then
+        local audit_env="${env}"
+        
+        # Resolve the correct template to match the env file that was selected
+        # This prevents mismatches (e.g., Docker env file vs staging template)
+        local audit_template=""
+        if [[ "${env_file}" == *"/deploy/docker/"* ]]; then
+            audit_template="${PROJECT_ROOT}/deploy/docker/.env.example"
+        elif [[ "${env_file}" == "${PROJECT_ROOT}/.env" ]]; then
+            audit_template="${PROJECT_ROOT}/.env.example"
+        fi
+        
+        log "INFO" "Running environment variable audit..."
+        local audit_exit=0
+        local audit_output=""
+        local audit_args=("${audit_env}" --env-file "${env_file}" --quiet)
+        [[ -n "${audit_template}" ]] && audit_args+=(--template "${audit_template}")
+        audit_output=$("${audit_script}" "${audit_args[@]}" 2>&1) || audit_exit=$?
+        
+        if [[ -n "${audit_output}" ]]; then
+            while IFS= read -r line; do
+                log "INFO" "  ${line}"
+            done <<< "${audit_output}"
+        fi
+        
+        if [[ ${audit_exit} -eq 1 ]]; then
+            log "ERROR" "Environment audit found missing required variables"
+            log "ERROR" "Run: ${audit_script} ${audit_env} --env-file ${env_file}"
+            return 1
+        elif [[ ${audit_exit} -eq 2 ]]; then
+            log "WARN" "Environment audit found missing optional variables"
+            log "WARN" "Run: ${audit_script} ${audit_env} --env-file ${env_file}"
+            log "WARN" "Continuing deployment (use --env-diff to review before deploying)"
+        fi
+    else
+        log "WARN" "Environment audit script not found at ${audit_script}, skipping audit"
     fi
     
     # Validate deployment state file structure
@@ -1877,6 +1919,7 @@ Options:
   --version COMMIT    Deploy specific git commit/tag (default: current HEAD)
   --branch BRANCH     Deploy latest commit from specified branch (resolves to commit hash)
   --dry-run           Validate configuration without deploying
+  --env-diff          Run environment variable audit only (compare .env vs template)
   --skip-migrations   Skip database migration execution (use with caution)
   --force             Force deployment even if lock exists or validations fail
   --help              Show this help message
@@ -1900,6 +1943,9 @@ Examples:
   # Dry-run validation
   ./deploy/scripts/deploy.sh --dry-run staging
 
+  # Check for .env drift (missing/extra variables)
+  ./deploy/scripts/deploy.sh staging --env-diff
+
 See: specs/001-deployment-infrastructure/spec.md
 USAGE_EOF
 }
@@ -1909,6 +1955,7 @@ main() {
     local dry_run=false
     local skip_migrations=false
     local force_deploy=false
+    local env_diff_only=false
     local environment=""
     local remote_host=""
     local target_version=""
@@ -1926,6 +1973,10 @@ main() {
                 ;;
             --force)
                 force_deploy=true
+                shift
+                ;;
+            --env-diff)
+                env_diff_only=true
                 shift
                 ;;
             --remote)
@@ -2035,6 +2086,19 @@ main() {
         
         echo "  NODE_DOMAIN: ${NODE_DOMAIN:-not set}"
         echo "  Remote host: ${remote_host:-not set}"
+    fi
+    
+    # If --env-diff specified, run env audit only and exit
+    # Exit directly via trap removal to avoid "Deployment failed" message for non-zero audit codes
+    if [[ "$env_diff_only" == "true" ]]; then
+        local audit_script="${SCRIPT_DIR}/env-audit.sh"
+        if [[ ! -x "${audit_script}" ]]; then
+            echo "ERROR: Environment audit script not found at ${audit_script}" >&2
+            exit 1
+        fi
+        trap - EXIT INT TERM  # Remove deploy trap -- this is not a deploy
+        "${audit_script}" "${environment}"
+        exit $?
     fi
     
     # If --remote specified, delegate to remote execution

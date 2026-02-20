@@ -241,6 +241,7 @@ This separation allows:
 
 ## Related Documentation
 
+- [Env Management Guide](../../../docs/deploy/env-management.md) - Full .env workflow, audit tool, debugging
 - [Testing Infrastructure](../../testing/README.md) - Smoke tests and performance tests
 - [Deployment Guide](../../../docs/deploy/quickstart.md) - Full deployment instructions
 - [Caddy Guide](../../../docs/deploy/caddy.md) - Caddy-specific setup
