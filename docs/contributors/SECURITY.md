@@ -115,7 +115,7 @@ SEL is designed for **public good infrastructure** where data transparency is a 
 - Bcrypt hashing (cost factor 12) for all new API keys
 - Dual-hash support during migration period (SHA-256 + bcrypt)
 - Zero-downtime migration path for existing agents
-- See `docs/API_KEY_MIGRATION.md` for migration strategy
+- See [API Key Management](../deploy/api-keys.md) for key lifecycle and security practices
 
 **Admin Authentication**:
 - Bcrypt-hashed passwords (default cost)
@@ -425,7 +425,7 @@ DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
 **P1 (High) - All Resolved**:
 - ✅ HTTP server timeout configuration (`server-9zn`)
 - ✅ Connection pool leak on error path (`server-0eo`)
-- ✅ API key hashing migration SHA-256 → bcrypt (`server-jjf`) - **Completed** (see `docs/API_KEY_MIGRATION.md`)
+- ✅ API key hashing migration SHA-256 → bcrypt (`server-jjf`) - **Completed** (see [API Key Management](../deploy/api-keys.md))
 
 **P2 (Medium) - All Resolved**:
 - ✅ Idempotency key expiration with 24h TTL and cleanup job (`server-brb`)

@@ -6,6 +6,8 @@
 **Conformance Level:** MUST for Federation, SHOULD for Ingestion  
 **Authors:** SEL Architecture Working Group (Ryan Kelln, Gemini 3 Pro, Claude Opus 4.5, OpenAI ChatGPT 5.2)
 
+> **Document Role:** This is the implementation profile derived from the [SEL Interoperability Profile v0.1](../togather_SEL_Interoperability_Profile_v0.1.md). It is the working reference for Togather contributors and includes implementation notes, multi-graph integration details, and updated guidance. The root-level spec is the formal community document; this profile is authoritative for the Togather implementation.
+
 ---
 
 ## Executive Summary

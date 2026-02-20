@@ -4,6 +4,8 @@
 **Date:** 2026-01-27  
 **Status:** Living Document
 
+> **Document Role:** This is the implementation guide for Togather contributors, covering code organization, data architecture, and development patterns. For the formal system design specification (intended for node implementers and architects), see [SEL Server Architecture Design](../togather_SEL_server_architecture_design_v1.md).
+
 This document provides an architectural overview of the Togather Shared Events Library (SEL) backend. It focuses on system design, component architecture, technology choices, and key design patterns. For implementation details, see [DATABASE.md](DATABASE.md) and [TESTING.md](TESTING.md).
 
 ---

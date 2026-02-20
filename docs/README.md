@@ -122,6 +122,7 @@ These resources are useful for everyone:
 | Category | Document | Status | Last Updated |
 |----------|----------|--------|--------------|
 | **Universal** | Glossary | Living | 2026-01-26 |
+| **Admin** | Admin Directory README | Living | 2026-02-19 |
 | **Admin** | User Management Guide | Living | 2026-02-05 |
 | **Admin** | Email Setup Guide | Living | 2026-02-05 |
 | **Admin** | Admin UI Guide | Living | 2026-01-27 |
@@ -134,6 +135,8 @@ These resources are useful for everyone:
 | **Contributors** | Architecture | Living | 2026-01-27 |
 | **Contributors** | Database | Living | 2026-01-27 |
 | **Contributors** | Testing | Living | 2026-01-27 |
+| **Design** | Design Directory README | Living | 2026-02-19 |
+| **Operations** | Operations Directory README | Living | 2026-02-19 |
 | **Interop** | Core Profile v0.1 | Draft | 2026-01-27 |
 | **Interop** | API Contract v1 | Draft | 2026-01-27 |
 | **Interop** | Federation v1 | Implemented | 2026-01-26 |

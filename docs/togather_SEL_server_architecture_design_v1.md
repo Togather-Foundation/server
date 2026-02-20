@@ -4,6 +4,8 @@
 **Date:** 2026-01-20  
 **Status:** Updated with Interoperability Profile v0.1 Requirements
 
+> **Document Role:** This is the formal system design specification for SEL node implementers and architects. For contributor implementation details (code organization, data architecture, testing patterns), see [Architecture Guide](contributors/ARCHITECTURE.md).
+
 ---
 
 ## 0. URI Scheme and Linked Data Foundation

@@ -28,7 +28,7 @@ New to deployment? Start here:
 
 - **[Quickstart Guide](quickstart.md)** - Complete deployment setup from scratch
 - **[Deployment Testing](deployment-testing.md)** - Post-deploy checklist and agent steps
-- **[Caddy Deployment](caddy-deployment.md)** - Production deployment with Caddy reverse proxy and automatic HTTPS
+- **[Caddy Guide](caddy.md)** - Production deployment with Caddy reverse proxy and automatic HTTPS
 - **[Linode Deployment](linode-deployment.md)** - Deploy to Linode cloud platform
 - **[Rollback Guide](rollback.md)** - Troubleshoot and recover from failed deployments
 - **[Migrations Guide](migrations.md)** - Manage database schema changes safely
@@ -46,6 +46,16 @@ New to deployment? Start here:
 
 - **[CI/CD Integration](ci-cd.md)** - GitHub Actions, GitLab CI, Jenkins examples
 - **[Grafana Dashboard Guidelines](grafana-dashboard-guidelines.md)** - Dashboard creation standards
+
+### Grafana
+
+Recommended reading order: security first, then setup, then dashboards and embedding.
+
+- **[Grafana Security](grafana-security.md)** - Secure embedding options and tradeoffs (start here)
+- **[Grafana Localhost Security](grafana-localhost-security.md)** - Analysis of localhost-only binding for server-side embedding
+- **[Grafana Subpath Setup](grafana-subpath-setup.md)** - Configure Grafana at the `/grafana` subpath on staging/production
+- **[Grafana Embedding](grafana-embedding.md)** - Embed Grafana dashboards in the SEL Admin UI
+- **[Grafana Dashboard Guidelines](grafana-dashboard-guidelines.md)** - Color scheme and design standards for blue/green deployment monitoring dashboards
 
 ## Deployment Architecture
 

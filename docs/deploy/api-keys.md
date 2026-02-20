@@ -144,6 +144,20 @@ curl -H "Authorization: Bearer 01NEW..." https://staging.../api/v1/events
 
 ## Testing API Keys
 
+### Verify Keys in Database
+
+```bash
+# On remote server
+source .env.staging
+psql "$DATABASE_URL" -c "SELECT prefix, role, name FROM api_keys;"
+
+# Expected output:
+#            prefix           | role  |         name
+# ----------------------------+-------+-----------------------
+#  01KGJZ3V49SKAPRK99NTT5PF5W | admin | Staging Test Admin
+#  01KGJZ40ZG0WQ5SQKCKA6VEH79 | agent | Staging Test Agent
+```
+
 ### Manual Test
 ```bash
 # Test agent key
