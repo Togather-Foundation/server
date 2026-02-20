@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check deploy-staging deploy-production rollback-staging rollback-production
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -73,6 +73,15 @@ help:
 	@echo "  make test-staging-smoke   - Run smoke tests on staging server"
 	@echo "  make test-production-smoke - Run smoke tests on production (read-only)"
 	@echo "  make test-remote ENV=<env> TYPE=<type> - Run custom remote tests"
+	@echo ""
+	@echo "Release:"
+	@echo "  make release-check        - Validate readiness for release (dry run)"
+	@echo "  make release VERSION=x.y.z - Full release: validate, tag, push (triggers GitHub Actions)"
+	@echo "  make deploy-staging VERSION=vX.Y.Z   - Deploy tagged version to staging"
+	@echo "  make deploy-production VERSION=vX.Y.Z - Deploy tagged version to production"
+	@echo "  make rollback-staging     - Rollback staging to previous deployment"
+	@echo "  make rollback-production  - Rollback production to previous deployment"
+	@echo "  (Or use /release command in OpenCode for agent-assisted changelog generation)"
 	@echo ""
 	@echo "E2E / Playwright Tests (requires running server + uvx):"
 	@echo "  make e2e               - Run all Python E2E tests (pytest + standalone)"
@@ -1028,3 +1037,189 @@ setup-help:
 deploy-package:
 	@echo "Building deployment package..."
 	@./deploy/scripts/build-deploy-package.sh
+
+# =============================================================================
+# Release Targets
+# =============================================================================
+
+# Validate readiness for a release without actually releasing.
+# Usage: make release-check VERSION=0.1.0
+release-check:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: VERSION is required"; \
+		echo "Usage: make release-check VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@VERSION="$(VERSION)"; \
+	TAG="v$${VERSION#v}"; \
+	VERSION_CLEAN="$${VERSION#v}"; \
+	echo ""; \
+	echo "Release readiness check for $${TAG}"; \
+	echo "========================================"; \
+	echo ""; \
+	PASS=true; \
+	echo "--> Checking branch..."; \
+	BRANCH=$$(git branch --show-current); \
+	if [ "$$BRANCH" != "main" ]; then \
+		echo "  ✗ Must be on 'main' branch (currently: $$BRANCH)"; \
+		PASS=false; \
+	else \
+		echo "  ✓ On main branch"; \
+	fi; \
+	echo "--> Checking working tree..."; \
+	DIRTY=$$(git status --porcelain | grep -v "^.. CHANGELOG.md$$" || true); \
+	if [ -n "$$DIRTY" ]; then \
+		echo "  ✗ Working tree has uncommitted changes"; \
+		echo "$$DIRTY" | sed 's/^/    /'; \
+		PASS=false; \
+	else \
+		echo "  ✓ Working tree clean"; \
+	fi; \
+	echo "--> Checking sync with origin/main..."; \
+	git fetch origin main --quiet 2>/dev/null || true; \
+	LOCAL=$$(git rev-parse HEAD); \
+	REMOTE=$$(git rev-parse origin/main); \
+	if [ "$$LOCAL" != "$$REMOTE" ]; then \
+		echo "  ✗ Not in sync with origin/main"; \
+		echo "    Local:  $${LOCAL:0:7}"; \
+		echo "    Remote: $${REMOTE:0:7}"; \
+		PASS=false; \
+	else \
+		echo "  ✓ In sync with origin/main ($${LOCAL:0:7})"; \
+	fi; \
+	echo "--> Checking tag availability..."; \
+	if git tag -l | grep -q "^$$TAG$$"; then \
+		echo "  ✗ Tag '$$TAG' already exists"; \
+		PASS=false; \
+	else \
+		echo "  ✓ Tag '$$TAG' is available"; \
+	fi; \
+	echo "--> Checking CHANGELOG.md..."; \
+	if grep -q "^## \[Unreleased\]" CHANGELOG.md; then \
+		UNRELEASED_LINES=$$(awk '/^## \[Unreleased\]/{found=1; next} /^## \[/{if(found) exit} found && /^[^[:space:]]/{count++} END{print count+0}' CHANGELOG.md); \
+		echo "  ✓ [Unreleased] section found ($${UNRELEASED_LINES} non-empty lines)"; \
+	else \
+		echo "  ⚠  No [Unreleased] section in CHANGELOG.md"; \
+	fi; \
+	echo "--> Checking GitHub Actions status..."; \
+	if command -v gh > /dev/null 2>&1; then \
+		CURRENT_SHA=$$(git rev-parse HEAD); \
+		RUN_INFO=$$(gh run list --branch main --limit 5 --json status,conclusion,headSha,name 2>/dev/null || echo "[]"); \
+		RESULT=$$(echo "$$RUN_INFO" | jq -r --arg sha "$$CURRENT_SHA" '.[] | select(.headSha == $$sha) | select(.status == "completed") | .conclusion' 2>/dev/null | head -1 || echo "unknown"); \
+		if [ "$$RESULT" = "success" ]; then \
+			echo "  ✓ GitHub Actions passed for HEAD"; \
+		elif [ "$$RESULT" = "failure" ]; then \
+			echo "  ✗ GitHub Actions FAILED for HEAD"; \
+			PASS=false; \
+		else \
+			echo "  ⚠  No completed GitHub Actions run found for HEAD ($${CURRENT_SHA:0:7})"; \
+		fi; \
+	else \
+		echo "  ⚠  gh CLI not found — skipping GitHub Actions check"; \
+	fi; \
+	echo ""; \
+	if [ "$$PASS" = "true" ]; then \
+		echo "✓ All checks passed. Ready to release $${TAG}"; \
+		echo "  Run: make release VERSION=$$VERSION_CLEAN"; \
+	else \
+		echo "✗ Some checks failed. Fix the issues above before releasing."; \
+		exit 1; \
+	fi
+
+# Full release: validate, update changelog, tag, push.
+# Triggers the GitHub Actions release workflow.
+# Usage: make release VERSION=0.1.0
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: VERSION is required"; \
+		echo "Usage: make release VERSION=0.1.0"; \
+		echo ""; \
+		echo "Tip: Use /release command in OpenCode for agent-assisted changelog generation."; \
+		exit 1; \
+	fi
+	@VERSION_CLEAN="$(VERSION)"; \
+	VERSION_CLEAN="$${VERSION_CLEAN#v}"; \
+	echo ""; \
+	echo "Starting release v$${VERSION_CLEAN}..."; \
+	echo "(For agent-assisted changelog generation, use /release in OpenCode instead)"; \
+	echo ""; \
+	scripts/release.sh "$$VERSION_CLEAN"
+
+# Deploy a specific tagged version to staging.
+# Usage: make deploy-staging VERSION=v0.1.0
+deploy-staging:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: VERSION is required"; \
+		echo "Usage: make deploy-staging VERSION=v0.1.0"; \
+		exit 1; \
+	fi
+	@if [ ! -f .deploy.conf.staging ]; then \
+		echo "ERROR: .deploy.conf.staging not found"; \
+		exit 1; \
+	fi
+	@SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.staging | cut -d= -f2); \
+	SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.staging | cut -d= -f2); \
+	echo "Deploying $(VERSION) to staging ($${SSH_USER}@$${SSH_HOST})..."; \
+	scripts/agent-run.sh ./deploy/scripts/deploy.sh staging \
+		--remote "$${SSH_USER}@$${SSH_HOST}" \
+		--version "$(VERSION)"
+
+# Deploy a specific tagged version to production.
+# Usage: make deploy-production VERSION=v0.1.0
+deploy-production:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: VERSION is required"; \
+		echo "Usage: make deploy-production VERSION=v0.1.0"; \
+		exit 1; \
+	fi
+	@if [ ! -f .deploy.conf.production ]; then \
+		echo "ERROR: .deploy.conf.production not found"; \
+		echo "Copy .deploy.conf.example to .deploy.conf.production and fill in values."; \
+		exit 1; \
+	fi
+	@SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.production | cut -d= -f2); \
+	SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.production | cut -d= -f2); \
+	NODE_DOMAIN=$$(grep '^NODE_DOMAIN=' .deploy.conf.production | cut -d= -f2); \
+	echo ""; \
+	echo "⚠️  Production deployment: $(VERSION) → $${NODE_DOMAIN}"; \
+	echo ""; \
+	read -p "Deploy $(VERSION) to PRODUCTION? [y/N] " -n 1 -r REPLY; echo ""; \
+	if [ ! "$$REPLY" = "y" ] && [ ! "$$REPLY" = "Y" ]; then \
+		echo "Aborted."; \
+		exit 0; \
+	fi; \
+	echo "Deploying $(VERSION) to production ($${SSH_USER}@$${SSH_HOST})..."; \
+	scripts/agent-run.sh ./deploy/scripts/deploy.sh production \
+		--remote "$${SSH_USER}@$${SSH_HOST}" \
+		--version "$(VERSION)"
+
+# Rollback staging to the previous deployment.
+rollback-staging:
+	@if [ ! -f .deploy.conf.staging ]; then \
+		echo "ERROR: .deploy.conf.staging not found"; \
+		exit 1; \
+	fi
+	@SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.staging | cut -d= -f2); \
+	SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.staging | cut -d= -f2); \
+	echo "Rolling back staging ($${SSH_USER}@$${SSH_HOST})..."; \
+	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather && server deploy rollback staging"
+
+# Rollback production to the previous deployment.
+rollback-production:
+	@if [ ! -f .deploy.conf.production ]; then \
+		echo "ERROR: .deploy.conf.production not found"; \
+		exit 1; \
+	fi
+	@SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.production | cut -d= -f2); \
+	SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.production | cut -d= -f2); \
+	NODE_DOMAIN=$$(grep '^NODE_DOMAIN=' .deploy.conf.production | cut -d= -f2); \
+	echo ""; \
+	echo "⚠️  Production rollback on $${NODE_DOMAIN}"; \
+	echo ""; \
+	read -p "Rollback PRODUCTION? [y/N] " -n 1 -r REPLY; echo ""; \
+	if [ ! "$$REPLY" = "y" ] && [ ! "$$REPLY" = "Y" ]; then \
+		echo "Aborted."; \
+		exit 0; \
+	fi; \
+	echo "Rolling back production ($${SSH_USER}@$${SSH_HOST})..."; \
+	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather && server deploy rollback production"

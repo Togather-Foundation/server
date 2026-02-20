@@ -1,0 +1,382 @@
+---
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: "1.24.13"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: togather-foundation/server
+
+permissions:
+  contents: write  # create GitHub releases and upload assets
+  packages: write  # push Docker images to GHCR
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Full CI gate — must pass before any artifact is built or published
+  # ─────────────────────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: sel_test
+          POSTGRES_PASSWORD: sel_test_pass
+          POSTGRES_DB: sel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Python for SHACL validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pyshacl
+        run: pip install pyshacl rdflib
+
+      - name: Create placeholder webfiles
+        run: |
+          mkdir -p web
+          echo "# robots.txt placeholder" > web/robots.txt
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.8
+          args: --timeout=5m
+
+      - name: Check formatting
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted. Run 'make fmt'"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+      - name: Install migrate tool
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h localhost -p 5432 -U sel_test; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+
+      - name: Run database migrations
+        run: make migrate-up
+        env:
+          DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+
+      - name: Run unit tests with race detector
+        run: go test -v -race ./internal/...
+
+      - name: Run contract tests
+        run: go test -v -race ./tests/contracts/...
+        env:
+          SHACL_VALIDATION_ENABLED: "true"
+
+      - name: Validate SHACL shapes
+        run: make validate-shapes
+        env:
+          SHACL_VALIDATION_ENABLED: "true"
+
+      - name: Run integration tests with race detector
+        run: go test -v -race -p 1 ./tests/integration/...
+        env:
+          DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+          TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+
+      - name: Run batch integration tests
+        run: go test -v -race -p 1 ./tests/integration_batch/...
+        env:
+          DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+          TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+
+      - name: Run E2E tests
+        run: go test -v -race ./tests/e2e/...
+        env:
+          DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+          TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Build release binary
+  # ─────────────────────────────────────────────────────────────────────────
+  build-binary:
+    name: Build Release Binary
+    runs-on: ubuntu-latest
+    needs: [ci-gate]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version_short=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create placeholder webfiles
+        run: |
+          mkdir -p web
+          echo "# robots.txt placeholder" > web/robots.txt
+          echo '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
+            > web/sitemap.xml
+
+      - name: Build release binary (linux/amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -trimpath \
+            -ldflags "-s -w \
+              -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=${{ steps.version.outputs.version }}' \
+              -X 'github.com/Togather-Foundation/server/cmd/server/cmd.GitCommit=${{ github.sha }}' \
+              -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" \
+            -o bin/togather-server-linux-amd64 \
+            ./cmd/server
+
+      - name: Verify binary
+        run: |
+          ls -lh bin/togather-server-linux-amd64
+          file bin/togather-server-linux-amd64
+
+      - name: Create binary archive
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cd bin
+          tar -czf "togather-server-${VERSION}-linux-amd64.tar.gz" togather-server-linux-amd64
+          sha256sum "togather-server-${VERSION}-linux-amd64.tar.gz" > "togather-server-${VERSION}-linux-amd64.tar.gz.sha256"
+          ls -lh
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binary
+          path: |
+            bin/togather-server-*.tar.gz
+            bin/togather-server-*.sha256
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Build and push Docker image to GHCR
+  # ─────────────────────────────────────────────────────────────────────────
+  build-docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [ci-gate]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+
+      - name: Build and push Docker image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIMESTAMP=${{ github.event.repository.updated_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image details
+        run: |
+          echo "Image pushed to GHCR:"
+          echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n' | sed 's/^/  /'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Create GitHub Release
+  # ─────────────────────────────────────────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-binary, build-docker]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for changelog extraction
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version_short=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version_short }}"
+          CHANGELOG_FILE="CHANGELOG.md"
+
+          # Extract the section for this version
+          # Pattern: from "## [VERSION]" to the next "## [" or end of file
+          SECTION=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") { found=1; next }
+            }
+            found { print }
+          ' "$CHANGELOG_FILE")
+
+          if [ -z "$SECTION" ]; then
+            echo "WARNING: No changelog section found for version $VERSION"
+            SECTION="See CHANGELOG.md for details."
+          fi
+
+          # Write to file (handles multiline safely)
+          echo "$SECTION" > /tmp/release-notes.md
+          echo "changelog_file=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-binary
+          path: release-assets/
+
+      - name: List release assets
+        run: ls -lh release-assets/
+
+      - name: Get GHCR image tags
+        id: ghcr
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "image=${IMAGE}:${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_short=${IMAGE}:${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Append Docker image info to release notes
+        run: |
+          cat >> /tmp/release-notes.md << EOF
+
+          ---
+
+          ## Docker Image
+
+          \`\`\`bash
+          docker pull ${{ steps.ghcr.outputs.image }}
+          \`\`\`
+
+          Available at: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Togather SEL Server ${{ steps.version.outputs.version }}"
+          body_path: /tmp/release-notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Release summary
+  # ─────────────────────────────────────────────────────────────────────────
+  release-summary:
+    name: Release Summary
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: always()
+
+    steps:
+      - name: Release complete
+        run: |
+          VERSION="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          echo "## Release ${VERSION} Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub Release | https://github.com/${REPO}/releases/tag/${VERSION} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Docker Image | \`ghcr.io/${{ env.IMAGE_NAME }}:${VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Next Steps" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "# Deploy to staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "make deploy-staging VERSION=${VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "make test-staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "# After staging verification, deploy to production" >> "$GITHUB_STEP_SUMMARY"
+          echo "make deploy-production VERSION=${VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "make test-production-smoke" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
