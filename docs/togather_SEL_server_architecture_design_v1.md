@@ -274,7 +274,7 @@ The SEL database schema implements a **three-layer hybrid architecture** designe
 2. **Relational Core Layer (Postgres):** Enables fast queries, time-range filtering, and geospatial operations
 3. **Semantic Export Layer (JSON-LD):** Generated on-demand, cached, serves federation and Artsdata
 
-The schema is based on **schema.org/Event** vocabulary with extensions for provenance, federation, and lifecycle management. All design decisions address critical gaps identified in the [Critical Gaps Analysis](../research/SEL_Architecture_Critical_Gaps_Analysis_Comprehensive.md) and ensure compliance with the [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md).
+The schema is based on **schema.org/Event** vocabulary with extensions for provenance, federation, and lifecycle management. All design decisions ensure compliance with the [SEL Interoperability Profile v0.1](./togather_SEL_Interoperability_Profile_v0.1.md).
 
 **For comprehensive schema details, see:** [SEL Schema Design Documentation](./togather_schema_design.md)
 
@@ -381,7 +381,7 @@ SEL supports reconciliation with **multiple knowledge graphs** to enable linking
 - **Arts/Culture/Music**: Artsdata → Wikidata (fallback)
 - **Sports/Community/Education**: Wikidata (primary)
 - **Places**: Multi-graph parallel reconciliation (Artsdata + OpenStreetMap + Wikidata)
-- See [Knowledge Graph Integration Strategy](./knowledge_graph_integration_strategy.md) for complete routing rules
+- See [Knowledge Graphs](./interop/knowledge-graphs.md) for complete routing rules
 
 **Entity Identifiers (`entity_identifiers`):**
 - Normalized external IDs from registered authorities

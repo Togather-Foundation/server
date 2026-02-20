@@ -1356,7 +1356,7 @@ server deploy rollback production --version abc123
 - **Deployment Guide**: [quickstart.md](./quickstart.md)
 - **Rollback Guide**: [rollback.md](./rollback.md)
 - **Migration Guide**: [migrations.md](./migrations.md)
-- **Testing**: [../tests/deployment/README.md](../tests/deployment/README.md)
+- **Testing**: [../../tests/deployment/README.md](../../tests/deployment/README.md)
 
 ---
 
