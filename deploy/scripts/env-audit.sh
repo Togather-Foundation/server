@@ -611,6 +611,41 @@ ENV
         ((fail++)) || true
     fi
 
+    # Test 9: JSON special characters in template defaults -> valid JSON
+    # Template with quotes, backslashes, tabs in default values
+    cat >"${tmpdir}/special_chars.env.tmpl" <<'TMPL'
+DATABASE_URL=postgresql://localhost/db
+DESCRIPTION=value_with"quotes
+PATH_VAR=C:\Users\test\bin
+TAB_VAR=before	after
+MULTI_SPECIAL=back\\slash"and\"nested
+TMPL
+
+    # Env missing DESCRIPTION (triggers warning with special-char default)
+    cat >"${tmpdir}/special_chars.env" <<'ENV'
+DATABASE_URL=postgresql://localhost/db
+PATH_VAR=C:\real\path
+TAB_VAR=value
+MULTI_SPECIAL=clean
+ENV
+
+    local json_special
+    json_special=$("${BASH_SOURCE[0]}" development \
+        --template "${tmpdir}/special_chars.env.tmpl" \
+        --env-file "${tmpdir}/special_chars.env" \
+        --json 2>/dev/null) || true
+
+    if echo "$json_special" | python3 -m json.tool >/dev/null 2>&1 && \
+       echo "$json_special" | grep -q '"key":"DESCRIPTION"' && \
+       echo "$json_special" | grep -q '"template_default"'; then
+        echo -e "${GREEN}[PASS]${NC} --json with special chars (quotes, backslashes, tabs) produces valid JSON"
+        ((pass++)) || true
+    else
+        echo -e "${RED}[FAIL]${NC} --json with special chars (quotes, backslashes, tabs) produces valid JSON"
+        echo "  Output was: ${json_special}"
+        ((fail++)) || true
+    fi
+
     echo ""
     if [[ $fail -eq 0 ]]; then
         echo -e "${GREEN}${BOLD}All ${pass} tests passed.${NC}"
