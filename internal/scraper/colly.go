@@ -150,7 +150,9 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 				return
 			}
 
-			_ = c.Visit(nextURL)
+			if err := c.Visit(nextURL); err != nil {
+				e.logger.Warn().Err(err).Str("url", nextURL).Msg("colly: failed to queue pagination URL")
+			}
 		})
 	}
 

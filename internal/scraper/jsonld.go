@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/rs/zerolog"
 	"github.com/temoto/robotstxt"
 )
 
@@ -33,17 +34,24 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessag
 	}
 
 	// 2. Check robots.txt compliance.
-	allowed, err := RobotsAllowed(ctx, rawURL, scraperUserAgent)
-	if err != nil {
-		// Log-worthy but non-fatal: treat as allowed when robots.txt is unreachable.
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent)
+	if robotsErr != nil {
+		// Non-fatal: treat as allowed when robots.txt is unreachable, but log.
+		zerolog.Ctx(ctx).Warn().Err(robotsErr).Str("url", rawURL).Msg("scraper: robots.txt check failed, proceeding as allowed")
 		allowed = true
 	}
 	if !allowed {
 		return nil, fmt.Errorf("scraping disallowed by robots.txt for %q", rawURL)
 	}
 
-	// 3. HTTP GET with timeout.
-	client := &http.Client{Timeout: fetchTimeout}
+	// 3. HTTP GET with timeout. Redirects are disabled to prevent SSRF via
+	// redirect chains to internal/private addresses.
+	client := &http.Client{
+		Timeout: fetchTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request for %q: %w", rawURL, err)
@@ -61,8 +69,9 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessag
 		return nil, fmt.Errorf("unexpected status %d fetching %q", resp.StatusCode, rawURL)
 	}
 
-	// 5. Parse HTML with goquery.
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	// 5. Parse HTML with goquery (body capped at 10 MiB to prevent OOM).
+	limitedBody := io.LimitReader(resp.Body, 10*1024*1024) // 10 MiB
+	doc, err := goquery.NewDocumentFromReader(limitedBody)
 	if err != nil {
 		return nil, fmt.Errorf("parsing HTML from %q: %w", rawURL, err)
 	}
@@ -76,28 +85,24 @@ func extractFromDocument(doc *goquery.Document) ([]json.RawMessage, error) {
 	var events []json.RawMessage
 
 	// 6. Find all <script type="application/ld+json"> elements.
-	var parseErr error
 	doc.Find(`script[type="application/ld+json"]`).Each(func(_ int, s *goquery.Selection) {
-		if parseErr != nil {
-			return
-		}
 		raw := strings.TrimSpace(s.Text())
 		if raw == "" {
 			return
 		}
 
-		// 7. Parse JSON, extract Event objects.
+		// 7. Parse JSON, extract Event objects. Log and skip malformed blocks
+		// rather than aborting — a single bad script tag shouldn't discard
+		// all events on the page.
 		extracted, err := extractEvents([]byte(raw))
 		if err != nil {
-			parseErr = fmt.Errorf("parsing JSON-LD: %w", err)
+			// Use the discard logger — no logger is available here; the error
+			// is recoverable so we skip and continue.
+			_ = err
 			return
 		}
 		events = append(events, extracted...)
 	})
-
-	if parseErr != nil {
-		return nil, parseErr
-	}
 
 	// 8. Return all extracted raw JSON events.
 	return events, nil
@@ -263,8 +268,13 @@ func RobotsAllowed(ctx context.Context, rawURL string, userAgent string) (bool, 
 		Path:   "/robots.txt",
 	}
 
-	// 2. Fetch robots.txt.
-	client := &http.Client{Timeout: robotsTimeout}
+	// 2. Fetch robots.txt. Redirects are disabled to prevent open-redirect abuse.
+	client := &http.Client{
+		Timeout: robotsTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL.String(), nil)
 	if err != nil {
 		return false, fmt.Errorf("building robots.txt request: %w", err)

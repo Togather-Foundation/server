@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/scraper"
@@ -77,7 +79,10 @@ Examples:
 			Limit:  scrapeLimit,
 		}
 
-		result, err := s.ScrapeURL(context.Background(), rawURL, opts)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		result, err := s.ScrapeURL(ctx, rawURL, opts)
 		if err != nil {
 			return fmt.Errorf("scrape url: %w", err)
 		}
@@ -163,7 +168,10 @@ Examples:
 			SourcesDir: scrapeSourceDir,
 		}
 
-		result, err := s.ScrapeSource(context.Background(), sourceName, opts)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		result, err := s.ScrapeSource(ctx, sourceName, opts)
 		if err != nil {
 			return fmt.Errorf("scrape source: %w", err)
 		}
@@ -210,7 +218,10 @@ Examples:
 			SourcesDir: scrapeSourceDir,
 		}
 
-		results, err := s.ScrapeAll(context.Background(), opts)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		results, err := s.ScrapeAll(ctx, opts)
 		if err != nil {
 			return fmt.Errorf("scrape all: %w", err)
 		}

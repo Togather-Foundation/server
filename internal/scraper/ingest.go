@@ -73,7 +73,7 @@ func (c *IngestClient) SubmitBatch(ctx context.Context, evts []events.EventInput
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024)) // 1 MiB cap
 	if err != nil {
 		return IngestResult{}, fmt.Errorf("read response: %w", err)
 	}

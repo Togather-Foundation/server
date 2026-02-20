@@ -5,7 +5,7 @@ CREATE TABLE scraper_runs (
   tier          INT NOT NULL DEFAULT 0,
   started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at  TIMESTAMPTZ,
-  status        TEXT NOT NULL DEFAULT 'running',
+  status        TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed')),
   events_found  INT NOT NULL DEFAULT 0,
   events_new    INT NOT NULL DEFAULT 0,
   events_dup    INT NOT NULL DEFAULT 0,

@@ -224,6 +224,9 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 
 	var results []ScrapeResult
 	for _, cfg := range configs {
+		if ctx.Err() != nil {
+			break
+		}
 		if !cfg.Enabled {
 			continue
 		}

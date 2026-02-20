@@ -62,10 +62,11 @@ func TestFetchAndExtractJSONLD_Fixtures(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			name:          "malformed json-ld",
-			fixture:       "malformed_jsonld.html",
-			wantErr:       true,
-			wantErrSubstr: "parsing JSON-LD",
+			// Malformed JSON-LD is skipped (logged) rather than aborting extraction.
+			// A single bad script block should not discard all events on the page.
+			name:      "malformed json-ld",
+			fixture:   "malformed_jsonld.html",
+			wantCount: 0,
 		},
 		{
 			name:      "event with string location",

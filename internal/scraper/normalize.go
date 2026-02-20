@@ -50,8 +50,14 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 
 	urlStr := extractStringValue(re.URL)
 
+	// Preserve schema.org subtype (MusicEvent, TheaterEvent, etc.) with "Event" as fallback.
+	eventType := re.AtType
+	if eventType == "" {
+		eventType = "Event"
+	}
+
 	evt := events.EventInput{
-		Type:                "Event",
+		Type:                eventType,
 		Name:                name,
 		Description:         extractStringValue(re.Description),
 		StartDate:           startDate,
@@ -116,11 +122,26 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, er
 		License:     source.License,
 		Source: &events.SourceInput{
 			URL:     source.URL,
-			EventID: raw.URL, // use event URL as external ID for dedup
+			EventID: eventIDFromRaw(raw, source),
 			Name:    source.Name,
 			License: source.License,
 		},
 	}, nil
+}
+
+// eventIDFromRaw returns a stable dedup key for a Tier 1 scraped event.
+// Prefers the event URL. Falls back to a hash of name+startDate+sourceName.
+func eventIDFromRaw(raw RawEvent, source SourceConfig) string {
+	if raw.URL != "" {
+		return raw.URL
+	}
+	// Generate deterministic ID from available fields when URL is missing.
+	h := fmt.Sprintf("%s|%s|%s", raw.Name, raw.StartDate, source.Name)
+	sum := 0
+	for _, c := range h {
+		sum = sum*31 + int(c)
+	}
+	return fmt.Sprintf("scraped:%s:%d", source.Name, sum)
 }
 
 // parseDate attempts to extract a date/datetime string from a json.RawMessage.
