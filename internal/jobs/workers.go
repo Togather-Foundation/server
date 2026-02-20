@@ -3,9 +3,11 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -271,6 +273,7 @@ type PlaceUpdater interface {
 }
 
 // OrgUpdater is the subset of organizations.Service used by EnrichmentWorker.
+// Defined here by the consumer to allow mock injection in tests.
 type OrgUpdater interface {
 	GetByULID(ctx context.Context, ulid string) (*organizations.Organization, error)
 	Update(ctx context.Context, ulid string, params organizations.UpdateOrganizationParams) (*organizations.Organization, error)
@@ -324,9 +327,9 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 	// 1. Dereference the identifier URI via the Artsdata client.
 	entity, err := w.ReconciliationService.DereferenceEntity(ctx, args.IdentifierURI)
 	if err != nil {
-		// Non-retryable: 404 / entity not found.
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+		// Non-retryable: 404 / entity not found at URI.
+		var se *artsdata.StatusError
+		if errors.As(err, &se) && se.Code == http.StatusNotFound {
 			logger.Warn("entity not found at URI, skipping enrichment",
 				"entity_type", args.EntityType,
 				"entity_id", args.EntityID,
@@ -390,6 +393,18 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 	description := kg.ExtractStringValue(entity.Description)
 	urlValue := kg.ExtractStringValue(entity.URL)
 
+	// Validate URL format before storing (reject relative, mailto:, or malformed values).
+	if urlValue != "" {
+		if _, err := url.ParseRequestURI(urlValue); err != nil {
+			logger.Warn("ignoring malformed URL from Artsdata",
+				"entity_id", args.EntityID,
+				"url", urlValue,
+				"error", err,
+			)
+			urlValue = ""
+		}
+	}
+
 	var streetAddress, city, region, postalCode, country string
 	if entity.Address != nil {
 		streetAddress = entity.Address.StreetAddress
@@ -407,8 +422,18 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		logger.Info("enrichment completed – no metadata fields to update",
 			"entity_type", args.EntityType,
 			"entity_id", args.EntityID,
+			"identifier_uri", args.IdentifierURI,
 			"same_as_stored", storedSameAs,
 		)
+		return nil
+	}
+
+	// setIfEmpty returns a pointer to candidate only when current is empty and candidate is not.
+	// Extracted once to avoid duplication across place/org cases.
+	setIfEmpty := func(current, candidate string) *string {
+		if current == "" && candidate != "" {
+			return &candidate
+		}
 		return nil
 	}
 
@@ -432,12 +457,6 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		}
 
 		params := places.UpdatePlaceParams{}
-		setIfEmpty := func(current, artsdata string) *string {
-			if current == "" && artsdata != "" {
-				return &artsdata
-			}
-			return nil
-		}
 
 		params.Description = setIfEmpty(current.Description, description)
 		params.URL = setIfEmpty(current.URL, urlValue)
@@ -451,6 +470,7 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 			params.City == nil && params.Region == nil && params.PostalCode == nil && params.Country == nil {
 			logger.Info("no new place fields to update (all already populated)",
 				"entity_id", args.EntityID,
+				"identifier_uri", args.IdentifierURI,
 			)
 			break
 		}
@@ -483,12 +503,6 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		}
 
 		params := organizations.UpdateOrganizationParams{}
-		setIfEmpty := func(current, artsdata string) *string {
-			if current == "" && artsdata != "" {
-				return &artsdata
-			}
-			return nil
-		}
 
 		params.Description = setIfEmpty(current.Description, description)
 		params.URL = setIfEmpty(current.URL, urlValue)
@@ -503,6 +517,7 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 			params.PostalCode == nil && params.AddressCountry == nil {
 			logger.Info("no new organization fields to update (all already populated)",
 				"entity_id", args.EntityID,
+				"identifier_uri", args.IdentifierURI,
 			)
 			break
 		}

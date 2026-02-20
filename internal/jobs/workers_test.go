@@ -411,9 +411,10 @@ func TestEnrichmentWorker_WorkEmptyArgs(t *testing.T) {
 }
 
 func TestEnrichmentWorker_WorkEntityNotFound_404_ReturnsNil(t *testing.T) {
+	t.Parallel()
 	deref := &mockEntityDereferencer{
 		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
-			return nil, errors.New("404 not found")
+			return nil, &artsdata.StatusError{Code: 404, Body: "not found"}
 		},
 	}
 	worker := EnrichmentWorker{
@@ -423,14 +424,16 @@ func TestEnrichmentWorker_WorkEntityNotFound_404_ReturnsNil(t *testing.T) {
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01J", "http://kg.artsdata.ca/resource/K-1"))
 	if err != nil {
-		t.Errorf("expected nil for 404 error (non-retryable), got: %v", err)
+		t.Errorf("expected nil for 404 StatusError (non-retryable), got: %v", err)
 	}
 }
 
-func TestEnrichmentWorker_WorkEntityNotFound_NotFound_ReturnsNil(t *testing.T) {
+func TestEnrichmentWorker_WorkEntityNotFound_OtherStatusCode_IsRetryable(t *testing.T) {
+	t.Parallel()
+	// A 503 StatusError should NOT be silently dropped — it is retryable.
 	deref := &mockEntityDereferencer{
 		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
-			return nil, errors.New("entity not found")
+			return nil, &artsdata.StatusError{Code: 503, Body: "service unavailable"}
 		},
 	}
 	worker := EnrichmentWorker{
@@ -439,12 +442,13 @@ func TestEnrichmentWorker_WorkEntityNotFound_NotFound_ReturnsNil(t *testing.T) {
 		IdentifierStore:       &mockIdentifierUpserter{},
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01J", "http://kg.artsdata.ca/resource/K-1"))
-	if err != nil {
-		t.Errorf("expected nil for 'not found' error (non-retryable), got: %v", err)
+	if err == nil {
+		t.Error("expected retryable error for 503 StatusError")
 	}
 }
 
 func TestEnrichmentWorker_WorkDereferenceError_IsRetryable(t *testing.T) {
+	t.Parallel()
 	deref := &mockEntityDereferencer{
 		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
 			return nil, errors.New("connection refused")
@@ -462,6 +466,7 @@ func TestEnrichmentWorker_WorkDereferenceError_IsRetryable(t *testing.T) {
 }
 
 func TestEnrichmentWorker_WorkPlace_HappyPath(t *testing.T) {
+	t.Parallel()
 	wikiURI := "https://www.wikidata.org/wiki/Q12345"
 	entity := &artsdata.EntityData{
 		ID:          "http://kg.artsdata.ca/resource/K-1",
@@ -507,6 +512,7 @@ func TestEnrichmentWorker_WorkPlace_HappyPath(t *testing.T) {
 }
 
 func TestEnrichmentWorker_WorkPlace_AlreadyPopulated_NoUpdate(t *testing.T) {
+	t.Parallel()
 	entity := &artsdata.EntityData{
 		ID:          "http://kg.artsdata.ca/resource/K-2",
 		Description: "Artsdata description",
@@ -543,6 +549,7 @@ func TestEnrichmentWorker_WorkPlace_AlreadyPopulated_NoUpdate(t *testing.T) {
 }
 
 func TestEnrichmentWorker_WorkOrg_HappyPath(t *testing.T) {
+	t.Parallel()
 	entity := &artsdata.EntityData{
 		ID:          "http://kg.artsdata.ca/resource/K-3",
 		Description: "Arts org",
@@ -580,6 +587,7 @@ func TestEnrichmentWorker_WorkOrg_HappyPath(t *testing.T) {
 }
 
 func TestEnrichmentWorker_WorkOrg_NoArtsdataFields_SkipsUpdate(t *testing.T) {
+	t.Parallel()
 	entity := &artsdata.EntityData{
 		ID: "http://kg.artsdata.ca/resource/K-4",
 		// No description, URL, or address fields
@@ -607,6 +615,7 @@ func TestEnrichmentWorker_WorkOrg_NoArtsdataFields_SkipsUpdate(t *testing.T) {
 }
 
 func TestEnrichmentWorker_WorkSameAs_UnknownAuthoritySkipped(t *testing.T) {
+	t.Parallel()
 	entity := &artsdata.EntityData{
 		ID:     "http://kg.artsdata.ca/resource/K-5",
 		SameAs: "https://unknown-authority.example.com/entity/99",
@@ -636,4 +645,251 @@ func TestEnrichmentWorker_WorkSameAs_UnknownAuthoritySkipped(t *testing.T) {
 // but don't make real DB calls (IdentifierStore is always injected in these tests).
 func fakePool() *pgxpool.Pool {
 	return new(pgxpool.Pool)
+}
+
+// TestEnrichmentWorker_WorkPlace_GetByULIDFails verifies that a GetByULID failure is
+// soft: Work still returns nil (enrichment continues for sameAs; entity update is skipped).
+func TestEnrichmentWorker_WorkPlace_GetByULIDFails(t *testing.T) {
+	t.Parallel()
+	entity := &artsdata.EntityData{
+		ID:          "http://kg.artsdata.ca/resource/K-10",
+		Description: "Some description",
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return entity, nil
+		},
+	}
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return nil, errors.New("db unavailable")
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01P", "http://kg.artsdata.ca/resource/K-10"))
+	if err != nil {
+		t.Errorf("expected nil (soft failure on GetByULID), got: %v", err)
+	}
+	if placeService.updateCalls != 0 {
+		t.Error("expected no Update call when GetByULID failed")
+	}
+}
+
+// TestEnrichmentWorker_WorkPlace_UpdateFails verifies that a failed Update is soft:
+// Work still returns nil.
+func TestEnrichmentWorker_WorkPlace_UpdateFails(t *testing.T) {
+	t.Parallel()
+	entity := &artsdata.EntityData{
+		ID:          "http://kg.artsdata.ca/resource/K-11",
+		Description: "Some description",
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return entity, nil
+		},
+	}
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01Q"}, nil
+		},
+		updateFunc: func(_ context.Context, _ string, _ places.UpdatePlaceParams) (*places.Place, error) {
+			return nil, errors.New("write conflict")
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01Q", "http://kg.artsdata.ca/resource/K-11"))
+	if err != nil {
+		t.Errorf("expected nil (soft failure on Update), got: %v", err)
+	}
+}
+
+// TestEnrichmentWorker_WorkPlace_PartialFieldUpdate verifies the common real-world case
+// where some fields are already populated and some are empty.
+func TestEnrichmentWorker_WorkPlace_PartialFieldUpdate(t *testing.T) {
+	t.Parallel()
+	entity := &artsdata.EntityData{
+		ID:          "http://kg.artsdata.ca/resource/K-12",
+		Description: "New description from Artsdata",
+		URL:         "https://new.example.com",
+		Address: &artsdata.Address{
+			AddressLocality: "Toronto",
+			PostalCode:      "M5V",
+		},
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return entity, nil
+		},
+	}
+	// Description and URL already set; City and PostalCode are empty → should be filled.
+	var capturedParams places.UpdatePlaceParams
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{
+				ULID:        "01R",
+				Description: "Existing description",
+				URL:         "https://existing.example.com",
+			}, nil
+		},
+		updateFunc: func(_ context.Context, _ string, params places.UpdatePlaceParams) (*places.Place, error) {
+			capturedParams = params
+			return &places.Place{ULID: "01R"}, nil
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01R", "http://kg.artsdata.ca/resource/K-12"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if placeService.updateCalls == 0 {
+		t.Fatal("expected Update to be called for partial field update")
+	}
+	// Description and URL already populated → should NOT be overwritten.
+	if capturedParams.Description != nil {
+		t.Errorf("Description should be nil (already populated), got %q", *capturedParams.Description)
+	}
+	if capturedParams.URL != nil {
+		t.Errorf("URL should be nil (already populated), got %q", *capturedParams.URL)
+	}
+	// City and PostalCode are empty → should be set from Artsdata.
+	if capturedParams.City == nil || *capturedParams.City != "Toronto" {
+		t.Errorf("City should be %q, got %v", "Toronto", capturedParams.City)
+	}
+	if capturedParams.PostalCode == nil || *capturedParams.PostalCode != "M5V" {
+		t.Errorf("PostalCode should be %q, got %v", "M5V", capturedParams.PostalCode)
+	}
+}
+
+// TestEnrichmentWorker_WorkSameAs_MultipleSameAsURIs verifies that multiple sameAs URIs
+// from an []interface{} are all processed correctly.
+func TestEnrichmentWorker_WorkSameAs_MultipleSameAsURIs(t *testing.T) {
+	t.Parallel()
+	entity := &artsdata.EntityData{
+		ID: "http://kg.artsdata.ca/resource/K-13",
+		SameAs: []interface{}{
+			"https://www.wikidata.org/wiki/Q99",
+			map[string]interface{}{"@id": "https://musicbrainz.org/place/abc"},
+			"https://unknown-site.example.com/foo", // should be skipped
+		},
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return entity, nil
+		},
+	}
+	idStore := &mockIdentifierUpserter{}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       idStore,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01S", "http://kg.artsdata.ca/resource/K-13"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// wikidata + musicbrainz = 2 known authorities; unknown-site is skipped.
+	if idStore.calls != 2 {
+		t.Errorf("expected 2 UpsertEntityIdentifier calls, got %d", idStore.calls)
+	}
+}
+
+// TestEnrichmentWorker_WorkNoSameAs_WithMetadata verifies that when there are no sameAs
+// URIs, idStore is never called but the metadata update still fires.
+func TestEnrichmentWorker_WorkNoSameAs_WithMetadata(t *testing.T) {
+	t.Parallel()
+	entity := &artsdata.EntityData{
+		ID:          "http://kg.artsdata.ca/resource/K-14",
+		Description: "Venue description",
+		// No SameAs
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return entity, nil
+		},
+	}
+	idStore := &mockIdentifierUpserter{}
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01T"}, nil
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       idStore,
+		PlaceService:          placeService,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01T", "http://kg.artsdata.ca/resource/K-14"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if idStore.calls != 0 {
+		t.Errorf("expected 0 identifier upserts for entity with no sameAs, got %d", idStore.calls)
+	}
+	if placeService.updateCalls == 0 {
+		t.Error("expected place Update to be called even when sameAs is absent")
+	}
+}
+
+// TestEnrichmentWorker_WorkURLValidation verifies that a malformed URL from Artsdata
+// is silently discarded and does not corrupt the entity's URL field.
+func TestEnrichmentWorker_WorkURLValidation(t *testing.T) {
+	t.Parallel()
+	entity := &artsdata.EntityData{
+		ID:  "http://kg.artsdata.ca/resource/K-15",
+		URL: "not-a-valid-url",
+		// Description is empty → hasArtsdataFields would be false without URL; with
+		// URL invalidated we need another field to trigger the update path.
+		Address: &artsdata.Address{AddressLocality: "Ottawa"},
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return entity, nil
+		},
+	}
+	var capturedParams places.UpdatePlaceParams
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01U"}, nil
+		},
+		updateFunc: func(_ context.Context, _ string, params places.UpdatePlaceParams) (*places.Place, error) {
+			capturedParams = params
+			return &places.Place{ULID: "01U"}, nil
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01U", "http://kg.artsdata.ca/resource/K-15"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Malformed URL must not reach the params.
+	if capturedParams.URL != nil {
+		t.Errorf("expected URL to be nil (invalid URL discarded), got %q", *capturedParams.URL)
+	}
 }
