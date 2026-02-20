@@ -274,3 +274,7 @@ Potential tracing improvements (not yet implemented):
 - [W3C Trace Context Specification](https://www.w3.org/TR/trace-context/)
 - [OTLP Specification](https://opentelemetry.io/docs/specs/otlp/)
 - [Semantic Conventions for HTTP](https://opentelemetry.io/docs/specs/semconv/http/)
+
+---
+
+**Last Updated:** 2026-02-20

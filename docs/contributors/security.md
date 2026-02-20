@@ -1,7 +1,6 @@
 # SEL Security Model
 
 **Version:** 0.1.3  
-**Last Updated:** 2026-01-26  
 **Status:** Living Document
 
 This document describes the security architecture, threat model, implemented protections, and operational security practices for the Shared Events Library (SEL) backend server.
@@ -482,3 +481,7 @@ We take security seriously and appreciate responsible disclosure of vulnerabilit
 
 **SEL Security Model** — Part of the [Togather Foundation](https://togather.foundation)  
 *Building secure, transparent infrastructure for event discovery as a public good.*
+
+---
+
+**Last Updated:** 2026-01-26

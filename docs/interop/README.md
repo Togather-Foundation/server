@@ -188,3 +188,7 @@ This SEL server is the reference implementation. See:
 ---
 
 **Back to:** [Documentation Index](../README.md)
+
+---
+
+**Last Updated:** 2026-02-20

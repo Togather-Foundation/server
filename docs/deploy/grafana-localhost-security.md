@@ -278,3 +278,7 @@ staging.toronto.togather.foundation {
 **No, if you try to embed `http://localhost:3000` directly** - browser's localhost ≠ server's localhost.
 
 The localhost binding IS sufficient security-wise, but requires proper proxy architecture for embedding to work.
+
+---
+
+**Last Updated:** 2026-02-20

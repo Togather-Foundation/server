@@ -297,3 +297,7 @@ ALTER TABLE organizations ADD COLUMN merged_into_id UUID REFERENCES organization
 - `web/admin/templates/review_queue.html` — duplicate comparison template section
 - `web/admin/static/js/duplicates.js` — redirect or reuse
 - `web/admin/templates/duplicates.html` — redirect or remove
+
+---
+
+**Last Updated:** 2026-02-20

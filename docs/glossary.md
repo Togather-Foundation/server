@@ -1,7 +1,6 @@
 # SEL Terminology Glossary
 
-**Version:** 0.1.0  
-**Last Updated:** 2026-01-26
+**Version:** 0.1.0
 
 This glossary defines canonical terms used throughout the SEL backend codebase and documentation to ensure consistent terminology.
 
@@ -415,3 +414,7 @@ https://{origin_node_domain}/events/{ulid}
 
 **Questions?**  
 File an issue at [togather/server/issues](https://github.com/Togather-Foundation/server/issues) with the "documentation" label.
+
+---
+
+**Last Updated:** 2026-01-26

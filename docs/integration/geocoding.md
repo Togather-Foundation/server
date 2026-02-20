@@ -578,3 +578,7 @@ log.Info().
 - [River Job Queue](https://riverqueue.com/docs)
 - Internal: [nominatim.md](nominatim.md) (client design and usage policy details)
 - Internal: [scrapers.md](scrapers.md) (scraper geocoding patterns)
+
+---
+
+**Last Updated:** 2026-02-20

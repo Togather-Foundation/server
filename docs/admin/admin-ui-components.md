@@ -877,3 +877,7 @@ Each page has its own JS file following this structure:
 - [ ] Check accessibility (keyboard navigation, screen readers)
 - [ ] Performance: ensure pages load < 1s on staging
 - [ ] Cross-browser testing (Chrome, Firefox, Safari)
+
+---
+
+**Last Updated:** 2026-02-04

@@ -227,3 +227,7 @@ make restart-staging
 - **Health Checks:** `deploy/scripts/health-check.sh`
 - **Rollback:** `deploy/scripts/rollback.sh`
 - **Configuration:** `docs/deploy/deploy-conf.md`
+
+---
+
+**Last Updated:** 2026-02-20

@@ -1050,3 +1050,7 @@ curl -X GET https://api.sel.events/api/v1/admin/users/{id} \
 |---------|------|---------|
 | 1.0 | 2024-02-05 | Initial API documentation |
 | 1.1 | 2026-02-05 | Added troubleshooting section |
+
+---
+
+**Last Updated:** 2026-02-20

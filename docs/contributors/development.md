@@ -486,3 +486,7 @@ To add validation for new entity types:
 - [pyshacl documentation](https://github.com/RDFLib/pySHACL)
 - [SHACL specification (W3C)](https://www.w3.org/TR/shacl/)
 - [RDF Turtle specification](https://www.w3.org/TR/turtle/)
+
+---
+
+**Last Updated:** 2026-02-20

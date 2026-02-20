@@ -266,3 +266,7 @@ Before committing:
 **Dashed Line Pattern**: `[10, 5]` (10px dash, 5px gap)  
 **Dotted Line Pattern**: `[2, 4]` (2px dot, 4px gap)  
 **Line Width**: `2px`
+
+---
+
+**Last Updated:** 2026-02-20

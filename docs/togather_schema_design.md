@@ -1767,3 +1767,7 @@ ALTER SYSTEM SET autovacuum_naptime = '30s';
 - All changes must be documented in migration scripts
 - Breaking changes require major version bump
 - Schema changes must pass SHACL validation in CI/CD
+
+---
+
+**Last Updated:** 2026-02-20

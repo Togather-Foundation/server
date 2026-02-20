@@ -1,7 +1,6 @@
 # Developer Quick Start Guide
 
 **Version:** 0.1.0  
-**Last Updated:** 2026-02-12  
 **For:** Application developers integrating with the SEL API
 
 ---
@@ -287,3 +286,7 @@ Currently, password reset is handled by admins. Contact [info@togather.foundatio
 
 **Developer Quick Start Guide** — Part of the [Togather Foundation](https://togather.foundation)  
 *Building shared infrastructure for event discovery as a public good.*
+
+---
+
+**Last Updated:** 2026-02-12

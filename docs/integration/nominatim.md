@@ -643,3 +643,7 @@ When switching to self-hosted:
 - [Geofabrik Downloads](https://download.geofabrik.de/north-america/canada/)
 - [OSM Planet Data](https://planet.openstreetmap.org/)
 - Internal: [geocoding.md](geocoding.md) (overall geocoding architecture)
+
+---
+
+**Last Updated:** 2026-02-20

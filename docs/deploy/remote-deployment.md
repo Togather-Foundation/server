@@ -478,3 +478,7 @@ For additional help:
 - [Troubleshooting](troubleshooting.md) - Common issues
 - [Rollback Guide](rollback.md) - Detailed rollback procedures
 - [Best Practices](best-practices.md) - Deployment best practices
+
+---
+
+**Last Updated:** 2026-02-20

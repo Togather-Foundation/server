@@ -780,3 +780,7 @@ Event creation, occurrences, source creation, and review queue entry are separat
 - `docs/api/API_CONTRACT_v1.md` - API contract specifications
 - `internal/domain/events/normalize.go` - Normalization logic
 - `internal/domain/events/validation.go` - Validation logic
+
+---
+
+**Last Updated:** 2026-02-20

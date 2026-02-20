@@ -1410,3 +1410,7 @@ In conclusion, the Shared Events Library backend in Go is structured not just to
 - AT Protocol PDS – personal data servers give individuals control/portability of their data and identity[box464.com](https://box464.com/posts/bluesky-pds/#:~:text=Post%20Summary)
 
 ![](https://www.google.com/s2/favicons?domain=https://dev.to&sz=32)![](https://www.google.com/s2/favicons?domain=https://www.reddit.com&sz=32)![](https://www.google.com/s2/favicons?domain=https://medium.com&sz=32)![](https://www.google.com/s2/favicons?domain=http://docs.artsdata.ca&sz=32)Sources
+
+---
+
+**Last Updated:** 2026-02-20

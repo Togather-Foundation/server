@@ -887,3 +887,5 @@ ssh deploy@<server> 'docker images | grep togather-server'
 ```
 
 ---
+
+**Last Updated:** 2026-02-20

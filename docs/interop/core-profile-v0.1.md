@@ -2,7 +2,6 @@
 
 **Status:** Proposed for Community Review  
 **Version:** 0.1.0-DRAFT  
-**Last Updated:** 2026-01-27  
 **Conformance Level:** MUST for Federation, SHOULD for Ingestion  
 **Authors:** SEL Architecture Working Group (Ryan Kelln, Gemini 3 Pro, Claude Opus 4.5, OpenAI ChatGPT 5.2)
 
@@ -937,3 +936,7 @@ Reference the shapes in `docs/interop/schemas/` for validation requirements.
 | 0.1.0-DRAFT | 2026-02-11 | Added § 2.5 Input Acceptance (flexible ingestion formats, event subtype mapping) |
 | 0.1.0-DRAFT | 2026-01-27 | Drafted core profile |
 | 0.1.0-DRAFT | 2025-01-20 | Initial draft |
+
+---
+
+**Last Updated:** 2026-01-27

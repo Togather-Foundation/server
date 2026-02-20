@@ -489,3 +489,6 @@ Identifier guidance (`@id` vs `sameAs`) + related pages: https://docs.artsdata.c
 
 Databus constraints + auth modes: https://docs.artsdata.ca/architecture/graph-store-api.html
 
+---
+
+**Last Updated:** 2026-02-20

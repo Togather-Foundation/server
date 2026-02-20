@@ -303,3 +303,7 @@ if endTime != nil && endTime.Before(*startTime) {
   - srv-xxd: River worker fix (✓ CLOSED)
   - srv-zqh: Schema.org support (OPEN)
   - srv-054: Smoke test improvements (OPEN)
+
+---
+
+**Last Updated:** 2026-02-20

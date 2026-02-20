@@ -352,3 +352,7 @@ Create tabs or accordion to switch between dashboards:
 - **Anonymous Access**: https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/grafana/#anonymous-authentication
 - **Docker Compose**: `deploy/docker/docker-compose.blue-green.yml`
 - **Dashboard Provisioning**: `deploy/config/grafana/dashboards/`
+
+---
+
+**Last Updated:** 2026-02-20
