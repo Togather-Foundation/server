@@ -51,70 +51,28 @@ gh run list --branch main --limit 1 --json status,conclusion,headSha \
 
 ## Step 2: Gather Release Data
 
-Run all of these to collect structured information about what's changing.
+Run the data-gathering script. It collects all structured git history and writes
+it to `.release-data.md` for the agent to read in the next step.
 
 ```bash
-# Determine the base: last tag or initial commit
-LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-echo "Release base: $LAST_TAG"
-
-# Commit range for this release
-echo "=== COMMITS SINCE ${LAST_TAG} ==="
-git log ${LAST_TAG}..HEAD --format="%H %s" --no-merges
-
-echo ""
-echo "=== CONVENTIONAL COMMIT SUMMARY ==="
-echo "-- Features --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^feat(\([^)]+\))?[!]?:" | sed 's/^/  /'
-
-echo "-- Bug Fixes --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^fix(\([^)]+\))?[!]?:" | sed 's/^/  /'
-
-echo "-- Performance --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^perf(\([^)]+\))?[!]?:" | sed 's/^/  /'
-
-echo "-- Breaking Changes --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^[a-z]+(\([^)]+\))?!:" | sed 's/^/  /'
-git log ${LAST_TAG}..HEAD --format="%B" --no-merges | grep -A5 "BREAKING CHANGE:" | sed 's/^/  /'
-
-echo "-- Refactoring --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^refactor(\([^)]+\))?:" | sed 's/^/  /'
-
-echo "-- Tests --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^test(\([^)]+\))?:" | sed 's/^/  /'
-
-echo "-- Docs --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^docs(\([^)]+\))?:" | sed 's/^/  /'
-
-echo "-- CI/Build/Chores --"
-git log ${LAST_TAG}..HEAD --format="%s" --no-merges | grep -E "^(ci|build|chore)(\([^)]+\))?:" | sed 's/^/  /'
-
-echo ""
-echo "=== STATS ==="
-COMMIT_COUNT=$(git log ${LAST_TAG}..HEAD --no-merges --oneline | wc -l | tr -d ' ')
-echo "Total commits: $COMMIT_COUNT"
-git diff ${LAST_TAG}..HEAD --stat | tail -1
-
-echo ""
-echo "=== CONTRIBUTORS ==="
-git shortlog -sn ${LAST_TAG}..HEAD --no-merges
-
-echo ""
-echo "=== CURRENT CHANGELOG [Unreleased] SECTION ==="
-# Extract the [Unreleased] section from CHANGELOG.md
-awk '/^## \[Unreleased\]/{found=1; next} /^## \[/{if(found) exit} found{print}' CHANGELOG.md
-
-echo ""
-echo "=== OPEN BEADS (unfinished work) ==="
-bd list --status=open --json 2>/dev/null | jq -r '.[] | "  [\(.id)] \(.title)"' || echo "  (bd not available or no open issues)"
+scripts/gather-release-data.sh <version>
+# e.g. scripts/gather-release-data.sh 0.1.0
 ```
+
+The script collects:
+- All commits since the last tag, bucketed by Conventional Commit type
+- Diff stats (files changed, insertions, deletions)
+- Contributors (from `git shortlog`)
+- The existing `[Unreleased]` section from `CHANGELOG.md`
+- Metadata: version, date, GitHub compare URL
+
+Output: `.release-data.md` (gitignored — only used during the release session).
 
 ---
 
 ## Step 3: Generate Changelog
 
-Use this prompt with the data from Step 2 to generate changelog content.
-Paste the shell output above into the agent along with this prompt:
+Read `.release-data.md` and use the prompt below to generate the changelog content.
 
 ---
 
@@ -123,51 +81,65 @@ Paste the shell output above into the agent along with this prompt:
 ```
 You are writing the changelog for Togather SEL Server version $VERSION.
 
-Using the git log data, commit summary, and existing [Unreleased] content above,
-generate two things:
+Read the file .release-data.md. It contains:
+- All commits since the last release, bucketed by type
+- Diff stats and contributors
+- The existing [Unreleased] section from CHANGELOG.md (may be empty)
+
+Generate two things:
 
 ## 1. CHANGELOG.md Entry
 
-Replace the [Unreleased] section in CHANGELOG.md with a new section:
+A new section to replace [Unreleased]:
 
-```
 ## [$VERSION] - $DATE
-```
 
 Requirements:
 - Use Keep a Changelog format (https://keepachangelog.com/en/1.0.0/)
 - Sections: Added, Changed, Deprecated, Removed, Fixed, Security
 - Only include sections that have content
 - Each entry is a concise, user-focused description (not the raw commit message)
-- Group related commits together
-- For breaking changes: add a prominent "⚠️ BREAKING CHANGES" subsection at the top
-- Preserve any existing [Unreleased] content that is not already covered by the commits
+- Group related commits together under a single entry where appropriate
+- For breaking changes: add a prominent "### Breaking Changes" subsection at the top
+- Incorporate any content from the existing [Unreleased] section that adds context
+  not already captured by the commit log
 
 ## 2. GitHub Release Notes
 
 A richer document for the GitHub Release body:
 
-```
 ## What's Changed
 
 [2-4 sentence narrative overview of the most significant changes and why they matter]
 
 ### Highlights
-[3-5 most important changes as bullet points with brief context]
+- [Most important change with brief context]
+- [Second most important]
+- [Third most important]
 
 ### All Changes
-[Complete list organized by type: Features, Bug Fixes, Performance, etc.]
+
+#### Features
+- ...
+
+#### Bug Fixes
+- ...
+
+#### Performance
+- ...
+
+#### Other
+- ...
 
 ### Breaking Changes
-[If any — detailed migration instructions]
+[Only if any — with detailed migration instructions]
 
 ### Contributors
-[List from git shortlog]
+[From the contributors section of .release-data.md]
 
-**Full Changelog**: https://github.com/Togather-Foundation/server/compare/$LAST_TAG..v$VERSION
-```
+**Full Changelog**: [use the GitHub compare URL from .release-data.md]
 
-Keep the tone: technical, precise, informative. Not marketing language.
+Keep tone: technical, precise, informative. Not marketing language.
 ```
 
 ---
@@ -212,7 +184,7 @@ After pushing the tag, GitHub Actions runs `.github/workflows/release.yml`:
 
 1. **CI Gate** — full test suite with race detector (all tests must pass)
 2. **Build** — binary compiled with version from the tag
-3. **Docker** — image built and pushed to GHCR as `ghcr.io/togather-foundation/server:v$VERSION` and `:latest`
+3. **Docker** — image built and pushed to GHCR as `ghcr.io/togather-foundation/server:v$VERSION`
 4. **GitHub Release** — created automatically with the changelog as the body, binary attached
 
 Monitor at:
@@ -271,9 +243,6 @@ make test-production-smoke
 ## Step 10: Post-Release
 
 ```bash
-# Add new [Unreleased] section to CHANGELOG.md
-# (The release script leaves it empty — add it back for next release)
-
 # Update beads: close any release-related issues
 bd list --status=open --json | jq -r '.[] | select(.title | test("release|v$VERSION"; "i")) | .id'
 # bd close <id> --reason "Released in v$VERSION"
