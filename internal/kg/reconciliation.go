@@ -27,6 +27,8 @@ var artsdataShortIDPattern = regexp.MustCompile(`^K\d+-\d+$`)
 // expandArtsdataID converts a short Artsdata ID (e.g. "K2-183") to its full
 // canonical URI (e.g. "https://kg.artsdata.ca/resource/K2-183").
 // IDs that already start with "http" are returned unchanged.
+// The function is idempotent: IDs that already start with "http" are returned unchanged,
+// so it is safe to call on already-expanded URIs.
 func expandArtsdataID(id string) string {
 	if strings.HasPrefix(id, "http") {
 		return id
@@ -100,7 +102,7 @@ type ReconcileRequest struct {
 // MatchResult represents a matched identifier from reconciliation.
 type MatchResult struct {
 	AuthorityCode string   `json:"authority_code"` // e.g., "artsdata"
-	IdentifierURI string   `json:"identifier_uri"` // e.g., "http://kg.artsdata.ca/resource/K11-211"
+	IdentifierURI string   `json:"identifier_uri"` // e.g., "https://kg.artsdata.ca/resource/K11-211"
 	Confidence    float64  `json:"confidence"`     // 0.0-1.0
 	Method        string   `json:"method"`         // "auto_high", "auto_low"
 	SameAsURIs    []string `json:"same_as_uris"`   // transitive sameAs from the matched entity
@@ -170,6 +172,7 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 	// 5. Apply confidence thresholds and classify
 	var matches []MatchResult
 	var topResult *artsdata.ReconciliationResult
+	var topResultMethod string
 
 	for i := range apiResults {
 		result := &apiResults[i]
@@ -186,6 +189,7 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 		// Track top result for dereferencing
 		if topResult == nil || result.Score > topResult.Score {
 			topResult = result
+			topResultMethod = method
 		}
 
 		matches = append(matches, MatchResult{
@@ -197,8 +201,10 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 		})
 	}
 
-	// 6. For high confidence matches, dereference to get sameAs links
-	if topResult != nil && len(matches) > 0 {
+	// 6. For auto_high confidence matches, dereference to get sameAs links.
+	// auto_low matches are stored as identifiers but do not trigger dereferencing
+	// or sameAs link resolution, as their confidence is insufficient to warrant it.
+	if topResult != nil && topResultMethod == "auto_high" {
 		topResultURI := expandArtsdataID(topResult.ID)
 		entity, err := s.artsdataClient.Dereference(ctx, topResultURI)
 		if err != nil {
