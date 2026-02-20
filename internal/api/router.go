@@ -140,7 +140,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		)
 	}
 
-	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, slogLogger, slot)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot)
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{

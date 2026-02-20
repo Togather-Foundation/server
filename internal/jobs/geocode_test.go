@@ -72,6 +72,8 @@ func TestNewWorkersWithPool_RegistersGeocodingWorkers(t *testing.T) {
 		nil, // eventsRepo
 		mockGeocodingService,
 		nil, // reconciliationService
+		nil, // placeService
+		nil, // orgService
 		logger,
 		"test",
 	)
@@ -89,6 +91,8 @@ func TestNewWorkersWithPool_NilGeocodingService(t *testing.T) {
 		nil, // eventsRepo
 		nil, // geocodingService - should not panic
 		nil, // reconciliationService
+		nil, // placeService
+		nil, // orgService
 		logger,
 		"test",
 	)

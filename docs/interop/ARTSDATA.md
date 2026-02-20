@@ -388,7 +388,7 @@ The Artsdata reconciliation adapter is implemented in the following locations:
 |-----------|----------|-------------|
 | HTTP Client | `internal/kg/artsdata/client.go` | W3C Reconciliation API client with rate limiting, retries, entity dereference |
 | Reconciliation Service | `internal/kg/reconciliation.go` | Cache→API→threshold→store pipeline |
-| Workers | `internal/jobs/workers.go` | `ReconciliationWorker` (River job) and `EnrichmentWorker` (placeholder) |
+| Workers | `internal/jobs/workers.go` | `ReconciliationWorker` (River job) and `EnrichmentWorker` (River job — dereferences Artsdata URI, stores sameAs identifiers, conservatively fills empty entity fields) |
 | CLI Command | `cmd/server/cmd/reconcile.go` | `server reconcile places\|organizations\|all` with `--dry-run`, `--limit`, `--force` |
 | Configuration | `internal/config/config.go` | `ArtsdataConfig` struct (env vars: `ARTSDATA_ENABLED`, `ARTSDATA_ENDPOINT`, etc.) |
 | DB Migration | `internal/storage/postgres/migrations/000030_*` | `knowledge_graph_authorities`, `entity_identifiers`, `reconciliation_cache` tables |
@@ -402,7 +402,7 @@ The Artsdata reconciliation adapter is implemented in the following locations:
 4. Raw Artsdata scores (unbounded, e.g. 1247 for exact match) are normalized to 0.0-1.0 via `normalizeArtsdataScore()` — `match=true` → 0.99, others → `score/15.0` capped at 0.95
 5. Results classified by confidence: >=0.95 with `match=true` → `auto_high`, >=0.80 → `auto_low`, <0.80 → rejected
 6. Matches stored in `entity_identifiers`, results cached in `reconciliation_cache` (both positive and negative)
-7. High-confidence matches enqueue `EnrichmentArgs` job (enrichment is a TODO placeholder)
+7. High-confidence matches enqueue `EnrichmentArgs` job → `EnrichmentWorker` dereferences the Artsdata URI, extracts `sameAs` links (stored as additional `entity_identifiers`), and conservatively fills empty fields on the local place/org (description, URL, address components)
 
 ### Bulk Reconciliation
 
@@ -450,7 +450,7 @@ Confidence thresholds are hardcoded: >=0.95 with `match=true` → `auto_high`, >
 1. **Properties not supported**: The Artsdata `/recon` endpoint returns HTTP 500 when any `properties` array is included. Disambiguation relies solely on `query` (name) + `type` fields.
 2. **Scores are unbounded**: Artsdata scores are not 0-100 or 0-1. Exact matches score ~1000+, partial matches ~3-12. Must normalize before storage.
 3. **Form-encoded requests only**: W3C Reconciliation API requires `application/x-www-form-urlencoded` POST with queries in a `queries` form parameter. JSON body requests fail silently or error.
-4. **No enrichment yet**: The `EnrichmentWorker` is a placeholder. It logs the job and completes without fetching additional data.
+4. **Enrichment is conservative**: `EnrichmentWorker` only fills entity fields that are currently empty. It never overwrites existing values. Unknown `sameAs` authorities (no `InferAuthorityCode` match) are silently skipped.
 5. **Rate limiting**: Artsdata API has no documented rate limits, but we default to 1 req/sec and use a single-worker queue to be conservative.
 
 

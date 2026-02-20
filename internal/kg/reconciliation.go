@@ -387,8 +387,14 @@ func ClassifyConfidence(score float64, match bool) string {
 	return "reject"
 }
 
-// inferAuthorityCode infers the authority code from a URI.
-func inferAuthorityCode(uri string) string {
+// DereferenceEntity fetches full JSON-LD entity data from an Artsdata URI.
+// This exposes the private artsdataClient.Dereference for use by EnrichmentWorker.
+func (s *ReconciliationService) DereferenceEntity(ctx context.Context, uri string) (*artsdata.EntityData, error) {
+	return s.artsdataClient.Dereference(ctx, uri)
+}
+
+// InferAuthorityCode infers the authority code from a URI.
+func InferAuthorityCode(uri string) string {
 	switch {
 	case strings.Contains(uri, "wikidata.org"):
 		return "wikidata"
@@ -404,3 +410,7 @@ func inferAuthorityCode(uri string) string {
 		return "" // Unknown authority
 	}
 }
+
+// inferAuthorityCode is the unexported alias kept for internal callers.
+// Delegates to InferAuthorityCode so there is a single implementation.
+func inferAuthorityCode(uri string) string { return InferAuthorityCode(uri) }

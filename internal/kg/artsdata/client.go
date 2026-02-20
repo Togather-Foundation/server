@@ -13,6 +13,18 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// StatusError is returned by the client when the server responds with a
+// non-2xx, non-retryable HTTP status code (e.g. 404 Not Found).
+// Callers can use errors.As to inspect the code and decide whether to retry.
+type StatusError struct {
+	Code int
+	Body string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.Code, e.Body)
+}
+
 const (
 	// DefaultEndpoint is the public Artsdata W3C Reconciliation API
 	DefaultEndpoint = "https://api.artsdata.ca/recon"
@@ -324,7 +336,7 @@ func (c *Client) doWithRetry(ctx context.Context, method, reqURL string, body io
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
+			return nil, &StatusError{Code: resp.StatusCode, Body: string(respBody)}
 		}
 
 		return respBody, nil // Success
