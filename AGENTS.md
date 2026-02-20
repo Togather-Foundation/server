@@ -421,6 +421,22 @@ fi
 
 See `docs/deploy/deploy-conf.md` for complete documentation.
 
+### Environment Variables
+
+When adding new env vars or deploying code that depends on new vars, use the env audit tool to detect drift:
+
+```bash
+# Check for missing/extra vars before deploying
+./deploy/scripts/deploy.sh staging --env-diff
+
+# Or run the audit directly
+./deploy/scripts/env-audit.sh staging
+```
+
+On remote servers, edit `/opt/togather/.env.<environment>` then deploy. The deploy script handles container recreation automatically.
+
+See `docs/deploy/env-management.md` for the full workflow (which file to edit, how to debug, adding new vars).
+
 ### Deployment Workflow
 
 **IMPORTANT: Always wrap deployment commands with `scripts/agent-run.sh`** to capture verbose output and preserve context window. Deployment scripts produce hundreds of lines of colored logs that flood agent context.
@@ -456,6 +472,7 @@ See `docs/deploy/deploy-conf.md` for complete documentation.
 ### Deployment Documentation
 
 - **Deployment Config:** `docs/deploy/deploy-conf.md` — Per-environment .deploy.conf files
+- **Env Management:** `docs/deploy/env-management.md` — .env file workflow, audit tool, debugging
 - **Complete Testing Checklist:** `docs/deploy/deployment-testing.md`
 - **Quick Start Guide:** `docs/deploy/quickstart.md`
 - **Remote Deployment:** `docs/deploy/remote-deployment.md`
