@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -76,9 +77,34 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 		DryRun:     opts.DryRun,
 	}
 
+	// Insert scraper run record (best-effort).
+	var runID int64
+	if s.queries != nil {
+		params := postgres.InsertScraperRunParams{
+			SourceName: result.SourceName,
+			SourceUrl:  result.SourceURL,
+			Tier:       int32(result.Tier),
+		}
+		id, insertErr := s.queries.InsertScraperRun(ctx, params)
+		if insertErr != nil {
+			s.logger.Warn().Err(insertErr).Msg("scraper: failed to insert scraper run")
+		} else {
+			runID = id
+		}
+	}
+
 	rawEvents, err := FetchAndExtractJSONLD(ctx, rawURL)
 	if err != nil {
 		result.Error = err
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunFailedParams{
+				ID:           runID,
+				ErrorMessage: pgtype.Text{String: err.Error(), Valid: true},
+			}
+			if err2 := s.queries.UpdateScraperRunFailed(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run failure")
+			}
+		}
 		return result, nil
 	}
 
@@ -95,18 +121,52 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 	}
 
 	if len(validEvents) == 0 {
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunCompletedParams{
+				ID:           runID,
+				EventsFound:  int32(result.EventsFound),
+				EventsNew:    0,
+				EventsDup:    0,
+				EventsFailed: 0,
+			}
+			if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
+			}
+		}
 		return result, nil
 	}
 
 	ingestResult, err := s.submitEvents(ctx, validEvents, opts.DryRun)
 	if err != nil {
 		result.Error = err
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunFailedParams{
+				ID:           runID,
+				ErrorMessage: pgtype.Text{String: err.Error(), Valid: true},
+			}
+			if err2 := s.queries.UpdateScraperRunFailed(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run failure")
+			}
+		}
 		return result, nil
 	}
 
 	result.EventsCreated = ingestResult.EventsCreated
 	result.EventsDuplicate = ingestResult.EventsDuplicate
 	result.EventsFailed = ingestResult.EventsFailed
+
+	if s.queries != nil && runID != 0 {
+		params := postgres.UpdateScraperRunCompletedParams{
+			ID:           runID,
+			EventsFound:  int32(result.EventsFound),
+			EventsNew:    int32(result.EventsCreated),
+			EventsDup:    int32(result.EventsDuplicate),
+			EventsFailed: int32(result.EventsFailed),
+		}
+		if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
+			s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
+		}
+	}
 
 	return result, nil
 }
@@ -186,10 +246,35 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		DryRun:     opts.DryRun,
 	}
 
+	// Insert scraper run record (best-effort).
+	var runID int64
+	if s.queries != nil {
+		params := postgres.InsertScraperRunParams{
+			SourceName: result.SourceName,
+			SourceUrl:  result.SourceURL,
+			Tier:       int32(result.Tier),
+		}
+		id, insertErr := s.queries.InsertScraperRun(ctx, params)
+		if insertErr != nil {
+			s.logger.Warn().Err(insertErr).Msg("scraper: failed to insert scraper run")
+		} else {
+			runID = id
+		}
+	}
+
 	extractor := NewCollyExtractor(s.logger)
 	rawEvents, err := extractor.ScrapeWithSelectors(ctx, source)
 	if err != nil {
 		result.Error = err
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunFailedParams{
+				ID:           runID,
+				ErrorMessage: pgtype.Text{String: err.Error(), Valid: true},
+			}
+			if err2 := s.queries.UpdateScraperRunFailed(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run failure")
+			}
+		}
 		return result, nil
 	}
 
@@ -225,18 +310,52 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	if len(validEvents) == 0 {
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunCompletedParams{
+				ID:           runID,
+				EventsFound:  int32(result.EventsFound),
+				EventsNew:    0,
+				EventsDup:    0,
+				EventsFailed: 0,
+			}
+			if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
+			}
+		}
 		return result, nil
 	}
 
 	ingestResult, err := s.submitEvents(ctx, validEvents, opts.DryRun)
 	if err != nil {
 		result.Error = err
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunFailedParams{
+				ID:           runID,
+				ErrorMessage: pgtype.Text{String: err.Error(), Valid: true},
+			}
+			if err2 := s.queries.UpdateScraperRunFailed(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run failure")
+			}
+		}
 		return result, nil
 	}
 
 	result.EventsCreated = ingestResult.EventsCreated
 	result.EventsDuplicate = ingestResult.EventsDuplicate
 	result.EventsFailed = ingestResult.EventsFailed
+
+	if s.queries != nil && runID != 0 {
+		params := postgres.UpdateScraperRunCompletedParams{
+			ID:           runID,
+			EventsFound:  int32(result.EventsFound),
+			EventsNew:    int32(result.EventsCreated),
+			EventsDup:    int32(result.EventsDuplicate),
+			EventsFailed: int32(result.EventsFailed),
+		}
+		if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
+			s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
+		}
+	}
 
 	return result, nil
 }
@@ -250,9 +369,34 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 		DryRun:     opts.DryRun,
 	}
 
+	// Insert scraper run record (best-effort).
+	var runID int64
+	if s.queries != nil {
+		params := postgres.InsertScraperRunParams{
+			SourceName: result.SourceName,
+			SourceUrl:  result.SourceURL,
+			Tier:       int32(result.Tier),
+		}
+		id, insertErr := s.queries.InsertScraperRun(ctx, params)
+		if insertErr != nil {
+			s.logger.Warn().Err(insertErr).Msg("scraper: failed to insert scraper run")
+		} else {
+			runID = id
+		}
+	}
+
 	rawEvents, err := FetchAndExtractJSONLD(ctx, source.URL)
 	if err != nil {
 		result.Error = err
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunFailedParams{
+				ID:           runID,
+				ErrorMessage: pgtype.Text{String: err.Error(), Valid: true},
+			}
+			if err2 := s.queries.UpdateScraperRunFailed(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run failure")
+			}
+		}
 		return result, nil
 	}
 
@@ -269,18 +413,52 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	if len(validEvents) == 0 {
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunCompletedParams{
+				ID:           runID,
+				EventsFound:  int32(result.EventsFound),
+				EventsNew:    0,
+				EventsDup:    0,
+				EventsFailed: 0,
+			}
+			if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
+			}
+		}
 		return result, nil
 	}
 
 	ingestResult, err := s.submitEvents(ctx, validEvents, opts.DryRun)
 	if err != nil {
 		result.Error = err
+		if s.queries != nil && runID != 0 {
+			params := postgres.UpdateScraperRunFailedParams{
+				ID:           runID,
+				ErrorMessage: pgtype.Text{String: err.Error(), Valid: true},
+			}
+			if err2 := s.queries.UpdateScraperRunFailed(ctx, params); err2 != nil {
+				s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run failure")
+			}
+		}
 		return result, nil
 	}
 
 	result.EventsCreated = ingestResult.EventsCreated
 	result.EventsDuplicate = ingestResult.EventsDuplicate
 	result.EventsFailed = ingestResult.EventsFailed
+
+	if s.queries != nil && runID != 0 {
+		params := postgres.UpdateScraperRunCompletedParams{
+			ID:           runID,
+			EventsFound:  int32(result.EventsFound),
+			EventsNew:    int32(result.EventsCreated),
+			EventsDup:    int32(result.EventsDuplicate),
+			EventsFailed: int32(result.EventsFailed),
+		}
+		if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
+			s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
+		}
+	}
 
 	return result, nil
 }

@@ -8,6 +8,8 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/scraper"
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
@@ -64,8 +66,11 @@ Examples:
 			return err
 		}
 
-		client := scraper.NewIngestClient(serverURL, apiKey)
-		s := scraper.NewScraper(client, nil, logger)
+		s, cleanup, err := newScraperWithDB(serverURL, apiKey, logger)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 
 		opts := scraper.ScrapeOptions{
 			DryRun: scrapeDryRun,
@@ -146,8 +151,11 @@ Examples:
 			return err
 		}
 
-		client := scraper.NewIngestClient(serverURL, apiKey)
-		s := scraper.NewScraper(client, nil, logger)
+		s, cleanup, err := newScraperWithDB(serverURL, apiKey, logger)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 
 		opts := scraper.ScrapeOptions{
 			DryRun:     scrapeDryRun,
@@ -190,8 +198,11 @@ Examples:
 			return err
 		}
 
-		client := scraper.NewIngestClient(serverURL, apiKey)
-		s := scraper.NewScraper(client, nil, logger)
+		s, cleanup, err := newScraperWithDB(serverURL, apiKey, logger)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 
 		opts := scraper.ScrapeOptions{
 			DryRun:     scrapeDryRun,
@@ -248,6 +259,31 @@ func loadScrapeConfig() (serverURL, apiKey string, err error) {
 	}
 
 	return serverURL, apiKey, nil
+}
+
+// newScraperWithDB builds a Scraper and optionally wires in a DB connection for
+// scraper_runs tracking. If DATABASE_URL is not set, tracking is skipped
+// (best-effort). The returned cleanup function must be called when done.
+func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper.Scraper, func(), error) {
+	client := scraper.NewIngestClient(serverURL, apiKey)
+
+	dbURL := getDatabaseURL()
+	if dbURL == "" {
+		logger.Warn().Msg("scraper: DATABASE_URL not set — scraper_runs tracking disabled")
+		s := scraper.NewScraper(client, nil, logger)
+		return s, func() {}, nil
+	}
+
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		logger.Warn().Err(err).Msg("scraper: failed to connect to DB — scraper_runs tracking disabled")
+		s := scraper.NewScraper(client, nil, logger)
+		return s, func() {}, nil
+	}
+
+	queries := postgres.New(pool)
+	s := scraper.NewScraper(client, queries, logger)
+	return s, pool.Close, nil
 }
 
 // printSingleResult prints a summary for a single scrape run. In dry-run mode
