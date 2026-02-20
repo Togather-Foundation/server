@@ -68,6 +68,54 @@ The `release-check` target validates:
 
 ---
 
+## How the Changelog Works
+
+The changelog is built in two layers that combine at release time.
+
+### Layer 1: Ongoing — the `[Unreleased]` section
+
+`CHANGELOG.md` always has an `## [Unreleased]` section at the top. As significant
+changes land on `main`, add a human-readable line there in
+[Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This is the
+curated, user-facing description of what changed and why — not a commit message.
+
+```markdown
+## [Unreleased]
+
+### Changed
+- Email sending now respects request cancellation via context propagation
+```
+
+This is optional but encouraged for notable changes. It gives you a head start
+on the release notes and captures context that isn't always obvious from commit
+messages alone.
+
+### Layer 2: At release time — agent synthesis
+
+When you run `/release 0.1.0`, the agent:
+
+1. **Reads the existing `[Unreleased]` content** — your hand-written notes
+2. **Gathers raw git data** — buckets all commits since the last tag by type
+   (feat, fix, refactor, breaking changes, etc.) using Conventional Commit prefixes
+3. **Synthesizes both** using the prompt in `agents/release.md` — merging manual
+   notes with anything in the git log not yet captured, producing a polished
+   Keep a Changelog entry
+4. **Shows you the draft** for review before writing anything
+5. **Writes and commits** — `scripts/release.sh` moves `[Unreleased]` →
+   `[0.1.0] - YYYY-MM-DD` and updates the comparison URLs at the bottom
+
+The GitHub Release body (richer, narrative format) is generated separately from
+the same data and attached automatically by the release workflow.
+
+### Why Conventional Commits matter
+
+The git log bucketing in Step 2 relies on commit message prefixes:
+`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, etc. Without them, the agent
+has to guess what kind of change each commit is. See
+`docs/contributing/commits.md` for the full conventions.
+
+---
+
 ## Step 2: Generate Changelog
 
 ### Option A: Agent-Assisted (Recommended)
