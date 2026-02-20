@@ -12,4 +12,5 @@ Feature design docs and UI specifications for the Togather SEL server.
 ## Related Documentation
 
 - **[Spec Kit](../../specs/)** - Feature specifications (source of intent)
-- **[Admin UI Guide](../admin-ui-guide.md)** - UI component reference for implemented features
+- **[Admin UI Overview](../admin/admin-ui-overview.md)** - Design system and core concepts for implemented features
+- **[Admin UI Components](../admin/admin-ui-components.md)** - Component library and JS patterns for implemented features

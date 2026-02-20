@@ -59,9 +59,10 @@ fetch('https://sel.togather.events/api/v1/events', {
 
 **You're operating a SEL server, managing users, or configuring deployment.**
 
-**Start here:** [admin-ui-guide.md](admin-ui-guide.md)
+**Start here:** [admin/admin-ui-overview.md](admin/admin-ui-overview.md)
 
 **Quick links:**
+- [Admin UI Components](admin/admin-ui-components.md) - Component library, templates, JavaScript architecture
 - [User Management Guide](admin/user-management.md) - Create & manage user accounts
 - [Email Setup Guide](admin/email-setup.md) - Configure SMTP for invitations
 - [Admin Users API](api/admin-users.md) - API endpoint reference
@@ -123,9 +124,10 @@ These resources are useful for everyone:
 |----------|----------|--------|--------------|
 | **Universal** | Glossary | Living | 2026-01-26 |
 | **Admin** | Admin Directory README | Living | 2026-02-19 |
-| **Admin** | User Management Guide | Living | 2026-02-05 |
+| **Admin** | Admin UI Overview | Living | 2026-02-19 |
+| **Admin** | Admin UI Components | Living | 2026-02-19 |
+| **Admin** | User Management Guide | Living | 2026-02-19 |
 | **Admin** | Email Setup Guide | Living | 2026-02-05 |
-| **Admin** | Admin UI Guide | Living | 2026-01-27 |
 | **Admin** | Admin Users API | Living | 2026-02-05 |
 | **Integration** | API Guide | Living | 2026-01-27 |
 | **Integration** | Authentication | Living | 2026-01-27 |
