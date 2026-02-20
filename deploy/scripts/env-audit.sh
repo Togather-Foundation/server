@@ -48,6 +48,21 @@ REQUIRED_VARS=(
 )
 
 # ============================================================================
+# HELPERS
+# ============================================================================
+
+# Escape a string for safe embedding in JSON
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"  # backslash
+    s="${s//\"/\\\"}"  # double quote
+    s="${s//$'\t'/\\t}" # tab
+    s="${s//$'\n'/\\n}" # newline
+    s="${s//$'\r'/\\r}" # carriage return
+    printf '%s' "$s"
+}
+
+# ============================================================================
 # COLOR / LOGGING
 # ============================================================================
 
@@ -401,7 +416,7 @@ output_json() {
         [[ "$first" != "true" ]] && warnings_json+=","
         local key="${entry%%|*}"
         local default="${entry##*|}"
-        warnings_json+="{\"key\":\"${key}\",\"severity\":\"warning\",\"template_default\":\"${default}\"}"
+        warnings_json+="{\"key\":\"$(json_escape "${key}")\",\"severity\":\"warning\",\"template_default\":\"$(json_escape "${default}")\"}"
         first=false
     done
     warnings_json+="]"
@@ -643,10 +658,18 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --template)
+                if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+                    log "ERROR" "--template requires a file path argument"
+                    exit 1
+                fi
                 template_file="$2"
                 shift 2
                 ;;
             --env-file)
+                if [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+                    log "ERROR" "--env-file requires a file path argument"
+                    exit 1
+                fi
                 env_file="$2"
                 shift 2
                 ;;

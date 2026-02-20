@@ -455,10 +455,21 @@ validate_config() {
     if [[ -x "${audit_script}" ]]; then
         local audit_env="${env}"
         
+        # Resolve the correct template to match the env file that was selected
+        # This prevents mismatches (e.g., Docker env file vs staging template)
+        local audit_template=""
+        if [[ "${env_file}" == *"/deploy/docker/"* ]]; then
+            audit_template="${PROJECT_ROOT}/deploy/docker/.env.example"
+        elif [[ "${env_file}" == "${PROJECT_ROOT}/.env" ]]; then
+            audit_template="${PROJECT_ROOT}/.env.example"
+        fi
+        
         log "INFO" "Running environment variable audit..."
         local audit_exit=0
         local audit_output=""
-        audit_output=$("${audit_script}" "${audit_env}" --env-file "${env_file}" --quiet 2>&1) || audit_exit=$?
+        local audit_args=("${audit_env}" --env-file "${env_file}" --quiet)
+        [[ -n "${audit_template}" ]] && audit_args+=(--template "${audit_template}")
+        audit_output=$("${audit_script}" "${audit_args[@]}" 2>&1) || audit_exit=$?
         
         if [[ -n "${audit_output}" ]]; then
             while IFS= read -r line; do
