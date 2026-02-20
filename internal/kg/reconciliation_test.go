@@ -143,7 +143,14 @@ func TestReconcileEntities_ShortIDExpanded(t *testing.T) {
 			return &artsdata.EntityData{ID: uri}, nil
 		},
 	}
-	mockCache := &mockReconciliationCacheStore{}
+
+	var upsertedIdentifierURI string
+	mockCache := &mockReconciliationCacheStore{
+		upsertIdentifierFunc: func(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error) {
+			upsertedIdentifierURI = arg.IdentifierUri // capture DB write URI
+			return postgres.EntityIdentifier{}, nil
+		},
+	}
 
 	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
 	results, err := svc.ReconcileEntity(context.Background(), ReconcileRequest{
@@ -155,6 +162,7 @@ func TestReconcileEntities_ShortIDExpanded(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, fullURI, results[0].IdentifierURI, "IdentifierURI must be the expanded full URI, not the short ID")
 	assert.Equal(t, fullURI, dereferencedURI, "Dereference must be called with the expanded full URI, not the short ID")
+	assert.Equal(t, fullURI, upsertedIdentifierURI, "DB write (UpsertEntityIdentifier) must use the expanded full URI, not the short ID")
 }
 
 // TestReconcileEntities_WithMockClient tests ReconcileEntity end-to-end with mock client and cache store.
