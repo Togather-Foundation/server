@@ -198,8 +198,9 @@ else
         else
             read -p "Continue without CI verification? [y/N] " -n 1 -r REPLY
             echo ""
-        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
-            fail "Aborted. Push a commit to trigger CI, wait for it to pass, then re-run."
+            if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+                fail "Aborted. Push a commit to trigger CI, wait for it to pass, then re-run."
+            fi
         fi
     fi
 fi
