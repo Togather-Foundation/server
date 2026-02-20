@@ -52,7 +52,7 @@ gh run list --branch main --limit 1 --json status,conclusion,headSha \
 ## Step 2: Gather Release Data
 
 Run the data-gathering script. It collects all structured git history and writes
-it to `.release-data.md` for the agent to read in the next step.
+it to `.release-data.md` for the subagent to read in the next step.
 
 ```bash
 scripts/gather-release-data.sh <version>
@@ -72,7 +72,7 @@ Output: `.release-data.md` (gitignored — only used during the release session)
 
 ## Step 3: Generate Changelog
 
-Read `.release-data.md` and use the prompt below to generate the changelog content.
+Create a subagent to read `.release-data.md` and use the prompt below to generate the changelog content.
 
 ---
 
