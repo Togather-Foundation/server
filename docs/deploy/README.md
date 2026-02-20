@@ -28,7 +28,7 @@ New to deployment? Start here:
 
 - **[Quickstart Guide](quickstart.md)** - Complete deployment setup from scratch
 - **[Deployment Testing](deployment-testing.md)** - Post-deploy checklist and agent steps
-- **[Caddy Guide](caddy.md)** - Production deployment with Caddy reverse proxy and automatic HTTPS
+- **[Caddy Guide](caddy.md)** - Caddy reverse proxy — configuration, TLS, routing, and security
 - **[Linode Deployment](linode-deployment.md)** - Deploy to Linode cloud platform
 - **[Rollback Guide](rollback.md)** - Troubleshoot and recover from failed deployments
 - **[Migrations Guide](migrations.md)** - Manage database schema changes safely
@@ -45,8 +45,6 @@ New to deployment? Start here:
 ### CI/CD & Automation
 
 - **[CI/CD Integration](ci-cd.md)** - GitHub Actions, GitLab CI, Jenkins examples
-- **[Grafana Dashboard Guidelines](grafana-dashboard-guidelines.md)** - Dashboard creation standards
-
 ### Grafana
 
 Recommended reading order: security first, then setup, then dashboards and embedding.
@@ -121,10 +119,10 @@ See individual guides for detailed usage.
 
 ## Related Documentation
 
-- **Development Setup**: [`docs/contributors/DEVELOPMENT.md`](../contributors/DEVELOPMENT.md)
-- **Architecture Overview**: [`docs/contributors/ARCHITECTURE.md`](../contributors/ARCHITECTURE.md)
-- **Security Practices**: [`docs/contributors/SECURITY.md`](../contributors/SECURITY.md)
-- **API Documentation**: [`docs/integration/API_GUIDE.md`](../integration/API_GUIDE.md)
+- **Development Setup**: [`docs/contributors/development.md`](../contributors/development.md)
+- **Architecture Overview**: [`docs/contributors/architecture.md`](../contributors/architecture.md)
+- **Security Practices**: [`docs/contributors/security.md`](../contributors/security.md)
+- **API Documentation**: [`docs/integration/api-guide.md`](../integration/api-guide.md)
 
 ---
 

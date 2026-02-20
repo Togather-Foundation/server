@@ -16,11 +16,11 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 **Start here:** [contributors/README.md](contributors/README.md)
 
 **Quick links:**
-- [Development Guide](contributors/DEVELOPMENT.md) - Coding standards, logging, validation
-- [Architecture Overview](contributors/ARCHITECTURE.md) - System design
-- [Database Guide](contributors/DATABASE.md) - Schema & migrations
-- [Testing Guide](contributors/TESTING.md) - TDD workflow
-- [Security Guide](contributors/SECURITY.md) - Security implementation
+- [Development Guide](contributors/development.md) - Coding standards, logging, validation
+- [Architecture Overview](contributors/architecture.md) - System design
+- [Database Guide](contributors/database.md) - Schema & migrations
+- [Testing Guide](contributors/testing.md) - TDD workflow
+- [Security Guide](contributors/security.md) - Security implementation
 
 ---
 
@@ -31,9 +31,9 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 **Start here:** [integration/README.md](integration/README.md)
 
 **Quick links:**
-- [API Guide](integration/API_GUIDE.md) - Practical API reference with examples
-- [Authentication](integration/AUTHENTICATION.md) - API keys & rate limits
-- [Scraper Best Practices](integration/SCRAPERS.md) - Idempotency, deduplication
+- [API Guide](integration/api-guide.md) - Practical API reference with examples
+- [Authentication](integration/authentication.md) - API keys & rate limits
+- [Scraper Best Practices](integration/scrapers.md) - Idempotency, deduplication
 - [Code Examples](integration/examples/) - Working code samples
 
 **Minimal example:**
@@ -76,11 +76,11 @@ fetch('https://sel.togather.events/api/v1/events', {
 **Start here:** [interop/README.md](interop/README.md)
 
 **Quick links:**
-- [Core Profile v0.1](interop/CORE_PROFILE_v0.1.md) - URI scheme, JSON-LD, validation
-- [API Contract v1](interop/API_CONTRACT_v1.md) - HTTP API specification
-- [Federation Protocol v1](interop/FEDERATION_v1.md) - Change feeds, sync protocol
-- [Knowledge Graphs](interop/KNOWLEDGE_GRAPHS.md) - Multi-graph reconciliation
-- [Artsdata Integration](interop/ARTSDATA.md) - Artsdata-specific guide
+- [Core Profile v0.1](interop/core-profile-v0.1.md) - URI scheme, JSON-LD, validation
+- [API Contract v1](interop/api-contract-v1.md) - HTTP API specification
+- [Federation Protocol v1](interop/federation-v1.md) - Change feeds, sync protocol
+- [Knowledge Graphs](interop/knowledge-graphs.md) - Multi-graph reconciliation
+- [Artsdata Integration](interop/artsdata.md) - Artsdata-specific guide
 - [SHACL Shapes](interop/schemas/) - Validation schemas
 
 ---
@@ -98,22 +98,22 @@ These resources are useful for everyone:
 ## Quick Start by Use Case
 
 ### Event Scraper
-1. Read [API Guide](integration/API_GUIDE.md)
-2. Get API key (see [Authentication](integration/AUTHENTICATION.md))
+1. Read [API Guide](integration/api-guide.md)
+2. Get API key (see [Authentication](integration/authentication.md))
 3. Copy [minimal scraper example](integration/examples/minimal_scraper.js)
 4. Submit events with `source.url` for duplicate detection
 
 ### SEL Node Implementer
-1. Read [Core Profile](interop/CORE_PROFILE_v0.1.md) for requirements
+1. Read [Core Profile](interop/core-profile-v0.1.md) for requirements
 2. Validate against [SHACL shapes](interop/schemas/)
-3. Implement [API Contract](interop/API_CONTRACT_v1.md)
-4. Enable [Federation](interop/FEDERATION_v1.md) for network participation
+3. Implement [API Contract](interop/api-contract-v1.md)
+4. Enable [Federation](interop/federation-v1.md) for network participation
 
 ### SEL Contributor
-1. Read [Development Guide](contributors/DEVELOPMENT.md)
+1. Read [Development Guide](contributors/development.md)
 2. Pick a task: `bd ready`
 3. Run tests: `make ci`
-4. Follow TDD workflow in [Testing Guide](contributors/TESTING.md)
+4. Follow TDD workflow in [Testing Guide](contributors/testing.md)
 
 ---
 

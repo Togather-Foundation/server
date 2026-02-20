@@ -13,24 +13,24 @@ You're building systems that submit events to or consume events from SEL:
 
 ### For Developers (API Key Self-Service)
 
-1. **[Developer Quick Start](DEVELOPER_QUICKSTART.md)** - Get started in 4 steps
-2. **[Authentication](AUTHENTICATION.md#developer-self-service)** - Invitation, login, key management
-3. **[API Guide](API_GUIDE.md)** - Practical guide with code examples
+1. **[Developer Quick Start](developer-quickstart.md)** - Get started in 4 steps
+2. **[Authentication](authentication.md#developer-self-service)** - Invitation, login, key management
+3. **[API Guide](api-guide.md)** - Practical guide with code examples
 
 ### For Event Scrapers
 
-1. **[API Guide](API_GUIDE.md)** - Practical guide with code examples
-2. **[Authentication](AUTHENTICATION.md)** - Get API keys, understand rate limits
-3. **[Scraper Best Practices](SCRAPERS.md)** - Idempotency, deduplication, batch patterns
+1. **[API Guide](api-guide.md)** - Practical guide with code examples
+2. **[Authentication](authentication.md)** - Get API keys, understand rate limits
+3. **[Scraper Best Practices](scrapers.md)** - Idempotency, deduplication, batch patterns
 
 ### For API Consumers
 
-1. **[API Guide](API_GUIDE.md)** - Event retrieval, filtering, pagination
-2. **[Authentication](AUTHENTICATION.md)** - Rate limits for public endpoints
+1. **[API Guide](api-guide.md)** - Event retrieval, filtering, pagination
+2. **[Authentication](authentication.md)** - Rate limits for public endpoints
 
 ### For MCP Clients
 
-1. **[MCP Server](MCP_SERVER.md)** - Tools, resources, prompts, transports
+1. **[MCP Server](mcp-server.md)** - Tools, resources, prompts, transports
 
 ## Minimal Scraper Example
 
@@ -130,7 +130,7 @@ Common status codes:
 
 ## Getting Help
 
-- **API Guide**: [API_GUIDE.md](API_GUIDE.md) - comprehensive reference
+- **API Guide**: [api-guide.md](api-guide.md) - comprehensive reference
 - **GitHub Issues**: [togather/server/issues](https://github.com/Togather-Foundation/server/issues)
 - **Email**: [info@togather.foundation](mailto:info@togather.foundation)
 

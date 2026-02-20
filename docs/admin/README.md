@@ -6,7 +6,7 @@ For operators managing the Togather admin interface.
 
 - **[user-management.md](user-management.md)** - How to create, edit, deactivate, and delete user accounts; invitation workflow; troubleshooting
 - **[email-setup.md](email-setup.md)** - Configure SMTP for sending invitation emails (Gmail, Resend, and generic SMTP)
-- **[user-administration-plan.md](user-administration-plan.md)** - Technical implementation plan for the user administration UI and API endpoints
+- **[user-administration-plan.md](user-administration-plan.md)** - Technical implementation plan for the user administration UI and API endpoints *(Technical planning document — contributor reference)*
 
 ## Related Documentation
 

@@ -12,11 +12,11 @@ You're building features, fixing bugs, or improving the SEL codebase. These docs
 
 ## Quick Start
 
-1. **[Development Guide](DEVELOPMENT.md)** - Start here for coding standards, logging, validation
-2. **[Architecture Overview](ARCHITECTURE.md)** - System design and component structure
-3. **[Database Guide](DATABASE.md)** - Schema design, migrations, query patterns
-4. **[Testing Guide](TESTING.md)** - TDD workflow, test types, coverage requirements
-5. **[Security Guide](SECURITY.md)** - Threat model, security implementations, best practices
+1. **[Development Guide](development.md)** - Start here for coding standards, logging, validation
+2. **[Architecture Overview](architecture.md)** - System design and component structure
+3. **[Database Guide](database.md)** - Schema design, migrations, query patterns
+4. **[Testing Guide](testing.md)** - TDD workflow, test types, coverage requirements
+5. **[Security Guide](security.md)** - Threat model, security implementations, best practices
 
 ## Essential Resources
 

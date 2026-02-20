@@ -6,7 +6,7 @@
 
 This document provides testing guidelines and workflows for the Togather SEL backend. It covers test-driven development (TDD), test types, coverage requirements, and best practices for contributors.
 
-For architecture context, see [ARCHITECTURE.md](ARCHITECTURE.md). For database testing, see [DATABASE.md](DATABASE.md).
+For architecture context, see [architecture.md](architecture.md). For database testing, see [database.md](database.md).
 
 ---
 
@@ -984,9 +984,9 @@ This runs all CI checks locally before pushing.
 ## Next Steps
 
 For more details:
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design patterns
-- [DATABASE.md](DATABASE.md) - Database schema and query patterns
-- [DEVELOPMENT.md](DEVELOPMENT.md) - Development workflow and standards
+- [architecture.md](architecture.md) - System architecture and design patterns
+- [database.md](database.md) - Database schema and query patterns
+- [development.md](development.md) - Development workflow and standards
 
 **Document Version**: 0.1.0  
 **Last Updated**: 2026-01-27  

@@ -243,4 +243,4 @@ This separation allows:
 
 - [Testing Infrastructure](../../testing/README.md) - Smoke tests and performance tests
 - [Deployment Guide](../../../docs/deploy/quickstart.md) - Full deployment instructions
-- [Caddy Deployment](../../../docs/deploy/caddy-deployment.md) - Caddy-specific setup
+- [Caddy Guide](../../../docs/deploy/caddy.md) - Caddy-specific setup

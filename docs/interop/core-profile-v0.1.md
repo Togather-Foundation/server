@@ -131,7 +131,7 @@ Events MAY include `sameAs` links to **multiple authorities** simultaneously. Fo
 - MusicBrainz (music-specific data)
 - Wikidata (universal identifier)
 
-See [Knowledge Graph Integration Strategy](./KNOWLEDGE_GRAPHS.md) for complete multi-graph integration details.
+See [Knowledge Graph Integration Strategy](./knowledge-graphs.md) for complete multi-graph integration details.
 
 ```json
 {
@@ -146,7 +146,7 @@ See [Knowledge Graph Integration Strategy](./KNOWLEDGE_GRAPHS.md) for complete m
 
 **Domain-Based Reconciliation:**
 
-SEL uses domain-aware reconciliation routing (see [Knowledge Graph Integration Strategy](./KNOWLEDGE_GRAPHS.md)):
+SEL uses domain-aware reconciliation routing (see [Knowledge Graph Integration Strategy](./knowledge-graphs.md)):
 - **Arts/Culture/Music events**: Reconcile with Artsdata first, fall back to Wikidata
 - **Sports/Community/Education events**: Reconcile with Wikidata directly
 - **Places**: Attempt multiple graphs (Artsdata, OpenStreetMap, Wikidata) and merge results
@@ -916,9 +916,9 @@ Reference the shapes in `docs/interop/schemas/` for validation requirements.
 
 ### 9.1 Related Documents
 
-- **API Contract:** See [API_CONTRACT_v1.md](./API_CONTRACT_v1.md) for HTTP API specifications
-- **Federation Protocol:** See [FEDERATION_v1.md](./FEDERATION_v1.md) for sync protocols
-- **Knowledge Graph Integration:** See [knowledge_graph_integration_strategy.md](./knowledge_graph_integration_strategy.md)
+- **API Contract:** See [api-contract-v1.md](./api-contract-v1.md) for HTTP API specifications
+- **Federation Protocol:** See [federation-v1.md](./federation-v1.md) for sync protocols
+- **Knowledge Graph Integration:** See [knowledge-graphs.md](./knowledge-graphs.md)
 
 ### 9.2 Glossary
 

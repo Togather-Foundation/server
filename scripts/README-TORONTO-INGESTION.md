@@ -111,8 +111,8 @@ The current SEL EventInput format differs from standard schema.org in several wa
 This violates the SEL Core Interoperability Profile principle: **"Schema.org First"**
 
 See:
-- `docs/interop/CORE_PROFILE_v0.1.md` - Section 1 (URI Scheme)
-- `docs/interop/API_CONTRACT_v1.md` - Section 1 (Public Read API)
+- `docs/interop/core-profile-v0.1.md` - Section 1 (URI Scheme)
+- `docs/interop/api-contract-v1.md` - Section 1 (Public Read API)
 
 ## Batch Processing Status
 
@@ -191,7 +191,7 @@ This means:
 
 ## References
 
-- [SEL Core Interoperability Profile](../docs/interop/CORE_PROFILE_v0.1.md)
-- [SEL API Contract](../docs/interop/API_CONTRACT_v1.md)
+- [SEL Core Interoperability Profile](../docs/interop/core-profile-v0.1.md)
+- [SEL API Contract](../docs/interop/api-contract-v1.md)
 - [Toronto Open Data Events](https://civictechto.github.io/toronto-opendata-festivalsandevents-jsonld-proxy/)
 - [Schema.org Event](https://schema.org/Event)

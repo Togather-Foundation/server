@@ -776,7 +776,7 @@ Event creation, occurrences, source creation, and review queue entry are separat
 
 ## Related Documentation
 
-- `docs/interop/CORE_PROFILE_v0.1.md` - SEL Core Interoperability Profile
+- `docs/interop/core-profile-v0.1.md` - SEL Core Interoperability Profile
 - `docs/api/API_CONTRACT_v1.md` - API contract specifications
 - `internal/domain/events/normalize.go` - Normalization logic
 - `internal/domain/events/validation.go` - Validation logic

@@ -6,7 +6,7 @@
 
 > **Document Role:** This is the implementation guide for Togather contributors, covering code organization, data architecture, and development patterns. For the formal system design specification (intended for node implementers and architects), see [SEL Server Architecture Design](../togather_SEL_server_architecture_design_v1.md).
 
-This document provides an architectural overview of the Togather Shared Events Library (SEL) backend. It focuses on system design, component architecture, technology choices, and key design patterns. For implementation details, see [DATABASE.md](DATABASE.md) and [TESTING.md](TESTING.md).
+This document provides an architectural overview of the Togather Shared Events Library (SEL) backend. It focuses on system design, component architecture, technology choices, and key design patterns. For implementation details, see [database.md](database.md) and [testing.md](testing.md).
 
 ---
 
@@ -315,7 +315,7 @@ Manages user accounts, API keys, and role-based access control.
 - **API Keys**: For agents and long-lived integrations (multiple keys per user, scoped permissions)
 - **JWT**: For admin interactive sessions (tokens, configurable expiry)
 
-**Rate Limiting**: Applied per-role to prevent abuse while allowing legitimate high-volume users. See [SECURITY.md](SECURITY.md) for details.
+**Rate Limiting**: Applied per-role to prevent abuse while allowing legitimate high-volume users. See [security.md](security.md) for details.
 
 ### Background Jobs & Utilities
 
@@ -1067,7 +1067,7 @@ X-RateLimit-Reset: 1640003600
 - SQL injection prevention via parameterized queries (SQLc)
 - XSS prevention via HTML escaping in templates
 
-For comprehensive security details, see [SECURITY.md](SECURITY.md).
+For comprehensive security details, see [security.md](security.md).
 
 ---
 
@@ -1176,7 +1176,7 @@ USEARCH_ENABLED=false
 **Structured Logging**:
 - zerolog for structured JSON logs
 - Request correlation IDs (X-Request-ID header)
-- Standard field names (see [DEVELOPMENT.md](DEVELOPMENT.md))
+- Standard field names (see [development.md](development.md))
 
 **Metrics** (Future):
 - Prometheus /metrics endpoint
@@ -1413,10 +1413,10 @@ LIMIT $2;
 ## Next Steps
 
 For implementation details and workflows:
-- **Database Schema**: See [DATABASE.md](DATABASE.md) for complete schema, migrations, and query patterns
-- **Testing Strategy**: See [TESTING.md](TESTING.md) for TDD workflow, test types, and coverage requirements
-- **API Integration**: See [../integration/API_GUIDE.md](../integration/API_GUIDE.md) for endpoint usage and examples
-- **Security**: See [SECURITY.md](SECURITY.md) for authentication, authorization, and security best practices
+- **Database Schema**: See [database.md](database.md) for complete schema, migrations, and query patterns
+- **Testing Strategy**: See [testing.md](testing.md) for TDD workflow, test types, and coverage requirements
+- **API Integration**: See [../integration/api-guide.md](../integration/api-guide.md) for endpoint usage and examples
+- **Security**: See [security.md](security.md) for authentication, authorization, and security best practices
 
 ---
 

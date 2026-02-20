@@ -6,7 +6,7 @@
 **Conformance Level:** MUST for Federation, SHOULD for Ingestion  
 **Authors:** SEL Architecture Working Group (Ryan Kelln, Gemini 3 Pro, Claude Opus 4.5, OpenAI ChatGPT 5.2)
 
-> **Document Role:** This is the formal SEL Interoperability Profile specification issued for community review. It defines the binding contract between SEL nodes, agents, and knowledge graphs. For implementation guidance and the working profile used by Togather contributors, see [Core Profile](interop/CORE_PROFILE_v0.1.md).
+> **Document Role:** This is the formal SEL Interoperability Profile specification issued for community review. It defines the binding contract between SEL nodes, agents, and knowledge graphs. For implementation guidance and the working profile used by Togather contributors, see [Core Profile](interop/core-profile-v0.1.md).
 
 ---
 

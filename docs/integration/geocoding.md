@@ -6,7 +6,7 @@
 
 This document describes the geocoding architecture for the Togather server, covering proximity search, forward/reverse geocoding via Nominatim, caching strategy, and background enrichment.
 
-For the Nominatim client design and usage policies, see [NOMINATIM.md](NOMINATIM.md).
+For the Nominatim client design and usage policies, see [nominatim.md](nominatim.md).
 
 ---
 
@@ -576,5 +576,5 @@ log.Info().
 - [PostGIS ST_DWithin](https://postgis.net/docs/ST_DWithin.html)
 - [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API)
 - [River Job Queue](https://riverqueue.com/docs)
-- Internal: [NOMINATIM.md](NOMINATIM.md) (client design and usage policy details)
-- Internal: [SCRAPERS.md](SCRAPERS.md) (scraper geocoding patterns)
+- Internal: [nominatim.md](nominatim.md) (client design and usage policy details)
+- Internal: [scrapers.md](scrapers.md) (scraper geocoding patterns)

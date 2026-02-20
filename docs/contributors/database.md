@@ -6,7 +6,7 @@
 
 This document provides practical guidance for working with the Togather SEL database. It covers schema design, migrations workflow, query patterns, and database best practices for contributors.
 
-For architectural context, see [ARCHITECTURE.md](ARCHITECTURE.md). For the complete DDL, see [../../docs/togather_schema_design.md](../../docs/togather_schema_design.md).
+For architectural context, see [architecture.md](architecture.md). For the complete DDL, see [../../docs/togather_schema_design.md](../../docs/togather_schema_design.md).
 
 ---
 
@@ -1179,8 +1179,8 @@ func TestEventRepository_QueryFilters(t *testing.T) {
 ---
 
 **Next Steps:**
-- [TESTING.md](TESTING.md) - Test-driven development workflow
-- [API_GUIDE.md](../integration/API_GUIDE.md) - API endpoints and usage
+- [testing.md](testing.md) - Test-driven development workflow
+- [api-guide.md](../integration/api-guide.md) - API endpoints and usage
 - [Complete Schema DDL](../../docs/togather_schema_design.md) - Full table definitions
 
 **Document Version**: 0.1.0  

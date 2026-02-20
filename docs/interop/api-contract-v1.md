@@ -17,9 +17,9 @@ This document defines the **HTTP API contract** for Shared Events Library (SEL) 
 - Change feed semantics for synchronization
 - Reconciliation API contracts for knowledge graph integration
 
-For core data models, URI schemes, and provenance rules, see [CORE_PROFILE_v0.1.md](./CORE_PROFILE_v0.1.md).
+For core data models, URI schemes, and provenance rules, see [core-profile-v0.1.md](./core-profile-v0.1.md).
 
-For federation sync protocols, see [FEDERATION_v1.md](./FEDERATION_v1.md).
+For federation sync protocols, see [federation-v1.md](./federation-v1.md).
 
 ---
 
@@ -343,7 +343,7 @@ curl "https://toronto.togather.foundation/api/v1/feeds/changes?since=c2VxXzEwMTA
 
 ### 5.6 Federation Sync
 
-For federation-specific protocols, see [FEDERATION_v1.md](./FEDERATION_v1.md).
+For federation-specific protocols, see [federation-v1.md](./federation-v1.md).
 
 ---
 
@@ -481,6 +481,6 @@ curl -X POST https://toronto.togather.foundation/api/v1/reconcile/places \
 
 ## 8. Related Documents
 
-- **Core Profile:** [CORE_PROFILE_v0.1.md](./CORE_PROFILE_v0.1.md) - URI schemes, data models, validation
-- **Federation Protocol:** [FEDERATION_v1.md](./FEDERATION_v1.md) - Sync protocols (§ 4.3-4.4)
-- **Knowledge Graph Integration:** [KNOWLEDGE_GRAPHS.md](./KNOWLEDGE_GRAPHS.md)
+- **Core Profile:** [core-profile-v0.1.md](./core-profile-v0.1.md) - URI schemes, data models, validation
+- **Federation Protocol:** [federation-v1.md](./federation-v1.md) - Sync protocols (§ 4.3-4.4)
+- **Knowledge Graph Integration:** [knowledge-graphs.md](./knowledge-graphs.md)

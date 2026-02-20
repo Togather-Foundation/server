@@ -632,7 +632,7 @@ For a description of the admin, editor, and viewer roles and their permissions, 
 
 ### User States
 
-For a description of user lifecycle states (Pending Invitation, Active, Inactive, Deleted), see [User Management Guide](admin/user-management.md#user-states).
+For a description of user lifecycle states (Pending Invitation, Active, Inactive), see [User Management Guide](admin/user-management.md#user-states).
 
 **State Badges:**
 ```html

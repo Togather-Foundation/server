@@ -6,7 +6,7 @@
 
 This document covers the Nominatim client design, usage policies, API reference, and rate limiting strategy for the Togather server.
 
-For the overall geocoding architecture (proximity search, caching, enrichment), see [GEOCODING.md](GEOCODING.md).
+For the overall geocoding architecture (proximity search, caching, enrichment), see [geocoding.md](geocoding.md).
 
 ---
 
@@ -642,4 +642,4 @@ When switching to self-hosted:
 - [Overpass QL Reference](https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL)
 - [Geofabrik Downloads](https://download.geofabrik.de/north-america/canada/)
 - [OSM Planet Data](https://planet.openstreetmap.org/)
-- Internal: [GEOCODING.md](GEOCODING.md) (overall geocoding architecture)
+- Internal: [geocoding.md](geocoding.md) (overall geocoding architecture)

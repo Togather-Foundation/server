@@ -14,19 +14,19 @@ You're building a **SEL-compatible node** or system that participates in the fed
 
 ### New to SEL?
 
-1. **[Core Profile v0.1](CORE_PROFILE_v0.1.md)** - Start here for URI scheme, JSON-LD structure, validation
-2. **[API Contract v1](API_CONTRACT_v1.md)** - HTTP endpoints, pagination, error formats
+1. **[Core Profile v0.1](core-profile-v0.1.md)** - Start here for URI scheme, JSON-LD structure, validation
+2. **[API Contract v1](api-contract-v1.md)** - HTTP endpoints, pagination, error formats
 3. **[Glossary](../glossary.md)** - Understand SEL terminology
 
 ### Building Federation?
 
-1. **[Federation Protocol v1](FEDERATION_v1.md)** - Change feeds, sync protocol, cursor semantics
-2. **[Core Profile v0.1](CORE_PROFILE_v0.1.md)** - URI preservation rules, provenance model
+1. **[Federation Protocol v1](federation-v1.md)** - Change feeds, sync protocol, cursor semantics
+2. **[Core Profile v0.1](core-profile-v0.1.md)** - URI preservation rules, provenance model
 
 ### Integrating Knowledge Graphs?
 
-1. **[Knowledge Graphs Guide](KNOWLEDGE_GRAPHS.md)** - Multi-graph reconciliation strategy
-2. **[Artsdata Integration](ARTSDATA.md)** - Artsdata-specific details
+1. **[Knowledge Graphs Guide](knowledge-graphs.md)** - Multi-graph reconciliation strategy
+2. **[Artsdata Integration](artsdata.md)** - Artsdata-specific details
 
 ## Conformance Levels
 
@@ -61,7 +61,7 @@ Defines the foundational interoperability requirements:
 - Provenance model
 - License policy
 
-**Read:** [CORE_PROFILE_v0.1.md](CORE_PROFILE_v0.1.md)
+**Read:** [core-profile-v0.1.md](core-profile-v0.1.md)
 
 ### 2. API Contract v1
 **Status:** Proposed for Community Review
@@ -73,7 +73,7 @@ Defines the HTTP API contract:
 - Error handling (RFC 7807)
 - Content negotiation
 
-**Read:** [API_CONTRACT_v1.md](API_CONTRACT_v1.md)
+**Read:** [api-contract-v1.md](api-contract-v1.md)
 
 ### 3. Federation Protocol v1
 **Status:** Implemented
@@ -85,7 +85,7 @@ Defines the federation sync protocol:
 - Trust-based conflict resolution
 - Authentication
 
-**Read:** [FEDERATION_v1.md](FEDERATION_v1.md)
+**Read:** [federation-v1.md](federation-v1.md)
 
 ## SHACL Validation Shapes
 
@@ -101,11 +101,11 @@ SEL supports multiple knowledge graph authorities for entity reconciliation:
 
 | Authority | Domain Coverage | Guide |
 |-----------|----------------|-------|
-| **Artsdata** | Arts, Culture, Music | [ARTSDATA.md](ARTSDATA.md) |
-| **Wikidata** | Universal | [KNOWLEDGE_GRAPHS.md](KNOWLEDGE_GRAPHS.md) |
-| **MusicBrainz** | Music | [KNOWLEDGE_GRAPHS.md](KNOWLEDGE_GRAPHS.md) |
-| **ISNI** | Persons, Orgs | [KNOWLEDGE_GRAPHS.md](KNOWLEDGE_GRAPHS.md) |
-| **OpenStreetMap** | Places | [KNOWLEDGE_GRAPHS.md](KNOWLEDGE_GRAPHS.md) |
+| **Artsdata** | Arts, Culture, Music | [artsdata.md](artsdata.md) |
+| **Wikidata** | Universal | [knowledge-graphs.md](knowledge-graphs.md) |
+| **MusicBrainz** | Music | [knowledge-graphs.md](knowledge-graphs.md) |
+| **ISNI** | Persons, Orgs | [knowledge-graphs.md](knowledge-graphs.md) |
+| **OpenStreetMap** | Places | [knowledge-graphs.md](knowledge-graphs.md) |
 
 ## Example: Federated Event
 

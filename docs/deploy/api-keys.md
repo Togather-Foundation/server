@@ -12,7 +12,7 @@ API keys are **infrastructure configuration**, not deployment artifacts. They sh
 
 **Key Creation Methods:**
 
-1. **Developer Self-Service** (recommended for application developers): Developers create and manage their own keys through the developer portal. See [Developer Self-Service](../integration/AUTHENTICATION.md#developer-self-service) for details.
+1. **Developer Self-Service** (recommended for application developers): Developers create and manage their own keys through the developer portal. See [Developer Self-Service](../integration/authentication.md#developer-self-service) for details.
 
 2. **CLI/Admin Creation** (for infrastructure and testing): Admins create keys via the `server api-key` command for infrastructure services, testing, and special purposes.
 
@@ -298,8 +298,8 @@ psql "$DATABASE_URL" -c "SELECT * FROM api_keys WHERE prefix = '<prefix>';"
 
 ## See Also
 
-- [Developer Self-Service](../integration/AUTHENTICATION.md#developer-self-service) - How developers create and manage their own API keys
-- [Authentication Guide](../integration/AUTHENTICATION.md) - Complete authentication documentation
+- [Developer Self-Service](../integration/authentication.md#developer-self-service) - How developers create and manage their own API keys
+- [Authentication Guide](../integration/authentication.md) - Complete authentication documentation
 - [Deployment Guide](deployment-testing.md)
 - [Performance Testing](../testing/performance-testing.md)
 - [Security Review](../../.opencode/skill/security-review/SKILL.md)
