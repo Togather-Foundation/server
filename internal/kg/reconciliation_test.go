@@ -106,6 +106,11 @@ func TestExpandArtsdataID(t *testing.T) {
 			input: "some-other-id",
 			want:  "some-other-id",
 		},
+		{
+			name:  "empty string is unchanged",
+			input: "",
+			want:  "",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -168,7 +173,7 @@ func TestReconcileEntities_ShortIDExpanded(t *testing.T) {
 // TestReconcileEntities_WithMockClient tests ReconcileEntity end-to-end with mock client and cache store.
 // Covers the high-confidence match + cache miss + dereference path.
 func TestReconcileEntities_WithMockClient(t *testing.T) {
-	const artsdataURI = "http://kg.artsdata.ca/resource/K11-211"
+	const artsdataURI = "https://kg.artsdata.ca/resource/K11-211"
 
 	mockClient := &mockArtsdataClient{
 		reconcileFunc: func(ctx context.Context, queries map[string]artsdata.ReconciliationQuery) (map[string][]artsdata.ReconciliationResult, error) {
@@ -508,7 +513,7 @@ func TestInferAuthorityCode(t *testing.T) {
 		},
 		{
 			name:     "Artsdata",
-			uri:      "http://kg.artsdata.ca/resource/K11-211",
+			uri:      "https://kg.artsdata.ca/resource/K11-211",
 			wantCode: "artsdata",
 		},
 		{
@@ -527,7 +532,7 @@ func TestInferAuthorityCode(t *testing.T) {
 }
 
 func TestReconcileEntity_CacheHit(t *testing.T) {
-	const artsdataURI = "http://kg.artsdata.ca/resource/K11-211"
+	const artsdataURI = "https://kg.artsdata.ca/resource/K11-211"
 
 	// Pre-build the JSON that the service will unmarshal from the cache row.
 	cachedMatches := []MatchResult{
@@ -614,7 +619,7 @@ func TestMatchResult_JSON(t *testing.T) {
 	// Test that MatchResult can be marshaled/unmarshaled for caching
 	original := MatchResult{
 		AuthorityCode: "artsdata",
-		IdentifierURI: "http://kg.artsdata.ca/resource/K11-211",
+		IdentifierURI: "https://kg.artsdata.ca/resource/K11-211",
 		Confidence:    0.98,
 		Method:        "auto_high",
 		SameAsURIs: []string{
@@ -642,14 +647,14 @@ func TestMatchResult_JSONArray(t *testing.T) {
 	original := []MatchResult{
 		{
 			AuthorityCode: "artsdata",
-			IdentifierURI: "http://kg.artsdata.ca/resource/K11-211",
+			IdentifierURI: "https://kg.artsdata.ca/resource/K11-211",
 			Confidence:    0.98,
 			Method:        "auto_high",
 			SameAsURIs:    []string{"http://www.wikidata.org/entity/Q1234567"},
 		},
 		{
 			AuthorityCode: "artsdata",
-			IdentifierURI: "http://kg.artsdata.ca/resource/K11-999",
+			IdentifierURI: "https://kg.artsdata.ca/resource/K11-999",
 			Confidence:    0.85,
 			Method:        "auto_low",
 			SameAsURIs:    []string{},
