@@ -1081,11 +1081,11 @@ release-check:
 	REMOTE=$$(git rev-parse origin/main); \
 	if [ "$$LOCAL" != "$$REMOTE" ]; then \
 		echo "  ✗ Not in sync with origin/main"; \
-		echo "    Local:  $${LOCAL:0:7}"; \
-		echo "    Remote: $${REMOTE:0:7}"; \
+		echo "    Local:  $$(echo $$LOCAL | cut -c1-7)"; \
+		echo "    Remote: $$(echo $$REMOTE | cut -c1-7)"; \
 		PASS=false; \
 	else \
-		echo "  ✓ In sync with origin/main ($${LOCAL:0:7})"; \
+		echo "  ✓ In sync with origin/main ($$(echo $$LOCAL | cut -c1-7))"; \
 	fi; \
 	echo "--> Checking tag availability..."; \
 	if git tag -l | grep -q "^$$TAG$$"; then \
@@ -1112,7 +1112,7 @@ release-check:
 			echo "  ✗ GitHub Actions FAILED for HEAD"; \
 			PASS=false; \
 		else \
-			echo "  ⚠  No completed GitHub Actions run found for HEAD ($${CURRENT_SHA:0:7})"; \
+			echo "  ⚠  No completed GitHub Actions run found for HEAD ($$(echo $$CURRENT_SHA | cut -c1-7))"; \
 		fi; \
 	else \
 		echo "  ⚠  gh CLI not found — skipping GitHub Actions check"; \
