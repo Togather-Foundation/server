@@ -61,7 +61,7 @@ func (DeduplicationWorker) Work(ctx context.Context, job *river.Job[Deduplicatio
 type ReconciliationWorker struct {
 	river.WorkerDefaults[ReconciliationArgs]
 	Pool                  *pgxpool.Pool
-	ReconciliationService *kg.ReconciliationService
+	ReconciliationService EntityReconciler
 	Logger                *slog.Logger
 }
 
@@ -247,6 +247,15 @@ func (w ReconciliationWorker) Work(ctx context.Context, job *river.Job[Reconcili
 	return nil
 }
 
+// EntityReconciler is the subset of kg.ReconciliationService used by ReconciliationWorker.
+// Defined here by the consumer to allow mock injection in tests.
+type EntityReconciler interface {
+	ReconcileEntity(ctx context.Context, req kg.ReconcileRequest) ([]kg.MatchResult, error)
+}
+
+// compile-time assertion: *kg.ReconciliationService must satisfy EntityReconciler.
+var _ EntityReconciler = (*kg.ReconciliationService)(nil)
+
 // EntityDereferencer is the subset of kg.ReconciliationService used by EnrichmentWorker.
 // Defined here by the consumer to allow mock injection in tests.
 type EntityDereferencer interface {
@@ -255,6 +264,16 @@ type EntityDereferencer interface {
 
 // compile-time assertion: *kg.ReconciliationService must satisfy EntityDereferencer.
 var _ EntityDereferencer = (*kg.ReconciliationService)(nil)
+
+// KGService combines EntityReconciler and EntityDereferencer for use in NewWorkersWithPool.
+// *kg.ReconciliationService satisfies this interface.
+type KGService interface {
+	EntityReconciler
+	EntityDereferencer
+}
+
+// compile-time assertion: *kg.ReconciliationService must satisfy KGService.
+var _ KGService = (*kg.ReconciliationService)(nil)
 
 // IdentifierUpserter handles upsert of entity identifiers for EnrichmentWorker.
 // Defined here by the consumer to allow mock injection in tests.
@@ -891,7 +910,7 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService *kg.ReconciliationService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string) *river.Workers {
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
