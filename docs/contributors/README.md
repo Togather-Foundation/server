@@ -104,3 +104,7 @@ Interested in how this project uses AI agents for development?
 ---
 
 **Back to:** [Documentation Index](../README.md)
+
+---
+
+**Last Updated:** 2026-02-20

@@ -632,3 +632,7 @@ docker system prune -a
 - **Documentation**: `/docs/deploy/`
 - **Troubleshooting**: `/docs/deploy/troubleshooting.md`
 - **GitHub Issues**: https://github.com/Togather-Foundation/server/issues
+
+---
+
+**Last Updated:** 2026-02-20

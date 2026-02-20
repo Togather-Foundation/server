@@ -304,3 +304,7 @@ psql "$DATABASE_URL" -c "SELECT * FROM api_keys WHERE prefix = '<prefix>';"
 - [Performance Testing](performance-testing.md)
 - [Security Review](../../.opencode/skill/security-review/SKILL.md)
 - [Environment Configuration](deploy-conf.md)
+
+---
+
+**Last Updated:** 2026-02-20

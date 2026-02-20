@@ -749,3 +749,7 @@ See [.env.example](../../.env.example) for full list. Key variables:
 - Documentation: `/opt/togather/docs/`
 - Issues: https://github.com/Togather-Foundation/server/issues
 - Logs: `sudo journalctl -u togather -f`
+
+---
+
+**Last Updated:** 2026-02-20

@@ -827,3 +827,7 @@ All gaps identified during the initial design review have been resolved. This se
 **Was:** `primaryVenueKey` returned either `Location.ID` or `Location.Name` without normalization, so whitespace or casing differences could produce different hashes for the same venue.
 
 **Fix:** `NormalizeVenueKey()` function in `dedup.go` canonicalizes venue keys: uses place ID if available (trimmed), otherwise normalizes name (lowercase, trim, collapse internal whitespace). `BuildDedupHash` also collapses whitespace in the name field. This ensures that `"  The  Rex  "` and `"the rex"` produce the same hash when no ID is available. Note: a submission with a place ID and one with only a name will still produce different hashes, which is inherent to having two different key types. (srv-l6mrz)
+
+---
+
+**Last Updated:** 2026-02-20

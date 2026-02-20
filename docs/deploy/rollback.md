@@ -98,3 +98,7 @@ sudo systemctl reload caddy
 1. Check deployment logs: `~/.togather/logs/deployments/<env>_*.log`
 2. Review deployment state: `/opt/togather/src/deploy/config/deployment-state.json`
 3. Contact the Togather infrastructure team
+
+---
+
+**Last Updated:** 2026-02-20

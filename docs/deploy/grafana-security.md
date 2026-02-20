@@ -297,3 +297,7 @@ I recommend implementing **Option 4 (Link-Only) by default** with **Option 1 (JW
 This gives security by default with opt-in complexity for embedding.
 
 Would you like me to implement this approach?
+
+---
+
+**Last Updated:** 2026-02-20

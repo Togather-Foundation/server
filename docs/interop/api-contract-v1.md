@@ -2,7 +2,6 @@
 
 **Status:** Proposed for Community Review  
 **Version:** 1.0-DRAFT  
-**Last Updated:** 2026-01-27  
 **Authors:** SEL Architecture Working Group (Ryan Kelln, Gemini 3 Pro, Claude Opus 4.5, OpenAI ChatGPT 5.2)
 
 **Note:** Split from togather_SEL_Interoperability_Profile_v0.1.md for clarity
@@ -484,3 +483,7 @@ curl -X POST https://toronto.togather.foundation/api/v1/reconcile/places \
 - **Core Profile:** [core-profile-v0.1.md](./core-profile-v0.1.md) - URI schemes, data models, validation
 - **Federation Protocol:** [federation-v1.md](./federation-v1.md) - Sync protocols (§ 4.3-4.4)
 - **Knowledge Graph Integration:** [knowledge-graphs.md](./knowledge-graphs.md)
+
+---
+
+**Last Updated:** 2026-01-27

@@ -413,3 +413,7 @@ make migrate-river
 - [PostGIS Installation](https://postgis.net/documentation/getting_started/#installing-postgis)
 - [pgvector GitHub](https://github.com/pgvector/pgvector)
 - [PostgreSQL Authentication Methods](https://www.postgresql.org/docs/16/auth-methods.html)
+
+---
+
+**Last Updated:** 2026-02-20

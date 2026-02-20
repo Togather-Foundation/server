@@ -141,3 +141,7 @@ Need to build a SEL-compatible node? See [interop/README.md](../interop/README.m
 ---
 
 **Back to:** [Documentation Index](../README.md)
+
+---
+
+**Last Updated:** 2026-02-20

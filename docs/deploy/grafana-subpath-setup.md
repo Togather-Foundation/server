@@ -234,3 +234,7 @@ sudo cat /etc/caddy/Caddyfile | grep -A 10 grafana
 - [Caddy Documentation: handle vs handle_path](https://caddyserver.com/docs/caddyfile/directives/handle)
 - [SEL Grafana Embedding Guide](./grafana-embedding.md)
 - [SEL Grafana Security Guide](./grafana-security.md)
+
+---
+
+**Last Updated:** 2026-02-20

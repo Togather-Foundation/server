@@ -1,7 +1,6 @@
 # SEL API Documentation
 
 **Version:** 0.1.0  
-**Last Updated:** 2026-01-27  
 **Base URL:** `https://sel.togather.events` (production) or `http://localhost:8080` (development)
 
 ---
@@ -1104,3 +1103,7 @@ def scrape_and_submit(events):
 
 **SEL API Documentation** — Part of the [Togather Foundation](https://togather.foundation)  
 *Building shared infrastructure for event discovery as a public good.*
+
+---
+
+**Last Updated:** 2026-01-27

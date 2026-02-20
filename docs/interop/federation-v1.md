@@ -502,3 +502,7 @@ Advertise capabilities via `/.well-known/sel-profile`.
 **Tests Passing:** ✅ All integration and unit tests pass
 
 **Build Status:** ✅ `go build ./...` succeeds
+
+---
+
+**Last Updated:** 2026-02-20

@@ -587,3 +587,7 @@ curl "https://www.wikidata.org/w/api.php?action=wbsearchentities&search=Massey+H
 **Document Status**: Draft for review  
 **Next Review**: 2026-02-23  
 **Maintainers**: SEL Architecture Working Group
+
+---
+
+**Last Updated:** 2026-02-20

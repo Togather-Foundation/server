@@ -1,7 +1,6 @@
 # SEL Documentation
 
-**Version:** 0.2.1  
-**Last Updated:** 2026-01-27
+**Version:** 0.2.1
 
 Welcome to the Shared Events Library (SEL) documentation. This guide will help you find the right documentation for your needs.
 
@@ -173,3 +172,7 @@ When updating docs:
 
 **SEL Documentation** — Part of the [Togather Foundation](https://togather.foundation)  
 *Building shared infrastructure for event discovery as a public good.*
+
+---
+
+**Last Updated:** 2026-01-27

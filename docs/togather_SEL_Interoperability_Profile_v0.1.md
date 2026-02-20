@@ -1035,3 +1035,7 @@ Example:
 [/docs/togather_SEL_Interoperability_Profile_v0.1.md](./togather_SEL_Interoperability_Profile_v0.1.md)
 /contexts/sel/v0.1.jsonld
 /frames/event-v0.1.frame.json
+
+---
+
+**Last Updated:** 2026-02-20
