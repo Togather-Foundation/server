@@ -49,3 +49,13 @@ Notes for setting up new projects:
    1. `cp .env.example .env`
 2. Update `.env` with your local database credentials and secrets.
 3. Keep `.env` local only (it is gitignored).
+
+## Local Symlinks (not tracked by git)
+
+Some files in `.opencode/` (gitignored) are symlinks to tracked files. Recreate
+them after a fresh clone:
+
+```bash
+# /release command — points to the tracked agents/release.md
+ln -s ../../agents/release.md .opencode/command/release.md
+```
