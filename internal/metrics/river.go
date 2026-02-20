@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,6 +59,7 @@ var (
 type RiverMetricsHook struct {
 	river.HookDefaults
 	Slot      string
+	mu        sync.Mutex          // protects startTime
 	startTime map[int64]time.Time // Track job start times for duration calculation
 }
 
@@ -81,7 +83,9 @@ func (h *RiverMetricsHook) InsertBegin(ctx context.Context, params *rivertype.Jo
 func (h *RiverMetricsHook) WorkBegin(ctx context.Context, job *rivertype.JobRow) error {
 	if h.Slot != "" {
 		RiverJobsInFlight.WithLabelValues(job.Kind, h.Slot).Inc()
+		h.mu.Lock()
 		h.startTime[job.ID] = time.Now()
+		h.mu.Unlock()
 	}
 	return nil
 }
@@ -96,10 +100,16 @@ func (h *RiverMetricsHook) WorkEnd(ctx context.Context, job *rivertype.JobRow, e
 	RiverJobsInFlight.WithLabelValues(job.Kind, h.Slot).Dec()
 
 	// Record duration if we tracked start time
-	if startTime, ok := h.startTime[job.ID]; ok {
+	h.mu.Lock()
+	startTime, ok := h.startTime[job.ID]
+	if ok {
+		delete(h.startTime, job.ID) // Clean up
+	}
+	h.mu.Unlock()
+
+	if ok {
 		duration := time.Since(startTime).Seconds()
 		RiverJobDuration.WithLabelValues(job.Kind, h.Slot).Observe(duration)
-		delete(h.startTime, job.ID) // Clean up
 	}
 
 	// Record completion result

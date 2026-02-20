@@ -120,7 +120,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	// Knowledge graph reconciliation service (srv-titkr)
-	var reconciliationService *kg.ReconciliationService
+	// Use a KGService interface variable (not a typed *kg.ReconciliationService pointer)
+	// to avoid the Go nil-interface trap: a typed nil pointer converts to a non-nil
+	// interface value, causing NewWorkersWithPool to register workers with a nil service.
+	var reconciliationService jobs.KGService
 	if cfg.Artsdata.Enabled {
 		// Create HTTP client with configured timeout
 		artsdataHTTPClient := &http.Client{
