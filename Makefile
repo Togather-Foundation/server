@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check deploy-staging deploy-production rollback-staging rollback-production
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -1144,6 +1144,19 @@ release:
 	echo "(For agent-assisted changelog generation, use /release in OpenCode instead)"; \
 	echo ""; \
 	scripts/release.sh "$$VERSION_CLEAN"
+
+# Dry-run release: validate preconditions and preview CHANGELOG.md diff,
+# but make no permanent changes (no commit, no tag, no push).
+# Usage: make release-dry-run VERSION=0.1.0
+release-dry-run:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: VERSION is required"; \
+		echo "Usage: make release-dry-run VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@VERSION_CLEAN="$(VERSION)"; \
+	VERSION_CLEAN="$${VERSION_CLEAN#v}"; \
+	scripts/release.sh --dry-run "$$VERSION_CLEAN"
 
 # Deploy a specific tagged version to staging.
 # Usage: make deploy-staging VERSION=v0.1.0

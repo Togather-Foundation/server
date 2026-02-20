@@ -165,10 +165,14 @@ else
         warn "A CI run is still in progress for HEAD: '$IN_PROGRESS_RUN'"
         warn "Consider waiting for it to complete before releasing."
         echo ""
-        read -p "Continue anyway? [y/N] " -n 1 -r REPLY
-        echo ""
-        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
-            fail "Aborted. Wait for CI to complete and re-run."
+        if [[ "$DRY_RUN" == "true" ]]; then
+            dryinfo "Continuing in dry-run mode."
+        else
+            read -p "Continue anyway? [y/N] " -n 1 -r REPLY
+            echo ""
+            if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+                fail "Aborted. Wait for CI to complete and re-run."
+            fi
         fi
     elif [[ "$MATCHING_RUN" == "success" ]]; then
         success "GitHub Actions CI passed for HEAD commit"
@@ -176,17 +180,24 @@ else
         fail "GitHub Actions CI FAILED for HEAD commit.\nFix CI failures before releasing.\nhttps://github.com/Togather-Foundation/server/actions"
     elif [[ "$MATCHING_RUN" == "cancelled" ]]; then
         warn "Most recent CI run was cancelled for HEAD."
-        read -p "Continue anyway? [y/N] " -n 1 -r REPLY
-        echo ""
-        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
-            fail "Aborted."
+        if [[ "$DRY_RUN" == "true" ]]; then
+            dryinfo "Continuing in dry-run mode."
+        else
+            read -p "Continue anyway? [y/N] " -n 1 -r REPLY
+            echo ""
+            if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+                fail "Aborted."
+            fi
         fi
     else
         warn "No completed CI run found for HEAD commit (${CURRENT_SHA:0:7})"
         warn "This may be the first run, or CI hasn't run yet."
         echo ""
-        read -p "Continue without CI verification? [y/N] " -n 1 -r REPLY
-        echo ""
+        if [[ "$DRY_RUN" == "true" ]]; then
+            dryinfo "Continuing in dry-run mode."
+        else
+            read -p "Continue without CI verification? [y/N] " -n 1 -r REPLY
+            echo ""
         if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
             fail "Aborted. Push a commit to trigger CI, wait for it to pass, then re-run."
         fi
