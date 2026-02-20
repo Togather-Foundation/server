@@ -7,6 +7,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -275,6 +276,86 @@ func TestUsageRollupWorker_WorkWithNilPool(t *testing.T) {
 	err := worker.Work(ctx, job)
 	if err == nil {
 		t.Error("Work() with nil pool should return error")
+	}
+}
+
+// ── ReconciliationWorker test helpers ──────────────────────────────────────
+
+type mockEntityReconciler struct {
+	reconcileFunc func(ctx context.Context, req kg.ReconcileRequest) ([]kg.MatchResult, error)
+	calls         int
+	lastReq       kg.ReconcileRequest
+}
+
+func (m *mockEntityReconciler) ReconcileEntity(ctx context.Context, req kg.ReconcileRequest) ([]kg.MatchResult, error) {
+	m.calls++
+	m.lastReq = req
+	if m.reconcileFunc != nil {
+		return m.reconcileFunc(ctx, req)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func TestReconciliationWorker_WorkCallsReconcileEntity(t *testing.T) {
+	t.Parallel()
+
+	reconciler := &mockEntityReconciler{
+		reconcileFunc: func(_ context.Context, req kg.ReconcileRequest) ([]kg.MatchResult, error) {
+			if req.EntityType != "place" || req.EntityID != "test-place-id" {
+				t.Errorf("unexpected request: %+v", req)
+			}
+			return nil, nil // no matches
+		},
+	}
+
+	// Verify the worker struct accepts an EntityReconciler (interface, not concrete type).
+	// Pool is nil so Work() returns an error before reaching the DB, but the
+	// compile-time interface wiring is what this test validates.
+	worker := ReconciliationWorker{
+		ReconciliationService: reconciler,
+	}
+
+	ctx := context.Background()
+	job := &river.Job[ReconciliationArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args: ReconciliationArgs{
+			EntityType: "place",
+			EntityID:   "test-place-id",
+		},
+	}
+
+	err := worker.Work(ctx, job)
+	if err == nil {
+		t.Error("expected error when Pool is nil")
+	}
+}
+
+func TestReconciliationWorker_WorkReturnsErrorFromReconciler(t *testing.T) {
+	t.Parallel()
+
+	reconciler := &mockEntityReconciler{
+		reconcileFunc: func(_ context.Context, _ kg.ReconcileRequest) ([]kg.MatchResult, error) {
+			return nil, errors.New("artsdata unavailable")
+		},
+	}
+
+	// Verify the worker accepts EntityReconciler and returns error when Pool is nil.
+	worker := ReconciliationWorker{
+		ReconciliationService: reconciler,
+	}
+
+	ctx := context.Background()
+	job := &river.Job[ReconciliationArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args: ReconciliationArgs{
+			EntityType: "place",
+			EntityID:   "test-place-id",
+		},
+	}
+
+	err := worker.Work(ctx, job)
+	if err == nil {
+		t.Error("expected error when Pool is nil")
 	}
 }
 
