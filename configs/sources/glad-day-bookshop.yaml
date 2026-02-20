@@ -1,0 +1,8 @@
+name: "glad-day-bookshop"
+url: "https://www.gladdaybookshop.com/events"
+tier: 0
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

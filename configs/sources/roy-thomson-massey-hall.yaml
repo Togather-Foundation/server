@@ -1,0 +1,8 @@
+name: "roy-thomson-massey-hall"
+url: "https://www.roythomson.com/calendar/"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 5

@@ -1,0 +1,105 @@
+# Togather SEL — Source Configuration Template
+# =============================================
+# Copy this file (without the _ prefix) to create a new source.
+# File naming: use lowercase, hyphens, no spaces. E.g.: toronto-symphony.yaml
+#
+# TIER 0 (JSON-LD extraction — preferred, zero config needed):
+#   Works automatically on any site that embeds schema.org/Event JSON-LD.
+#   No selectors needed. Test first: server scrape url <URL> --dry-run
+#
+# TIER 1 (Colly CSS selector scraping):
+#   Required for sites without JSON-LD.
+#   Must specify selectors for each field to extract.
+#
+# --- TIER 0 EXAMPLE ---
+#
+# name: "my-venue"
+# url: "https://myvenue.ca/events"
+# tier: 0
+# schedule: "daily"
+# trust_level: 7
+# license: "CC0-1.0"
+# enabled: true
+# max_pages: 5
+#
+# --- TIER 1 EXAMPLE ---
+#
+# name: "my-venue"
+# url: "https://myvenue.ca/events"
+# tier: 1
+# schedule: "weekly"
+# trust_level: 6
+# license: "CC0-1.0"
+# enabled: true
+# max_pages: 3
+# selectors:
+#   event_list: "div.event-card"
+#   name: "h2.event-title"
+#   start_date: "time[datetime]"
+#   end_date: "time.end-date[datetime]"
+#   location: "span.venue-name"
+#   description: "p.event-description"
+#   url: "a.event-link"
+#   image: "img.event-image"
+#   pagination: "a.next-page"
+
+# --- REQUIRED FIELDS ---
+
+# name: Unique identifier for this source (used in CLI commands).
+# Must be lowercase with hyphens, no spaces.
+name: "example-venue"
+
+# url: The events listing page to scrape.
+url: "https://example.com/events"
+
+# tier: Extraction method to use.
+#   0 = JSON-LD (automatic, no selectors needed)
+#   1 = CSS selectors (requires selectors block below)
+tier: 0
+
+# --- OPTIONAL FIELDS ---
+
+# schedule: How often to scrape (for future scheduling support).
+# Values: "daily", "weekly", "manual" (default: "manual")
+schedule: "daily"
+
+# trust_level: Source data quality/trustworthiness (1–10, default: 5).
+# Higher values give this source priority in conflict resolution.
+# 8–10: Official institutional sources (symphony, museum, library)
+# 5–7: Community venues, established arts orgs
+# 1–4: User-generated, aggregator, or uncertain provenance
+trust_level: 7
+
+# license: Default license for events from this source.
+# Most scraper sources should be CC0 or CC-BY — verify before setting.
+# If unknown, omit this field (defaults to empty / unset).
+license: "CC0-1.0"
+
+# enabled: Set to false to temporarily disable without deleting the file.
+enabled: true
+
+# event_url_pattern: Only follow links matching this glob pattern (Tier 1).
+# Useful to avoid scraping non-event pages during pagination.
+# Example: "/events/*"
+# event_url_pattern: "/events/*"
+
+# max_pages: Safety limit for pagination to prevent runaway crawls (default: 10).
+# Set lower for sites with deep pagination you don't need.
+max_pages: 5
+
+# --- TIER 1 SELECTORS ---
+# Only required when tier: 1
+# Use CSS selectors. For start_date/end_date, prefer elements with datetime
+# attributes (e.g. <time datetime="2026-03-15">); the scraper will use the
+# datetime attr value when present, falling back to element text.
+#
+# selectors:
+#   event_list: "div.event-card"         # Container wrapping each event
+#   name: "h2.event-title"              # Event name/title
+#   start_date: "time[datetime]"         # Start date (prefers datetime attr)
+#   end_date: "time.end-date[datetime]"  # End date (optional)
+#   location: "span.venue-name"          # Location/venue name
+#   description: "p.event-description"  # Description text
+#   url: "a.event-link"                  # Link to event detail page
+#   image: "img.event-image"             # Event image
+#   pagination: "a.next-page"            # Pagination "next" link (optional)
