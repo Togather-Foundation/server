@@ -204,7 +204,7 @@ sudo ./install.sh
 
 ## Local Development
 
-Local development setup is documented in `docs/contributors/DEVELOPMENT.md` and `docs/contributors/POSTGRESQL_SETUP.md`.
+Local development setup is documented in `docs/contributors/development.md` and `docs/contributors/postgresql-setup.md`.
 
 ---
 

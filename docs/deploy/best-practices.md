@@ -396,7 +396,7 @@ TLS_KEY_FILE=/path/to/private.key
 
 **Caddy TLS:**
 
-TLS is handled by Caddy automatically when it terminates HTTPS. See `docs/deploy/caddy-deployment.md` for the default config and operational guidance.
+TLS is handled by Caddy automatically when it terminates HTTPS. See [Caddy Guide](caddy.md) for the default config and operational guidance.
 
 ### Rate Limiting
 

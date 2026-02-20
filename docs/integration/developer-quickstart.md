@@ -145,7 +145,7 @@ Response shows key prefixes (not full keys), usage stats, and last used time.
 
 ### Submit an Event
 
-See [API_GUIDE.md](API_GUIDE.md#event-submission) for complete event submission documentation.
+See [api-guide.md](api-guide.md#event-submission) for complete event submission documentation.
 
 **Minimal event:**
 ```json
@@ -271,10 +271,10 @@ Currently, password reset is handled by admins. Contact [info@togather.foundatio
 
 ## Next Steps
 
-- **Complete API Reference:** [API_GUIDE.md](API_GUIDE.md)
-- **Authentication Details:** [AUTHENTICATION.md](AUTHENTICATION.md#developer-self-service)
-- **Event Scraper Best Practices:** [SCRAPERS.md](SCRAPERS.md)
-- **Security Guidelines:** [../contributors/SECURITY.md](../contributors/SECURITY.md)
+- **Complete API Reference:** [api-guide.md](api-guide.md)
+- **Authentication Details:** [authentication.md](authentication.md#developer-self-service)
+- **Event Scraper Best Practices:** [scrapers.md](scrapers.md)
+- **Security Guidelines:** [../contributors/security.md](../contributors/security.md)
 
 ---
 

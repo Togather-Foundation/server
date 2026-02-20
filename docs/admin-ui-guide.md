@@ -619,13 +619,7 @@ This section provides a quick overview of the UI. For detailed workflows, troubl
 
 ### User Roles
 
-The system supports three role levels with progressive permissions:
-
-| Role | Permissions | Use Case |
-|------|-------------|----------|
-| **Admin** | Full access: manage events, users, API keys, federation nodes | Site administrators, project leads |
-| **Editor** | Create/edit events, review duplicates, view reports | Content managers, event curators |
-| **Viewer** | Read-only access to events and reports | Auditors, stakeholders, analysts |
+For a description of the admin, editor, and viewer roles and their permissions, see [User Management Guide](admin/user-management.md#user-roles).
 
 **Role Badge Colors:**
 ```html
@@ -638,22 +632,7 @@ The system supports three role levels with progressive permissions:
 
 ### User States
 
-Users can be in one of three states:
-
-1. **Pending Invitation** (Yellow badge)
-   - User created but hasn't accepted invitation
-   - Cannot log in yet
-   - Invitation link expires in 7 days
-
-2. **Active** (Green badge)
-   - Invitation accepted and password set
-   - Can log in and perform role-based actions
-   - Normal operational state
-
-3. **Inactive** (Gray badge)
-   - Account deactivated by admin
-   - Cannot log in
-   - Data preserved for audit trail
+For a description of user lifecycle states (Pending Invitation, Active, Inactive), see [User Management Guide](admin/user-management.md#user-states).
 
 **State Badges:**
 ```html

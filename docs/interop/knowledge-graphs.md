@@ -4,9 +4,9 @@
 **Date:** 2026-01-23  
 **Status:** Living Document  
 **Related Documents:**
-- [SEL Schema Design](../contributors/DATABASE.md)
-- [SEL Core Profile](./CORE_PROFILE_v0.1.md)
-- [Artsdata Integration Guide](./ARTSDATA.md)
+- [SEL Schema Design](../contributors/database.md)
+- [SEL Core Profile](./core-profile-v0.1.md)
+- [Artsdata Integration Guide](./artsdata.md)
 
 ---
 
@@ -49,7 +49,7 @@ The SEL integrates with the following knowledge graphs, registered in the `knowl
 
 ### 1.2 Authority Registry Schema
 
-See [Schema Design § 5.1](../contributors/DATABASE.md#51-knowledge-graph-authorities-registry) for the complete `knowledge_graph_authorities` table definition.
+See [Schema Design § 5.1](../contributors/database.md#51-knowledge-graph-authorities-registry) for the complete `knowledge_graph_authorities` table definition.
 
 **Key Fields:**
 - `authority_code`: Unique identifier (e.g., `artsdata`, `wikidata`)
@@ -64,7 +64,7 @@ See [Schema Design § 5.1](../contributors/DATABASE.md#51-knowledge-graph-author
 
 ### 2.1 Domain-Based Routing
 
-Events are categorized by `event_domain` field (see [Schema § 1.1](../contributors/DATABASE.md#11-events-table)):
+Events are categorized by `event_domain` field (see [Schema § 1.1](../contributors/database.md#11-events-table)):
 
 | Event Domain | Primary Graphs | Fallback Graphs | Notes |
 |--------------|----------------|-----------------|-------|
@@ -218,7 +218,7 @@ When multiple authorities provide identifiers for the same entity, use the follo
 
 When different graphs provide conflicting information (e.g., different venue names):
 
-1. Use field-level provenance tracking (see [Schema § 3](../contributors/DATABASE.md#3-provenance-and-source-tracking))
+1. Use field-level provenance tracking (see [Schema § 3](../contributors/database.md#3-provenance-and-source-tracking))
 2. Apply trust-weighted conflict resolution
 3. Store all versions with provenance metadata
 4. Expose conflicts via admin UI for manual review

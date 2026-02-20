@@ -484,8 +484,8 @@ GITHUB_ALLOWED_ORGS=org1,org2,org3  # Restrict to org members
 
 ### Related Documentation
 
-- **Authentication guide**: [docs/integration/AUTHENTICATION.md](../integration/AUTHENTICATION.md)
-- **Developer quickstart**: [docs/integration/DEVELOPER_QUICKSTART.md](../integration/DEVELOPER_QUICKSTART.md)
+- **Authentication guide**: [docs/integration/authentication.md](../integration/authentication.md)
+- **Developer quickstart**: [docs/integration/developer-quickstart.md](../integration/developer-quickstart.md)
 
 ---
 

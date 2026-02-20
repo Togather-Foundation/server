@@ -123,6 +123,10 @@ Users can be in one of these states:
 3. Email contains a secure invitation link (valid for 7 days)
 4. User must click the link and set a password to activate their account
 
+### User Experience: Accepting the Invitation
+
+The invited user receives an email with subject "You've been invited to SEL Admin". The email contains a link to `/admin/accept-invitation?token=...` where they can set their password (minimum 12 characters, must include uppercase, lowercase, number, and special character). Once they submit the form, their account becomes active and they can log in.
+
 ### API Endpoint
 
 ```bash

@@ -6,7 +6,7 @@
 
 This document provides best practices for building event scrapers that integrate with the Togather SEL API. It covers idempotency patterns, duplicate handling, error handling, and operational considerations.
 
-For authentication details, see [AUTHENTICATION.md](AUTHENTICATION.md). For API reference, see [API_GUIDE.md](API_GUIDE.md).
+For authentication details, see [authentication.md](authentication.md). For API reference, see [api-guide.md](api-guide.md).
 
 ---
 
@@ -697,8 +697,8 @@ Example scrapers live in `docs/integration/examples/`:
 
 ## Next Steps
 
-- [AUTHENTICATION.md](AUTHENTICATION.md) - API key management and authentication
-- [API_GUIDE.md](API_GUIDE.md) - Complete API endpoint reference
+- [authentication.md](authentication.md) - API key management and authentication
+- [api-guide.md](api-guide.md) - Complete API endpoint reference
 - [examples/](examples/) - Scraper examples in multiple languages
 
 **Document Version**: 0.1.0

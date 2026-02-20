@@ -430,11 +430,11 @@ nano .env
 docker compose -f deploy/docker/docker-compose.yml restart app
 ```
 
-**See [Caddy Deployment Guide](caddy-deployment.md) for production blue-green deployments.**
+**See [Caddy Guide](caddy.md) for production blue-green deployments.**
 
 ### Option 2: Caddy (Recommended)
 
-Use Caddy for automatic HTTPS and simpler config. See [Caddy Deployment Guide](caddy-deployment.md).
+Use Caddy for automatic HTTPS and simpler config. See [Caddy Guide](caddy.md).
 
 ---
 

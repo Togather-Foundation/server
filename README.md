@@ -110,9 +110,9 @@ curl -X POST https://toronto.togather.foundation/api/v1/events \
 
 ### Comprehensive Guides
 
-- **[Developer Quick Start](docs/integration/DEVELOPER_QUICKSTART.md)** - 4-step onboarding guide
-- **[Authentication Guide](docs/integration/AUTHENTICATION.md)** - API keys, JWT tokens, and security
-- **[API Guide](docs/integration/API_GUIDE.md)** - Endpoint reference and examples
+- **[Developer Quick Start](docs/integration/developer-quickstart.md)** - 4-step onboarding guide
+- **[Authentication Guide](docs/integration/authentication.md)** - API keys, JWT tokens, and security
+- **[API Guide](docs/integration/api-guide.md)** - Endpoint reference and examples
 
 ---
 
@@ -144,17 +144,17 @@ make build
 ./server setup
 ```
 
-**Docs:** [docs/contributors/DEVELOPMENT.md](docs/contributors/DEVELOPMENT.md) · [docs/contributors/POSTGRESQL_SETUP.md](docs/contributors/POSTGRESQL_SETUP.md)
+**Docs:** [docs/contributors/development.md](docs/contributors/development.md) · [docs/contributors/postgresql-setup.md](docs/contributors/postgresql-setup.md)
 
 
 ## Documentation & Contributor Resources
 
 - [SEL Documentation](docs/README.md) - Landing page for contributors, integrators, and node builders
-- [Architecture Guide](docs/contributors/ARCHITECTURE.md) - System design and core patterns
-- [Development Guide](docs/contributors/DEVELOPMENT.md) - Standards, tools, and workflows
-- [Database Guide](docs/contributors/DATABASE.md) - Schema and migrations
-- [Testing Guide](docs/contributors/TESTING.md) - TDD workflow and test commands
-- [Security Guide](docs/contributors/SECURITY.md) - Security model and practices
+- [Architecture Guide](docs/contributors/architecture.md) - System design and core patterns
+- [Development Guide](docs/contributors/development.md) - Standards, tools, and workflows
+- [Database Guide](docs/contributors/database.md) - Schema and migrations
+- [Testing Guide](docs/contributors/testing.md) - TDD workflow and test commands
+- [Security Guide](docs/contributors/security.md) - Security model and practices
 - [Integration Guides](docs/integration/README.md) - API usage and scraper guidance
 - [Development Velocity](docs/contributors/meta/agent_workflows.md) - Collaboration highlights and delivery pace
 

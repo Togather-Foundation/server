@@ -6,7 +6,7 @@
 
 This document provides comprehensive authentication and authorization guidance for integrating with the Togather SEL API. It covers API key management, role-based access control, rate limiting, and security best practices.
 
-For API endpoint details, see [API_GUIDE.md](API_GUIDE.md). For security architecture, see [../contributors/SECURITY.md](../contributors/SECURITY.md).
+For API endpoint details, see [api-guide.md](api-guide.md). For security architecture, see [../contributors/security.md](../contributors/security.md).
 
 ---
 
@@ -1109,9 +1109,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ---
 
 **Next Steps:**
-- [API_GUIDE.md](API_GUIDE.md) - Complete API endpoint reference
-- [SCRAPERS.md](SCRAPERS.md) - Event scraper best practices
-- [../contributors/SECURITY.md](../contributors/SECURITY.md) - Security architecture
+- [api-guide.md](api-guide.md) - Complete API endpoint reference
+- [scrapers.md](scrapers.md) - Event scraper best practices
+- [../contributors/security.md](../contributors/security.md) - Security architecture
 
 **Document Version**: 0.1.0  
 **Last Updated**: 2026-01-27  

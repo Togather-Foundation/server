@@ -12,7 +12,7 @@ API keys are **infrastructure configuration**, not deployment artifacts. They sh
 
 **Key Creation Methods:**
 
-1. **Developer Self-Service** (recommended for application developers): Developers create and manage their own keys through the developer portal. See [Developer Self-Service](../integration/AUTHENTICATION.md#developer-self-service) for details.
+1. **Developer Self-Service** (recommended for application developers): Developers create and manage their own keys through the developer portal. See [Developer Self-Service](../integration/authentication.md#developer-self-service) for details.
 
 2. **CLI/Admin Creation** (for infrastructure and testing): Admins create keys via the `server api-key` command for infrastructure services, testing, and special purposes.
 
@@ -143,6 +143,20 @@ curl -H "Authorization: Bearer 01NEW..." https://staging.../api/v1/events
 ```
 
 ## Testing API Keys
+
+### Verify Keys in Database
+
+```bash
+# On remote server
+source .env.staging
+psql "$DATABASE_URL" -c "SELECT prefix, role, name FROM api_keys;"
+
+# Expected output:
+#            prefix           | role  |         name
+# ----------------------------+-------+-----------------------
+#  01KGJZ3V49SKAPRK99NTT5PF5W | admin | Staging Test Admin
+#  01KGJZ40ZG0WQ5SQKCKA6VEH79 | agent | Staging Test Agent
+```
 
 ### Manual Test
 ```bash
@@ -284,8 +298,8 @@ psql "$DATABASE_URL" -c "SELECT * FROM api_keys WHERE prefix = '<prefix>';"
 
 ## See Also
 
-- [Developer Self-Service](../integration/AUTHENTICATION.md#developer-self-service) - How developers create and manage their own API keys
-- [Authentication Guide](../integration/AUTHENTICATION.md) - Complete authentication documentation
+- [Developer Self-Service](../integration/authentication.md#developer-self-service) - How developers create and manage their own API keys
+- [Authentication Guide](../integration/authentication.md) - Complete authentication documentation
 - [Deployment Guide](deployment-testing.md)
 - [Performance Testing](../testing/performance-testing.md)
 - [Security Review](../../.opencode/skill/security-review/SKILL.md)

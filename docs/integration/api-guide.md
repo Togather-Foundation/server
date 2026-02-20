@@ -93,7 +93,7 @@ Authorization: Bearer your-api-key-here
 4. Navigate to API Keys and create a new key
 5. Copy the key immediately (shown only once)
 
-See [Developer Self-Service](AUTHENTICATION.md#developer-self-service) for complete details.
+See [Developer Self-Service](authentication.md#developer-self-service) for complete details.
 
 **For Administrators:**
 
@@ -1088,10 +1088,10 @@ def scrape_and_submit(events):
 
 ## See Also
 
-- [SEL Core Profile](../interop/CORE_PROFILE_v0.1.md) - Detailed JSON-LD specifications
-- [Security Model](../contributors/SECURITY.md) - Authentication and security practices
-- [Development Guide](../contributors/DEVELOPMENT.md) - For contributors
-- [Schema Design](../contributors/DATABASE.md) - Database schema and provenance model
+- [SEL Core Profile](../interop/core-profile-v0.1.md) - Detailed JSON-LD specifications
+- [Security Model](../contributors/security.md) - Authentication and security practices
+- [Development Guide](../contributors/development.md) - For contributors
+- [Schema Design](../contributors/database.md) - Database schema and provenance model
 
 ---
 
