@@ -158,16 +158,6 @@ The webfiles automation is integrated into the deployment pipeline:
 4. **Health checks**: Deployment validates server is healthy before traffic switch
 5. **Smoke tests**: Can be run post-deployment to verify correctness
 
-## Future Enhancements
-
-Potential improvements for future iterations:
-
-1. **Dynamic sitemap**: Generate sitemap with actual event/place/org URLs from database
-2. **Sitemap index**: Split large sitemaps into multiple files with an index
-3. **Cache headers**: Optimize caching based on update frequency
-4. **Validation**: Add XML schema validation in smoke tests
-5. **SEO optimization**: Add additional SEO meta tags and structured data
-
 ---
 
 **Last Updated:** 2026-02-20

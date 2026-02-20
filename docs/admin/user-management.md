@@ -1076,7 +1076,6 @@ This is civic infrastructure. Good user management practices help:
 
 - [Email Setup Guide](email-setup.md) - Configure SMTP for sending invitation emails
 - [Admin Users API Reference](../api/admin-users.md) - Complete API endpoint documentation
-- [User Administration Plan](user-administration-plan.md) - Technical implementation details
 - [SEL Interoperability Profile](../togather_SEL_Interoperability_Profile_v0.1.md) - SEL specification and requirements
 
 ---

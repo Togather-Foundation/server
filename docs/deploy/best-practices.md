@@ -5,15 +5,14 @@ Best practices and operational guidelines for deploying and maintaining Togather
 ## Table of Contents
 
 1. [Pre-Deployment Checklist](#pre-deployment-checklist)
-2. [Deployment Timing](#deployment-timing)
-3. [Monitoring and Observability](#monitoring-and-observability)
-4. [Rollback Procedures](#rollback-procedures)
-5. [Security Best Practices](#security-best-practices)
-6. [Database Management](#database-management)
-7. [Configuration Management](#configuration-management)
-8. [Incident Response](#incident-response)
-9. [Performance Optimization](#performance-optimization)
-10. [Maintenance Windows](#maintenance-windows)
+2. [Monitoring and Observability](#monitoring-and-observability)
+3. [Rollback Procedures](#rollback-procedures)
+4. [Security Best Practices](#security-best-practices)
+5. [Database Management](#database-management)
+6. [Configuration Management](#configuration-management)
+7. [Incident Response](#incident-response)
+8. [Performance Optimization](#performance-optimization)
+9. [Maintenance Windows](#maintenance-windows)
 
 ---
 
@@ -78,45 +77,6 @@ cd deploy/scripts
 # ✓ Sufficient disk space for snapshots
 # ✓ No existing deployment locks
 ```
-
----
-
-## Deployment Timing
-
-### Recommended Deployment Windows
-
-**Production:**
-- **Best**: Tuesday-Thursday, 10am-2pm local time
-- **Avoid**: Friday afternoons, weekends, holidays
-- **Never**: During peak traffic hours or critical events
-
-**Why Tuesday-Thursday?**
-- Monday: Let weekend issues surface first
-- Friday: Limited time for incident response
-- Tuesday-Thursday: Full team available, adequate recovery time
-
-### Traffic Considerations
-
-Check traffic patterns before deploying:
-
-```bash
-# Example: Check current load
-docker stats togather-production-blue
-
-# If CPU >70% or Memory >80%, consider waiting
-# Blue-green deployments cause temporary 2x resource usage
-```
-
-**Deployment Impact:**
-- During switch: ~5 seconds of dual resource usage
-- New container warm-up: ~30 seconds
-- Database connection pool initialization: ~10 seconds
-
-**Safe to deploy when:**
-- CPU usage <70%
-- Memory usage <80%
-- Response times normal (<500ms p95)
-- Error rate <1%
 
 ---
 
@@ -724,32 +684,6 @@ curl http://localhost:8080/health | jq '.status'  # Should be "healthy"
 - Identify root cause
 - List action items to prevent recurrence
 - Update runbooks if needed
-
-### Incident Communication Template
-
-```
-**Incident Update**
-
-**Status:** [Investigating/Identified/Monitoring/Resolved]
-**Severity:** [SEV1/SEV2/SEV3]
-**Impact:** [What's affected, % of users impacted]
-
-**What happened:**
-[Brief description of the issue]
-
-**What we're doing:**
-[Actions being taken]
-
-**Next update:**
-[Time of next update]
-
-**Timeline:**
-- [HH:MM] Issue detected
-- [HH:MM] On-call paged
-- [HH:MM] Root cause identified
-- [HH:MM] Fix applied
-- [HH:MM] Service restored
-```
 
 ---
 

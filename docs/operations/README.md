@@ -10,4 +10,4 @@ Operational monitoring and observability guides for Togather SEL server.
 
 - **[Monitoring](../deploy/monitoring.md)** - Prometheus and Grafana observability setup
 - **[Log Management](../deploy/log-management.md)** - Structured logging and log analysis
-- **[Grafana Setup](../deploy/grafana-subpath-setup.md)** - Configure Grafana for staging/production
+- **[Grafana](../deploy/grafana.md)** - Grafana configuration, subpath proxy, embedding, and security

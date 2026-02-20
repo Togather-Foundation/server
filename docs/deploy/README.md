@@ -45,15 +45,10 @@ New to deployment? Start here:
 ### CI/CD & Automation
 
 - **[CI/CD Integration](ci-cd.md)** - GitHub Actions, GitLab CI, Jenkins examples
+
 ### Grafana
 
-Recommended reading order: security first, then setup, then dashboards and embedding.
-
-- **[Grafana Security](grafana-security.md)** - Secure embedding options and tradeoffs (start here)
-- **[Grafana Localhost Security](grafana-localhost-security.md)** - Analysis of localhost-only binding for server-side embedding
-- **[Grafana Subpath Setup](grafana-subpath-setup.md)** - Configure Grafana at the `/grafana` subpath on staging/production
-- **[Grafana Embedding](grafana-embedding.md)** - Embed Grafana dashboards in the SEL Admin UI
-- **[Grafana Dashboard Guidelines](grafana-dashboard-guidelines.md)** - Color scheme and design standards for blue/green deployment monitoring dashboards
+- **[Grafana](grafana.md)** - Configuration, Docker setup, subpath proxy, embedding, security, dashboard guidelines, and troubleshooting
 
 ## Deployment Architecture
 

@@ -1,34 +1,14 @@
 # Unified Duplicate Detection & Review Workflow
 
-**Bead:** srv-mka  
-**Status:** Design  
-**Date:** 2026-02-11
-
-## Problem
-
-Duplicate detection and the review queue are two separate systems that should be unified:
-
-1. **Dedup hash is broken**: The `events.dedup_hash` column is `GENERATED ALWAYS` (MD5 of `name|venue_id|series_id`), but the application computes SHA256 of `name|venue_name|start_date`. `FindByDedupHash()` searches for the app hash, but the DB overwrites it with its own MD5. They never match. Cross-source duplicates slip through.
-
-2. **Duplicates are silently swallowed**: When the dedup hash matches (if it worked), the duplicate is dropped with no record. No data merging occurs, so better data from a second source is lost.
-
-3. **No near-duplicate detection**: Events with slightly different names for the same real-world event (different scrapers, different formatting) produce different hashes and are treated as separate events.
-
-4. **No place/org dedup**: Places and organizations use name-based upsert but have no fuzzy matching. "The Rex Jazz Bar" and "Rex Hotel Jazz & Blues Bar" create separate place records.
-
-5. **Duplicates admin page is a stub**: The `ListDuplicates` API returns `[]`. The frontend exists but shows nothing.
-
 ## Design Principles
 
 - **Err on the side of review** — flag uncertain cases for human/LLM review rather than auto-deciding
 - **Minimize human labor** — auto-merge when confidence is high; nodes are volunteer-run
 - **Trust-based data merging** — sources have trust levels (1-10); higher-trust data wins, but any source can fill gaps
 - **Configurable thresholds** — similarity thresholds are config values, not hardcoded
-- **LLM-ready API** — review queue API should be consumable by an automated LLM reviewer
+- **LLM-ready API** — review queue API is consumable by an automated LLM reviewer
 
-## Architecture
-
-### Ingestion Flow (revised)
+## Ingestion Flow
 
 ```
 Event arrives →
@@ -48,7 +28,7 @@ Event arrives →
   7. If clean → publish
 ```
 
-### Auto-Merge Strategy (exact dedup hash match)
+## Auto-Merge Strategy (exact dedup hash match)
 
 When two events have identical dedup hashes (same normalized name, same venue, same start date) from different sources:
 
@@ -61,11 +41,9 @@ For each field on the existing event:
 
 Fields subject to merge: `description`, `image_url`, `public_url`, `keywords`, `in_language`, `is_accessible_for_free`, `event_status`, `attendance_mode`.
 
-Occurrences are NOT duplicated — the existing occurrence set is kept.
+Occurrences are not duplicated — the existing occurrence set is kept. The new source is recorded via a new `event_source` provenance entry linking the source to the existing event.
 
-The new source is recorded via a new `event_source` provenance entry linking the source to the existing event.
-
-### Near-Duplicate Detection
+## Near-Duplicate Detection
 
 After the exact hash check fails, query for potential duplicates:
 
@@ -73,23 +51,22 @@ After the exact hash check fails, query for potential duplicates:
 SELECT e.ulid, e.name, e.dedup_hash
 FROM events e
 JOIN event_occurrences o ON o.event_id = e.id
-JOIN places p ON p.id = e.primary_venue_id
 WHERE e.lifecycle_state NOT IN ('deleted')
-  AND e.primary_venue_id = $venue_id       -- same venue
-  AND o.start_time::date = $start_date     -- same date
-  AND similarity(e.name, $name) > $threshold  -- fuzzy name match
+  AND e.primary_venue_id = $venue_id
+  AND o.start_time::date = $start_date
+  AND similarity(e.name, $name) > $threshold
 ORDER BY similarity(e.name, $name) DESC
 LIMIT 5;
 ```
 
-This uses `pg_trgm`'s `similarity()` function. The threshold is configurable (default: 0.4).
+Uses `pg_trgm`'s `similarity()` function. Threshold is configurable (default: 0.4).
 
 When candidates are found, the event enters the review queue with a `potential_duplicate` warning containing:
 - `duplicate_of_ulid` — the candidate event's ULID
 - `similarity_score` — the trigram similarity score
 - `candidate_name` — the candidate event's name (for display)
 
-### Place & Organization Dedup
+## Place & Organization Dedup
 
 During ingestion, before upserting a place/org, check for fuzzy matches:
 
@@ -105,81 +82,67 @@ LIMIT 3;
 
 **Behavior by similarity score (configurable):**
 - `>= auto_merge_threshold` (default 0.95): Auto-merge — use the existing place/org, fill gaps
-- `>= review_threshold` (default 0.6): Flag event for review with `place_possible_duplicate` warning
-- `< review_threshold`: No match — create new place/org as usual
+- `>= review_threshold` (default 0.6): Flag event for review with warning
+- `< review_threshold`: No match — create new place/org
 
-Place/Org merge:
+**Merge operations:**
 - `MergePlaces(duplicate_id, primary_id)`: Reassign all events referencing the duplicate to the primary. Fill gaps on primary from duplicate fields. Soft-delete duplicate.
 - `MergeOrganizations(duplicate_id, primary_id)`: Same pattern.
 
-### Review Queue Changes
+Both operations use `SELECT ... FOR UPDATE SKIP LOCKED` to handle concurrent ingestion races. `MergeEvents` includes transitive chain resolution via a recursive CTE (max depth 10) to flatten merge chains.
 
-**New review warning codes:**
+## Review Queue Integration
+
+### New warning codes
+
 - `potential_duplicate` — event may be a duplicate of another event
 - `place_possible_duplicate` — event's venue may be a duplicate of an existing place
 - `org_possible_duplicate` — event's organizer may be a duplicate of an existing org
 
-**New review action: Merge**
-- `POST /api/v1/admin/review-queue/{id}/merge` 
-- Body: `{ "merge_into": "<target_event_ulid>" }`
-- Merges the review event's data into the target using trust-based strategy
-- Soft-deletes the review event, creates tombstone
-- Marks review entry as resolved with status `merged`
+### Merge action
 
-**New review action: Keep Separate**
-- `POST /api/v1/admin/review-queue/{id}/approve` (existing, reused)
-- Approves the event as non-duplicate
-- Future: could record a `not_duplicate_of` entry to prevent re-flagging (deferred)
+```
+POST /api/v1/admin/review-queue/{id}/merge
+Body: {"merge_into": "<target_event_ulid>"}
+```
 
-**New review queue field:**
-- `duplicate_of_event_id UUID` — references the candidate event for duplicate reviews
-- Nullable; only set when the review reason includes `potential_duplicate`
+Merges the review event's data into the target using the trust-based merge strategy. Soft-deletes the review event, creates tombstone. Marks review entry as resolved with status `merged`. The entire operation (field merge, tombstone creation, review status update) is wrapped in a single database transaction.
 
-**Duplicates admin page:**
-- Redirect `/admin/duplicates` to `/admin/review-queue?warning=potential_duplicate`
-- Or: make the duplicates page a filtered view of the review queue
-- Remove the stub `ListDuplicates` API (or make it query the review queue with duplicate filter)
+### Keep Separate action
+
+`POST /api/v1/admin/review-queue/{id}/approve` — approves the event as non-duplicate and records the pair in `event_not_duplicates` to prevent re-flagging on future ingestion.
+
+### New review queue fields
+
+- `duplicate_of_event_id UUID` — references the candidate event for duplicate reviews (nullable)
+- `merged` status — added to allowed review statuses
+
+### Duplicates admin page
+
+`/admin/duplicates` redirects to `/admin/review-queue?warning=potential_duplicate`.
 
 ### Review Queue API (LLM-ready)
 
-The existing API is already well-structured for programmatic use. Ensure:
-
-1. `GET /api/v1/admin/review-queue/{id}` response includes:
-   - Both original and normalized payloads
-   - All warnings with details (including duplicate candidate info)
-   - The candidate event's full data (when `potential_duplicate`)
-   
-2. All actions return the updated review entry state
-
-3. Document the API contract so an LLM agent can call:
-   - List pending reviews → pick one → read details → decide → call approve/reject/merge
+`GET /api/v1/admin/review-queue/{id}` includes both original and normalized payloads, all warnings with details (including duplicate candidate info), and the candidate event's full data when `potential_duplicate` is present. An LLM agent can: list pending reviews → pick one → read details → call approve/reject/merge.
 
 ## Configuration
 
-New fields in `ValidationConfig`:
-
 ```go
 type DedupConfig struct {
-    // NearDuplicateThreshold is the pg_trgm similarity threshold for
-    // flagging potential duplicate events. Range: 0.0-1.0.
-    // Lower values catch more duplicates but increase false positives.
-    // Default: 0.4
+    // Trigram similarity threshold for flagging potential duplicate events.
+    // Range: 0.0-1.0. Default: 0.4
     NearDuplicateThreshold float64
 
-    // PlaceReviewThreshold is the similarity threshold for flagging
-    // a potential place duplicate for review. Default: 0.6
+    // Similarity threshold for flagging potential place duplicate for review. Default: 0.6
     PlaceReviewThreshold float64
 
-    // PlaceAutoMergeThreshold is the similarity threshold above which
-    // places are auto-merged without review. Default: 0.95
+    // Similarity threshold above which places are auto-merged. Default: 0.95
     PlaceAutoMergeThreshold float64
 
-    // OrgReviewThreshold is the similarity threshold for flagging
-    // a potential organization duplicate for review. Default: 0.6
+    // Similarity threshold for flagging potential org duplicate for review. Default: 0.6
     OrgReviewThreshold float64
 
-    // OrgAutoMergeThreshold is the similarity threshold above which
-    // organizations are auto-merged without review. Default: 0.95
+    // Similarity threshold above which orgs are auto-merged. Default: 0.95
     OrgAutoMergeThreshold float64
 }
 ```
@@ -191,113 +154,41 @@ Environment variables:
 - `DEDUP_ORG_REVIEW_THRESHOLD` (default: 0.6)
 - `DEDUP_ORG_AUTO_MERGE_THRESHOLD` (default: 0.95)
 
-## Database Changes
+## Database Schema
 
-### Migration: Fix dedup hash
+### Dedup hash
 
-```sql
--- Drop the generated expression, make it a regular stored column
-ALTER TABLE events ALTER COLUMN dedup_hash DROP EXPRESSION;
--- The existing idx_events_dedup index remains valid
-```
+`events.dedup_hash` is a regular stored column (not a `GENERATED ALWAYS` expression). The application computes SHA256 of the normalized `name|venue_key|start_date`. `NormalizeVenueKey()` in `dedup.go` canonicalizes venue keys (uses place ID if available, otherwise normalizes name: lowercase, trim, collapse whitespace).
 
-### Migration: Add duplicate tracking to review queue
+### Review queue additions
 
 ```sql
-ALTER TABLE event_review_queue 
+ALTER TABLE event_review_queue
   ADD COLUMN duplicate_of_event_id UUID REFERENCES events(id);
-
--- Add 'merged' to allowed review statuses
--- (Currently: pending, approved, rejected, superseded)
 ```
 
-### Migration: pg_trgm indexes for fuzzy matching
+### pg_trgm indexes
 
 ```sql
--- Extension already enabled in migration 000001
--- Add GIN indexes for trigram similarity
 CREATE INDEX idx_places_name_trgm ON places USING gin (name gin_trgm_ops)
   WHERE deleted_at IS NULL;
 CREATE INDEX idx_organizations_name_trgm ON organizations USING gin (name gin_trgm_ops)
   WHERE deleted_at IS NULL;
-
--- Add GIN index on events for near-duplicate name matching
 CREATE INDEX idx_events_name_trgm ON events USING gin (name gin_trgm_ops)
   WHERE lifecycle_state NOT IN ('deleted');
 ```
 
-### Migration: Place and Org merge support
+### Merge tracking
 
 ```sql
--- Track merged places
 ALTER TABLE places ADD COLUMN merged_into_id UUID REFERENCES places(id);
-
--- Track merged organizations  
 ALTER TABLE organizations ADD COLUMN merged_into_id UUID REFERENCES organizations(id);
 ```
 
-## Implementation Layers
+### Not-duplicate tracking
 
-### Layer 0: Database + Dedup Hash Fix
-- Migration: drop dedup_hash generated expression
-- Migration: add `duplicate_of_event_id` to review queue, `merged_into_id` to places/orgs
-- Migration: add pg_trgm GIN indexes
-- No code changes needed beyond migrations
-
-### Layer 1: Auto-Merge for Exact Duplicates
-- New `AutoMergeEvent()` function in `internal/domain/events/merge.go`
-- Modify `ingest.go`: replace silent drop with auto-merge call
-- Add `IsMerged` field to `IngestResult`
-- Add source trust level lookup during merge
-- Tests for merge field selection logic
-
-### Layer 2: Near-Duplicate Detection
-- New SQL query: find events at same venue + date with fuzzy name match
-- New repository method: `FindNearDuplicates(ctx, venueID, startDate, name, threshold)`
-- Modify `ingest.go`: add near-duplicate check after exact hash check
-- Add `potential_duplicate` warning type
-- Tests for near-duplicate detection and review routing
-
-### Layer 3: Place/Org Dedup
-- New SQL queries: fuzzy place/org name search
-- New repository methods: `FindSimilarPlaces()`, `FindSimilarOrganizations()`
-- New merge methods: `MergePlaces()`, `MergeOrganizations()`
-- Modify ingestion pipeline: check place/org similarity before upsert
-- Add warning types: `place_possible_duplicate`, `org_possible_duplicate`
-- Config: `DedupConfig` struct with thresholds
-
-### Layer 4: Review Queue Merge Action + UI
-- New handler: `MergeReviewEvent()` 
-- New route: `POST /api/v1/admin/review-queue/{id}/merge`
-- Review queue UI: show duplicate comparison when `potential_duplicate` warning present
-- Duplicates page: redirect to filtered review queue
-- Remove `ListDuplicates` stub
-
-## Files Affected
-
-### New files
-- `internal/domain/events/merge.go` — auto-merge logic
-- `internal/domain/events/merge_test.go` — merge tests
-- Migration files (3-4 new migrations)
-
-### Modified files
-- `internal/config/config.go` — add `DedupConfig`
-- `internal/domain/events/ingest.go` — revised duplicate handling flow
-- `internal/domain/events/repository.go` — new interfaces for near-duplicate + merge
-- `internal/storage/postgres/events_repository.go` — implement new queries
-- `internal/storage/postgres/places_repository.go` — similarity search + merge
-- `internal/storage/postgres/organizations_repository.go` — similarity search + merge
-- `internal/storage/postgres/queries/events.sql` — near-duplicate query
-- `internal/storage/postgres/queries/places.sql` — similarity query
-- `internal/storage/postgres/queries/organizations.sql` — similarity query
-- `internal/api/handlers/admin_review_queue.go` — merge action handler
-- `internal/api/handlers/admin.go` — remove/redirect ListDuplicates stub
-- `internal/api/router.go` — add merge route
-- `web/admin/static/js/review-queue.js` — duplicate comparison UI in review
-- `web/admin/templates/review_queue.html` — duplicate comparison template section
-- `web/admin/static/js/duplicates.js` — redirect or reuse
-- `web/admin/templates/duplicates.html` — redirect or remove
-
----
-
-**Last Updated:** 2026-02-20
+```sql
+-- event_not_duplicates (migration 000027)
+-- Composite PK (event_id_a, event_id_b) with canonical ULID ordering
+-- Prevents re-flagging known non-duplicate pairs on future ingestion
+```

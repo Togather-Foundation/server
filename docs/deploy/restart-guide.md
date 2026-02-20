@@ -196,15 +196,6 @@ Example:
 
 ## Integration with Other Tools
 
-### Use with bd (Beads) Issue Tracker
-
-```bash
-# Track restart as part of issue resolution
-bd update <issue-id> --notes "Restarted staging to apply fix"
-make restart-staging
-bd close <issue-id>
-```
-
 ### Use with Deployment Scripts
 
 ```bash

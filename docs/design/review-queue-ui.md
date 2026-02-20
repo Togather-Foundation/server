@@ -1,16 +1,12 @@
-# Review Queue UI Design
+# Review Queue UI
 
-## Overview
+Admin UI for the event review queue. Admins can review events with data quality issues, compare original vs normalized data, and approve/reject/fix events.
 
-Admin UI for the event review queue where admins can review events with data quality issues (e.g., reversed dates), see original vs normalized data, and approve/reject/fix events.
-
-**Parent bead:** srv-349
 **Architecture doc:** `docs/architecture/event-review-workflow.md`
 
-## Existing API (fully implemented)
+## API Reference
 
-All endpoints in `internal/api/handlers/admin_review_queue.go` (687 lines).
-All wrapped with: `jwtAuth(adminRateLimit(middleware.AdminRequestSize(...)))`.
+All endpoints in `internal/api/handlers/admin_review_queue.go`. All wrapped with `jwtAuth(adminRateLimit(middleware.AdminRequestSize(...)))`.
 
 ### GET /api/v1/admin/review-queue
 
@@ -61,17 +57,17 @@ Detail view with original vs corrected data.
 
 ### POST /api/v1/admin/review-queue/{id}/approve
 
-**Request:** `{"notes": "optional"}`
+**Request:** `{"notes": "optional"}`  
 **Response:** Full review detail object.
 
 ### POST /api/v1/admin/review-queue/{id}/reject
 
-**Request:** `{"reason": "required"}`
+**Request:** `{"reason": "required"}`  
 **Response:** Full review detail object.
 
 ### POST /api/v1/admin/review-queue/{id}/fix
 
-**Request:** `{"corrections": {"startDate": "...", "endDate": "..."}, "notes": "optional"}`
+**Request:** `{"corrections": {"startDate": "...", "endDate": "..."}, "notes": "optional"}`  
 **Response:** Full review detail object.
 
 ## Warning Codes
@@ -81,33 +77,29 @@ Detail view with original vs corrected data.
 | `reversed_dates_timezone_likely` | High | `bg-success` (green) | End 0-4 AM, duration < 7h. Likely overnight timezone error. |
 | `reversed_dates_corrected_needs_review` | Low | `bg-warning` (yellow) | Reversed dates but doesn't match high-confidence pattern. |
 
-## UI Design
+## Page Layout
 
-### Page Layout: `/admin/review-queue`
-
-Single-page design with list view and inline detail expansion. No separate detail page.
+Single-page design: list view with inline detail expansion. No separate detail page. Route: `/admin/review-queue`.
 
 ```
 +------------------------------------------------------------------+
 | [Dashboard] [Events] [Users] [Duplicates] [Review] [API Keys]    |
 +------------------------------------------------------------------+
 | Review Queue                                                      |
-| Review events with data quality issues                            |
-|                                                                    |
-| [Pending (3)] [Approved] [Rejected]         [status filter tabs]  |
+|                                                                   |
+| [Pending (3)] [Approved] [Rejected]         [status filter tabs] |
 +------------------------------------------------------------------+
 | Event Name       | Start Time      | Warning    | Created | Act. |
 |------------------|-----------------|------------|---------|------|
 | Late Night Jazz  | Mar 31, 11 PM   | High Conf. | 2h ago  | ...  |
-|   [Expanded detail card when clicked]                             |
-|   +-----------------------------------------------------------+  |
-|   | Original               | Corrected                        |  |
-|   | endDate: Mar 31 02:00  | endDate: Apr 1 02:00 (green)     |  |
-|   | Warning: timezone_likely - End at 02:00, duration 3h       |  |
-|   | [Approve] [Fix Dates...] [Reject...]                       |  |
-|   +-----------------------------------------------------------+  |
+|   [Expanded detail card when clicked]                            |
+|   +----------------------------------------------------------+   |
+|   | Original               | Corrected                       |   |
+|   | endDate: Mar 31 02:00  | endDate: Apr 1 02:00 (green)    |   |
+|   | Warning: timezone_likely - End at 02:00, duration 3h      |   |
+|   | [Approve] [Fix Dates...] [Reject...]                      |   |
+|   +----------------------------------------------------------+   |
 | Open Mic Night   | Apr 2, 10 PM    | Low Conf.  | 1d ago  | ...  |
-| Friday Salsa     | Apr 5, 9 PM     | Low Conf.  | 3d ago  | ...  |
 +------------------------------------------------------------------+
 | Showing 3 items                              [< Prev] [Next >]   |
 +------------------------------------------------------------------+
@@ -115,152 +107,77 @@ Single-page design with list view and inline detail expansion. No separate detai
 
 ### Status Filter Tabs
 
-Three tabs at the top, styled as Tabler nav-tabs:
-- **Pending** (default) - with count badge
-- **Approved** - historical approved reviews
-- **Rejected** - historical rejections
+Three Tabler nav-tabs: **Pending** (default, with count badge), **Approved**, **Rejected**.
 
 ### List Table Columns
 
-| Column | Content | Notes |
-|--------|---------|-------|
-| Event Name | `eventName` with link to `/admin/events/{eventId}` | Truncate at ~40 chars |
-| Start Time | `eventStartTime` formatted | `formatDate()` from components.js |
-| Warning | Warning code badge | Green for high confidence, yellow for low |
-| Created | `createdAt` relative | e.g., "2h ago", "1d ago" |
-| Actions | Quick action buttons | Expand chevron |
+| Column | Content |
+|--------|---------|
+| Event Name | `eventName` with link to `/admin/events/{eventId}`, truncated at ~40 chars |
+| Start Time | `eventStartTime` formatted via `formatDate()` from components.js |
+| Warning | Warning code badge: green for high confidence, yellow for low |
+| Created | `createdAt` relative time, e.g., "2h ago" |
+| Actions | Expand chevron |
 
 ### Inline Detail Card
 
-When a row is clicked, a detail card expands below it showing:
+Expands below the clicked row:
 
-1. **Side-by-side comparison** (2-column layout):
-   - Left: Original payload (dates highlighted red if changed)
-   - Right: Normalized/corrected payload (dates highlighted green if changed)
-
-2. **Changes summary**: Each change from the `changes` array displayed as:
-   - Field name, original value -> corrected value, reason
-
-3. **Warning details**: Full message from warnings array
-
-4. **Action buttons**:
-   - **Approve** (green, `btn-success`): Quick approve with optional notes textarea
-   - **Fix Dates** (blue, `btn-primary`): Opens inline form with datetime-local inputs
-   - **Reject** (red outline, `btn-outline-danger`): Opens modal requiring reason text
+1. **Side-by-side comparison**: original (dates red if changed) vs normalized (dates green if changed)
+2. **Changes summary**: field name, original → corrected value, reason
+3. **Warning details**: full message
+4. **Actions**:
+   - **Approve** (`btn-success`): quick approve with optional notes textarea
+   - **Fix Dates** (`btn-primary`): inline datetime-local inputs, pre-filled
+   - **Reject** (`btn-outline-danger`): modal requiring reason text
 
 ### Reject Modal
 
 ```
 +----------------------------------+
-| Reject Event                      |
+| Reject Event                     |
 +----------------------------------+
 | Reason (required):               |
-| [textarea                        ]|
-|                                   |
+| [textarea                       ]|
 | [Cancel]            [Reject]     |
 +----------------------------------+
 ```
 
-### Fix Dates Form (inline, replaces action buttons)
+### Fix Dates Form
 
 ```
 +-------------------------------------------------------+
 | Correct Dates                                          |
-| Start: [datetime-local input, pre-filled]              |
-| End:   [datetime-local input, pre-filled]              |
-| Notes: [textarea, optional]                            |
-| [Cancel] [Apply Fix]                                   |
+| Start: [datetime-local input, pre-filled]             |
+| End:   [datetime-local input, pre-filled]             |
+| Notes: [textarea, optional]                           |
+| [Cancel] [Apply Fix]                                  |
 +-------------------------------------------------------+
 ```
 
-## Files to Create/Modify
-
-### New Files
-
-1. **`web/admin/templates/review_queue.html`** - Page template
-   - Follow standard template pattern (see `duplicates.html` for closest reference)
-   - Include `_head_meta.html`, `_header.html`, `_footer.html`
-   - `ActivePage: "review-queue"`
-   - Loading state, empty state, table, detail card, reject modal
-
-2. **`web/admin/static/js/review-queue.js`** - Page logic
-   - IIFE pattern matching other pages
-   - State: `{ entries: [], currentFilter: 'pending', expandedId: null, cursor: null }`
-   - Functions: `init()`, `loadEntries()`, `renderTable()`, `expandDetail()`, `collapseDetail()`, `approve()`, `reject()`, `fixDates()`, `renderPagination()`
-   - Event delegation via `data-action` attributes (CSP-compliant)
-   - Use shared utilities: `showToast()`, `confirmAction()`, `escapeHtml()`, `formatDate()`, `setLoading()`, `renderLoadingState()`, `renderEmptyState()`
-
-### Modified Files
-
-3. **`web/admin/static/js/api.js`** - Add `reviewQueue` namespace:
-   ```javascript
-   reviewQueue: {
-       list: (params = {}) => {
-           const query = new URLSearchParams(params);
-           return API.request(`/api/v1/admin/review-queue?${query}`);
-       },
-       get: (id) => API.request(`/api/v1/admin/review-queue/${id}`),
-       approve: (id, data = {}) => API.request(`/api/v1/admin/review-queue/${id}/approve`, {
-           method: 'POST', body: JSON.stringify(data)
-       }),
-       reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, {
-           method: 'POST', body: JSON.stringify(data)
-       }),
-       fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, {
-           method: 'POST', body: JSON.stringify(data)
-       })
-   }
-   ```
-
-4. **`web/admin/templates/_header.html`** - Add nav item after "Duplicates":
-   ```html
-   <li class="nav-item{{ if eq .ActivePage "review-queue" }} active{{ end }}">
-       <a class="nav-link" href="/admin/review-queue">Review</a>
-   </li>
-   ```
-
-5. **`internal/api/handlers/admin_html.go`** - Add `ServeReviewQueue` method:
-   ```go
-   func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Request) {
-       // Same pattern as ServeDuplicates
-       // ActivePage: "review-queue"
-       // Template: "review_queue.html"
-   }
-   ```
-
-6. **`internal/api/router.go`** - Add HTML route after duplicates route (~line 409):
-   ```go
-   mux.Handle("/admin/review-queue", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeReviewQueue))))
-   ```
-
 ## CSS
 
-No new CSS file needed. Use existing Tabler classes and `custom.css`. Specific classes to use:
+No new CSS file needed. Tabler classes used:
 
-- **Diff highlighting**: `.bg-success-lt` (green tint) for corrected values, `.bg-danger-lt` (red tint) for original changed values
+- **Diff highlighting**: `.bg-success-lt` (corrected values), `.bg-danger-lt` (original changed values)
 - **Warning badges**: `.badge.bg-success` (high confidence), `.badge.bg-warning` (low confidence)
 - **Status badges**: `.badge.bg-warning` (pending), `.badge.bg-success` (approved), `.badge.bg-danger` (rejected)
-- **Detail card**: `.card` with `.card-body` inside an expanded table row (`<tr>` with full colspan)
+- **Detail card**: `.card` with `.card-body` inside an expanded `<tr>` with full colspan
 - **Comparison columns**: `.row > .col-md-6` for side-by-side on desktop, stacked on mobile
 
 ## Implementation Notes
 
-- All existing patterns are in the codebase already - follow them exactly
-- The API is fully implemented and tested; this is purely frontend work + Go handler wiring
-- Use `data-action` attributes for all click handlers (CSP compliance)
+- All click handlers use `data-action` attributes (CSP compliance)
+- Template files are auto-discovered via Go's `embed.FS` in `web/embed.go`
 - The `_footer.html` template already loads `bootstrap.bundle.min.js`, `tabler.min.js`, `api.js`, and `components.js`
-- Template files are embedded via Go's `embed.FS` in `web/embed.go` - new templates are auto-discovered
+- The `reviewQueue` API namespace in `api.js` exposes `list`, `get`, `approve`, `reject`, `fix`
 
 ## Testing
 
-After implementation:
-1. `AGENT=1 make build` - verify Go compiles
-2. Start dev server, verify `/admin/review-queue` renders
-3. Run E2E tests: `uvx --from playwright --with playwright python tests/e2e/test_admin_ui_python.py`
-4. Verify no console errors, CSP violations
-5. Test with empty queue (empty state displays)
-6. Test approve/reject/fix flows if review queue has entries
+```bash
+AGENT=1 make build
+# Start dev server, verify /admin/review-queue renders
+make e2e
+```
 
----
-
-**Last Updated:** 2026-02-20
+Verify: no console errors, no CSP violations, empty state displays, approve/reject/fix flows work if queue has entries.

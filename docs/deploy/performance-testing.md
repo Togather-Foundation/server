@@ -323,13 +323,6 @@ All generated events use these fixtures to create realistic traffic patterns.
 5. **Realistic ratios**: Use 80/20 or 90/10 read/write ratios for most tests
 6. **Long-running tests**: Use `stress` or `peak` profiles to find memory leaks or resource exhaustion
 
-## Next Steps
-
-- Add authentication to test write endpoints properly
-- Integrate with CI/CD for automated performance regression testing
-- Create performance benchmarks to track over time
-- Add more endpoint coverage (search, filters, pagination)
-
 ---
 
 **Last Updated:** 2026-02-20

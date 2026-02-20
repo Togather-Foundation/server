@@ -1038,7 +1038,6 @@ curl -X GET https://api.sel.events/api/v1/admin/users/{id} \
 
 - [User Management Guide](../admin/user-management.md) - Admin guide for managing users via UI
 - [Email Setup Guide](../admin/email-setup.md) - Configure SMTP for invitation emails
-- [User Administration Plan](../admin/user-administration-plan.md) - Technical implementation details
 - [SEL Interoperability Profile](../togather_SEL_Interoperability_Profile_v0.1.md) - SEL specification
 - [Authentication & Authorization Design](../togather_SEL_server_architecture_design_v1.md#authentication--authorization)
 
