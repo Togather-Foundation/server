@@ -126,6 +126,8 @@ type Querier interface {
 	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
+	// Get the most recent scraper run for a given source_name.
+	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
@@ -155,6 +157,9 @@ type Querier interface {
 	// Uses canonical ordering (smaller ULID first) to prevent storing both (A,B) and (B,A).
 	// ON CONFLICT DO NOTHING handles the case where the pair already exists.
 	InsertNotDuplicate(ctx context.Context, arg InsertNotDuplicateParams) error
+	// SQLc queries for scraper runs tracking.
+	// Insert a new scraper run record and return its id.
+	InsertScraperRun(ctx context.Context, arg InsertScraperRunParams) (int64, error)
 	// Check if a pair of events has been marked as not-duplicates.
 	// Uses canonical ordering to match regardless of argument order.
 	IsNotDuplicate(ctx context.Context, arg IsNotDuplicateParams) (bool, error)
@@ -181,6 +186,8 @@ type Querier interface {
 	ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesByCreatedAtDescParams) ([]ListPlacesByCreatedAtDescRow, error)
 	ListPlacesByName(ctx context.Context, arg ListPlacesByNameParams) ([]ListPlacesByNameRow, error)
 	ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByNameDescParams) ([]ListPlacesByNameDescRow, error)
+	// List the N most recent scraper runs ordered by started_at DESC.
+	ListRecentScraperRuns(ctx context.Context, limit int32) ([]ScraperRun, error)
 	// List reviews with pagination and status filter
 	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
 	// Get organizations that have no external identifiers, ordered by creation date
@@ -225,6 +232,10 @@ type Querier interface {
 	UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error)
 	// Update existing review entry (for resubmissions with same issues)
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
+	// Mark a scraper run as completed with event counts.
+	UpdateScraperRunCompleted(ctx context.Context, arg UpdateScraperRunCompletedParams) error
+	// Mark a scraper run as failed with an error message.
+	UpdateScraperRunFailed(ctx context.Context, arg UpdateScraperRunFailedParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	// SQLc queries for API key usage tracking.
