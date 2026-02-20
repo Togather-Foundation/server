@@ -89,6 +89,7 @@ fetch('https://sel.togather.events/api/v1/events', {
 
 These resources are useful for everyone:
 
+- **[Feature Reference](features.md)** - Complete list of capabilities organized by area
 - **[Glossary](glossary.md)** - Canonical terminology reference
 - **[Spec Kit](../specs/001-sel-backend/)** - Feature specifications
 - **[OpenAPI Spec](https://sel.togather.events/api/v1/openapi.json)** - Machine-readable API *(when deployed)*
@@ -121,6 +122,7 @@ These resources are useful for everyone:
 
 | Category | Document | Status | Last Updated |
 |----------|----------|--------|--------------|
+| **Universal** | Feature Reference | Living | 2026-02-20 |
 | **Universal** | Glossary | Living | 2026-01-26 |
 | **Admin** | Admin Directory README | Living | 2026-02-19 |
 | **Admin** | Admin UI Overview | Living | 2026-02-19 |
