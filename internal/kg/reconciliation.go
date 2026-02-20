@@ -111,6 +111,13 @@ type MatchResult struct {
 // ReconcileEntity reconciles an entity against Artsdata.
 // Returns matched identifiers (may be empty if no match found).
 func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req ReconcileRequest) ([]MatchResult, error) {
+	if s.cache == nil {
+		return nil, fmt.Errorf("reconciliation cache not configured")
+	}
+	if s.artsdataClient == nil {
+		return nil, fmt.Errorf("artsdata client not configured")
+	}
+
 	// 1. Build lookup key from request
 	lookupKey := NormalizeLookupKey(req.EntityType, req.Name, req.Properties)
 

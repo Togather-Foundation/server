@@ -732,6 +732,10 @@ type BatchIngestionWorker struct {
 	Pool *pgxpool.Pool
 	// Logger provides structured logging (defaults to slog.Default() if nil)
 	Logger *slog.Logger
+	// ReconciliationEnabled controls whether reconciliation jobs are enqueued
+	// after successful event ingestion. Set to true only when a ReconciliationService
+	// is configured and the ReconciliationWorker is registered.
+	ReconciliationEnabled bool
 }
 
 func (BatchIngestionWorker) Kind() string { return JobKindBatchIngestion }
@@ -823,36 +827,39 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 					}
 
 					// Enqueue reconciliation jobs for place and org (srv-titkr)
-					if result.PlaceULID != "" {
-						_, err := riverClient.Insert(ctx, ReconciliationArgs{
-							EntityType: "place",
-							EntityID:   result.PlaceULID,
-						}, &river.InsertOpts{
-							Queue:       "reconciliation",
-							MaxAttempts: ReconciliationMaxAttempts,
-						})
-						if err != nil {
-							logger.Warn("failed to enqueue place reconciliation for batch event",
-								"batch_id", batchID,
-								"place_ulid", result.PlaceULID,
-								"error", err,
-							)
+					// Only enqueue when reconciliation is enabled and the worker is registered.
+					if w.ReconciliationEnabled {
+						if result.PlaceULID != "" {
+							_, err := riverClient.Insert(ctx, ReconciliationArgs{
+								EntityType: "place",
+								EntityID:   result.PlaceULID,
+							}, &river.InsertOpts{
+								Queue:       "reconciliation",
+								MaxAttempts: ReconciliationMaxAttempts,
+							})
+							if err != nil {
+								logger.Warn("failed to enqueue place reconciliation for batch event",
+									"batch_id", batchID,
+									"place_ulid", result.PlaceULID,
+									"error", err,
+								)
+							}
 						}
-					}
-					if result.OrganizerULID != "" {
-						_, err := riverClient.Insert(ctx, ReconciliationArgs{
-							EntityType: "organization",
-							EntityID:   result.OrganizerULID,
-						}, &river.InsertOpts{
-							Queue:       "reconciliation",
-							MaxAttempts: ReconciliationMaxAttempts,
-						})
-						if err != nil {
-							logger.Warn("failed to enqueue org reconciliation for batch event",
-								"batch_id", batchID,
-								"org_ulid", result.OrganizerULID,
-								"error", err,
-							)
+						if result.OrganizerULID != "" {
+							_, err := riverClient.Insert(ctx, ReconciliationArgs{
+								EntityType: "organization",
+								EntityID:   result.OrganizerULID,
+							}, &river.InsertOpts{
+								Queue:       "reconciliation",
+								MaxAttempts: ReconciliationMaxAttempts,
+							})
+							if err != nil {
+								logger.Warn("failed to enqueue org reconciliation for batch event",
+									"batch_id", batchID,
+									"org_ulid", result.OrganizerULID,
+									"error", err,
+								)
+							}
 						}
 					}
 				}
@@ -922,9 +929,10 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 		Logger: logger,
 	})
 	river.AddWorker[BatchIngestionArgs](workers, BatchIngestionWorker{
-		IngestService: ingestService,
-		Pool:          pool,
-		Logger:        logger,
+		IngestService:         ingestService,
+		Pool:                  pool,
+		Logger:                logger,
+		ReconciliationEnabled: reconciliationService != nil,
 	})
 	river.AddWorker[ReviewQueueCleanupArgs](workers, ReviewQueueCleanupWorker{
 		Repo:   eventsRepo,
