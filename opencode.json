@@ -1,12 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": ["opencode-beads"],
-  "model": "github-copilot/claude-sonnet-4.5",
+  "model": "github-copilot/claude-sonnet-4.6",
   "agent": {
     "general": {
       "description": "General-purpose agent implementing code and executing multi-step tasks",
       "mode": "subagent",
-      "model": "github-copilot/claude-sonnet-4.5"
+      "model": "github-copilot/claude-sonnet-4.6"
     },
     "explore": {
       "description": "Fast agent specialized for exploring codebases",
