@@ -296,7 +296,7 @@ type EmailConfig struct {
 - Test invitation acceptance flow
 
 #### 4.3 Documentation
-- **File**: `docs/admin-ui-guide.md` (update)
+- **File**: `docs/admin/admin-ui-components.md` (update — user management section)
 - **File**: `docs/api/admin-users.md` (new)
 - Document user management features, API endpoints, configuration
 
