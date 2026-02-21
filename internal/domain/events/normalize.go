@@ -1,11 +1,37 @@
 package events
 
 import (
+	"html"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/microcosm-cc/bluemonday"
 )
+
+// strictHTML is a bluemonday policy that strips all HTML tags.
+// It is safe for concurrent use.
+var strictHTML = bluemonday.StrictPolicy()
+
+// cleanText strips all HTML tags and decodes HTML entities from s, then
+// collapses internal whitespace. This repairs content from CMSes (e.g.
+// WordPress) that embed HTML markup in JSON-LD name/description fields.
+// Some sources double-encode their HTML (e.g. &lt;p&gt; instead of <p>),
+// so we unescape entities first, then sanitize, to catch both forms.
+func cleanText(s string) string {
+	// First pass: decode entities so &lt;p&gt; becomes <p> before sanitizing.
+	s = html.UnescapeString(s)
+	// Strip all HTML tags (bluemonday uses a real parser — handles attributes,
+	// comments, CDATA, etc.). StrictPolicy produces plain text with no tags.
+	s = strictHTML.Sanitize(s)
+	// Second pass: decode any entities that were inside tag attributes and
+	// are now exposed after stripping (e.g. &amp; left in text nodes).
+	s = html.UnescapeString(s)
+	// Collapse runs of whitespace (newlines, tabs, multiple spaces).
+	s = strings.Join(strings.Fields(s), " ")
+	return s
+}
 
 // normalizeURL fixes common URL issues in external data sources:
 // - Adds https:// prefix to URLs starting with "www."
@@ -97,8 +123,8 @@ var eventSubtypeDomains = map[string]string{
 // NormalizeEventInput trims and normalizes values for consistent storage and hashing.
 // Also auto-corrects common data quality issues like timezone errors and malformed URLs.
 func NormalizeEventInput(input EventInput) EventInput {
-	input.Name = strings.TrimSpace(input.Name)
-	input.Description = strings.TrimSpace(input.Description)
+	input.Name = cleanText(input.Name)
+	input.Description = cleanText(input.Description)
 	input.StartDate = strings.TrimSpace(input.StartDate)
 	input.EndDate = strings.TrimSpace(input.EndDate)
 	input.DoorTime = strings.TrimSpace(input.DoorTime)

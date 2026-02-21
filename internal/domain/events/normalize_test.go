@@ -209,6 +209,71 @@ func TestNormalizeURL(t *testing.T) {
 	}
 }
 
+func TestCleanText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain text unchanged",
+			input: "Jazz Night",
+			want:  "Jazz Night",
+		},
+		{
+			name:  "HTML entities in name (WordPress numeric)",
+			input: "Music &#038; Truffles KIDS &#8211; David Jalbert, piano",
+			want:  "Music & Truffles KIDS – David Jalbert, piano",
+		},
+		{
+			name:  "HTML tags in description (entity-encoded)",
+			input: "&lt;p&gt;The Show: David will share stories.&lt;/p&gt;\n",
+			want:  "The Show: David will share stories.",
+		},
+		{
+			name:  "literal HTML tags with entities inside",
+			input: "<p>A &amp; B</p>\n<br/>More text",
+			want:  "A & B More text",
+		},
+		{
+			name:  "collapses internal whitespace",
+			input: "Hello\n\nWorld\t  test",
+			want:  "Hello World test",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "named entity (no tags)",
+			input: "Caf&eacute; &amp; Bar",
+			want:  "Café & Bar",
+		},
+		{
+			name:  "trims surrounding whitespace",
+			input: "  trimmed  ",
+			want:  "trimmed",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, cleanText(tc.input))
+		})
+	}
+}
+
+func TestNormalizeEventInputHTMLCleaning(t *testing.T) {
+	input := EventInput{
+		Name:        "Music &#038; Truffles KIDS &#8211; David Jalbert, piano",
+		Description: "&lt;p&gt;The Show: David will share stories.&lt;/p&gt;\n",
+		StartDate:   "2026-02-22T15:00:00Z",
+	}
+	got := NormalizeEventInput(input)
+	assert.Equal(t, "Music & Truffles KIDS – David Jalbert, piano", got.Name)
+	assert.Equal(t, "The Show: David will share stories.", got.Description)
+}
+
 func TestNormalizeStringSlice(t *testing.T) {
 	tests := []struct {
 		name     string
