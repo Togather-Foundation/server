@@ -1,8 +1,11 @@
 name: "harbourfront-centre"
-url: "https://harbourfrontcentre.com/events/"
+# Corrected URL: /events/ 301-redirects to /; working listing is at /whats-on/.
+# Disabled: individual event pages only have Yoast WebPage JSON-LD, not Event @type.
+# Fix: needs Tier 1 CSS selectors for /whats-on/ listing + /event/* detail pages.
+url: "https://harbourfrontcentre.com/whats-on/"
 tier: 0
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 5

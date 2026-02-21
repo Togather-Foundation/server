@@ -1,8 +1,11 @@
 name: "hot-docs"
+# URL is valid (200 OK) but site has no Event JSON-LD on any page (listing or detail).
+# Disabled: Tier 0 finds 0 events; would need Tier 1 CSS selectors to extract data.
+# Fix: implement Tier 1 selectors for hotdocs.ca event listing + detail pages.
 url: "https://hotdocs.ca/whats-on/films"
 tier: 0
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 3

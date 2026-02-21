@@ -1,8 +1,12 @@
 name: "roy-thomson-massey-hall"
-url: "https://www.roythomson.com/calendar/"
+# Corrected URL: old mfrh.org/events 404s; roythomsonhall.com and masseyhall.com are
+# the canonical domains — both are JS-rendered SPAs returning ~75 bytes of static HTML.
+# Disabled: no Event JSON-LD extractable from static HTML.
+# Fix: needs Tier 2 (Rod headless browser) — see bead srv-h264z.
+url: "https://www.roythomsonhall.com/"
 tier: 0
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 5

@@ -1,8 +1,12 @@
 name: "toronto-reference-library"
-url: "https://www.torontopubliclibrary.ca/programs-and-learning/events/index.jsp"
+# Corrected URL: old torontopubliclibrary.ca path 403s; canonical domain is tpl.ca.
+# Disabled: /events/ listing has only Library @type JSON-LD (org info), not Event.
+# Fix: investigate individual event detail pages on tpl.ca for Event JSON-LD,
+#      or implement Tier 1 CSS selectors for the listing page.
+url: "https://www.tpl.ca/events/"
 tier: 0
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 10

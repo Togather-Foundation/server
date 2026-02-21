@@ -1,8 +1,10 @@
 name: "glad-day-bookshop"
+# Disabled: robots.txt has `Disallow: /*` for all user agents — cannot scrape.
+# Fix: contact site owner for permission or a data feed.
 url: "https://www.gladdaybookshop.com/events"
 tier: 0
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 3

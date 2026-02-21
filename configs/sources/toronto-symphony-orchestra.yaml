@@ -1,8 +1,11 @@
 name: "toronto-symphony-orchestra"
-url: "https://www.tso.ca/concerts-events"
+# Corrected URL: /concerts-events 404s; the calendar lives at /concerts-and-events/calendar
+# Disabled: site is a JS-rendered React SPA — static HTML has no Event JSON-LD.
+# Fix: needs Tier 2 (Rod headless browser) — see bead srv-h264z.
+url: "https://www.tso.ca/concerts-and-events/calendar"
 tier: 0
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 5
