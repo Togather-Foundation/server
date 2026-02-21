@@ -763,6 +763,177 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 		// that IsNotDuplicate is called during the flow.
 		_ = result2 // The near-dup check ran with the new ULID
 	})
+
+	t.Run("S6.6_near_duplicate_flags_existing_event_pending_review", func(t *testing.T) {
+		// Given: A published event "Jazz at the Rex" exists at venue V1.
+		// Action: "Rex Jazz Night" submitted for same venue/date. Similarity=0.55.
+		// Expected: The existing event gets UpdateEvent called to set lifecycle to pending_review.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		// Register the existing event in the mock so GetByULID finds it.
+		existingEvent := &Event{
+			ID:             "existing-event-uuid-001",
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true")
+		}
+
+		// Verify UpdateEvent was called on the existing event with pending_review.
+		calls := repo.GetUpdateEventCalls()
+		found := false
+		for _, call := range calls {
+			if call.ULID == candidateULID {
+				found = true
+				if call.Params.LifecycleState == nil || *call.Params.LifecycleState != "pending_review" {
+					t.Errorf("Expected existing event UpdateEvent with pending_review, got %+v", call.Params)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("Expected UpdateEvent to be called on the existing candidate event")
+		}
+
+		// Verify a review queue entry was created for the existing event.
+		existingEntries := repo.GetReviewQueueByEventID("existing-event-uuid-001")
+		if len(existingEntries) == 0 {
+			t.Error("Expected review queue entry to be created for the existing candidate event")
+		}
+	})
+
+	t.Run("S6.7_near_duplicate_review_entries_cross_linked", func(t *testing.T) {
+		// Given: A published event exists and is found as near-duplicate.
+		// Expected: The new event's review entry links to the existing event's UUID,
+		// and the existing event's review entry links to the new event's UUID.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-002"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		newEventID := result.Event.ID
+
+		// Verify the existing event's review entry links to the new event.
+		existingEntries := repo.GetReviewQueueByEventID(existingEventID)
+		if len(existingEntries) == 0 {
+			t.Fatal("Expected review queue entry for existing event")
+		}
+		if existingEntries[0].DuplicateOfEventID == nil || *existingEntries[0].DuplicateOfEventID != newEventID {
+			t.Errorf("Expected existing event's review entry DuplicateOfEventID = %q, got %v",
+				newEventID, existingEntries[0].DuplicateOfEventID)
+		}
+
+		// Verify the new event's review entry links to the existing event.
+		newEntries := repo.GetReviewQueueByEventID(newEventID)
+		if len(newEntries) == 0 {
+			t.Fatal("Expected review queue entry for new event")
+		}
+		if newEntries[0].DuplicateOfEventID == nil || *newEntries[0].DuplicateOfEventID != existingEventID {
+			t.Errorf("Expected new event's review entry DuplicateOfEventID = %q, got %v",
+				existingEventID, newEntries[0].DuplicateOfEventID)
+		}
+	})
+
+	t.Run("S6.8_near_duplicate_existing_already_in_review_graceful", func(t *testing.T) {
+		// Given: The existing event's GetByULID fails (e.g., event deleted or DB error).
+		// Expected: Ingest succeeds, new event still goes to pending_review.
+		// (The existing event flagging is non-critical: log and continue.)
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		// Do NOT register the candidate event — GetByULID will return ErrNotFound.
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		// Ingest should still succeed and flag the new event for review.
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true even when existing event lookup fails")
+		}
+		if result.Event.LifecycleState != "pending_review" {
+			t.Errorf("Expected new event in pending_review, got %q", result.Event.LifecycleState)
+		}
+	})
+
+	t.Run("S6.9_near_duplicate_skips_already_pending_event", func(t *testing.T) {
+		// Given: An existing event is already in pending_review state.
+		// Expected: UpdateEvent is NOT called for it (only published events get flagged).
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		existingEvent := &Event{
+			ID:             "existing-event-uuid-003",
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "pending_review", // Already in review
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true")
+		}
+
+		// Verify UpdateEvent was NOT called for the already-pending existing event.
+		for _, call := range repo.GetUpdateEventCalls() {
+			if call.ULID == candidateULID {
+				t.Error("UpdateEvent should not be called on an already-pending event")
+			}
+		}
+	})
 }
 
 // --- S7: Place Fuzzy Dedup Scenarios ---

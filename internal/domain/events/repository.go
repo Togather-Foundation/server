@@ -308,15 +308,16 @@ type ReviewQueueEntry struct {
 
 // ReviewQueueCreateParams contains data for creating a review queue entry
 type ReviewQueueCreateParams struct {
-	EventID           string
-	OriginalPayload   []byte
-	NormalizedPayload []byte
-	Warnings          []byte
-	SourceID          *string
-	SourceExternalID  *string
-	DedupHash         *string
-	EventStartTime    time.Time
-	EventEndTime      *time.Time
+	EventID            string
+	OriginalPayload    []byte
+	NormalizedPayload  []byte
+	Warnings           []byte
+	SourceID           *string
+	SourceExternalID   *string
+	DedupHash          *string
+	EventStartTime     time.Time
+	EventEndTime       *time.Time
+	DuplicateOfEventID *string // UUID of the event this is a potential duplicate of (for merge workflow)
 }
 
 // ReviewQueueUpdateParams contains data for updating a review queue entry

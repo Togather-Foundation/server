@@ -1911,6 +1911,7 @@ type reviewQueueRowFields interface {
 	GetRejectionReason() pgtype.Text
 	GetCreatedAt() pgtype.Timestamptz
 	GetUpdatedAt() pgtype.Timestamptz
+	GetDuplicateOfEventID() pgtype.UUID
 }
 
 // Implement reviewQueueRowFields for FindReviewByDedupRow
@@ -1932,6 +1933,7 @@ func (r FindReviewByDedupRow) GetReviewNotes() pgtype.Text           { return r.
 func (r FindReviewByDedupRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
 func (r FindReviewByDedupRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
 func (r FindReviewByDedupRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+func (r FindReviewByDedupRow) GetDuplicateOfEventID() pgtype.UUID    { return r.DuplicateOfEventID }
 
 // Implement reviewQueueRowFields for ListReviewQueueRow
 func (r ListReviewQueueRow) GetID() int32                          { return r.ID }
@@ -1952,6 +1954,7 @@ func (r ListReviewQueueRow) GetReviewNotes() pgtype.Text           { return r.Re
 func (r ListReviewQueueRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
 func (r ListReviewQueueRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
 func (r ListReviewQueueRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+func (r ListReviewQueueRow) GetDuplicateOfEventID() pgtype.UUID    { return r.DuplicateOfEventID }
 
 // Implement reviewQueueRowFields for GetReviewQueueEntryRow
 func (r GetReviewQueueEntryRow) GetID() int32                          { return r.ID }
@@ -1972,6 +1975,7 @@ func (r GetReviewQueueEntryRow) GetReviewNotes() pgtype.Text           { return 
 func (r GetReviewQueueEntryRow) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
 func (r GetReviewQueueEntryRow) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
 func (r GetReviewQueueEntryRow) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+func (r GetReviewQueueEntryRow) GetDuplicateOfEventID() pgtype.UUID    { return r.DuplicateOfEventID }
 
 // Implement reviewQueueRowFields for EventReviewQueue (standard row type without JOIN)
 func (r EventReviewQueue) GetID() int32                          { return r.ID }
@@ -1992,6 +1996,7 @@ func (r EventReviewQueue) GetReviewNotes() pgtype.Text           { return r.Revi
 func (r EventReviewQueue) GetRejectionReason() pgtype.Text       { return r.RejectionReason }
 func (r EventReviewQueue) GetCreatedAt() pgtype.Timestamptz      { return r.CreatedAt }
 func (r EventReviewQueue) GetUpdatedAt() pgtype.Timestamptz      { return r.UpdatedAt }
+func (r EventReviewQueue) GetDuplicateOfEventID() pgtype.UUID    { return r.DuplicateOfEventID }
 
 // Note: ApproveReviewRow, RejectReviewRow, CreateReviewQueueEntryRow, and
 // UpdateReviewQueueEntryRow no longer exist as separate types — these queries
@@ -2039,6 +2044,10 @@ func convertReviewQueueRowGeneric(row reviewQueueRowFields) *events.ReviewQueueE
 	if rejectionReason := row.GetRejectionReason(); rejectionReason.Valid {
 		entry.RejectionReason = &rejectionReason.String
 	}
+	if duplicateOf := row.GetDuplicateOfEventID(); duplicateOf.Valid {
+		s := duplicateOf.String()
+		entry.DuplicateOfEventID = &s
+	}
 
 	return entry
 }
@@ -2076,6 +2085,13 @@ func (r *EventRepository) CreateReviewQueueEntry(ctx context.Context, params eve
 	}
 	if params.EventEndTime != nil {
 		createParams.EventEndTime = pgtype.Timestamptz{Time: *params.EventEndTime, Valid: true}
+	}
+	if params.DuplicateOfEventID != nil {
+		var dupUUID pgtype.UUID
+		if err := dupUUID.Scan(*params.DuplicateOfEventID); err != nil {
+			return nil, fmt.Errorf("invalid duplicate_of_event_id: %w", err)
+		}
+		createParams.DuplicateOfEventID = dupUUID
 	}
 
 	row, err := queries.CreateReviewQueueEntry(ctx, createParams)

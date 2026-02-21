@@ -119,7 +119,8 @@ INSERT INTO event_review_queue (
   source_external_id,
   dedup_hash,
   event_start_time,
-  event_end_time
+  event_end_time,
+  duplicate_of_event_id
 ) VALUES (
   $1,
   $2,
@@ -129,21 +130,23 @@ INSERT INTO event_review_queue (
   $6,
   $7,
   $8,
-  $9
+  $9,
+  $10
 )
 RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type CreateReviewQueueEntryParams struct {
-	EventID           pgtype.UUID        `json:"event_id"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
+	EventID            pgtype.UUID        `json:"event_id"`
+	OriginalPayload    []byte             `json:"original_payload"`
+	NormalizedPayload  []byte             `json:"normalized_payload"`
+	Warnings           []byte             `json:"warnings"`
+	SourceID           pgtype.Text        `json:"source_id"`
+	SourceExternalID   pgtype.Text        `json:"source_external_id"`
+	DedupHash          pgtype.Text        `json:"dedup_hash"`
+	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 }
 
 // Create new review queue entry
@@ -158,6 +161,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		arg.DedupHash,
 		arg.EventStartTime,
 		arg.EventEndTime,
+		arg.DuplicateOfEventID,
 	)
 	var i EventReviewQueue
 	err := row.Scan(
@@ -202,7 +206,8 @@ SELECT r.id,
        r.review_notes,
        r.rejection_reason,
        r.created_at,
-       r.updated_at
+       r.updated_at,
+       r.duplicate_of_event_id
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
  WHERE (
@@ -226,24 +231,25 @@ type FindReviewByDedupParams struct {
 }
 
 type FindReviewByDedupRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	EventUlid         string             `json:"event_ulid"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                 int32              `json:"id"`
+	EventID            pgtype.UUID        `json:"event_id"`
+	EventUlid          string             `json:"event_ulid"`
+	OriginalPayload    []byte             `json:"original_payload"`
+	NormalizedPayload  []byte             `json:"normalized_payload"`
+	Warnings           []byte             `json:"warnings"`
+	SourceID           pgtype.Text        `json:"source_id"`
+	SourceExternalID   pgtype.Text        `json:"source_external_id"`
+	DedupHash          pgtype.Text        `json:"dedup_hash"`
+	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	Status             string             `json:"status"`
+	ReviewedBy         pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes        pgtype.Text        `json:"review_notes"`
+	RejectionReason    pgtype.Text        `json:"rejection_reason"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 }
 
 // SQLc queries for event_review_queue domain.
@@ -271,6 +277,7 @@ func (q *Queries) FindReviewByDedup(ctx context.Context, arg FindReviewByDedupPa
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -293,31 +300,33 @@ SELECT r.id,
        r.review_notes,
        r.rejection_reason,
        r.created_at,
-       r.updated_at
+       r.updated_at,
+       r.duplicate_of_event_id
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
  WHERE r.id = $1
 `
 
 type GetReviewQueueEntryRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	EventUlid         string             `json:"event_ulid"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                 int32              `json:"id"`
+	EventID            pgtype.UUID        `json:"event_id"`
+	EventUlid          string             `json:"event_ulid"`
+	OriginalPayload    []byte             `json:"original_payload"`
+	NormalizedPayload  []byte             `json:"normalized_payload"`
+	Warnings           []byte             `json:"warnings"`
+	SourceID           pgtype.Text        `json:"source_id"`
+	SourceExternalID   pgtype.Text        `json:"source_external_id"`
+	DedupHash          pgtype.Text        `json:"dedup_hash"`
+	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	Status             string             `json:"status"`
+	ReviewedBy         pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes        pgtype.Text        `json:"review_notes"`
+	RejectionReason    pgtype.Text        `json:"rejection_reason"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 }
 
 // Get single review by ID
@@ -343,6 +352,7 @@ func (q *Queries) GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQ
 		&i.RejectionReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
 	)
 	return i, err
 }
@@ -365,7 +375,8 @@ SELECT r.id,
        r.review_notes,
        r.rejection_reason,
        r.created_at,
-       r.updated_at
+       r.updated_at,
+       r.duplicate_of_event_id
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
  WHERE ($1::text IS NULL OR r.status = $1)
@@ -381,24 +392,25 @@ type ListReviewQueueParams struct {
 }
 
 type ListReviewQueueRow struct {
-	ID                int32              `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	EventUlid         string             `json:"event_ulid"`
-	OriginalPayload   []byte             `json:"original_payload"`
-	NormalizedPayload []byte             `json:"normalized_payload"`
-	Warnings          []byte             `json:"warnings"`
-	SourceID          pgtype.Text        `json:"source_id"`
-	SourceExternalID  pgtype.Text        `json:"source_external_id"`
-	DedupHash         pgtype.Text        `json:"dedup_hash"`
-	EventStartTime    pgtype.Timestamptz `json:"event_start_time"`
-	EventEndTime      pgtype.Timestamptz `json:"event_end_time"`
-	Status            string             `json:"status"`
-	ReviewedBy        pgtype.Text        `json:"reviewed_by"`
-	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
-	ReviewNotes       pgtype.Text        `json:"review_notes"`
-	RejectionReason   pgtype.Text        `json:"rejection_reason"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                 int32              `json:"id"`
+	EventID            pgtype.UUID        `json:"event_id"`
+	EventUlid          string             `json:"event_ulid"`
+	OriginalPayload    []byte             `json:"original_payload"`
+	NormalizedPayload  []byte             `json:"normalized_payload"`
+	Warnings           []byte             `json:"warnings"`
+	SourceID           pgtype.Text        `json:"source_id"`
+	SourceExternalID   pgtype.Text        `json:"source_external_id"`
+	DedupHash          pgtype.Text        `json:"dedup_hash"`
+	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	Status             string             `json:"status"`
+	ReviewedBy         pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes        pgtype.Text        `json:"review_notes"`
+	RejectionReason    pgtype.Text        `json:"rejection_reason"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 }
 
 // List reviews with pagination and status filter
@@ -430,6 +442,7 @@ func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams
 			&i.RejectionReason,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DuplicateOfEventID,
 		); err != nil {
 			return nil, err
 		}

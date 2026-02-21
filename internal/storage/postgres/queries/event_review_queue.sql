@@ -20,7 +20,8 @@ SELECT r.id,
        r.review_notes,
        r.rejection_reason,
        r.created_at,
-       r.updated_at
+       r.updated_at,
+       r.duplicate_of_event_id
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
  WHERE (
@@ -47,7 +48,8 @@ INSERT INTO event_review_queue (
   source_external_id,
   dedup_hash,
   event_start_time,
-  event_end_time
+  event_end_time,
+  duplicate_of_event_id
 ) VALUES (
   sqlc.arg('event_id'),
   sqlc.arg('original_payload'),
@@ -57,7 +59,8 @@ INSERT INTO event_review_queue (
   sqlc.narg('source_external_id'),
   sqlc.narg('dedup_hash'),
   sqlc.arg('event_start_time'),
-  sqlc.narg('event_end_time')
+  sqlc.narg('event_end_time'),
+  sqlc.narg('duplicate_of_event_id')
 )
 RETURNING *;
 
@@ -90,7 +93,8 @@ SELECT r.id,
        r.review_notes,
        r.rejection_reason,
        r.created_at,
-       r.updated_at
+       r.updated_at,
+       r.duplicate_of_event_id
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
  WHERE r.id = sqlc.arg('id');
@@ -114,7 +118,8 @@ SELECT r.id,
        r.review_notes,
        r.rejection_reason,
        r.created_at,
-       r.updated_at
+       r.updated_at,
+       r.duplicate_of_event_id
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
  WHERE (sqlc.narg('status')::text IS NULL OR r.status = sqlc.narg('status'))

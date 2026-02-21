@@ -123,6 +123,13 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// Check if review is needed due to validation warnings OR metadata quality issues
 	needsReview := len(warnings) > 0 || eventNeedsReview(validated, nil, s.validationConfig)
 
+	// nearDuplicateOfID holds the UUID of the first near-duplicate candidate's event record.
+	// Used to cross-link review queue entries between the new event and existing matched events.
+	var nearDuplicateOfID *string
+	// nearDuplicateCandidates stores candidates found during Layer 2 detection.
+	// Actual flagging is deferred until after the new event is created (to use its UUID as cross-link).
+	var nearDuplicateCandidates []NearDuplicateCandidate
+
 	// Honour scraper-set lifecycle hint: "review" forces pending_review regardless
 	// of other quality checks (e.g., truncated description flagged before fetching).
 	if input.LifecycleState == "review" {
@@ -492,6 +499,9 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 						},
 					})
 					needsReview = true
+					// Store candidates for cross-linking review entries after the new event is created
+					// (we need the new event's UUID, which is not available until after txRepo.Create).
+					nearDuplicateCandidates = candidates
 				}
 			}
 		}
@@ -615,6 +625,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}()
 
+	// Re-evaluate lifecycle state: needsReview may have been updated by near-duplicate detection
+	// (Layer 2) or other checks that run after the initial params were built.
+	if needsReview {
+		params.LifecycleState = "pending_review"
+	}
+
 	event, err := txRepo.Create(ctx, params)
 	if err != nil {
 		return nil, err
@@ -626,6 +642,56 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 	if err := s.recordSourceWithRepo(ctx, txRepo, event, validated, sourceID); err != nil {
 		return nil, err
+	}
+
+	// Flag near-duplicate existing events for review now that we have event.ID (UUID).
+	// This runs outside the transaction (uses s.repo) so existing events are immediately
+	// visible to other operations. Non-critical: errors are logged and skipped.
+	if len(nearDuplicateCandidates) > 0 {
+		pendingState := "pending_review"
+		for i, c := range nearDuplicateCandidates {
+			existingEvent, fetchErr := s.repo.GetByULID(ctx, c.ULID)
+			if fetchErr != nil {
+				log.Warn().Err(fetchErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to fetch existing event for review flagging, skipping")
+				continue
+			}
+
+			// Only flag events that are currently published (don't re-flag already-pending or closed events).
+			if existingEvent.LifecycleState == "published" {
+				if _, updateErr := s.repo.UpdateEvent(ctx, c.ULID, UpdateEventParams{
+					LifecycleState: &pendingState,
+				}); updateErr != nil {
+					log.Warn().Err(updateErr).
+						Str("candidate_ulid", c.ULID).
+						Msg("Near-duplicate: failed to update existing event lifecycle state, skipping")
+				}
+			}
+
+			// Create review queue entry for the existing event, cross-linked to the new event's UUID.
+			existingStart, existingEnd := parseEventTimesFromEvent(existingEvent)
+			newEventID := event.ID
+			if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+				EventID:            existingEvent.ID,
+				OriginalPayload:    []byte("{}"),
+				NormalizedPayload:  []byte("{}"),
+				Warnings:           []byte("[]"),
+				EventStartTime:     existingStart,
+				EventEndTime:       existingEnd,
+				DuplicateOfEventID: &newEventID,
+			}); createErr != nil {
+				log.Warn().Err(createErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to create review queue entry for existing event (may already exist), skipping")
+			}
+
+			// Capture the first candidate's UUID as the cross-link for the new event's review entry.
+			if i == 0 {
+				existingID := existingEvent.ID
+				nearDuplicateOfID = &existingID
+			}
+		}
 	}
 
 	// Create review queue entry if needed
@@ -669,15 +735,16 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 		startTime, endTime := parseEventTimes(validated)
 		reviewEntry, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-			EventID:           event.ID, // Use UUID, not ULID
-			OriginalPayload:   originalJSON,
-			NormalizedPayload: normalizedJSON,
-			Warnings:          warningsJSON,
-			SourceID:          sourceIDPtr,
-			SourceExternalID:  externalID,
-			DedupHash:         dedupHashPtr,
-			EventStartTime:    startTime,
-			EventEndTime:      endTime,
+			EventID:            event.ID, // Use UUID, not ULID
+			OriginalPayload:    originalJSON,
+			NormalizedPayload:  normalizedJSON,
+			Warnings:           warningsJSON,
+			SourceID:           sourceIDPtr,
+			SourceExternalID:   externalID,
+			DedupHash:          dedupHashPtr,
+			EventStartTime:     startTime,
+			EventEndTime:       endTime,
+			DuplicateOfEventID: nearDuplicateOfID,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create review queue entry: %w", err)
@@ -1224,6 +1291,16 @@ func parseEventTimes(input EventInput) (time.Time, *time.Time) {
 	}
 
 	return start, end
+}
+
+// parseEventTimesFromEvent extracts start/end times from an existing Event's first occurrence.
+// Used when creating review queue entries for existing near-duplicate events.
+func parseEventTimesFromEvent(event *Event) (time.Time, *time.Time) {
+	if len(event.Occurrences) == 0 {
+		return time.Now(), nil
+	}
+	occ := event.Occurrences[0]
+	return occ.StartTime, occ.EndTime
 }
 
 // stringOrEmpty safely extracts string from pointer or returns empty string
