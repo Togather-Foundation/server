@@ -78,7 +78,57 @@ description: "Task list for integrated event scraper"
 
 ---
 
-## Phase 3: Scheduling + Production (Future — not in this pass)
+## Phase 3: DB-backed Source Configs + Org/Place Linkage
+
+**Purpose**: Move source configs from YAML-only to DB-backed with YAML as seed format.
+YAML files remain canonical for version control and staging resets; DB is the runtime store.
+
+### Migration (srv-65kvw)
+
+- [ ] D001 Create migration `000032_scraper_sources.{up,down}.sql` with `scraper_sources`,
+  `org_scraper_sources`, `place_scraper_sources` tables — see spec.md for full schema
+- [ ] D002 Add SQLc queries in `internal/storage/postgres/queries/scraper_sources.sql`:
+  UpsertScraperSource, GetScraperSourceByName, ListScraperSources, DeleteScraperSource,
+  LinkOrgToSource, UnlinkOrgFromSource, ListSourcesForOrg,
+  LinkPlaceToSource, UnlinkPlaceFromSource, ListSourcesForPlace
+
+### Domain + Storage Layer (srv-iorfa) — depends on D001
+
+- [ ] D003 Add `internal/domain/scraper/source.go` — ScraperSource type, SelectorConfig,
+  Repository interface (Upsert, GetByName, List, LinkToOrg, UnlinkFromOrg, ListForOrg,
+  LinkToPlace, UnlinkFromPlace, ListForPlace), Filters/Pagination types
+- [ ] D004 Add `internal/storage/postgres/scraper_sources_repository.go` — postgres
+  implementation of scraper.Repository using SQLc generated code
+- [ ] D005 Wire repository into server dependency injection (cmd/server/cmd/serve.go pattern)
+
+### CLI Sync/Export (srv-2nu7e) — depends on srv-iorfa
+
+- [ ] D006 Add `server scrape sync` subcommand — upsert all `configs/sources/*.yaml` into
+  `scraper_sources` table; report created/updated/skipped counts; accept `--sources` flag
+- [ ] D007 Add `server scrape export` subcommand — dump all `scraper_sources` rows to
+  YAML files in `--sources` directory; skip `_`-prefixed files; report written/skipped
+
+### DB Runtime (srv-l71q1) — depends on srv-iorfa
+
+- [ ] D008 Update `internal/scraper/config.go` — add `LoadSourceConfigsFromDB(ctx, repo)`
+  function that reads from `scraper_sources`; update `LoadSourceConfigs` to try DB first
+  when a repo is available, fall back to YAML directory if DB unavailable or returns empty
+- [ ] D009 Update scrape CLI commands (source, all, list) to pass repo when available
+
+### API Exposure (srv-17zth) — depends on srv-iorfa
+
+- [ ] D010 Update org JSON-LD handler to include linked scraper sources as
+  `sel:scraperSource` array on org responses when sources are linked
+- [ ] D011 Update place JSON-LD handler similarly
+- [ ] D012 Document `sel:scraperSource` field in `docs/integration/scraper.md` and
+  `docs/integration/api-guide.md`
+
+**Phase 3 Checkpoint**: `server scrape sync` loads YAMLs into DB; `server scrape all`
+reads from DB; orgs/places with linked sources show them in API responses.
+
+---
+
+## Phase 4: Scheduling + Production (Future — not in this pass)
 
 - [ ] S023 [US4] Implement River job worker for periodic scraping in `internal/scraper/schedule.go`
 - [ ] S024 [US4] Wire scraper worker into server startup in `cmd/server/cmd/serve.go`

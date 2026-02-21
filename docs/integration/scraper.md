@@ -1,8 +1,8 @@
 # Integrated Event Scraper
 
-**Version:** 0.1.0
-**Date:** 2026-02-20
-**Status:** Implemented
+**Version:** 0.2.0
+**Date:** 2026-02-21
+**Status:** Implemented (Tier 0 + Tier 1); DB-backed source configs in progress (srv-65kvw..srv-17zth)
 
 The Togather SEL server includes a built-in two-tier event scraper for automatically
 extracting events from Toronto-area arts and culture websites. This document covers
@@ -33,13 +33,22 @@ see [scrapers.md](scrapers.md).
 server scrape url https://example.com/events --dry-run
 
 # Scrape a configured source and ingest into the running server
-server scrape source toronto-symphony-orch
+server scrape source harbourfront-centre
 
 # Scrape all enabled sources
 server scrape all
 
 # List configured sources
 server scrape list
+
+# Inspect a new URL to discover CSS class structure for Tier 1 selectors
+server scrape inspect https://example.com/events
+
+# Test selectors against a live URL without writing a config
+server scrape test https://example.com/events --event-list ".event-card" --name "h2"
+
+# AI-assisted: generate a source config for a URL (requires OpenCode)
+# /generate-selectors https://example.com/events
 ```
 
 The scraper submits events to the SEL batch ingest API (`POST /api/v1/events:batch`),
@@ -61,6 +70,32 @@ All subcommands are under `server scrape`. Persistent flags apply to all subcomm
 | `--dry-run` | — | `false` | Display extracted events without submitting |
 | `--limit N` | — | `0` (no limit) | Max events per source |
 | `--sources` | — | `configs/sources` | Path to sources directory |
+
+### `server scrape inspect <URL>`
+
+Fetch a URL and print a structured summary of the DOM: top CSS class frequencies,
+`data-*` attributes, candidate event container elements with sample HTML, and event
+link patterns. Used for Tier 1 selector research.
+
+```bash
+server scrape inspect https://example.com/events
+```
+
+### `server scrape test <URL>`
+
+Run a live selector test against a URL without writing a config or ingesting events.
+Pass selectors as flags or via a `--config` YAML file.
+
+```bash
+server scrape test https://example.com/events \
+  --event-list ".event-card" \
+  --name "h2.title" \
+  --start-date "time[datetime]" \
+  --url "a.event-link"
+
+# Or load from a config file
+server scrape test https://example.com/events --config my-source.yaml
+```
 
 ### `server scrape url <URL>`
 
@@ -269,36 +304,53 @@ LIMIT 20;
 
 ## Adding New Sources
 
-To contribute a new GTA arts/culture source:
+### Quickest path: AI-assisted generation (recommended)
+
+Use the `/generate-selectors` OpenCode slash command (see `agents/generate-selectors.md`):
+
+```bash
+# Single URL
+/generate-selectors https://example.com/events
+
+# File of URLs (one per line)
+/generate-selectors urls.txt
+```
+
+The command inspects the URL, proposes CSS selectors, validates live, checks the
+org database for a match, and writes `configs/sources/<name>.yaml`. It runs up to
+5 URLs in parallel via subagents.
+
+### Manual path
 
 1. Check whether the site has JSON-LD:
    ```bash
-   curl -sA "Togather-SEL-Scraper/0.1" https://example.com/events | grep -i 'application/ld+json'
+   server scrape inspect https://example.com/events
+   # Look for "Event hrefs" and top CSS classes in the output
    ```
-2. If JSON-LD exists, create a Tier 0 config (minimal, zero selectors needed).
-3. If no JSON-LD, inspect the event listing page in browser dev tools and build Tier 1 selectors.
-4. Test with `--dry-run` first:
+2. If JSON-LD exists, create a minimal Tier 0 config.
+3. If no JSON-LD, use `server scrape test` to iterate on selectors before writing the config.
+4. Test with `--dry-run`:
    ```bash
    server scrape source my-new-source --dry-run
    ```
-5. Verify event counts and data quality in the output.
-6. Submit a PR with the new `configs/sources/<slug>.yaml` file.
+5. Submit a PR with the new `configs/sources/<slug>.yaml` file.
 
-### Candidate Sites
+### Currently Configured Sources (Tier 1)
 
-See `configs/sources/README.md` for a curated list of high-priority GTA venues to
-investigate (confirmed and unconfirmed JSON-LD).
+| Name | URL | Events/page | Notes |
+|------|-----|-------------|-------|
+| harbourfront-centre | harbourfrontcentre.com/whats-on/ | 106 | |
+| toronto-reference-library | tpl.bibliocommons.com/v2/events | 21 | Screen-reader span duplication |
+| gardiner-museum | gardinermuseum.on.ca/whats-on/ | 7 | |
+| soulpepper | soulpepper.ca/performances | 9 | |
+| moca | moca.ca/events | 20 | Elementor template ID hook — fragile |
+| factory-theatre | factorytheatre.ca/whats-on/ | 5 | |
+| tarragon-theatre | tarragontheatre.com/whats-on/ | 13 | No dates on listing page |
+| coc | coc.ca/tickets/2526-season | 7 | Season URL — annual update needed |
+| national-ballet | national.ballet.ca/performances/202627-season/ | 9 | Season URL — annual update needed |
+| rom | rom.on.ca/whats-on/events | 120 | 3 pages; Drupal span duplication |
 
-### Currently Configured Sources
-
-| Name | URL | Tier |
-|------|-----|------|
-| Toronto Symphony Orchestra | https://www.tso.ca/concerts-events | 0 |
-| Roy Thomson / Massey Hall | https://www.mfrh.org/events | 0 |
-| Hot Docs Cinema | https://hotdocs.ca/whats-on | 0 |
-| Glad Day Bookshop | https://gladdaybookshop.com/pages/events | 0 |
-| Toronto Public Library | https://www.torontopubliclibrary.ca/events/ | 0 |
-| Harbourfront Centre | https://harbourfrontcentre.com/events/ | 0 |
+See `configs/sources/README.md` for full status including disabled sources and unverified candidates.
 
 ---
 

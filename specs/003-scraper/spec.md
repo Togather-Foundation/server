@@ -20,10 +20,20 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
 ### Non-Goals (v0.1)
 
 - Email/newsletter parsing (Tier 3 — future)
-- LLM-assisted extraction (Tier 3 — future)
 - Headless browser/JS rendering (Tier 2 — future, via Rod)
 - River job scheduling for automated periodic scrapes (Phase 3 — future)
 - Admin UI for managing scrape sources (future)
+
+### Design Additions (post-v0.1)
+
+- **LLM-assisted selector generation**: `agents/generate-selectors.md` slash command
+  inspects a URL, proposes CSS selectors, validates live via `server scrape test`, and
+  writes a `configs/sources/<name>.yaml`. Implemented 2026-02-21.
+- **DB-backed source configs**: `scraper_sources` table stores configs alongside
+  YAML files as the canonical seed format. `server scrape sync` imports YAML→DB;
+  `server scrape export` dumps DB→YAML. Scraper runtime reads from DB with YAML
+  fallback. Org/place linkage via join tables exposes sources in JSON-LD API responses.
+  Beads: srv-65kvw, srv-iorfa, srv-2nu7e, srv-l71q1, srv-17zth.
 
 ## User Scenarios & Testing
 
@@ -148,6 +158,42 @@ selectors:
 ```
 
 ### Database Schema
+
+#### `scraper_sources` (planned — srv-65kvw)
+
+```sql
+CREATE TABLE scraper_sources (
+  id              BIGSERIAL PRIMARY KEY,
+  name            TEXT UNIQUE NOT NULL,
+  url             TEXT NOT NULL,
+  tier            INT NOT NULL DEFAULT 0,
+  schedule        TEXT NOT NULL DEFAULT 'manual'
+                    CHECK (schedule IN ('daily', 'weekly', 'manual')),
+  trust_level     INT NOT NULL DEFAULT 5,
+  license         TEXT NOT NULL DEFAULT 'CC0-1.0',
+  enabled         BOOL NOT NULL DEFAULT true,
+  max_pages       INT NOT NULL DEFAULT 10,
+  selectors       JSONB,           -- null for tier 0
+  notes           TEXT,            -- curator freetext, exposed in API
+  last_scraped_at TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE org_scraper_sources (
+  organization_id UUID   NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  scraper_source_id BIGINT NOT NULL REFERENCES scraper_sources(id) ON DELETE CASCADE,
+  PRIMARY KEY (organization_id, scraper_source_id)
+);
+
+CREATE TABLE place_scraper_sources (
+  place_id          UUID   NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+  scraper_source_id BIGINT NOT NULL REFERENCES scraper_sources(id) ON DELETE CASCADE,
+  PRIMARY KEY (place_id, scraper_source_id)
+);
+```
+
+#### `scraper_runs` (existing)
 
 ```sql
 CREATE TABLE scraper_runs (
