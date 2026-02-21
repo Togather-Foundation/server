@@ -1,0 +1,13 @@
+name: "918-bathurst"
+# Tier 2 (disabled). WordPress + The Events Calendar (Tribe) photo view —
+# events are JS-rendered (AJAX). The tribe-no-js flag confirms JS dependency.
+# /events/list/ returns 404; default /events/ uses photo view.
+# Requires Rod headless browser (srv-h264z).
+# URL: https://918bathurst.com/events/
+url: "https://918bathurst.com/events/"
+tier: 2
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

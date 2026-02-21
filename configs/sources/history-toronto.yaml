@@ -1,0 +1,13 @@
+name: "history-toronto"
+# Tier 2 (disabled). Custom events site — date is split across three spans
+# (span.m-date__day, span.m-date__month, span.m-date__year) with no datetime attr.
+# Requires Rod headless browser (srv-h264z) or custom date concatenation logic.
+# ~50+ events confirmed 2026-02-21.
+# URL: https://www.historytoronto.com/events
+url: "https://www.historytoronto.com/events"
+tier: 2
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 5

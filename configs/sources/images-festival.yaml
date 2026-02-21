@@ -1,0 +1,12 @@
+name: "images-festival"
+# Tier 2 (disabled). React/Tailwind SPA — no server-rendered event cards found.
+# Requires Rod headless browser (srv-h264z).
+# Toronto-based international contemporary art and media festival.
+# URL: https://imagesfestival.com/events
+url: "https://imagesfestival.com/events"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

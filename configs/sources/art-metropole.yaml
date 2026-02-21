@@ -1,0 +1,16 @@
+name: "art-metropole"
+# Tier 1 (Colly CSS selectors). Custom WP site — 139+ events confirmed 2026-02-21.
+# Date is text in <span class="weak"> e.g. "04 Feb. - 29 Mar. 2026" (no datetime attr).
+# Name and URL both from <a> in <li>; event_list scoped to div.events li.
+url: "https://artmetropole.com/events"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.events li"
+  name: "a"
+  start_date: "span.weak"
+  url: "a"

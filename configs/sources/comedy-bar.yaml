@@ -1,0 +1,12 @@
+name: "comedy-bar"
+# Tier 2 (disabled). Custom JS calendar — events injected client-side via
+# $('<div class="render-event"...>') JavaScript. No server-rendered event HTML.
+# Requires Rod headless browser (srv-h264z).
+# URL: https://comedybar.ca/public/event
+url: "https://comedybar.ca/public/event"
+tier: 2
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

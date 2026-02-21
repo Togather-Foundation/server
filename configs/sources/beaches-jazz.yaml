@@ -1,0 +1,12 @@
+name: "beaches-jazz"
+# Tier 2 (disabled). Wix site — JS-rendered events, no server-rendered event HTML.
+# Toronto International Jazz Festival at the Beaches.
+# Requires Rod headless browser (srv-h264z).
+# URL: https://www.beachesjazz.com/events-1
+url: "https://www.beachesjazz.com/events-1"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

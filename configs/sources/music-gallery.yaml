@@ -1,0 +1,16 @@
+name: "music-gallery"
+# Tier 1 (Colly CSS selectors). WordPress custom theme.
+# Date is plain text "Friday, March 13, 2026" (no datetime attr).
+# Using /event-category/performance/ — persistent URL, same article.c-border structure.
+url: "https://musicgallery.org/event-category/performance/"
+tier: 1
+schedule: "weekly"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.c-border"
+  name: "h3 a"
+  start_date: "div.mb-4"
+  url: "h3 a"
