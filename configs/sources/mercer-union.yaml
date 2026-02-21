@@ -1,0 +1,11 @@
+name: "mercer-union"
+# Tier 2 (disabled). Vue SPA — event data embedded as JSON payload in page script,
+# not as HTML elements. No server-rendered event listing.
+# Requires Rod headless browser (srv-h264z).
+url: "https://mercerunion.org/programs"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 2

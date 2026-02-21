@@ -1,0 +1,11 @@
+name: "lula-lounge"
+# Tier 2 (disabled). Wix + React site — events are JS-rendered.
+# Lula is a major Toronto music/arts venue (world music, jazz, afrobeat).
+# Requires Rod headless browser (srv-h264z).
+url: "https://www.lula.ca/events"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 2
