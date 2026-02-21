@@ -244,6 +244,41 @@ func TestPlacesHandlerGetScraperSourcesEmpty(t *testing.T) {
 	require.False(t, present, "sel:scraperSource should be omitted when empty")
 }
 
+func TestPlacesHandlerGetScraperSourcesError(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	placeRepo := stubPlacesRepo{
+		listFn: func(_ places.Filters, _ places.Pagination) (places.ListResult, error) {
+			return places.ListResult{}, nil
+		},
+		getFn: func(_ string) (*places.Place, error) {
+			return &places.Place{ULID: ulid, Name: "Central Park"}, nil
+		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
+	}
+	scraperRepo := stubScraperSourceRepo{
+		listByPlaceFn: func(_ context.Context, _ string) ([]domainScraper.Source, error) {
+			return nil, errors.New("db error")
+		},
+	}
+
+	h := NewPlacesHandler(places.NewService(placeRepo), "test", "https://example.org").
+		WithScraperSourceRepo(scraperRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/places/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	// best-effort: error must NOT bubble up as 500; response is still 200 OK
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, present := payload["sel:scraperSource"]
+	require.False(t, present, "sel:scraperSource must be omitted when ListByPlace returns an error")
+}
+
 func TestPlacesHandlerGetNoScraperRepo(t *testing.T) {
 	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
 	placeRepo := stubPlacesRepo{

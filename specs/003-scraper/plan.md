@@ -1,7 +1,7 @@
 # Implementation Plan: Integrated Event Scraper
 
 **Branch**: `003-scraper` | **Date**: 2026-02-21 | **Spec**: [spec.md](./spec.md)
-**Status**: Phases 1 & 2 complete. Phase 3 (DB-backed source configs) **COMPLETE** — all 5 beads closed (srv-65kvw, srv-iorfa, srv-2nu7e, srv-l71q1, srv-17zth). Parent bead srv-m085x closed.
+**Status**: Phases 1–3 complete. Code review fixes **COMPLETE** — all 13 review beads closed across 3 waves (Wave 1: srv-43rad, srv-i0lhn, srv-e3sk8, srv-kezsj; Wave 2: srv-v5a2n, srv-14cib, srv-9nwr7, srv-ewuhx, srv-0z4fu, srv-ooakk; Wave 3: srv-r1x5p, srv-0b33l, srv-dnq72).
 **Input**: Feature specification from `/specs/003-scraper/spec.md`
 
 ## Summary
@@ -183,17 +183,37 @@ The normalizer must handle all of these gracefully.
 - **DB-first source config loading with YAML fallback** — `loadSourceConfigs` in `Scraper` tries the repository first; falls back to YAML transparently. The scraper works identically before and after `server scrape sync` is run.
 - **`ScrapeAll` dispatches tier directly** (not via `ScrapeSource`) — avoids a double `loadSourceConfigs` call on every run while keeping the iteration logic in one place.
 
-### Issues Found in Code Review (all fixed in `aa839d4`)
+### Issues Found in Code Review (all fixed across 3 waves)
+
+**Wave 1** (commit `0678950`) — context, docs, minor cleanup:
 
 | Issue | Fix |
 |-------|-----|
-| No HTTP body size limits | `io.LimitReader`: 10 MiB HTML, 1 MiB ingest response |
-| SSRF via open redirect | `CheckRedirect` returns `http.ErrUseLastResponse` on all clients |
-| CLI ignored SIGINT/SIGTERM | `signal.NotifyContext` replaces `context.Background()` |
-| Tier 1 EventID not deterministic | SHA-256 hash of `(source.Name + raw.Name + raw.StartDate)` as fallback |
-| `@type` overwritten with "Event" | Preserve original type (e.g. `MusicEvent`, `TheaterEvent`) |
-| Abort on first JSON-LD parse error | Skip-and-continue instead of early return |
-| No DB CHECK on `status` column | `CHECK (status IN ('running','completed','failed'))` added to migration |
+| Missing `scraperSource`/`tier`/`distanceKm` terms in JSON-LD context | Added to `contexts/sel/v0.1.jsonld` |
+| Redundant interface var check in `router.go` | Removed |
+| Sparse godoc on `ScraperSourceSummary` | Expanded |
+| Unclear `enabled` guard comment in `ScrapeAll` | Added explanation comment |
+
+**Wave 2** (commit `c4a679f`) — structural/code quality:
+
+| Issue | Fix |
+|-------|-----|
+| `dbSourceToSourceConfig` duplicated in two files | Exported as `SourceConfigFromDomain`; removed duplicate |
+| `SourceConfig.Notes` lost during YAML round-trip | Added `Notes string \`yaml:"notes,omitempty"\`` field |
+| `GetByName` + `Upsert` TOCTOU race in `scrapeSyncCmd` | Single `Upsert` + compare `UpdatedAt == CreatedAt` for insert-vs-update detection |
+| `context.Background()` in CLI DB ops (ignores SIGINT) | Replaced with `cmd.Context()` throughout |
+| `scraper.go` run-tracking logic scattered across 3 scrape methods | Extracted `runWithTracking`, `updateRunFailed`, `updateRunCompleted` helpers |
+| Pure-delegation `Service` wrapper in `domain/scraper` added unnecessary indirection | Removed; callers use `Repository` directly |
+
+**Wave 3** (post-review tests + migration):
+
+| Issue | Fix |
+|-------|-----|
+| No integration tests for `ScraperSourceRepository` | Added `scraper_sources_repository_test.go` with 13 tests covering all CRUD, list/filter, link/unlink, error paths |
+| No test for `ListByOrg`/`ListByPlace` error → still 200 + omit field | Added `TestOrganizationsHandlerGetScraperSourcesError` and `TestPlacesHandlerGetScraperSourcesError` |
+| Redundant `idx_scraper_sources_name` index (UNIQUE already creates one) | Migration `000033` drops it |
+
+**Learning**: `insertOrganization`/`insertPlace` test helpers return `seededEntity{ID, ULID}` where `ID` is the DB-generated UUID and `ULID` is the application ULID text. Repository methods that reference join tables (`LinkToOrg`, `ListByOrg`, etc.) take the UUID — use `entity.ID`, not `entity.ULID`.
 
 ### Spec Divergences (cosmetic, intentional)
 

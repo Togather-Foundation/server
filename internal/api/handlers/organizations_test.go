@@ -248,6 +248,41 @@ func TestOrganizationsHandlerGetScraperSourcesEmpty(t *testing.T) {
 	require.False(t, present, "sel:scraperSource should be omitted when empty")
 }
 
+func TestOrganizationsHandlerGetScraperSourcesError(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	orgRepo := stubOrganizationsRepo{
+		listFn: func(_ organizations.Filters, _ organizations.Pagination) (organizations.ListResult, error) {
+			return organizations.ListResult{}, nil
+		},
+		getFn: func(_ string) (*organizations.Organization, error) {
+			return &organizations.Organization{ULID: ulid, Name: "Arts Org"}, nil
+		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
+	}
+	scraperRepo := stubScraperSourceRepo{
+		listByOrgFn: func(_ context.Context, _ string) ([]domainScraper.Source, error) {
+			return nil, errors.New("db error")
+		},
+	}
+
+	h := NewOrganizationsHandler(organizations.NewService(orgRepo), "test", "https://example.org").
+		WithScraperSourceRepo(scraperRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	// best-effort: error must NOT bubble up as 500; response is still 200 OK
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, present := payload["sel:scraperSource"]
+	require.False(t, present, "sel:scraperSource must be omitted when ListByOrg returns an error")
+}
+
 func TestOrganizationsHandlerGetNoScraperRepo(t *testing.T) {
 	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
 	orgRepo := stubOrganizationsRepo{
