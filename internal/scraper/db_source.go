@@ -7,10 +7,10 @@ import (
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 )
 
-// dbSourceToSourceConfig converts a domain/scraper.Source (read from the DB)
+// SourceConfigFromDomain converts a domain/scraper.Source (read from the DB)
 // into a SourceConfig suitable for scraping. Selectors are JSON-decoded from
 // the JSONB column; an empty/nil Selectors field is valid for Tier 0 sources.
-func dbSourceToSourceConfig(src domainScraper.Source) (SourceConfig, error) {
+func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 	cfg := SourceConfig{
 		Name:       src.Name,
 		URL:        src.URL,
@@ -20,6 +20,7 @@ func dbSourceToSourceConfig(src domainScraper.Source) (SourceConfig, error) {
 		License:    src.License,
 		Enabled:    src.Enabled,
 		MaxPages:   src.MaxPages,
+		Notes:      src.Notes,
 	}
 
 	if len(src.Selectors) > 0 {

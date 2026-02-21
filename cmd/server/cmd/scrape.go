@@ -127,20 +127,21 @@ Examples:
   server scrape list
   server scrape list --sources configs/sources`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		dir := scrapeSourceDir
 
 		// Try DB first.
 		var configs []scraper.SourceConfig
 		dbURL := getDatabaseURL()
 		if dbURL != "" {
-			pool, poolErr := pgxpool.New(context.Background(), dbURL)
+			pool, poolErr := pgxpool.New(ctx, dbURL)
 			if poolErr == nil {
 				defer pool.Close()
 				repo := postgres.NewScraperSourceRepository(pool)
-				sources, listErr := repo.List(context.Background(), nil) // all, not just enabled
+				sources, listErr := repo.List(ctx, nil) // all, not just enabled
 				if listErr == nil && len(sources) > 0 {
 					for _, src := range sources {
-						cfg, convErr := dbSourceToSourceConfig(src)
+						cfg, convErr := scraper.SourceConfigFromDomain(src)
 						if convErr != nil {
 							fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", src.Name, convErr)
 							continue
@@ -431,6 +432,7 @@ Examples:
   server scrape sync
   server scrape sync --sources configs/sources`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		dir := scrapeSourceDir
 
 		configs, err := scraper.LoadSourceConfigs(dir)
@@ -446,14 +448,13 @@ Examples:
 		if dbURL == "" {
 			return fmt.Errorf("DATABASE_URL is required for sync")
 		}
-		pool, err := pgxpool.New(context.Background(), dbURL)
+		pool, err := pgxpool.New(ctx, dbURL)
 		if err != nil {
 			return fmt.Errorf("connect to DB: %w", err)
 		}
 		defer pool.Close()
 
 		repo := postgres.NewScraperSourceRepository(pool)
-		svc := domainScraper.NewService(repo)
 
 		var created, updated int
 		for _, cfg := range configs {
@@ -463,14 +464,14 @@ Examples:
 				continue
 			}
 
-			// Determine if this is a new or existing source.
-			_, getErr := svc.GetByName(context.Background(), cfg.Name)
-			_, upsertErr := svc.Upsert(context.Background(), params)
+			result, upsertErr := repo.Upsert(ctx, params)
 			if upsertErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: upsert %q: %v\n", cfg.Name, upsertErr)
 				continue
 			}
-			if getErr != nil { // ErrNotFound → new
+			// Infer created vs updated from the RETURNING timestamps.
+			// On INSERT both timestamps are equal; on UPDATE updated_at > created_at.
+			if result.UpdatedAt.Equal(result.CreatedAt) {
 				created++
 			} else {
 				updated++
@@ -495,22 +496,22 @@ Examples:
   server scrape export
   server scrape export --sources configs/sources`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		dir := scrapeSourceDir
 
 		dbURL := getDatabaseURL()
 		if dbURL == "" {
 			return fmt.Errorf("DATABASE_URL is required for export")
 		}
-		pool, err := pgxpool.New(context.Background(), dbURL)
+		pool, err := pgxpool.New(ctx, dbURL)
 		if err != nil {
 			return fmt.Errorf("connect to DB: %w", err)
 		}
 		defer pool.Close()
 
 		repo := postgres.NewScraperSourceRepository(pool)
-		svc := domainScraper.NewService(repo)
 
-		sources, err := svc.List(context.Background(), nil)
+		sources, err := repo.List(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("list scraper sources: %w", err)
 		}
@@ -524,7 +525,7 @@ Examples:
 		}
 
 		for _, src := range sources {
-			cfg, decErr := dbSourceToSourceConfig(src)
+			cfg, decErr := scraper.SourceConfigFromDomain(src)
 			if decErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", src.Name, decErr)
 				continue
@@ -570,31 +571,8 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		Enabled:    cfg.Enabled,
 		MaxPages:   cfg.MaxPages,
 		Selectors:  selectorsJSON,
-		Notes:      "",
+		Notes:      cfg.Notes,
 	}, nil
-}
-
-// dbSourceToSourceConfig converts a domain Source (from DB) back to a
-// scraper.SourceConfig for YAML export.
-func dbSourceToSourceConfig(src domainScraper.Source) (scraper.SourceConfig, error) {
-	cfg := scraper.SourceConfig{
-		Name:       src.Name,
-		URL:        src.URL,
-		Tier:       src.Tier,
-		Schedule:   src.Schedule,
-		TrustLevel: src.TrustLevel,
-		License:    src.License,
-		Enabled:    src.Enabled,
-		MaxPages:   src.MaxPages,
-	}
-
-	if len(src.Selectors) > 0 {
-		if err := json.Unmarshal(src.Selectors, &cfg.Selectors); err != nil {
-			return scraper.SourceConfig{}, fmt.Errorf("decode selectors: %w", err)
-		}
-	}
-
-	return cfg, nil
 }
 
 func init() {

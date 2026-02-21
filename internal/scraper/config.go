@@ -22,6 +22,7 @@ type SourceConfig struct {
 	Enabled         bool           `yaml:"enabled"`
 	EventURLPattern string         `yaml:"event_url_pattern"`
 	MaxPages        int            `yaml:"max_pages"`
+	Notes           string         `yaml:"notes,omitempty"`
 	Selectors       SelectorConfig `yaml:"selectors"`
 }
 
