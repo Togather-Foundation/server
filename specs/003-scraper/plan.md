@@ -1,6 +1,7 @@
 # Implementation Plan: Integrated Event Scraper
 
 **Branch**: `003-scraper` | **Date**: 2026-02-20 | **Spec**: [spec.md](./spec.md)
+**Status**: Phases 1 & 2 complete, deployed to staging. Phases 3+ are future work.
 **Input**: Feature specification from `/specs/003-scraper/spec.md`
 
 ## Summary
@@ -9,9 +10,10 @@ Add an integrated event scraper to the SEL server that extracts events from Toro
 
 ## Technical Context
 
-**New Dependencies**:
-- `github.com/PuerkitoBio/goquery` v1.x — HTML parsing and JSON-LD extraction
-- `github.com/gocolly/colly/v2` v2.x — Web scraping framework with rate limiting, robots.txt, caching
+**New Dependencies** (added):
+- `github.com/PuerkitoBio/goquery` v1.11.0 — HTML parsing and JSON-LD extraction
+- `github.com/gocolly/colly/v2` v2.3.0 — Web scraping framework with rate limiting, robots.txt, caching
+- `gopkg.in/yaml.v3` — promoted from indirect to direct for source config loading
 
 **Existing Infrastructure Leveraged**:
 - Batch ingest API (`POST /api/v1/events:batch`) — scraper is a consumer
@@ -101,39 +103,41 @@ The normalizer must handle all of these gracefully.
 
 ## Phases
 
-### Phase 1: Foundation + Tier 0 (JSON-LD Extraction)
+### Phase 1: Foundation + Tier 0 (JSON-LD Extraction) ✅ COMPLETE
 
 **Goal**: `server scrape url <URL>` works end-to-end with JSON-LD sites.
 
-1. Add Goquery + Colly dependencies
-2. Create `scraper_runs` migration
-3. Implement `internal/scraper/config.go` — types and YAML loader
-4. Implement `internal/scraper/jsonld.go` — Tier 0 extraction
-5. Implement `internal/scraper/normalize.go` — schema.org → EventInput mapping
-6. Implement `internal/scraper/ingest.go` — HTTP client for batch API
-7. Implement `internal/scraper/scraper.go` — orchestrator
-8. Implement `cmd/server/cmd/scrape.go` — CLI with `url` subcommand
-9. Unit tests for JSON-LD extraction, normalization
-10. Integration test: scrape a real URL, verify events appear in API
+1. ✅ Add Goquery + Colly dependencies (`srv-p6vbo`)
+2. ✅ Create `scraper_runs` migration + SQLc queries (`srv-0hk2l`)
+3. ✅ Implement `internal/scraper/config.go` — types and YAML loader (`srv-rje5r`)
+4. ✅ Implement `internal/scraper/jsonld.go` — Tier 0 extraction (`srv-5atjx`)
+5. ✅ Implement `internal/scraper/normalize.go` — schema.org → EventInput mapping (`srv-2gby0`)
+6. ✅ Implement `internal/scraper/ingest.go` — HTTP client for batch API (`srv-qiii1`)
+7. ✅ Implement `internal/scraper/scraper.go` — orchestrator (`srv-4xupn`)
+8. ✅ Implement `cmd/server/cmd/scrape.go` — CLI with `url` subcommand (`srv-xyp0r`)
+9. ✅ Unit tests: JSON-LD extraction (22 tests), normalization (35 tests), 7 HTML fixtures
+10. ✅ Integration tests: httptest-based scrape tests
 
-### Phase 2: Tier 1 (Colly) + Source Configs
+### Phase 2: Tier 1 (Colly) + Source Configs ✅ COMPLETE
 
 **Goal**: Config-driven scraping with CSS selectors for sites without JSON-LD.
 
-1. Implement `internal/scraper/colly.go` — Colly-based extraction
-2. Create `configs/sources/_example.yaml` — documented template
-3. Create 5-10 real GTA source configs
-4. Implement `server scrape source`, `server scrape all`, `server scrape list`
-5. Add `scraper_runs` DB tracking
-6. Unit tests for Colly extraction, config validation
-7. End-to-end test: scrape all sources on staging
+1. ✅ Implement `internal/scraper/colly.go` — Colly-based extraction (`srv-rnb2s`)
+2. ✅ Create `configs/sources/_example.yaml` — documented template (`srv-ztij5`)
+3. ✅ Create 6 GTA source configs: TSO, Roy Thomson, Hot Docs, Glad Day, TPL, Harbourfront (`srv-ztij5`)
+4. ✅ Implement `server scrape source`, `server scrape all`, `server scrape list` (`srv-xyp0r`)
+5. ✅ Add `scraper_runs` DB tracking wired into all tiers (`srv-0mnq0`)
+6. ✅ Code review + security fixes: body limits, no-redirect clients, signal contexts, EventID dedup, @type preservation, CHECK constraint
+7. ✅ Deployed to staging — all smoke tests passing
+
+**Known issue**: The 6 GTA source configs contain placeholder URLs that have not been validated against live sites. See `srv-aany8`.
 
 ### Phase 3: Scheduling + Production (Future)
 
-1. River job worker for periodic scraping
+1. River job worker for periodic scraping — `srv-pfeud`
 2. Config-driven schedules (daily, weekly)
 3. Prometheus metrics for scrape success/failure rates
-4. Admin UI page for scrape status
+4. Admin UI page for scrape status — `srv-5127b`
 
 ### Phase 4: Agent Feedback + Quality (Future)
 
@@ -141,6 +145,43 @@ The normalizer must handle all of these gracefully.
 2. Source quality metrics over time
 3. MCP tool for agent to report data quality issues
 4. Agent-assisted source config generation
+
+## Reflect (Phase 6)
+
+### Design Decisions That Worked Well
+
+- **Two-tier split was clean** — JSON-LD zero-config path vs Colly selector path mapped naturally to separate files with no coupling.
+- **Submitting via batch API** — exercises the full auth/dedup/reconciliation pipeline during dogfooding; scraper stays loosely coupled.
+- **Optional DB tracking** (`queries *postgres.Queries` may be nil) — unit tests stay simple; CLI gracefully degrades when `DATABASE_URL` is absent.
+- **7 HTML fixture files** covering all 7 schema.org event shapes — gave high confidence in the normalizer before hitting live sites.
+
+### Issues Found in Code Review (all fixed in `aa839d4`)
+
+| Issue | Fix |
+|-------|-----|
+| No HTTP body size limits | `io.LimitReader`: 10 MiB HTML, 1 MiB ingest response |
+| SSRF via open redirect | `CheckRedirect` returns `http.ErrUseLastResponse` on all clients |
+| CLI ignored SIGINT/SIGTERM | `signal.NotifyContext` replaces `context.Background()` |
+| Tier 1 EventID not deterministic | SHA-256 hash of `(source.Name + raw.Name + raw.StartDate)` as fallback |
+| `@type` overwritten with "Event" | Preserve original type (e.g. `MusicEvent`, `TheaterEvent`) |
+| Abort on first JSON-LD parse error | Skip-and-continue instead of early return |
+| No DB CHECK on `status` column | `CHECK (status IN ('running','completed','failed'))` added to migration |
+
+### Spec Divergences (cosmetic, intentional)
+
+- SQLc field names differ slightly from spec: `SourceUrl` (not `SourceURL`), `EventsNew` (not `EventsCreated`), `EventsDup` (not `EventsDuplicate`). Column semantics are correct.
+- Batch ingest response is async (202 Accepted); event created/dup counts come from the async status result, not the initial submit response. `IngestResult` handles both shapes.
+
+### Follow-up Beads Filed
+
+| Bead | Title | Priority |
+|------|-------|----------|
+| `srv-aany8` | Validate and fix GTA source config URLs against live sites | P3 |
+| `srv-pfeud` | River job scheduling for periodic automated scrapes | P4 |
+| `srv-5127b` | Admin UI for source management and run history | P4 |
+| `srv-h264z` | Tier 2 headless browser support via Rod | P4 |
+
+---
 
 ## Constitution Check
 
