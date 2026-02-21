@@ -87,6 +87,11 @@ enabled: true
 # Set lower for sites with deep pagination you don't need.
 max_pages: 5
 
+# skip_multi_session_check: Disable multi-session detection for this source (default: false).
+# Set to true for sources that legitimately publish long-duration events (exhibitions,
+# residencies, summer institutes, etc.) that would otherwise trigger the review queue.
+# skip_multi_session_check: false
+
 # --- TIER 1 SELECTORS ---
 # Only required when tier: 1
 # Use CSS selectors. For start_date/end_date, prefer elements with datetime

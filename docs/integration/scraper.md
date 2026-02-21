@@ -241,6 +241,7 @@ selectors:
 | `license` | `""` | License applied to ingested events |
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
+| `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
 | `selectors` | — | Required when `tier: 1` |
 
 ---

@@ -212,6 +212,9 @@ CREATE TABLE event_review_queue (
   review_notes TEXT,
   rejection_reason TEXT,
   
+  -- Near-duplicate cross-linking (see Near-Duplicate Cross-Linking section)
+  duplicate_of_event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+  
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   
@@ -264,10 +267,46 @@ Validation generates machine-readable warning codes:
 |------|-----------|-------------|
 | `reversed_dates_timezone_likely` | High | End time 0-4 AM, duration < 7h after correction. Likely overnight event with timezone error. |
 | `reversed_dates_corrected_needs_review` | Low | Reversed dates corrected but doesn't match high-confidence pattern. Needs admin review. |
+| `multi_session_likely` | — | Event appears to be a multi-session course or recurring series. See [Multi-Session Detection](#multi-session-detection). |
+
+## Multi-Session Detection
+
+Events that appear to be multi-session courses or recurring series are automatically routed to the review queue instead of being published. Two heuristics are applied:
+
+| Heuristic | Condition |
+|-----------|-----------|
+| **Duration** | Single occurrence spanning > 168 hours (1 week) |
+| **Title patterns** | Contains `(N sessions)`, `(N weeks)`, `(N classes)`, `(N workshops)`, `workshop series`, `course`, or `weekly` |
+
+When either heuristic fires, the warning code `multi_session_likely` is added and the event is stored with `lifecycle_state = 'pending_review'`.
+
+**Per-source opt-out:** Sources that legitimately publish long-duration events (e.g. exhibitions, residencies) can set `skip_multi_session_check: true` in their source config. See [scraper.md](../integration/scraper.md) for the config field reference.
+
+---
+
+## Near-Duplicate Cross-Linking
+
+When Layer 2 (pg_trgm) near-duplicate detection matches a new event against one or more existing published events, both sides of the match enter the review queue:
+
+1. **New event** — stored with `lifecycle_state = 'pending_review'` (existing behaviour). Its review queue entry has `duplicate_of_event_id` pointing to the first matched existing event.
+2. **Each matched existing event** — if currently `published`, its `lifecycle_state` is set to `'pending_review'` and a new review queue entry is created, with `duplicate_of_event_id` pointing to the new event.
+
+This allows an admin to compare both candidates side-by-side and decide which to keep, merge, or discard.
+
+**Scope:** Only Layer 2 (near-duplicate) matches trigger this behaviour. Layer 1 exact dedup-hash matches still auto-merge as before.
+
+**Timing:** The existing-event updates happen after the transaction commits (for FK safety). Failures are non-critical — they are logged and skipped rather than failing the ingest request.
+
+### `duplicate_of_event_id` field
+
+The `event_review_queue` table has a `duplicate_of_event_id` column (nullable `TEXT`, references `events.id`). It is populated when a review entry is created as part of near-duplicate cross-linking:
+
+- On the **new** event's entry: points to the first matched existing event.
+- On each **existing** event's entry: points to the new event.
+
+---
 
 ## Ingestion Workflow
-
-### High-Level Flow
 
 ```
 1. Decode JSON payload
