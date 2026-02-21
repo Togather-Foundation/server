@@ -31,6 +31,7 @@ IMPORTANT:
 - `server cleanup` — Clean up deployment artifacts (Docker images, snapshots, logs)
 - `server api-key` — API key management (create, list, revoke)
 - `server developer` — Developer account management (invite, list, deactivate)
+- `server scrape` — Scrape events from URLs or configured sources (url, list, source, all)
 - `server reconcile` — Bulk reconciliation against knowledge graphs (places, organizations, all)
 - `server webfiles` — Generate robots.txt and sitemap.xml for deployment
 - `server version` — Print version information
@@ -48,6 +49,7 @@ internal/auth/        — Authentication (JWT, API keys)
 internal/config/      — Configuration and logging setup
 internal/jobs/        — River background job workers
 internal/jsonld/      — JSON-LD processing
+internal/scraper/     — Two-tier event scraper (JSON-LD + Colly CSS selectors)
 internal/kg/          — Knowledge graph reconciliation (Artsdata adapter)
 internal/validation/  — Input validation
 web/                  — Frontend/web assets

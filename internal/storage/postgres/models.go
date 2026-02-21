@@ -436,6 +436,22 @@ type ReverseGeocodingCache struct {
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 }
 
+type ScraperRun struct {
+	ID           int64              `json:"id"`
+	SourceName   string             `json:"source_name"`
+	SourceUrl    string             `json:"source_url"`
+	Tier         int32              `json:"tier"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	Status       string             `json:"status"`
+	EventsFound  int32              `json:"events_found"`
+	EventsNew    int32              `json:"events_new"`
+	EventsDup    int32              `json:"events_dup"`
+	EventsFailed int32              `json:"events_failed"`
+	ErrorMessage pgtype.Text        `json:"error_message"`
+	Metadata     []byte             `json:"metadata"`
+}
+
 type Source struct {
 	ID                     pgtype.UUID        `json:"id"`
 	Name                   string             `json:"name"`
