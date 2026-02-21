@@ -57,18 +57,19 @@ func NewEventSummary(name string) *EventSummary {
 
 // Place represents a full schema.org Place for JSON-LD output.
 type Place struct {
-	Context                 any             `json:"@context,omitempty"`
-	Type                    string          `json:"@type"`
-	ID                      string          `json:"@id,omitempty"`
-	Name                    string          `json:"name"`
-	Description             string          `json:"description,omitempty"`
-	Address                 *PostalAddress  `json:"address,omitempty"`
-	Geo                     *GeoCoordinates `json:"geo,omitempty"`
-	Telephone               string          `json:"telephone,omitempty"`
-	Email                   string          `json:"email,omitempty"`
-	URL                     string          `json:"url,omitempty"`
-	MaximumAttendeeCapacity int             `json:"maximumAttendeeCapacity,omitempty"`
-	DistanceKm              *float64        `json:"sel:distanceKm,omitempty"` // Custom SEL field for proximity search
+	Context                 any                    `json:"@context,omitempty"`
+	Type                    string                 `json:"@type"`
+	ID                      string                 `json:"@id,omitempty"`
+	Name                    string                 `json:"name"`
+	Description             string                 `json:"description,omitempty"`
+	Address                 *PostalAddress         `json:"address,omitempty"`
+	Geo                     *GeoCoordinates        `json:"geo,omitempty"`
+	Telephone               string                 `json:"telephone,omitempty"`
+	Email                   string                 `json:"email,omitempty"`
+	URL                     string                 `json:"url,omitempty"`
+	MaximumAttendeeCapacity int                    `json:"maximumAttendeeCapacity,omitempty"`
+	DistanceKm              *float64               `json:"sel:distanceKm,omitempty"`    // Custom SEL field for proximity search
+	ScraperSources          []ScraperSourceSummary `json:"sel:scraperSource,omitempty"` // Linked scraper sources
 }
 
 // NewPlace creates a Place with @type pre-set.
@@ -100,16 +101,26 @@ type GeoCoordinates struct {
 
 // Organization represents a full schema.org Organization for JSON-LD output.
 type Organization struct {
-	Context     any            `json:"@context,omitempty"`
-	Type        string         `json:"@type"`
-	ID          string         `json:"@id,omitempty"`
-	Name        string         `json:"name"`
-	LegalName   string         `json:"legalName,omitempty"`
-	Description string         `json:"description,omitempty"`
-	URL         string         `json:"url,omitempty"`
-	Email       string         `json:"email,omitempty"`
-	Telephone   string         `json:"telephone,omitempty"`
-	Address     *PostalAddress `json:"address,omitempty"`
+	Context        any                    `json:"@context,omitempty"`
+	Type           string                 `json:"@type"`
+	ID             string                 `json:"@id,omitempty"`
+	Name           string                 `json:"name"`
+	LegalName      string                 `json:"legalName,omitempty"`
+	Description    string                 `json:"description,omitempty"`
+	URL            string                 `json:"url,omitempty"`
+	Email          string                 `json:"email,omitempty"`
+	Telephone      string                 `json:"telephone,omitempty"`
+	Address        *PostalAddress         `json:"address,omitempty"`
+	ScraperSources []ScraperSourceSummary `json:"sel:scraperSource,omitempty"` // Linked scraper sources
+}
+
+// ScraperSourceSummary is a compact representation of a linked scraper source,
+// embedded in org and place JSON-LD responses as sel:scraperSource.
+type ScraperSourceSummary struct {
+	Name  string `json:"name"`
+	URL   string `json:"url"`
+	Tier  int    `json:"tier"`
+	Notes string `json:"notes,omitempty"`
 }
 
 // NewOrganization creates an Organization with @type pre-set.

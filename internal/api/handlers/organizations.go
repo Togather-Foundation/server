@@ -9,17 +9,26 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
 
 type OrganizationsHandler struct {
-	Service *organizations.Service
-	Env     string
-	BaseURL string
+	Service     *organizations.Service
+	scraperRepo domainScraper.Repository // optional; nil = omit sel:scraperSource
+	Env         string
+	BaseURL     string
 }
 
 func NewOrganizationsHandler(service *organizations.Service, env string, baseURL string) *OrganizationsHandler {
 	return &OrganizationsHandler{Service: service, Env: env, BaseURL: baseURL}
+}
+
+// WithScraperSourceRepo adds scraper source linkage to the handler (optional).
+// When set, the Get handler includes linked scraper sources as sel:scraperSource.
+func (h *OrganizationsHandler) WithScraperSourceRepo(repo domainScraper.Repository) *OrganizationsHandler {
+	h.scraperRepo = repo
+	return h
 }
 
 func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +122,21 @@ func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	org.Email = item.Email
 	org.Telephone = item.Telephone
 	org.Address = schema.NewPostalAddress(item.StreetAddress, item.AddressLocality, item.AddressRegion, item.PostalCode, item.AddressCountry)
+
+	// Attach linked scraper sources (best-effort; omit on error).
+	if h.scraperRepo != nil {
+		if sources, srcErr := h.scraperRepo.ListByOrg(r.Context(), item.ULID); srcErr == nil && len(sources) > 0 {
+			org.ScraperSources = make([]schema.ScraperSourceSummary, 0, len(sources))
+			for _, src := range sources {
+				org.ScraperSources = append(org.ScraperSources, schema.ScraperSourceSummary{
+					Name:  src.Name,
+					URL:   src.URL,
+					Tier:  src.Tier,
+					Notes: src.Notes,
+				})
+			}
+		}
+	}
 
 	writeJSON(w, http.StatusOK, org, contentTypeFromRequest(r))
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -166,4 +167,108 @@ func TestPlacesHandlerListServiceError(t *testing.T) {
 	h.List(res, req)
 
 	require.Equal(t, http.StatusInternalServerError, res.Code)
+}
+
+func TestPlacesHandlerGetScraperSourcesPresent(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	placeRepo := stubPlacesRepo{
+		listFn: func(_ places.Filters, _ places.Pagination) (places.ListResult, error) {
+			return places.ListResult{}, nil
+		},
+		getFn: func(_ string) (*places.Place, error) {
+			return &places.Place{ULID: ulid, Name: "Central Park"}, nil
+		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
+	}
+	scraperRepo := stubScraperSourceRepo{
+		listByPlaceFn: func(_ context.Context, _ string) ([]domainScraper.Source, error) {
+			return []domainScraper.Source{
+				{Name: "central-park-events", URL: "https://centralpark.example.org/events", Tier: 1, Notes: "weekly scrape"},
+			}, nil
+		},
+	}
+
+	h := NewPlacesHandler(places.NewService(placeRepo), "test", "https://example.org").
+		WithScraperSourceRepo(scraperRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/places/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	sources, ok := payload["sel:scraperSource"].([]any)
+	require.True(t, ok, "sel:scraperSource should be a slice")
+	require.Len(t, sources, 1)
+	src, ok := sources[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "central-park-events", src["name"])
+	require.Equal(t, "https://centralpark.example.org/events", src["url"])
+}
+
+func TestPlacesHandlerGetScraperSourcesEmpty(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	placeRepo := stubPlacesRepo{
+		listFn: func(_ places.Filters, _ places.Pagination) (places.ListResult, error) {
+			return places.ListResult{}, nil
+		},
+		getFn: func(_ string) (*places.Place, error) {
+			return &places.Place{ULID: ulid, Name: "Central Park"}, nil
+		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
+	}
+	scraperRepo := stubScraperSourceRepo{
+		listByPlaceFn: func(_ context.Context, _ string) ([]domainScraper.Source, error) {
+			return nil, nil // no linked sources
+		},
+	}
+
+	h := NewPlacesHandler(places.NewService(placeRepo), "test", "https://example.org").
+		WithScraperSourceRepo(scraperRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/places/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, present := payload["sel:scraperSource"]
+	require.False(t, present, "sel:scraperSource should be omitted when empty")
+}
+
+func TestPlacesHandlerGetNoScraperRepo(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	placeRepo := stubPlacesRepo{
+		listFn: func(_ places.Filters, _ places.Pagination) (places.ListResult, error) {
+			return places.ListResult{}, nil
+		},
+		getFn: func(_ string) (*places.Place, error) {
+			return &places.Place{ULID: ulid, Name: "Central Park"}, nil
+		},
+		tombstoneFn: func(_ string) (*places.Tombstone, error) {
+			return nil, places.ErrNotFound
+		},
+	}
+
+	// No WithScraperSourceRepo — scraperRepo is nil
+	h := NewPlacesHandler(places.NewService(placeRepo), "test", "https://example.org")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/places/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, present := payload["sel:scraperSource"]
+	require.False(t, present, "sel:scraperSource should be omitted when scraperRepo is nil")
 }

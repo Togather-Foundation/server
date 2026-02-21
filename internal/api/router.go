@@ -24,6 +24,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	scraperDomain "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/domain/users"
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/geocoding"
@@ -169,6 +170,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		WithOrgResolver(orgService)
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL).WithGeocodingService(geocodingService)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
+
+	// Wire scraper source repo into org/place handlers for sel:scraperSource linkage (best-effort).
+	scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+	var scraperRepo scraperDomain.Repository = scraperSourceRepo
+	placesHandler = placesHandler.WithScraperSourceRepo(scraperRepo)
+	orgHandler = orgHandler.WithScraperSourceRepo(scraperRepo)
 
 	// Create geocoding handler (srv-28gtj)
 	geocodingHandler := handlers.NewGeocodingHandler(geocodingService, cfg.Environment)

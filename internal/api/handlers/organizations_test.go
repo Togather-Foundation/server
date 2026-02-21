@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -170,4 +171,108 @@ func TestOrganizationsHandlerListServiceError(t *testing.T) {
 	h.List(res, req)
 
 	require.Equal(t, http.StatusInternalServerError, res.Code)
+}
+
+func TestOrganizationsHandlerGetScraperSourcesPresent(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	orgRepo := stubOrganizationsRepo{
+		listFn: func(_ organizations.Filters, _ organizations.Pagination) (organizations.ListResult, error) {
+			return organizations.ListResult{}, nil
+		},
+		getFn: func(_ string) (*organizations.Organization, error) {
+			return &organizations.Organization{ULID: ulid, Name: "Arts Org"}, nil
+		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
+	}
+	scraperRepo := stubScraperSourceRepo{
+		listByOrgFn: func(_ context.Context, _ string) ([]domainScraper.Source, error) {
+			return []domainScraper.Source{
+				{Name: "arts-org-events", URL: "https://arts.example.org/events", Tier: 0, Notes: "main calendar"},
+			}, nil
+		},
+	}
+
+	h := NewOrganizationsHandler(organizations.NewService(orgRepo), "test", "https://example.org").
+		WithScraperSourceRepo(scraperRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	sources, ok := payload["sel:scraperSource"].([]any)
+	require.True(t, ok, "sel:scraperSource should be a slice")
+	require.Len(t, sources, 1)
+	src, ok := sources[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "arts-org-events", src["name"])
+	require.Equal(t, "https://arts.example.org/events", src["url"])
+}
+
+func TestOrganizationsHandlerGetScraperSourcesEmpty(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	orgRepo := stubOrganizationsRepo{
+		listFn: func(_ organizations.Filters, _ organizations.Pagination) (organizations.ListResult, error) {
+			return organizations.ListResult{}, nil
+		},
+		getFn: func(_ string) (*organizations.Organization, error) {
+			return &organizations.Organization{ULID: ulid, Name: "Arts Org"}, nil
+		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
+	}
+	scraperRepo := stubScraperSourceRepo{
+		listByOrgFn: func(_ context.Context, _ string) ([]domainScraper.Source, error) {
+			return nil, nil // no linked sources
+		},
+	}
+
+	h := NewOrganizationsHandler(organizations.NewService(orgRepo), "test", "https://example.org").
+		WithScraperSourceRepo(scraperRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, present := payload["sel:scraperSource"]
+	require.False(t, present, "sel:scraperSource should be omitted when empty")
+}
+
+func TestOrganizationsHandlerGetNoScraperRepo(t *testing.T) {
+	const ulid = "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	orgRepo := stubOrganizationsRepo{
+		listFn: func(_ organizations.Filters, _ organizations.Pagination) (organizations.ListResult, error) {
+			return organizations.ListResult{}, nil
+		},
+		getFn: func(_ string) (*organizations.Organization, error) {
+			return &organizations.Organization{ULID: ulid, Name: "Arts Org"}, nil
+		},
+		tombstoneFn: func(_ string) (*organizations.Tombstone, error) {
+			return nil, organizations.ErrNotFound
+		},
+	}
+
+	// No WithScraperSourceRepo — scraperRepo is nil
+	h := NewOrganizationsHandler(organizations.NewService(orgRepo), "test", "https://example.org")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/organizations/"+ulid, nil)
+	req.SetPathValue("id", ulid)
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, present := payload["sel:scraperSource"]
+	require.False(t, present, "sel:scraperSource should be omitted when scraperRepo is nil")
 }

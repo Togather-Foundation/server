@@ -10,6 +10,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 )
@@ -23,6 +24,7 @@ type PlacesGeocodingService interface {
 type PlacesHandler struct {
 	Service          *places.Service
 	GeocodingService PlacesGeocodingService
+	scraperRepo      domainScraper.Repository // optional; nil = omit sel:scraperSource
 	Env              string
 	BaseURL          string
 }
@@ -34,6 +36,13 @@ func NewPlacesHandler(service *places.Service, env string, baseURL string) *Plac
 // WithGeocodingService adds geocoding capability to the handler (optional dependency).
 func (h *PlacesHandler) WithGeocodingService(service PlacesGeocodingService) *PlacesHandler {
 	h.GeocodingService = service
+	return h
+}
+
+// WithScraperSourceRepo adds scraper source linkage to the handler (optional).
+// When set, the Get handler includes linked scraper sources as sel:scraperSource.
+func (h *PlacesHandler) WithScraperSourceRepo(repo domainScraper.Repository) *PlacesHandler {
+	h.scraperRepo = repo
 	return h
 }
 
@@ -194,6 +203,21 @@ func (h *PlacesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	place.URL = item.URL
 	if item.MaximumAttendeeCapacity != nil {
 		place.MaximumAttendeeCapacity = *item.MaximumAttendeeCapacity
+	}
+
+	// Attach linked scraper sources (best-effort; omit on error).
+	if h.scraperRepo != nil {
+		if sources, srcErr := h.scraperRepo.ListByPlace(r.Context(), item.ULID); srcErr == nil && len(sources) > 0 {
+			place.ScraperSources = make([]schema.ScraperSourceSummary, 0, len(sources))
+			for _, src := range sources {
+				place.ScraperSources = append(place.ScraperSources, schema.ScraperSourceSummary{
+					Name:  src.Name,
+					URL:   src.URL,
+					Tier:  src.Tier,
+					Notes: src.Notes,
+				})
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, place, contentTypeFromRequest(r))
