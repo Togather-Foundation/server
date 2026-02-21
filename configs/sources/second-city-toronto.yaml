@@ -1,0 +1,14 @@
+name: "second-city-toronto"
+# Tier 1 (Colly CSS selectors). Chakra UI show listing, 51 shows confirmed 2026-02-21.
+# Selectors validated with `server scrape test`.
+url: "https://www.secondcity.com/shows/toronto"
+tier: 1
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.chakra-linkbox"
+  name: "h2.chakra-heading"
+  url: "a.chakra-linkbox__overlay"

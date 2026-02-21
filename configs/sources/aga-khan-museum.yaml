@@ -1,0 +1,15 @@
+name: "aga-khan-museum"
+# Tier 1 (Colly CSS selectors). Static HTML event cards, 18 events confirmed 2026-02-21.
+# Selectors validated with `server scrape test`.
+url: "https://agakhanmuseum.org/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.c-event-card__wrap"
+  name: "h3.c-event-card__title"
+  start_date: "span.c-event-card__date-label"
+  url: "a.c-event-card__link"

@@ -1,0 +1,14 @@
+name: "tafelmusik"
+# Tier 1 (Colly CSS selectors). Season listing page, 11 events confirmed 2026-02-21.
+# No dates in static HTML; name + URL extracted reliably.
+url: "https://tafelmusik.org/concerts-events/2025-26-season/"
+tier: 1
+schedule: "weekly"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "div.content-preview-item"
+  name: "h3"
+  url: "a"

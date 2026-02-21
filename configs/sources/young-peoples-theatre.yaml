@@ -1,0 +1,14 @@
+name: "young-peoples-theatre"
+# Tier 1 (Colly CSS selectors). Static HTML, a.item.show-box containers confirmed 13 shows 2026-02-21.
+# No dates in static HTML; dates available on individual show pages.
+url: "https://www.youngpeoplestheatre.org/shows-tickets/"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "a.item.show-box"
+  name: "h3"
+  url: "a.item.show-box"

@@ -1,0 +1,9 @@
+name: "ago"
+# Disabled: HTTP 403 on all event listing pages 2026-02-21. Needs Tier 2 (Rod/authenticated scrape).
+url: "https://ago.ca/whats-on"
+tier: 0
+schedule: "daily"
+trust_level: 9
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

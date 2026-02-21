@@ -1,0 +1,9 @@
+name: "inside-out"
+# Disabled: Programme page redirects and 0 events in static HTML 2026-02-21. Needs Tier 2 (Rod).
+url: "https://insideout.ca/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

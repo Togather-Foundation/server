@@ -1,0 +1,9 @@
+name: "high-park-nature-centre"
+# Tier 0 (JSON-LD). WordPress Event schema, 12 events confirmed 2026-02-21.
+url: "https://highparknaturecentre.com/events/"
+tier: 0
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

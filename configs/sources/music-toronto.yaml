@@ -1,0 +1,15 @@
+name: "music-toronto"
+# Tier 1 (Colly CSS selectors). Squarespace event listing, 35 events confirmed 2026-02-21.
+# Selectors validated with `server scrape test`.
+url: "https://musictorontoconcerts.com/concerts/"
+tier: 1
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.eventlist-event"
+  name: "h1.eventlist-title"
+  start_date: "time.event-date"
+  url: "a.eventlist-column-thumbnail"

@@ -1,0 +1,10 @@
+name: "dance-immersion"
+# Disabled: inspect shows div.post-entry containers but scrape test returns 0 events 2026-02-21.
+# Possible nested JS rendering or selector mismatch. Needs further investigation / Tier 2 (Rod).
+url: "https://danceimmersion.ca/events/"
+tier: 0
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

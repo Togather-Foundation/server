@@ -1,0 +1,14 @@
+name: "north-york-arts"
+# Tier 1 (Colly CSS selectors). The Events Calendar list view, selectors validated 2026-02-21.
+# Only 1 test event currently on site; real events expected to populate when scheduled.
+url: "https://www.northyorkarts.org/events/list/"
+tier: 1
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.tribe-events-calendar-latest-past__event"
+  name: "h3"
+  url: "a"

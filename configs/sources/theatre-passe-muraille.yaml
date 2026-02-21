@@ -1,0 +1,10 @@
+name: "theatre-passe-muraille"
+# Disabled: Elementor-built pages; no workable static event containers found 2026-02-21.
+# /tickets/ is a FAQ accordion; /25-26-season/ has 0 extractable events. Needs Tier 2 (Rod).
+url: "https://passemuraille.ca/25-26-season/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

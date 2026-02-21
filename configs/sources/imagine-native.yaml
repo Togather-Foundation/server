@@ -1,0 +1,10 @@
+name: "imagine-native"
+# Disabled: Elementor-based; event links appear to be external (libraries/partner sites) 2026-02-21.
+# 0 events extracted from static HTML. Needs Tier 2 (Rod) or manual curation.
+url: "https://imaginenative.org/year-round/events/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

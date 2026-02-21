@@ -1,0 +1,9 @@
+name: "buddies-in-bad-times"
+# Tier 0 (JSON-LD). The Events Calendar / tribe-events schema, 24 events confirmed 2026-02-21.
+url: "https://buddiesinbadtimes.com/events/"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

@@ -1,0 +1,14 @@
+name: "ocadu"
+# Tier 1 (Colly CSS selectors). Drupal calendar view, 328 raw rows confirmed 2026-02-21.
+# Calendar repeats events per day — use max_pages: 1 to limit duplication.
+url: "https://www.ocadu.ca/campus-life/events-and-exhibitions"
+tier: 1
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "li.calendar-view-day__row"
+  name: "span.event-title"
+  url: "a"

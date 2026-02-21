@@ -1,0 +1,10 @@
+name: "workman-arts"
+# Disabled: Events loaded via AJAX filter; no event containers in static HTML 2026-02-21.
+# Needs Tier 2 (Rod) for JS rendering.
+url: "https://workmanarts.com/events/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

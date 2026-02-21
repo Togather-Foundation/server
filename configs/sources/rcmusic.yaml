@@ -1,0 +1,10 @@
+name: "rcmusic"
+# Disabled: Events loaded via AWS-backed search JS; static HTML has empty containers 2026-02-21.
+# Needs Tier 2 (Rod) for JS rendering.
+url: "https://www.rcmusic.com/events-and-performances"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: false
+max_pages: 3
