@@ -1,6 +1,7 @@
 name: "young-peoples-theatre"
 # Tier 1 (Colly CSS selectors). Static HTML, a.item.show-box containers confirmed 13 shows 2026-02-21.
-# No dates in static HTML; dates available on individual show pages.
+# No startDate: dates are not present in static HTML listing; they exist on individual show pages.
+# Events normalised without startDate are dropped. Needs tier-2 detail-page scraping.
 url: "https://www.youngpeoplestheatre.org/shows-tickets/"
 tier: 1
 schedule: "weekly"

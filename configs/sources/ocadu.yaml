@@ -1,6 +1,9 @@
 name: "ocadu"
 # Tier 1 (Colly CSS selectors). Drupal calendar view, 328 raw rows confirmed 2026-02-21.
 # Calendar repeats events per day — use max_pages: 1 to limit duplication.
+# No startDate: date is on the parent <td> (calendar day wrapper), not on the <li> row.
+# Tier-1 selectors can't reach a parent element; needs tier-2 detail-page scraping or
+# a structural change to the selector approach to extract dates.
 url: "https://www.ocadu.ca/campus-life/events-and-exhibitions"
 tier: 1
 schedule: "daily"

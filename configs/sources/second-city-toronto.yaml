@@ -1,6 +1,8 @@
 name: "second-city-toronto"
 # Tier 1 (Colly CSS selectors). Chakra UI show listing, 51 shows confirmed 2026-02-21.
 # Selectors validated with `server scrape test`.
+# No startDate: dates are not present in static HTML listing; they exist on detail pages only.
+# Events normalised without startDate are dropped. Needs tier-2 detail-page scraping.
 url: "https://www.secondcity.com/shows/toronto"
 tier: 1
 schedule: "daily"

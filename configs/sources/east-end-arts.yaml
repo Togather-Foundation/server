@@ -1,12 +1,14 @@
 name: "east-end-arts"
 # Tier 1 (Colly CSS selectors). Homepage news/events grid, 8 items confirmed 2026-02-21.
-# /events/ returns 404; homepage carries recent event listings. No dates in static HTML.
+# /events/ returns 404; homepage carries recent news listings, not an events calendar.
+# No dates in static HTML; articles are news posts, not structured events.
+# Disabled: not a viable event source at tier 1 — re-enable only with tier-2 detail scraping.
 url: "https://eastendarts.ca/"
 tier: 1
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 1
 selectors:
   event_list: "article.vcex-recent-news-entry"

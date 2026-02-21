@@ -61,6 +61,47 @@ Prefix: 01KGJZ40ZG0WQ5SQKCKA6VEH79
 
 **IMPORTANT:** Save the full key immediately - it cannot be retrieved later. Only the prefix is stored for identification.
 
+## Scraper Ingestion Key
+
+The `server scrape all` command submits events to a SEL server using `SEL_API_KEY` (or
+`SEL_INGEST_KEY`) and `SEL_SERVER_URL`. A dedicated agent-role key must exist **on the
+target server** before running scrapes against it.
+
+### First-time setup for a new environment
+
+```bash
+# 1. Create the key on the target server (run once per environment)
+ssh togather "docker exec togather-server-green /app/server api-key create scraper --role agent"
+# Save the printed key — it is shown only once.
+
+# 2. Add to your local .env for scraping against that environment
+echo "SEL_SERVER_URL=https://staging.toronto.togather.foundation" >> .env
+echo "SEL_API_KEY=<key-from-step-1>" >> .env
+```
+
+### Running a scrape
+
+```bash
+source .env
+./bin/togather-server scrape all --sources configs/sources
+```
+
+Or pass the flags directly without sourcing `.env`:
+
+```bash
+./bin/togather-server scrape all \
+  --server https://staging.toronto.togather.foundation \
+  --key <key> \
+  --sources configs/sources
+```
+
+### Persistent key on staging
+
+The key created above (`scraper-ingest` / role `agent`) should be treated as
+infrastructure — store it in `.env` locally alongside `SEL_SERVER_URL`. It does **not**
+need to be in `.env.staging` on the remote server; it only needs to exist in the staging
+database (which it does once created via `api-key create`).
+
 ## Configuring Test Keys
 
 Test API keys are used for performance testing, smoke tests, and integration tests. They should be configured in environment-specific files.

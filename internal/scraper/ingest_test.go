@@ -57,11 +57,9 @@ func TestSubmitBatch(t *testing.T) {
 			wantErrContain: "rate limited",
 		},
 		{
-			name:         "empty events slice sends request and handles empty result",
-			serverStatus: http.StatusAccepted,
-			serverBody:   IngestResult{BatchID: "01JKEMPTY0001"},
-			events:       []events.EventInput{},
-			wantResult:   IngestResult{BatchID: "01JKEMPTY0001"},
+			name:       "empty events slice returns zero IngestResult without HTTP call",
+			events:     []events.EventInput{},
+			wantResult: IngestResult{},
 		},
 	}
 
@@ -114,6 +112,53 @@ func TestSubmitBatch(t *testing.T) {
 				t.Errorf("EventsCreated = %d, want %d", result.EventsCreated, tc.wantResult.EventsCreated)
 			}
 		})
+	}
+}
+
+func TestSubmitBatchChunking(t *testing.T) {
+	// Build 150 events — requires two chunks (100 + 50).
+	const total = 150
+	evts := make([]events.EventInput, total)
+	for i := range evts {
+		evts[i] = events.EventInput{Name: "Event", StartDate: "2026-03-01T10:00:00Z"}
+	}
+
+	var requestCount int
+	var receivedSizes []int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Events []events.EventInput `json:"events"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		requestCount++
+		receivedSizes = append(receivedSizes, len(body.Events))
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(IngestResult{
+			BatchID:       "chunk-batch",
+			EventsCreated: len(body.Events),
+		})
+	}))
+	defer srv.Close()
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+	result, err := client.SubmitBatch(context.Background(), evts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if requestCount != 2 {
+		t.Errorf("expected 2 HTTP requests for 150 events, got %d", requestCount)
+	}
+	if len(receivedSizes) == 2 && (receivedSizes[0] != 100 || receivedSizes[1] != 50) {
+		t.Errorf("expected chunk sizes [100 50], got %v", receivedSizes)
+	}
+	if result.EventsCreated != total {
+		t.Errorf("EventsCreated = %d, want %d", result.EventsCreated, total)
 	}
 }
 

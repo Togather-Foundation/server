@@ -49,10 +49,38 @@ func NewIngestClient(baseURL, apiKey string) *IngestClient {
 	}
 }
 
+// maxBatchSize is the maximum number of events accepted by the API per request.
+const maxBatchSize = 100
+
 // SubmitBatch marshals events as {"events":[...]} and POSTs them to
-// {baseURL}/api/v1/events:batch. It returns an IngestResult populated from the
-// JSON response.
+// {baseURL}/api/v1/events:batch. Payloads larger than maxBatchSize are
+// automatically split into sequential chunks; results are aggregated into a
+// single IngestResult. It returns an IngestResult populated from the JSON
+// response.
 func (c *IngestClient) SubmitBatch(ctx context.Context, evts []events.EventInput) (IngestResult, error) {
+	var combined IngestResult
+	for i := 0; i < len(evts); i += maxBatchSize {
+		end := min(i+maxBatchSize, len(evts))
+		chunk := evts[i:end]
+
+		result, err := c.submitChunk(ctx, chunk)
+		if err != nil {
+			return combined, err
+		}
+		combined.EventsCreated += result.EventsCreated
+		combined.EventsDuplicate += result.EventsDuplicate
+		combined.EventsFailed += result.EventsFailed
+		combined.Errors = append(combined.Errors, result.Errors...)
+		if combined.BatchID == "" {
+			combined.BatchID = result.BatchID
+		}
+	}
+	return combined, nil
+}
+
+// submitChunk posts a single chunk of events (must be ≤ maxBatchSize) to the
+// batch ingest endpoint and returns the parsed response.
+func (c *IngestClient) submitChunk(ctx context.Context, evts []events.EventInput) (IngestResult, error) {
 	payload, err := json.Marshal(map[string]any{"events": evts})
 	if err != nil {
 		return IngestResult{}, fmt.Errorf("marshal batch: %w", err)

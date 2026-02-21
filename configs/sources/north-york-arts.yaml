@@ -12,3 +12,4 @@ selectors:
   event_list: "article.tribe-events-calendar-latest-past__event"
   name: "h3"
   url: "a"
+  start_date: "time"
