@@ -201,7 +201,7 @@ AGENT_SESSION=session2 scripts/agent-run.sh make lint
 ```
 
 Output files live in `.agent-output/<session-id>/` and can be searched:
-- Use `Grep` to search for specific errors in the log files
+- Use `Grep` or `rg` to search for specific errors in the log files
 - Use `Read` to view sections of the full output
 - File paths are reported in the summary output
 
