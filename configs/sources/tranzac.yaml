@@ -1,0 +1,10 @@
+name: "tranzac"
+# Tranzac Club (Toronto). Nuxt.js + DatoCMS SPA — full event calendar is JS-rendered.
+# 698KB page with Nuxt/Stripe deps. Disabled until Tier 2 (Rod) implemented (srv-h264z).
+url: "https://tranzac.org/calendar"
+tier: 2
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+notes: "Nuxt.js SPA backed by DatoCMS. Calendar content is JS-rendered. Tier 2 required."

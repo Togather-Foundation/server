@@ -1,0 +1,17 @@
+name: "toronto-summer-music"
+# Toronto Summer Music Festival. WordPress + The Events Calendar plugin.
+# Summer-only festival (June-August). Events page shows 0 results in off-season.
+# Off-season: no events present. Enabled but will yield 0 results until June.
+url: "https://torontosummermusic.com/events/list/"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.type-tribe_events"
+  name: "a.tribe-events-calendar-list__event-title-link"
+  start_date: "time.tribe-events-calendar-list__event-datetime[datetime]"
+  url: "a.tribe-events-calendar-list__event-title-link"
+  pagination: "a.tribe-events-c-nav__next"

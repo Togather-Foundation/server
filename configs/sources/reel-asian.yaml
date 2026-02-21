@@ -1,0 +1,11 @@
+name: "reel-asian"
+# Reel Asian International Film Festival (Toronto). WordPress + Elevent ticketing widget.
+# Year-round events at /year-round/current-events/ use Elevent embedded widget (AJAX).
+# Disabled until Tier 2 (Rod) implemented (srv-h264z).
+url: "https://www.reelasian.com/year-round/current-events/"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+notes: "WordPress + Elevent embedded widget (elevent-cdn.azureedge.net). Events are JS-rendered. Tier 2 required."
