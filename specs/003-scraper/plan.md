@@ -231,6 +231,69 @@ The normalizer must handle all of these gracefully.
 
 ---
 
+## Source Config Findings (Phase 2 expansion)
+
+### Recon Script (`scripts/recon-venues.py`)
+
+Crawls `https://t0ronto.ca/` directory (689 communities, 486 arts/culture org URLs).
+Probes each URL for: tech stack, JSON-LD event count, `/events/` subpage, tribe REST API, candidate hrefs.
+Output: `scripts/recon-output.tsv` — columns: `domain`, `final_url`, `status`, `tech_stack`, `jsonld_event_count`, `events_subpage`, `tribe_api`, `tier_guess`, `candidate_urls`.
+
+**Tier guess logic:**
+- `T0` — JSON-LD Event blocks found on page
+- `T1` — WordPress/Drupal + events subpage or tribe API detected (server-rendered HTML)
+- `T2` — Squarespace/Wix/React/Elementor/JetEngine detected (JS-rendered, needs headless)
+- `SKIP` — 404, no event content, or ticketing-only aggregator
+
+**Results from full run (486 orgs):** 13 T0, 249 T1, 148 T2, 76 SKIP.
+
+### The Events Calendar (Tribe) WordPress Plugin
+
+Very common in Toronto arts/culture WordPress sites. Detected via REST API endpoint at `/?rest_route=/tribe/events/v1/events` or `/wp-json/tribe/events/v1/events`.
+
+**Two scraping approaches:**
+
+1. **Tribe REST API (preferred for Tier 1)** — JSON endpoint, no CSS selectors needed:
+   - `GET <base>/wp-json/tribe/events/v1/events?per_page=50`
+   - Returns JSON with `events[]` array; each event has `title`, `start_date`, `url`, `description`, `venue`
+   - **Cannot be used directly** — Tier 1 Colly scraper works on HTML, not JSON APIs. A future Tier 1.5 (API-first) or Tier 0 extension could support this.
+
+2. **Tribe HTML list view (Tier 1)** — server-rendered HTML:
+   - URL pattern: `<base>/events/list/` or `<base>/events/`
+   - Event items: `article.type-tribe_events` or `.tribe-events-calendar-list__event-wrapper`
+   - Title: `h2.tribe-events-list-event__title a` or `.tribe-event-url`
+   - Date: `.tribe-event-date-start` or `time[datetime]`
+   - Link: `h2.tribe-events-list-event__title a` (href)
+   - **Caveat**: Default list view may use AJAX pagination — first page only is safe
+
+3. **Tribe month view JSON-LD (Tier 0)** — some sites embed JSON-LD in the month calendar page:
+   - URL: `<base>/events/` (not `list/`) on some configurations
+   - Check for `<script type="application/ld+json">` blocks with `@type: Event`
+   - If present, scrape as Tier 0 (zero config needed)
+
+**Detection**: `/?rest_route=/tribe/events/v1/events` returning 200 JSON is the most reliable indicator.
+
+### Key Learnings
+
+- **T0 venues with Ticketmaster-backed JSON-LD**: The Danforth, Opera House, Mod Club, RBC Amphitheatre all have rich MusicEvent JSON-LD directly in their HTML — the data comes from Ticketmaster's widget but is embedded in the venue's own page. This is legitimate and scrapeable.
+- **The scraper does NOT follow HTTP redirects** — always resolve final URL with `curl -sIL` before putting in config.
+- **Squarespace CSS classes are hashed/unstable** — not suitable for Tier 1; always Tier 2.
+- **Elementor/JetEngine** — renders via JS, Tier 2 only.
+- **`max_pages` in Colly config only controls pagination** (following `selectors.pagination` links), not sub-page crawling.
+- **`trust_level` guidelines**: 8–10 major institutional, 6–7 arts orgs/established venues, 5 community orgs, 1–4 aggregators.
+- **Tribe `/events/` URL is not always the calendar** — some sites use `/events/` as a static page (e.g. Jazz Bistro's "Private Events" page). Always check the actual tribe calendar URL; often `/event-calendar/` or `/calendar/`.
+- **Tribe "photo view" shortcodes are JS-rendered shells** — `tribe-events-view--photo` (and other shortcode-embedded views) render via React/AJAX. The static HTML is an empty shell. Only the classic list/month view is server-rendered.
+- **`type-tribe_events` class absent when no upcoming events** — the CSS class only appears when events are actually rendered. A site with only past events or an off-season calendar will have no visible tribe markup on the future-events page.
+- **Tribe REST API is the ground truth** — `GET /wp-json/tribe/events/v1/events?per_page=50` returns structured JSON regardless of which WordPress theme/view is used. Use this to verify if a site has events before investing in CSS selectors. (Not yet usable by the Tier 1 Colly scraper — future Tier 1.5.)
+- **Standard tribe list-view CSS selector chain** (when server-rendered): `article.tribe-events-calendar-list__event` → `a.tribe-events-calendar-list__event-title-link` (title + href) → `time.tribe-events-calendar-list__event-datetime[datetime]` (ISO date).
+- **WAF sites (ModSecurity)**: Some sites (e.g. summerworks.ca) block default curl User-Agent. Use `User-Agent: Mozilla/5.0 ...` in config's `headers` field.
+- **`scrape test` is Tier 1 only** — requires `--event-list` flag + URL as first arg. For Tier 0 configs, use `scrape url <URL> --dry-run` to validate.
+- **308 Permanent Redirect** blocks the no-redirect scraper — always resolve to final URL with `curl -sIL -o /dev/null -w "%{url_effective}"` before writing config. Trailing slash matters (`/events/` vs `/events`).
+- **Tribe default view is month (AJAX)** — must always use `/events/list/` suffix to get server-rendered HTML list view. The month view loads events via JS.
+- **ai1ec (All-in-One Event Calendar / Timely)** — another AJAX calendar plugin, similar to Tribe photo view. Tier 2 only.
+- **Weebly + unstructured free-text events** — not scrapeable; skip.
+- **Custom event card patterns** work well for T1 — e.g. Broadbent Institute's `div.bi-event-card` is stable, fully server-rendered, and clean to select.
+
 ## Constitution Check
 
 | Requirement | Status | Evidence |

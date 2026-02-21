@@ -1,0 +1,9 @@
+name: "comicon-toronto"
+# Tier 0 (JSON-LD). 1 Event confirmed. Scraper confirmed 2026-02-21.
+url: "https://fanexpohq.com/comicontoronto/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2

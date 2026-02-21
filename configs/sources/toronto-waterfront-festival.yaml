@@ -1,0 +1,9 @@
+name: "toronto-waterfront-festival"
+# Tier 0 (JSON-LD). WordPress site, 1 Event confirmed. Scraper confirmed 2026-02-21.
+url: "https://towaterfrontfest.com/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2

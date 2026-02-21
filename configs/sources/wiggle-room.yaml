@@ -1,0 +1,9 @@
+name: "wiggle-room"
+# Tier 0 (JSON-LD). Tribe Events / WordPress. 15 events confirmed 2026-02-21.
+url: "https://wiggleroomtoronto.com/events/"
+tier: 0
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

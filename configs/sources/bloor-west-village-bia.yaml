@@ -1,0 +1,10 @@
+name: "bloor-west-village-bia"
+# Tier 0 (JSON-LD). JSON-LD Event array on list page. 5 events confirmed 2026-02-21.
+# Note: must use www. subdomain + /events-calendar/list/ (month view is AJAX).
+url: "https://www.bloorwestvillagebia.com/events-calendar/list/"
+tier: 0
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 2

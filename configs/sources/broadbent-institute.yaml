@@ -1,0 +1,15 @@
+name: "broadbent-institute"
+# Tier 1 (Colly CSS). Custom bi-event-card pattern, fully server-rendered. 18 events confirmed 2026-02-21.
+# Note: returns mix of upcoming + past events — pipeline deduplicates.
+url: "https://broadbentinstitute.ca/events/"
+tier: 1
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "div.bi-event-card"
+  name: "h2.bi-event-card__title > a"
+  start_date: "span.bi-event-card__date-start"
+  url: "h2.bi-event-card__title > a"

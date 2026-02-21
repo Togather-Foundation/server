@@ -1,0 +1,10 @@
+name: "mod-club"
+# Tier 0 (JSON-LD). Next.js site, 25 MusicEvents confirmed in HTML 2026-02-21.
+# Note: scraper currently returns "No events found" due to compression issue with Next.js pages.
+url: "https://www.themodclub.com/"
+tier: 0
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
