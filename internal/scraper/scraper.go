@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
@@ -38,9 +39,10 @@ type ScrapeResult struct {
 // Scraper orchestrates fetching, normalising, and ingesting events from
 // configured sources.
 type Scraper struct {
-	ingest  *IngestClient
-	queries *postgres.Queries // may be nil — DB tracking skipped when nil
-	logger  zerolog.Logger
+	ingest     *IngestClient
+	queries    *postgres.Queries        // may be nil — DB tracking skipped when nil
+	sourceRepo domainScraper.Repository // may be nil — falls back to YAML when nil
+	logger     zerolog.Logger
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -51,6 +53,58 @@ func NewScraper(ingest *IngestClient, queries *postgres.Queries, logger zerolog.
 		queries: queries,
 		logger:  logger,
 	}
+}
+
+// NewScraperWithSourceRepo constructs a Scraper with a DB-backed source
+// repository. When sourceRepo is non-nil, ScrapeSource and ScrapeAll load
+// configs from the DB first and fall back to YAML only if the DB returns
+// empty or an error.
+func NewScraperWithSourceRepo(
+	ingest *IngestClient,
+	queries *postgres.Queries,
+	sourceRepo domainScraper.Repository,
+	logger zerolog.Logger,
+) *Scraper {
+	return &Scraper{
+		ingest:     ingest,
+		queries:    queries,
+		sourceRepo: sourceRepo,
+		logger:     logger,
+	}
+}
+
+// loadSourceConfigs returns the active SourceConfig slice. It tries the DB
+// repository first (when available); if that yields nothing or fails it falls
+// back to loading YAML files from opts.SourcesDir.
+func (s *Scraper) loadSourceConfigs(ctx context.Context, opts ScrapeOptions) ([]SourceConfig, error) {
+	if s.sourceRepo != nil {
+		t := true
+		sources, err := s.sourceRepo.List(ctx, &t) // enabled only
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("scraper: DB source list failed, falling back to YAML")
+		} else if len(sources) > 0 {
+			configs := make([]SourceConfig, 0, len(sources))
+			for _, src := range sources {
+				cfg, convErr := dbSourceToSourceConfig(src)
+				if convErr != nil {
+					s.logger.Warn().Err(convErr).Str("source", src.Name).
+						Msg("scraper: skipping DB source with conversion error")
+					continue
+				}
+				configs = append(configs, cfg)
+			}
+			if len(configs) > 0 {
+				return configs, nil
+			}
+		}
+	}
+
+	// Fall back to YAML.
+	dir := opts.SourcesDir
+	if dir == "" {
+		dir = "configs/sources"
+	}
+	return LoadSourceConfigs(dir)
 }
 
 // ScrapeURL fetches rawURL, extracts JSON-LD events, normalises them, and
@@ -171,14 +225,14 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 	return result, nil
 }
 
-// ScrapeSource loads source configs from opts.SourcesDir, locates the named
-// source, and scrapes it according to its Tier.
+// ScrapeSource loads source configs (DB-first, YAML fallback), locates the
+// named source, and scrapes it according to its Tier.
 func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts ScrapeOptions) (ScrapeResult, error) {
 	if opts.SourcesDir == "" {
 		opts.SourcesDir = "configs/sources"
 	}
 
-	configs, err := LoadSourceConfigs(opts.SourcesDir)
+	configs, err := s.loadSourceConfigs(ctx, opts)
 	if err != nil {
 		return ScrapeResult{}, fmt.Errorf("loading source configs: %w", err)
 	}
@@ -209,15 +263,15 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 	}
 }
 
-// ScrapeAll loads all enabled sources and scrapes each one, collecting results.
-// Per-source errors are recorded in each ScrapeResult.Error rather than
-// aborting the entire run.
+// ScrapeAll loads all enabled sources (DB-first, YAML fallback) and scrapes
+// each one, collecting results. Per-source errors are recorded in each
+// ScrapeResult.Error rather than aborting the entire run.
 func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeResult, error) {
 	if opts.SourcesDir == "" {
 		opts.SourcesDir = "configs/sources"
 	}
 
-	configs, err := LoadSourceConfigs(opts.SourcesDir)
+	configs, err := s.loadSourceConfigs(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("loading source configs: %w", err)
 	}
@@ -230,7 +284,18 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 		if !cfg.Enabled {
 			continue
 		}
-		res, scrapeErr := s.ScrapeSource(ctx, cfg.Name, opts)
+		var (
+			res       ScrapeResult
+			scrapeErr error
+		)
+		switch cfg.Tier {
+		case 0:
+			res, scrapeErr = s.scrapeTier0(ctx, cfg, opts)
+		case 1:
+			res, scrapeErr = s.scrapeTier1(ctx, cfg, opts)
+		default:
+			scrapeErr = fmt.Errorf("unknown tier %d for source %s", cfg.Tier, cfg.Name)
+		}
 		if scrapeErr != nil {
 			res.Error = scrapeErr
 		}

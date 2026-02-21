@@ -1,7 +1,7 @@
 # Implementation Plan: Integrated Event Scraper
 
-**Branch**: `003-scraper` | **Date**: 2026-02-20 | **Spec**: [spec.md](./spec.md)
-**Status**: Phases 1 & 2 complete, deployed to staging. Phases 3+ are future work.
+**Branch**: `003-scraper` | **Date**: 2026-02-21 | **Spec**: [spec.md](./spec.md)
+**Status**: Phases 1 & 2 complete. Phase 3 (DB-backed source configs) in progress — migration, domain/storage layer, sync/export CLI, and DB-first runtime done. API exposure (`srv-17zth`) pending.
 **Input**: Feature specification from `/specs/003-scraper/spec.md`
 
 ## Summary
@@ -70,6 +70,7 @@ Add an integrated event scraper to the SEL server that extracts events from Toro
 ### Storage: Hybrid YAML + DB
 
 - **YAML files** (`configs/sources/*.yaml`): Source definitions — what to scrape, how, and with what trust level. Version controlled, community-contributable via PRs.
+- **Database** (`scraper_sources` table, Phase 3): Runtime store for source configs. `server scrape sync` upserts YAML→DB; `server scrape export` dumps DB→YAML. Runtime scraping reads from DB first, falls back to YAML if DB unavailable or empty.
 - **Database** (`scraper_runs` table): Runtime state — when each source was last scraped, what happened, metrics. Queryable for monitoring and debugging.
 
 ### JSON-LD Normalization Challenges
@@ -132,14 +133,36 @@ The normalizer must handle all of these gracefully.
 
 **Known issue**: The 6 GTA source configs contain placeholder URLs that have not been validated against live sites. See `srv-aany8`.
 
-### Phase 3: Scheduling + Production (Future)
+### Phase 3: DB-Backed Source Configs (In Progress)
+
+**Goal**: `scraper_sources` table is the runtime store; YAML files remain version-controlled canonical source. Sync and export CLI commands; runtime reads DB-first.
+
+1. ✅ Migration `000032_scraper_sources.up.sql` + SQLc queries (`srv-65kvw`)
+2. ✅ `internal/domain/scraper/source.go` — `Source` type, `Repository` interface, `Service` (`srv-iorfa`)
+3. ✅ `internal/storage/postgres/scraper_sources_repository.go` — postgres impl (`srv-iorfa`)
+4. ✅ `server scrape sync` (YAML→DB upsert) + `server scrape export` (DB→YAML) CLI commands (`srv-2nu7e`)
+5. ✅ `internal/scraper/db_source.go` — `domain/scraper.Source` → `SourceConfig` converter (`srv-l71q1`)
+6. ✅ `internal/scraper/scraper.go` — added `sourceRepo` field, `NewScraperWithSourceRepo`, `loadSourceConfigs` (DB-first + YAML fallback) (`srv-l71q1`)
+7. ✅ `server scrape list` — DB-first listing with YAML fallback (`srv-l71q1`)
+8. ✅ `newScraperWithDB` wires `ScraperSourceRepository` into all scrape subcommands (`srv-l71q1`)
+9. [ ] `srv-17zth` — expose `sel:scraperSource` in org/place JSON-LD API responses (blocked on srv-l71q1 ✅)
+
+**Architecture decisions (Phase 3)**:
+- `scraper_sources` table is separate from `organizations`/`places`; linked via `org_scraper_sources` and `place_scraper_sources` join tables (many-to-many).
+- `internal/scraper` imports `internal/domain/scraper` with alias `domainScraper` — no circular dependency.
+- `loadSourceConfigs` only passes `enabled: true` to the DB query; the YAML fallback runs `LoadSourceConfigs` which returns all valid configs (enabled + disabled). Both `ScrapeSource` and `ScrapeAll` check `cfg.Enabled` before scraping.
+- `ScrapeAll` now dispatches tier directly (avoids double `loadSourceConfigs` call that would occur if it called `ScrapeSource`).
+- `scrape list` uses `repo.List(ctx, nil)` (all sources, not just enabled) so operators can see disabled sources too.
+- `server scrape sync` smoke-tested: loaded all 14 YAML sources into DB. `server scrape export` smoke-tested: wrote them back to YAML correctly.
+
+### Phase 4: Scheduling + Production (Future)
 
 1. River job worker for periodic scraping — `srv-pfeud`
 2. Config-driven schedules (daily, weekly)
 3. Prometheus metrics for scrape success/failure rates
 4. Admin UI page for scrape status — `srv-5127b`
 
-### Phase 4: Agent Feedback + Quality (Future)
+### Phase 5: Agent Feedback + Quality (Future)
 
 1. Event completeness scoring
 2. Source quality metrics over time
@@ -154,6 +177,8 @@ The normalizer must handle all of these gracefully.
 - **Submitting via batch API** — exercises the full auth/dedup/reconciliation pipeline during dogfooding; scraper stays loosely coupled.
 - **Optional DB tracking** (`queries *postgres.Queries` may be nil) — unit tests stay simple; CLI gracefully degrades when `DATABASE_URL` is absent.
 - **7 HTML fixture files** covering all 7 schema.org event shapes — gave high confidence in the normalizer before hitting live sites.
+- **DB-first source config loading with YAML fallback** — `loadSourceConfigs` in `Scraper` tries the repository first; falls back to YAML transparently. The scraper works identically before and after `server scrape sync` is run.
+- **`ScrapeAll` dispatches tier directly** (not via `ScrapeSource`) — avoids a double `loadSourceConfigs` call on every run while keeping the iteration logic in one place.
 
 ### Issues Found in Code Review (all fixed in `aa839d4`)
 

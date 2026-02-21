@@ -121,7 +121,7 @@ Examples:
 var scrapeListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List configured scrape sources",
-	Long: `List all source configurations found in the sources directory.
+	Long: `List all source configurations. Tries the DB first; falls back to YAML files.
 
 Examples:
   server scrape list
@@ -129,14 +129,39 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := scrapeSourceDir
 
-		configs, err := scraper.LoadSourceConfigs(dir)
-		if err != nil {
-			// Still print what we have, but note validation errors
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		// Try DB first.
+		var configs []scraper.SourceConfig
+		dbURL := getDatabaseURL()
+		if dbURL != "" {
+			pool, poolErr := pgxpool.New(context.Background(), dbURL)
+			if poolErr == nil {
+				defer pool.Close()
+				repo := postgres.NewScraperSourceRepository(pool)
+				sources, listErr := repo.List(context.Background(), nil) // all, not just enabled
+				if listErr == nil && len(sources) > 0 {
+					for _, src := range sources {
+						cfg, convErr := dbSourceToSourceConfig(src)
+						if convErr != nil {
+							fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", src.Name, convErr)
+							continue
+						}
+						configs = append(configs, cfg)
+					}
+				}
+			}
+		}
+
+		// Fall back to YAML if DB yielded nothing.
+		if len(configs) == 0 {
+			var err error
+			configs, err = scraper.LoadSourceConfigs(dir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			}
 		}
 
 		if len(configs) == 0 {
-			fmt.Printf("No source configs found in %s\n", dir)
+			fmt.Printf("No source configs found (DB empty and no YAML files in %s)\n", dir)
 			return nil
 		}
 
@@ -631,27 +656,29 @@ func loadScrapeConfig() (serverURL, apiKey string, err error) {
 }
 
 // newScraperWithDB builds a Scraper and optionally wires in a DB connection for
-// scraper_runs tracking. If DATABASE_URL is not set, tracking is skipped
-// (best-effort). The returned cleanup function must be called when done.
+// scraper_runs tracking and DB-backed source configs. If DATABASE_URL is not
+// set, both features are skipped (best-effort). The returned cleanup function
+// must be called when done.
 func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper.Scraper, func(), error) {
 	client := scraper.NewIngestClient(serverURL, apiKey)
 
 	dbURL := getDatabaseURL()
 	if dbURL == "" {
-		logger.Warn().Msg("scraper: DATABASE_URL not set — scraper_runs tracking disabled")
+		logger.Warn().Msg("scraper: DATABASE_URL not set — scraper_runs tracking and DB source configs disabled")
 		s := scraper.NewScraper(client, nil, logger)
 		return s, func() {}, nil
 	}
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		logger.Warn().Err(err).Msg("scraper: failed to connect to DB — scraper_runs tracking disabled")
+		logger.Warn().Err(err).Msg("scraper: failed to connect to DB — scraper_runs tracking and DB source configs disabled")
 		s := scraper.NewScraper(client, nil, logger)
 		return s, func() {}, nil
 	}
 
 	queries := postgres.New(pool)
-	s := scraper.NewScraper(client, queries, logger)
+	sourceRepo := postgres.NewScraperSourceRepository(pool)
+	s := scraper.NewScraperWithSourceRepo(client, queries, sourceRepo, logger)
 	return s, pool.Close, nil
 }
 
