@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -123,6 +122,9 @@ Examples:
 			fmt.Printf("%-30s %-44s %-4d %-7v %s\n",
 				cfg.Name, u, cfg.Tier, cfg.Enabled, cfg.Schedule,
 			)
+			if !cfg.Enabled && cfg.Notes != "" {
+				fmt.Printf("  # %s\n", cfg.Notes)
+			}
 		}
 
 		return nil
@@ -239,16 +241,8 @@ func printSingleResult(r scraper.ScrapeResult) {
 			fmt.Println("No events found")
 			return
 		}
-		// For dry-run mode we emit a compact JSON summary of the counts.
-		summary := map[string]any{
-			"dry_run":   true,
-			"source":    r.SourceName,
-			"url":       r.SourceURL,
-			"found":     r.EventsFound,
-			"submitted": r.EventsSubmitted,
-		}
-		out, _ := json.MarshalIndent(summary, "", "  ")
-		fmt.Println(string(out))
+		fmt.Printf("[dry-run] source=%-28s  found=%-4d  would-submit=%d\n",
+			r.SourceName, r.EventsFound, r.EventsSubmitted)
 		return
 	}
 

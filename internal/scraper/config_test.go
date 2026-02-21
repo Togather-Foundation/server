@@ -432,3 +432,14 @@ tier: 0
 		"expected url error, got: %s", err.Error(),
 	)
 }
+
+func TestLoadSourceConfigs_DuplicateNameError(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "a.yaml", validTier0YAML)
+	writeYAML(t, dir, "b.yaml", validTier0YAML) // same name: "Toronto Symphony Orchestra"
+
+	_, err := LoadSourceConfigs(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate source name")
+	assert.Contains(t, err.Error(), "Toronto Symphony Orchestra")
+}

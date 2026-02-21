@@ -32,6 +32,7 @@ type ScrapeResult struct {
 	EventsCreated   int
 	EventsDuplicate int
 	EventsFailed    int
+	IngestErrors    []IngestError // per-event errors returned by the batch API
 	Error           error
 	DryRun          bool
 }
@@ -197,7 +198,7 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 	}
 
 	var results []ScrapeResult
-	for _, cfg := range configs {
+	for i, cfg := range configs {
 		if ctx.Err() != nil {
 			break
 		}
@@ -207,6 +208,14 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 		if !cfg.Enabled {
 			continue
 		}
+
+		s.logger.Info().
+			Str("source", cfg.Name).
+			Int("tier", cfg.Tier).
+			Int("index", i+1).
+			Int("total", len(configs)).
+			Msg("scraper: starting source")
+
 		var (
 			res       ScrapeResult
 			scrapeErr error
@@ -348,6 +357,17 @@ func (s *Scraper) runWithTracking(
 	result.EventsCreated = ingestResult.EventsCreated
 	result.EventsDuplicate = ingestResult.EventsDuplicate
 	result.EventsFailed = ingestResult.EventsFailed
+	result.IngestErrors = ingestResult.Errors
+
+	if len(ingestResult.Errors) > 0 {
+		for _, ie := range ingestResult.Errors {
+			s.logger.Warn().
+				Str("source", result.SourceName).
+				Int("event_index", ie.Index).
+				Str("error", ie.Message).
+				Msg("scraper: ingest rejected event")
+		}
+	}
 
 	s.updateRunCompleted(ctx, runID, result)
 	return *result

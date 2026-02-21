@@ -116,6 +116,7 @@ func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
 
 	var configs []SourceConfig
 	var validationErrors []string
+	seen := make(map[string]string) // name → file path of first occurrence
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -139,6 +140,13 @@ func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
 			validationErrors = append(validationErrors, fmt.Sprintf("%s: %s", filePath, err.Error()))
 			continue
 		}
+
+		if first, dup := seen[cfg.Name]; dup {
+			validationErrors = append(validationErrors,
+				fmt.Sprintf("%s: duplicate source name %q (already defined in %s)", filePath, cfg.Name, first))
+			continue
+		}
+		seen[cfg.Name] = filePath
 		configs = append(configs, cfg)
 	}
 

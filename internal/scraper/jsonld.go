@@ -19,6 +19,9 @@ const (
 	scraperUserAgent = "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)"
 	fetchTimeout     = 30 * time.Second
 	robotsTimeout    = 10 * time.Second
+
+	retryMaxAttempts = 3
+	retryBaseDelay   = 2 * time.Second
 )
 
 // FetchAndExtractJSONLD fetches the page at rawURL, parses all JSON-LD script
@@ -52,22 +55,12 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessag
 			return http.ErrUseLastResponse
 		},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request for %q: %w", rawURL, err)
-	}
-	req.Header.Set("User-Agent", scraperUserAgent)
 
-	resp, err := client.Do(req)
+	resp, err := fetchWithRetry(ctx, client, rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %q: %w", rawURL, err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	// 4. Check response status.
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d fetching %q", resp.StatusCode, rawURL)
-	}
 
 	// 5. Parse HTML with goquery (body capped at 10 MiB to prevent OOM).
 	limitedBody := io.LimitReader(resp.Body, 10*1024*1024) // 10 MiB
@@ -77,6 +70,47 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessag
 	}
 
 	return extractFromDocument(doc)
+}
+
+// fetchWithRetry performs an HTTP GET for rawURL, retrying up to
+// retryMaxAttempts times on transient errors (network errors, 429, 503).
+// Delays between attempts grow linearly: retryBaseDelay * attempt.
+// Context cancellation stops the retry loop immediately.
+func fetchWithRetry(ctx context.Context, client *http.Client, rawURL string) (*http.Response, error) {
+	var lastErr error
+	for attempt := 1; attempt <= retryMaxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating request for %q: %w", rawURL, err)
+		}
+		req.Header.Set("User-Agent", scraperUserAgent)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("fetching %q (attempt %d): %w", rawURL, attempt, err)
+		} else {
+			// Retry on 429 Too Many Requests and 503 Service Unavailable.
+			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
+				_ = resp.Body.Close()
+				lastErr = fmt.Errorf("unexpected status %d fetching %q (attempt %d)", resp.StatusCode, rawURL, attempt)
+			} else if resp.StatusCode != http.StatusOK {
+				// Non-retryable HTTP error — return immediately.
+				return nil, fmt.Errorf("unexpected status %d fetching %q", resp.StatusCode, rawURL)
+			} else {
+				return resp, nil
+			}
+		}
+
+		if attempt < retryMaxAttempts {
+			delay := retryBaseDelay * time.Duration(attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+	}
+	return nil, lastErr
 }
 
 // extractFromDocument extracts Event objects from all JSON-LD script tags in the
