@@ -121,7 +121,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		Msg("Ingest: After appendQualityWarnings")
 
 	// Check if review is needed due to validation warnings OR metadata quality issues
-	needsReview := len(warnings) > 0 || needsReview(validated, nil, s.validationConfig)
+	needsReview := len(warnings) > 0 || eventNeedsReview(validated, nil, s.validationConfig)
 
 	// Honour scraper-set lifecycle hint: "review" forces pending_review regardless
 	// of other quality checks (e.g., truncated description flagged before fetching).
@@ -983,7 +983,7 @@ func parsePrice(s string) (*float64, error) {
 	return &v, nil
 }
 
-func needsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
+func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
 	// Use zero-value defaults if config is uninitialized (RequireImage defaults to false)
 	// This should never happen in practice since all callers pass initialized config,
 	// but defensive check prevents potential panics.
