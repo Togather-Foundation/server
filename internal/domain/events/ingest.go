@@ -644,53 +644,13 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		return nil, err
 	}
 
-	// Flag near-duplicate existing events for review now that we have event.ID (UUID).
-	// This runs outside the transaction (uses s.repo) so existing events are immediately
-	// visible to other operations. Non-critical: errors are logged and skipped.
+	// Capture first near-duplicate candidate's UUID for cross-linking in the new event's
+	// review entry (created below inside the transaction).
 	if len(nearDuplicateCandidates) > 0 {
-		pendingState := "pending_review"
-		for i, c := range nearDuplicateCandidates {
-			existingEvent, fetchErr := s.repo.GetByULID(ctx, c.ULID)
-			if fetchErr != nil {
-				log.Warn().Err(fetchErr).
-					Str("candidate_ulid", c.ULID).
-					Msg("Near-duplicate: failed to fetch existing event for review flagging, skipping")
-				continue
-			}
-
-			// Only flag events that are currently published (don't re-flag already-pending or closed events).
-			if existingEvent.LifecycleState == "published" {
-				if _, updateErr := s.repo.UpdateEvent(ctx, c.ULID, UpdateEventParams{
-					LifecycleState: &pendingState,
-				}); updateErr != nil {
-					log.Warn().Err(updateErr).
-						Str("candidate_ulid", c.ULID).
-						Msg("Near-duplicate: failed to update existing event lifecycle state, skipping")
-				}
-			}
-
-			// Create review queue entry for the existing event, cross-linked to the new event's UUID.
-			existingStart, existingEnd := parseEventTimesFromEvent(existingEvent)
-			newEventID := event.ID
-			if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-				EventID:            existingEvent.ID,
-				OriginalPayload:    []byte("{}"),
-				NormalizedPayload:  []byte("{}"),
-				Warnings:           []byte("[]"),
-				EventStartTime:     existingStart,
-				EventEndTime:       existingEnd,
-				DuplicateOfEventID: &newEventID,
-			}); createErr != nil {
-				log.Warn().Err(createErr).
-					Str("candidate_ulid", c.ULID).
-					Msg("Near-duplicate: failed to create review queue entry for existing event (may already exist), skipping")
-			}
-
-			// Capture the first candidate's UUID as the cross-link for the new event's review entry.
-			if i == 0 {
-				existingID := existingEvent.ID
-				nearDuplicateOfID = &existingID
-			}
+		existingEvent, fetchErr := s.repo.GetByULID(ctx, nearDuplicateCandidates[0].ULID)
+		if fetchErr == nil {
+			existingID := existingEvent.ID
+			nearDuplicateOfID = &existingID
 		}
 	}
 
@@ -766,6 +726,51 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// Commit transaction - all operations succeeded
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	// Flag near-duplicate existing events for review AFTER the transaction commits.
+	// This must happen post-commit because the review queue entry for existing events
+	// cross-references the new event's UUID via duplicate_of_event_id (FK constraint).
+	// Non-critical: errors are logged and skipped — the new event is already committed.
+	if len(nearDuplicateCandidates) > 0 {
+		pendingState := "pending_review"
+		for _, c := range nearDuplicateCandidates {
+			existingEvent, fetchErr := s.repo.GetByULID(ctx, c.ULID)
+			if fetchErr != nil {
+				log.Warn().Err(fetchErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to fetch existing event for review flagging, skipping")
+				continue
+			}
+
+			// Only flag events that are currently published (don't re-flag already-pending or closed events).
+			if existingEvent.LifecycleState == "published" {
+				if _, updateErr := s.repo.UpdateEvent(ctx, c.ULID, UpdateEventParams{
+					LifecycleState: &pendingState,
+				}); updateErr != nil {
+					log.Warn().Err(updateErr).
+						Str("candidate_ulid", c.ULID).
+						Msg("Near-duplicate: failed to update existing event lifecycle state, skipping")
+				}
+			}
+
+			// Create review queue entry for the existing event, cross-linked to the new event's UUID.
+			existingStart, existingEnd := parseEventTimesFromEvent(existingEvent)
+			newEventID := event.ID
+			if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+				EventID:            existingEvent.ID,
+				OriginalPayload:    []byte("{}"),
+				NormalizedPayload:  []byte("{}"),
+				Warnings:           []byte("[]"),
+				EventStartTime:     existingStart,
+				EventEndTime:       existingEnd,
+				DuplicateOfEventID: &newEventID,
+			}); createErr != nil {
+				log.Warn().Err(createErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to create review queue entry for existing event (may already exist), skipping")
+			}
+		}
 	}
 
 	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings, PlaceULID: placeULID, OrganizerULID: orgULID}, nil
