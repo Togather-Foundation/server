@@ -1,0 +1,11 @@
+name: "amici-ensemble"
+# Disabled — Elementor-built WordPress site. Concerts are Elementor widget sections,
+# not repeating CSS-selectable cards. No JSON-LD Event data present.
+# notes: Elementor/JetEngine layout — concerts in custom elementor sections on homepage.
+#        Needs Tier 2 (headless browser) or manual data entry.
+url: "https://amiciensemble.com/"
+tier: 1
+schedule: "manual"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false

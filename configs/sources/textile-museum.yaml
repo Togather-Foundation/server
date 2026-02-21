@@ -1,0 +1,17 @@
+name: "textile-museum"
+# Tier 1 (Colly CSS selectors). Textile Museum of Canada, 7 events confirmed 2026-02-21.
+# Uses tribe_events REST on listing page; individual event pages have JSON-LD.
+# Tier 1 extracts event names and URLs from listing; start_date not available at listing level.
+# Selectors validated with `server scrape test`.
+url: "https://textilemuseum.ca/programming/"
+tier: 1
+schedule: "weekly"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+event_url_pattern: "/event/*"
+selectors:
+  event_list: "div.card--style-event"
+  name: "a.h3"
+  url: "a.h3"

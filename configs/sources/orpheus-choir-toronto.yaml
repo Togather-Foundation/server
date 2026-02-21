@@ -1,0 +1,12 @@
+name: "orpheus-choir-toronto"
+# Disabled — concert season page is a static WordPress editorial page (not a listing).
+# Concerts are described in Gutenberg blocks (wp-block-columns) without structured
+# repeating containers; no JSON-LD Events and no parseable CSS selector pattern.
+# notes: Custom static season page, no tribe_events or repeating card structure.
+#        Would need Tier 2 (headless) or a custom parser to extract from freeform HTML.
+url: "https://orpheuschoirtoronto.com/2025-2026-concert-season/"
+tier: 1
+schedule: "manual"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false

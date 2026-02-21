@@ -1,0 +1,9 @@
+name: "toronto-union"
+# Tier 0 (JSON-LD). Union Station events, 14 events confirmed 2026-02-21.
+url: "https://torontounion.ca/toronto-union-events/"
+tier: 0
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

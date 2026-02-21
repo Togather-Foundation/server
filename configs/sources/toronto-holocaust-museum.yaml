@@ -1,0 +1,11 @@
+name: "toronto-holocaust-museum"
+# Disabled — custom JavaScript SPA (Angular/custom controller). Events are loaded
+# dynamically via JS with an infinite scroll controller; the static HTML only contains
+# template elements (li.event.template) with empty fields.
+# notes: JS-rendered event list — needs Tier 2 (headless browser) to render events.
+url: "https://torontoholocaustmuseum.org/events"
+tier: 1
+schedule: "manual"
+trust_level: 8
+license: "CC0-1.0"
+enabled: false
