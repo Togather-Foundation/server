@@ -34,6 +34,18 @@
     "takedownRequestedAt": {
       "@id": "sel:takedownRequestedAt",
       "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
+    },
+    "scraperSource": {
+      "@id": "sel:scraperSource",
+      "@container": "@set"
+    },
+    "tier": {
+      "@id": "sel:tier",
+      "@type": "http://www.w3.org/2001/XMLSchema#integer"
+    },
+    "distanceKm": {
+      "@id": "sel:distanceKm",
+      "@type": "http://www.w3.org/2001/XMLSchema#decimal"
     }
   }
 }

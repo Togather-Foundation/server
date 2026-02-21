@@ -114,8 +114,12 @@ type Organization struct {
 	ScraperSources []ScraperSourceSummary `json:"sel:scraperSource,omitempty"` // Linked scraper sources
 }
 
-// ScraperSourceSummary is a compact representation of a linked scraper source,
-// embedded in org and place JSON-LD responses as sel:scraperSource.
+// ScraperSourceSummary is a compact representation of a scraper source linked
+// to an organization or place. It is a SEL-specific extension (not a schema.org
+// type) serialized under the sel:scraperSource JSON-LD key. It appears only on
+// single-item Get responses — not on List responses — and is populated
+// best-effort (omitted on error or when no sources are linked). The sel:
+// prefix requires a corresponding term definition in the SEL JSON-LD context.
 type ScraperSourceSummary struct {
 	Name  string `json:"name"`
 	URL   string `json:"url"`

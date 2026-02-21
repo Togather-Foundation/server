@@ -281,6 +281,9 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 		if ctx.Err() != nil {
 			break
 		}
+		// Skip disabled sources. DB-loaded configs are pre-filtered (loadSourceConfigs
+		// passes enabled=true), but the YAML fallback returns all sources regardless
+		// of enabled state, so this guard is required for correctness.
 		if !cfg.Enabled {
 			continue
 		}
