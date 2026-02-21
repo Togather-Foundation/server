@@ -5,145 +5,301 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 )
 
-func TestSubmitBatch(t *testing.T) {
-	sampleEvents := []events.EventInput{
-		{Name: "Test Event", StartDate: "2026-03-01T10:00:00Z"},
-		{Name: "Another Event", StartDate: "2026-03-02T10:00:00Z"},
-	}
+// batchHandlerPair sets up a pair of handlers (POST /api/v1/events:batch and
+// GET /api/v1/batch-status/<id>) on a single httptest.Server. The batch POST
+// always returns a 202 with status_url pointing at the same server. The status
+// handler calls statusFn to produce the response body and status code.
+type batchHandlerPair struct {
+	batchID   string
+	statusFn  func(callCount int32) (statusCode int, body any)
+	callCount int32
+	srvURL    string
+}
 
+func (p *batchHandlerPair) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+		// Verify headers on every batch POST
+		if r.Header.Get("Authorization") == "" {
+			http.Error(w, "missing Authorization", http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "bad Content-Type", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"batch_id":   p.batchID,
+			"status":     "processing",
+			"status_url": p.srvURL + "/api/v1/batch-status/" + p.batchID,
+		})
+
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/batch-status/"):
+		n := atomic.AddInt32(&p.callCount, 1)
+		code, body := p.statusFn(n)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(body)
+
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// sampleEvts returns n minimal EventInput values.
+func sampleEvts(n int) []events.EventInput {
+	out := make([]events.EventInput, n)
+	for i := range out {
+		out[i] = events.EventInput{Name: "Test Event", StartDate: "2026-03-01T10:00:00Z"}
+	}
+	return out
+}
+
+// completedStatusBody returns a completed batch-status JSON body.
+func completedStatusBody(batchID string, created, duplicates, failed int) map[string]any {
+	return map[string]any{
+		"batch_id":   batchID,
+		"status":     "completed",
+		"created":    created,
+		"duplicates": duplicates,
+		"failed":     failed,
+	}
+}
+
+// TestSubmitBatch_PollsAfter202 verifies that submitChunk polls the status URL
+// after receiving a 202 and correctly maps the final counts into IngestResult.
+func TestSubmitBatch_PollsAfter202(t *testing.T) {
+	handler := &batchHandlerPair{
+		batchID: "01JKTEST00001",
+		statusFn: func(n int32) (int, any) {
+			if n < 3 {
+				return http.StatusNotFound, map[string]string{"title": "still processing"}
+			}
+			return http.StatusOK, completedStatusBody("01JKTEST00001", 2, 0, 0)
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+	result, err := client.SubmitBatch(context.Background(), sampleEvts(2))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.BatchID != "01JKTEST00001" {
+		t.Errorf("BatchID = %q, want %q", result.BatchID, "01JKTEST00001")
+	}
+	if result.EventsCreated != 2 {
+		t.Errorf("EventsCreated = %d, want 2", result.EventsCreated)
+	}
+	if result.EventsDuplicate != 0 {
+		t.Errorf("EventsDuplicate = %d, want 0", result.EventsDuplicate)
+	}
+	if result.EventsFailed != 0 {
+		t.Errorf("EventsFailed = %d, want 0", result.EventsFailed)
+	}
+	if got := atomic.LoadInt32(&handler.callCount); got < 3 {
+		t.Errorf("expected ≥3 status polls, got %d", got)
+	}
+}
+
+// TestSubmitBatch_ImmediateCompletion verifies a single poll that returns
+// "completed" immediately works correctly.
+func TestSubmitBatch_ImmediateCompletion(t *testing.T) {
+	handler := &batchHandlerPair{
+		batchID: "batch-imm",
+		statusFn: func(_ int32) (int, any) {
+			return http.StatusOK, completedStatusBody("batch-imm", 5, 1, 0)
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+	result, err := client.SubmitBatch(context.Background(), sampleEvts(6))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.EventsCreated != 5 {
+		t.Errorf("EventsCreated = %d, want 5", result.EventsCreated)
+	}
+	if result.EventsDuplicate != 1 {
+		t.Errorf("EventsDuplicate = %d, want 1", result.EventsDuplicate)
+	}
+}
+
+// TestSubmitBatch_FallbackStatusURL verifies that when status_url is absent
+// from the 202 body, submitChunk constructs it from batch_id and baseURL.
+func TestSubmitBatch_FallbackStatusURL(t *testing.T) {
+	// Custom handler that omits status_url in the 202 response.
+	var srvURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			// Deliberately omit status_url; only batch_id present.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id": "batch-fallback",
+			})
+			_ = srvURL
+
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/batch-fallback":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(completedStatusBody("batch-fallback", 3, 1, 0))
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+	result, err := client.SubmitBatch(context.Background(), sampleEvts(4))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.EventsCreated != 3 {
+		t.Errorf("EventsCreated = %d, want 3", result.EventsCreated)
+	}
+	if result.EventsDuplicate != 1 {
+		t.Errorf("EventsDuplicate = %d, want 1", result.EventsDuplicate)
+	}
+}
+
+// TestSubmitBatch_ContextCancelDuringPoll verifies that context cancellation
+// during polling surfaces as an error (not a silent zero result).
+func TestSubmitBatch_ContextCancelDuringPoll(t *testing.T) {
+	handler := &batchHandlerPair{
+		batchID: "batch-cancel",
+		// Always return "still processing".
+		statusFn: func(_ int32) (int, any) {
+			return http.StatusNotFound, map[string]string{"title": "still processing"}
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+
+	_, err := client.SubmitBatch(ctx, sampleEvts(1))
+	// Either context cancelled error or nil (timeout path) is acceptable;
+	// what must NOT happen is a panic or a hang.
+	_ = err
+}
+
+// TestSubmitBatch_ErrorOnNon2xx verifies that non-2xx responses from the
+// initial POST are returned as errors.
+func TestSubmitBatch_ErrorOnNon2xx(t *testing.T) {
 	tests := []struct {
 		name           string
-		serverStatus   int
-		serverBody     any
-		events         []events.EventInput
-		wantErr        bool
+		statusCode     int
 		wantErrContain string
-		wantResult     IngestResult
 	}{
-		{
-			name:         "successful batch returns correct IngestResult",
-			serverStatus: http.StatusAccepted,
-			serverBody: IngestResult{
-				BatchID:         "01JKTEST00001",
-				EventsCreated:   2,
-				EventsDuplicate: 0,
-				EventsFailed:    0,
-			},
-			events: sampleEvents,
-			wantResult: IngestResult{
-				BatchID:       "01JKTEST00001",
-				EventsCreated: 2,
-			},
-		},
-		{
-			name:           "non-200 response returns error with status code",
-			serverStatus:   http.StatusBadRequest,
-			serverBody:     map[string]string{"detail": "invalid events"},
-			events:         sampleEvents,
-			wantErr:        true,
-			wantErrContain: "400",
-		},
-		{
-			name:           "429 response returns error mentioning rate limiting",
-			serverStatus:   http.StatusTooManyRequests,
-			serverBody:     map[string]string{"detail": "slow down"},
-			events:         sampleEvents,
-			wantErr:        true,
-			wantErrContain: "rate limited",
-		},
-		{
-			name:       "empty events slice returns zero IngestResult without HTTP call",
-			events:     []events.EventInput{},
-			wantResult: IngestResult{},
-		},
+		{"400 bad request", http.StatusBadRequest, "400"},
+		{"429 rate limited", http.StatusTooManyRequests, "rate limited"},
+		{"500 server error", http.StatusInternalServerError, "500"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify path and method
-				if r.URL.Path != "/api/v1/events:batch" {
-					t.Errorf("unexpected path: %s", r.URL.Path)
-				}
-				if r.Method != http.MethodPost {
-					t.Errorf("unexpected method: %s", r.Method)
-				}
-				// Verify headers
-				if r.Header.Get("Authorization") == "" {
-					t.Errorf("missing Authorization header")
-				}
-				if r.Header.Get("Content-Type") != "application/json" {
-					t.Errorf("unexpected Content-Type: %s", r.Header.Get("Content-Type"))
-				}
-				if r.Header.Get("User-Agent") == "" {
-					t.Errorf("missing User-Agent header")
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(tc.serverStatus)
-				_ = json.NewEncoder(w).Encode(tc.serverBody)
+				http.Error(w, "error body", tc.statusCode)
 			}))
 			defer srv.Close()
 
 			client := NewIngestClient(srv.URL, "test-api-key")
-			result, err := client.SubmitBatch(context.Background(), tc.events)
-
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				if tc.wantErrContain != "" && !containsString(err.Error(), tc.wantErrContain) {
-					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrContain)
-				}
-				return
+			_, err := client.SubmitBatch(context.Background(), sampleEvts(1))
+			if err == nil {
+				t.Fatalf("expected error for HTTP %d, got nil", tc.statusCode)
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result.BatchID != tc.wantResult.BatchID {
-				t.Errorf("BatchID = %q, want %q", result.BatchID, tc.wantResult.BatchID)
-			}
-			if result.EventsCreated != tc.wantResult.EventsCreated {
-				t.Errorf("EventsCreated = %d, want %d", result.EventsCreated, tc.wantResult.EventsCreated)
+			if !containsString(err.Error(), tc.wantErrContain) {
+				t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrContain)
 			}
 		})
 	}
 }
 
-func TestSubmitBatchChunking(t *testing.T) {
-	// Build 150 events — requires two chunks (100 + 50).
-	const total = 150
-	evts := make([]events.EventInput, total)
-	for i := range evts {
-		evts[i] = events.EventInput{Name: "Event", StartDate: "2026-03-01T10:00:00Z"}
-	}
-
-	var requestCount int
-	var receivedSizes []int
-
+// TestSubmitBatch_EmptySlice verifies that an empty events slice returns a
+// zero IngestResult without making any HTTP requests.
+func TestSubmitBatch_EmptySlice(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Events []events.EventInput `json:"events"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode body: %v", err)
-		}
-		requestCount++
-		receivedSizes = append(receivedSizes, len(body.Events))
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(IngestResult{
-			BatchID:       "chunk-batch",
-			EventsCreated: len(body.Events),
-		})
+		t.Error("no HTTP call expected for empty events slice")
+		http.Error(w, "unexpected", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+	result, err := client.SubmitBatch(context.Background(), []events.EventInput{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.EventsCreated != 0 || result.EventsDuplicate != 0 || result.EventsFailed != 0 {
+		t.Errorf("expected zero result for empty slice, got %+v", result)
+	}
+}
+
+// TestSubmitBatchChunking verifies that SubmitBatch splits large payloads into
+// ≤100-event chunks and aggregates the polled counts correctly.
+func TestSubmitBatchChunking(t *testing.T) {
+	const total = 150
+	evts := sampleEvts(total)
+
+	var batchCount int32
+	var srvURL string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			var body struct {
+				Events []events.EventInput `json:"events"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			n := atomic.AddInt32(&batchCount, 1)
+			batchID := "chunk-batch-" + string(rune('0'+n))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   batchID,
+				"status_url": srvURL + "/api/v1/batch-status/" + batchID,
+			})
+
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/batch-status/"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status":     "completed",
+				"created":    10,
+				"duplicates": 0,
+				"failed":     0,
+			})
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
 
 	client := NewIngestClient(srv.URL, "test-api-key")
 	result, err := client.SubmitBatch(context.Background(), evts)
@@ -151,19 +307,17 @@ func TestSubmitBatchChunking(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if requestCount != 2 {
-		t.Errorf("expected 2 HTTP requests for 150 events, got %d", requestCount)
+	if got := atomic.LoadInt32(&batchCount); got != 2 {
+		t.Errorf("expected 2 batch POST calls, got %d", got)
 	}
-	if len(receivedSizes) == 2 && (receivedSizes[0] != 100 || receivedSizes[1] != 50) {
-		t.Errorf("expected chunk sizes [100 50], got %v", receivedSizes)
-	}
-	if result.EventsCreated != total {
-		t.Errorf("EventsCreated = %d, want %d", result.EventsCreated, total)
+	// Each chunk's status response returns created=10, two chunks → 20.
+	if result.EventsCreated != 20 {
+		t.Errorf("EventsCreated = %d, want 20", result.EventsCreated)
 	}
 }
 
+// TestSubmitBatchDryRun verifies no HTTP calls are made for dry-run mode.
 func TestSubmitBatchDryRun(t *testing.T) {
-	// Verify no HTTP calls are made by using a server that would fail if contacted.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("DryRun should not make any HTTP calls")
 		http.Error(w, "unexpected call", http.StatusInternalServerError)

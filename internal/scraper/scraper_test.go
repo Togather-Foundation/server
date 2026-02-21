@@ -41,24 +41,45 @@ func serveFile(t *testing.T, filename string) *httptest.Server {
 	return srv
 }
 
-// newMockIngestServer starts an httptest server that returns a successful
-// batch ingest response. It records whether it was called.
+// newMockIngestServer starts an httptest server that simulates the async
+// batch ingest API: POST /api/v1/events:batch returns 202 with a status_url,
+// and GET /api/v1/batch-status/test-batch returns the completed result.
+// It records whether the batch POST was called.
 func newMockIngestServer(t *testing.T, called *bool) *httptest.Server {
 	t.Helper()
+	var srvURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if called != nil {
-			*called = true
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			if called != nil {
+				*called = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   "test-batch",
+				"status":     "processing",
+				"status_url": srvURL + "/api/v1/batch-status/test-batch",
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/test-batch":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   "test-batch",
+				"status":     "completed",
+				"created":    1,
+				"duplicates": 0,
+				"failed":     0,
+			})
+
+		default:
+			t.Errorf("mock ingest: unexpected %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/events:batch" {
-			t.Errorf("mock ingest: unexpected path %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(IngestResult{
-			BatchID:       "test-batch",
-			EventsCreated: 1,
-		})
 	}))
+	// Capture the URL after the server is created.
+	srvURL = srv.URL
 	t.Cleanup(srv.Close)
 	return srv
 }
