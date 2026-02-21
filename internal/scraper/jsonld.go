@@ -286,6 +286,62 @@ func isEventType(typStr string) bool {
 	return typStr == "Event" || typStr == "EventSeries"
 }
 
+// tribeEventsDescriptionSelectors lists CSS selectors tried in order when
+// fetching the full event description from a Tribe Events (WordPress) detail page.
+// The first selector that yields more than 50 characters of text wins.
+var tribeEventsDescriptionSelectors = []string{
+	".tribe-events-content p",            // Tribe Events classic
+	".tribe-block__event-description p",  // Tribe Events block editor
+	".tribe-events-single-description p", // Tribe Events alt
+	".entry-content p",                   // generic WordPress
+	"article p",                          // last resort
+}
+
+// FetchFullDescription fetches the event detail page at eventURL and extracts
+// the full description from the HTML body. It tries Tribe Events selectors in
+// order and returns text from the first selector that yields >50 characters.
+// Returns an empty string on any error (non-fatal — caller uses JSON-LD
+// description as fallback). Does NOT check robots.txt; callers are expected
+// to have already cleared the domain.
+func FetchFullDescription(ctx context.Context, eventURL string) string {
+	client := &http.Client{
+		Timeout: fetchTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := fetchWithRetry(ctx, client, eventURL)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	limitedBody := io.LimitReader(resp.Body, 10*1024*1024) // 10 MiB
+	doc, err := goquery.NewDocumentFromReader(limitedBody)
+	if err != nil {
+		return ""
+	}
+
+	for _, sel := range tribeEventsDescriptionSelectors {
+		var parts []string
+		doc.Find(sel).Each(func(_ int, s *goquery.Selection) {
+			if t := strings.TrimSpace(s.Text()); t != "" {
+				parts = append(parts, t)
+			}
+		})
+		if len(parts) == 0 {
+			continue
+		}
+		text := strings.Join(parts, "\n\n")
+		if len([]rune(text)) > 50 {
+			return text
+		}
+	}
+
+	return ""
+}
+
 // RobotsAllowed checks whether the given user agent is permitted to fetch rawURL
 // according to the site's robots.txt. A missing (404) robots.txt is treated as
 // "allow all". Network errors fetching robots.txt are returned as errors; callers

@@ -123,6 +123,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// Check if review is needed due to validation warnings OR metadata quality issues
 	needsReview := len(warnings) > 0 || needsReview(validated, nil, s.validationConfig)
 
+	// Honour scraper-set lifecycle hint: "review" forces pending_review regardless
+	// of other quality checks (e.g., truncated description flagged before fetching).
+	if input.LifecycleState == "review" {
+		needsReview = true
+	}
+
 	var sourceID string
 	if validated.Source != nil && validated.Source.URL != "" {
 		sourceID, err = s.repo.GetOrCreateSource(ctx, SourceLookupParams{

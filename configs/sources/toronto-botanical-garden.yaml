@@ -7,3 +7,4 @@ trust_level: 7
 license: "CC0-1.0"
 enabled: true
 max_pages: 3
+follow_event_urls: true

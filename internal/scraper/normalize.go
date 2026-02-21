@@ -492,3 +492,12 @@ func firstElement(raw json.RawMessage) json.RawMessage {
 	}
 	return arr[0]
 }
+
+// HasTruncatedDescription reports whether desc appears to be truncated,
+// indicated by ending with an ellipsis character or HTML entity.
+func HasTruncatedDescription(desc string) bool {
+	desc = strings.TrimSpace(desc)
+	return strings.HasSuffix(desc, "…") || // U+2026
+		strings.HasSuffix(desc, "...") ||
+		strings.HasSuffix(desc, "\u2026")
+}

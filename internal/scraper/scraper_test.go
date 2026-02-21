@@ -1,8 +1,10 @@
 package scraper
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -173,8 +175,124 @@ func TestScrapeURL_IngestSubmits(t *testing.T) {
 	}
 }
 
-// TestScrapeAll verifies that ScrapeAll iterates over enabled configs and
-// returns one result per source.
+// TestScrapeTier0_FollowEventURLs verifies that when FollowEventURLs is true the
+// scraper fetches individual event detail pages to replace truncated descriptions.
+func TestScrapeTier0_FollowEventURLs(t *testing.T) {
+	// Serve a detail page that contains a full description in .tribe-events-content p
+	const fullDescription = "This is the full and complete event description from the Tribe Events content area, definitely more than fifty characters."
+
+	detailSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<html><body><div class="tribe-events-content"><p>%s</p></div></body></html>`, fullDescription)
+	}))
+	t.Cleanup(detailSrv.Close)
+
+	// Build a listing page with one JSON-LD event whose description is truncated
+	// and whose url points to the detail server.
+	listingHTML := fmt.Sprintf(`<!DOCTYPE html>
+<html><head><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "name": "Botany Workshop",
+  "startDate": "2026-06-15T10:00:00-04:00",
+  "endDate": "2026-06-15T12:00:00-04:00",
+  "description": "Join us for a hands-on botany workshop\u2026",
+  "url": "%s/event/botany-workshop",
+  "location": {
+    "@type": "Place",
+    "name": "Toronto Botanical Garden",
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "Toronto",
+      "addressRegion": "ON",
+      "addressCountry": "CA"
+    }
+  }
+}
+</script></head><body></body></html>`, detailSrv.URL)
+
+	listingSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/robots.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(listingHTML))
+	}))
+	t.Cleanup(listingSrv.Close)
+
+	var ingestBody []byte
+	var ingestSrvURL string
+	ingestSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			var err error
+			ingestBody, err = io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("reading ingest body: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   "test-batch",
+				"status":     "processing",
+				"status_url": ingestSrvURL + "/api/v1/batch-status/test-batch",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/test-batch":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id": "test-batch", "status": "completed",
+				"created": 1, "duplicates": 0, "failed": 0,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	ingestSrvURL = ingestSrv.URL
+	t.Cleanup(ingestSrv.Close)
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`name: test-tbg
+url: %s
+tier: 0
+enabled: true
+trust_level: 7
+schedule: manual
+follow_event_urls: true
+`, listingSrv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "test-tbg.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	scraper := newTestScraper(t, ingestSrv.URL)
+
+	results, err := scraper.ScrapeAll(t.Context(), ScrapeOptions{
+		DryRun:     false,
+		SourcesDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("ScrapeAll error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	res := results[0]
+	if res.Error != nil {
+		t.Fatalf("result.Error = %v, want nil", res.Error)
+	}
+	if res.EventsFound != 1 {
+		t.Errorf("EventsFound = %d, want 1", res.EventsFound)
+	}
+	if res.EventsSubmitted != 1 {
+		t.Errorf("EventsSubmitted = %d, want 1", res.EventsSubmitted)
+	}
+
+	// Verify the full description was sent to the ingest endpoint
+	if !bytes.Contains(ingestBody, []byte(fullDescription)) {
+		t.Errorf("ingest body does not contain full description\nbody: %s", ingestBody)
+	}
+}
 func TestScrapeAll(t *testing.T) {
 	pageSrv := serveFile(t, "single_event.html")
 

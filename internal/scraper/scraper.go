@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
@@ -299,6 +300,42 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: events skipped during normalisation")
 		}
+
+		// Follow individual event URLs to fetch full descriptions (e.g. Tribe Events /
+		// WordPress sources that truncate descriptions in the listing page JSON-LD).
+		if source.FollowEventURLs {
+			for i := range valid {
+				if i > 0 {
+					select {
+					case <-ctx.Done():
+						return len(rawEvents), valid, nil
+					case <-time.After(500 * time.Millisecond):
+					}
+				}
+				evt := &valid[i]
+				if HasTruncatedDescription(evt.Description) && evt.URL != "" {
+					full := FetchFullDescription(ctx, evt.URL)
+					if len([]rune(full)) > len([]rune(evt.Description)) {
+						s.logger.Debug().
+							Str("source", source.Name).
+							Str("url", evt.URL).
+							Int("old_len", len([]rune(evt.Description))).
+							Int("new_len", len([]rune(full))).
+							Msg("scraper: replaced truncated description with full text")
+						evt.Description = full
+					}
+				}
+				// After follow-URL step: if description is still truncated, route to review.
+				if HasTruncatedDescription(evt.Description) {
+					s.logger.Debug().
+						Str("source", source.Name).
+						Str("url", evt.URL).
+						Msg("scraper: description still truncated after follow, routing to review")
+					evt.LifecycleState = "review"
+				}
+			}
+		}
+
 		return len(rawEvents), valid, nil
 	}), nil
 }

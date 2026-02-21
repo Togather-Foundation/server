@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -241,6 +242,98 @@ func TestRobotsAllowed_DisallowSpecificAgent(t *testing.T) {
 	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent)
 	require.NoError(t, err)
 	assert.False(t, allowed)
+}
+
+// ---- FetchFullDescription tests ---------------------------------------------------------
+
+func TestFetchFullDescription(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		body     string
+		wantSubs string // substring that must appear in result (empty = empty result expected)
+	}{
+		{
+			name: "tribe-events-content selector",
+			body: `<html><body>
+				<div class="tribe-events-content">
+					<p>This is the full event description from the tribe events content area.</p>
+					<p>It has multiple paragraphs with enough content to exceed fifty characters.</p>
+				</div>
+			</body></html>`,
+			wantSubs: "full event description",
+		},
+		{
+			name: "fallback to entry-content selector",
+			body: `<html><body>
+				<div class="entry-content">
+					<p>This fallback description comes from the generic WordPress entry-content div.</p>
+				</div>
+			</body></html>`,
+			wantSubs: "fallback description",
+		},
+		{
+			name: "fallback to article p selector",
+			body: `<html><body>
+				<article>
+					<p>This is from an article paragraph and should be long enough to pass the fifty char threshold.</p>
+				</article>
+			</body></html>`,
+			wantSubs: "from an article",
+		},
+		{
+			name:     "no matching selector returns empty",
+			body:     `<html><body><div class="unrelated"><span>Short</span></div></body></html>`,
+			wantSubs: "",
+		},
+		{
+			name: "content shorter than 50 runes falls through",
+			body: `<html><body>
+				<div class="tribe-events-content"><p>Too short</p></div>
+				<div class="entry-content">
+					<p>This entry-content paragraph is long enough to exceed fifty characters comfortably.</p>
+				</div>
+			</body></html>`,
+			wantSubs: "entry-content paragraph",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			got := FetchFullDescription(context.Background(), srv.URL)
+			if tc.wantSubs == "" {
+				if got != "" {
+					t.Errorf("FetchFullDescription: expected empty, got %q", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantSubs) {
+				t.Errorf("FetchFullDescription: result %q does not contain %q", got, tc.wantSubs)
+			}
+		})
+	}
+}
+
+func TestFetchFullDescription_HTTPError(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	got := FetchFullDescription(context.Background(), srv.URL)
+	if got != "" {
+		t.Errorf("FetchFullDescription on 500: expected empty, got %q", got)
+	}
 }
 
 // ---- Fixture-file sanity tests ---------------------------------------------------------

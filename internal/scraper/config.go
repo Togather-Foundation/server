@@ -24,6 +24,10 @@ type SourceConfig struct {
 	MaxPages        int            `yaml:"max_pages"`
 	Notes           string         `yaml:"notes,omitempty"`
 	Selectors       SelectorConfig `yaml:"selectors"`
+	// FollowEventURLs instructs the Tier 0 scraper to fetch each event's detail
+	// page to retrieve the full description when the JSON-LD description appears
+	// truncated (e.g. Tribe Events WordPress sources always truncate).
+	FollowEventURLs bool `yaml:"follow_event_urls"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) scraping.

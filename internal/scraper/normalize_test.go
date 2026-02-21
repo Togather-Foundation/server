@@ -948,6 +948,39 @@ func TestExtractEventID(t *testing.T) {
 	}
 }
 
+// TestHasTruncatedDescription verifies detection of ellipsis-truncated descriptions.
+func TestHasTruncatedDescription(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		desc string
+		want bool
+	}{
+		{"ellipsis unicode suffix", "This is a long description\u2026", true},
+		{"ellipsis literal suffix", "This is a long description…", true},
+		{"three dots suffix", "This is a long description...", true},
+		{"three dots with space", "This is a long description ... ", true},
+		{"empty string", "", false},
+		{"full sentence no ellipsis", "This is a complete description.", false},
+		{"ends with period not dots", "A description ending in period.", false},
+		{"only ellipsis", "…", true},
+		{"only three dots", "...", true},
+		{"ellipsis mid-string", "Truncated… here is more text", false},
+		{"whitespace trimmed ellipsis", "Some text…   ", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := HasTruncatedDescription(tc.desc)
+			if got != tc.want {
+				t.Errorf("HasTruncatedDescription(%q) = %v, want %v", tc.desc, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestMustJSONHelper ensures the test helper itself works correctly.
 func TestMustJSONHelper(t *testing.T) {
 	raw := mustJSON("hello")

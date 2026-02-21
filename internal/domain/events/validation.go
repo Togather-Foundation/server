@@ -63,6 +63,7 @@ type EventInput struct {
 	License             string                `json:"license,omitempty"`
 	Source              *SourceInput          `json:"source,omitempty"`
 	Occurrences         []OccurrenceInput     `json:"occurrences,omitempty"`
+	LifecycleState      string                `json:"lifecycle_state,omitempty"` // Scraper hint: "review" forces pending_review
 }
 
 type PlaceInput struct {

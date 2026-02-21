@@ -40,6 +40,7 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 		License             string                `json:"license,omitempty"`
 		Source              *SourceInput          `json:"source,omitempty"`
 		Occurrences         []OccurrenceInput     `json:"occurrences,omitempty"`
+		LifecycleState      string                `json:"lifecycle_state,omitempty"`
 	}
 
 	var raw rawEvent
@@ -64,6 +65,7 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 	e.License = raw.License
 	e.Source = raw.Source
 	e.Occurrences = raw.Occurrences
+	e.LifecycleState = raw.LifecycleState
 
 	// Handle location: object or text string
 	if len(raw.Location) > 0 {
