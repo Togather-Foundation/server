@@ -1000,6 +1000,11 @@ func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationC
 	if isTooFarFuture(input.StartDate, 730) {
 		return true
 	}
+	if !input.SkipMultiSessionCheck {
+		if isMulti, _ := IsMultiSessionEvent(input); isMulti {
+			return true
+		}
+	}
 	for _, code := range linkStatuses {
 		if code >= 400 {
 			return true
@@ -1109,6 +1114,17 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 			Message: fmt.Sprintf("Event has low data quality score (%.0f%%). Review recommended.", confidence*100),
 			Code:    "low_confidence",
 		})
+	}
+
+	// Check for multi-session / recurring events
+	if !input.SkipMultiSessionCheck {
+		if isMulti, reason := IsMultiSessionEvent(input); isMulti {
+			result = append(result, ValidationWarning{
+				Field:   "event",
+				Message: fmt.Sprintf("Event appears to be a multi-session or recurring event: %s. Review recommended to split into individual occurrences or confirm as single event.", reason),
+				Code:    "multi_session_likely",
+			})
+		}
 	}
 
 	// Check for failed link checks (if provided)

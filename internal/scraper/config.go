@@ -28,6 +28,10 @@ type SourceConfig struct {
 	// page to retrieve the full description when the JSON-LD description appears
 	// truncated (e.g. Tribe Events WordPress sources always truncate).
 	FollowEventURLs bool `yaml:"follow_event_urls"`
+	// SkipMultiSessionCheck disables the multi-session event heuristic for this
+	// source. Use for sources that legitimately emit long-duration single events
+	// (e.g., festivals, art installations).
+	SkipMultiSessionCheck bool `yaml:"skip_multi_session_check"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) scraping.

@@ -649,3 +649,138 @@ func TestCorrectEndDateTimezoneError_Integration(t *testing.T) {
 		// this will now generate a "reversed_dates_timezone_likely" warning
 	})
 }
+
+func TestIsMultiSessionEvent(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     EventInput
+		wantMulti bool
+		wantMsg   string // substring match (empty means no check)
+	}{
+		// Duration-based
+		{
+			name:      "normal 2h event",
+			input:     EventInput{StartDate: "2026-02-10T19:00:00Z", EndDate: "2026-02-10T21:00:00Z", Name: "Concert"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "1 week event plus 1 second",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-17T10:00:01Z", Name: "Art Show"},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		{
+			name:      "5 week course by duration",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-03-17T10:00:00Z", Name: "Keep Fit"},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		{
+			name:      "no end date",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Open Mic"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "exactly 1 week is not flagged",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-17T10:00:00Z", Name: "Festival"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Title-based
+		{
+			name:      "6 sessions in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-10T12:00:00Z", Name: "Keep Fit in Winter (6 sessions)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "1 session in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-10T12:00:00Z", Name: "Intro Yoga (1 session)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "4 weeks in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Drawing Course (4 weeks)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "workshop series",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Pottery Workshop Series"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "weekly in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Weekly Meditation Circle"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "course in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Beginner Painting Course"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "8 classes in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Yoga (8 Classes)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "3 workshops in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Pottery (3 Workshops)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		// False positives to avoid
+		{
+			name:      "racecourse not flagged",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Day at the Racecourse"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "discourse not flagged",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Public Discourse"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "normal title no match",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Jazz Night at the Rex"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Case insensitivity
+		{
+			name:      "WEEKLY uppercase",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "WEEKLY Jazz Sessions"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "COURSE uppercase",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "BEGINNER COURSE"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMulti, gotMsg := IsMultiSessionEvent(tt.input)
+			assert.Equal(t, tt.wantMulti, gotMulti, "IsMultiSessionEvent flag mismatch")
+			if tt.wantMsg != "" {
+				assert.Contains(t, gotMsg, tt.wantMsg, "reason should contain %q", tt.wantMsg)
+			}
+			if !tt.wantMulti {
+				assert.Empty(t, gotMsg, "reason should be empty when not multi-session")
+			}
+		})
+	}
+}

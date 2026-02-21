@@ -1,14 +1,28 @@
 package events
 
 import (
+	"fmt"
 	"html"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/microcosm-cc/bluemonday"
 )
+
+// multiSessionPatterns are compiled once at package level for efficiency.
+// They match title patterns indicating a multi-session course or recurring series.
+var multiSessionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\(\d+\s+sessions?\)`),  // "(6 sessions)", "(1 session)"
+	regexp.MustCompile(`(?i)\(\d+\s+weeks?\)`),     // "(4 weeks)", "(1 week)"
+	regexp.MustCompile(`(?i)\(\d+\s+classes?\)`),   // "(8 classes)", "(1 class)"
+	regexp.MustCompile(`(?i)\(\d+\s+workshops?\)`), // "(3 workshops)", "(1 workshop)"
+	regexp.MustCompile(`(?i)workshop series`),      // "Workshop Series"
+	regexp.MustCompile(`(?i)\bcourse\b`),           // "Course" (word boundary avoids "racecourse", "discourse")
+	regexp.MustCompile(`(?i)\bweekly\b`),           // "Weekly" (word boundary)
+}
 
 // strictHTML is a bluemonday policy that strips all HTML tags.
 // It is safe for concurrent use.
@@ -342,8 +356,7 @@ func normalizeStringSlice(values []string, lower bool) []string {
 	return result
 }
 
-// correctEndDateTimezoneError detects and fixes common timezone conversion errors
-// where endDate appears chronologically before startDate.
+// correctEndDateTimezoneError detects and fixes common timezone conversion errors// where endDate appears chronologically before startDate.
 //
 // This typically occurs with midnight-spanning events that were incorrectly converted
 // from local time to UTC. For example:
@@ -395,4 +408,35 @@ func correctEndDateTimezoneError(input EventInput) EventInput {
 	// If conditions aren't met, leave as-is and let validation handle it
 
 	return input
+}
+
+// IsMultiSessionEvent checks whether an event looks like a multi-session course
+// or recurring series that was scraped as a single occurrence spanning a long period.
+// Returns (true, reason) if the event should be flagged for review.
+//
+// Detection heuristics:
+//  1. Duration > 168 hours (1 week): a single occurrence spanning > 1 week is suspicious
+//  2. Title patterns: "(N sessions)", "(N weeks)", "workshop series", etc.
+func IsMultiSessionEvent(input EventInput) (bool, string) {
+	// Duration check: only possible when both start and end dates are present.
+	if input.EndDate != "" {
+		startTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
+		endTime, err2 := time.Parse(time.RFC3339, strings.TrimSpace(input.EndDate))
+		if err == nil && err2 == nil {
+			duration := endTime.Sub(startTime)
+			if duration > 168*time.Hour {
+				days := int(duration.Hours() / 24)
+				return true, fmt.Sprintf("single occurrence spans %d days", days)
+			}
+		}
+	}
+
+	// Title pattern check (case-insensitive, compiled at package level).
+	for _, re := range multiSessionPatterns {
+		if re.MatchString(input.Name) {
+			return true, fmt.Sprintf("title matches multi-session pattern: %s", re.String())
+		}
+	}
+
+	return false, ""
 }

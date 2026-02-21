@@ -41,29 +41,30 @@ type ValidationResult struct {
 }
 
 type EventInput struct {
-	Context             json.RawMessage       `json:"@context,omitempty"` // Accepted but ignored (schema.org compatibility)
-	ID                  string                `json:"@id,omitempty"`
-	Type                string                `json:"@type,omitempty"`
-	Name                string                `json:"name,omitempty"`
-	Description         string                `json:"description,omitempty"`
-	StartDate           string                `json:"startDate,omitempty"`
-	EndDate             string                `json:"endDate,omitempty"`
-	DoorTime            string                `json:"doorTime,omitempty"`
-	EventDomain         string                `json:"eventDomain,omitempty"`
-	Location            *PlaceInput           `json:"location,omitempty"`
-	VirtualLocation     *VirtualLocationInput `json:"virtualLocation,omitempty"`
-	Organizer           *OrganizationInput    `json:"organizer,omitempty"`
-	Image               string                `json:"image,omitempty"`
-	URL                 string                `json:"url,omitempty"`
-	Keywords            []string              `json:"keywords,omitempty"`
-	InLanguage          []string              `json:"inLanguage,omitempty"`
-	IsAccessibleForFree *bool                 `json:"isAccessibleForFree,omitempty"`
-	Offers              *OfferInput           `json:"offers,omitempty"`
-	SameAs              []string              `json:"sameAs,omitempty"`
-	License             string                `json:"license,omitempty"`
-	Source              *SourceInput          `json:"source,omitempty"`
-	Occurrences         []OccurrenceInput     `json:"occurrences,omitempty"`
-	LifecycleState      string                `json:"lifecycle_state,omitempty"` // Scraper hint: "review" forces pending_review
+	Context               json.RawMessage       `json:"@context,omitempty"` // Accepted but ignored (schema.org compatibility)
+	ID                    string                `json:"@id,omitempty"`
+	Type                  string                `json:"@type,omitempty"`
+	Name                  string                `json:"name,omitempty"`
+	Description           string                `json:"description,omitempty"`
+	StartDate             string                `json:"startDate,omitempty"`
+	EndDate               string                `json:"endDate,omitempty"`
+	DoorTime              string                `json:"doorTime,omitempty"`
+	EventDomain           string                `json:"eventDomain,omitempty"`
+	Location              *PlaceInput           `json:"location,omitempty"`
+	VirtualLocation       *VirtualLocationInput `json:"virtualLocation,omitempty"`
+	Organizer             *OrganizationInput    `json:"organizer,omitempty"`
+	Image                 string                `json:"image,omitempty"`
+	URL                   string                `json:"url,omitempty"`
+	Keywords              []string              `json:"keywords,omitempty"`
+	InLanguage            []string              `json:"inLanguage,omitempty"`
+	IsAccessibleForFree   *bool                 `json:"isAccessibleForFree,omitempty"`
+	Offers                *OfferInput           `json:"offers,omitempty"`
+	SameAs                []string              `json:"sameAs,omitempty"`
+	License               string                `json:"license,omitempty"`
+	Source                *SourceInput          `json:"source,omitempty"`
+	Occurrences           []OccurrenceInput     `json:"occurrences,omitempty"`
+	LifecycleState        string                `json:"lifecycle_state,omitempty"`          // Scraper hint: "review" forces pending_review
+	SkipMultiSessionCheck bool                  `json:"skip_multi_session_check,omitempty"` // Disables multi-session heuristic for this event
 }
 
 type PlaceInput struct {

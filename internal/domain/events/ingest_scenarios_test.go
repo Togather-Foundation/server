@@ -1771,3 +1771,101 @@ func mustJSON(v any) []byte {
 	}
 	return b
 }
+
+// --- Multi-Session Detection Scenarios ---
+
+func TestScenario_MultiSession(t *testing.T) {
+	t.Run("multi_session_5week_duration_goes_to_review", func(t *testing.T) {
+		// Given: A new event spanning ~5 weeks (multi-session course).
+		// Expected: lifecycle_state = "pending_review" with multi_session_likely warning.
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		// 5-week duration: clearly a multi-session course
+		startDate := "2026-03-01T10:00:00Z"
+		endDate := "2026-04-05T10:00:00Z" // 35 days later
+
+		input := EventInput{
+			Name:        "Keep Fit in Winter",
+			Description: "A five-week fitness programme",
+			Image:       "https://example.com/keepfit.jpg",
+			StartDate:   startDate,
+			EndDate:     endDate,
+			License:     "CC0-1.0",
+			Location:    &PlaceInput{Name: "Community Centre", AddressLocality: "Toronto"},
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if result.Event == nil {
+			t.Fatal("Expected non-nil event")
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true for 5-week event")
+		}
+		if result.Event.LifecycleState != "pending_review" {
+			t.Errorf("Expected lifecycle_state = pending_review, got %q", result.Event.LifecycleState)
+		}
+
+		// Verify multi_session_likely warning is present
+		found := false
+		for _, w := range result.Warnings {
+			if w.Code == "multi_session_likely" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected multi_session_likely warning, got warnings: %v", result.Warnings)
+		}
+
+		// Verify a review queue entry was created
+		if len(repo.reviewQueue) == 0 {
+			t.Error("Expected review queue entry to be created")
+		}
+	})
+
+	t.Run("multi_session_skip_flag_allows_publish", func(t *testing.T) {
+		// Given: A 5-week event with SkipMultiSessionCheck = true (e.g. festival source).
+		// Expected: lifecycle_state = "published" (not routed to review for multi-session).
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		startDate := "2026-03-01T10:00:00Z"
+		endDate := "2026-04-05T10:00:00Z" // 35 days later
+
+		input := EventInput{
+			Name:                  "Toronto Art Festival",
+			Description:           "Annual multi-week art festival across the city",
+			Image:                 "https://example.com/festival.jpg",
+			StartDate:             startDate,
+			EndDate:               endDate,
+			License:               "CC0-1.0",
+			Location:              &PlaceInput{Name: "Various Venues", AddressLocality: "Toronto"},
+			SkipMultiSessionCheck: true,
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if result.Event == nil {
+			t.Fatal("Expected non-nil event")
+		}
+		if result.NeedsReview {
+			t.Errorf("Expected NeedsReview = false when SkipMultiSessionCheck = true, got warnings: %v", result.Warnings)
+		}
+		if result.Event.LifecycleState != "published" {
+			t.Errorf("Expected lifecycle_state = published, got %q", result.Event.LifecycleState)
+		}
+
+		// Verify no multi_session_likely warning
+		for _, w := range result.Warnings {
+			if w.Code == "multi_session_likely" {
+				t.Errorf("Did not expect multi_session_likely warning when SkipMultiSessionCheck = true")
+			}
+		}
+	})
+}
