@@ -28,9 +28,57 @@ func cleanText(s string) string {
 	// Second pass: decode any entities that were inside tag attributes and
 	// are now exposed after stripping (e.g. &amp; left in text nodes).
 	s = html.UnescapeString(s)
+	// Unescape WordPress/Tribe-Events-style backslash sequences that survive
+	// JSON parsing as literal two-character sequences. These arise because
+	// WordPress encodes apostrophes as \' and newlines as \n inside JSON-LD
+	// <script> tags using double-backslashes (\\' and \\n in the raw HTML),
+	// which are valid JSON escape sequences for a literal backslash followed
+	// by the next character. After JSON decoding we get the literal pair.
+	s = unescapeBackslashSequences(s)
 	// Collapse runs of whitespace (newlines, tabs, multiple spaces).
 	s = strings.Join(strings.Fields(s), " ")
 	return s
+}
+
+// unescapeBackslashSequences converts literal two-character backslash sequences
+// left by WordPress/Tribe Events JSON-LD encoding into their intended characters:
+//   - \' → '  (apostrophe)
+//   - \n → newline (collapsed to space by the caller's strings.Fields)
+//   - \r → carriage return (collapsed to space)
+//   - \t → tab (collapsed to space)
+//   - \\ → \ (double-backslash → single backslash)
+func unescapeBackslashSequences(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case '\'':
+				b.WriteByte('\'')
+				i++
+			case 'n':
+				b.WriteByte('\n')
+				i++
+			case 'r':
+				b.WriteByte('\r')
+				i++
+			case 't':
+				b.WriteByte('\t')
+				i++
+			case '\\':
+				b.WriteByte('\\')
+				i++
+			default:
+				b.WriteByte(s[i])
+			}
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }
 
 // normalizeURL fixes common URL issues in external data sources:

@@ -255,6 +255,21 @@ func TestCleanText(t *testing.T) {
 			input: "  trimmed  ",
 			want:  "trimmed",
 		},
+		{
+			name:  "WordPress backslash-apostrophe in description",
+			input: `See Toronto\'s wildlife through the eyes of local photographers.\n`,
+			want:  "See Toronto's wildlife through the eyes of local photographers.",
+		},
+		{
+			name:  "entity-encoded HTML with backslash-apostrophe (Tribe Events listing page)",
+			input: `&lt;p&gt;See Toronto\'s wildlife.&lt;/p&gt;\n`,
+			want:  "See Toronto's wildlife.",
+		},
+		{
+			name:  "double backslash collapses to single",
+			input: `path\\to\\file`,
+			want:  `path\to\file`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
