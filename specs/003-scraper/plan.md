@@ -293,6 +293,26 @@ Very common in Toronto arts/culture WordPress sites. Detected via REST API endpo
 - **ai1ec (All-in-One Event Calendar / Timely)** — another AJAX calendar plugin, similar to Tribe photo view. Tier 2 only.
 - **Weebly + unstructured free-text events** — not scrapeable; skip.
 - **Custom event card patterns** work well for T1 — e.g. Broadbent Institute's `div.bi-event-card` is stable, fully server-rendered, and clean to select.
+- **T1 Webflow pattern**: Server-rendered cards use `.w-dyn-item` container. Individual site classes vary (e.g. InterAccess: `a.card.is-generic`).
+- **CraftCMS events**: Server-rendered, typically in `.events-module` sections with custom card classes. Clean T1.
+- **Joomla K2 component**: Server-rendered article list; `div.catItemView` container with `span.catItemDateCreated` for dates. Date format: `"Monday, 01 December 2025 00:00"`.
+- **Shopify + Showpass/InLight**: Shopify stores that embed ticketing widgets are T2. The Showpass public API (`/api/public/events/?venue=<id>`) may be an alternative data source.
+- **Roy Thomson Hall / Massey Hall (mhrth.com)**: React/Next.js SPA on Heroku — empty body without JS. T2.
+- **Obsidian Theatre**: WordPress but returns blank body — likely anti-bot JS redirect. T2.
+- **Church-Wellesley Village BIA**: Wix Events App, SSR container is empty. T2.
+- **Heritage Trust (Elgin & Winter Garden)**: Custom PHP CMS; `div#month_list div.event-list-item`; date in `h2` text; detail link href contains `d=YYYY-MM-DD`. 4 events confirmed T1.
+- **Charles Street Video**: Custom PHP CMS; events at `/events.php?submenu=events` (root URL is JS redirect shell but events page is directly accessible without JS). `td.item_card` container.
+- **Downtown Yonge BIA**: WordPress + Divi + GeoDirectory AJAX. `/events/` is a marketing overview page, not a dated event feed. SKIP.
+- **Cabbagetown South BIA**: Tribe Events WordPress; `@type:Event` JSON-LD confirmed. T0.
+- **Caribbeantales Festival / Blood in the Snow / Fivars.net**: Tribe API responds but 0 events (off-season or inactive). SKIP until in-season.
+- **Greektown Toronto**: Tribe API 0 events; static `/art-events/` page. SKIP.
+- **Small World Music**: WordPress + Visual Composer; custom `marcato_show` post type; `article.archivedEvent` → `div.eventBoxDate` (text date). 7 events T1.
+- **Broadbent Institute**: WP custom `broadbent_events` post type; `div.bi-event-card` → `span.bi-event-card__date-start`. T1.
+- **Bloor-Yorkville BIA**: WP + Elementor; use `/category/events/` (not `/by-events/` which is nav-only). Date not in listing markup — falls back to link follow.
+- **Bloor Annex BIA**: WP archive; `article .blog_postmeta .post-date`. Mixed events/news feed — trust_level 4.
+- **Broadview-Danforth BIA**: Joomla K2; `div.catItemView h3.catItemTitle a` + `span.catItemDateCreated`. Mixed news/events.
+- **aluCine Festival**: React SPA (base44 platform + Supabase backend). T2/SKIP.
+- **Bangiya Parishad**: WP; `div.event-two__single`; split date: day in `span`, month in `p` inside `div.event-two__date`. Very sparse (1–4 events/year).
 
 ## Constitution Check
 
