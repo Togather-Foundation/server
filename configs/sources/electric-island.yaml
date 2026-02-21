@@ -1,0 +1,11 @@
+name: "electric-island"
+# Electric Island Festival (Toronto). Webflow site — events section shows only
+# season date headers (MAY/JUNE/AUG/SEPT); individual lineup cards are JS-rendered.
+# Tickets are on Ticketweb. Disabled until Tier 2 (Rod) is implemented (srv-h264z).
+url: "https://www.electricisland.to/events"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+notes: "Webflow site. Season date headers are server-rendered but individual event cards require JS. Tier 2 required."
