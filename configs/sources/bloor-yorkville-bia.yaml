@@ -1,0 +1,16 @@
+name: "bloor-yorkville-bia"
+# Tier 1 (Colly CSS). WordPress + Elementor. Events category archive.
+# NOTE: /by-events/ is a static nav page; use /category/events/ for actual listings.
+# Date not in listing markup; falls back to link follow or WP post date.
+# 10 event posts confirmed 2026-02-21.
+url: "https://www.bloor-yorkville.com/category/events/"
+tier: 1
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article"
+  name: "article .entry-header h2.entry-title a"
+  url: "article .entry-header h2.entry-title a"

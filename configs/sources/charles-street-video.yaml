@@ -1,0 +1,17 @@
+name: "charles-street-video"
+# Tier 1 (Colly CSS). Custom PHP CMS. Server-rendered table layout.
+# NOTE: Root URL is a JS redirect shell; events page is directly accessible.
+# Date in bold span as plain text (e.g. "Thu 9 - Tue 14 April 2026"), no datetime attr.
+# Multiple events confirmed 2026-02-21.
+url: "https://charlesstreetvideo.com/events.php?submenu=events"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "td.item_card"
+  name: "td.item_card a h3"
+  start_date: "td.item_card > span[style]"
+  url: "td.item_card > a"

@@ -1,0 +1,9 @@
+name: "church-wellesley-village-bia"
+# Tier 2 (DISABLED). Wix Events App, event container renders empty server-side.
+# No static event data in SSR output. Headless browser required.
+url: "https://www.churchwellesleyvillage.ca/events"
+tier: 2
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: false

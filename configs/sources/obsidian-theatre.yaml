@@ -1,0 +1,9 @@
+name: "obsidian-theatre"
+# Tier 2 (DISABLED). WordPress but returns empty body — likely JS-rendered or blocked.
+# Major Black-led theatre company in Toronto.
+url: "https://www.obsidiantheatre.com/season-listings/"
+tier: 2
+schedule: "weekly"
+trust_level: 8
+license: "CC0-1.0"
+enabled: false

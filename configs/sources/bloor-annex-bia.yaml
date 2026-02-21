@@ -1,0 +1,16 @@
+name: "bloor-annex-bia"
+# Tier 1 (Colly CSS). WordPress. News/events category archive.
+# Mixes event announcements with general news. Date in .post-date as plain text.
+# 10 posts per page confirmed 2026-02-21.
+url: "https://www.bloorannex.ca/category/news-events"
+tier: 1
+schedule: "weekly"
+trust_level: 4
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "article"
+  name: "article .entry-header h3 a"
+  start_date: "article .blog_postmeta .post-date"
+  url: "article .entry-header h3 a"

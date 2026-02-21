@@ -1,0 +1,16 @@
+name: "heritage-trust-elgin-winter-garden"
+# Tier 1 (Colly CSS). Custom PHP CMS. Elgin & Winter Garden Theatre Centre.
+# Date in div.event-list-content h2 as plain text. Detail link href contains d=YYYY-MM-DD.
+# 4 events confirmed 2026-02-21.
+url: "https://www.heritagetrust.on.ca/ewg/ewg-home/whats-on/events-calendar"
+tier: 1
+schedule: "weekly"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div#month_list > div.event-list-item"
+  name: "h4.event-title"
+  start_date: "div.event-list-content h2"
+  url: "ul.event-actions li a"

@@ -1,0 +1,9 @@
+name: "cabbagetown-south-bia"
+# Tier 0 (JSON-LD). Tribe Events WordPress. @type:Event JSON-LD confirmed 2026-02-21.
+url: "https://cabbagetownsouth.ca/events/"
+tier: 0
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

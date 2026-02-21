@@ -1,0 +1,16 @@
+name: "broadview-danforth-bia"
+# Tier 1 (Colly CSS). Joomla + K2 component. Server-rendered news/events listing.
+# Date in span.catItemDateCreated as plain text (e.g. "Monday, 01 December 2025 00:00").
+# Mixes event announcements with general news.
+url: "https://broadviewdanforthbia.ca/news/"
+tier: 1
+schedule: "weekly"
+trust_level: 4
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.catItemView"
+  name: "div.catItemView h3.catItemTitle a"
+  start_date: "span.catItemDateCreated"
+  url: "div.catItemView h3.catItemTitle a"
