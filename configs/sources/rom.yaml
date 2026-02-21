@@ -1,0 +1,18 @@
+name: "rom"
+url: "https://www.rom.on.ca/whats-on/events"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+# Organization match: no match found in database
+# Note: name field (span.h8) produces duplicated text due to Drupal hidden-span pattern
+#       e.g. "DinosaursDinosaurs" — this is a site rendering artifact
+selectors:
+  event_list: "div.rom-event-listing"
+  name: "span.h8"
+  start_date: ".datetime"
+  url: "a"
+  image: "img"
+  pagination: "li.pager__item a[rel=next]"

@@ -1,0 +1,18 @@
+name: "factory-theatre"
+url: "https://www.factorytheatre.ca/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+# Organization match: no match found in database
+# Note: Date format uses en-dash (–), e.g. "February 18–28 2026".
+# The shows-block lists season productions; independent rental events
+# are on a separate /calendar/ page which is JS-rendered.
+selectors:
+  event_list: ".shows-block .column"
+  name: "h2.is-style-alt"
+  start_date: "p"
+  url: "a.image-link"
+  image: "img.attachment-cropped-hero"

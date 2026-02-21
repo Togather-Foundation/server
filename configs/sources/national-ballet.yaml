@@ -1,0 +1,19 @@
+name: "national-ballet"
+url: "https://national.ballet.ca/performances/202627-season/"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+# Organization match: no match found in database
+# Note: URL is season-specific (202627 = 2026/27); update annually.
+# The /performances path returns 404 — the correct path is /performances/<year-code>-season/.
+# Date is in .subtitle span as a <p> tag; name is in .accent span.
+# URLs point to /productions/ detail pages.
+selectors:
+  event_list: "li.upcoming-list-item"
+  name: ".accent"
+  start_date: ".subtitle"
+  url: "a.btn-secondary"
+  image: "img"

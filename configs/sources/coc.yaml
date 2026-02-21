@@ -1,0 +1,19 @@
+name: "coc"
+url: "https://www.coc.ca/tickets/2526-season"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+# Organization match: no match found in database
+# Note: URL is season-specific (2526 = 2025/26); update annually.
+# The /season path returns 404 — the correct path is /tickets/<season-code>-season.
+# All performances are at Four Seasons Centre for the Performing Arts.
+selectors:
+  event_list: "div.events-grid__item"
+  name: "h3.event-item__title"
+  start_date: ".event-item__date"
+  location: ".event-item__venue"
+  url: "a.event-item__link"
+  image: "img.event-item__image"

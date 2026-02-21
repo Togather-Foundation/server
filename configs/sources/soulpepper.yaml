@@ -1,0 +1,15 @@
+name: "soulpepper"
+url: "https://www.soulpepper.ca/performances"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+# Organization match: no match found in database
+selectors:
+  event_list: "article.listing-item"
+  name: ".title a"
+  start_date: ".run"
+  url: "a[href^='/performances']"
+  image: "a > img"

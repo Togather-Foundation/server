@@ -1,0 +1,20 @@
+name: "moca"
+url: "https://moca.ca/events"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+# Organization match: no match found in database
+# Note: event_list uses the Elementor template ID (20414) as a stable hook;
+# dates are concatenated from multiple jet-listing-dynamic-field__content spans
+# (cost info + date + time) — ingest normalization should parse the date portion.
+# Images are lazy-loaded SVG placeholders; real images are behind JS rendering.
+# Pagination: https://moca.ca/events/page/2/ via next page link.
+selectors:
+  event_list: "div.elementor-20414 section"
+  name: "h1"
+  start_date: ".jet-listing-dynamic-field__content"
+  url: "a.elementor-button"
+  pagination: "a.next.page-numbers"
