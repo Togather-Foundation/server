@@ -1,51 +1,50 @@
 # GTA Event Source Configs
 
-This directory contains YAML configuration files for each scrape source. All sources
-are currently **disabled** pending Tier 1/Tier 2 support or data-access resolution.
+This directory contains YAML configuration files for each scrape source.
 
 ## Status Summary (validated 2026-02-21)
 
-| Source | Status | Reason | Fix Required |
-|--------|--------|--------|--------------|
-| toronto-symphony-orchestra | disabled | JS-rendered React SPA — no Event JSON-LD in static HTML | Tier 2 (Rod headless) — see bead srv-h264z |
-| roy-thomson-massey-hall | disabled | JS-rendered SPA (both roythomsonhall.com + masseyhall.com) — ~75 bytes static HTML | Tier 2 (Rod headless) — see bead srv-h264z |
-| hot-docs | disabled | No Event JSON-LD on any page (listing or detail) | Tier 1 CSS selectors for hotdocs.ca |
-| glad-day-bookshop | disabled | robots.txt `Disallow: /*` for all user agents | Contact site owner / find alternate feed |
-| harbourfront-centre | disabled | Only Yoast WebPage JSON-LD on event pages, not Event @type | Tier 1 CSS selectors for /whats-on/ + /event/* |
-| toronto-reference-library | disabled | /events/ listing has only Library @type JSON-LD (org info), not Event | Tier 1 CSS selectors or investigate detail pages |
+| Source | Tier | Status | Events/page | Notes |
+|--------|------|--------|-------------|-------|
+| harbourfront-centre | 1 | **enabled** | 106 | CSS selectors on /whats-on/ |
+| toronto-reference-library | 1 | **enabled** | 21 | CSS selectors on tpl.bibliocommons.com/v2/events |
+| hot-docs | 1 | disabled | — | JS-rendered; static HTML is empty — needs Tier 2 |
+| toronto-symphony-orchestra | 2 | disabled | — | JS-rendered React SPA — see bead srv-h264z |
+| roy-thomson-massey-hall | 2 | disabled | — | JS-rendered SPA (~75 bytes static HTML) — see bead srv-h264z |
+| glad-day-bookshop | — | disabled | — | robots.txt `Disallow: /*` — contact site owner |
 
 ## Individual Source Notes
 
-### toronto-symphony-orchestra.yaml
+### harbourfront-centre.yaml (Tier 1, enabled)
+- Listing: `https://harbourfrontcentre.com/whats-on/` — 310KB static HTML, no JS rendering needed.
+- Extracts 106 events per page using `.wo-event` container with child selectors for name, date, URL, image.
+- Old URL `/events/` returns 301 → `/`; individual event pages have Yoast `WebPage` JSON-LD, not `Event`.
+
+### toronto-reference-library.yaml (Tier 1, enabled)
+- Listing: `https://tpl.bibliocommons.com/v2/events` — 1.2MB static HTML, 21 events per page.
+- Extracts from `.cp-events-search-item` cards; pagination via `a.cp-pagination-btn--next`.
+- Known: `cp-screen-reader-message` spans cause duplicated text in `name` and `location` fields
+  (e.g. `"BendaleEvent location: Bendale"`). Acceptable for now; ingest normalization can strip it.
+- Old URL `torontopubliclibrary.ca/programs-and-learning/events/index.jsp` returns 403.
+
+### toronto-symphony-orchestra.yaml (Tier 2, disabled)
 - Old URL `/concerts-events` returns 404. Correct listing: `/concerts-and-events/calendar`.
 - Site is a React SPA — fetching static HTML yields no Event JSON-LD.
-- Requires Tier 2 headless browser (Rod) to execute JS and extract structured data.
+- Requires Tier 2 headless browser (Rod) — see bead srv-h264z.
 
-### roy-thomson-massey-hall.yaml
+### roy-thomson-massey-hall.yaml (Tier 2, disabled)
 - Old URL was `mfrh.org/events` (404). Canonical domains are `roythomsonhall.com` and `masseyhall.com`.
 - Both domains serve a JS-rendered SPA; static HTML response is ~75 bytes.
-- Requires Tier 2 headless browser.
+- Requires Tier 2 headless browser — see bead srv-h264z.
 
-### hot-docs.yaml
-- URL `hotdocs.ca/whats-on/films` is valid (200 OK).
-- Neither the listing page nor individual event detail pages contain Event JSON-LD.
-- Requires Tier 1 CSS selectors to extract title, date, description from DOM.
+### hot-docs.yaml (disabled)
+- URL `hotdocs.ca/whats-on/films` is valid (200 OK) but only 22KB static HTML; `<main>` is empty.
+- JS-rendered — needs Tier 2, not Tier 1 CSS selectors.
 
-### glad-day-bookshop.yaml
+### glad-day-bookshop.yaml (disabled)
 - URL `gladdaybookshop.com/events` is accessible.
 - `robots.txt` has `Disallow: /*` for all user agents — scraping is not permitted.
 - Resolution: contact site owner for permission or locate a public data feed.
-
-### harbourfront-centre.yaml
-- Old URL `/events/` returns 301 redirect to `/`; the working listing is at `/whats-on/`.
-- Individual event pages (`/event/*`) have JSON-LD but it is Yoast `WebPage` type, not `Event @type`.
-- Requires Tier 1 CSS selectors to extract structured event data.
-
-### toronto-reference-library.yaml
-- Old URL `torontopubliclibrary.ca/programs-and-learning/events/index.jsp` returns 403.
-- Canonical domain is `tpl.ca`; `/events/` listing (200 OK) contains only `Library @type` JSON-LD.
-- Resolution: investigate individual event detail pages on `tpl.ca` for Event JSON-LD,
-  or implement Tier 1 CSS selectors.
 
 ---
 

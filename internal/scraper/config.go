@@ -147,6 +147,20 @@ func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
 	return configs, nil
 }
 
+// LoadSourceConfig reads a single YAML source config file, applies defaults,
+// and validates it. It is the public counterpart of the internal loadFile,
+// intended for use by CLI commands that accept an explicit config path.
+func LoadSourceConfig(path string) (SourceConfig, error) {
+	cfg, err := loadFile(path)
+	if err != nil {
+		return SourceConfig{}, fmt.Errorf("loading %s: %w", path, err)
+	}
+	if err := ValidateConfig(cfg); err != nil {
+		return SourceConfig{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
+}
+
 // loadFile reads a single YAML source config file and applies defaults.
 func loadFile(path string) (SourceConfig, error) {
 	data, err := os.ReadFile(path)

@@ -1,12 +1,22 @@
 name: "toronto-reference-library"
-# Corrected URL: old torontopubliclibrary.ca path 403s; canonical domain is tpl.ca.
-# Disabled: /events/ listing has only Library @type JSON-LD (org info), not Event.
-# Fix: investigate individual event detail pages on tpl.ca for Event JSON-LD,
-#      or implement Tier 1 CSS selectors for the listing page.
-url: "https://www.tpl.ca/events/"
-tier: 0
+# Tier 1 (Colly CSS selectors). Uses tpl.bibliocommons.com/v2/events — full static
+# HTML listing with 7,800+ events across all TPL branches.
+# Selectors validated 2026-02-21 with `server scrape test`.
+# Note: cp-screen-reader-message spans add duplicate text to name/location fields;
+# normalization will strip the duplicated suffix at ingest time.
+url: "https://tpl.bibliocommons.com/v2/events"
+tier: 1
 schedule: "daily"
-trust_level: 8
+trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 10
+selectors:
+  event_list: ".cp-events-search-item"
+  name: "h3.cp-heading a"
+  start_date: ".cp-event-date-time"
+  location: ".cp-event-location-name a"
+  description: ".cp-event-description"
+  url: "h3.cp-heading a"
+  image: ".cp-event-featured-image img"
+  pagination: "a.cp-pagination-btn--next"

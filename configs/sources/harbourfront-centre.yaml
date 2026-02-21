@@ -1,11 +1,18 @@
 name: "harbourfront-centre"
-# Corrected URL: /events/ 301-redirects to /; working listing is at /whats-on/.
-# Disabled: individual event pages only have Yoast WebPage JSON-LD, not Event @type.
-# Fix: needs Tier 1 CSS selectors for /whats-on/ listing + /event/* detail pages.
+# Tier 1 (Colly CSS selectors). Static HTML listing page, no JS rendering needed.
+# Selectors validated 2026-02-21 with `server scrape test`.
+# 53+ events per page including performances, workshops, exhibitions, and series.
 url: "https://harbourfrontcentre.com/whats-on/"
-tier: 0
+tier: 1
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
-max_pages: 5
+enabled: true
+max_pages: 3
+selectors:
+  event_list: ".wo-event"
+  name: ".date-copy div:nth-child(2)"
+  start_date: ".date-copy div:first-child"
+  description: ".wo-event-copy"
+  url: "a.col"
+  image: ".img-fluid"
