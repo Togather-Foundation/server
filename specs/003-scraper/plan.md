@@ -1,7 +1,7 @@
 # Implementation Plan: Integrated Event Scraper
 
 **Branch**: `003-scraper` | **Date**: 2026-02-21 | **Spec**: [spec.md](./spec.md)
-**Status**: Phases 1 & 2 complete. Phase 3 (DB-backed source configs) in progress — migration, domain/storage layer, sync/export CLI, and DB-first runtime done. API exposure (`srv-17zth`) pending.
+**Status**: Phases 1 & 2 complete. Phase 3 (DB-backed source configs) **COMPLETE** — all 5 beads closed (srv-65kvw, srv-iorfa, srv-2nu7e, srv-l71q1, srv-17zth). Parent bead srv-m085x closed.
 **Input**: Feature specification from `/specs/003-scraper/spec.md`
 
 ## Summary
@@ -133,7 +133,7 @@ The normalizer must handle all of these gracefully.
 
 **Known issue**: The 6 GTA source configs contain placeholder URLs that have not been validated against live sites. See `srv-aany8`.
 
-### Phase 3: DB-Backed Source Configs (In Progress)
+### Phase 3: DB-Backed Source Configs ✅ COMPLETE
 
 **Goal**: `scraper_sources` table is the runtime store; YAML files remain version-controlled canonical source. Sync and export CLI commands; runtime reads DB-first.
 
@@ -145,7 +145,7 @@ The normalizer must handle all of these gracefully.
 6. ✅ `internal/scraper/scraper.go` — added `sourceRepo` field, `NewScraperWithSourceRepo`, `loadSourceConfigs` (DB-first + YAML fallback) (`srv-l71q1`)
 7. ✅ `server scrape list` — DB-first listing with YAML fallback (`srv-l71q1`)
 8. ✅ `newScraperWithDB` wires `ScraperSourceRepository` into all scrape subcommands (`srv-l71q1`)
-9. [ ] `srv-17zth` — expose `sel:scraperSource` in org/place JSON-LD API responses (blocked on srv-l71q1 ✅)
+9. ✅ `sel:scraperSource` exposed on org/place JSON-LD `Get` API responses; optional `scraperRepo` field + `WithScraperSourceRepo()` on both handlers; router wired; tests added (`srv-17zth`)
 
 **Architecture decisions (Phase 3)**:
 - `scraper_sources` table is separate from `organizations`/`places`; linked via `org_scraper_sources` and `place_scraper_sources` join tables (many-to-many).
@@ -154,6 +154,9 @@ The normalizer must handle all of these gracefully.
 - `ScrapeAll` now dispatches tier directly (avoids double `loadSourceConfigs` call that would occur if it called `ScrapeSource`).
 - `scrape list` uses `repo.List(ctx, nil)` (all sources, not just enabled) so operators can see disabled sources too.
 - `server scrape sync` smoke-tested: loaded all 14 YAML sources into DB. `server scrape export` smoke-tested: wrote them back to YAML correctly.
+- `sel:scraperSource` is only populated on the single-item `Get` handler (not `List`) — best-effort, omitted on error or when empty.
+- Handler pattern: optional dependency injected via `WithScraperSourceRepo(repo)` fluent method (same as `WithGeocodingService`).
+- `scraperDomain.Repository` interface assigned to a local variable in `router.go` to satisfy the typed parameter — `postgres.NewScraperSourceRepository(pool)` returns the concrete type.
 
 ### Phase 4: Scheduling + Production (Future)
 
