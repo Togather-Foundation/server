@@ -4,7 +4,7 @@ name: "toronto-holocaust-museum"
 # template elements (li.event.template) with empty fields.
 # notes: JS-rendered event list — needs Tier 2 (headless browser) to render events.
 url: "https://torontoholocaustmuseum.org/events"
-tier: 0
+tier: 2
 schedule: "manual"
 trust_level: 8
 license: "CC0-1.0"

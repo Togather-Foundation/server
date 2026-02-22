@@ -82,8 +82,8 @@ func ValidateConfig(cfg SourceConfig) error {
 		}
 	}
 
-	if cfg.Tier != 0 && cfg.Tier != 1 {
-		errs = append(errs, fmt.Sprintf("tier: must be 0 or 1, got %d", cfg.Tier))
+	if cfg.Tier < 0 || cfg.Tier > 2 {
+		errs = append(errs, fmt.Sprintf("tier: must be 0, 1, or 2, got %d", cfg.Tier))
 	}
 
 	if cfg.TrustLevel != 0 && (cfg.TrustLevel < 1 || cfg.TrustLevel > 10) {
