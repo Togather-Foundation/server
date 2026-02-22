@@ -718,11 +718,12 @@ func (h *EventsHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return batch status URI and job information
-	statusURI, err := ids.BuildCanonicalURI(h.BaseURL, "batch-status", batchID)
-	if err != nil {
-		statusURI = h.BaseURL + "/api/v1/batch-status/" + batchID
-	}
+	// Return batch status URL pointing at the API endpoint.
+	// BuildCanonicalURI is intentionally NOT used here: it produces
+	// /batch-status/{id} (a semantic URI) rather than the API route
+	// /api/v1/batch-status/{id}, which caused the "/" catch-all to
+	// intercept the request and return HTML instead of JSON.
+	statusURI := h.BaseURL + "/api/v1/batch-status/" + batchID
 
 	response := map[string]any{
 		"@context":   loadDefaultContext(),
