@@ -87,14 +87,19 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: "url: must be a valid http/https URL",
 		},
 		{
-			name:    "invalid tier 2",
+			name:    "valid tier 2",
 			cfg:     func() SourceConfig { c := validTier0; c.Tier = 2; return c }(),
-			wantErr: "tier: must be 0 or 1",
+			wantErr: "",
 		},
 		{
 			name:    "invalid tier negative",
 			cfg:     func() SourceConfig { c := validTier0; c.Tier = -1; return c }(),
-			wantErr: "tier: must be 0 or 1",
+			wantErr: "tier: must be 0, 1, or 2",
+		},
+		{
+			name:    "invalid tier 3",
+			cfg:     func() SourceConfig { c := validTier0; c.Tier = 3; return c }(),
+			wantErr: "tier: must be 0, 1, or 2",
 		},
 		{
 			name:    "invalid trust_level 11",

@@ -5,7 +5,7 @@ name: "orpheus-choir-toronto"
 # notes: Custom static season page, no tribe_events or repeating card structure.
 #        Would need Tier 2 (headless) or a custom parser to extract from freeform HTML.
 url: "https://orpheuschoirtoronto.com/2025-2026-concert-season/"
-tier: 0
+tier: 2
 schedule: "manual"
 trust_level: 6
 license: "CC0-1.0"
