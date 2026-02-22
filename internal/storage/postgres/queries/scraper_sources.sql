@@ -108,3 +108,28 @@ SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enab
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = sqlc.arg('place_id')
  ORDER BY s.name ASC;
+
+-- name: ListScraperSourcesWithLatestRun :many
+-- List all scraper sources with their most recent run stats embedded.
+SELECT
+  s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+  s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+  r.started_at   AS last_run_started_at,
+  r.completed_at AS last_run_completed_at,
+  r.status       AS last_run_status,
+  r.events_found AS last_run_events_found,
+  r.events_new   AS last_run_events_new,
+  r.events_dup   AS last_run_events_dup,
+  r.events_failed AS last_run_events_failed,
+  r.error_message AS last_run_error_message
+FROM scraper_sources s
+LEFT JOIN LATERAL (
+  SELECT started_at, completed_at, status,
+         events_found, events_new, events_dup, events_failed, error_message
+    FROM scraper_runs
+   WHERE source_name = s.name
+   ORDER BY started_at DESC
+   LIMIT 1
+) r ON true
+WHERE (sqlc.narg('enabled')::boolean IS NULL OR s.enabled = sqlc.narg('enabled'))
+ORDER BY s.name ASC;

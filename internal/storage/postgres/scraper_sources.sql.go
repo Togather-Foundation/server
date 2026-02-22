@@ -249,6 +249,100 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 	return items, nil
 }
 
+const listScraperSourcesWithLatestRun = `-- name: ListScraperSourcesWithLatestRun :many
+SELECT
+  s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+  s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+  r.started_at   AS last_run_started_at,
+  r.completed_at AS last_run_completed_at,
+  r.status       AS last_run_status,
+  r.events_found AS last_run_events_found,
+  r.events_new   AS last_run_events_new,
+  r.events_dup   AS last_run_events_dup,
+  r.events_failed AS last_run_events_failed,
+  r.error_message AS last_run_error_message
+FROM scraper_sources s
+LEFT JOIN LATERAL (
+  SELECT started_at, completed_at, status,
+         events_found, events_new, events_dup, events_failed, error_message
+    FROM scraper_runs
+   WHERE source_name = s.name
+   ORDER BY started_at DESC
+   LIMIT 1
+) r ON true
+WHERE ($1::boolean IS NULL OR s.enabled = $1)
+ORDER BY s.name ASC
+`
+
+type ListScraperSourcesWithLatestRunRow struct {
+	ID                  int64              `json:"id"`
+	Name                string             `json:"name"`
+	Url                 string             `json:"url"`
+	Tier                int32              `json:"tier"`
+	Schedule            string             `json:"schedule"`
+	TrustLevel          int32              `json:"trust_level"`
+	License             string             `json:"license"`
+	Enabled             bool               `json:"enabled"`
+	MaxPages            int32              `json:"max_pages"`
+	Selectors           []byte             `json:"selectors"`
+	Notes               pgtype.Text        `json:"notes"`
+	LastScrapedAt       pgtype.Timestamptz `json:"last_scraped_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	LastRunStartedAt    pgtype.Timestamptz `json:"last_run_started_at"`
+	LastRunCompletedAt  pgtype.Timestamptz `json:"last_run_completed_at"`
+	LastRunStatus       string             `json:"last_run_status"`
+	LastRunEventsFound  int32              `json:"last_run_events_found"`
+	LastRunEventsNew    int32              `json:"last_run_events_new"`
+	LastRunEventsDup    int32              `json:"last_run_events_dup"`
+	LastRunEventsFailed int32              `json:"last_run_events_failed"`
+	LastRunErrorMessage pgtype.Text        `json:"last_run_error_message"`
+}
+
+// List all scraper sources with their most recent run stats embedded.
+func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error) {
+	rows, err := q.db.Query(ctx, listScraperSourcesWithLatestRun, enabled)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListScraperSourcesWithLatestRunRow{}
+	for rows.Next() {
+		var i ListScraperSourcesWithLatestRunRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Url,
+			&i.Tier,
+			&i.Schedule,
+			&i.TrustLevel,
+			&i.License,
+			&i.Enabled,
+			&i.MaxPages,
+			&i.Selectors,
+			&i.Notes,
+			&i.LastScrapedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastRunStartedAt,
+			&i.LastRunCompletedAt,
+			&i.LastRunStatus,
+			&i.LastRunEventsFound,
+			&i.LastRunEventsNew,
+			&i.LastRunEventsDup,
+			&i.LastRunEventsFailed,
+			&i.LastRunErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const unlinkOrgScraperSource = `-- name: UnlinkOrgScraperSource :exec
 DELETE FROM org_scraper_sources
  WHERE organization_id   = $1

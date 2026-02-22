@@ -1616,6 +1616,190 @@ paths:
               schema:
                 type: object
 
+  /admin/scraper/sources:
+    get:
+      operationId: listScraperSources
+      summary: List scraper sources
+      description: |
+        Returns all scraper sources with their latest run summary (status, counts,
+        error message). Supports optional filtering by enabled state.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: enabled
+          in: query
+          description: Filter by enabled state. Omit to return all sources.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of scraper sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScraperSourceSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/scraper/sources/{name}:
+    patch:
+      operationId: setScraperSourceEnabled
+      summary: Enable or disable a scraper source
+      description: |
+        Enables or disables the named scraper source. Returns the updated source.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Scraper source name
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated scraper source
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScraperSourceSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/scraper/sources/{name}/runs:
+    get:
+      operationId: listScraperSourceRuns
+      summary: List run history for a scraper source
+      description: |
+        Returns the most recent runs for the named scraper source (up to 50).
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Scraper source name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of scraper runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScraperRunDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/scraper/sources/{name}/trigger:
+    post:
+      operationId: triggerScraperSource
+      summary: Trigger an immediate scrape for a source
+      description: |
+        Dispatches a background scrape for the named source and returns 202
+        immediately. Returns 503 if this node has no scraper configured, and 404
+        if the source name is unknown.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Scraper source name
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Scrape triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_name:
+                    type: string
+                  status:
+                    type: string
+                    example: triggered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Scraper not configured on this node
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
 components:
   securitySchemes:
     apiKey:
@@ -1737,6 +1921,76 @@ components:
         default: 50
 
   schemas:
+    ScraperSourceSummary:
+      type: object
+      description: A scraper source with its latest run summary
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        tier:
+          type: integer
+        schedule:
+          type: string
+        license:
+          type: string
+        enabled:
+          type: boolean
+        last_run_status:
+          type: string
+        last_run_started_at:
+          type: string
+          format: date-time
+        last_run_completed_at:
+          type: string
+          format: date-time
+        last_run_events_found:
+          type: integer
+        last_run_events_new:
+          type: integer
+        last_run_events_dup:
+          type: integer
+        last_run_events_failed:
+          type: integer
+        last_run_error_message:
+          type: string
+
+    ScraperRunDetail:
+      type: object
+      description: A single scraper run record
+      properties:
+        id:
+          type: integer
+        source_name:
+          type: string
+        source_url:
+          type: string
+          format: uri
+        tier:
+          type: integer
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        events_found:
+          type: integer
+        events_new:
+          type: integer
+        events_dup:
+          type: integer
+        events_failed:
+          type: integer
+        error_message:
+          type: string
+
     Event:
       type: object
       description: A cultural event in Schema.org Event format with SEL extensions for provenance and federation

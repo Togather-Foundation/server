@@ -1,0 +1,209 @@
+// Scraper Sources Admin Page (srv-5127b)
+// Manages scraper source listing, enable/disable, trigger, and run history.
+
+(function () {
+    'use strict';
+
+    document.addEventListener('DOMContentLoaded', init);
+
+    function init() {
+        setupEventHandlers();
+        loadSources();
+    }
+
+    // -------------------------------------------------------------------------
+    // Event delegation
+    // -------------------------------------------------------------------------
+
+    function setupEventHandlers() {
+        document.addEventListener('click', function (e) {
+            var target = e.target.closest('[data-action]');
+            if (!target) return;
+
+            var action = target.dataset.action;
+            var name = target.dataset.name;
+
+            if (action === 'view-runs') {
+                openRunsModal(name);
+            } else if (action === 'trigger-scrape') {
+                triggerScrape(target, name);
+            } else if (action === 'toggle-enabled') {
+                toggleEnabled(target, name);
+            }
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Load sources
+    // -------------------------------------------------------------------------
+
+    async function loadSources() {
+        showState('loading');
+        try {
+            var data = await API.scraper.listSources();
+            var items = data.items || [];
+            if (items.length === 0) {
+                showState('empty');
+                return;
+            }
+            renderSources(items);
+            showState('table');
+            document.getElementById('showing-text').textContent =
+                'Showing ' + items.length + ' source' + (items.length === 1 ? '' : 's');
+        } catch (err) {
+            showState('empty');
+            showToast('Failed to load scraper sources: ' + err.message, 'error');
+        }
+    }
+
+    function renderSources(items) {
+        var tbody = document.getElementById('sources-table');
+        tbody.innerHTML = items.map(renderSourceRow).join('');
+    }
+
+    function renderSourceRow(src) {
+        var statusBadge = '';
+        if (src.last_run_status) {
+            var cls = src.last_run_status === 'completed' ? 'bg-success-lt'
+                : src.last_run_status === 'failed' ? 'bg-danger-lt'
+                : src.last_run_status === 'running' ? 'bg-warning-lt'
+                : 'bg-secondary-lt';
+            statusBadge = '<span class="badge ' + cls + '">' + escapeHtml(src.last_run_status) + '</span>';
+        } else {
+            statusBadge = '<span class="badge bg-secondary-lt">never</span>';
+        }
+
+        var lastRun = src.last_run_started_at
+            ? formatDate(src.last_run_started_at)
+            : '—';
+
+        var eventCounts = src.last_run_status
+            ? escapeHtml(String(src.last_run_events_new)) + ' / ' + escapeHtml(String(src.last_run_events_found))
+            : '—';
+
+        var enabledToggleLabel = src.enabled ? 'Disable' : 'Enable';
+        var enabledBtnClass = src.enabled ? 'btn-success' : 'btn-outline-secondary';
+
+        return '<tr>' +
+            '<td>' +
+                '<div class="font-weight-medium">' + escapeHtml(src.name) + '</div>' +
+                '<div class="text-muted small">' + escapeHtml(src.url) + '</div>' +
+            '</td>' +
+            '<td>' + escapeHtml(String(src.tier)) + '</td>' +
+            '<td>' + escapeHtml(src.schedule || '—') + '</td>' +
+            '<td class="text-muted small">' + escapeHtml(lastRun) + '</td>' +
+            '<td>' + eventCounts + '</td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td>' +
+                '<button class="btn btn-sm ' + enabledBtnClass + '" ' +
+                    'data-action="toggle-enabled" data-name="' + escapeHtml(src.name) + '" ' +
+                    'data-enabled="' + String(!src.enabled) + '">' +
+                    enabledToggleLabel +
+                '</button>' +
+            '</td>' +
+            '<td>' +
+                '<div class="btn-group">' +
+                    '<button class="btn btn-sm btn-outline-primary" data-action="trigger-scrape" data-name="' + escapeHtml(src.name) + '">Run</button>' +
+                    '<button class="btn btn-sm btn-outline-secondary" data-action="view-runs" data-name="' + escapeHtml(src.name) + '">History</button>' +
+                '</div>' +
+            '</td>' +
+            '</tr>';
+    }
+
+    // -------------------------------------------------------------------------
+    // Toggle enabled
+    // -------------------------------------------------------------------------
+
+    async function toggleEnabled(btn, name) {
+        var enabled = btn.dataset.enabled === 'true';
+        setLoading(btn, true);
+        try {
+            await API.scraper.setEnabled(name, enabled);
+            showToast('Source ' + (enabled ? 'enabled' : 'disabled') + ': ' + name, 'success');
+            loadSources();
+        } catch (err) {
+            showToast('Failed to update source: ' + err.message, 'error');
+            setLoading(btn, false);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Trigger scrape
+    // -------------------------------------------------------------------------
+
+    async function triggerScrape(btn, name) {
+        setLoading(btn, true);
+        try {
+            await API.scraper.triggerScrape(name);
+            showToast('Scrape triggered for: ' + name, 'success');
+        } catch (err) {
+            showToast('Failed to trigger scrape: ' + err.message, 'error');
+        } finally {
+            setLoading(btn, false);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Run history modal
+    // -------------------------------------------------------------------------
+
+    async function openRunsModal(name) {
+        document.getElementById('runs-modal-source-name').textContent = name;
+        showRunsState('loading');
+
+        var modalEl = document.getElementById('runs-modal');
+        var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+
+        try {
+            var data = await API.scraper.listRuns(name);
+            var runs = data.items || [];
+            if (runs.length === 0) {
+                showRunsState('empty');
+                return;
+            }
+            renderRuns(runs);
+            showRunsState('table');
+        } catch (err) {
+            showRunsState('empty');
+            showToast('Failed to load run history: ' + err.message, 'error');
+        }
+    }
+
+    function renderRuns(runs) {
+        var tbody = document.getElementById('runs-table');
+        tbody.innerHTML = runs.map(function (run) {
+            var cls = run.status === 'completed' ? 'bg-success-lt'
+                : run.status === 'failed' ? 'bg-danger-lt'
+                : run.status === 'running' ? 'bg-warning-lt'
+                : 'bg-secondary-lt';
+            return '<tr>' +
+                '<td class="text-muted small">' + escapeHtml(run.started_at ? formatDate(run.started_at) : '—') + '</td>' +
+                '<td class="text-muted small">' + escapeHtml(run.completed_at ? formatDate(run.completed_at) : '—') + '</td>' +
+                '<td><span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span></td>' +
+                '<td>' + escapeHtml(String(run.events_found)) + '</td>' +
+                '<td>' + escapeHtml(String(run.events_new)) + '</td>' +
+                '<td>' + escapeHtml(String(run.events_dup)) + '</td>' +
+                '<td>' + escapeHtml(String(run.events_failed)) + '</td>' +
+                '<td class="text-muted small">' + escapeHtml(run.error_message || '') + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    // -------------------------------------------------------------------------
+    // State helpers
+    // -------------------------------------------------------------------------
+
+    function showState(state) {
+        document.getElementById('loading-state').style.display = state === 'loading' ? '' : 'none';
+        document.getElementById('empty-state').style.display = state === 'empty' ? '' : 'none';
+        document.getElementById('sources-container').style.display = state === 'table' ? '' : 'none';
+    }
+
+    function showRunsState(state) {
+        document.getElementById('runs-loading').style.display = state === 'loading' ? '' : 'none';
+        document.getElementById('runs-empty').style.display = state === 'empty' ? '' : 'none';
+        document.getElementById('runs-table-container').style.display = state === 'table' ? '' : 'none';
+    }
+
+})();
