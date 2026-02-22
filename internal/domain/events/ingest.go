@@ -757,13 +757,30 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 			// Create review queue entry for the existing event, cross-linked to the new event's UUID.
 			existingStart, existingEnd := parseEventTimesFromEvent(existingEvent)
 			newEventID := event.ID
+
+			// Reconstruct payloads from stored event data so reviewers can compare.
+			reconstructedPayload, payloadErr := reconstructPayloadFromEvent(existingEvent)
+			if payloadErr != nil {
+				log.Warn().Err(payloadErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to reconstruct payload for existing event, using empty")
+				reconstructedPayload = []byte("{}")
+			}
+			existingWarnings, warnErr := nearDuplicateWarnings(existingEvent, event.ULID)
+			if warnErr != nil {
+				log.Warn().Err(warnErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to generate warnings for existing event, using empty")
+				existingWarnings = []byte("[]")
+			}
+
 			if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 				EventID:            existingEvent.ID,
-				OriginalPayload:    []byte("{}"),
-				NormalizedPayload:  []byte("{}"),
-				Warnings:           []byte("[]"),
+				OriginalPayload:    reconstructedPayload,
+				NormalizedPayload:  reconstructedPayload, // same as original for reconstructed data
 				EventStartTime:     existingStart,
 				EventEndTime:       existingEnd,
+				Warnings:           existingWarnings,
 				DuplicateOfEventID: &newEventID,
 			}); createErr != nil {
 				log.Warn().Err(createErr).
@@ -1278,6 +1295,109 @@ func isEventPast(endTime *time.Time) bool {
 // toJSON marshals a value to JSON
 func toJSON(v any) ([]byte, error) {
 	return json.Marshal(v)
+}
+
+// reconstructPayloadFromEvent builds a JSON representation of a stored event
+// for use in review queue entries. This is NOT the original EventInput — it's
+// a "reconstructed snapshot" containing the event's current stored data so
+// reviewers can compare near-duplicate pairs side-by-side.
+func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
+	payload := map[string]any{
+		"_reconstructed": true, // flag so UI knows this isn't an original submission
+		"name":           event.Name,
+	}
+
+	if event.Description != "" {
+		payload["description"] = event.Description
+	}
+	if event.ImageURL != "" {
+		payload["image"] = event.ImageURL
+	}
+	if event.PublicURL != "" {
+		payload["url"] = event.PublicURL
+	}
+	if event.VirtualURL != "" {
+		payload["virtual_url"] = event.VirtualURL
+	}
+	if len(event.Keywords) > 0 {
+		payload["keywords"] = event.Keywords
+	}
+	if len(event.InLanguage) > 0 {
+		payload["in_language"] = event.InLanguage
+	}
+	if event.IsAccessibleForFree != nil {
+		payload["is_accessible_for_free"] = *event.IsAccessibleForFree
+	}
+	if event.AttendanceMode != "" {
+		payload["attendance_mode"] = event.AttendanceMode
+	}
+	if event.EventStatus != "" {
+		payload["event_status"] = event.EventStatus
+	}
+	if event.EventDomain != "" {
+		payload["event_domain"] = event.EventDomain
+	}
+
+	// Include occurrence data (schedule)
+	if len(event.Occurrences) > 0 {
+		occs := make([]map[string]any, 0, len(event.Occurrences))
+		for _, occ := range event.Occurrences {
+			o := map[string]any{
+				"start_date": occ.StartTime.Format(time.RFC3339),
+			}
+			if occ.EndTime != nil {
+				o["end_date"] = occ.EndTime.Format(time.RFC3339)
+			}
+			if occ.Timezone != "" {
+				o["timezone"] = occ.Timezone
+			}
+			if occ.DoorTime != nil {
+				o["door_time"] = occ.DoorTime.Format(time.RFC3339)
+			}
+			if occ.VirtualURL != nil && *occ.VirtualURL != "" {
+				o["virtual_url"] = *occ.VirtualURL
+			}
+			if occ.TicketURL != "" {
+				o["ticket_url"] = occ.TicketURL
+			}
+			if occ.PriceMin != nil {
+				o["price_min"] = *occ.PriceMin
+			}
+			if occ.PriceMax != nil {
+				o["price_max"] = *occ.PriceMax
+			}
+			if occ.PriceCurrency != "" {
+				o["price_currency"] = occ.PriceCurrency
+			}
+			if occ.Availability != "" {
+				o["availability"] = occ.Availability
+			}
+			occs = append(occs, o)
+		}
+		payload["occurrences"] = occs
+	}
+
+	// Include identifiers for cross-referencing
+	payload["ulid"] = event.ULID
+	payload["lifecycle_state"] = event.LifecycleState
+	if event.DedupHash != "" {
+		payload["dedup_hash"] = event.DedupHash
+	}
+
+	return json.Marshal(payload)
+}
+
+// nearDuplicateWarnings generates validation warnings for an existing event
+// being flagged as a near-duplicate of a newly ingested event.
+func nearDuplicateWarnings(existingEvent *Event, newEventULID string) ([]byte, error) {
+	warnings := []ValidationWarning{
+		{
+			Field:   "near_duplicate",
+			Code:    "near_duplicate_of_new_event",
+			Message: fmt.Sprintf("This existing event may be a near-duplicate of newly ingested event %s", newEventULID),
+		},
+	}
+	return json.Marshal(warnings)
 }
 
 // parseEventTimes extracts start and end times from validated event input

@@ -815,6 +815,44 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 		existingEntries := repo.GetReviewQueueByEventID("existing-event-uuid-001")
 		if len(existingEntries) == 0 {
 			t.Error("Expected review queue entry to be created for the existing candidate event")
+		} else {
+			entry := existingEntries[0]
+
+			// Payload must not be empty — it should be a reconstructed snapshot.
+			if string(entry.OriginalPayload) == "{}" {
+				t.Error("Expected OriginalPayload to be populated (not empty {})")
+			}
+			if string(entry.NormalizedPayload) == "{}" {
+				t.Error("Expected NormalizedPayload to be populated (not empty {})")
+			}
+
+			// Verify _reconstructed flag is present.
+			var payload map[string]any
+			if err := json.Unmarshal(entry.OriginalPayload, &payload); err != nil {
+				t.Fatalf("Failed to unmarshal OriginalPayload: %v", err)
+			}
+			if payload["_reconstructed"] != true {
+				t.Error("Expected _reconstructed: true in OriginalPayload")
+			}
+
+			// Verify near_duplicate_of_new_event warning is present.
+			if string(entry.Warnings) == "[]" {
+				t.Error("Expected Warnings to be populated (not empty [])")
+			}
+			var warnings []ValidationWarning
+			if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
+				t.Fatalf("Failed to unmarshal Warnings: %v", err)
+			}
+			found := false
+			for _, w := range warnings {
+				if w.Code == "near_duplicate_of_new_event" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Error("Expected near_duplicate_of_new_event warning code in Warnings")
+			}
 		}
 	})
 
@@ -856,6 +894,19 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 		if existingEntries[0].DuplicateOfEventID == nil || *existingEntries[0].DuplicateOfEventID != newEventID {
 			t.Errorf("Expected existing event's review entry DuplicateOfEventID = %q, got %v",
 				newEventID, existingEntries[0].DuplicateOfEventID)
+		}
+
+		// Verify the existing event's review entry has populated (reconstructed) payloads.
+		existingEntry := existingEntries[0]
+		if string(existingEntry.OriginalPayload) == "{}" {
+			t.Error("S6.7: Expected existing event's OriginalPayload to be reconstructed (not {})")
+		}
+		var existingPayload map[string]any
+		if err := json.Unmarshal(existingEntry.OriginalPayload, &existingPayload); err != nil {
+			t.Fatalf("S6.7: Failed to unmarshal existing event's OriginalPayload: %v", err)
+		}
+		if existingPayload["_reconstructed"] != true {
+			t.Error("S6.7: Expected _reconstructed: true in existing event's OriginalPayload")
 		}
 
 		// Verify the new event's review entry links to the existing event.
@@ -931,6 +982,23 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 		for _, call := range repo.GetUpdateEventCalls() {
 			if call.ULID == candidateULID {
 				t.Error("UpdateEvent should not be called on an already-pending event")
+			}
+		}
+
+		// Even for an already-pending existing event, the review queue entry
+		// should still have reconstructed (non-empty) payloads.
+		existingEntries := repo.GetReviewQueueByEventID("existing-event-uuid-003")
+		if len(existingEntries) > 0 {
+			entry := existingEntries[0]
+			if string(entry.OriginalPayload) == "{}" {
+				t.Error("S6.9: Expected OriginalPayload to be reconstructed (not {})")
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(entry.OriginalPayload, &payload); err != nil {
+				t.Fatalf("S6.9: Failed to unmarshal OriginalPayload: %v", err)
+			}
+			if payload["_reconstructed"] != true {
+				t.Error("S6.9: Expected _reconstructed: true in OriginalPayload")
 			}
 		}
 	})
