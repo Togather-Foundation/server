@@ -116,7 +116,6 @@
 
     async function toggleEnabled(btn, name) {
         var enabled = btn.dataset.enabled === 'true';
-        var label = enabled ? 'Enabling...' : 'Disabling...';
         setLoading(btn, true);
         try {
             await API.scraper.setEnabled(name, enabled);
@@ -126,7 +125,6 @@
             showToast('Failed to update source: ' + err.message, 'error');
             setLoading(btn, false);
         }
-        void label; // suppress unused variable warning
     }
 
     // -------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -260,21 +261,27 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		sourceName string
-		wantStatus int
-		wantName   string
+		name         string
+		sourceName   string
+		getSourceErr error
+		wantStatus   int
+		wantName     string
 	}{
-		{
-			name:       "returns 202 with source name",
-			sourceName: "my-source",
-			wantStatus: http.StatusAccepted,
-			wantName:   "my-source",
-		},
 		{
 			name:       "returns 400 when name is missing",
 			sourceName: "",
 			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "returns 503 when scraper is nil (not configured)",
+			sourceName: "my-source",
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:         "returns 404 when source does not exist",
+			sourceName:   "unknown-source",
+			getSourceErr: pgx.ErrNoRows,
+			wantStatus:   http.StatusNotFound,
 		},
 	}
 
@@ -283,10 +290,11 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			q := &fakeScraperQueries{}
+			q := &fakeScraperQueries{
+				getSourceErr: tc.getSourceErr,
+			}
+			// Scraper is always nil in these tests — TriggerScrape now returns 503 for nil.
 			h := newTestScraperHandler(q)
-			// Scraper is nil — TriggerScrape must handle nil Scraper gracefully in tests
-			// (goroutine won't crash because we check for nil)
 
 			var path string
 			if tc.sourceName != "" {
@@ -304,16 +312,6 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 
 			resp := w.Result()
 			assert.Equal(t, tc.wantStatus, resp.StatusCode)
-
-			if tc.wantStatus == http.StatusAccepted {
-				var body struct {
-					SourceName string `json:"source_name"`
-					Status     string `json:"status"`
-				}
-				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-				assert.Equal(t, tc.wantName, body.SourceName)
-				assert.Equal(t, "triggered", body.Status)
-			}
 		})
 	}
 }
@@ -380,8 +378,23 @@ func TestAdminScraperHandler_SetSourceEnabled(t *testing.T) {
 			name:         "returns 404 when source not found",
 			sourceName:   "missing-source",
 			body:         map[string]any{"enabled": true},
-			getSourceErr: errStubNotImplemented,
+			getSourceErr: pgx.ErrNoRows,
 			wantStatus:   http.StatusNotFound,
+		},
+		{
+			name:         "returns 500 on get source db error",
+			sourceName:   "my-source",
+			body:         map[string]any{"enabled": true},
+			getSourceErr: errStubNotImplemented,
+			wantStatus:   http.StatusInternalServerError,
+		},
+		{
+			name:         "returns 500 on upsert db error",
+			sourceName:   "my-source",
+			body:         map[string]any{"enabled": true},
+			getSourceRow: existingSource,
+			upsertErr:    errStubNotImplemented,
+			wantStatus:   http.StatusInternalServerError,
 		},
 	}
 

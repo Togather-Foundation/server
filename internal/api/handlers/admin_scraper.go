@@ -3,10 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
@@ -47,6 +49,7 @@ type scraperSourceResponse struct {
 	LastRunEventsNew    int32      `json:"last_run_events_new,omitempty"`
 	LastRunEventsDup    int32      `json:"last_run_events_dup,omitempty"`
 	LastRunEventsFailed int32      `json:"last_run_events_failed,omitempty"`
+	LastRunErrorMessage string     `json:"last_run_error_message,omitempty"`
 }
 
 // scraperRunResponse is the JSON representation of a single scraper run.
@@ -88,6 +91,9 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 	if row.LastRunCompletedAt.Valid {
 		t := row.LastRunCompletedAt.Time
 		resp.LastRunCompletedAt = &t
+	}
+	if row.LastRunErrorMessage.Valid {
+		resp.LastRunErrorMessage = row.LastRunErrorMessage.String
 	}
 	return resp
 }
@@ -135,7 +141,10 @@ func toScraperRunResponse(run postgres.ScraperRun) scraperRunResponse {
 // ListSources handles GET /api/v1/admin/scraper/sources.
 // Returns all scraper sources with their latest run stats.
 func (h *AdminScraperHandler) ListSources(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.Queries.ListScraperSourcesWithLatestRun(r.Context(), pgtype.Bool{})
+	// pgtype.Bool{Valid: false} sends NULL to the query, which the WHERE clause
+	// treats as "no filter" — returning all sources regardless of enabled state.
+	allSources := pgtype.Bool{Valid: false}
+	rows, err := h.Queries.ListScraperSourcesWithLatestRun(r.Context(), allSources)
 	if err != nil {
 		h.Logger.Error().Err(err).Msg("admin scraper: list sources")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to list scraper sources", fmt.Errorf("list scraper sources: %w", err), h.Env)
@@ -190,16 +199,33 @@ func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if h.Scraper != nil {
-		s := h.Scraper
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-			if _, err := s.ScrapeSource(ctx, name, scraper.ScrapeOptions{}); err != nil {
-				h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: background trigger failed")
-			}
-		}()
+	// Verify the source exists before checking node capability — callers get a
+	// 404 for typos/invalid names rather than a silent background failure.
+	if _, err := h.Queries.GetScraperSourceByName(r.Context(), name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Scraper source not found", nil, h.Env)
+			return
+		}
+		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: lookup source for trigger")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up scraper source", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
+		return
 	}
+
+	// Return 503 if this node has no scraper configured rather than silently
+	// returning "triggered" with nothing actually running.
+	if h.Scraper == nil {
+		problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/not-available", "Scraper not configured on this node", nil, h.Env)
+		return
+	}
+
+	s := h.Scraper
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if _, err := s.ScrapeSource(ctx, name, scraper.ScrapeOptions{}); err != nil {
+			h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: background trigger failed")
+		}
+	}()
 
 	writeJSON(w, http.StatusAccepted, struct {
 		SourceName string `json:"source_name"`
@@ -226,7 +252,12 @@ func (h *AdminScraperHandler) SetSourceEnabled(w http.ResponseWriter, r *http.Re
 
 	existing, err := h.Queries.GetScraperSourceByName(r.Context(), name)
 	if err != nil {
-		problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Scraper source not found", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Scraper source not found", nil, h.Env)
+			return
+		}
+		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: get source for enable toggle")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up scraper source", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
 		return
 	}
 
