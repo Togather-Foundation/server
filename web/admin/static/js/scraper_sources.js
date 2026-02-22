@@ -77,9 +77,17 @@
             ? formatDate(src.last_run_started_at)
             : '—';
 
-        var eventCounts = src.last_run_status
-            ? escapeHtml(String(src.last_run_events_new)) + ' / ' + escapeHtml(String(src.last_run_events_found))
-            : '—';
+        var eventCounts = '—';
+        if (src.last_run_status) {
+            var newCount = src.last_run_events_new != null ? src.last_run_events_new : 0;
+            var dupCount = src.last_run_events_dup != null ? src.last_run_events_dup : 0;
+            var failCount = src.last_run_events_failed != null ? src.last_run_events_failed : 0;
+            eventCounts = escapeHtml(String(newCount)) + ' / ' +
+                escapeHtml(String(dupCount)) + ' / ' +
+                (failCount > 0
+                    ? '<span class="badge bg-danger-lt">' + escapeHtml(String(failCount)) + '</span>'
+                    : escapeHtml(String(failCount)));
+        }
 
         var enabledToggleLabel = src.enabled ? 'Disable' : 'Enable';
         var enabledBtnClass = src.enabled ? 'btn-success' : 'btn-outline-secondary';

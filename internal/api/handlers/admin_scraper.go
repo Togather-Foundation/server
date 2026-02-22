@@ -45,10 +45,10 @@ type scraperSourceResponse struct {
 	LastRunStatus       string     `json:"last_run_status,omitempty"`
 	LastRunStartedAt    *time.Time `json:"last_run_started_at,omitempty"`
 	LastRunCompletedAt  *time.Time `json:"last_run_completed_at,omitempty"`
-	LastRunEventsFound  int32      `json:"last_run_events_found,omitempty"`
-	LastRunEventsNew    int32      `json:"last_run_events_new,omitempty"`
-	LastRunEventsDup    int32      `json:"last_run_events_dup,omitempty"`
-	LastRunEventsFailed int32      `json:"last_run_events_failed,omitempty"`
+	LastRunEventsFound  int32      `json:"last_run_events_found"`
+	LastRunEventsNew    int32      `json:"last_run_events_new"`
+	LastRunEventsDup    int32      `json:"last_run_events_dup"`
+	LastRunEventsFailed int32      `json:"last_run_events_failed"`
 	LastRunErrorMessage string     `json:"last_run_error_message,omitempty"`
 }
 
