@@ -193,7 +193,9 @@ Exits with a non-zero status if any source encountered an error.
 Examples:
   server scrape all
   server scrape all --dry-run
-  server scrape all --limit 10`,
+  server scrape all --limit 10
+  server scrape all --tier 0
+  server scrape all --tier 1`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 
@@ -212,6 +214,7 @@ Examples:
 			DryRun:     scrapeDryRun,
 			Limit:      scrapeLimit,
 			SourcesDir: scrapeSourceDir,
+			TierFilter: scrapeTier,
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

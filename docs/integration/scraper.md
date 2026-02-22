@@ -21,8 +21,9 @@ see [scrapers.md](scrapers.md).
 4. [Source Configuration](#source-configuration)
 5. [Database Run Tracking](#database-run-tracking)
 6. [Environment Variables](#environment-variables)
-7. [Adding New Sources](#adding-new-sources)
-8. [Security Design](#security-design)
+7. [Staging Scrape Workflow](#staging-scrape-workflow)
+8. [Adding New Sources](#adding-new-sources)
+9. [Security Design](#security-design)
 
 ---
 
@@ -141,7 +142,17 @@ output table but do not abort the run. Exits non-zero if any source failed.
 ```bash
 server scrape all
 server scrape all --dry-run --limit 10
+server scrape all --tier 0          # JSON-LD sources only
+server scrape all --tier 1          # CSS-selector sources only
 ```
+
+**`--tier` flag** (applies to `scrape all` only):
+
+| Value | Meaning |
+|-------|---------|
+| `-1` | All tiers (default) |
+| `0` | Tier 0 — JSON-LD sources only |
+| `1` | Tier 1 — CSS-selector sources only |
 
 Output: per-source table with totals row.
 
@@ -300,6 +311,109 @@ LIMIT 20;
 | `SEL_API_KEY` | API key for ingest submissions |
 | `SEL_INGEST_KEY` | Alternative API key env var (checked after `SEL_API_KEY`) |
 | `DATABASE_URL` | PostgreSQL connection string for scraper run tracking |
+
+---
+
+## Staging Scrape Workflow
+
+Use these targets to populate the staging server with real event data. All
+targets read connection details from `.deploy.conf.staging` — no manual
+copy-pasting of URLs or keys is needed.
+
+### Configuration: `.deploy.conf.staging`
+
+`.deploy.conf.staging` (gitignored) stores per-environment deployment metadata:
+
+```ini
+NODE_DOMAIN=staging.toronto.togather.foundation
+SSH_HOST=togather
+SSH_USER=deploy
+PERF_AGENT_API_KEY=<ulid-key-for-ingest>
+PERF_ADMIN_API_KEY=<ulid-key-for-admin>
+```
+
+**API key roles:**
+
+| Variable | Role |
+|----------|------|
+| `PERF_AGENT_API_KEY` | Agent / ingest operations — used for `scrape all` |
+| `PERF_ADMIN_API_KEY` | Admin operations — used for managing users, keys, sources |
+
+The scrape targets use `PERF_AGENT_API_KEY`. Use `PERF_ADMIN_API_KEY` only
+when calling admin API endpoints directly.
+
+### Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make scrape-staging` | Scrape all enabled sources (all tiers) to staging |
+| `make scrape-staging-t0` | Scrape only Tier 0 (JSON-LD) sources to staging |
+| `make staging-reset-scrape` | Wipe staging event data then scrape T0 sources |
+
+```bash
+# Typical usage: reset staging and populate with T0 sources
+make staging-reset-scrape
+
+# Add more events from T1 sources after T0 is complete
+make scrape-staging
+
+# Scrape only T0 sources without resetting first
+make scrape-staging-t0
+```
+
+### Manual Commands
+
+Equivalent manual commands (useful when you need extra flags like `--dry-run`
+or `--limit`):
+
+```bash
+# Source the config
+source .deploy.conf.staging
+
+# Dry-run all T0 sources against staging
+go run ./cmd/server scrape all \
+  --tier 0 \
+  --server "https://$NODE_DOMAIN" \
+  --key "$PERF_AGENT_API_KEY" \
+  --dry-run
+
+# Scrape a single source against staging
+go run ./cmd/server scrape source harbourfront-centre \
+  --server "https://$NODE_DOMAIN" \
+  --key "$PERF_AGENT_API_KEY"
+
+# Scrape all sources with a per-source event limit
+go run ./cmd/server scrape all \
+  --server "https://$NODE_DOMAIN" \
+  --key "$PERF_AGENT_API_KEY" \
+  --limit 20
+```
+
+### Verifying Results
+
+After a scrape run, verify results via the staging API:
+
+```bash
+source .deploy.conf.staging
+
+# Check total event count
+curl -s "https://$NODE_DOMAIN/api/v1/events?limit=1" \
+  | jq '.total_count // (.items | length)'
+
+# Check the review queue (events needing human review)
+curl -s "https://$NODE_DOMAIN/api/v1/events?lifecycle_state=review&limit=10" \
+  -H "Authorization: Bearer $PERF_ADMIN_API_KEY" \
+  | jq '[.items[] | {name: .name, source: .source_name}]'
+
+# List recent scraper runs (requires DB access)
+source .env
+psql "$DATABASE_URL" -c "
+  SELECT source_name, status, events_new, events_dup, started_at
+  FROM scraper_runs
+  ORDER BY started_at DESC
+  LIMIT 20;
+"
+```
 
 ---
 

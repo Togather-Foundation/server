@@ -21,6 +21,7 @@ type ScrapeOptions struct {
 	DryRun     bool
 	Limit      int    // 0 = no limit
 	SourcesDir string // default: "configs/sources"
+	TierFilter int    // -1 = all tiers; 0, 1, … = restrict to that tier
 }
 
 // ScrapeResult holds aggregated outcomes for one scrape run.
@@ -207,6 +208,10 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 		// passes enabled=true), but the YAML fallback returns all sources regardless
 		// of enabled state, so this guard is required for correctness.
 		if !cfg.Enabled {
+			continue
+		}
+		// Apply tier filter when set (non-negative value).
+		if opts.TierFilter >= 0 && cfg.Tier != opts.TierFilter {
 			continue
 		}
 

@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -82,6 +82,11 @@ help:
 	@echo "  make rollback-staging     - Rollback staging to previous deployment"
 	@echo "  make rollback-production  - Rollback production to previous deployment"
 	@echo "  (Or use /release command in OpenCode for agent-assisted changelog generation)"
+	@echo ""
+	@echo "Staging Scrape Workflow:"
+	@echo "  make scrape-staging       - Scrape all enabled sources to staging"
+	@echo "  make scrape-staging-t0    - Scrape only T0 (JSON-LD) sources to staging"
+	@echo "  make staging-reset-scrape - Reset staging DB and scrape T0 sources"
 	@echo ""
 	@echo "E2E / Playwright Tests (requires running server + uvx):"
 	@echo "  make e2e               - Run all Python E2E tests (pytest + standalone)"
@@ -1236,3 +1241,52 @@ rollback-production:
 	fi; \
 	echo "Rolling back production ($${SSH_USER}@$${SSH_HOST})..."; \
 	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather && server deploy rollback production"
+
+# Scrape all enabled sources to staging.
+# Sources .deploy.conf.staging for NODE_DOMAIN and PERF_AGENT_API_KEY.
+scrape-staging: ## Scrape all enabled sources to staging
+	@if [ ! -f .deploy.conf.staging ]; then \
+		echo "ERROR: .deploy.conf.staging not found"; \
+		exit 1; \
+	fi
+	@NODE_DOMAIN=$$(grep '^NODE_DOMAIN=' .deploy.conf.staging | cut -d= -f2); \
+	PERF_AGENT_API_KEY=$$(grep '^PERF_AGENT_API_KEY=' .deploy.conf.staging | cut -d= -f2); \
+	echo "Scraping all sources to https://$$NODE_DOMAIN ..."; \
+	scripts/agent-run.sh go run ./cmd/server \
+		scrape all \
+		--server "https://$$NODE_DOMAIN" \
+		--key "$$PERF_AGENT_API_KEY"
+
+# Scrape only T0 (JSON-LD) sources to staging.
+# Sources .deploy.conf.staging for NODE_DOMAIN and PERF_AGENT_API_KEY.
+scrape-staging-t0: ## Scrape only T0 sources to staging
+	@if [ ! -f .deploy.conf.staging ]; then \
+		echo "ERROR: .deploy.conf.staging not found"; \
+		exit 1; \
+	fi
+	@NODE_DOMAIN=$$(grep '^NODE_DOMAIN=' .deploy.conf.staging | cut -d= -f2); \
+	PERF_AGENT_API_KEY=$$(grep '^PERF_AGENT_API_KEY=' .deploy.conf.staging | cut -d= -f2); \
+	echo "Scraping T0 sources to https://$$NODE_DOMAIN ..."; \
+	scripts/agent-run.sh go run ./cmd/server \
+		scrape all \
+		--tier 0 \
+		--server "https://$$NODE_DOMAIN" \
+		--key "$$PERF_AGENT_API_KEY"
+
+# Reset staging DB (preserves users/keys/sources) then scrape T0 sources.
+# Sources .deploy.conf.staging for NODE_DOMAIN and PERF_AGENT_API_KEY.
+staging-reset-scrape: ## Reset staging DB and scrape T0 sources
+	@if [ ! -f .deploy.conf.staging ]; then \
+		echo "ERROR: .deploy.conf.staging not found"; \
+		exit 1; \
+	fi
+	@echo "Resetting staging database..."; \
+	scripts/staging-reset.sh --yes
+	@NODE_DOMAIN=$$(grep '^NODE_DOMAIN=' .deploy.conf.staging | cut -d= -f2); \
+	PERF_AGENT_API_KEY=$$(grep '^PERF_AGENT_API_KEY=' .deploy.conf.staging | cut -d= -f2); \
+	echo "Scraping T0 sources to https://$$NODE_DOMAIN ..."; \
+	scripts/agent-run.sh go run ./cmd/server \
+		scrape all \
+		--tier 0 \
+		--server "https://$$NODE_DOMAIN" \
+		--key "$$PERF_AGENT_API_KEY"
