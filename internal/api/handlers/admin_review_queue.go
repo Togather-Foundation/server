@@ -39,33 +39,35 @@ func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.Adm
 
 // reviewQueueItem represents a single item in the review queue list
 type reviewQueueItem struct {
-	ID              int                        `json:"id"`
-	EventID         string                     `json:"eventId"`
-	EventName       string                     `json:"eventName,omitempty"`
-	EventStartTime  *time.Time                 `json:"eventStartTime,omitempty"`
-	EventEndTime    *time.Time                 `json:"eventEndTime,omitempty"`
-	Warnings        []events.ValidationWarning `json:"warnings"`
-	Status          string                     `json:"status"`
-	CreatedAt       time.Time                  `json:"createdAt"`
-	ReviewedBy      *string                    `json:"reviewedBy,omitempty"`
-	ReviewedAt      *time.Time                 `json:"reviewedAt,omitempty"`
-	RejectionReason *string                    `json:"rejectionReason,omitempty"`
+	ID                 int                        `json:"id"`
+	EventID            string                     `json:"eventId"`
+	EventName          string                     `json:"eventName,omitempty"`
+	EventStartTime     *time.Time                 `json:"eventStartTime,omitempty"`
+	EventEndTime       *time.Time                 `json:"eventEndTime,omitempty"`
+	Warnings           []events.ValidationWarning `json:"warnings"`
+	Status             string                     `json:"status"`
+	CreatedAt          time.Time                  `json:"createdAt"`
+	ReviewedBy         *string                    `json:"reviewedBy,omitempty"`
+	ReviewedAt         *time.Time                 `json:"reviewedAt,omitempty"`
+	RejectionReason    *string                    `json:"rejectionReason,omitempty"`
+	DuplicateOfEventID *string                    `json:"duplicateOfEventId,omitempty"`
 }
 
 // reviewQueueDetail represents detailed review information
 type reviewQueueDetail struct {
-	ID              int                        `json:"id"`
-	EventID         string                     `json:"eventId"`
-	Status          string                     `json:"status"`
-	Warnings        []events.ValidationWarning `json:"warnings"`
-	Original        map[string]any             `json:"original"`
-	Normalized      map[string]any             `json:"normalized"`
-	Changes         []changeDetail             `json:"changes"`
-	CreatedAt       time.Time                  `json:"createdAt"`
-	ReviewedBy      *string                    `json:"reviewedBy,omitempty"`
-	ReviewedAt      *time.Time                 `json:"reviewedAt,omitempty"`
-	ReviewNotes     *string                    `json:"reviewNotes,omitempty"`
-	RejectionReason *string                    `json:"rejectionReason,omitempty"`
+	ID                 int                        `json:"id"`
+	EventID            string                     `json:"eventId"`
+	Status             string                     `json:"status"`
+	Warnings           []events.ValidationWarning `json:"warnings"`
+	Original           map[string]any             `json:"original"`
+	Normalized         map[string]any             `json:"normalized"`
+	Changes            []changeDetail             `json:"changes"`
+	CreatedAt          time.Time                  `json:"createdAt"`
+	ReviewedBy         *string                    `json:"reviewedBy,omitempty"`
+	ReviewedAt         *time.Time                 `json:"reviewedAt,omitempty"`
+	ReviewNotes        *string                    `json:"reviewNotes,omitempty"`
+	RejectionReason    *string                    `json:"rejectionReason,omitempty"`
+	DuplicateOfEventID *string                    `json:"duplicateOfEventId,omitempty"`
 }
 
 // changeDetail describes a specific change made during normalization
@@ -673,6 +675,9 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	if review.RejectionReason != nil {
 		item.RejectionReason = review.RejectionReason
 	}
+	if review.DuplicateOfEventULID != nil {
+		item.DuplicateOfEventID = review.DuplicateOfEventULID
+	}
 
 	return item, nil
 }
@@ -727,6 +732,9 @@ func buildReviewQueueDetail(review events.ReviewQueueEntry) (reviewQueueDetail, 
 	}
 	if review.RejectionReason != nil {
 		detail.RejectionReason = review.RejectionReason
+	}
+	if review.DuplicateOfEventULID != nil {
+		detail.DuplicateOfEventID = review.DuplicateOfEventULID
 	}
 
 	return detail, nil

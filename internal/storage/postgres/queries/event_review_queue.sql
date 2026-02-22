@@ -21,9 +21,11 @@ SELECT r.id,
        r.rejection_reason,
        r.created_at,
        r.updated_at,
-       r.duplicate_of_event_id
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
  WHERE (
          (sqlc.narg('source_id')::text IS NOT NULL 
           AND sqlc.narg('source_external_id')::text IS NOT NULL 
@@ -94,9 +96,11 @@ SELECT r.id,
        r.rejection_reason,
        r.created_at,
        r.updated_at,
-       r.duplicate_of_event_id
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
  WHERE r.id = sqlc.arg('id');
 
 -- name: ListReviewQueue :many
@@ -119,9 +123,11 @@ SELECT r.id,
        r.rejection_reason,
        r.created_at,
        r.updated_at,
-       r.duplicate_of_event_id
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
  WHERE (sqlc.narg('status')::text IS NULL OR r.status = sqlc.narg('status'))
    AND (sqlc.narg('after_id')::integer IS NULL OR r.id > sqlc.narg('after_id'))
  ORDER BY r.id ASC

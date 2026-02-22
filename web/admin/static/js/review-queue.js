@@ -291,6 +291,7 @@
                         <a href="/admin/events/${entry.eventId}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
                             ${escapeHtml(eventName)}
                         </a>
+                        ${entry.duplicateOfEventId ? '<span class="badge bg-purple-lt ms-1" title="Near-duplicate">dup</span>' : ''}
                     </td>
                     <td class="text-muted">${startTime}</td>
                     <td>${warningBadge}</td>
@@ -520,6 +521,15 @@
             </div>
         ` : '';
         
+        // Build cross-link banner for pending items with a known duplicate event
+        const crossLinkHtml = (detail.status === 'pending' && detail.duplicateOfEventId) ? `
+            <div class="alert alert-warning mb-3">
+                <strong>Near-duplicate detected:</strong>
+                This event may be a duplicate of
+                <a href="/admin/events/${escapeHtml(detail.duplicateOfEventId)}" class="alert-link">${escapeHtml(detail.duplicateOfEventId)}</a>.
+            </div>
+        ` : '';
+
         // Check if there are any duplicate-related warnings
         const hasDuplicateWarnings = warnings.some(w => 
             w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
@@ -605,6 +615,7 @@
             <td colspan="${colspan}" class="p-0">
                 <div class="card mb-0">
                     <div class="card-body">
+                        ${crossLinkHtml}
                         ${warningsHtml}
                         ${changesHtml}
                         ${eventDataHtml}
