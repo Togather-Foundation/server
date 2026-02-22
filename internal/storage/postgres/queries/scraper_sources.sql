@@ -111,18 +111,20 @@ SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enab
 
 -- name: ListScraperSourcesWithLatestRun :many
 -- List all scraper sources with their most recent run stats embedded.
--- last_run_* columns are nullable (NULL when a source has never been run).
+-- last_run_started_at/completed_at/error_message are nullable (NULL when a source
+-- has never been run). status and event counts use COALESCE to return non-nullable
+-- defaults so SQLc generates simple string/int32 types for those columns.
 SELECT
   s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
   s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
-  r.started_at   AS last_run_started_at,
-  r.completed_at AS last_run_completed_at,
-  r.status       AS last_run_status,
-  r.events_found AS last_run_events_found,
-  r.events_new   AS last_run_events_new,
-  r.events_dup   AS last_run_events_dup,
-  r.events_failed AS last_run_events_failed,
-  r.error_message AS last_run_error_message
+  r.started_at                        AS last_run_started_at,
+  r.completed_at                      AS last_run_completed_at,
+  COALESCE(r.status, '')              AS last_run_status,
+  COALESCE(r.events_found, 0)         AS last_run_events_found,
+  COALESCE(r.events_new, 0)           AS last_run_events_new,
+  COALESCE(r.events_dup, 0)           AS last_run_events_dup,
+  COALESCE(r.events_failed, 0)        AS last_run_events_failed,
+  r.error_message                     AS last_run_error_message
 FROM scraper_sources s
 LEFT JOIN LATERAL (
   SELECT started_at, completed_at, status,
