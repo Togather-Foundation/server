@@ -169,6 +169,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	// Load source configs for periodic job registration.
+	// TODO(srv-ephoo): Load sources from DB (with YAML fallback) so dynamically
+	// added/removed sources are picked up without a server restart.
 	var sourceCfgs []scraper.SourceConfig
 	if scraperSvc != nil {
 		sourceCfgs, _ = scraper.LoadSourceConfigs("configs/sources")

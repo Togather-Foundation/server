@@ -399,7 +399,17 @@ func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
 			t.Fatal("goroutine did not call ScrapeSource within timeout")
 		}
 
-		// Give zerolog a moment to flush then verify the error was logged.
+		// The goroutine logs the error after ScrapeSource returns (which is when
+		// done is closed). Yield briefly to let the log write complete.
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if logBuf.Len() > 0 {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		// Verify the error was logged.
 		assert.Contains(t, logBuf.String(), "background trigger failed")
 	})
 }

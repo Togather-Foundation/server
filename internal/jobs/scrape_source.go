@@ -3,10 +3,10 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/riverqueue/river"
-	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -39,23 +39,17 @@ type ScrapeSourceWorker struct {
 	river.WorkerDefaults[ScrapeSourceArgs]
 	Scraper       scraperSourceScraper
 	ConfigQueries scraperConfigReader
-	Logger        zerolog.Logger
+	Logger        *slog.Logger
 }
 
-func (ScrapeSourceWorker) Kind() string { return JobKindScrapeSource }
-
-// Work runs a scrape for the source named in job.Args.SourceName.
-//
-// Behaviour:
-//   - Reads scraper_config.auto_scrape from the DB. If it is false, the job
-//     skips silently (no error, no scrape).
-//   - If the config read fails, the worker logs a warning and proceeds anyway
-//     so that a transient DB blip does not silently drop scheduled scrapes.
-//   - Returns an error (causing River to retry) if the underlying scrape fails.
-//   - Returns an error immediately if Scraper is nil.
 func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourceArgs]) error {
 	if w.Scraper == nil {
 		return fmt.Errorf("scrape_source worker: scraper not configured")
+	}
+
+	logger := w.Logger
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	sourceName := job.Args.SourceName
@@ -64,14 +58,14 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 	if w.ConfigQueries != nil {
 		cfg, err := w.ConfigQueries.GetScraperConfig(ctx)
 		if err != nil {
-			w.Logger.Warn().Err(err).Str("source", sourceName).Msg("scrape_source: failed to read scraper config, proceeding anyway")
+			logger.WarnContext(ctx, "scrape_source: failed to read scraper config, proceeding anyway", "source", sourceName, "error", err)
 		} else if !cfg.AutoScrape {
-			w.Logger.Debug().Str("source", sourceName).Msg("scrape_source: auto_scrape disabled, skipping")
+			logger.DebugContext(ctx, "scrape_source: auto_scrape disabled, skipping", "source", sourceName)
 			return nil
 		}
 	}
 
-	w.Logger.Info().Str("source", sourceName).Int("attempt", job.Attempt).Msg("scrape_source: starting periodic scrape")
+	logger.InfoContext(ctx, "scrape_source: starting periodic scrape", "source", sourceName, "attempt", job.Attempt)
 
 	start := time.Now()
 	result, err := w.Scraper.ScrapeSource(ctx, sourceName, scraper.ScrapeOptions{})
@@ -79,13 +73,13 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 		return fmt.Errorf("scrape_source %s: %w", sourceName, err)
 	}
 
-	w.Logger.Info().
-		Str("source", sourceName).
-		Int("events_found", result.EventsFound).
-		Int("events_created", result.EventsCreated).
-		Int("events_duplicate", result.EventsDuplicate).
-		Dur("duration", time.Since(start)).
-		Msg("scrape_source: periodic scrape completed")
+	logger.InfoContext(ctx, "scrape_source: periodic scrape completed",
+		"source", sourceName,
+		"events_found", result.EventsFound,
+		"events_created", result.EventsCreated,
+		"events_duplicate", result.EventsDuplicate,
+		"duration", time.Since(start),
+	)
 
 	return nil
 }
