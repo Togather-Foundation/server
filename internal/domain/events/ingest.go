@@ -1302,6 +1302,9 @@ func toJSON(v any) ([]byte, error) {
 // a "reconstructed snapshot" containing the event's current stored data so
 // reviewers can compare near-duplicate pairs side-by-side.
 func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
+	if event == nil {
+		return []byte("{}"), fmt.Errorf("reconstruct payload: nil event")
+	}
 	payload := map[string]any{
 		"_reconstructed": true, // flag so UI knows this isn't an original submission
 		"name":           event.Name,
@@ -1383,6 +1386,15 @@ func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
 	if event.DedupHash != "" {
 		payload["dedup_hash"] = event.DedupHash
 	}
+	if event.PrimaryVenueID != nil {
+		payload["primary_venue_id"] = *event.PrimaryVenueID
+	}
+	if event.PrimaryVenueULID != nil {
+		payload["primary_venue_ulid"] = *event.PrimaryVenueULID
+	}
+	if event.OrganizerID != nil {
+		payload["organizer_id"] = *event.OrganizerID
+	}
 
 	return json.Marshal(payload)
 }
@@ -1390,11 +1402,15 @@ func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
 // nearDuplicateWarnings generates validation warnings for an existing event
 // being flagged as a near-duplicate of a newly ingested event.
 func nearDuplicateWarnings(existingEvent *Event, newEventULID string) ([]byte, error) {
+	msg := fmt.Sprintf("This existing event may be a near-duplicate of newly ingested event %s", newEventULID)
+	if existingEvent != nil && existingEvent.Name != "" {
+		msg = fmt.Sprintf("Existing event %q may be a near-duplicate of newly ingested event %s", existingEvent.Name, newEventULID)
+	}
 	warnings := []ValidationWarning{
 		{
 			Field:   "near_duplicate",
 			Code:    "near_duplicate_of_new_event",
-			Message: fmt.Sprintf("This existing event may be a near-duplicate of newly ingested event %s", newEventULID),
+			Message: msg,
 		},
 	}
 	return json.Marshal(warnings)

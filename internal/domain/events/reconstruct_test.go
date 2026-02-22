@@ -10,7 +10,19 @@ import (
 )
 
 func TestReconstructPayloadFromEvent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil event returns empty JSON", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := reconstructPayloadFromEvent(nil)
+		require.Error(t, err)
+		assert.Equal(t, []byte("{}"), data)
+	})
+
 	t.Run("fully populated event contains all fields", func(t *testing.T) {
+		t.Parallel()
+
 		free := true
 		start := time.Date(2026, 3, 15, 19, 0, 0, 0, time.UTC)
 		end := time.Date(2026, 3, 15, 22, 0, 0, 0, time.UTC)
@@ -18,6 +30,10 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 		priceMin := 10.0
 		priceMax := 25.0
 		virtualOcc := "https://zoom.example.com/occ"
+
+		venueID := "venue-uuid-001"
+		venueULID := "01VENUEULIDX"
+		organizerID := "org-uuid-001"
 
 		event := &Event{
 			ID:                  "event-uuid-001",
@@ -35,6 +51,9 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 			EventDomain:         "music",
 			DedupHash:           "abc123hash",
 			LifecycleState:      "published",
+			PrimaryVenueID:      &venueID,
+			PrimaryVenueULID:    &venueULID,
+			OrganizerID:         &organizerID,
 			Occurrences: []Occurrence{
 				{
 					StartTime:     start,
@@ -72,6 +91,9 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 		assert.Equal(t, "01ABCDE", result["ulid"])
 		assert.Equal(t, "published", result["lifecycle_state"])
 		assert.Equal(t, "abc123hash", result["dedup_hash"])
+		assert.Equal(t, "venue-uuid-001", result["primary_venue_id"])
+		assert.Equal(t, "01VENUEULIDX", result["primary_venue_ulid"])
+		assert.Equal(t, "org-uuid-001", result["organizer_id"])
 
 		occs, ok := result["occurrences"].([]any)
 		require.True(t, ok, "occurrences should be a slice")
@@ -91,6 +113,8 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 	})
 
 	t.Run("minimal event omits optional fields", func(t *testing.T) {
+		t.Parallel()
+
 		event := &Event{
 			ID:             "event-uuid-002",
 			ULID:           "01MINIMAL",
@@ -122,9 +146,14 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 		assert.NotContains(t, result, "event_domain")
 		assert.NotContains(t, result, "dedup_hash")
 		assert.NotContains(t, result, "occurrences")
+		assert.NotContains(t, result, "primary_venue_id")
+		assert.NotContains(t, result, "primary_venue_ulid")
+		assert.NotContains(t, result, "organizer_id")
 	})
 
 	t.Run("multiple occurrences all included", func(t *testing.T) {
+		t.Parallel()
+
 		start1 := time.Date(2026, 4, 1, 19, 0, 0, 0, time.UTC)
 		start2 := time.Date(2026, 4, 8, 19, 0, 0, 0, time.UTC)
 
@@ -167,6 +196,8 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 	})
 
 	t.Run("nil pointer fields cause no panic and are omitted", func(t *testing.T) {
+		t.Parallel()
+
 		event := &Event{
 			ID:                  "event-uuid-004",
 			ULID:                "01NILPTR",
@@ -206,6 +237,8 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 	})
 
 	t.Run("occurrence with empty virtual_url string is omitted", func(t *testing.T) {
+		t.Parallel()
+
 		emptyStr := ""
 		event := &Event{
 			ID:             "event-uuid-005",
@@ -233,7 +266,11 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 }
 
 func TestNearDuplicateWarnings(t *testing.T) {
+	t.Parallel()
+
 	t.Run("generates warning with near_duplicate_of_new_event code", func(t *testing.T) {
+		t.Parallel()
+
 		event := &Event{
 			ID:             "existing-uuid",
 			ULID:           "01EXISTING",
@@ -252,5 +289,44 @@ func TestNearDuplicateWarnings(t *testing.T) {
 		assert.Equal(t, "near_duplicate", warnings[0].Field)
 		assert.Equal(t, "near_duplicate_of_new_event", warnings[0].Code)
 		assert.Contains(t, warnings[0].Message, newULID)
+		assert.Contains(t, warnings[0].Message, "Jazz at the Rex")
+	})
+
+	t.Run("nil existing event uses generic message", func(t *testing.T) {
+		t.Parallel()
+
+		newULID := "01NEWULID2"
+
+		data, err := nearDuplicateWarnings(nil, newULID)
+		require.NoError(t, err)
+
+		var warnings []ValidationWarning
+		require.NoError(t, json.Unmarshal(data, &warnings))
+
+		require.Len(t, warnings, 1)
+		assert.Equal(t, "near_duplicate", warnings[0].Field)
+		assert.Equal(t, "near_duplicate_of_new_event", warnings[0].Code)
+		assert.Contains(t, warnings[0].Message, newULID)
+	})
+
+	t.Run("existing event with empty name uses generic message", func(t *testing.T) {
+		t.Parallel()
+
+		event := &Event{
+			ID:   "existing-uuid-empty-name",
+			ULID: "01NONAME",
+		}
+		newULID := "01NEWULID3"
+
+		data, err := nearDuplicateWarnings(event, newULID)
+		require.NoError(t, err)
+
+		var warnings []ValidationWarning
+		require.NoError(t, json.Unmarshal(data, &warnings))
+
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0].Message, newULID)
+		// Generic message when name is empty
+		assert.Contains(t, warnings[0].Message, "This existing event")
 	})
 }

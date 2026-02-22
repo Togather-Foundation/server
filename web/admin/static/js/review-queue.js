@@ -532,7 +532,7 @@
 
         // Check if there are any duplicate-related warnings
         const hasDuplicateWarnings = warnings.some(w => 
-            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
+            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate' || w.code === 'near_duplicate_of_new_event')
         );
         
         // Extract duplicate event ID from warnings details if available
