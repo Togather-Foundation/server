@@ -41,6 +41,11 @@ type fakeScraperQueries struct {
 	// UpsertScraperSource (used by SetSourceEnabled)
 	upsertRow postgres.ScraperSource
 	upsertErr error
+
+	// GetScraperConfig / SetScraperConfig
+	configRow    postgres.ScraperConfig
+	configGetErr error
+	configSetErr error
 }
 
 // fakeScraper is a test double for scraperIface.
@@ -72,6 +77,14 @@ func (f *fakeScraperQueries) GetScraperSourceByName(_ context.Context, _ string)
 
 func (f *fakeScraperQueries) UpsertScraperSource(_ context.Context, _ postgres.UpsertScraperSourceParams) (postgres.ScraperSource, error) {
 	return f.upsertRow, f.upsertErr
+}
+
+func (f *fakeScraperQueries) GetScraperConfig(_ context.Context) (postgres.ScraperConfig, error) {
+	return f.configRow, f.configGetErr
+}
+
+func (f *fakeScraperQueries) SetScraperConfig(_ context.Context, _ postgres.SetScraperConfigParams) error {
+	return f.configSetErr
 }
 
 // ----------------------------------------------------------------------------

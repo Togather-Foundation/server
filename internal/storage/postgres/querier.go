@@ -138,6 +138,7 @@ type Querier interface {
 	GetReconciliationCache(ctx context.Context, arg GetReconciliationCacheParams) (ReconciliationCache, error)
 	// Get single review by ID
 	GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error)
+	GetScraperConfig(ctx context.Context) (ScraperConfig, error)
 	// Get a single scraper source by primary key.
 	GetScraperSourceByID(ctx context.Context, id int64) (ScraperSource, error)
 	// Get a single scraper source by unique name.
@@ -230,6 +231,7 @@ type Querier interface {
 	// Returns the ULID of the final canonical event (the one that is not itself merged).
 	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
 	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
+	SetScraperConfig(ctx context.Context, arg SetScraperConfigParams) error
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error

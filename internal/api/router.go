@@ -35,6 +35,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/mcp"
 	"github.com/Togather-Foundation/server/internal/metrics"
+	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/web"
 	"github.com/jackc/pgx/v5"
@@ -151,8 +152,36 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		metrics.NewRiverMetricsHook(slot),
 	}
 
-	// Configure periodic cleanup jobs (daily)
-	periodicJobs := jobs.NewPeriodicJobs()
+	// Build scraper for periodic jobs and admin trigger (srv-pfeud).
+	// Use the server's own base URL and an API key from env for self-ingestion.
+	var scraperSvc *scraper.Scraper
+	ingestAPIKey := os.Getenv("SEL_API_KEY")
+	if ingestAPIKey == "" {
+		ingestAPIKey = os.Getenv("SEL_INGEST_KEY")
+	}
+	if ingestAPIKey != "" {
+		scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+		ingestClient := scraper.NewIngestClient(cfg.Server.BaseURL, ingestAPIKey)
+		scraperSvc = scraper.NewScraperWithSourceRepo(ingestClient, queries, scraperSourceRepo, logger)
+		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
+	} else {
+		logger.Warn().Msg("router: SEL_API_KEY/SEL_INGEST_KEY not set — periodic scrape jobs and admin trigger disabled")
+	}
+
+	// Load source configs for periodic job registration.
+	var sourceCfgs []scraper.SourceConfig
+	if scraperSvc != nil {
+		sourceCfgs, _ = scraper.LoadSourceConfigs("configs/sources")
+		// Warn only — missing sources dir is non-fatal on startup.
+	}
+
+	// Register scrape worker when scraper is available.
+	if scraperSvc != nil {
+		workers = jobs.NewWorkersWithScraper(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, scraperSvc, queries)
+	}
+
+	// Configure periodic cleanup jobs and per-source scrape jobs.
+	periodicJobs := jobs.NewPeriodicJobsFromSources(sourceCfgs)
 
 	riverClient, err := jobs.NewClient(pool, workers, slogLogger, riverHooks, periodicJobs)
 	if err != nil {
@@ -291,7 +320,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		Queries: queries,
 		Logger:  logger,
 		Env:     cfg.Environment,
-		// Scraper is nil here; trigger goroutine is nil-safe
+		Scraper: scraperSvc, // nil when SEL_API_KEY is unset; handler is nil-safe
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)
@@ -586,11 +615,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminScraperListRuns := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSourceRuns))))
 	adminScraperTrigger := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.TriggerScrape))))
 	adminScraperSetEnabled := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.SetSourceEnabled))))
+	adminScraperGetConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.GetConfig))))
+	adminScraperPatchConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.PatchConfig))))
 
 	mux.Handle("GET /api/v1/admin/scraper/sources", adminScraperListSources)
 	mux.Handle("GET /api/v1/admin/scraper/sources/{name}/runs", adminScraperListRuns)
 	mux.Handle("POST /api/v1/admin/scraper/sources/{name}/trigger", adminScraperTrigger)
 	mux.Handle("PATCH /api/v1/admin/scraper/sources/{name}", adminScraperSetEnabled)
+	mux.Handle("GET /api/v1/admin/scraper/config", adminScraperGetConfig)
+	mux.Handle("PATCH /api/v1/admin/scraper/config", adminScraperPatchConfig)
 
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
