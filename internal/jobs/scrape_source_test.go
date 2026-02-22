@@ -8,7 +8,6 @@ import (
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
-	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -157,7 +156,7 @@ func TestScrapeSourceWorker_Work_HappyPath(t *testing.T) {
 	w := ScrapeSourceWorker{
 		Scraper:       ms,
 		ConfigQueries: cfg,
-		Logger:        zerolog.Nop(),
+		Logger:        nil, // defaults to slog.Default()
 	}
 
 	job := newTestJob("test-source")
@@ -179,7 +178,7 @@ func TestScrapeSourceWorker_Work_AutoScrapeDisabled(t *testing.T) {
 	w := ScrapeSourceWorker{
 		Scraper:       ms,
 		ConfigQueries: cfg,
-		Logger:        zerolog.Nop(),
+		Logger:        nil, // defaults to slog.Default()
 	}
 
 	job := newTestJob("test-source")
@@ -202,7 +201,7 @@ func TestScrapeSourceWorker_Work_ConfigReadError_Proceeds(t *testing.T) {
 	w := ScrapeSourceWorker{
 		Scraper:       ms,
 		ConfigQueries: cfg,
-		Logger:        zerolog.Nop(),
+		Logger:        nil, // defaults to slog.Default()
 	}
 
 	job := newTestJob("test-source")
@@ -225,7 +224,7 @@ func TestScrapeSourceWorker_Work_ScraperError_Propagated(t *testing.T) {
 	w := ScrapeSourceWorker{
 		Scraper:       ms,
 		ConfigQueries: cfg,
-		Logger:        zerolog.Nop(),
+		Logger:        nil, // defaults to slog.Default()
 	}
 
 	job := newTestJob("test-source")
@@ -246,7 +245,7 @@ func TestScrapeSourceWorker_Work_NilScraper(t *testing.T) {
 	w := ScrapeSourceWorker{
 		Scraper:       nil,
 		ConfigQueries: cfg,
-		Logger:        zerolog.Nop(),
+		Logger:        nil, // defaults to slog.Default()
 	}
 
 	job := newTestJob("test-source")

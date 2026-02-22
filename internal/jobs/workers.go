@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -23,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
-	"github.com/rs/zerolog"
 )
 
 type DeduplicationArgs struct {
@@ -992,11 +990,10 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 
 	// Periodic scrape worker (srv-pfeud)
 	if scr != nil {
-		zl := zerolog.New(os.Stderr).With().Timestamp().Logger()
 		river.AddWorker[ScrapeSourceArgs](workers, ScrapeSourceWorker{
 			Scraper:       scr,
 			ConfigQueries: cfgQueries,
-			Logger:        zl,
+			Logger:        logger,
 		})
 	}
 

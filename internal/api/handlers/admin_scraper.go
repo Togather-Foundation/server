@@ -306,6 +306,18 @@ type scraperConfigResponse struct {
 func (h *AdminScraperHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.Queries.GetScraperConfig(r.Context())
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No config row yet — return sensible defaults.
+			writeJSON(w, http.StatusOK, scraperConfigResponse{
+				AutoScrape:            true,
+				MaxConcurrentSources:  3,
+				RequestTimeoutSeconds: 30,
+				RetryMaxAttempts:      3,
+				MaxBatchSize:          100,
+				RateLimitMs:           0,
+			}, "application/json")
+			return
+		}
 		h.Logger.Error().Err(err).Msg("admin scraper: get config")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to read scraper config", fmt.Errorf("get scraper config: %w", err), h.Env)
 		return
@@ -327,9 +339,21 @@ func (h *AdminScraperHandler) PatchConfig(w http.ResponseWriter, r *http.Request
 	// Read current config as baseline.
 	current, err := h.Queries.GetScraperConfig(r.Context())
 	if err != nil {
-		h.Logger.Error().Err(err).Msg("admin scraper: patch config — read baseline")
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to read scraper config", fmt.Errorf("get scraper config: %w", err), h.Env)
-		return
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No config row yet — seed defaults as the baseline.
+			current = postgres.ScraperConfig{
+				AutoScrape:            true,
+				MaxConcurrentSources:  3,
+				RequestTimeoutSeconds: 30,
+				RetryMaxAttempts:      3,
+				MaxBatchSize:          100,
+				RateLimitMs:           0,
+			}
+		} else {
+			h.Logger.Error().Err(err).Msg("admin scraper: patch config — read baseline")
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to read scraper config", fmt.Errorf("get scraper config: %w", err), h.Env)
+			return
+		}
 	}
 
 	// Decode the patch body (all fields optional).
@@ -343,6 +367,28 @@ func (h *AdminScraperHandler) PatchConfig(w http.ResponseWriter, r *http.Request
 	}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	// Validate numeric fields: reject zero or negative values.
+	if patch.MaxConcurrentSources != nil && *patch.MaxConcurrentSources <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "max_concurrent_sources must be greater than 0", nil, h.Env)
+		return
+	}
+	if patch.RequestTimeoutSeconds != nil && *patch.RequestTimeoutSeconds <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "request_timeout_seconds must be greater than 0", nil, h.Env)
+		return
+	}
+	if patch.RetryMaxAttempts != nil && *patch.RetryMaxAttempts <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "retry_max_attempts must be greater than 0", nil, h.Env)
+		return
+	}
+	if patch.MaxBatchSize != nil && *patch.MaxBatchSize <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "max_batch_size must be greater than 0", nil, h.Env)
+		return
+	}
+	if patch.RateLimitMs != nil && *patch.RateLimitMs < 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "rate_limit_ms must be 0 or greater", nil, h.Env)
 		return
 	}
 
