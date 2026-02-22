@@ -14,3 +14,29 @@ sql:
         emit_interface: true
         emit_exact_table_names: false
         emit_empty_slices: true
+        overrides:
+          # ListScraperSourcesWithLatestRun uses a LEFT JOIN LATERAL so all
+          # last_run_* columns from scraper_runs are nullable (NULL when a
+          # source has never been run). SQLc cannot infer this from the query
+          # alone, so we override the column types explicitly.
+          - column: "scraper_runs.status"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Text"
+            nullable: true
+          - column: "scraper_runs.events_found"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Int4"
+          - column: "scraper_runs.events_new"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Int4"
+          - column: "scraper_runs.events_dup"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Int4"
+          - column: "scraper_runs.events_failed"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Int4"

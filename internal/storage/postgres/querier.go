@@ -209,6 +209,7 @@ type Querier interface {
 	// List all scraper sources linked to a given place.
 	ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.UUID) ([]ScraperSource, error)
 	// List all scraper sources with their most recent run stats embedded.
+	// last_run_* columns are nullable (NULL when a source has never been run).
 	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error)
 	// Get organizations that have no external identifiers, ordered by creation date
 	ListUnreconciledOrganizations(ctx context.Context, maxResults int32) ([]ListUnreconciledOrganizationsRow, error)

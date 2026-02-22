@@ -111,6 +111,7 @@ SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enab
 
 -- name: ListScraperSourcesWithLatestRun :many
 -- List all scraper sources with their most recent run stats embedded.
+-- last_run_* columns are nullable (NULL when a source has never been run).
 SELECT
   s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
   s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
