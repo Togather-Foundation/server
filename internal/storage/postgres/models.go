@@ -453,11 +453,11 @@ type ScraperRun struct {
 	Tier         int32              `json:"tier"`
 	StartedAt    pgtype.Timestamptz `json:"started_at"`
 	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
-	Status       pgtype.Text        `json:"status"`
-	EventsFound  pgtype.Int4        `json:"events_found"`
-	EventsNew    pgtype.Int4        `json:"events_new"`
-	EventsDup    pgtype.Int4        `json:"events_dup"`
-	EventsFailed pgtype.Int4        `json:"events_failed"`
+	Status       string             `json:"status"`
+	EventsFound  int32              `json:"events_found"`
+	EventsNew    int32              `json:"events_new"`
+	EventsDup    int32              `json:"events_dup"`
+	EventsFailed int32              `json:"events_failed"`
 	ErrorMessage pgtype.Text        `json:"error_message"`
 	Metadata     []byte             `json:"metadata"`
 }

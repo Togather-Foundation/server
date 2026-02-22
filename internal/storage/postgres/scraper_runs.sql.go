@@ -168,11 +168,11 @@ UPDATE scraper_runs
 `
 
 type UpdateScraperRunCompletedParams struct {
-	EventsFound  pgtype.Int4 `json:"events_found"`
-	EventsNew    pgtype.Int4 `json:"events_new"`
-	EventsDup    pgtype.Int4 `json:"events_dup"`
-	EventsFailed pgtype.Int4 `json:"events_failed"`
-	ID           int64       `json:"id"`
+	EventsFound  int32 `json:"events_found"`
+	EventsNew    int32 `json:"events_new"`
+	EventsDup    int32 `json:"events_dup"`
+	EventsFailed int32 `json:"events_failed"`
+	ID           int64 `json:"id"`
 }
 
 // Mark a scraper run as completed with event counts.
