@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
@@ -40,6 +41,21 @@ type fakeScraperQueries struct {
 	// UpsertScraperSource (used by SetSourceEnabled)
 	upsertRow postgres.ScraperSource
 	upsertErr error
+}
+
+// fakeScraper is a test double for scraperIface.
+type fakeScraper struct {
+	err  error         // error to return from ScrapeSource
+	done chan struct{} // closed when ScrapeSource is called
+}
+
+func newFakeScraper(err error) *fakeScraper {
+	return &fakeScraper{err: err, done: make(chan struct{})}
+}
+
+func (f *fakeScraper) ScrapeSource(_ context.Context, _ string, _ scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
+	defer close(f.done)
+	return scraper.ScrapeResult{}, f.err
 }
 
 func (f *fakeScraperQueries) ListScraperSourcesWithLatestRun(_ context.Context, _ pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error) {
@@ -314,6 +330,65 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, resp.StatusCode)
 		})
 	}
+}
+
+func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns 202 and launches goroutine on success", func(t *testing.T) {
+		t.Parallel()
+
+		fake := newFakeScraper(nil)
+		q := &fakeScraperQueries{} // source lookup succeeds (zero-value row, no error)
+		h := newTestScraperHandler(q)
+		h.Scraper = fake
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
+		req.SetPathValue("name", "my-source")
+		w := httptest.NewRecorder()
+		h.TriggerScrape(w, req)
+
+		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
+
+		// Wait for the goroutine to call ScrapeSource.
+		select {
+		case <-fake.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("goroutine did not call ScrapeSource within timeout")
+		}
+	})
+
+	t.Run("returns 202 and logs error when scrape fails", func(t *testing.T) {
+		t.Parallel()
+
+		fake := newFakeScraper(errStubNotImplemented)
+		var logBuf bytes.Buffer
+		q := &fakeScraperQueries{}
+		h := &AdminScraperHandler{
+			Queries: q,
+			Logger:  zerolog.New(&logBuf),
+			Env:     "test",
+			Scraper: fake,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
+		req.SetPathValue("name", "my-source")
+		w := httptest.NewRecorder()
+		h.TriggerScrape(w, req)
+
+		// Handler still returns 202 — errors are async.
+		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
+
+		// Wait for goroutine to finish and log the error.
+		select {
+		case <-fake.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("goroutine did not call ScrapeSource within timeout")
+		}
+
+		// Give zerolog a moment to flush then verify the error was logged.
+		assert.Contains(t, logBuf.String(), "background trigger failed")
+	})
 }
 
 // ----------------------------------------------------------------------------

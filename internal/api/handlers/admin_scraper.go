@@ -25,12 +25,18 @@ type scraperQueriesIface interface {
 	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.ScraperSource, error)
 }
 
+// scraperIface is the subset of scraper.Scraper used by AdminScraperHandler,
+// allowing test doubles to be injected without a real Scraper instance.
+type scraperIface interface {
+	ScrapeSource(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error)
+}
+
 // AdminScraperHandler handles admin scraper source management and run history.
 type AdminScraperHandler struct {
 	Queries scraperQueriesIface
 	Logger  zerolog.Logger
 	Env     string
-	Scraper *scraper.Scraper
+	Scraper scraperIface
 }
 
 // scraperSourceResponse is the JSON representation of a scraper source.
