@@ -37,15 +37,15 @@ func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.Adm
 	}
 }
 
-// reviewQueueItem represents a single item in the review queue list
-type reviewQueueItem struct {
+// reviewQueueBase contains fields shared by both list (reviewQueueItem) and detail
+// (reviewQueueDetail) API responses. Embedded via struct embedding — do not add fields
+// here that duplicate field names in either outer struct, as this causes silent JSON
+// serialization issues (both fields get dropped by encoding/json).
+type reviewQueueBase struct {
 	ID                 int                        `json:"id"`
 	EventID            string                     `json:"eventId"`
-	EventName          string                     `json:"eventName,omitempty"`
-	EventStartTime     *time.Time                 `json:"eventStartTime,omitempty"`
-	EventEndTime       *time.Time                 `json:"eventEndTime,omitempty"`
-	Warnings           []events.ValidationWarning `json:"warnings"`
 	Status             string                     `json:"status"`
+	Warnings           []events.ValidationWarning `json:"warnings"`
 	CreatedAt          time.Time                  `json:"createdAt"`
 	ReviewedBy         *string                    `json:"reviewedBy,omitempty"`
 	ReviewedAt         *time.Time                 `json:"reviewedAt,omitempty"`
@@ -53,21 +53,23 @@ type reviewQueueItem struct {
 	DuplicateOfEventID *string                    `json:"duplicateOfEventUlid,omitempty"`
 }
 
-// reviewQueueDetail represents detailed review information
+// reviewQueueItem represents a single item in the review queue list.
+// Embeds reviewQueueBase for shared fields.
+type reviewQueueItem struct {
+	reviewQueueBase
+	EventName      string     `json:"eventName,omitempty"`
+	EventStartTime *time.Time `json:"eventStartTime,omitempty"`
+	EventEndTime   *time.Time `json:"eventEndTime,omitempty"`
+}
+
+// reviewQueueDetail represents detailed review information.
+// Embeds reviewQueueBase for shared fields.
 type reviewQueueDetail struct {
-	ID                 int                        `json:"id"`
-	EventID            string                     `json:"eventId"`
-	Status             string                     `json:"status"`
-	Warnings           []events.ValidationWarning `json:"warnings"`
-	Original           map[string]any             `json:"original"`
-	Normalized         map[string]any             `json:"normalized"`
-	Changes            []changeDetail             `json:"changes"`
-	CreatedAt          time.Time                  `json:"createdAt"`
-	ReviewedBy         *string                    `json:"reviewedBy,omitempty"`
-	ReviewedAt         *time.Time                 `json:"reviewedAt,omitempty"`
-	ReviewNotes        *string                    `json:"reviewNotes,omitempty"`
-	RejectionReason    *string                    `json:"rejectionReason,omitempty"`
-	DuplicateOfEventID *string                    `json:"duplicateOfEventUlid,omitempty"`
+	reviewQueueBase
+	Original    map[string]any `json:"original"`
+	Normalized  map[string]any `json:"normalized"`
+	Changes     []changeDetail `json:"changes"`
+	ReviewNotes *string        `json:"reviewNotes,omitempty"`
 }
 
 // changeDetail describes a specific change made during normalization
@@ -627,6 +629,31 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 
 // Helper functions
 
+// populateReviewQueueBase extracts the shared fields from a ReviewQueueEntry into
+// a reviewQueueBase. Called by both buildReviewQueueItem and buildReviewQueueDetail.
+func populateReviewQueueBase(review events.ReviewQueueEntry, warnings []events.ValidationWarning) reviewQueueBase {
+	base := reviewQueueBase{
+		ID:        review.ID,
+		EventID:   review.EventULID,
+		Status:    review.Status,
+		Warnings:  warnings,
+		CreatedAt: review.CreatedAt,
+	}
+	if review.ReviewedBy != nil {
+		base.ReviewedBy = review.ReviewedBy
+	}
+	if review.ReviewedAt != nil {
+		base.ReviewedAt = review.ReviewedAt
+	}
+	if review.RejectionReason != nil {
+		base.RejectionReason = review.RejectionReason
+	}
+	if review.DuplicateOfEventULID != nil {
+		base.DuplicateOfEventID = review.DuplicateOfEventULID
+	}
+	return base
+}
+
 func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, error) {
 	// Parse warnings from JSON
 	var warnings []events.ValidationWarning
@@ -637,9 +664,9 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	}
 
 	// Parse original payload to extract event name
-	var original map[string]any
 	eventName := ""
 	if len(review.OriginalPayload) > 0 {
+		var original map[string]any
 		if err := json.Unmarshal(review.OriginalPayload, &original); err != nil {
 			slog.Warn("failed to parse original payload",
 				slog.Int("review_id", review.ID),
@@ -649,35 +676,15 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 		}
 	}
 
-	// Use EventULID directly from the entry
-	eventULID := review.EventULID
-
 	item := reviewQueueItem{
-		ID:        review.ID,
-		EventID:   eventULID,
-		EventName: eventName,
-		Warnings:  warnings,
-		Status:    review.Status,
-		CreatedAt: review.CreatedAt,
+		reviewQueueBase: populateReviewQueueBase(review, warnings),
+		EventName:       eventName,
 	}
 
-	// Add optional fields
 	if review.EventEndTime != nil {
 		item.EventEndTime = review.EventEndTime
 	}
 	item.EventStartTime = &review.EventStartTime
-	if review.ReviewedBy != nil {
-		item.ReviewedBy = review.ReviewedBy
-	}
-	if review.ReviewedAt != nil {
-		item.ReviewedAt = review.ReviewedAt
-	}
-	if review.RejectionReason != nil {
-		item.RejectionReason = review.RejectionReason
-	}
-	if review.DuplicateOfEventULID != nil {
-		item.DuplicateOfEventID = review.DuplicateOfEventULID
-	}
 
 	return item, nil
 }
@@ -706,35 +713,15 @@ func buildReviewQueueDetail(review events.ReviewQueueEntry) (reviewQueueDetail, 
 	// Calculate changes
 	changes := calculateChanges(original, normalized)
 
-	// Use EventULID directly
-	eventULID := review.EventULID
-
 	detail := reviewQueueDetail{
-		ID:         review.ID,
-		EventID:    eventULID,
-		Status:     review.Status,
-		Warnings:   warnings,
-		Original:   original,
-		Normalized: normalized,
-		Changes:    changes,
-		CreatedAt:  review.CreatedAt,
+		reviewQueueBase: populateReviewQueueBase(review, warnings),
+		Original:        original,
+		Normalized:      normalized,
+		Changes:         changes,
 	}
 
-	// Add optional fields
-	if review.ReviewedBy != nil {
-		detail.ReviewedBy = review.ReviewedBy
-	}
-	if review.ReviewedAt != nil {
-		detail.ReviewedAt = review.ReviewedAt
-	}
 	if review.ReviewNotes != nil {
 		detail.ReviewNotes = review.ReviewNotes
-	}
-	if review.RejectionReason != nil {
-		detail.RejectionReason = review.RejectionReason
-	}
-	if review.DuplicateOfEventULID != nil {
-		detail.DuplicateOfEventID = review.DuplicateOfEventULID
 	}
 
 	return detail, nil
