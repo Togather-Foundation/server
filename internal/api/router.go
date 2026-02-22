@@ -322,7 +322,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		Queries: queries,
 		Logger:  logger,
 		Env:     cfg.Environment,
-		Scraper: scraperSvc, // nil when SEL_API_KEY is unset; handler is nil-safe
+		// Only assign scraperSvc when non-nil: assigning a typed nil (*scraper.Scraper)
+		// to the scraperIface field would produce a non-nil interface value, defeating
+		// the h.Scraper == nil guard in TriggerScrape and causing a nil-pointer panic.
+	}
+	if scraperSvc != nil {
+		adminScraperHandler.Scraper = scraperSvc
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)
