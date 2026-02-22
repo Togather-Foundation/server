@@ -1,8 +1,8 @@
 # Integrated Event Scraper
 
-**Version:** 0.2.0
-**Date:** 2026-02-21
-**Status:** Implemented (Tier 0 + Tier 1); DB-backed source configs in progress (srv-65kvw..srv-17zth)
+**Version:** 0.3.0
+**Date:** 2026-02-22
+**Status:** Implemented (Tier 0 + Tier 1, DB-backed source configs, periodic River scheduling)
 
 The Togather SEL server includes a built-in two-tier event scraper for automatically
 extracting events from Toronto-area arts and culture websites. This document covers
@@ -19,11 +19,13 @@ see [building-scrapers.md](building-scrapers.md).
 2. [CLI Reference](#cli-reference)
 3. [Tiered Extraction](#tiered-extraction)
 4. [Source Configuration](#source-configuration)
-5. [Database Run Tracking](#database-run-tracking)
-6. [Environment Variables](#environment-variables)
-7. [Staging Scrape Workflow](#staging-scrape-workflow)
-8. [Adding New Sources](#adding-new-sources)
-9. [Security Design](#security-design)
+5. [Periodic Scheduling](#periodic-scheduling)
+6. [Scraper Global Config](#scraper-global-config)
+7. [Database Run Tracking](#database-run-tracking)
+8. [Environment Variables](#environment-variables)
+9. [Staging Scrape Workflow](#staging-scrape-workflow)
+10. [Adding New Sources](#adding-new-sources)
+11. [Security Design](#security-design)
 
 ---
 
@@ -254,6 +256,58 @@ selectors:
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
 | `selectors` | — | Required when `tier: 1` |
+
+---
+
+## Periodic Scheduling
+
+Sources with `schedule: "daily"` or `schedule: "weekly"` are automatically scraped
+by a River background worker (`ScrapeSourceWorker`) registered at server startup.
+
+| `schedule` value | Behaviour |
+|-----------------|-----------|
+| `daily` | Runs once per day (midnight UTC) |
+| `weekly` | Runs once per week (Sunday midnight UTC) |
+| `manual` | Never run automatically; CLI-only |
+
+Periodic jobs are registered via `NewPeriodicJobsFromSources(sources)` during
+`server serve` startup. Only sources where `enabled: true` are registered.
+Job runs are recorded in `scraper_runs` (same as manual scrapes).
+
+Automatic scheduling is gated by the `auto_scrape` flag in the global scraper
+config (see [Scraper Global Config](#scraper-global-config)). When `auto_scrape`
+is `false`, no periodic jobs fire even if sources have a `schedule` set.
+
+---
+
+## Scraper Global Config
+
+A single `scraper_config` row (migration `000034`) stores operator-level settings
+that apply to all scrape runs.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_scrape` | bool | `false` | Enable/disable periodic River job scheduling |
+| `max_concurrent_sources` | int | `3` | Max sources scraped in parallel during `scrape all` |
+| `request_timeout_seconds` | int | `30` | HTTP request timeout per page fetch |
+| `retry_max_attempts` | int | `3` | Retries on transient network errors |
+| `max_batch_size` | int | `100` | Max events per ingest batch POST |
+| `rate_limit_ms` | int | `1000` | Minimum ms between requests to the same domain |
+
+### Admin API
+
+```
+GET  /api/admin/scraper/config   — Read current config
+PATCH /api/admin/scraper/config  — Update one or more fields (partial JSON body)
+```
+
+Both endpoints require an admin API key (`Authorization: Bearer <key>`).
+
+### Admin UI Toggle
+
+The `/admin/scraper` page includes an **Auto-scrape** toggle that sets `auto_scrape`
+via `PATCH /api/admin/scraper/config`. Enabling it activates periodic job scheduling
+for all sources with a `daily` or `weekly` schedule.
 
 ---
 

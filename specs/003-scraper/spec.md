@@ -21,7 +21,7 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
 
 - Email/newsletter parsing (Tier 3 — future)
 - Headless browser/JS rendering (Tier 2 — future, via Rod)
-- River job scheduling for automated periodic scrapes (Phase 3 — future)
+- ~~River job scheduling for automated periodic scrapes (Phase 3 — future)~~ **Implemented** (srv-pfeud): `ScrapeSourceWorker` + `NewPeriodicJobsFromSources`, `scraper_config` global settings table, admin UI auto-scrape toggle, `GET/PATCH /api/admin/scraper/config`.
 - Admin UI for managing scrape sources (future)
 
 ### Design Additions (post-v0.1)
@@ -34,6 +34,11 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
   `server scrape export` dumps DB→YAML. Scraper runtime reads from DB with YAML
   fallback. Org/place linkage via join tables exposes sources in JSON-LD API responses.
   Beads: srv-65kvw, srv-iorfa, srv-2nu7e, srv-l71q1, srv-17zth.
+- **Scraper global config**: `scraper_config` table stores operator-level settings
+  (`auto_scrape`, `max_concurrent_sources`, `request_timeout_seconds`,
+  `retry_max_attempts`, `max_batch_size`, `rate_limit_ms`). Managed via
+  `GET/PATCH /api/admin/scraper/config` and the admin UI auto-scrape toggle.
+  Beads: srv-pfeud.
 
 ## User Scenarios & Testing
 
