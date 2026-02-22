@@ -47,7 +47,7 @@ Examples:
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		result, err := scraper.Inspect(ctx, args[0])
+		result, err := scraper.Inspect(ctx, args[0], nil)
 		if err != nil {
 			return fmt.Errorf("inspect: %w", err)
 		}

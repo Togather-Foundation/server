@@ -38,14 +38,17 @@ type SampleCard struct {
 
 // Inspect fetches url and analyses its DOM, returning a structured summary
 // useful for discovering CSS selectors. It uses the standard SEL User-Agent.
-func Inspect(ctx context.Context, rawURL string) (*InspectResult, error) {
+// client is the HTTP client to use; pass nil to use a default 20s-timeout client.
+func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("inspect: build request: %w", err)
 	}
 	req.Header.Set("User-Agent", "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)")
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	if client == nil {
+		client = &http.Client{Timeout: 20 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("inspect: fetch: %w", err)

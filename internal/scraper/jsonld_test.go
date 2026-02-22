@@ -78,7 +78,7 @@ func TestFetchAndExtractJSONLD_Fixtures(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			events, err := FetchAndExtractJSONLD(context.Background(), urlFor(tc.fixture))
+			events, err := FetchAndExtractJSONLD(context.Background(), urlFor(tc.fixture), nil)
 			if tc.wantErr {
 				require.Error(t, err)
 				if tc.wantErrSubstr != "" {
@@ -191,7 +191,7 @@ func TestRobotsAllowed_NoRobotsFile(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.True(t, allowed, "missing robots.txt should allow all")
 }
@@ -207,7 +207,7 @@ func TestRobotsAllowed_AllowAll(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.True(t, allowed)
 }
@@ -223,7 +223,7 @@ func TestRobotsAllowed_DisallowAll(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.False(t, allowed)
 }
@@ -239,7 +239,7 @@ func TestRobotsAllowed_DisallowSpecificAgent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.False(t, allowed)
 }
@@ -309,7 +309,7 @@ func TestFetchFullDescription(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			got := FetchFullDescription(context.Background(), srv.URL)
+			got := FetchFullDescription(context.Background(), srv.URL, nil)
 			if tc.wantSubs == "" {
 				if got != "" {
 					t.Errorf("FetchFullDescription: expected empty, got %q", got)
@@ -330,7 +330,7 @@ func TestFetchFullDescription_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got := FetchFullDescription(context.Background(), srv.URL)
+	got := FetchFullDescription(context.Background(), srv.URL, nil)
 	if got != "" {
 		t.Errorf("FetchFullDescription on 500: expected empty, got %q", got)
 	}

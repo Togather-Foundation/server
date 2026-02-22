@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -19,9 +20,24 @@ import (
 // ScrapeOptions controls scraper behaviour.
 type ScrapeOptions struct {
 	DryRun     bool
-	Limit      int    // 0 = no limit
-	SourcesDir string // default: "configs/sources"
-	TierFilter int    // -1 = all tiers; 0, 1, … = restrict to that tier
+	Limit      int               // 0 = no limit
+	SourcesDir string            // default: "configs/sources"
+	TierFilter int               // -1 = all tiers; 0, 1, … = restrict to that tier
+	Transport  http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
+}
+
+// HTTPClient returns an http.Client using the configured transport (if any)
+// with the given timeout. Used by all scraper HTTP code to ensure consistent
+// transport usage.
+func (o ScrapeOptions) HTTPClient(timeout time.Duration) *http.Client {
+	transport := o.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
 }
 
 // ScrapeResult holds aggregated outcomes for one scrape run.
@@ -135,7 +151,7 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
-		rawEvents, err := FetchAndExtractJSONLD(ctx, rawURL)
+		rawEvents, err := FetchAndExtractJSONLD(ctx, rawURL, opts.HTTPClient(fetchTimeout))
 		if err != nil {
 			return 0, nil, err
 		}
@@ -254,6 +270,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
 		extractor := NewCollyExtractor(s.logger)
+		extractor.SetTransport(opts.Transport)
 		rawEvents, err := extractor.ScrapeWithSelectors(ctx, source)
 		if err != nil {
 			return 0, nil, err
@@ -296,7 +313,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
-		rawEvents, err := FetchAndExtractJSONLD(ctx, source.URL)
+		rawEvents, err := FetchAndExtractJSONLD(ctx, source.URL, opts.HTTPClient(fetchTimeout))
 		if err != nil {
 			return 0, nil, err
 		}
@@ -319,7 +336,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 				}
 				evt := &valid[i]
 				if HasTruncatedDescription(evt.Description) && evt.URL != "" {
-					full := FetchFullDescription(ctx, evt.URL)
+					full := FetchFullDescription(ctx, evt.URL, opts.HTTPClient(fetchTimeout))
 					if len([]rune(full)) > len([]rune(evt.Description)) {
 						s.logger.Debug().
 							Str("source", source.Name).

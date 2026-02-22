@@ -3,15 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/rs/zerolog"
+	"github.com/spf13/cobra"
+
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/zerolog"
-	"github.com/spf13/cobra"
 )
 
 // scrapeURLCmd scrapes a single URL.
@@ -42,8 +44,9 @@ Examples:
 		defer cleanup()
 
 		opts := scraper.ScrapeOptions{
-			DryRun: scrapeDryRun,
-			Limit:  scrapeLimit,
+			DryRun:    scrapeDryRun,
+			Limit:     scrapeLimit,
+			Transport: buildScrapeTransport(cmd, logger),
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -162,6 +165,7 @@ Examples:
 			DryRun:     scrapeDryRun,
 			Limit:      scrapeLimit,
 			SourcesDir: scrapeSourceDir,
+			Transport:  buildScrapeTransport(cmd, logger),
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -215,6 +219,7 @@ Examples:
 			Limit:      scrapeLimit,
 			SourcesDir: scrapeSourceDir,
 			TierFilter: scrapeTier,
+			Transport:  buildScrapeTransport(cmd, logger),
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -295,4 +300,18 @@ func printAllResults(results []scraper.ScrapeResult) error {
 		return fmt.Errorf("one or more sources failed")
 	}
 	return nil
+}
+
+// buildScrapeTransport reads --cache, --refresh, and --cache-dir flags from cmd
+// and constructs a CachingTransport if caching is enabled. Returns nil when
+// --cache is not set (callers fall back to http.DefaultTransport).
+func buildScrapeTransport(cmd *cobra.Command, logger zerolog.Logger) http.RoundTripper {
+	cacheEnabled, _ := cmd.Flags().GetBool("cache")
+	if !cacheEnabled {
+		return nil
+	}
+	refresh, _ := cmd.Flags().GetBool("refresh")
+	cacheDir, _ := cmd.Flags().GetString("cache-dir")
+	logger.Info().Str("cache_dir", cacheDir).Bool("refresh", refresh).Msg("scrape cache enabled")
+	return scraper.NewCachingTransport(http.DefaultTransport, cacheDir, refresh)
 }

@@ -24,9 +24,28 @@ const (
 	retryBaseDelay   = 2 * time.Second
 )
 
+// robotsClientFrom derives an HTTP client for robots.txt fetching from the
+// given client. It reuses the transport (so caching is preserved) but applies
+// the shorter robotsTimeout. If client is nil, a plain client is returned.
+func robotsClientFrom(client *http.Client) *http.Client {
+	var transport http.RoundTripper
+	if client != nil {
+		transport = client.Transport
+	}
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &http.Client{
+		Timeout:   robotsTimeout,
+		Transport: transport,
+	}
+}
+
 // FetchAndExtractJSONLD fetches the page at rawURL, parses all JSON-LD script
 // blocks, and returns every schema.org Event (or EventSeries) found within them.
-func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessage, error) {
+// client is the HTTP client to use; pass nil to use a default client with
+// fetchTimeout and redirect-disabled settings.
+func FetchAndExtractJSONLD(ctx context.Context, rawURL string, client *http.Client) ([]json.RawMessage, error) {
 	// 1. Parse and validate URL.
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
@@ -37,7 +56,10 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessag
 	}
 
 	// 2. Check robots.txt compliance.
-	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent)
+	// Build a robots client: reuse the transport from the main client (for
+	// caching) but apply the shorter robotsTimeout.
+	robotsClient := robotsClientFrom(client)
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		// Non-fatal: treat as allowed when robots.txt is unreachable, but log.
 		zerolog.Ctx(ctx).Warn().Err(robotsErr).Str("url", rawURL).Msg("scraper: robots.txt check failed, proceeding as allowed")
@@ -49,11 +71,13 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string) ([]json.RawMessag
 
 	// 3. HTTP GET with timeout. Redirects are disabled to prevent SSRF via
 	// redirect chains to internal/private addresses.
-	client := &http.Client{
-		Timeout: fetchTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	if client == nil {
+		client = &http.Client{
+			Timeout: fetchTimeout,
+		}
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 
 	resp, err := fetchWithRetry(ctx, client, rawURL)
@@ -300,15 +324,18 @@ var tribeEventsDescriptionSelectors = []string{
 // FetchFullDescription fetches the event detail page at eventURL and extracts
 // the full description from the HTML body. It tries Tribe Events selectors in
 // order and returns text from the first selector that yields >50 characters.
+// client is the HTTP client to use; pass nil to use a default client.
 // Returns an empty string on any error (non-fatal — caller uses JSON-LD
 // description as fallback). Does NOT check robots.txt; callers are expected
 // to have already cleared the domain.
-func FetchFullDescription(ctx context.Context, eventURL string) string {
-	client := &http.Client{
-		Timeout: fetchTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+func FetchFullDescription(ctx context.Context, eventURL string, client *http.Client) string {
+	if client == nil {
+		client = &http.Client{
+			Timeout: fetchTimeout,
+		}
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 
 	resp, err := fetchWithRetry(ctx, client, eventURL)
@@ -346,7 +373,8 @@ func FetchFullDescription(ctx context.Context, eventURL string) string {
 // according to the site's robots.txt. A missing (404) robots.txt is treated as
 // "allow all". Network errors fetching robots.txt are returned as errors; callers
 // should typically treat them as allowed.
-func RobotsAllowed(ctx context.Context, rawURL string, userAgent string) (bool, error) {
+// client is the HTTP client to use; pass nil to use a default client.
+func RobotsAllowed(ctx context.Context, rawURL string, userAgent string, client *http.Client) (bool, error) {
 	// 1. Parse the URL and build the robots.txt URL.
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
@@ -359,11 +387,13 @@ func RobotsAllowed(ctx context.Context, rawURL string, userAgent string) (bool, 
 	}
 
 	// 2. Fetch robots.txt. Redirects are disabled to prevent open-redirect abuse.
-	client := &http.Client{
-		Timeout: robotsTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	if client == nil {
+		client = &http.Client{
+			Timeout: robotsTimeout,
+		}
+	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL.String(), nil)
 	if err != nil {

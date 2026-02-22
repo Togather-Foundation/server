@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 type CollyExtractor struct {
 	userAgent string
 	rateLimit time.Duration
+	transport http.RoundTripper // optional; nil = Colly default
 	logger    zerolog.Logger
 }
 
@@ -26,6 +28,12 @@ func NewCollyExtractor(logger zerolog.Logger) *CollyExtractor {
 		rateLimit: time.Second,
 		logger:    logger,
 	}
+}
+
+// SetTransport sets a custom http.RoundTripper on the extractor. Call before
+// ScrapeWithSelectors. A nil transport uses Colly's default.
+func (e *CollyExtractor) SetTransport(t http.RoundTripper) {
+	e.transport = t
 }
 
 // ScrapeWithSelectors fetches config.URL and all linked pages (up to
@@ -60,6 +68,11 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 		colly.AllowedDomains(allowedDomain),
 		// robots.txt is respected by default in Colly; do NOT use IgnoreRobotsTxt.
 	)
+
+	// Apply custom transport if set (e.g. CachingTransport for dev).
+	if e.transport != nil {
+		c.WithTransport(e.transport)
+	}
 
 	// Per-domain rate limiting.
 	if err := c.Limit(&colly.LimitRule{

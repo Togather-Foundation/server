@@ -69,6 +69,9 @@ func init() {
 	scrapeCmd.PersistentFlags().BoolVar(&scrapeDryRun, "dry-run", false, "display extracted events without submitting")
 	scrapeCmd.PersistentFlags().IntVar(&scrapeLimit, "limit", 0, "max events per source (0 = no limit)")
 	scrapeCmd.PersistentFlags().StringVar(&scrapeSourceDir, "sources", "configs/sources", "path to sources directory")
+	scrapeCmd.PersistentFlags().Bool("cache", false, "Enable local HTTP cache for scraper requests (dev/testing)")
+	scrapeCmd.PersistentFlags().Bool("refresh", false, "Force fresh fetches, overwriting cached responses (requires --cache)")
+	scrapeCmd.PersistentFlags().String("cache-dir", "tmp/scrape-cache", "Directory for cached scraper responses")
 
 	// Flags for `scrape all`
 	scrapeAllCmd.Flags().IntVar(&scrapeTier, "tier", -1, "filter sources by tier (-1 = all tiers, 0 = JSON-LD, 1 = CSS selectors)")
