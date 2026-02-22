@@ -275,12 +275,18 @@ Events that appear to be multi-session courses or recurring series are automatic
 
 | Heuristic | Condition |
 |-----------|-----------|
-| **Duration** | Single occurrence spanning > 168 hours (1 week) |
+| **Duration** | Single occurrence spanning > duration threshold (default: 168 hours / 1 week) |
 | **Title patterns** | Contains `(N sessions)`, `(N weeks)`, `(N classes)`, `(N workshops)`, `workshop series`, `course`, or `weekly` |
 
 When either heuristic fires, the warning code `multi_session_likely` is added and the event is stored with `lifecycle_state = 'pending_review'`.
 
-**Per-source opt-out:** Sources that legitimately publish long-duration events (e.g. exhibitions, residencies) can set `skip_multi_session_check: true` in their source config. See [scraper.md](../integration/scraper.md) for the config field reference.
+**Per-source opt-out:** Sources that legitimately publish long-duration events (e.g. exhibitions, residencies) can set `skip_multi_session_check: true` in their source config to disable all duration and title checks. See [scraper.md](../integration/scraper.md) for the config field reference.
+
+**Per-source threshold override:** Sources that legitimately publish events spanning more than 1 week (e.g. multi-week festivals) can set `multi_session_duration_threshold` to a custom Go duration string (e.g. `"720h"` for 30 days) in their source config. This overrides the default 168h threshold for duration-based detection only; title pattern checks still apply. Example:
+
+```yaml
+multi_session_duration_threshold: "720h"  # 30 days
+```
 
 ---
 

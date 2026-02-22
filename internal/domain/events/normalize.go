@@ -410,21 +410,31 @@ func correctEndDateTimezoneError(input EventInput) EventInput {
 	return input
 }
 
+// multiSessionThreshold is the default duration above which a single occurrence
+// is considered suspicious as a multi-session event.
+const multiSessionThreshold = 168 * time.Hour // 1 week
+
 // IsMultiSessionEvent checks whether an event looks like a multi-session course
 // or recurring series that was scraped as a single occurrence spanning a long period.
 // Returns (true, reason) if the event should be flagged for review.
 //
 // Detection heuristics:
-//  1. Duration > 168 hours (1 week): a single occurrence spanning > 1 week is suspicious
+//  1. Duration > threshold (default 168h / 1 week, or custom per-source value from
+//     EventInput.MultiSessionDurationThreshold): a single occurrence spanning > threshold is suspicious
 //  2. Title patterns: "(N sessions)", "(N weeks)", "workshop series", etc.
 func IsMultiSessionEvent(input EventInput) (bool, string) {
+	threshold := multiSessionThreshold
+	if input.MultiSessionDurationThreshold > 0 {
+		threshold = input.MultiSessionDurationThreshold
+	}
+
 	// Duration check: only possible when both start and end dates are present.
 	if input.EndDate != "" {
 		startTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
 		endTime, err2 := time.Parse(time.RFC3339, strings.TrimSpace(input.EndDate))
 		if err == nil && err2 == nil {
 			duration := endTime.Sub(startTime)
-			if duration > 168*time.Hour {
+			if duration > threshold {
 				days := int(duration.Hours() / 24)
 				return true, fmt.Sprintf("single occurrence spans %d days", days)
 			}

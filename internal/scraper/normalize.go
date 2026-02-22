@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 )
@@ -56,24 +57,30 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		eventType = "Event"
 	}
 
+	multiSessionThreshold, err := parseMultiSessionThreshold(source.MultiSessionDurationThreshold)
+	if err != nil {
+		return events.EventInput{}, err
+	}
+
 	evt := events.EventInput{
-		Type:                  eventType,
-		Name:                  name,
-		Description:           extractStringValue(re.Description),
-		StartDate:             startDate,
-		EndDate:               parseDate(re.EndDate),
-		DoorTime:              parseDate(re.DoorTime),
-		Location:              parseLocation(re.Location),
-		Organizer:             parseOrganizer(re.Organizer),
-		Image:                 parseImage(re.Image),
-		URL:                   urlStr,
-		Offers:                parseOffer(re.Offers),
-		Keywords:              parseStringOrArray(re.Keywords),
-		InLanguage:            parseStringOrArray(re.InLanguage),
-		IsAccessibleForFree:   parseBool(re.IsAccessibleForFree),
-		SameAs:                parseStringOrArray(re.SameAs),
-		License:               source.License,
-		SkipMultiSessionCheck: source.SkipMultiSessionCheck,
+		Type:                          eventType,
+		Name:                          name,
+		Description:                   extractStringValue(re.Description),
+		StartDate:                     startDate,
+		EndDate:                       parseDate(re.EndDate),
+		DoorTime:                      parseDate(re.DoorTime),
+		Location:                      parseLocation(re.Location),
+		Organizer:                     parseOrganizer(re.Organizer),
+		Image:                         parseImage(re.Image),
+		URL:                           urlStr,
+		Offers:                        parseOffer(re.Offers),
+		Keywords:                      parseStringOrArray(re.Keywords),
+		InLanguage:                    parseStringOrArray(re.InLanguage),
+		IsAccessibleForFree:           parseBool(re.IsAccessibleForFree),
+		SameAs:                        parseStringOrArray(re.SameAs),
+		License:                       source.License,
+		SkipMultiSessionCheck:         source.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: multiSessionThreshold,
 		Source: &events.SourceInput{
 			URL:     source.URL,
 			EventID: extractEventID(raw),
@@ -106,22 +113,28 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, er
 		return events.EventInput{}, fmt.Errorf("raw event has no startDate")
 	}
 
+	multiSessionThreshold, err := parseMultiSessionThreshold(source.MultiSessionDurationThreshold)
+	if err != nil {
+		return events.EventInput{}, err
+	}
+
 	var loc *events.PlaceInput
 	if raw.Location != "" {
 		loc = &events.PlaceInput{Name: raw.Location}
 	}
 
 	return events.EventInput{
-		Type:                  "Event",
-		Name:                  raw.Name,
-		StartDate:             raw.StartDate,
-		EndDate:               raw.EndDate,
-		Description:           raw.Description,
-		URL:                   raw.URL,
-		Image:                 raw.Image,
-		Location:              loc,
-		License:               source.License,
-		SkipMultiSessionCheck: source.SkipMultiSessionCheck,
+		Type:                          "Event",
+		Name:                          raw.Name,
+		StartDate:                     raw.StartDate,
+		EndDate:                       raw.EndDate,
+		Description:                   raw.Description,
+		URL:                           raw.URL,
+		Image:                         raw.Image,
+		Location:                      loc,
+		License:                       source.License,
+		SkipMultiSessionCheck:         source.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: multiSessionThreshold,
 		Source: &events.SourceInput{
 			URL:     source.URL,
 			EventID: eventIDFromRaw(raw, source),
@@ -502,4 +515,19 @@ func HasTruncatedDescription(desc string) bool {
 	return strings.HasSuffix(desc, "…") || // U+2026
 		strings.HasSuffix(desc, "...") ||
 		strings.HasSuffix(desc, "\u2026")
+}
+
+// parseMultiSessionThreshold parses a Go duration string (e.g. "720h") from a
+// SourceConfig and returns the duration. Returns 0 and no error when the value
+// is empty (caller should use the default). Returns an error for non-empty but
+// unparseable values.
+func parseMultiSessionThreshold(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("parse multi_session_duration_threshold %q: %w", raw, err)
+	}
+	return d, nil
 }

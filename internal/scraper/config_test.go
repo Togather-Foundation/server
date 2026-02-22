@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -442,4 +443,120 @@ func TestLoadSourceConfigs_DuplicateNameError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate source name")
 	assert.Contains(t, err.Error(), "Toronto Symphony Orchestra")
+}
+
+func TestLoadSourceConfigs_MultiSessionDurationThreshold(t *testing.T) {
+	t.Parallel()
+
+	t.Run("parses valid duration string from YAML", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Festival Source"
+url: "https://example.com/events"
+tier: 0
+multi_session_duration_threshold: "720h"
+`
+		dir := t.TempDir()
+		writeYAML(t, dir, "festival.yaml", yamlContent)
+
+		configs, err := LoadSourceConfigs(dir)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		assert.Equal(t, "720h", configs[0].MultiSessionDurationThreshold)
+	})
+
+	t.Run("empty threshold is valid (uses default)", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Normal Source"
+url: "https://example.com/events"
+tier: 0
+`
+		dir := t.TempDir()
+		writeYAML(t, dir, "normal.yaml", yamlContent)
+
+		configs, err := LoadSourceConfigs(dir)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		assert.Equal(t, "", configs[0].MultiSessionDurationThreshold)
+	})
+
+	t.Run("threshold with skip_multi_session_check false still parses", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Custom Threshold Source"
+url: "https://example.com/events"
+tier: 0
+skip_multi_session_check: false
+multi_session_duration_threshold: "336h"
+`
+		dir := t.TempDir()
+		writeYAML(t, dir, "custom.yaml", yamlContent)
+
+		configs, err := LoadSourceConfigs(dir)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+		assert.Equal(t, "336h", configs[0].MultiSessionDurationThreshold)
+		assert.False(t, configs[0].SkipMultiSessionCheck)
+	})
+}
+
+func TestParseMultiSessionThreshold(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{
+			name:  "empty string returns zero (use default)",
+			input: "",
+			want:  0,
+		},
+		{
+			name:  "valid 720h (30 days)",
+			input: "720h",
+			want:  720 * time.Hour,
+		},
+		{
+			name:  "valid 336h (14 days)",
+			input: "336h",
+			want:  336 * time.Hour,
+		},
+		{
+			name:  "valid 168h (1 week)",
+			input: "168h",
+			want:  168 * time.Hour,
+		},
+		{
+			name:  "valid with minutes",
+			input: "720h30m",
+			want:  720*time.Hour + 30*time.Minute,
+		},
+		{
+			name:    "invalid string returns error",
+			input:   "30d",
+			wantErr: true,
+		},
+		{
+			name:    "invalid non-duration string returns error",
+			input:   "thirty days",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseMultiSessionThreshold(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

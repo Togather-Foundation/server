@@ -32,6 +32,12 @@ type SourceConfig struct {
 	// source. Use for sources that legitimately emit long-duration single events
 	// (e.g., festivals, art installations).
 	SkipMultiSessionCheck bool `yaml:"skip_multi_session_check"`
+	// MultiSessionDurationThreshold overrides the default 168h (1 week) duration
+	// threshold used by the multi-session heuristic. Use for sources that
+	// legitimately publish events longer than 1 week but shorter than 30 days
+	// (e.g., festivals spanning multiple weeks). Value is a Go duration string
+	// like "720h" (30 days). Zero value means use the default (168h).
+	MultiSessionDurationThreshold string `yaml:"multi_session_duration_threshold,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) scraping.

@@ -651,6 +651,7 @@ func TestCorrectEndDateTimezoneError_Integration(t *testing.T) {
 }
 
 func TestIsMultiSessionEvent(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     EventInput
@@ -769,10 +770,70 @@ func TestIsMultiSessionEvent(t *testing.T) {
 			wantMulti: true,
 			wantMsg:   "pattern",
 		},
+		// Custom threshold: zero means default (168h)
+		{
+			name: "zero threshold uses default 168h - short event not flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-02-17T10:00:00Z", // exactly 168h
+				Name:                          "Festival",
+				MultiSessionDurationThreshold: 0,
+			},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Custom threshold: 10-day event with default (168h) threshold IS flagged
+		{
+			name: "10-day event with default threshold flagged",
+			input: EventInput{
+				StartDate: "2026-02-10T10:00:00Z",
+				EndDate:   "2026-02-20T10:00:00Z", // 10 days = 240h > 168h
+				Name:      "Art Show",
+			},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		// Custom threshold: 10-day event with 720h (30 days) threshold NOT flagged
+		{
+			name: "10-day event with 720h custom threshold not flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-02-20T10:00:00Z", // 10 days = 240h < 720h
+				Name:                          "Festival",
+				MultiSessionDurationThreshold: 720 * time.Hour,
+			},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Custom threshold: 35-day event with 720h (30 days) threshold IS flagged
+		{
+			name: "35-day event with 720h custom threshold flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-03-17T10:00:00Z", // 35 days = 840h > 720h
+				Name:                          "Long Festival",
+				MultiSessionDurationThreshold: 720 * time.Hour,
+			},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		// Custom threshold: exactly at threshold boundary (not flagged)
+		{
+			name: "event exactly at custom threshold not flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-03-12T10:00:00Z", // exactly 720h (30 days)
+				Name:                          "Festival",
+				MultiSessionDurationThreshold: 720 * time.Hour,
+			},
+			wantMulti: false,
+			wantMsg:   "",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			gotMulti, gotMsg := IsMultiSessionEvent(tt.input)
 			assert.Equal(t, tt.wantMulti, gotMulti, "IsMultiSessionEvent flag mismatch")
 			if tt.wantMsg != "" {

@@ -92,6 +92,13 @@ max_pages: 5
 # residencies, summer institutes, etc.) that would otherwise trigger the review queue.
 # skip_multi_session_check: false
 
+# multi_session_duration_threshold: Override the default 168h (1 week) duration threshold
+# used by multi-session detection for this source. Use for sources that legitimately publish
+# events spanning more than 1 week but less than your threshold (e.g. multi-week festivals).
+# Value must be a valid Go duration string (e.g. "720h" for 30 days, "336h" for 2 weeks).
+# Omit or leave empty to use the default (168h). Has no effect when skip_multi_session_check is true.
+# multi_session_duration_threshold: "720h"
+
 # --- TIER 1 SELECTORS ---
 # Only required when tier: 1
 # Use CSS selectors. For start_date/end_date, prefer elements with datetime
