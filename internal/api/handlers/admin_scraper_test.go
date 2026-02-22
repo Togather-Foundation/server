@@ -57,18 +57,6 @@ func (f *fakeScraperQueries) UpsertScraperSource(_ context.Context, _ postgres.U
 	return f.upsertRow, f.upsertErr
 }
 
-// fakeScraperRunner is a no-op implementation of scraperRunner for tests.
-type fakeScraperRunner struct {
-	called     bool
-	sourceName string
-}
-
-func (f *fakeScraperRunner) ScrapeSource(_ context.Context, name string, _ interface{}) (interface{}, error) {
-	f.called = true
-	f.sourceName = name
-	return nil, nil
-}
-
 // ----------------------------------------------------------------------------
 // Helper to build a handler under test
 // ----------------------------------------------------------------------------
