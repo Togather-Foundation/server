@@ -107,6 +107,55 @@ func (q *Queries) ListRecentScraperRuns(ctx context.Context, limit int32) ([]Scr
 	return items, nil
 }
 
+const listScraperRunsBySource = `-- name: ListScraperRunsBySource :many
+SELECT id, source_name, source_url, tier, started_at, completed_at, status,
+       events_found, events_new, events_dup, events_failed, error_message, metadata
+  FROM scraper_runs
+ WHERE source_name = $1
+ ORDER BY started_at DESC
+ LIMIT $2
+`
+
+type ListScraperRunsBySourceParams struct {
+	SourceName string `json:"source_name"`
+	Limit      int32  `json:"limit"`
+}
+
+// List recent scraper runs for a specific source, ordered newest first.
+func (q *Queries) ListScraperRunsBySource(ctx context.Context, arg ListScraperRunsBySourceParams) ([]ScraperRun, error) {
+	rows, err := q.db.Query(ctx, listScraperRunsBySource, arg.SourceName, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScraperRun{}
+	for rows.Next() {
+		var i ScraperRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceName,
+			&i.SourceUrl,
+			&i.Tier,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Status,
+			&i.EventsFound,
+			&i.EventsNew,
+			&i.EventsDup,
+			&i.EventsFailed,
+			&i.ErrorMessage,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateScraperRunCompleted = `-- name: UpdateScraperRunCompleted :exec
 UPDATE scraper_runs
    SET status        = 'completed',

@@ -286,6 +286,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create Admin Review Queue handler (srv-bjo)
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
+	// Create Admin Scraper handler (srv-5127b)
+	adminScraperHandler := &handlers.AdminScraperHandler{
+		Queries: queries,
+		Logger:  logger,
+		Env:     cfg.Environment,
+		// Scraper is nil here; trigger goroutine is nil-safe
+	}
+
 	// Create Admin Geocoding handler (srv-qq7o1)
 	adminGeocodingHandler := handlers.NewAdminGeocodingHandler(pool, riverClient, slogLogger, cfg.Environment)
 
@@ -573,6 +581,17 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodDelete: adminDeactivateDeveloper,
 	}))
 
+	// Admin scraper source management (srv-5127b)
+	adminScraperListSources := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSources))))
+	adminScraperListRuns := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSourceRuns))))
+	adminScraperTrigger := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.TriggerScrape))))
+	adminScraperSetEnabled := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.SetSourceEnabled))))
+
+	mux.Handle("GET /api/v1/admin/scraper/sources", adminScraperListSources)
+	mux.Handle("GET /api/v1/admin/scraper/sources/{name}/runs", adminScraperListRuns)
+	mux.Handle("POST /api/v1/admin/scraper/sources/{name}/trigger", adminScraperTrigger)
+	mux.Handle("PATCH /api/v1/admin/scraper/sources/{name}", adminScraperSetEnabled)
+
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
 	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
@@ -664,6 +683,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/places", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServePlacesList))))
 	mux.Handle("/admin/organizations", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeOrganizationsList))))
 	mux.Handle("/admin/developers", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDevelopersList))))
+	mux.Handle("/admin/scraper", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeScraperSources))))
 
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

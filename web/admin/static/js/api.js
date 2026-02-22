@@ -392,5 +392,21 @@ const API = {
         delete: (id) => API.request(`/api/v1/admin/developers/${id}`, {
             method: 'DELETE'
         })
+    },
+
+    // Scraper source management (srv-5127b)
+    scraper: {
+        listSources: () => API.request('/api/v1/admin/scraper/sources'),
+
+        listRuns: (name) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}/runs`),
+
+        triggerScrape: (name) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}/trigger`, {
+            method: 'POST'
+        }),
+
+        setEnabled: (name, enabled) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ enabled })
+        })
     }
 };

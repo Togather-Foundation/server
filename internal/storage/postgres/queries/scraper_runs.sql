@@ -41,3 +41,12 @@ SELECT id, source_name, source_url, tier, started_at, completed_at, status,
   FROM scraper_runs
  ORDER BY started_at DESC
  LIMIT sqlc.arg('limit');
+
+-- name: ListScraperRunsBySource :many
+-- List recent scraper runs for a specific source, ordered newest first.
+SELECT id, source_name, source_url, tier, started_at, completed_at, status,
+       events_found, events_new, events_dup, events_failed, error_message, metadata
+  FROM scraper_runs
+ WHERE source_name = sqlc.arg('source_name')
+ ORDER BY started_at DESC
+ LIMIT sqlc.arg('limit');

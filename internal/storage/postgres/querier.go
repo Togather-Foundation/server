@@ -200,12 +200,16 @@ type Querier interface {
 	ListRecentScraperRuns(ctx context.Context, limit int32) ([]ScraperRun, error)
 	// List reviews with pagination and status filter
 	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
+	// List recent scraper runs for a specific source, ordered newest first.
+	ListScraperRunsBySource(ctx context.Context, arg ListScraperRunsBySourceParams) ([]ScraperRun, error)
 	// List all scraper sources, optionally filtered by enabled flag.
 	ListScraperSources(ctx context.Context, enabled pgtype.Bool) ([]ScraperSource, error)
 	// List all scraper sources linked to a given organization.
 	ListScraperSourcesByOrg(ctx context.Context, organizationID pgtype.UUID) ([]ScraperSource, error)
 	// List all scraper sources linked to a given place.
 	ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.UUID) ([]ScraperSource, error)
+	// List all scraper sources with their most recent run stats embedded.
+	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error)
 	// Get organizations that have no external identifiers, ordered by creation date
 	ListUnreconciledOrganizations(ctx context.Context, maxResults int32) ([]ListUnreconciledOrganizationsRow, error)
 	// Get places that have no external identifiers, ordered by creation date
