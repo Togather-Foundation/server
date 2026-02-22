@@ -291,7 +291,7 @@
                         <a href="/admin/events/${entry.eventId}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
                             ${escapeHtml(eventName)}
                         </a>
-                        ${entry.duplicateOfEventId ? '<span class="badge bg-purple-lt ms-1" title="Near-duplicate">dup</span>' : ''}
+                        ${entry.duplicateOfEventUlid ? '<span class="badge bg-purple-lt ms-1" title="Near-duplicate">dup</span>' : ''}
                     </td>
                     <td class="text-muted">${startTime}</td>
                     <td>${warningBadge}</td>
@@ -522,11 +522,11 @@
         ` : '';
         
         // Build cross-link banner for pending items with a known duplicate event
-        const crossLinkHtml = (detail.status === 'pending' && detail.duplicateOfEventId) ? `
+        const crossLinkHtml = (detail.status === 'pending' && detail.duplicateOfEventUlid) ? `
             <div class="alert alert-warning mb-3">
                 <strong>Near-duplicate detected:</strong>
                 This event may be a duplicate of
-                <a href="/admin/events/${escapeHtml(detail.duplicateOfEventId)}" class="alert-link">${escapeHtml(detail.duplicateOfEventId)}</a>.
+                <a href="/admin/events/${escapeHtml(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
             </div>
         ` : '';
 
@@ -540,8 +540,8 @@
         let duplicateEventId = '';
         if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
             duplicateEventId = duplicateWarning.details.matches[0].ulid || '';
-        } else if (detail.duplicateOfEventId) {
-            duplicateEventId = detail.duplicateOfEventId;
+        } else if (detail.duplicateOfEventUlid) {
+            duplicateEventId = detail.duplicateOfEventUlid;
         }
         
         // Build action buttons (only for pending status)
@@ -602,7 +602,7 @@
         ` : `
             <div class="text-muted">
                 ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
-                ${detail.duplicateOfEventId ? `<br>Merged into: <a href="/admin/events/${escapeHtml(detail.duplicateOfEventId)}" class="text-reset">${escapeHtml(detail.duplicateOfEventId)}</a>` : ''}
+                ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${escapeHtml(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
                 ${detail.reviewNotes ? `<br>Notes: ${escapeHtml(detail.reviewNotes)}` : ''}
                 ${detail.rejectionReason ? `<br>Reason: ${escapeHtml(detail.rejectionReason)}` : ''}
             </div>

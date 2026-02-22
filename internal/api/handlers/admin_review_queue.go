@@ -50,7 +50,7 @@ type reviewQueueItem struct {
 	ReviewedBy         *string                    `json:"reviewedBy,omitempty"`
 	ReviewedAt         *time.Time                 `json:"reviewedAt,omitempty"`
 	RejectionReason    *string                    `json:"rejectionReason,omitempty"`
-	DuplicateOfEventID *string                    `json:"duplicateOfEventId,omitempty"`
+	DuplicateOfEventID *string                    `json:"duplicateOfEventUlid,omitempty"`
 }
 
 // reviewQueueDetail represents detailed review information
@@ -67,7 +67,7 @@ type reviewQueueDetail struct {
 	ReviewedAt         *time.Time                 `json:"reviewedAt,omitempty"`
 	ReviewNotes        *string                    `json:"reviewNotes,omitempty"`
 	RejectionReason    *string                    `json:"rejectionReason,omitempty"`
-	DuplicateOfEventID *string                    `json:"duplicateOfEventId,omitempty"`
+	DuplicateOfEventID *string                    `json:"duplicateOfEventUlid,omitempty"`
 }
 
 // changeDetail describes a specific change made during normalization
