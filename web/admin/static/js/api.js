@@ -407,6 +407,14 @@ const API = {
         setEnabled: (name, enabled) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}`, {
             method: 'PATCH',
             body: JSON.stringify({ enabled })
+        }),
+
+        // Global scraper config (srv-pfeud)
+        getConfig: () => API.request('/api/v1/admin/scraper/config'),
+
+        patchConfig: (patch) => API.request('/api/v1/admin/scraper/config', {
+            method: 'PATCH',
+            body: JSON.stringify(patch)
         })
     }
 };

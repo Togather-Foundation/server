@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -22,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
+	"github.com/rs/zerolog"
 )
 
 type DeduplicationArgs struct {
@@ -918,6 +920,12 @@ func NewWorkers() *river.Workers {
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
 func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string) *river.Workers {
+	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, nil)
+}
+
+// NewWorkersWithScraper creates workers like NewWorkersWithPool but also
+// registers ScrapeSourceWorker when a non-nil scraper is provided.
+func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperConfigReader) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -979,6 +987,16 @@ func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService,
 			PlaceService:          placeService,
 			OrgService:            orgService,
 			Logger:                logger,
+		})
+	}
+
+	// Periodic scrape worker (srv-pfeud)
+	if scr != nil {
+		zl := zerolog.New(os.Stderr).With().Timestamp().Logger()
+		river.AddWorker[ScrapeSourceArgs](workers, ScrapeSourceWorker{
+			Scraper:       scr,
+			ConfigQueries: cfgQueries,
+			Logger:        zl,
 		})
 	}
 

@@ -23,6 +23,8 @@ type scraperQueriesIface interface {
 	ListScraperRunsBySource(ctx context.Context, arg postgres.ListScraperRunsBySourceParams) ([]postgres.ScraperRun, error)
 	GetScraperSourceByName(ctx context.Context, name string) (postgres.ScraperSource, error)
 	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.ScraperSource, error)
+	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
+	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
 }
 
 // scraperIface is the subset of scraper.Scraper used by AdminScraperHandler,
@@ -287,4 +289,103 @@ func (h *AdminScraperHandler) SetSourceEnabled(w http.ResponseWriter, r *http.Re
 	}
 
 	writeJSON(w, http.StatusOK, scraperSourceFromDB(updated), "application/json")
+}
+
+// scraperConfigResponse is the JSON representation of the global scraper config.
+type scraperConfigResponse struct {
+	AutoScrape            bool  `json:"auto_scrape"`
+	MaxConcurrentSources  int32 `json:"max_concurrent_sources"`
+	RequestTimeoutSeconds int32 `json:"request_timeout_seconds"`
+	RetryMaxAttempts      int32 `json:"retry_max_attempts"`
+	MaxBatchSize          int32 `json:"max_batch_size"`
+	RateLimitMs           int32 `json:"rate_limit_ms"`
+}
+
+// GetConfig handles GET /api/v1/admin/scraper/config.
+// Returns the current global scraper configuration.
+func (h *AdminScraperHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := h.Queries.GetScraperConfig(r.Context())
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("admin scraper: get config")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to read scraper config", fmt.Errorf("get scraper config: %w", err), h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, scraperConfigResponse{
+		AutoScrape:            cfg.AutoScrape,
+		MaxConcurrentSources:  cfg.MaxConcurrentSources,
+		RequestTimeoutSeconds: cfg.RequestTimeoutSeconds,
+		RetryMaxAttempts:      cfg.RetryMaxAttempts,
+		MaxBatchSize:          cfg.MaxBatchSize,
+		RateLimitMs:           cfg.RateLimitMs,
+	}, "application/json")
+}
+
+// PatchConfig handles PATCH /api/v1/admin/scraper/config.
+// Accepts a partial JSON body; only provided fields are applied over the current config.
+func (h *AdminScraperHandler) PatchConfig(w http.ResponseWriter, r *http.Request) {
+	// Read current config as baseline.
+	current, err := h.Queries.GetScraperConfig(r.Context())
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("admin scraper: patch config — read baseline")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to read scraper config", fmt.Errorf("get scraper config: %w", err), h.Env)
+		return
+	}
+
+	// Decode the patch body (all fields optional).
+	var patch struct {
+		AutoScrape            *bool  `json:"auto_scrape"`
+		MaxConcurrentSources  *int32 `json:"max_concurrent_sources"`
+		RequestTimeoutSeconds *int32 `json:"request_timeout_seconds"`
+		RetryMaxAttempts      *int32 `json:"retry_max_attempts"`
+		MaxBatchSize          *int32 `json:"max_batch_size"`
+		RateLimitMs           *int32 `json:"rate_limit_ms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	// Apply patch fields over the baseline.
+	params := postgres.SetScraperConfigParams{
+		AutoScrape:            current.AutoScrape,
+		MaxConcurrentSources:  current.MaxConcurrentSources,
+		RequestTimeoutSeconds: current.RequestTimeoutSeconds,
+		RetryMaxAttempts:      current.RetryMaxAttempts,
+		MaxBatchSize:          current.MaxBatchSize,
+		RateLimitMs:           current.RateLimitMs,
+	}
+	if patch.AutoScrape != nil {
+		params.AutoScrape = *patch.AutoScrape
+	}
+	if patch.MaxConcurrentSources != nil {
+		params.MaxConcurrentSources = *patch.MaxConcurrentSources
+	}
+	if patch.RequestTimeoutSeconds != nil {
+		params.RequestTimeoutSeconds = *patch.RequestTimeoutSeconds
+	}
+	if patch.RetryMaxAttempts != nil {
+		params.RetryMaxAttempts = *patch.RetryMaxAttempts
+	}
+	if patch.MaxBatchSize != nil {
+		params.MaxBatchSize = *patch.MaxBatchSize
+	}
+	if patch.RateLimitMs != nil {
+		params.RateLimitMs = *patch.RateLimitMs
+	}
+
+	if err := h.Queries.SetScraperConfig(r.Context(), params); err != nil {
+		h.Logger.Error().Err(err).Msg("admin scraper: patch config — write")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to update scraper config", fmt.Errorf("set scraper config: %w", err), h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, scraperConfigResponse{
+		AutoScrape:            params.AutoScrape,
+		MaxConcurrentSources:  params.MaxConcurrentSources,
+		RequestTimeoutSeconds: params.RequestTimeoutSeconds,
+		RetryMaxAttempts:      params.RetryMaxAttempts,
+		MaxBatchSize:          params.MaxBatchSize,
+		RateLimitMs:           params.RateLimitMs,
+	}, "application/json")
 }

@@ -446,6 +446,17 @@ type ReverseGeocodingCache struct {
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 }
 
+type ScraperConfig struct {
+	ID                    int32              `json:"id"`
+	AutoScrape            bool               `json:"auto_scrape"`
+	MaxConcurrentSources  int32              `json:"max_concurrent_sources"`
+	RequestTimeoutSeconds int32              `json:"request_timeout_seconds"`
+	RetryMaxAttempts      int32              `json:"retry_max_attempts"`
+	MaxBatchSize          int32              `json:"max_batch_size"`
+	RateLimitMs           int32              `json:"rate_limit_ms"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ScraperRun struct {
 	ID           int64              `json:"id"`
 	SourceName   string             `json:"source_name"`
