@@ -128,10 +128,12 @@ reads from DB; orgs/places with linked sources show them in API responses.
 
 ---
 
-## Phase 4: Scheduling + Production (Future — not in this pass)
+## Phase 4: Scheduling + Production
 
-- [ ] S023 [US4] Implement River job worker for periodic scraping in `internal/scraper/schedule.go`
-- [ ] S024 [US4] Wire scraper worker into server startup in `cmd/server/cmd/serve.go`
+Implemented in srv-pfeud (`feat/srv-pfeud-scraper-periodic-jobs`).
+
+- [x] S023 [US4] `ScrapeSourceWorker` River worker in `internal/jobs/` — runs for each enabled source with `schedule="daily"` or `"weekly"`
+- [x] S024 [US4] `NewPeriodicJobsFromSources` registered on `server serve` startup; `scraper_config` DB table (migration 000034) with `auto_scrape`, `max_concurrent_sources`, `request_timeout_seconds`, `retry_max_attempts`, `max_batch_size`, `rate_limit_ms`; admin API `GET/PATCH /api/admin/scraper/config`; admin UI toggle
 - [ ] S025 Add Prometheus metrics for scrape runs (success/failure rates, event counts)
 
 ## Phase 4: Agent Feedback + Quality (Future)

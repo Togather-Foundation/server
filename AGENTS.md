@@ -31,7 +31,7 @@ IMPORTANT:
 - `server cleanup` — Clean up deployment artifacts (Docker images, snapshots, logs)
 - `server api-key` — API key management (create, list, revoke)
 - `server developer` — Developer account management (invite, list, deactivate)
-- `server scrape` — Scrape events from URLs or configured sources (url, list, source, all)
+- `server scrape` — Scrape events from URLs or configured sources (url, list, source, all); `source <name>` accepts `--dry-run` to display extracted events without submitting
 - `server reconcile` — Bulk reconciliation against knowledge graphs (places, organizations, all)
 - `server webfiles` — Generate robots.txt and sitemap.xml for deployment
 - `server version` — Print version information
