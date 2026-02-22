@@ -19,9 +19,15 @@ You're building systems that submit events to or consume events from SEL:
 
 ### For Event Scrapers
 
+There are two distinct scraper scenarios:
+
+**Using Togather's built-in scraper** (internal operators and source contributors):
+1. **[Built-in Scraper](scraper.md)** - CLI usage, source config YAML, tiers, staging workflow
+
+**Building your own scraper** (third-party agents submitting events to the SEL API):
 1. **[API Guide](api-guide.md)** - Practical guide with code examples
 2. **[Authentication](authentication.md)** - Get API keys, understand rate limits
-3. **[Scraper Best Practices](scrapers.md)** - Idempotency, deduplication, batch patterns
+3. **[Building Scrapers](building-scrapers.md)** - Idempotency, deduplication, submission patterns
 
 ### For API Consumers
 

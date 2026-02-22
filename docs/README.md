@@ -32,7 +32,7 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 **Quick links:**
 - [API Guide](integration/api-guide.md) - Practical API reference with examples
 - [Authentication](integration/authentication.md) - API keys & rate limits
-- [Scraper Best Practices](integration/scrapers.md) - Idempotency, deduplication
+- [Building Scrapers](integration/building-scrapers.md) - Idempotency, deduplication, submission patterns
 - [Code Examples](integration/examples/) - Working code samples
 
 **Minimal example:**

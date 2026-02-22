@@ -272,7 +272,7 @@ Currently, password reset is handled by admins. Contact [info@togather.foundatio
 
 - **Complete API Reference:** [api-guide.md](api-guide.md)
 - **Authentication Details:** [authentication.md](authentication.md#developer-self-service)
-- **Event Scraper Best Practices:** [scrapers.md](scrapers.md)
+- **Building Your Own Scraper:** [building-scrapers.md](building-scrapers.md)
 - **Security Guidelines:** [../contributors/security.md](../contributors/security.md)
 
 ---

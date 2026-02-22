@@ -577,7 +577,7 @@ log.Info().
 - [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API)
 - [River Job Queue](https://riverqueue.com/docs)
 - Internal: [nominatim.md](nominatim.md) (client design and usage policy details)
-- Internal: [scrapers.md](scrapers.md) (scraper geocoding patterns)
+- Internal: [building-scrapers.md](building-scrapers.md) (scraper geocoding patterns)
 
 ---
 

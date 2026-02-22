@@ -1110,7 +1110,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 **Next Steps:**
 - [api-guide.md](api-guide.md) - Complete API endpoint reference
-- [scrapers.md](scrapers.md) - Event scraper best practices
+- [building-scrapers.md](building-scrapers.md) - Building scrapers that submit to the SEL API
 - [../contributors/security.md](../contributors/security.md) - Security architecture
 
 **Document Version**: 0.1.0  

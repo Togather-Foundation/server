@@ -8,8 +8,8 @@ The Togather SEL server includes a built-in two-tier event scraper for automatic
 extracting events from Toronto-area arts and culture websites. This document covers
 usage, configuration, and how to contribute new source configs.
 
-For external scraper best practices (third-party agents submitting to the API),
-see [scrapers.md](scrapers.md).
+For guidance on building your own scraper that submits events to the SEL API,
+see [building-scrapers.md](building-scrapers.md).
 
 ---
 
