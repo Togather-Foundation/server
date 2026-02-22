@@ -453,10 +453,10 @@ func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *S
 	}
 	params := postgres.UpdateScraperRunCompletedParams{
 		ID:           runID,
-		EventsFound:  int32(result.EventsFound),
-		EventsNew:    int32(result.EventsCreated),
-		EventsDup:    int32(result.EventsDuplicate),
-		EventsFailed: int32(result.EventsFailed),
+		EventsFound:  pgtype.Int4{Int32: int32(result.EventsFound), Valid: true},
+		EventsNew:    pgtype.Int4{Int32: int32(result.EventsCreated), Valid: true},
+		EventsDup:    pgtype.Int4{Int32: int32(result.EventsDuplicate), Valid: true},
+		EventsFailed: pgtype.Int4{Int32: int32(result.EventsFailed), Valid: true},
 	}
 	if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
 		s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")

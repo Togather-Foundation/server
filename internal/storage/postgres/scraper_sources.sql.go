@@ -291,15 +291,16 @@ type ListScraperSourcesWithLatestRunRow struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	LastRunStartedAt    pgtype.Timestamptz `json:"last_run_started_at"`
 	LastRunCompletedAt  pgtype.Timestamptz `json:"last_run_completed_at"`
-	LastRunStatus       string             `json:"last_run_status"`
-	LastRunEventsFound  int32              `json:"last_run_events_found"`
-	LastRunEventsNew    int32              `json:"last_run_events_new"`
-	LastRunEventsDup    int32              `json:"last_run_events_dup"`
-	LastRunEventsFailed int32              `json:"last_run_events_failed"`
+	LastRunStatus       pgtype.Text        `json:"last_run_status"`
+	LastRunEventsFound  pgtype.Int4        `json:"last_run_events_found"`
+	LastRunEventsNew    pgtype.Int4        `json:"last_run_events_new"`
+	LastRunEventsDup    pgtype.Int4        `json:"last_run_events_dup"`
+	LastRunEventsFailed pgtype.Int4        `json:"last_run_events_failed"`
 	LastRunErrorMessage pgtype.Text        `json:"last_run_error_message"`
 }
 
 // List all scraper sources with their most recent run stats embedded.
+// last_run_* columns are nullable (NULL when a source has never been run).
 func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error) {
 	rows, err := q.db.Query(ctx, listScraperSourcesWithLatestRun, enabled)
 	if err != nil {

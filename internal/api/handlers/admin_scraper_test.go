@@ -91,13 +91,13 @@ func TestAdminScraperHandler_ListSources(t *testing.T) {
 			Enabled:             true,
 			Schedule:            "daily",
 			License:             "CC0",
-			LastRunStatus:       "completed",
+			LastRunStatus:       pgtype.Text{String: "completed", Valid: true},
 			LastRunStartedAt:    nowTs(),
 			LastRunCompletedAt:  nowTs(),
-			LastRunEventsFound:  10,
-			LastRunEventsNew:    5,
-			LastRunEventsDup:    3,
-			LastRunEventsFailed: 2,
+			LastRunEventsFound:  pgtype.Int4{Int32: 10, Valid: true},
+			LastRunEventsNew:    pgtype.Int4{Int32: 5, Valid: true},
+			LastRunEventsDup:    pgtype.Int4{Int32: 3, Valid: true},
+			LastRunEventsFailed: pgtype.Int4{Int32: 2, Valid: true},
 		}
 	}
 
@@ -171,9 +171,9 @@ func TestAdminScraperHandler_ListSourceRuns(t *testing.T) {
 			Tier:        1,
 			StartedAt:   nowTs(),
 			CompletedAt: nowTs(),
-			Status:      status,
-			EventsFound: 10,
-			EventsNew:   5,
+			Status:      pgtype.Text{String: status, Valid: true},
+			EventsFound: pgtype.Int4{Int32: 10, Valid: true},
+			EventsNew:   pgtype.Int4{Int32: 5, Valid: true},
 		}
 	}
 

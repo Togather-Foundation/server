@@ -71,18 +71,28 @@ type scraperRunResponse struct {
 // toScraperSourceResponse converts a ListScraperSourcesWithLatestRunRow to a scraperSourceResponse.
 func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) scraperSourceResponse {
 	resp := scraperSourceResponse{
-		ID:                  row.ID,
-		Name:                row.Name,
-		URL:                 row.Url,
-		Tier:                row.Tier,
-		Schedule:            row.Schedule,
-		License:             row.License,
-		Enabled:             row.Enabled,
-		LastRunStatus:       row.LastRunStatus,
-		LastRunEventsFound:  row.LastRunEventsFound,
-		LastRunEventsNew:    row.LastRunEventsNew,
-		LastRunEventsDup:    row.LastRunEventsDup,
-		LastRunEventsFailed: row.LastRunEventsFailed,
+		ID:       row.ID,
+		Name:     row.Name,
+		URL:      row.Url,
+		Tier:     row.Tier,
+		Schedule: row.Schedule,
+		License:  row.License,
+		Enabled:  row.Enabled,
+	}
+	if row.LastRunStatus.Valid {
+		resp.LastRunStatus = row.LastRunStatus.String
+	}
+	if row.LastRunEventsFound.Valid {
+		resp.LastRunEventsFound = row.LastRunEventsFound.Int32
+	}
+	if row.LastRunEventsNew.Valid {
+		resp.LastRunEventsNew = row.LastRunEventsNew.Int32
+	}
+	if row.LastRunEventsDup.Valid {
+		resp.LastRunEventsDup = row.LastRunEventsDup.Int32
+	}
+	if row.LastRunEventsFailed.Valid {
+		resp.LastRunEventsFailed = row.LastRunEventsFailed.Int32
 	}
 	if row.LastRunStartedAt.Valid {
 		t := row.LastRunStartedAt.Time
@@ -114,15 +124,25 @@ func scraperSourceFromDB(s postgres.ScraperSource) scraperSourceResponse {
 // toScraperRunResponse converts a postgres.ScraperRun to a scraperRunResponse.
 func toScraperRunResponse(run postgres.ScraperRun) scraperRunResponse {
 	resp := scraperRunResponse{
-		ID:           run.ID,
-		SourceName:   run.SourceName,
-		SourceURL:    run.SourceUrl,
-		Tier:         run.Tier,
-		Status:       run.Status,
-		EventsFound:  run.EventsFound,
-		EventsNew:    run.EventsNew,
-		EventsDup:    run.EventsDup,
-		EventsFailed: run.EventsFailed,
+		ID:         run.ID,
+		SourceName: run.SourceName,
+		SourceURL:  run.SourceUrl,
+		Tier:       run.Tier,
+	}
+	if run.Status.Valid {
+		resp.Status = run.Status.String
+	}
+	if run.EventsFound.Valid {
+		resp.EventsFound = run.EventsFound.Int32
+	}
+	if run.EventsNew.Valid {
+		resp.EventsNew = run.EventsNew.Int32
+	}
+	if run.EventsDup.Valid {
+		resp.EventsDup = run.EventsDup.Int32
+	}
+	if run.EventsFailed.Valid {
+		resp.EventsFailed = run.EventsFailed.Int32
 	}
 	if run.StartedAt.Valid {
 		t := run.StartedAt.Time
