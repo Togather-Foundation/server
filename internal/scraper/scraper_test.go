@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -293,6 +294,41 @@ follow_event_urls: true
 		t.Errorf("ingest body does not contain full description\nbody: %s", ingestBody)
 	}
 }
+func TestScrapeOptions_HTTPClient_RequestTimeout(t *testing.T) {
+	fallback := 30 * time.Second
+
+	tests := []struct {
+		name        string
+		opts        ScrapeOptions
+		wantTimeout time.Duration
+	}{
+		{
+			name:        "zero RequestTimeout uses fallback",
+			opts:        ScrapeOptions{},
+			wantTimeout: fallback,
+		},
+		{
+			name:        "non-zero RequestTimeout overrides fallback",
+			opts:        ScrapeOptions{RequestTimeout: 60 * time.Second},
+			wantTimeout: 60 * time.Second,
+		},
+		{
+			name:        "non-zero RequestTimeout smaller than fallback",
+			opts:        ScrapeOptions{RequestTimeout: 5 * time.Second},
+			wantTimeout: 5 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := tt.opts.HTTPClient(fallback)
+			if client.Timeout != tt.wantTimeout {
+				t.Errorf("HTTPClient timeout = %v, want %v", client.Timeout, tt.wantTimeout)
+			}
+		})
+	}
+}
+
 func TestScrapeAll(t *testing.T) {
 	pageSrv := serveFile(t, "single_event.html")
 

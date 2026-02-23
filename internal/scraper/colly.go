@@ -36,6 +36,15 @@ func (e *CollyExtractor) SetTransport(t http.RoundTripper) {
 	e.transport = t
 }
 
+// SetRateLimit overrides the per-domain request delay used by the Colly
+// collector. Call before ScrapeWithSelectors. A zero or negative value is
+// ignored (keeps the default 1-second delay).
+func (e *CollyExtractor) SetRateLimit(d time.Duration) {
+	if d > 0 {
+		e.rateLimit = d
+	}
+}
+
 // ScrapeWithSelectors fetches config.URL and all linked pages (up to
 // config.MaxPages), applying the CSS selectors in config.Selectors to collect
 // RawEvents. It respects robots.txt (Colly default) and applies per-domain
