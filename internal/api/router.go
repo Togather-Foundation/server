@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -58,7 +59,7 @@ type RouterWithClient struct {
 	UsageRecorder *developers.UsageRecorder
 }
 
-func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string) *RouterWithClient {
+func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string, shutdownCtx ...context.Context) *RouterWithClient {
 	repo, err := postgres.NewRepository(pool)
 	if err != nil {
 		logger.Error().Err(err).Msg("repository init failed")
@@ -328,6 +329,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 	if scraperSvc != nil {
 		adminScraperHandler.Scraper = scraperSvc
+	}
+	// Propagate shutdown context so the background TriggerScrape goroutine is
+	// cancelled during graceful server drain (srv-aupkq).
+	if len(shutdownCtx) > 0 && shutdownCtx[0] != nil {
+		adminScraperHandler.ShutdownCtx = shutdownCtx[0]
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)

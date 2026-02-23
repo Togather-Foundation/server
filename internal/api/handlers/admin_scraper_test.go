@@ -48,6 +48,14 @@ type fakeScraperQueries struct {
 	configSetErr error
 }
 
+// blockingScraperFunc is a function type that implements scraperIface.
+// Useful for constructing inline test doubles that block until cancelled.
+type blockingScraperFunc func(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error)
+
+func (f blockingScraperFunc) ScrapeSource(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
+	return f(ctx, sourceName, opts)
+}
+
 // fakeScraper is a test double for scraperIface.
 type fakeScraper struct {
 	err  error         // error to return from ScrapeSource
@@ -347,6 +355,47 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 
 func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
 	t.Parallel()
+
+	t.Run("cancels goroutine context when ShutdownCtx is cancelled", func(t *testing.T) {
+		t.Parallel()
+
+		// blockingScraper blocks until its context is cancelled, then records it.
+		type blockResult struct {
+			ctxErr error
+		}
+		resultCh := make(chan blockResult, 1)
+		var blockScraper scraperIface = blockingScraperFunc(func(ctx context.Context, _ string, _ scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
+			<-ctx.Done()
+			resultCh <- blockResult{ctxErr: ctx.Err()}
+			return scraper.ScrapeResult{}, ctx.Err()
+		})
+
+		shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+		q := &fakeScraperQueries{}
+		h := &AdminScraperHandler{
+			Queries:     q,
+			Logger:      zerolog.Nop(),
+			Env:         "test",
+			Scraper:     blockScraper,
+			ShutdownCtx: shutdownCtx,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
+		req.SetPathValue("name", "my-source")
+		w := httptest.NewRecorder()
+		h.TriggerScrape(w, req)
+
+		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
+
+		// Cancel the shutdown context and verify the goroutine's ctx.Err() is set.
+		shutdownCancel()
+		select {
+		case res := <-resultCh:
+			assert.ErrorIs(t, res.ctxErr, context.Canceled)
+		case <-time.After(5 * time.Second):
+			t.Fatal("goroutine did not respond to shutdown context cancellation within timeout")
+		}
+	})
 
 	t.Run("returns 202 and launches goroutine on success", func(t *testing.T) {
 		t.Parallel()
