@@ -38,6 +38,134 @@ func (m *mockScraper) ScrapeSource(ctx context.Context, sourceName string, opts 
 }
 
 // ---------------------------------------------------------------------------
+// sourceJitterOffset tests
+// ---------------------------------------------------------------------------
+
+func TestSourceJitterOffset_InWindow(t *testing.T) {
+	window := 2 * time.Hour
+	tests := []string{"source-a", "source-b", "toronto-events", "weekly-arts", ""}
+
+	for _, name := range tests {
+		offset := sourceJitterOffset(name, window)
+		if offset < 0 {
+			t.Errorf("sourceJitterOffset(%q): got negative offset %v", name, offset)
+		}
+		if offset >= window {
+			t.Errorf("sourceJitterOffset(%q): offset %v >= window %v", name, offset, window)
+		}
+	}
+}
+
+func TestSourceJitterOffset_Deterministic(t *testing.T) {
+	window := 2 * time.Hour
+	names := []string{"source-a", "source-b", "toronto-events"}
+
+	for _, name := range names {
+		first := sourceJitterOffset(name, window)
+		second := sourceJitterOffset(name, window)
+		if first != second {
+			t.Errorf("sourceJitterOffset(%q): not deterministic: %v vs %v", name, first, second)
+		}
+	}
+}
+
+func TestSourceJitterOffset_DifferentNames(t *testing.T) {
+	window := 2 * time.Hour
+	// Most distinct names should produce different offsets (hash collision unlikely).
+	a := sourceJitterOffset("source-alpha", window)
+	b := sourceJitterOffset("source-beta", window)
+	if a == b {
+		t.Errorf("sourceJitterOffset: expected different offsets for different names, both got %v", a)
+	}
+}
+
+func TestSourceJitterOffset_ZeroWindow(t *testing.T) {
+	offset := sourceJitterOffset("any-source", 0)
+	if offset != 0 {
+		t.Errorf("sourceJitterOffset with zero window: expected 0, got %v", offset)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// staggeredSchedule tests
+// ---------------------------------------------------------------------------
+
+func TestStaggeredSchedule_Next_StrictlyAfterCurrent(t *testing.T) {
+	s := &staggeredSchedule{
+		interval: 24 * time.Hour,
+		offset:   30 * time.Minute,
+	}
+
+	// current is exactly at the slot (periodStart + offset)
+	base := time.Date(2026, 1, 1, 0, 30, 0, 0, time.UTC) // exactly periodStart+30min
+	next := s.Next(base)
+	if !next.After(base) {
+		t.Errorf("Next(%v) = %v, want strictly after current", base, next)
+	}
+}
+
+func TestStaggeredSchedule_Next_CorrectPeriod(t *testing.T) {
+	interval := 24 * time.Hour
+	offset := 30 * time.Minute
+
+	s := &staggeredSchedule{interval: interval, offset: offset}
+
+	// At 01:00 UTC — the slot for the current day (00:30) has passed,
+	// so next should be tomorrow at 00:30.
+	current := time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC)
+	next := s.Next(current)
+
+	expected := time.Date(2026, 1, 2, 0, 30, 0, 0, time.UTC)
+	if !next.Equal(expected) {
+		t.Errorf("Next(%v) = %v, want %v", current, next, expected)
+	}
+}
+
+func TestStaggeredSchedule_Next_BeforeSlot(t *testing.T) {
+	interval := 24 * time.Hour
+	offset := 2 * time.Hour
+
+	s := &staggeredSchedule{interval: interval, offset: offset}
+
+	// At 01:00 UTC — the slot for the current day (02:00) is still ahead.
+	current := time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC)
+	next := s.Next(current)
+
+	expected := time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC)
+	if !next.Equal(expected) {
+		t.Errorf("Next(%v) = %v, want %v", current, next, expected)
+	}
+}
+
+func TestStaggeredSchedule_Next_DifferentOffsetsDifferentSlots(t *testing.T) {
+	interval := 24 * time.Hour
+	window := 2 * time.Hour
+
+	offsetA := sourceJitterOffset("source-alpha", window)
+	offsetB := sourceJitterOffset("source-beta", window)
+
+	sA := &staggeredSchedule{interval: interval, offset: offsetA}
+	sB := &staggeredSchedule{interval: interval, offset: offsetB}
+
+	// Use midnight as a common base; both next times should be within same day
+	// but at different slots.
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second) // just before midnight
+	nextA := sA.Next(base)
+	nextB := sB.Next(base)
+
+	if nextA.Equal(nextB) {
+		t.Errorf("expected different next times for different source offsets, both got %v", nextA)
+	}
+	// Both should be within the jitter window of midnight (first period).
+	if nextA.Sub(base) > interval {
+		t.Errorf("nextA %v too far from base %v", nextA, base)
+	}
+	if nextB.Sub(base) > interval {
+		t.Errorf("nextB %v too far from base %v", nextB, base)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // NewPeriodicJobsFromSources tests
 // ---------------------------------------------------------------------------
 
