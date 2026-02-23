@@ -1,0 +1,9 @@
+name: "xp-game-summit"
+# Tier 0 (JSON-LD). Game dev conference events, 3 events confirmed 2026-02-21.
+url: "https://xpgamesummit.com/programming/"
+tier: 0
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

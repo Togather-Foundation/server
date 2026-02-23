@@ -1,0 +1,16 @@
+name: "gardiner-museum"
+url: "https://www.gardinermuseum.on.ca/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+# Organization match: no match found in database
+selectors:
+  event_list: "article[role=item]"
+  name: ".article-title h3"
+  start_date: ".article-subtitle h4"
+  description: ".article-paragraph"
+  url: ".article-link a"
+  image: ".article-image img"

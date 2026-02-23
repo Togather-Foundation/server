@@ -1,0 +1,11 @@
+name: "toronto-society-of-architects"
+# Toronto Society of Architects. WordPress + Alpine.js event filtering UI.
+# Event listing is loaded via AJAX (Alpine.js x-data component).
+# Disabled until Tier 2 (Rod) implemented (srv-h264z).
+url: "https://torontosocietyofarchitects.ca/events/"
+tier: 2
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false
+notes: "WordPress + Alpine.js. Events filtered/loaded via AJAX. Tier 2 required."

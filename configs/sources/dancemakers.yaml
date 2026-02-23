@@ -1,0 +1,14 @@
+name: "dancemakers"
+# Tier 1 (Colly CSS). Custom event-item pattern, server-rendered. 7 events confirmed 2026-02-21.
+url: "https://dancemakers.org/upcoming-events/"
+tier: 1
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "a.event-item"
+  name: ".event-header p"
+  start_date: "span.event-date"
+  url: "a.event-item"

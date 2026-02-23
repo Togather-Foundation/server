@@ -97,9 +97,9 @@ func TestNeedsReview(t *testing.T) {
 				cfg = config.ValidationConfig{RequireImage: true}
 			} // else: zero-value config with RequireImage: false
 
-			result := needsReview(tt.input, tt.linkStatuses, cfg)
+			result := eventNeedsReview(tt.input, tt.linkStatuses, cfg)
 			if result != tt.expected {
-				t.Errorf("needsReview() = %v, want %v", result, tt.expected)
+				t.Errorf("eventNeedsReview() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

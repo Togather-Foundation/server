@@ -1,0 +1,15 @@
+name: "interaccess"
+# Tier 1 (Colly CSS selectors). Webflow CMS — 22 events confirmed 2026-02-21.
+# Cards are server-rendered; date is text "Feb 27, 2026" (no datetime attr).
+url: "https://www.interaccess.org/events"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "a.card.is-generic"
+  name: "h3.heading-style-h3.is-card-title"
+  start_date: "div.text-size-small.is-inline-block"
+  url: "a.card.is-generic"

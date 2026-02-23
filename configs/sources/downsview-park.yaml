@@ -1,0 +1,17 @@
+name: "downsview-park"
+# Tier 1 (Colly CSS selectors). Downsview Park, 32 events confirmed 2026-02-21.
+# Drupal site with Drupal Views event cards (article.node--type-event).
+# Note: www.downsviewpark.ca redirects to downsviewpark.ca — use non-www URL.
+# Selectors validated with `server scrape test`.
+url: "https://downsviewpark.ca/events"
+tier: 1
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.node--type-event"
+  name: "h3 .field--name-title"
+  start_date: ".event-start-date"
+  url: "a[href]"

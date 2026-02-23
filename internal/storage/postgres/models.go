@@ -325,6 +325,11 @@ type KnowledgeGraphAuthority struct {
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 }
 
+type OrgScraperSource struct {
+	OrganizationID  pgtype.UUID `json:"organization_id"`
+	ScraperSourceID int64       `json:"scraper_source_id"`
+}
+
 type Organization struct {
 	ID               pgtype.UUID        `json:"id"`
 	Ulid             string             `json:"ulid"`
@@ -394,6 +399,11 @@ type Place struct {
 	MergedIntoID            pgtype.UUID        `json:"merged_into_id"`
 }
 
+type PlaceScraperSource struct {
+	PlaceID         pgtype.UUID `json:"place_id"`
+	ScraperSourceID int64       `json:"scraper_source_id"`
+}
+
 type PlaceTombstone struct {
 	ID              pgtype.UUID        `json:"id"`
 	PlaceID         pgtype.UUID        `json:"place_id"`
@@ -434,6 +444,50 @@ type ReverseGeocodingCache struct {
 	HitCount        int32              `json:"hit_count"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+}
+
+type ScraperConfig struct {
+	ID                    int32              `json:"id"`
+	AutoScrape            bool               `json:"auto_scrape"`
+	MaxConcurrentSources  int32              `json:"max_concurrent_sources"`
+	RequestTimeoutSeconds int32              `json:"request_timeout_seconds"`
+	RetryMaxAttempts      int32              `json:"retry_max_attempts"`
+	MaxBatchSize          int32              `json:"max_batch_size"`
+	RateLimitMs           int32              `json:"rate_limit_ms"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ScraperRun struct {
+	ID           int64              `json:"id"`
+	SourceName   string             `json:"source_name"`
+	SourceUrl    string             `json:"source_url"`
+	Tier         int32              `json:"tier"`
+	StartedAt    pgtype.Timestamptz `json:"started_at"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	Status       string             `json:"status"`
+	EventsFound  int32              `json:"events_found"`
+	EventsNew    int32              `json:"events_new"`
+	EventsDup    int32              `json:"events_dup"`
+	EventsFailed int32              `json:"events_failed"`
+	ErrorMessage pgtype.Text        `json:"error_message"`
+	Metadata     []byte             `json:"metadata"`
+}
+
+type ScraperSource struct {
+	ID            int64              `json:"id"`
+	Name          string             `json:"name"`
+	Url           string             `json:"url"`
+	Tier          int32              `json:"tier"`
+	Schedule      string             `json:"schedule"`
+	TrustLevel    int32              `json:"trust_level"`
+	License       string             `json:"license"`
+	Enabled       bool               `json:"enabled"`
+	MaxPages      int32              `json:"max_pages"`
+	Selectors     []byte             `json:"selectors"`
+	Notes         pgtype.Text        `json:"notes"`
+	LastScrapedAt pgtype.Timestamptz `json:"last_scraped_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Source struct {

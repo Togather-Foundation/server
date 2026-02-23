@@ -1,0 +1,11 @@
+name: "burdock-brewery"
+# Tier 2 (DISABLED). Shopify + Showpass iframe + InLight Labs Events Calendar JS embed.
+# No static event data in page source. Headless browser required.
+# NOTE: Showpass public API at https://www.showpass.com/api/public/events/?venue=17330
+#       may be a viable alternative data source without T2.
+url: "https://burdockbrewery.com/pages/music-hall"
+tier: 2
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false

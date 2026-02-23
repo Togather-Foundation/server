@@ -1,0 +1,10 @@
+name: "canadian-stage"
+# Disabled: HTTP 302 redirect loop, likely a React/Next.js SPA 2026-02-21.
+# Needs Tier 2 (Rod) for JS rendering.
+url: "https://www.canadianstage.com/shows-events/"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: false
+max_pages: 3

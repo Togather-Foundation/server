@@ -1,0 +1,11 @@
+name: "the-danforth"
+# Tier 0 (JSON-LD). Next.js/Vercel site, 36 MusicEvents confirmed in HTML 2026-02-21.
+# Note: scraper currently returns "No events found" due to a compression/encoding issue
+# with Next.js SSR pages; JSON-LD is present in raw HTML. Tracked in bug report.
+url: "https://www.thedanforth.com/shows"
+tier: 0
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

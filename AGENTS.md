@@ -31,6 +31,7 @@ IMPORTANT:
 - `server cleanup` — Clean up deployment artifacts (Docker images, snapshots, logs)
 - `server api-key` — API key management (create, list, revoke)
 - `server developer` — Developer account management (invite, list, deactivate)
+- `server scrape` — Scrape events from URLs or configured sources (url, list, source, all); `source <name>` accepts `--dry-run` to display extracted events without submitting
 - `server reconcile` — Bulk reconciliation against knowledge graphs (places, organizations, all)
 - `server webfiles` — Generate robots.txt and sitemap.xml for deployment
 - `server version` — Print version information
@@ -48,6 +49,7 @@ internal/auth/        — Authentication (JWT, API keys)
 internal/config/      — Configuration and logging setup
 internal/jobs/        — River background job workers
 internal/jsonld/      — JSON-LD processing
+internal/scraper/     — Two-tier event scraper (JSON-LD + Colly CSS selectors)
 internal/kg/          — Knowledge graph reconciliation (Artsdata adapter)
 internal/validation/  — Input validation
 web/                  — Frontend/web assets
@@ -199,7 +201,7 @@ AGENT_SESSION=session2 scripts/agent-run.sh make lint
 ```
 
 Output files live in `.agent-output/<session-id>/` and can be searched:
-- Use `Grep` to search for specific errors in the log files
+- Use `Grep` or `rg` to search for specific errors in the log files
 - Use `Read` to view sections of the full output
 - File paths are reported in the summary output
 

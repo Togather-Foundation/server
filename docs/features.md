@@ -63,6 +63,22 @@ Long-running tasks handled by the River transactional job queue.
 
 ---
 
+## Integrated Event Scraper
+
+A two-tier web scraper for automatically extracting events from arts and culture websites.
+
+- **Tier 0 — JSON-LD extraction** — zero-config per site; fetches page, finds `<script type="application/ld+json">` Event blocks, normalises all schema.org variants (`@graph`, `ItemList`, `EventSeries`, arrays, single objects)
+- **Tier 1 — Colly CSS selectors** — for sites without reliable JSON-LD; per-site YAML config specifies CSS selectors; handles pagination
+- **Source configs** — community-contributed YAML files in `configs/sources/`; validate with `server scrape list`
+- **robots.txt compliance** — Tier 0 checks manually; Tier 1 via Colly native support
+- **Transparent User-Agent** — `Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)`
+- **Run tracking** — each scrape recorded in `scraper_runs` table with status, timing, and event counts
+- **SEL-native submission** — events submitted via batch ingest API, so dedup/reconciliation/provenance run automatically
+
+See [integration/scraper.md](integration/scraper.md) for usage and configuration details.
+
+---
+
 ## Knowledge Graph Integration
 
 - **Artsdata reconciliation** — match and link local records to Artsdata entities via their SPARQL/API
@@ -140,6 +156,7 @@ Operator tools for managing the node.
 | `server ingest` | Ingest events from a JSON file |
 | `server events` | Query events from a running SEL node |
 | `server generate` | Generate test events from fixtures |
+| `server scrape` | Scrape events from URLs or configured sources (url, list, source, all) |
 | `server reconcile` | Bulk-reconcile records against knowledge graphs |
 | `server snapshot` | Database backup management (create, list, cleanup) |
 | `server healthcheck` | Health monitoring with blue-green slot support and watch mode |

@@ -1,0 +1,17 @@
+name: "opera-atelier"
+# Tier 1 (Colly CSS selectors). Opera Atelier baroque opera company, 3 productions confirmed 2026-02-21.
+# Seasonal shows listed on homepage in div.shows-block layout-columns-2 sections.
+# Selectors validated with `server scrape test`.
+url: "https://www.operaatelier.com/"
+tier: 1
+schedule: "weekly"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.shows-block .layout-columns-2"
+  name: "h2 a"
+  start_date: ".date"
+  location: ".venue"
+  url: "h2 a"

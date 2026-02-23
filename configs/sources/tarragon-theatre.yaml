@@ -1,0 +1,18 @@
+name: "tarragon-theatre"
+url: "https://tarragontheatre.com/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+# Organization match: no match found in database
+# Note: Images are lazy-loaded (data-src); the src attribute returns a placeholder SVG.
+# No per-item dates on the listing page — dates are on detail pages only.
+# Events will be skipped by the normaliser (startDate required); this config provides
+# URL/name discovery only. A Tier 2 follow-up scraper on detail pages could extract dates.
+# URLs point to /plays/ paths (season productions), not /events/.
+selectors:
+  event_list: "div.nectar-post-grid-item[data-post-id]"
+  name: "h3.post-heading a span"
+  url: ".nectar-post-grid-link"

@@ -1,0 +1,10 @@
+name: "crows-theatre"
+# Disabled: site times out consistently (context deadline exceeded) on both scrape url and inspect.
+# Likely slow server or bot protection; needs manual investigation or Tier 2 (Rod).
+url: "https://crowstheatre.com/shows-events/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 1

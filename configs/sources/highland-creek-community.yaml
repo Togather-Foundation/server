@@ -1,0 +1,9 @@
+name: "highland-creek-community"
+# Tier 0 (JSON-LD). Tribe Events WordPress, JSON-LD blocks on events page. 1 event confirmed 2026-02-21.
+url: "https://myhighlandcreek.org/events/"
+tier: 0
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 2

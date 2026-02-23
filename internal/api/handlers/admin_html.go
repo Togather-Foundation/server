@@ -366,6 +366,31 @@ func (h *AdminHTMLHandler) ServeOrganizationsList(w http.ResponseWriter, r *http
 	}
 }
 
+// ServeScraperSources renders the scraper source management page (srv-5127b).
+func (h *AdminHTMLHandler) ServeScraperSources(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "scraper_sources"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Scraper Sources - SEL Admin",
+		"ActivePage": "scraper",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "scraper_sources.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "scraper_sources.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
 // AdminHTMLPlaceholder returns a basic handler for admin HTML routes.
 // Deprecated: Use AdminHTMLHandler methods instead
 func AdminHTMLPlaceholder(_ string) http.HandlerFunc {

@@ -1,0 +1,9 @@
+name: "mooredale-concerts"
+# Tier 0 (JSON-LD). WordPress tribe-events plugin with Event schema, 7 events confirmed 2026-02-21.
+url: "https://www.mooredaleconcerts.com/events/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2

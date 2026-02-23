@@ -1,0 +1,18 @@
+name: "wavelength-music"
+# Wavelength Music (Toronto). Custom WordPress theme with server-rendered event cards.
+# 15 events confirmed on /events/upcoming-events/ 2026-02-21.
+# Selectors: div.events-upcoming-item -> p.events-upcoming-title a (name),
+#            p.events-upcoming-event_start_time (date text), no datetime attr.
+url: "https://www.wavelengthmusic.ca/events/upcoming-events/"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.events-upcoming-item"
+  name: "p.events-upcoming-title a"
+  start_date: "p.events-upcoming-event_start_time"
+  location: "p.events-upcoming-event_venue_name"
+  url: "p.events-upcoming-title a"

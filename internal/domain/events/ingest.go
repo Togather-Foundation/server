@@ -121,7 +121,20 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		Msg("Ingest: After appendQualityWarnings")
 
 	// Check if review is needed due to validation warnings OR metadata quality issues
-	needsReview := len(warnings) > 0 || needsReview(validated, nil, s.validationConfig)
+	needsReview := len(warnings) > 0 || eventNeedsReview(validated, nil, s.validationConfig)
+
+	// nearDuplicateOfID holds the UUID of the first near-duplicate candidate's event record.
+	// Used to cross-link review queue entries between the new event and existing matched events.
+	var nearDuplicateOfID *string
+	// nearDuplicateCandidates stores candidates found during Layer 2 detection.
+	// Actual flagging is deferred until after the new event is created (to use its UUID as cross-link).
+	var nearDuplicateCandidates []NearDuplicateCandidate
+
+	// Honour scraper-set lifecycle hint: "review" forces pending_review regardless
+	// of other quality checks (e.g., truncated description flagged before fetching).
+	if input.LifecycleState == "review" {
+		needsReview = true
+	}
 
 	var sourceID string
 	if validated.Source != nil && validated.Source.URL != "" {
@@ -486,6 +499,9 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 						},
 					})
 					needsReview = true
+					// Store candidates for cross-linking review entries after the new event is created
+					// (we need the new event's UUID, which is not available until after txRepo.Create).
+					nearDuplicateCandidates = candidates
 				}
 			}
 		}
@@ -609,6 +625,12 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		}
 	}()
 
+	// Re-evaluate lifecycle state: needsReview may have been updated by near-duplicate detection
+	// (Layer 2) or other checks that run after the initial params were built.
+	if needsReview {
+		params.LifecycleState = "pending_review"
+	}
+
 	event, err := txRepo.Create(ctx, params)
 	if err != nil {
 		return nil, err
@@ -620,6 +642,16 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 	if err := s.recordSourceWithRepo(ctx, txRepo, event, validated, sourceID); err != nil {
 		return nil, err
+	}
+
+	// Capture first near-duplicate candidate's UUID for cross-linking in the new event's
+	// review entry (created below inside the transaction).
+	if len(nearDuplicateCandidates) > 0 {
+		existingEvent, fetchErr := s.repo.GetByULID(ctx, nearDuplicateCandidates[0].ULID)
+		if fetchErr == nil {
+			existingID := existingEvent.ID
+			nearDuplicateOfID = &existingID
+		}
 	}
 
 	// Create review queue entry if needed
@@ -663,15 +695,16 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 
 		startTime, endTime := parseEventTimes(validated)
 		reviewEntry, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-			EventID:           event.ID, // Use UUID, not ULID
-			OriginalPayload:   originalJSON,
-			NormalizedPayload: normalizedJSON,
-			Warnings:          warningsJSON,
-			SourceID:          sourceIDPtr,
-			SourceExternalID:  externalID,
-			DedupHash:         dedupHashPtr,
-			EventStartTime:    startTime,
-			EventEndTime:      endTime,
+			EventID:            event.ID, // Use UUID, not ULID
+			OriginalPayload:    originalJSON,
+			NormalizedPayload:  normalizedJSON,
+			Warnings:           warningsJSON,
+			SourceID:           sourceIDPtr,
+			SourceExternalID:   externalID,
+			DedupHash:          dedupHashPtr,
+			EventStartTime:     startTime,
+			EventEndTime:       endTime,
+			DuplicateOfEventID: nearDuplicateOfID,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create review queue entry: %w", err)
@@ -693,6 +726,68 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	// Commit transaction - all operations succeeded
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	// Flag near-duplicate existing events for review AFTER the transaction commits.
+	// This must happen post-commit because the review queue entry for existing events
+	// cross-references the new event's UUID via duplicate_of_event_id (FK constraint).
+	// Non-critical: errors are logged and skipped — the new event is already committed.
+	if len(nearDuplicateCandidates) > 0 {
+		pendingState := "pending_review"
+		for _, c := range nearDuplicateCandidates {
+			existingEvent, fetchErr := s.repo.GetByULID(ctx, c.ULID)
+			if fetchErr != nil {
+				log.Warn().Err(fetchErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to fetch existing event for review flagging, skipping")
+				continue
+			}
+
+			// Only flag events that are currently published (don't re-flag already-pending or closed events).
+			if existingEvent.LifecycleState == "published" {
+				if _, updateErr := s.repo.UpdateEvent(ctx, c.ULID, UpdateEventParams{
+					LifecycleState: &pendingState,
+				}); updateErr != nil {
+					log.Warn().Err(updateErr).
+						Str("candidate_ulid", c.ULID).
+						Msg("Near-duplicate: failed to update existing event lifecycle state, skipping")
+				}
+			}
+
+			// Create review queue entry for the existing event, cross-linked to the new event's UUID.
+			existingStart, existingEnd := parseEventTimesFromEvent(existingEvent)
+			newEventID := event.ID
+
+			// Reconstruct payloads from stored event data so reviewers can compare.
+			reconstructedPayload, payloadErr := reconstructPayloadFromEvent(existingEvent)
+			if payloadErr != nil {
+				log.Warn().Err(payloadErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to reconstruct payload for existing event, using empty")
+				reconstructedPayload = []byte("{}")
+			}
+			existingWarnings, warnErr := nearDuplicateWarnings(existingEvent, event.ULID)
+			if warnErr != nil {
+				log.Warn().Err(warnErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to generate warnings for existing event, using empty")
+				existingWarnings = []byte("[]")
+			}
+
+			if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+				EventID:            existingEvent.ID,
+				OriginalPayload:    reconstructedPayload,
+				NormalizedPayload:  reconstructedPayload, // same as original for reconstructed data
+				EventStartTime:     existingStart,
+				EventEndTime:       existingEnd,
+				Warnings:           existingWarnings,
+				DuplicateOfEventID: &newEventID,
+			}); createErr != nil {
+				log.Warn().Err(createErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to create review queue entry for existing event (may already exist), skipping")
+			}
+		}
 	}
 
 	return &IngestResult{Event: event, NeedsReview: needsReview, Warnings: warnings, PlaceULID: placeULID, OrganizerULID: orgULID}, nil
@@ -977,7 +1072,7 @@ func parsePrice(s string) (*float64, error) {
 	return &v, nil
 }
 
-func needsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
+func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) bool {
 	// Use zero-value defaults if config is uninitialized (RequireImage defaults to false)
 	// This should never happen in practice since all callers pass initialized config,
 	// but defensive check prevents potential panics.
@@ -993,6 +1088,11 @@ func needsReview(input EventInput, linkStatuses map[string]int, validationConfig
 	}
 	if isTooFarFuture(input.StartDate, 730) {
 		return true
+	}
+	if !input.SkipMultiSessionCheck {
+		if isMulti, _ := IsMultiSessionEvent(input); isMulti {
+			return true
+		}
 	}
 	for _, code := range linkStatuses {
 		if code >= 400 {
@@ -1105,6 +1205,17 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 		})
 	}
 
+	// Check for multi-session / recurring events
+	if !input.SkipMultiSessionCheck {
+		if isMulti, reason := IsMultiSessionEvent(input); isMulti {
+			result = append(result, ValidationWarning{
+				Field:   "event",
+				Message: fmt.Sprintf("Event appears to be a multi-session or recurring event: %s. Review recommended to split into individual occurrences or confirm as single event.", reason),
+				Code:    "multi_session_likely",
+			})
+		}
+	}
+
 	// Check for failed link checks (if provided)
 	for url, code := range linkStatuses {
 		if code >= 400 {
@@ -1186,6 +1297,125 @@ func toJSON(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
+// reconstructPayloadFromEvent builds a JSON representation of a stored event
+// for use in review queue entries. This is NOT the original EventInput — it's
+// a "reconstructed snapshot" containing the event's current stored data so
+// reviewers can compare near-duplicate pairs side-by-side.
+func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
+	if event == nil {
+		return []byte("{}"), fmt.Errorf("reconstruct payload: nil event")
+	}
+	payload := map[string]any{
+		"_reconstructed": true, // flag so UI knows this isn't an original submission
+		"name":           event.Name,
+	}
+
+	if event.Description != "" {
+		payload["description"] = event.Description
+	}
+	if event.ImageURL != "" {
+		payload["image"] = event.ImageURL
+	}
+	if event.PublicURL != "" {
+		payload["url"] = event.PublicURL
+	}
+	if event.VirtualURL != "" {
+		payload["virtual_url"] = event.VirtualURL
+	}
+	if len(event.Keywords) > 0 {
+		payload["keywords"] = event.Keywords
+	}
+	if len(event.InLanguage) > 0 {
+		payload["in_language"] = event.InLanguage
+	}
+	if event.IsAccessibleForFree != nil {
+		payload["is_accessible_for_free"] = *event.IsAccessibleForFree
+	}
+	if event.AttendanceMode != "" {
+		payload["attendance_mode"] = event.AttendanceMode
+	}
+	if event.EventStatus != "" {
+		payload["event_status"] = event.EventStatus
+	}
+	if event.EventDomain != "" {
+		payload["event_domain"] = event.EventDomain
+	}
+
+	// Include occurrence data (schedule)
+	if len(event.Occurrences) > 0 {
+		occs := make([]map[string]any, 0, len(event.Occurrences))
+		for _, occ := range event.Occurrences {
+			o := map[string]any{
+				"start_date": occ.StartTime.Format(time.RFC3339),
+			}
+			if occ.EndTime != nil {
+				o["end_date"] = occ.EndTime.Format(time.RFC3339)
+			}
+			if occ.Timezone != "" {
+				o["timezone"] = occ.Timezone
+			}
+			if occ.DoorTime != nil {
+				o["door_time"] = occ.DoorTime.Format(time.RFC3339)
+			}
+			if occ.VirtualURL != nil && *occ.VirtualURL != "" {
+				o["virtual_url"] = *occ.VirtualURL
+			}
+			if occ.TicketURL != "" {
+				o["ticket_url"] = occ.TicketURL
+			}
+			if occ.PriceMin != nil {
+				o["price_min"] = *occ.PriceMin
+			}
+			if occ.PriceMax != nil {
+				o["price_max"] = *occ.PriceMax
+			}
+			if occ.PriceCurrency != "" {
+				o["price_currency"] = occ.PriceCurrency
+			}
+			if occ.Availability != "" {
+				o["availability"] = occ.Availability
+			}
+			occs = append(occs, o)
+		}
+		payload["occurrences"] = occs
+	}
+
+	// Include identifiers for cross-referencing
+	payload["ulid"] = event.ULID
+	payload["lifecycle_state"] = event.LifecycleState
+	if event.DedupHash != "" {
+		payload["dedup_hash"] = event.DedupHash
+	}
+	if event.PrimaryVenueID != nil {
+		payload["primary_venue_id"] = *event.PrimaryVenueID
+	}
+	if event.PrimaryVenueULID != nil {
+		payload["primary_venue_ulid"] = *event.PrimaryVenueULID
+	}
+	if event.OrganizerID != nil {
+		payload["organizer_id"] = *event.OrganizerID
+	}
+
+	return json.Marshal(payload)
+}
+
+// nearDuplicateWarnings generates validation warnings for an existing event
+// being flagged as a near-duplicate of a newly ingested event.
+func nearDuplicateWarnings(existingEvent *Event, newEventULID string) ([]byte, error) {
+	msg := fmt.Sprintf("This existing event may be a near-duplicate of newly ingested event %s", newEventULID)
+	if existingEvent != nil && existingEvent.Name != "" {
+		msg = fmt.Sprintf("Existing event %q may be a near-duplicate of newly ingested event %s", existingEvent.Name, newEventULID)
+	}
+	warnings := []ValidationWarning{
+		{
+			Field:   "near_duplicate",
+			Code:    "near_duplicate_of_new_event",
+			Message: msg,
+		},
+	}
+	return json.Marshal(warnings)
+}
+
 // parseEventTimes extracts start and end times from validated event input
 func parseEventTimes(input EventInput) (time.Time, *time.Time) {
 	start, err := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
@@ -1202,6 +1432,16 @@ func parseEventTimes(input EventInput) (time.Time, *time.Time) {
 	}
 
 	return start, end
+}
+
+// parseEventTimesFromEvent extracts start/end times from an existing Event's first occurrence.
+// Used when creating review queue entries for existing near-duplicate events.
+func parseEventTimesFromEvent(event *Event) (time.Time, *time.Time) {
+	if len(event.Occurrences) == 0 {
+		return time.Now(), nil
+	}
+	occ := event.Occurrences[0]
+	return occ.StartTime, occ.EndTime
 }
 
 // stringOrEmpty safely extracts string from pointer or returns empty string

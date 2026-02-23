@@ -111,8 +111,14 @@ func runServer() error {
 	defer dbCollector.Stop()
 	logger.Info().Msg("database metrics collector started")
 
+	// Create a shutdown context that is cancelled when the server receives SIGINT/SIGTERM.
+	// This is passed to long-running background goroutines (e.g. TriggerScrape) so they
+	// are aware of graceful drain and stop hitting a closing DB pool.
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	defer shutdownCancel()
+
 	// Create router with River client
-	routerWithClient := api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate)
+	routerWithClient := api.NewRouter(cfg, logger, pool, Version, GitCommit, BuildDate, shutdownCtx)
 
 	// Start River background job workers
 	// Workers process batch ingestion, deduplication, enrichment, and reconciliation jobs
@@ -170,7 +176,7 @@ func runServer() error {
 	}()
 
 	// Wait for shutdown signal
-	return gracefulShutdown(server, logger)
+	return gracefulShutdown(server, logger, shutdownCancel)
 }
 
 func loadConfig() (config.Config, error) {
@@ -235,12 +241,16 @@ VALUES (gen_random_uuid(), $1, $2, $3, 'admin', true, now())`
 	return nil
 }
 
-func gracefulShutdown(server *http.Server, logger zerolog.Logger) error {
+func gracefulShutdown(server *http.Server, logger zerolog.Logger, shutdownCancel context.CancelFunc) error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	<-stop
 	logger.Info().Msg("shutting down")
+
+	// Cancel the shutdown context immediately so background goroutines (e.g.
+	// TriggerScrape) stop before the DB pool closes.
+	shutdownCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

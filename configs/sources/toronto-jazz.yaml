@@ -1,0 +1,16 @@
+name: "toronto-jazz"
+# Tier 1 (Colly CSS selectors). Festival homepage ticketed shows, 4 events confirmed 2026-02-21.
+# Off-season count is low; spikes during festival (June).
+# No startDate: partial dates ("June 23") present in HTML but lack year — normaliser rejects them.
+# Needs tier-2 detail-page scraping or a date-normalisation improvement for year-less strings.
+url: "https://torontojazz.com/ticketed-performances/"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "div.artist-items"
+  name: "a.artist_item"
+  url: "a.artist_item"

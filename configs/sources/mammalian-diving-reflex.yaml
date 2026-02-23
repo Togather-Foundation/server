@@ -1,0 +1,11 @@
+name: "mammalian-diving-reflex"
+# Tier 2 (disabled). JS-required site (< 200 bytes returned without JS).
+# Mammalian Diving Reflex is a prominent Toronto performance arts organization.
+# Requires Rod headless browser (srv-h264z).
+url: "https://www.mammalian.ca/shows/"
+tier: 2
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 2

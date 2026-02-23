@@ -1,11 +1,99 @@
 package events
 
 import (
+	"fmt"
+	"html"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/microcosm-cc/bluemonday"
 )
+
+// multiSessionPatterns are compiled once at package level for efficiency.
+// They match title patterns indicating a multi-session course or recurring series.
+var multiSessionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\(\d+\s+sessions?\)`),  // "(6 sessions)", "(1 session)"
+	regexp.MustCompile(`(?i)\(\d+\s+weeks?\)`),     // "(4 weeks)", "(1 week)"
+	regexp.MustCompile(`(?i)\(\d+\s+classes?\)`),   // "(8 classes)", "(1 class)"
+	regexp.MustCompile(`(?i)\(\d+\s+workshops?\)`), // "(3 workshops)", "(1 workshop)"
+	regexp.MustCompile(`(?i)workshop series`),      // "Workshop Series"
+	regexp.MustCompile(`(?i)\bcourse\b`),           // "Course" (word boundary avoids "racecourse", "discourse")
+	regexp.MustCompile(`(?i)\bweekly\b`),           // "Weekly" (word boundary)
+}
+
+// strictHTML is a bluemonday policy that strips all HTML tags.
+// It is safe for concurrent use.
+var strictHTML = bluemonday.StrictPolicy()
+
+// cleanText strips all HTML tags and decodes HTML entities from s, then
+// collapses internal whitespace. This repairs content from CMSes (e.g.
+// WordPress) that embed HTML markup in JSON-LD name/description fields.
+// Some sources double-encode their HTML (e.g. &lt;p&gt; instead of <p>),
+// so we unescape entities first, then sanitize, to catch both forms.
+func cleanText(s string) string {
+	// First pass: decode entities so &lt;p&gt; becomes <p> before sanitizing.
+	s = html.UnescapeString(s)
+	// Strip all HTML tags (bluemonday uses a real parser — handles attributes,
+	// comments, CDATA, etc.). StrictPolicy produces plain text with no tags.
+	s = strictHTML.Sanitize(s)
+	// Second pass: decode any entities that were inside tag attributes and
+	// are now exposed after stripping (e.g. &amp; left in text nodes).
+	s = html.UnescapeString(s)
+	// Unescape WordPress/Tribe-Events-style backslash sequences that survive
+	// JSON parsing as literal two-character sequences. These arise because
+	// WordPress encodes apostrophes as \' and newlines as \n inside JSON-LD
+	// <script> tags using double-backslashes (\\' and \\n in the raw HTML),
+	// which are valid JSON escape sequences for a literal backslash followed
+	// by the next character. After JSON decoding we get the literal pair.
+	s = unescapeBackslashSequences(s)
+	// Collapse runs of whitespace (newlines, tabs, multiple spaces).
+	s = strings.Join(strings.Fields(s), " ")
+	return s
+}
+
+// unescapeBackslashSequences converts literal two-character backslash sequences
+// left by WordPress/Tribe Events JSON-LD encoding into their intended characters:
+//   - \' → '  (apostrophe)
+//   - \n → newline (collapsed to space by the caller's strings.Fields)
+//   - \r → carriage return (collapsed to space)
+//   - \t → tab (collapsed to space)
+//   - \\ → \ (double-backslash → single backslash)
+func unescapeBackslashSequences(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case '\'':
+				b.WriteByte('\'')
+				i++
+			case 'n':
+				b.WriteByte('\n')
+				i++
+			case 'r':
+				b.WriteByte('\r')
+				i++
+			case 't':
+				b.WriteByte('\t')
+				i++
+			case '\\':
+				b.WriteByte('\\')
+				i++
+			default:
+				b.WriteByte(s[i])
+			}
+		} else {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
 
 // normalizeURL fixes common URL issues in external data sources:
 // - Adds https:// prefix to URLs starting with "www."
@@ -97,8 +185,8 @@ var eventSubtypeDomains = map[string]string{
 // NormalizeEventInput trims and normalizes values for consistent storage and hashing.
 // Also auto-corrects common data quality issues like timezone errors and malformed URLs.
 func NormalizeEventInput(input EventInput) EventInput {
-	input.Name = strings.TrimSpace(input.Name)
-	input.Description = strings.TrimSpace(input.Description)
+	input.Name = cleanText(input.Name)
+	input.Description = cleanText(input.Description)
 	input.StartDate = strings.TrimSpace(input.StartDate)
 	input.EndDate = strings.TrimSpace(input.EndDate)
 	input.DoorTime = strings.TrimSpace(input.DoorTime)
@@ -268,8 +356,7 @@ func normalizeStringSlice(values []string, lower bool) []string {
 	return result
 }
 
-// correctEndDateTimezoneError detects and fixes common timezone conversion errors
-// where endDate appears chronologically before startDate.
+// correctEndDateTimezoneError detects and fixes common timezone conversion errors// where endDate appears chronologically before startDate.
 //
 // This typically occurs with midnight-spanning events that were incorrectly converted
 // from local time to UTC. For example:
@@ -321,4 +408,45 @@ func correctEndDateTimezoneError(input EventInput) EventInput {
 	// If conditions aren't met, leave as-is and let validation handle it
 
 	return input
+}
+
+// multiSessionThreshold is the default duration above which a single occurrence
+// is considered suspicious as a multi-session event.
+const multiSessionThreshold = 168 * time.Hour // 1 week
+
+// IsMultiSessionEvent checks whether an event looks like a multi-session course
+// or recurring series that was scraped as a single occurrence spanning a long period.
+// Returns (true, reason) if the event should be flagged for review.
+//
+// Detection heuristics:
+//  1. Duration > threshold (default 168h / 1 week, or custom per-source value from
+//     EventInput.MultiSessionDurationThreshold): a single occurrence spanning > threshold is suspicious
+//  2. Title patterns: "(N sessions)", "(N weeks)", "workshop series", etc.
+func IsMultiSessionEvent(input EventInput) (bool, string) {
+	threshold := multiSessionThreshold
+	if input.MultiSessionDurationThreshold > 0 {
+		threshold = input.MultiSessionDurationThreshold
+	}
+
+	// Duration check: only possible when both start and end dates are present.
+	if input.EndDate != "" {
+		startTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
+		endTime, err2 := time.Parse(time.RFC3339, strings.TrimSpace(input.EndDate))
+		if err == nil && err2 == nil {
+			duration := endTime.Sub(startTime)
+			if duration > threshold {
+				days := int(duration.Hours() / 24)
+				return true, fmt.Sprintf("single occurrence spans %d days", days)
+			}
+		}
+	}
+
+	// Title pattern check (case-insensitive, compiled at package level).
+	for _, re := range multiSessionPatterns {
+		if re.MatchString(input.Name) {
+			return true, fmt.Sprintf("title matches multi-session pattern: %s", re.String())
+		}
+	}
+
+	return false, ""
 }

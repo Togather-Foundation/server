@@ -1,0 +1,11 @@
+name: "xtsc"
+# Tier 2 (disabled). JS-required site (< 300 bytes returned without JS).
+# XTSC is a trans/queer arts organization in Toronto.
+# Requires Rod headless browser (srv-h264z).
+url: "https://xtsc.ca/events/"
+tier: 2
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: false
+max_pages: 2

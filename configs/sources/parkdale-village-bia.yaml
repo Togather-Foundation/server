@@ -1,0 +1,16 @@
+name: "parkdale-village-bia"
+# Tier 1 (Colly CSS). CraftCMS. Events module server-rendered.
+# Date in a.event h6.text as plain text (e.g. "Event Date: February 01, 2026").
+# 1 event confirmed 2026-02-21.
+url: "https://parkdalevillagebia.com/event-hub"
+tier: 1
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "section.events-module div.row.events > div.col-lg-6"
+  name: "a.event h4.title span"
+  start_date: "a.event h6.text"
+  url: "a.event"

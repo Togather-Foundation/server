@@ -1,0 +1,19 @@
+name: "yohomo"
+# Tier 2 (disabled). Webflow CMS — event rows are server-rendered but dates are split
+# across multiple <p class="text-style-allcaps"> tags (Month, Day-of-week, Day number)
+# with no datetime attribute. Cannot extract machine-readable start_date with Tier 1.
+# Requires Rod headless browser (srv-h264z) or a custom date parser.
+# ~95 queer/LGBTQ+ Toronto events confirmed 2026-02-21.
+# URL: https://www.yohomo.ca/events
+# Selectors (for when Tier 2 is available):
+#   event_list: "div.event.w-dyn-item"
+#   name: "a.event-row"  (text of child elements)
+#   url: "a.event-row"
+#   start_date: "div.div-block-77"  (needs date parsing: "Sat . Feb 21")
+url: "https://www.yohomo.ca/events"
+tier: 2
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false
+max_pages: 5

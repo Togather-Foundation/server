@@ -1746,7 +1746,10 @@ deploy() {
     
     # Determine target slot once to avoid race conditions
     local target_slot=$(get_inactive_slot)
+    # Capture old slot now, before state is updated, so we can stop it after traffic switches
+    local old_slot=$(get_active_slot)
     log "INFO" "Target deployment slot: ${target_slot}"
+    log "INFO" "Old (outgoing) slot: ${old_slot}"
     
     # T019: Deploy to inactive slot (blue-green)
     deploy_to_slot "$env" "$target_slot" || return 1
@@ -1759,6 +1762,22 @@ deploy() {
     
     # T022: Update deployment state
     update_deployment_state "$env" "active" || return 1
+    
+    # Stop the old container now that traffic has been confirmed switched.
+    # Both slots were running simultaneously only during the health-check window.
+    # Stopping the old slot prevents two River job workers from processing jobs
+    # concurrently with different code versions, which can cause data corruption.
+    # NOTE: This is only reached on the success path — if switch_traffic or
+    # update_deployment_state fails, we return early and the old container keeps
+    # running, preserving service continuity until the operator intervenes.
+    local old_container_name="togather-server-${old_slot}"
+    log "INFO" "Stopping old container to prevent dual River worker execution: ${old_container_name}"
+    if docker stop "${old_container_name}" 2>/dev/null; then
+        log "SUCCESS" "Stopped old container: ${old_container_name}"
+    else
+        # Non-fatal: container may already be stopped or may not exist
+        log "WARN" "Could not stop old container ${old_container_name} (may already be stopped or not exist)"
+    fi
     
     log "SUCCESS" "Deployment completed successfully"
     log "INFO" "Deployment ID: ${DEPLOYMENT_ID}"

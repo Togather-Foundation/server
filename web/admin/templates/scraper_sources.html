@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .Title }}</title>
+    {{ template "_head_meta.html" . }}
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css?v={{ assetVersion }}">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v={{ assetVersion }}">
+</head>
+<body>
+    {{ template "_header.html" . }}
+
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <h2 class="page-title">Scraper Sources</h2>
+                            <div class="text-muted mt-1">Manage scraper sources and view run history</div>
+                        </div>
+                        <div class="col-auto ms-auto d-print-none">
+                            <div class="d-flex align-items-center gap-3">
+                                <div id="auto-scrape-toggle-wrap" class="d-none">
+                                    <label class="form-check form-switch mb-0 d-flex align-items-center gap-2" title="Enable or disable periodic automated scraping">
+                                        <input class="form-check-input" type="checkbox" id="auto-scrape-toggle" data-action="toggle-auto-scrape">
+                                        <span class="form-check-label">Auto-scrape</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page body -->
+            <div class="page-body">
+                <div class="container-xl">
+
+                    <!-- Loading state -->
+                    <div id="loading-state" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-3">Loading scraper sources...</p>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="empty-state" class="empty text-center py-5" style="display: none;">
+                        <div class="empty-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-lg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M4 4m0 1a1 1 0 0 1 1 -1h14a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1z"/>
+                                <path d="M4 12m0 1a1 1 0 0 1 1 -1h14a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1z"/>
+                                <path d="M4 20m0 1a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-6a1 1 0 0 1 -1 -1z"/>
+                            </svg>
+                        </div>
+                        <p class="empty-title">No Scraper Sources</p>
+                        <p class="empty-subtitle text-muted">No scraper sources have been configured yet.</p>
+                    </div>
+
+                    <!-- Sources table -->
+                    <div id="sources-container" class="card" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Source</th>
+                                        <th>Tier</th>
+                                        <th>Schedule</th>
+                                        <th>Last Run</th>
+                                        <th>Events (new / dup / failed)</th>
+                                        <th>Status</th>
+                                        <th>Enabled</th>
+                                        <th class="w-1"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sources-table">
+                                    <!-- Populated via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="card-footer d-flex align-items-center">
+                            <p class="m-0 text-muted">
+                                <span id="showing-text">Showing 0 sources</span>
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run History Modal -->
+    <div class="modal fade" id="runs-modal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Run History: <span id="runs-modal-source-name"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <!-- Loading -->
+                    <div id="runs-loading" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <!-- Empty -->
+                    <div id="runs-empty" class="empty text-center py-4" style="display: none;">
+                        <p class="empty-title">No Runs Yet</p>
+                        <p class="empty-subtitle text-muted">This source has not been run yet.</p>
+                    </div>
+                    <!-- Table -->
+                    <div id="runs-table-container" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table">
+                                <thead>
+                                    <tr>
+                                        <th>Started</th>
+                                        <th>Completed</th>
+                                        <th>Status</th>
+                                        <th>Found</th>
+                                        <th>New</th>
+                                        <th>Dup</th>
+                                        <th>Failed</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="runs-table">
+                                    <!-- Populated via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/scraper_sources.js?v={{ assetVersion }}"></script>
+</body>
+</html>

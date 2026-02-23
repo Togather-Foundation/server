@@ -285,38 +285,40 @@ type OrganizationRecord struct {
 
 // ReviewQueueEntry represents an event in the review queue
 type ReviewQueueEntry struct {
-	ID                 int
-	EventID            string // UUID (events.id)
-	EventULID          string // ULID (events.ulid) - populated via JOIN
+	ID                   int
+	EventID              string // UUID (events.id)
+	EventULID            string // ULID (events.ulid) - populated via JOIN
+	OriginalPayload      []byte
+	NormalizedPayload    []byte
+	Warnings             []byte
+	SourceID             *string
+	SourceExternalID     *string
+	DedupHash            *string
+	DuplicateOfEventID   *string // UUID of the event this is a duplicate of (for merge workflow)
+	DuplicateOfEventULID *string // ULID of the duplicate event (from JOIN)
+	EventStartTime       time.Time
+	EventEndTime         *time.Time
+	Status               string
+	ReviewedBy           *string
+	ReviewedAt           *time.Time
+	ReviewNotes          *string
+	RejectionReason      *string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+// ReviewQueueCreateParams contains data for creating a review queue entry
+type ReviewQueueCreateParams struct {
+	EventID            string
 	OriginalPayload    []byte
 	NormalizedPayload  []byte
 	Warnings           []byte
 	SourceID           *string
 	SourceExternalID   *string
 	DedupHash          *string
-	DuplicateOfEventID *string // UUID of the event this is a duplicate of (for merge workflow)
 	EventStartTime     time.Time
 	EventEndTime       *time.Time
-	Status             string
-	ReviewedBy         *string
-	ReviewedAt         *time.Time
-	ReviewNotes        *string
-	RejectionReason    *string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-}
-
-// ReviewQueueCreateParams contains data for creating a review queue entry
-type ReviewQueueCreateParams struct {
-	EventID           string
-	OriginalPayload   []byte
-	NormalizedPayload []byte
-	Warnings          []byte
-	SourceID          *string
-	SourceExternalID  *string
-	DedupHash         *string
-	EventStartTime    time.Time
-	EventEndTime      *time.Time
+	DuplicateOfEventID *string // UUID of the event this is a potential duplicate of (for merge workflow)
 }
 
 // ReviewQueueUpdateParams contains data for updating a review queue entry

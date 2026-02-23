@@ -1,0 +1,17 @@
+name: "koffler-arts"
+# Tier 1 (Colly CSS selectors). Koffler Arts Jewish cultural centre, 13 events confirmed 2026-02-21.
+# WordPress site with div.post event cards.
+# Selectors validated with `server scrape test`.
+url: "https://www.kofflerarts.org/calendar"
+tier: 1
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.post"
+  name: ".title"
+  start_date: ".date"
+  location: ".location"
+  url: "a.txtbox"

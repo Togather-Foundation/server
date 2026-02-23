@@ -209,6 +209,86 @@ func TestNormalizeURL(t *testing.T) {
 	}
 }
 
+func TestCleanText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain text unchanged",
+			input: "Jazz Night",
+			want:  "Jazz Night",
+		},
+		{
+			name:  "HTML entities in name (WordPress numeric)",
+			input: "Music &#038; Truffles KIDS &#8211; David Jalbert, piano",
+			want:  "Music & Truffles KIDS – David Jalbert, piano",
+		},
+		{
+			name:  "HTML tags in description (entity-encoded)",
+			input: "&lt;p&gt;The Show: David will share stories.&lt;/p&gt;\n",
+			want:  "The Show: David will share stories.",
+		},
+		{
+			name:  "literal HTML tags with entities inside",
+			input: "<p>A &amp; B</p>\n<br/>More text",
+			want:  "A & B More text",
+		},
+		{
+			name:  "collapses internal whitespace",
+			input: "Hello\n\nWorld\t  test",
+			want:  "Hello World test",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "named entity (no tags)",
+			input: "Caf&eacute; &amp; Bar",
+			want:  "Café & Bar",
+		},
+		{
+			name:  "trims surrounding whitespace",
+			input: "  trimmed  ",
+			want:  "trimmed",
+		},
+		{
+			name:  "WordPress backslash-apostrophe in description",
+			input: `See Toronto\'s wildlife through the eyes of local photographers.\n`,
+			want:  "See Toronto's wildlife through the eyes of local photographers.",
+		},
+		{
+			name:  "entity-encoded HTML with backslash-apostrophe (Tribe Events listing page)",
+			input: `&lt;p&gt;See Toronto\'s wildlife.&lt;/p&gt;\n`,
+			want:  "See Toronto's wildlife.",
+		},
+		{
+			name:  "double backslash collapses to single",
+			input: `path\\to\\file`,
+			want:  `path\to\file`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, cleanText(tc.input))
+		})
+	}
+}
+
+func TestNormalizeEventInputHTMLCleaning(t *testing.T) {
+	input := EventInput{
+		Name:        "Music &#038; Truffles KIDS &#8211; David Jalbert, piano",
+		Description: "&lt;p&gt;The Show: David will share stories.&lt;/p&gt;\n",
+		StartDate:   "2026-02-22T15:00:00Z",
+	}
+	got := NormalizeEventInput(input)
+	assert.Equal(t, "Music & Truffles KIDS – David Jalbert, piano", got.Name)
+	assert.Equal(t, "The Show: David will share stories.", got.Description)
+}
+
 func TestNormalizeStringSlice(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -568,4 +648,200 @@ func TestCorrectEndDateTimezoneError_Integration(t *testing.T) {
 		// NOTE: When passed to ValidateEventInputWithWarnings with the original input,
 		// this will now generate a "reversed_dates_timezone_likely" warning
 	})
+}
+
+func TestIsMultiSessionEvent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		input     EventInput
+		wantMulti bool
+		wantMsg   string // substring match (empty means no check)
+	}{
+		// Duration-based
+		{
+			name:      "normal 2h event",
+			input:     EventInput{StartDate: "2026-02-10T19:00:00Z", EndDate: "2026-02-10T21:00:00Z", Name: "Concert"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "1 week event plus 1 second",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-17T10:00:01Z", Name: "Art Show"},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		{
+			name:      "5 week course by duration",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-03-17T10:00:00Z", Name: "Keep Fit"},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		{
+			name:      "no end date",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Open Mic"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "exactly 1 week is not flagged",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-17T10:00:00Z", Name: "Festival"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Title-based
+		{
+			name:      "6 sessions in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-10T12:00:00Z", Name: "Keep Fit in Winter (6 sessions)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "1 session in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", EndDate: "2026-02-10T12:00:00Z", Name: "Intro Yoga (1 session)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "4 weeks in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Drawing Course (4 weeks)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "workshop series",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Pottery Workshop Series"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "weekly in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Weekly Meditation Circle"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "course in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Beginner Painting Course"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "8 classes in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Yoga (8 Classes)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "3 workshops in title",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Pottery (3 Workshops)"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		// False positives to avoid
+		{
+			name:      "racecourse not flagged",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Day at the Racecourse"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "discourse not flagged",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Public Discourse"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		{
+			name:      "normal title no match",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "Jazz Night at the Rex"},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Case insensitivity
+		{
+			name:      "WEEKLY uppercase",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "WEEKLY Jazz Sessions"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		{
+			name:      "COURSE uppercase",
+			input:     EventInput{StartDate: "2026-02-10T10:00:00Z", Name: "BEGINNER COURSE"},
+			wantMulti: true,
+			wantMsg:   "pattern",
+		},
+		// Custom threshold: zero means default (168h)
+		{
+			name: "zero threshold uses default 168h - short event not flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-02-17T10:00:00Z", // exactly 168h
+				Name:                          "Festival",
+				MultiSessionDurationThreshold: 0,
+			},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Custom threshold: 10-day event with default (168h) threshold IS flagged
+		{
+			name: "10-day event with default threshold flagged",
+			input: EventInput{
+				StartDate: "2026-02-10T10:00:00Z",
+				EndDate:   "2026-02-20T10:00:00Z", // 10 days = 240h > 168h
+				Name:      "Art Show",
+			},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		// Custom threshold: 10-day event with 720h (30 days) threshold NOT flagged
+		{
+			name: "10-day event with 720h custom threshold not flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-02-20T10:00:00Z", // 10 days = 240h < 720h
+				Name:                          "Festival",
+				MultiSessionDurationThreshold: 720 * time.Hour,
+			},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+		// Custom threshold: 35-day event with 720h (30 days) threshold IS flagged
+		{
+			name: "35-day event with 720h custom threshold flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-03-17T10:00:00Z", // 35 days = 840h > 720h
+				Name:                          "Long Festival",
+				MultiSessionDurationThreshold: 720 * time.Hour,
+			},
+			wantMulti: true,
+			wantMsg:   "spans",
+		},
+		// Custom threshold: exactly at threshold boundary (not flagged)
+		{
+			name: "event exactly at custom threshold not flagged",
+			input: EventInput{
+				StartDate:                     "2026-02-10T10:00:00Z",
+				EndDate:                       "2026-03-12T10:00:00Z", // exactly 720h (30 days)
+				Name:                          "Festival",
+				MultiSessionDurationThreshold: 720 * time.Hour,
+			},
+			wantMulti: false,
+			wantMsg:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotMulti, gotMsg := IsMultiSessionEvent(tt.input)
+			assert.Equal(t, tt.wantMulti, gotMulti, "IsMultiSessionEvent flag mismatch")
+			if tt.wantMsg != "" {
+				assert.Contains(t, gotMsg, tt.wantMsg, "reason should contain %q", tt.wantMsg)
+			}
+			if !tt.wantMulti {
+				assert.Empty(t, gotMsg, "reason should be empty when not multi-session")
+			}
+		})
+	}
 }

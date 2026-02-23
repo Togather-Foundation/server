@@ -1,0 +1,15 @@
+name: "bayview-leaside-bia"
+# Tier 1 (Colly CSS). Tribe Events WordPress list view. 15 events confirmed 2026-02-21.
+# Must use /events/list/ — default /events/ renders month view (AJAX).
+url: "https://bayviewleasidebia.com/events/list/"
+tier: 1
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.tribe-events-calendar-list__event"
+  name: "a.tribe-events-calendar-list__event-title-link"
+  start_date: "time.tribe-events-calendar-list__event-datetime"
+  url: "a.tribe-events-calendar-list__event-title-link"

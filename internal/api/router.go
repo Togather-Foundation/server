@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -24,6 +25,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+
 	"github.com/Togather-Foundation/server/internal/domain/users"
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/geocoding"
@@ -34,6 +36,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/mcp"
 	"github.com/Togather-Foundation/server/internal/metrics"
+	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/web"
 	"github.com/jackc/pgx/v5"
@@ -56,7 +59,7 @@ type RouterWithClient struct {
 	UsageRecorder *developers.UsageRecorder
 }
 
-func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string) *RouterWithClient {
+func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string, shutdownCtx ...context.Context) *RouterWithClient {
 	repo, err := postgres.NewRepository(pool)
 	if err != nil {
 		logger.Error().Err(err).Msg("repository init failed")
@@ -150,8 +153,38 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		metrics.NewRiverMetricsHook(slot),
 	}
 
-	// Configure periodic cleanup jobs (daily)
-	periodicJobs := jobs.NewPeriodicJobs()
+	// Build scraper for periodic jobs and admin trigger (srv-pfeud).
+	// Use the server's own base URL and an API key from env for self-ingestion.
+	var scraperSvc *scraper.Scraper
+	ingestAPIKey := os.Getenv("SEL_API_KEY")
+	if ingestAPIKey == "" {
+		ingestAPIKey = os.Getenv("SEL_INGEST_KEY")
+	}
+	if ingestAPIKey != "" {
+		scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+		ingestClient := scraper.NewIngestClient(cfg.Server.BaseURL, ingestAPIKey)
+		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
+		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
+	} else {
+		logger.Warn().Msg("router: SEL_API_KEY/SEL_INGEST_KEY not set — periodic scrape jobs and admin trigger disabled")
+	}
+
+	// Load source configs for periodic job registration.
+	// TODO(srv-ephoo): Load sources from DB (with YAML fallback) so dynamically
+	// added/removed sources are picked up without a server restart.
+	var sourceCfgs []scraper.SourceConfig
+	if scraperSvc != nil {
+		sourceCfgs, _ = scraper.LoadSourceConfigs("configs/sources")
+		// Warn only — missing sources dir is non-fatal on startup.
+	}
+
+	// Register scrape worker when scraper is available.
+	if scraperSvc != nil {
+		workers = jobs.NewWorkersWithScraper(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, scraperSvc, queries)
+	}
+
+	// Configure periodic cleanup jobs and per-source scrape jobs.
+	periodicJobs := jobs.NewPeriodicJobsFromSources(sourceCfgs)
 
 	riverClient, err := jobs.NewClient(pool, workers, slogLogger, riverHooks, periodicJobs)
 	if err != nil {
@@ -169,6 +202,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		WithOrgResolver(orgService)
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL).WithGeocodingService(geocodingService)
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
+
+	// Wire scraper source repo into org/place handlers for sel:scraperSource linkage (best-effort).
+	scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+	placesHandler = placesHandler.WithScraperSourceRepo(scraperSourceRepo)
+	orgHandler = orgHandler.WithScraperSourceRepo(scraperSourceRepo)
 
 	// Create geocoding handler (srv-28gtj)
 	geocodingHandler := handlers.NewGeocodingHandler(geocodingService, cfg.Environment)
@@ -279,6 +317,24 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create Admin Review Queue handler (srv-bjo)
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
+
+	// Create Admin Scraper handler (srv-5127b)
+	adminScraperHandler := &handlers.AdminScraperHandler{
+		Queries: queries,
+		Logger:  logger,
+		Env:     cfg.Environment,
+		// Only assign scraperSvc when non-nil: assigning a typed nil (*scraper.Scraper)
+		// to the scraperIface field would produce a non-nil interface value, defeating
+		// the h.Scraper == nil guard in TriggerScrape and causing a nil-pointer panic.
+	}
+	if scraperSvc != nil {
+		adminScraperHandler.Scraper = scraperSvc
+	}
+	// Propagate shutdown context so the background TriggerScrape goroutine is
+	// cancelled during graceful server drain (srv-aupkq).
+	if len(shutdownCtx) > 0 && shutdownCtx[0] != nil {
+		adminScraperHandler.ShutdownCtx = shutdownCtx[0]
+	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)
 	adminGeocodingHandler := handlers.NewAdminGeocodingHandler(pool, riverClient, slogLogger, cfg.Environment)
@@ -567,6 +623,21 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodDelete: adminDeactivateDeveloper,
 	}))
 
+	// Admin scraper source management (srv-5127b)
+	adminScraperListSources := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSources))))
+	adminScraperListRuns := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSourceRuns))))
+	adminScraperTrigger := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.TriggerScrape))))
+	adminScraperSetEnabled := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.SetSourceEnabled))))
+	adminScraperGetConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.GetConfig))))
+	adminScraperPatchConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.PatchConfig))))
+
+	mux.Handle("GET /api/v1/admin/scraper/sources", adminScraperListSources)
+	mux.Handle("GET /api/v1/admin/scraper/sources/{name}/runs", adminScraperListRuns)
+	mux.Handle("POST /api/v1/admin/scraper/sources/{name}/trigger", adminScraperTrigger)
+	mux.Handle("PATCH /api/v1/admin/scraper/sources/{name}", adminScraperSetEnabled)
+	mux.Handle("GET /api/v1/admin/scraper/config", adminScraperGetConfig)
+	mux.Handle("PATCH /api/v1/admin/scraper/config", adminScraperPatchConfig)
+
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
 	mux.Handle("POST /api/v1/accept-invitation", publicAcceptInvitation)
@@ -658,6 +729,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/places", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServePlacesList))))
 	mux.Handle("/admin/organizations", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeOrganizationsList))))
 	mux.Handle("/admin/developers", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDevelopersList))))
+	mux.Handle("/admin/scraper", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeScraperSources))))
 
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

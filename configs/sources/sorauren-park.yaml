@@ -1,0 +1,9 @@
+name: "sorauren-park"
+# Tier 0 (JSON-LD). Tribe Events WordPress. 10 events confirmed at /all-events 2026-02-21.
+url: "https://soraurenpark.com/all-events"
+tier: 0
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

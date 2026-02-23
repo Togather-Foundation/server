@@ -1,0 +1,9 @@
+name: "the-artist-project"
+# Tier 0 (JSON-LD). Static site. 1 Event confirmed, art fair. Scraper confirmed 2026-02-21.
+url: "https://theartistproject.com/home/"
+tier: 0
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2

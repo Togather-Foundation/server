@@ -1,0 +1,9 @@
+name: "playwrights-guild"
+# Tier 0 (JSON-LD). The Events Calendar / tribe-events schema, 12 events confirmed 2026-02-21.
+url: "https://playwrightsguild.ca/events/list/"
+tier: 0
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3

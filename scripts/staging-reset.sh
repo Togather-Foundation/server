@@ -139,11 +139,13 @@ TRUNCATE TABLE
   event_series,
   field_provenance,
   event_changes,
-  event_sources,     -- Links between events and sources (delete this)
+  event_sources,       -- Links between events and sources (delete this)
   idempotency_keys,
   event_review_queue,  -- Review queue for events
   entity_identifiers,  -- Knowledge graph entity identifiers
   reconciliation_cache, -- Reconciliation API cache
+  place_scraper_sources, -- Links between places and sources (FK blocks places truncate)
+  org_scraper_sources,   -- Links between organizations and sources (FK blocks orgs truncate)
   events,
   places,
   organizations

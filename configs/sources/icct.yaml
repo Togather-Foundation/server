@@ -1,0 +1,9 @@
+name: "icct"
+# Icelandic Canadian Club of Toronto. Tier 0 (JSON-LD). WordPress site.
+# 2 events confirmed on /events page with full startDate timestamps. 2026-02-21.
+url: "https://www.icct.info/events"
+tier: 0
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true

@@ -763,6 +763,245 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 		// that IsNotDuplicate is called during the flow.
 		_ = result2 // The near-dup check ran with the new ULID
 	})
+
+	t.Run("S6.6_near_duplicate_flags_existing_event_pending_review", func(t *testing.T) {
+		// Given: A published event "Jazz at the Rex" exists at venue V1.
+		// Action: "Rex Jazz Night" submitted for same venue/date. Similarity=0.55.
+		// Expected: The existing event gets UpdateEvent called to set lifecycle to pending_review.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		// Register the existing event in the mock so GetByULID finds it.
+		existingEvent := &Event{
+			ID:             "existing-event-uuid-001",
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true")
+		}
+
+		// Verify UpdateEvent was called on the existing event with pending_review.
+		calls := repo.GetUpdateEventCalls()
+		found := false
+		for _, call := range calls {
+			if call.ULID == candidateULID {
+				found = true
+				if call.Params.LifecycleState == nil || *call.Params.LifecycleState != "pending_review" {
+					t.Errorf("Expected existing event UpdateEvent with pending_review, got %+v", call.Params)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("Expected UpdateEvent to be called on the existing candidate event")
+		}
+
+		// Verify a review queue entry was created for the existing event.
+		existingEntries := repo.GetReviewQueueByEventID("existing-event-uuid-001")
+		if len(existingEntries) == 0 {
+			t.Error("Expected review queue entry to be created for the existing candidate event")
+		} else {
+			entry := existingEntries[0]
+
+			// Payload must not be empty — it should be a reconstructed snapshot.
+			if string(entry.OriginalPayload) == "{}" {
+				t.Error("Expected OriginalPayload to be populated (not empty {})")
+			}
+			if string(entry.NormalizedPayload) == "{}" {
+				t.Error("Expected NormalizedPayload to be populated (not empty {})")
+			}
+
+			// Verify _reconstructed flag is present.
+			var payload map[string]any
+			if err := json.Unmarshal(entry.OriginalPayload, &payload); err != nil {
+				t.Fatalf("Failed to unmarshal OriginalPayload: %v", err)
+			}
+			if payload["_reconstructed"] != true {
+				t.Error("Expected _reconstructed: true in OriginalPayload")
+			}
+
+			// Verify near_duplicate_of_new_event warning is present.
+			if string(entry.Warnings) == "[]" {
+				t.Error("Expected Warnings to be populated (not empty [])")
+			}
+			var warnings []ValidationWarning
+			if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
+				t.Fatalf("Failed to unmarshal Warnings: %v", err)
+			}
+			found := false
+			for _, w := range warnings {
+				if w.Code == "near_duplicate_of_new_event" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Error("Expected near_duplicate_of_new_event warning code in Warnings")
+			}
+		}
+	})
+
+	t.Run("S6.7_near_duplicate_review_entries_cross_linked", func(t *testing.T) {
+		// Given: A published event exists and is found as near-duplicate.
+		// Expected: The new event's review entry links to the existing event's UUID,
+		// and the existing event's review entry links to the new event's UUID.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-002"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		newEventID := result.Event.ID
+
+		// Verify the existing event's review entry links to the new event.
+		existingEntries := repo.GetReviewQueueByEventID(existingEventID)
+		if len(existingEntries) == 0 {
+			t.Fatal("Expected review queue entry for existing event")
+		}
+		if existingEntries[0].DuplicateOfEventID == nil || *existingEntries[0].DuplicateOfEventID != newEventID {
+			t.Errorf("Expected existing event's review entry DuplicateOfEventID = %q, got %v",
+				newEventID, existingEntries[0].DuplicateOfEventID)
+		}
+
+		// Verify the existing event's review entry has populated (reconstructed) payloads.
+		existingEntry := existingEntries[0]
+		if string(existingEntry.OriginalPayload) == "{}" {
+			t.Error("S6.7: Expected existing event's OriginalPayload to be reconstructed (not {})")
+		}
+		var existingPayload map[string]any
+		if err := json.Unmarshal(existingEntry.OriginalPayload, &existingPayload); err != nil {
+			t.Fatalf("S6.7: Failed to unmarshal existing event's OriginalPayload: %v", err)
+		}
+		if existingPayload["_reconstructed"] != true {
+			t.Error("S6.7: Expected _reconstructed: true in existing event's OriginalPayload")
+		}
+
+		// Verify the new event's review entry links to the existing event.
+		newEntries := repo.GetReviewQueueByEventID(newEventID)
+		if len(newEntries) == 0 {
+			t.Fatal("Expected review queue entry for new event")
+		}
+		if newEntries[0].DuplicateOfEventID == nil || *newEntries[0].DuplicateOfEventID != existingEventID {
+			t.Errorf("Expected new event's review entry DuplicateOfEventID = %q, got %v",
+				existingEventID, newEntries[0].DuplicateOfEventID)
+		}
+	})
+
+	t.Run("S6.8_near_duplicate_existing_already_in_review_graceful", func(t *testing.T) {
+		// Given: The existing event's GetByULID fails (e.g., event deleted or DB error).
+		// Expected: Ingest succeeds, new event still goes to pending_review.
+		// (The existing event flagging is non-critical: log and continue.)
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		// Do NOT register the candidate event — GetByULID will return ErrNotFound.
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		// Ingest should still succeed and flag the new event for review.
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true even when existing event lookup fails")
+		}
+		if result.Event.LifecycleState != "pending_review" {
+			t.Errorf("Expected new event in pending_review, got %q", result.Event.LifecycleState)
+		}
+	})
+
+	t.Run("S6.9_near_duplicate_skips_already_pending_event", func(t *testing.T) {
+		// Given: An existing event is already in pending_review state.
+		// Expected: UpdateEvent is NOT called for it (only published events get flagged).
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		existingEvent := &Event{
+			ID:             "existing-event-uuid-003",
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "pending_review", // Already in review
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true")
+		}
+
+		// Verify UpdateEvent was NOT called for the already-pending existing event.
+		for _, call := range repo.GetUpdateEventCalls() {
+			if call.ULID == candidateULID {
+				t.Error("UpdateEvent should not be called on an already-pending event")
+			}
+		}
+
+		// Even for an already-pending existing event, the review queue entry
+		// should still have reconstructed (non-empty) payloads.
+		existingEntries := repo.GetReviewQueueByEventID("existing-event-uuid-003")
+		if len(existingEntries) > 0 {
+			entry := existingEntries[0]
+			if string(entry.OriginalPayload) == "{}" {
+				t.Error("S6.9: Expected OriginalPayload to be reconstructed (not {})")
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(entry.OriginalPayload, &payload); err != nil {
+				t.Fatalf("S6.9: Failed to unmarshal OriginalPayload: %v", err)
+			}
+			if payload["_reconstructed"] != true {
+				t.Error("S6.9: Expected _reconstructed: true in OriginalPayload")
+			}
+		}
+	})
 }
 
 // --- S7: Place Fuzzy Dedup Scenarios ---
@@ -1770,4 +2009,102 @@ func mustJSON(v any) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// --- Multi-Session Detection Scenarios ---
+
+func TestScenario_MultiSession(t *testing.T) {
+	t.Run("multi_session_5week_duration_goes_to_review", func(t *testing.T) {
+		// Given: A new event spanning ~5 weeks (multi-session course).
+		// Expected: lifecycle_state = "pending_review" with multi_session_likely warning.
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		// 5-week duration: clearly a multi-session course
+		startDate := "2026-03-01T10:00:00Z"
+		endDate := "2026-04-05T10:00:00Z" // 35 days later
+
+		input := EventInput{
+			Name:        "Keep Fit in Winter",
+			Description: "A five-week fitness programme",
+			Image:       "https://example.com/keepfit.jpg",
+			StartDate:   startDate,
+			EndDate:     endDate,
+			License:     "CC0-1.0",
+			Location:    &PlaceInput{Name: "Community Centre", AddressLocality: "Toronto"},
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if result.Event == nil {
+			t.Fatal("Expected non-nil event")
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true for 5-week event")
+		}
+		if result.Event.LifecycleState != "pending_review" {
+			t.Errorf("Expected lifecycle_state = pending_review, got %q", result.Event.LifecycleState)
+		}
+
+		// Verify multi_session_likely warning is present
+		found := false
+		for _, w := range result.Warnings {
+			if w.Code == "multi_session_likely" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected multi_session_likely warning, got warnings: %v", result.Warnings)
+		}
+
+		// Verify a review queue entry was created
+		if len(repo.reviewQueue) == 0 {
+			t.Error("Expected review queue entry to be created")
+		}
+	})
+
+	t.Run("multi_session_skip_flag_allows_publish", func(t *testing.T) {
+		// Given: A 5-week event with SkipMultiSessionCheck = true (e.g. festival source).
+		// Expected: lifecycle_state = "published" (not routed to review for multi-session).
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		startDate := "2026-03-01T10:00:00Z"
+		endDate := "2026-04-05T10:00:00Z" // 35 days later
+
+		input := EventInput{
+			Name:                  "Toronto Art Festival",
+			Description:           "Annual multi-week art festival across the city",
+			Image:                 "https://example.com/festival.jpg",
+			StartDate:             startDate,
+			EndDate:               endDate,
+			License:               "CC0-1.0",
+			Location:              &PlaceInput{Name: "Various Venues", AddressLocality: "Toronto"},
+			SkipMultiSessionCheck: true,
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if result.Event == nil {
+			t.Fatal("Expected non-nil event")
+		}
+		if result.NeedsReview {
+			t.Errorf("Expected NeedsReview = false when SkipMultiSessionCheck = true, got warnings: %v", result.Warnings)
+		}
+		if result.Event.LifecycleState != "published" {
+			t.Errorf("Expected lifecycle_state = published, got %q", result.Event.LifecycleState)
+		}
+
+		// Verify no multi_session_likely warning
+		for _, w := range result.Warnings {
+			if w.Code == "multi_session_likely" {
+				t.Errorf("Did not expect multi_session_likely warning when SkipMultiSessionCheck = true")
+			}
+		}
+	})
 }

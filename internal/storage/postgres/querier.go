@@ -68,6 +68,8 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	// Delete a scraper source by name.
+	DeleteScraperSource(ctx context.Context, name string) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	// Expires all pending (non-accepted, non-expired) invitations for a user by
 	// setting accepted_at. This satisfies the unique partial index
@@ -126,6 +128,8 @@ type Querier interface {
 	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
+	// Get the most recent scraper run for a given source_name.
+	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
@@ -134,6 +138,11 @@ type Querier interface {
 	GetReconciliationCache(ctx context.Context, arg GetReconciliationCacheParams) (ReconciliationCache, error)
 	// Get single review by ID
 	GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error)
+	GetScraperConfig(ctx context.Context) (ScraperConfig, error)
+	// Get a single scraper source by primary key.
+	GetScraperSourceByID(ctx context.Context, id int64) (ScraperSource, error)
+	// Get a single scraper source by unique name.
+	GetScraperSourceByName(ctx context.Context, name string) (ScraperSource, error)
 	// Retrieves source metadata by ID
 	GetSourceByID(ctx context.Context, id pgtype.UUID) (GetSourceByIDRow, error)
 	// Gets all sources that contributed to an event (deduplicated)
@@ -155,9 +164,16 @@ type Querier interface {
 	// Uses canonical ordering (smaller ULID first) to prevent storing both (A,B) and (B,A).
 	// ON CONFLICT DO NOTHING handles the case where the pair already exists.
 	InsertNotDuplicate(ctx context.Context, arg InsertNotDuplicateParams) error
+	// SQLc queries for scraper runs tracking.
+	// Insert a new scraper run record and return its id.
+	InsertScraperRun(ctx context.Context, arg InsertScraperRunParams) (int64, error)
 	// Check if a pair of events has been marked as not-duplicates.
 	// Uses canonical ordering to match regardless of argument order.
 	IsNotDuplicate(ctx context.Context, arg IsNotDuplicateParams) (bool, error)
+	// Associate an organization with a scraper source.
+	LinkOrgScraperSource(ctx context.Context, arg LinkOrgScraperSourceParams) error
+	// Associate a place with a scraper source.
+	LinkPlaceScraperSource(ctx context.Context, arg LinkPlaceScraperSourceParams) error
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
 	ListActiveDeveloperInvitations(ctx context.Context) ([]DeveloperInvitation, error)
 	// Developer API key operations
@@ -181,8 +197,23 @@ type Querier interface {
 	ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesByCreatedAtDescParams) ([]ListPlacesByCreatedAtDescRow, error)
 	ListPlacesByName(ctx context.Context, arg ListPlacesByNameParams) ([]ListPlacesByNameRow, error)
 	ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByNameDescParams) ([]ListPlacesByNameDescRow, error)
+	// List the N most recent scraper runs ordered by started_at DESC.
+	ListRecentScraperRuns(ctx context.Context, limit int32) ([]ScraperRun, error)
 	// List reviews with pagination and status filter
 	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
+	// List recent scraper runs for a specific source, ordered newest first.
+	ListScraperRunsBySource(ctx context.Context, arg ListScraperRunsBySourceParams) ([]ScraperRun, error)
+	// List all scraper sources, optionally filtered by enabled flag.
+	ListScraperSources(ctx context.Context, enabled pgtype.Bool) ([]ScraperSource, error)
+	// List all scraper sources linked to a given organization.
+	ListScraperSourcesByOrg(ctx context.Context, organizationID pgtype.UUID) ([]ScraperSource, error)
+	// List all scraper sources linked to a given place.
+	ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.UUID) ([]ScraperSource, error)
+	// List all scraper sources with their most recent run stats embedded.
+	// last_run_started_at/completed_at/error_message are nullable (NULL when a source
+	// has never been run). status and event counts use COALESCE to return non-nullable
+	// defaults so SQLc generates simple string/int32 types for those columns.
+	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error)
 	// Get organizations that have no external identifiers, ordered by creation date
 	ListUnreconciledOrganizations(ctx context.Context, maxResults int32) ([]ListUnreconciledOrganizationsRow, error)
 	// Get places that have no external identifiers, ordered by creation date
@@ -200,11 +231,16 @@ type Querier interface {
 	// Returns the ULID of the final canonical event (the one that is not itself merged).
 	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
 	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
+	SetScraperConfig(ctx context.Context, arg SetScraperConfigParams) error
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
 	// Marks a field provenance record as superseded by a new record
 	SupersedeFieldProvenance(ctx context.Context, arg SupersedeFieldProvenanceParams) error
+	// Remove an organization↔scraper source association.
+	UnlinkOrgScraperSource(ctx context.Context, arg UnlinkOrgScraperSourceParams) error
+	// Remove a place↔scraper source association.
+	UnlinkPlaceScraperSource(ctx context.Context, arg UnlinkPlaceScraperSourceParams) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	UpdateDeveloper(ctx context.Context, arg UpdateDeveloperParams) (Developer, error)
 	UpdateDeveloperLastLogin(ctx context.Context, id pgtype.UUID) error
@@ -225,6 +261,12 @@ type Querier interface {
 	UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error)
 	// Update existing review entry (for resubmissions with same issues)
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
+	// Mark a scraper run as completed with event counts.
+	UpdateScraperRunCompleted(ctx context.Context, arg UpdateScraperRunCompletedParams) error
+	// Mark a scraper run as failed with an error message.
+	UpdateScraperRunFailed(ctx context.Context, arg UpdateScraperRunFailedParams) error
+	// Update last_scraped_at timestamp after a successful scrape run.
+	UpdateScraperSourceLastScraped(ctx context.Context, name string) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	// SQLc queries for API key usage tracking.
@@ -234,6 +276,9 @@ type Querier interface {
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
 	// Insert or update a cache entry
 	UpsertReconciliationCache(ctx context.Context, arg UpsertReconciliationCacheParams) (ReconciliationCache, error)
+	// SQLc queries for scraper_sources and linkage tables.
+	// Insert or update a scraper source by name (used by 'server scrape sync').
+	UpsertScraperSource(ctx context.Context, arg UpsertScraperSourceParams) (ScraperSource, error)
 }
 
 var _ Querier = (*Queries)(nil)

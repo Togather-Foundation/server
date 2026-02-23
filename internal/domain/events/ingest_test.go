@@ -462,19 +462,20 @@ func (m *MockRepository) CreateReviewQueueEntry(ctx context.Context, params Revi
 	defer m.mu.Unlock()
 
 	entry := &ReviewQueueEntry{
-		ID:                m.nextReviewID,
-		EventID:           params.EventID,
-		OriginalPayload:   params.OriginalPayload,
-		NormalizedPayload: params.NormalizedPayload,
-		Warnings:          params.Warnings,
-		SourceID:          params.SourceID,
-		SourceExternalID:  params.SourceExternalID,
-		DedupHash:         params.DedupHash,
-		EventStartTime:    params.EventStartTime,
-		EventEndTime:      params.EventEndTime,
-		Status:            "pending",
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		ID:                 m.nextReviewID,
+		EventID:            params.EventID,
+		OriginalPayload:    params.OriginalPayload,
+		NormalizedPayload:  params.NormalizedPayload,
+		Warnings:           params.Warnings,
+		SourceID:           params.SourceID,
+		SourceExternalID:   params.SourceExternalID,
+		DedupHash:          params.DedupHash,
+		EventStartTime:     params.EventStartTime,
+		EventEndTime:       params.EventEndTime,
+		DuplicateOfEventID: params.DuplicateOfEventID,
+		Status:             "pending",
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	m.reviewQueue[m.nextReviewID] = entry
 	m.nextReviewID++
@@ -513,6 +514,20 @@ func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*Revi
 		return nil, ErrNotFound
 	}
 	return entry, nil
+}
+
+// GetReviewQueueByEventID is a test helper that returns all review queue entries for a given event UUID.
+func (m *MockRepository) GetReviewQueueByEventID(eventID string) []*ReviewQueueEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var entries []*ReviewQueueEntry
+	for _, e := range m.reviewQueue {
+		if e.EventID == eventID {
+			entries = append(entries, e)
+		}
+	}
+	return entries
 }
 
 func (m *MockRepository) ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error) {
@@ -590,6 +605,23 @@ func (m *MockRepository) MergeReview(ctx context.Context, id int, reviewedBy str
 
 func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil
+}
+
+// AddEvent is a test helper that pre-populates the mock with an existing event,
+// making it available via GetByULID. Used in near-duplicate scenario tests.
+func (m *MockRepository) AddEvent(event *Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events[event.ULID] = event
+}
+
+// GetUpdateEventCalls is a test helper that returns all recorded UpdateEvent calls.
+func (m *MockRepository) GetUpdateEventCalls() []updateEventCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]updateEventCall, len(m.updateEventCalls))
+	copy(result, m.updateEventCalls)
+	return result
 }
 
 func (m *MockRepository) GetSourceTrustLevel(ctx context.Context, eventID string) (int, error) {

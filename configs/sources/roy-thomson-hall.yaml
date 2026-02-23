@@ -1,0 +1,9 @@
+name: "roy-thomson-hall"
+# Tier 2 (DISABLED). React/Next.js SPA hosted on Heroku. Empty body without JS.
+# Major Toronto concert hall (Toronto Symphony Orchestra, etc.).
+url: "https://roythomsonhall.mhrth.com/whats-on"
+tier: 2
+schedule: "weekly"
+trust_level: 9
+license: "CC0-1.0"
+enabled: false

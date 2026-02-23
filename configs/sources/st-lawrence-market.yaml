@@ -1,0 +1,11 @@
+name: "st-lawrence-market"
+# Disabled — stlawrencemarket.com redirects (302) to www.stlawrencemarket.com/events/
+# which redirects again; scraper does not follow redirects. Final events page uses
+# a simple div.event_list which was empty on inspection — events may be dynamically loaded.
+# notes: Redirect chain blocks scraper; events likely JS-rendered. Needs Tier 2.
+url: "https://www.stlawrencemarket.com/events/"
+tier: 0
+schedule: "manual"
+trust_level: 7
+license: "CC0-1.0"
+enabled: false

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-scraper`
 **Created**: 2026-02-20
-**Status**: Draft
+**Status**: Implemented (Phases 1–4 complete; metrics + Tier 2 pending)
 **Input**: Need to populate the SEL with real event data from Toronto arts/culture websites for dogfooding and agent curation testing via SEL MCP.
 
 ## Context
@@ -17,13 +17,29 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
 - **SEL-native**: Uses the existing batch ingest API, so dedup/reconciliation/provenance all work automatically
 - **Observable**: Track scrape runs with metrics and logging
 
-### Non-Goals (v0.1)
+### Non-Goals (current)
 
 - Email/newsletter parsing (Tier 3 — future)
-- LLM-assisted extraction (Tier 3 — future)
-- Headless browser/JS rendering (Tier 2 — future, via Rod)
-- River job scheduling for automated periodic scrapes (Phase 3 — future)
-- Admin UI for managing scrape sources (future)
+- Tier 2 headless browser/JS rendering (Rod-based extractor; see bead srv-h264z)
+- API-first ingestion outside `server scrape` workflows (e.g., bespoke REST harvesters)
+- Prometheus dashboards beyond scraper metrics (tracked separately)
+
+### Design Additions (post-v0.1)
+
+- **Agent-led selector generation**: `/generate-selectors` orchestrates parallel
+  subagents that run `server scrape inspect`, propose Tier 1 selectors, validate via
+  `server scrape test`, and commit vetted YAML configs. This workflow is defined in
+  `agents/generate-selectors.md` and is now the default Tier 1 authoring path.
+- **DB-backed source configs**: `scraper_sources` table stores configs alongside
+  YAML files as the canonical seed format. `server scrape sync` imports YAML→DB;
+  `server scrape export` dumps DB→YAML. Scraper runtime reads from DB with YAML
+  fallback. Org/place linkage via join tables exposes sources in JSON-LD API responses.
+  Beads: srv-65kvw, srv-iorfa, srv-2nu7e, srv-l71q1, srv-17zth.
+- **Scraper global config + scheduling**: `scraper_config` table holds operator
+  tunables (`auto_scrape`, concurrency, timeouts, retry caps, batch sizes). `GET/PATCH
+  /api/admin/scraper/config` powers the admin UI toggle, and `ScrapeSourceWorker`
+  + `NewPeriodicJobsFromSources` enqueue River jobs automatically when schedules are
+  set to `daily`/`weekly`. Delivered in srv-pfeud and deployed to staging.
 
 ## User Scenarios & Testing
 
@@ -51,14 +67,14 @@ An operator maintains a set of known event sources as YAML configuration files, 
 
 **Acceptance Scenarios**:
 
-1. **Given** YAML source configs exist in `configs/sources/`, **When** the operator runs `server scrape list`, **Then** the system lists all sources with name, URL, tier, schedule, and last scrape status
+1. **Given** YAML or DB-backed source configs exist, **When** the operator runs `server scrape list`, **Then** the system lists all sources with name, URL, tier, schedule, enabled flag, and last scrape status (preferring DB entries when available)
 2. **Given** a valid source config, **When** the operator runs `server scrape source <name>`, **Then** the system scrapes that source using the configured tier and settings
 3. **Given** an invalid source config (missing required fields), **When** the system loads configs, **Then** it reports validation errors with the file path and field name
 4. **Given** a Tier 1 source config with CSS selectors, **When** scraping, **Then** the system uses Colly with the configured selectors to extract event data
 
 ---
 
-### User Story 3 — Operator Scrapes All Configured Sources (Priority: P2)
+### User Story 3 — Operator Scrapes All Configured Sources or Schedules Them (Priority: P2)
 
 An operator wants to run all configured sources in one command for bulk data collection.
 
@@ -70,10 +86,11 @@ An operator wants to run all configured sources in one command for bulk data col
 2. **Given** one source fails during `scrape all`, **Then** the system continues with remaining sources and includes the failure in the summary
 3. **Given** `--dry-run`, **Then** no events are submitted for any source
 4. **Given** `--limit N`, **Then** at most N events are extracted per source
+5. **Given** sources with `schedule` set to `daily` or `weekly`, **Then** the River `ScrapeSourceWorker` enqueues and executes periodic jobs when `auto_scrape` is enabled in `scraper_config`, honoring concurrency/timeouts from that table.
 
 ---
 
-### User Story 4 — Scrape Runs Are Tracked (Priority: P2)
+### User Story 4 — Scrape Runs & Metrics Are Tracked (Priority: P2)
 
 Each scrape execution is recorded in the database for monitoring, debugging, and preventing excessive re-scraping.
 
@@ -84,6 +101,7 @@ Each scrape execution is recorded in the database for monitoring, debugging, and
 1. **Given** a scrape starts, **Then** a `scraper_runs` row is created with status "running"
 2. **Given** a scrape completes successfully, **Then** the row is updated with status "completed", event counts, and duration
 3. **Given** a scrape fails, **Then** the row is updated with status "failed" and the error message
+4. **Given** Prometheus metrics work (future bead `srv-sf4vs`), **Then** the scraper emits success/failure counters, duration histograms, and event totals for both CLI-triggered and River-triggered runs.
 
 ---
 
@@ -100,22 +118,26 @@ Each scrape execution is recorded in the database for monitoring, debugging, and
 
 ```
 internal/scraper/
-  scraper.go       — Scraper service: orchestrates tiers, manages runs
-  jsonld.go        — Tier 0: fetch URL, extract JSON-LD Event blocks
-  colly.go         — Tier 1: Colly-based CSS selector extraction
-  normalize.go     — Map schema.org JSON-LD variants → EventInput
-  config.go        — Source config types, YAML loader, validation
-  ingest.go        — HTTP client for SEL batch ingest API
+  scraper.go           — Scraper service: orchestrates tiers, manages runs
+  jsonld.go            — Tier 0: fetch URL, extract JSON-LD Event blocks
+  colly.go             — Tier 1: Colly-based CSS selector extraction
+  normalize.go         — Map schema.org JSON-LD variants → EventInput
+  config.go            — Source config types, YAML loader, validation (DB or YAML)
+  db_source.go         — Domain → scraper SourceConfig translation helpers
+  ingest.go            — HTTP client for SEL batch ingest API
 
 cmd/server/cmd/
-  scrape.go        — CLI: server scrape {url,source,all,list}
+  scrape.go            — CLI: server scrape {url,source,all,list,sync,export}
 
 configs/sources/
-  _example.yaml    — Documented example source config
-  *.yaml           — Per-source configs (community-contributed)
+  _example.yaml        — Documented example source config
+  *.yaml               — Per-source configs (community-contributed)
 
 internal/storage/postgres/migrations/
-  NNNNNN_add_scraper_runs.{up,down}.sql
+  000031_add_scraper_runs.{up,down}.sql
+  000032_scraper_sources.{up,down}.sql
+  000033_drop_extra_scraper_sources_index.sql
+  000034_scraper_config.{up,down}.sql
 ```
 
 ### Source Config Schema
@@ -124,15 +146,17 @@ internal/storage/postgres/migrations/
 # Required fields
 name: "Toronto Symphony Orchestra"     # Unique identifier
 url: "https://www.tso.ca/concerts-events"
-tier: 0                                # 0=jsonld (auto), 1=colly (selectors)
 
 # Optional fields
-schedule: "daily"                      # daily, weekly, manual (for future scheduling)
+schedule: "daily"                      # daily, weekly, manual
 trust_level: 5                         # 1-10, maps to SEL source trust
 license: "CC-BY-4.0"                   # Default license attribution
 enabled: true                          # Can disable without deleting
 event_url_pattern: "/events/*"         # Only follow links matching pattern
 max_pages: 10                          # Safety limit for pagination
+rate_limit_ms: 1000                    # Overrides global rate limiting when set
+headers:
+  User-Agent: "Mozilla/5.0..."         # Optional per-source headers
 
 # Tier 1 selectors (required when tier=1)
 selectors:
@@ -147,7 +171,45 @@ selectors:
   pagination: "a.next-page"
 ```
 
+Tier assignments now map to both YAML configs and `scraper_sources.tier`. Tier 2 is reserved for Rod/headless support (srv-h264z) and is not yet implemented.
+
 ### Database Schema
+
+#### `scraper_sources` (planned — srv-65kvw)
+
+```sql
+CREATE TABLE scraper_sources (
+  id              BIGSERIAL PRIMARY KEY,
+  name            TEXT UNIQUE NOT NULL,
+  url             TEXT NOT NULL,
+  tier            INT NOT NULL DEFAULT 0,
+  schedule        TEXT NOT NULL DEFAULT 'manual'
+                    CHECK (schedule IN ('daily', 'weekly', 'manual')),
+  trust_level     INT NOT NULL DEFAULT 5,
+  license         TEXT NOT NULL DEFAULT 'CC0-1.0',
+  enabled         BOOL NOT NULL DEFAULT true,
+  max_pages       INT NOT NULL DEFAULT 10,
+  selectors       JSONB,           -- null for tier 0
+  notes           TEXT,            -- curator freetext, exposed in API
+  last_scraped_at TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE org_scraper_sources (
+  organization_id UUID   NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  scraper_source_id BIGINT NOT NULL REFERENCES scraper_sources(id) ON DELETE CASCADE,
+  PRIMARY KEY (organization_id, scraper_source_id)
+);
+
+CREATE TABLE place_scraper_sources (
+  place_id          UUID   NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+  scraper_source_id BIGINT NOT NULL REFERENCES scraper_sources(id) ON DELETE CASCADE,
+  PRIMARY KEY (place_id, scraper_source_id)
+);
+```
+
+#### `scraper_runs` (existing)
 
 ```sql
 CREATE TABLE scraper_runs (

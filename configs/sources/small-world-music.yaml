@@ -1,0 +1,15 @@
+name: "small-world-music"
+# Tier 1 (Colly CSS). WordPress custom post type (marcato_show). 7 events confirmed 2026-02-21.
+# No Tribe Events. Date in div.eventBoxDate (plain text, no datetime attr).
+url: "https://smallworldmusic.com/events/"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 2
+selectors:
+  event_list: "div.upcomingEvents article.archivedEvent"
+  name: "div.archivedEventTitle a"
+  start_date: "div.eventBoxDate"
+  url: "div.archivedEventTitle a"
