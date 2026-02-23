@@ -994,6 +994,7 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 			Scraper:       scr,
 			ConfigQueries: cfgQueries,
 			Logger:        logger,
+			Slot:          slot,
 		})
 	}
 

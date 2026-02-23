@@ -163,7 +163,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	if ingestAPIKey != "" {
 		scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
 		ingestClient := scraper.NewIngestClient(cfg.Server.BaseURL, ingestAPIKey)
-		scraperSvc = scraper.NewScraperWithSourceRepo(ingestClient, queries, scraperSourceRepo, logger)
+		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
 	} else {
 		logger.Warn().Msg("router: SEL_API_KEY/SEL_INGEST_KEY not set — periodic scrape jobs and admin trigger disabled")

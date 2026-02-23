@@ -124,19 +124,19 @@ func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper
 	dbURL := getDatabaseURL()
 	if dbURL == "" {
 		logger.Warn().Msg("scraper: DATABASE_URL not set — scraper_runs tracking and DB source configs disabled")
-		s := scraper.NewScraper(client, nil, logger)
+		s := scraper.NewScraperWithSlot(client, nil, logger, "cli")
 		return s, func() {}, nil
 	}
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		logger.Warn().Err(err).Msg("scraper: failed to connect to DB — scraper_runs tracking and DB source configs disabled")
-		s := scraper.NewScraper(client, nil, logger)
+		s := scraper.NewScraperWithSlot(client, nil, logger, "cli")
 		return s, func() {}, nil
 	}
 
 	queries := postgres.New(pool)
 	sourceRepo := postgres.NewScraperSourceRepository(pool)
-	s := scraper.NewScraperWithSourceRepo(client, queries, sourceRepo, logger)
+	s := scraper.NewScraperWithSourceRepoAndSlot(client, queries, sourceRepo, logger, "cli")
 	return s, pool.Close, nil
 }

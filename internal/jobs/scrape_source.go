@@ -41,6 +41,7 @@ type ScrapeSourceWorker struct {
 	Scraper       scraperSourceScraper
 	ConfigQueries scraperConfigReader
 	Logger        *slog.Logger
+	Slot          string // deployment slot for metrics labeling
 }
 
 func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourceArgs]) error {

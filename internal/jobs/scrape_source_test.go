@@ -435,6 +435,22 @@ func TestScrapeSourceWorker_Work_NilConfigQueries(t *testing.T) {
 	}
 }
 
+// TestScrapeSourceWorker_SlotField verifies that ScrapeSourceWorker has a Slot
+// field and that it can be set when constructing the worker.
+func TestScrapeSourceWorker_SlotField(t *testing.T) {
+	ms := &mockScraper{}
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: nil,
+		Logger:        nil,
+		Slot:          "blue",
+	}
+
+	if w.Slot != "blue" {
+		t.Errorf("ScrapeSourceWorker.Slot = %q, want %q", w.Slot, "blue")
+	}
+}
+
 func TestScrapeSourceWorker_Work_ConfigTunablesWired(t *testing.T) {
 	tests := []struct {
 		name        string
