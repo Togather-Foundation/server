@@ -35,10 +35,11 @@ type scraperIface interface {
 
 // AdminScraperHandler handles admin scraper source management and run history.
 type AdminScraperHandler struct {
-	Queries scraperQueriesIface
-	Logger  zerolog.Logger
-	Env     string
-	Scraper scraperIface
+	Queries     scraperQueriesIface
+	Logger      zerolog.Logger
+	Env         string
+	Scraper     scraperIface
+	ShutdownCtx context.Context // optional; used to propagate graceful shutdown to background scrapes
 }
 
 // scraperSourceResponse is the JSON representation of a scraper source.
@@ -226,9 +227,16 @@ func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Derive the background context from ShutdownCtx so the goroutine is
+	// cancelled during graceful shutdown. Fall back to context.Background()
+	// if ShutdownCtx was not wired (e.g. in tests).
+	baseCtx := h.ShutdownCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
 	s := h.Scraper
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		ctx, cancel := context.WithTimeout(baseCtx, 10*time.Minute)
 		defer cancel()
 		if _, err := s.ScrapeSource(ctx, name, scraper.ScrapeOptions{}); err != nil {
 			h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: background trigger failed")
