@@ -54,21 +54,38 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 
 	sourceName := job.Args.SourceName
 
-	// Check global auto_scrape toggle. Proceed on config read error (log only).
+	// Read global scraper config. Proceed on read error (log only); fall back to
+	// zero-value ScrapeOptions which use package-level defaults everywhere.
+	opts := scraper.ScrapeOptions{}
 	if w.ConfigQueries != nil {
 		cfg, err := w.ConfigQueries.GetScraperConfig(ctx)
 		if err != nil {
-			logger.WarnContext(ctx, "scrape_source: failed to read scraper config, proceeding anyway", "source", sourceName, "error", err)
-		} else if !cfg.AutoScrape {
-			logger.DebugContext(ctx, "scrape_source: auto_scrape disabled, skipping", "source", sourceName)
-			return nil
+			logger.WarnContext(ctx, "scrape_source: failed to read scraper config, proceeding with defaults", "source", sourceName, "error", err)
+		} else {
+			if !cfg.AutoScrape {
+				logger.DebugContext(ctx, "scrape_source: auto_scrape disabled, skipping", "source", sourceName)
+				return nil
+			}
+			if cfg.MaxBatchSize > 0 {
+				opts.Limit = int(cfg.MaxBatchSize)
+			}
+			if cfg.RequestTimeoutSeconds > 0 {
+				opts.RequestTimeout = time.Duration(cfg.RequestTimeoutSeconds) * time.Second
+			}
+			if cfg.RateLimitMs > 0 {
+				opts.RateLimitMs = cfg.RateLimitMs
+			}
+			// TODO: cfg.RetryMaxAttempts — wire into retry logic when a retry
+			// wrapper is added to ScrapeSource (srv-ephoo follow-up).
+			// TODO: cfg.MaxConcurrentSources — wire into ScrapeAll fan-out
+			// concurrency when a semaphore is added there (srv-ephoo follow-up).
 		}
 	}
 
 	logger.InfoContext(ctx, "scrape_source: starting periodic scrape", "source", sourceName, "attempt", job.Attempt)
 
 	start := time.Now()
-	result, err := w.Scraper.ScrapeSource(ctx, sourceName, scraper.ScrapeOptions{})
+	result, err := w.Scraper.ScrapeSource(ctx, sourceName, opts)
 	if err != nil {
 		return fmt.Errorf("scrape_source %s: %w", sourceName, err)
 	}

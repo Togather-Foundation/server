@@ -19,20 +19,27 @@ import (
 
 // ScrapeOptions controls scraper behaviour.
 type ScrapeOptions struct {
-	DryRun     bool
-	Limit      int               // 0 = no limit
-	SourcesDir string            // default: "configs/sources"
-	TierFilter int               // -1 = all tiers; 0, 1, … = restrict to that tier
-	Transport  http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
+	DryRun         bool
+	Limit          int               // 0 = no limit
+	SourcesDir     string            // default: "configs/sources"
+	TierFilter     int               // -1 = all tiers; 0, 1, … = restrict to that tier
+	Transport      http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
+	RequestTimeout time.Duration     // 0 = use the fetchTimeout package const
+	RateLimitMs    int32             // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
 }
 
-// HTTPClient returns an http.Client using the configured transport (if any)
-// with the given timeout. Used by all scraper HTTP code to ensure consistent
-// transport usage.
-func (o ScrapeOptions) HTTPClient(timeout time.Duration) *http.Client {
+// HTTPClient returns an http.Client using the configured transport (if any).
+// When RequestTimeout is non-zero it is used as the client timeout; otherwise
+// the provided fallback is used. Used by all scraper HTTP code to ensure
+// consistent transport usage.
+func (o ScrapeOptions) HTTPClient(fallback time.Duration) *http.Client {
 	transport := o.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
+	}
+	timeout := fallback
+	if o.RequestTimeout > 0 {
+		timeout = o.RequestTimeout
 	}
 	return &http.Client{
 		Timeout:   timeout,
@@ -271,6 +278,9 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
 		extractor := NewCollyExtractor(s.logger)
 		extractor.SetTransport(opts.Transport)
+		if opts.RateLimitMs > 0 {
+			extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
+		}
 		rawEvents, err := extractor.ScrapeWithSelectors(ctx, source)
 		if err != nil {
 			return 0, nil, err
