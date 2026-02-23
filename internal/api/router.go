@@ -174,8 +174,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// added/removed sources are picked up without a server restart.
 	var sourceCfgs []scraper.SourceConfig
 	if scraperSvc != nil {
-		sourceCfgs, _ = scraper.LoadSourceConfigs("configs/sources")
-		// Warn only — missing sources dir is non-fatal on startup.
+		var loadErr error
+		sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
+		if loadErr != nil {
+			logger.Warn().Err(loadErr).Msg("router: failed to load source configs for periodic jobs (non-fatal)")
+		}
 	}
 
 	// Register scrape worker when scraper is available.
