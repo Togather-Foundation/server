@@ -25,13 +25,15 @@ func (m *mockScraperConfig) GetScraperConfig(ctx context.Context) (postgres.Scra
 
 // mockScraper is a test double for scraperSourceScraper.
 type mockScraper struct {
-	result scraper.ScrapeResult
-	err    error
-	called bool
+	result   scraper.ScrapeResult
+	err      error
+	called   bool
+	lastOpts scraper.ScrapeOptions
 }
 
 func (m *mockScraper) ScrapeSource(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
 	m.called = true
+	m.lastOpts = opts
 	return m.result, m.err
 }
 
@@ -252,5 +254,133 @@ func TestScrapeSourceWorker_Work_NilScraper(t *testing.T) {
 	err := w.Work(context.Background(), job)
 	if err == nil {
 		t.Fatal("expected error when Scraper is nil")
+	}
+}
+
+func TestScrapeSourceWorker_Work_NilConfigQueries(t *testing.T) {
+	tests := []struct {
+		name       string
+		scrapeErr  error
+		wantErr    bool
+		wantCalled bool
+	}{
+		{
+			name:       "nil ConfigQueries proceeds with scrape successfully",
+			scrapeErr:  nil,
+			wantErr:    false,
+			wantCalled: true,
+		},
+		{
+			name:       "nil ConfigQueries proceeds with scrape and propagates scraper error",
+			scrapeErr:  errors.New("scrape failed"),
+			wantErr:    true,
+			wantCalled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := &mockScraper{
+				result: scraper.ScrapeResult{SourceName: "test-source"},
+				err:    tt.scrapeErr,
+			}
+
+			w := ScrapeSourceWorker{
+				Scraper:       ms,
+				ConfigQueries: nil, // no toggle check should be attempted
+				Logger:        nil, // defaults to slog.Default()
+			}
+
+			job := newTestJob("test-source")
+			err := w.Work(context.Background(), job)
+
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if ms.called != tt.wantCalled {
+				t.Errorf("ScrapeSource called=%v, want %v", ms.called, tt.wantCalled)
+			}
+		})
+	}
+}
+
+func TestScrapeSourceWorker_Work_ConfigTunablesWired(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         postgres.ScraperConfig
+		wantLimit   int
+		wantTimeout time.Duration
+		wantRateMs  int32
+	}{
+		{
+			name: "all tunables wired from config",
+			cfg: postgres.ScraperConfig{
+				AutoScrape:            true,
+				MaxBatchSize:          50,
+				RequestTimeoutSeconds: 60,
+				RateLimitMs:           500,
+			},
+			wantLimit:   50,
+			wantTimeout: 60 * time.Second,
+			wantRateMs:  500,
+		},
+		{
+			name: "zero values leave defaults (limit=0, timeout=0, rate=0)",
+			cfg: postgres.ScraperConfig{
+				AutoScrape:            true,
+				MaxBatchSize:          0,
+				RequestTimeoutSeconds: 0,
+				RateLimitMs:           0,
+			},
+			wantLimit:   0,
+			wantTimeout: 0,
+			wantRateMs:  0,
+		},
+		{
+			name: "partial config: only batch size set",
+			cfg: postgres.ScraperConfig{
+				AutoScrape:   true,
+				MaxBatchSize: 25,
+			},
+			wantLimit:   25,
+			wantTimeout: 0,
+			wantRateMs:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &mockScraperConfig{cfg: tt.cfg}
+			ms := &mockScraper{result: scraper.ScrapeResult{SourceName: "test-source"}}
+
+			w := ScrapeSourceWorker{
+				Scraper:       ms,
+				ConfigQueries: cfg,
+				Logger:        nil,
+			}
+
+			job := newTestJob("test-source")
+			err := w.Work(context.Background(), job)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !ms.called {
+				t.Fatal("expected ScrapeSource to be called")
+			}
+
+			got := ms.lastOpts
+			if got.Limit != tt.wantLimit {
+				t.Errorf("Limit: got %d, want %d", got.Limit, tt.wantLimit)
+			}
+			if got.RequestTimeout != tt.wantTimeout {
+				t.Errorf("RequestTimeout: got %v, want %v", got.RequestTimeout, tt.wantTimeout)
+			}
+			if got.RateLimitMs != tt.wantRateMs {
+				t.Errorf("RateLimitMs: got %d, want %d", got.RateLimitMs, tt.wantRateMs)
+			}
+		})
 	}
 }
