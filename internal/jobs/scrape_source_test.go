@@ -42,6 +42,7 @@ func (m *mockScraper) ScrapeSource(ctx context.Context, sourceName string, opts 
 // ---------------------------------------------------------------------------
 
 func TestSourceJitterOffset_InWindow(t *testing.T) {
+	t.Parallel()
 	window := 2 * time.Hour
 	tests := []string{"source-a", "source-b", "toronto-events", "weekly-arts", ""}
 
@@ -57,6 +58,7 @@ func TestSourceJitterOffset_InWindow(t *testing.T) {
 }
 
 func TestSourceJitterOffset_Deterministic(t *testing.T) {
+	t.Parallel()
 	window := 2 * time.Hour
 	names := []string{"source-a", "source-b", "toronto-events"}
 
@@ -70,6 +72,7 @@ func TestSourceJitterOffset_Deterministic(t *testing.T) {
 }
 
 func TestSourceJitterOffset_DifferentNames(t *testing.T) {
+	t.Parallel()
 	window := 2 * time.Hour
 	// Most distinct names should produce different offsets (hash collision unlikely).
 	a := sourceJitterOffset("source-alpha", window)
@@ -80,6 +83,7 @@ func TestSourceJitterOffset_DifferentNames(t *testing.T) {
 }
 
 func TestSourceJitterOffset_ZeroWindow(t *testing.T) {
+	t.Parallel()
 	offset := sourceJitterOffset("any-source", 0)
 	if offset != 0 {
 		t.Errorf("sourceJitterOffset with zero window: expected 0, got %v", offset)
@@ -91,6 +95,7 @@ func TestSourceJitterOffset_ZeroWindow(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStaggeredSchedule_Next_StrictlyAfterCurrent(t *testing.T) {
+	t.Parallel()
 	s := &staggeredSchedule{
 		interval: 24 * time.Hour,
 		offset:   30 * time.Minute,
@@ -105,6 +110,7 @@ func TestStaggeredSchedule_Next_StrictlyAfterCurrent(t *testing.T) {
 }
 
 func TestStaggeredSchedule_Next_CorrectPeriod(t *testing.T) {
+	t.Parallel()
 	interval := 24 * time.Hour
 	offset := 30 * time.Minute
 
@@ -122,6 +128,7 @@ func TestStaggeredSchedule_Next_CorrectPeriod(t *testing.T) {
 }
 
 func TestStaggeredSchedule_Next_BeforeSlot(t *testing.T) {
+	t.Parallel()
 	interval := 24 * time.Hour
 	offset := 2 * time.Hour
 
@@ -138,6 +145,7 @@ func TestStaggeredSchedule_Next_BeforeSlot(t *testing.T) {
 }
 
 func TestStaggeredSchedule_Next_DifferentOffsetsDifferentSlots(t *testing.T) {
+	t.Parallel()
 	interval := 24 * time.Hour
 	window := 2 * time.Hour
 
@@ -170,6 +178,7 @@ func TestStaggeredSchedule_Next_DifferentOffsetsDifferentSlots(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewPeriodicJobsFromSources_Count(t *testing.T) {
+	t.Parallel()
 	baseCount := len(NewPeriodicJobs()) // existing periodic jobs
 
 	tests := []struct {
@@ -230,6 +239,7 @@ func TestNewPeriodicJobsFromSources_Count(t *testing.T) {
 }
 
 func TestNewPeriodicJobsFromSources_Intervals(t *testing.T) {
+	t.Parallel()
 	// We can't directly inspect the schedule from *river.PeriodicJob easily,
 	// so we verify behaviour indirectly via ScrapeSourceArgs produced by the constructor.
 	// The key thing here is that the function returns without panicking and produces
@@ -271,6 +281,7 @@ func newTestJob(sourceName string) *river.Job[ScrapeSourceArgs] {
 }
 
 func TestScrapeSourceWorker_Work_HappyPath(t *testing.T) {
+	t.Parallel()
 	cfg := &mockScraperConfig{
 		cfg: postgres.ScraperConfig{AutoScrape: true},
 	}
@@ -300,6 +311,7 @@ func TestScrapeSourceWorker_Work_HappyPath(t *testing.T) {
 }
 
 func TestScrapeSourceWorker_Work_AutoScrapeDisabled(t *testing.T) {
+	t.Parallel()
 	cfg := &mockScraperConfig{
 		cfg: postgres.ScraperConfig{AutoScrape: false},
 	}
@@ -322,6 +334,7 @@ func TestScrapeSourceWorker_Work_AutoScrapeDisabled(t *testing.T) {
 }
 
 func TestScrapeSourceWorker_Work_ConfigReadError_Proceeds(t *testing.T) {
+	t.Parallel()
 	// When config read fails, worker should proceed (log warning only).
 	cfg := &mockScraperConfig{err: errors.New("db down")}
 	ms := &mockScraper{
@@ -345,6 +358,7 @@ func TestScrapeSourceWorker_Work_ConfigReadError_Proceeds(t *testing.T) {
 }
 
 func TestScrapeSourceWorker_Work_ScraperError_Propagated(t *testing.T) {
+	t.Parallel()
 	cfg := &mockScraperConfig{
 		cfg: postgres.ScraperConfig{AutoScrape: true},
 	}
@@ -368,6 +382,7 @@ func TestScrapeSourceWorker_Work_ScraperError_Propagated(t *testing.T) {
 }
 
 func TestScrapeSourceWorker_Work_NilScraper(t *testing.T) {
+	t.Parallel()
 	cfg := &mockScraperConfig{
 		cfg: postgres.ScraperConfig{AutoScrape: true},
 	}
@@ -386,6 +401,7 @@ func TestScrapeSourceWorker_Work_NilScraper(t *testing.T) {
 }
 
 func TestScrapeSourceWorker_Work_NilConfigQueries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		scrapeErr  error
@@ -438,6 +454,7 @@ func TestScrapeSourceWorker_Work_NilConfigQueries(t *testing.T) {
 // TestScrapeSourceWorker_SlotField verifies that ScrapeSourceWorker has a Slot
 // field and that it can be set when constructing the worker.
 func TestScrapeSourceWorker_SlotField(t *testing.T) {
+	t.Parallel()
 	ms := &mockScraper{}
 	w := ScrapeSourceWorker{
 		Scraper:       ms,
@@ -452,6 +469,7 @@ func TestScrapeSourceWorker_SlotField(t *testing.T) {
 }
 
 func TestScrapeSourceWorker_Work_ConfigTunablesWired(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		cfg         postgres.ScraperConfig

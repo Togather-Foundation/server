@@ -23,6 +23,7 @@ func newMetricsTestScraper(slot string) *Scraper {
 // TestRecordMetrics_Success verifies that a successful result increments
 // ScraperRunsTotal with result="success" and the correct labels.
 func TestRecordMetrics_Success(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("test-slot")
 	result := ScrapeResult{
 		SourceName: "metrics-success-src",
@@ -47,6 +48,7 @@ func TestRecordMetrics_Success(t *testing.T) {
 // TestRecordMetrics_Error verifies that an error result increments
 // ScraperRunsTotal with result="error".
 func TestRecordMetrics_Error(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("test-slot")
 	result := ScrapeResult{
 		SourceName: "metrics-error-src",
@@ -72,6 +74,7 @@ func TestRecordMetrics_Error(t *testing.T) {
 // TestRecordMetrics_DryRun verifies that a dry-run result increments
 // ScraperRunsTotal with result="dry_run".
 func TestRecordMetrics_DryRun(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("test-slot")
 	result := ScrapeResult{
 		SourceName: "metrics-dryrun-src",
@@ -97,6 +100,7 @@ func TestRecordMetrics_DryRun(t *testing.T) {
 // TestRecordMetrics_NoSlot verifies that recordMetrics is a no-op when slot is
 // empty — no panic and no counter increment.
 func TestRecordMetrics_NoSlot(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("")
 	result := ScrapeResult{
 		SourceName: "noslot-src",
@@ -110,6 +114,7 @@ func TestRecordMetrics_NoSlot(t *testing.T) {
 // TestRecordMetrics_EventCounts verifies that ScraperEventsTotal is incremented
 // for each non-zero event outcome bucket.
 func TestRecordMetrics_EventCounts(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("count-slot")
 	result := ScrapeResult{
 		SourceName:      "metrics-counts-src",
@@ -157,6 +162,7 @@ func TestRecordMetrics_EventCounts(t *testing.T) {
 // Error != nil, the result label is "error" — failures must never be silently
 // hidden behind the "dry_run" bucket.
 func TestRecordMetrics_DryRunWithError(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("test-slot")
 	result := ScrapeResult{
 		SourceName: "metrics-dryrun-err-src",
@@ -192,6 +198,7 @@ func TestRecordMetrics_DryRunWithError(t *testing.T) {
 // TestRecordMetrics_ZeroCountsNotEmitted verifies that outcomes with zero
 // counts are not separately incremented (delta should be 0).
 func TestRecordMetrics_ZeroCountsNotEmitted(t *testing.T) {
+	t.Parallel()
 	s := newMetricsTestScraper("zero-slot")
 	result := ScrapeResult{
 		SourceName:      "metrics-zero-src",
