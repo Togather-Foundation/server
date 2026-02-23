@@ -731,6 +731,141 @@ increase(togather_river_jobs_completed_total{result="error"}[15m]) >= 3
 
 ---
 
+### Scraper Metrics
+
+The Togather server instruments its two-tier event scraper (Tier 0: JSON-LD extraction, Tier 1: Colly CSS selectors). These metrics track scrape run outcomes, duration, and per-event processing results across configured sources and ad-hoc URL scrapes.
+
+#### Metric Summary
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `togather_scraper_runs_total` | Counter | `source`, `tier`, `result`, `slot` | Total completed scrape runs by outcome |
+| `togather_scraper_run_duration_seconds` | Histogram | `source`, `tier`, `slot` | Scrape run duration in seconds |
+| `togather_scraper_events_total` | Counter | `source`, `tier`, `outcome`, `slot` | Total events processed by the scraper, by outcome |
+
+#### Label Values
+
+- **`source`**: Configured source name (e.g., `harbourfront-centre`) or the hostname for ad-hoc `ScrapeURL` calls
+- **`tier`**: Scraper tier — `"0"` (JSON-LD / Tier 0) or `"1"` (Colly CSS / Tier 1)
+- **`result`** (`scraper_runs_total` only): `"success"`, `"error"`, `"dry_run"`
+  - **Note**: `"error"` takes priority over `"dry_run"` — a dry-run that returns an error is classified as `"error"`, not `"dry_run"`
+- **`outcome`** (`scraper_events_total` only): `"found"`, `"submitted"`, `"created"`, `"duplicate"`, `"failed"`
+  - **Note**: Zero-count outcomes are not emitted to avoid label cardinality pollution — only outcomes that actually occur appear in the time series
+- **`slot`**: Deployment slot (`blue`, `green`, `cli`, or `unknown`)
+
+#### `togather_scraper_runs_total{source,tier,result,slot}`
+**Type**: Counter  
+**Description**: Total number of completed scrape runs  
+**Labels**:
+- `source`: Source name or hostname
+- `tier`: Scraper tier (`"0"` or `"1"`)
+- `result`: Run outcome (`success`, `error`, or `dry_run`)
+- `slot`: Deployment slot
+
+**Example Queries**:
+```promql
+# Scrape success rate per source (last hour)
+sum by (source) (increase(togather_scraper_runs_total{result="success"}[1h]))
+  / sum by (source) (increase(togather_scraper_runs_total[1h]))
+
+# Failed runs in last 24 hours
+sum by (source) (increase(togather_scraper_runs_total{result="error"}[24h]))
+
+# Total runs by tier and result
+sum by (tier, result) (togather_scraper_runs_total)
+
+# Alert if error rate >20% for any source
+sum by (source) (rate(togather_scraper_runs_total{result="error"}[1h]))
+  / sum by (source) (rate(togather_scraper_runs_total[1h])) > 0.20
+```
+
+#### `togather_scraper_run_duration_seconds{source,tier,slot}`
+**Type**: Histogram  
+**Buckets**: 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300 seconds  
+**Description**: Scrape run duration in seconds  
+**Labels**:
+- `source`: Source name or hostname
+- `tier`: Scraper tier (`"0"` or `"1"`)
+- `slot`: Deployment slot
+
+**Example Queries**:
+```promql
+# p95 scrape duration per source (last 5 minutes)
+histogram_quantile(0.95,
+  sum by (source, le) (rate(togather_scraper_run_duration_seconds_bucket[5m])))
+
+# p50 (median) duration per tier
+histogram_quantile(0.50,
+  sum by (tier, le) (rate(togather_scraper_run_duration_seconds_bucket[5m])))
+
+# Average scrape duration per source
+rate(togather_scraper_run_duration_seconds_sum[5m])
+  / rate(togather_scraper_run_duration_seconds_count[5m])
+
+# Alert if p95 duration >120s for any source
+histogram_quantile(0.95,
+  sum by (source, le) (rate(togather_scraper_run_duration_seconds_bucket[5m]))) > 120
+```
+
+#### `togather_scraper_events_total{source,tier,outcome,slot}`
+**Type**: Counter  
+**Description**: Total number of events processed by the scraper, by outcome  
+**Labels**:
+- `source`: Source name or hostname
+- `tier`: Scraper tier (`"0"` or `"1"`)
+- `outcome`: Event processing result (`found`, `submitted`, `created`, `duplicate`, `failed`)
+- `slot`: Deployment slot
+
+**Note**: Zero-count outcomes are not emitted — only outcomes that actually occur during a run produce time series, preventing sparse label cardinality.
+
+**Example Queries**:
+```promql
+# Events created per source per day
+sum by (source) (increase(togather_scraper_events_total{outcome="created"}[24h]))
+
+# Duplicate rate per source (last hour)
+sum by (source) (increase(togather_scraper_events_total{outcome="duplicate"}[1h]))
+  / sum by (source) (increase(togather_scraper_events_total{outcome="found"}[1h]))
+
+# Failed event processing in last hour
+sum by (source) (increase(togather_scraper_events_total{outcome="failed"}[1h]))
+
+# All event outcomes for a specific source
+togather_scraper_events_total{source="harbourfront-centre"}
+```
+
+**Common Dashboard Panels**:
+
+1. **Scrape Success Rate** (% by source):
+   ```promql
+   100 * (
+     sum by (source) (rate(togather_scraper_runs_total{result="success"}[1h]))
+     / sum by (source) (rate(togather_scraper_runs_total[1h]))
+   )
+   ```
+
+2. **Events Created per Source** (per day):
+   ```promql
+   sum by (source) (increase(togather_scraper_events_total{outcome="created"}[24h]))
+   ```
+
+3. **p95 Scrape Duration Heatmap**:
+   ```promql
+   histogram_quantile(0.95,
+     sum by (source, le) (rate(togather_scraper_run_duration_seconds_bucket[5m])))
+   ```
+
+4. **Failed Runs (last 24h)**:
+   ```promql
+   sum by (source) (increase(togather_scraper_runs_total{result="error"}[24h]))
+   ```
+
+**Notes on `dry_run` result**:
+
+The `dry_run` result label is emitted when the CLI `--dry-run` flag is used (via `server scrape source <name> --dry-run`). This lets you distinguish testing runs from live production scrapes in dashboards and alerts. If a dry-run encounters an error, the run is recorded as `"error"` rather than `"dry_run"`.
+
+---
+
 ### Go Runtime Metrics
 
 Prometheus automatically collects Go runtime metrics with the `go_` prefix:
