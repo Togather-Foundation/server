@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"time"
 
@@ -101,13 +102,55 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 	return nil
 }
 
+// Jitter windows for staggering periodic scrape jobs across sources.
+const (
+	dailyJitterWindow  = 2 * time.Hour
+	weeklyJitterWindow = 4 * time.Hour
+)
+
+// sourceJitterOffset returns a deterministic duration offset in [0, window)
+// derived from a hash of the source name. The same name always produces the
+// same offset, so the schedule is stable across restarts.
+func sourceJitterOffset(sourceName string, window time.Duration) time.Duration {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(sourceName))
+	ratio := float64(h.Sum32()) / float64(1<<32)
+	return time.Duration(ratio * float64(window))
+}
+
+// staggeredSchedule is a river.PeriodicSchedule that fires at a fixed offset
+// within each period. Given an interval and an offset, the next run time is
+// always: truncate(current, interval) + offset + interval
+//
+// This guarantees that every source with the same interval fires at its own
+// deterministic sub-slot rather than all piling up on the same clock tick.
+type staggeredSchedule struct {
+	interval time.Duration
+	offset   time.Duration
+}
+
+// Next returns the next run time that is strictly after current.
+// It aligns to: floor(current / interval)*interval + offset, then advances
+// by one period if that time is not strictly in the future.
+func (s *staggeredSchedule) Next(current time.Time) time.Time {
+	// Truncate to the start of the current period.
+	periodStart := current.Truncate(s.interval)
+	candidate := periodStart.Add(s.offset)
+	// If the candidate is not strictly after current, move to the next period.
+	if !candidate.After(current) {
+		candidate = candidate.Add(s.interval)
+	}
+	return candidate
+}
+
 // NewPeriodicJobsFromSources returns the base periodic jobs plus one River
 // PeriodicJob for every source whose Schedule is "daily" or "weekly" and
 // whose Enabled flag is true.
 //
-// Schedules:
-//   - "daily"  → every 24 hours
-//   - "weekly" → every 7 days
+// Each source receives a deterministic jitter offset so that jobs spread
+// across a stagger window rather than all firing simultaneously:
+//   - "daily"  → 24-hour interval, offset spread within 2 hours
+//   - "weekly" → 7-day interval, offset spread within 4 hours
 func NewPeriodicJobsFromSources(sources []scraper.SourceConfig) []*river.PeriodicJob {
 	jobs := NewPeriodicJobs()
 
@@ -116,20 +159,25 @@ func NewPeriodicJobsFromSources(sources []scraper.SourceConfig) []*river.Periodi
 			continue
 		}
 
-		var interval time.Duration
+		var interval, window time.Duration
 		switch src.Schedule {
 		case "daily":
 			interval = 24 * time.Hour
+			window = dailyJitterWindow
 		case "weekly":
 			interval = 7 * 24 * time.Hour
+			window = weeklyJitterWindow
 		default:
 			// "manual" or unknown — skip
 			continue
 		}
 
+		offset := sourceJitterOffset(src.Name, window)
+		schedule := &staggeredSchedule{interval: interval, offset: offset}
+
 		name := src.Name // capture for closure
 		jobs = append(jobs, river.NewPeriodicJob(
-			river.PeriodicInterval(interval),
+			schedule,
 			func() (river.JobArgs, *river.InsertOpts) {
 				return ScrapeSourceArgs{SourceName: name}, nil
 			},
