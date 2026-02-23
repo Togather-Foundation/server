@@ -1,7 +1,7 @@
 # Implementation Plan: Integrated Event Scraper
 
 **Branch**: `003-scraper` | **Date**: 2026-02-21 | **Spec**: [spec.md](./spec.md)
-**Status**: Phases 1–3 complete. Code review fixes **COMPLETE** — all 13 review beads closed across 3 waves (Wave 1: srv-43rad, srv-i0lhn, srv-e3sk8, srv-kezsj; Wave 2: srv-v5a2n, srv-14cib, srv-9nwr7, srv-ewuhx, srv-0z4fu, srv-ooakk; Wave 3: srv-r1x5p, srv-0b33l, srv-dnq72).
+**Status**: Phases 1–4 delivered (Tier 0/1, DB-backed configs, scheduling, admin UI). Code review fixes **COMPLETE** — all 13 review beads closed across 3 waves (Wave 1: srv-43rad, srv-i0lhn, srv-e3sk8, srv-kezsj; Wave 2: srv-v5a2n, srv-14cib, srv-9nwr7, srv-ewuhx, srv-0z4fu, srv-ooakk; Wave 3: srv-r1x5p, srv-0b33l, srv-dnq72). Remaining work tracked via beads (`srv-h264z`, `srv-sf4vs`).
 **Input**: Feature specification from `/specs/003-scraper/spec.md`
 
 ## Summary
@@ -158,12 +158,12 @@ The normalizer must handle all of these gracefully.
 - Handler pattern: optional dependency injected via `WithScraperSourceRepo(repo)` fluent method (same as `WithGeocodingService`).
 - `scraperDomain.Repository` interface assigned to a local variable in `router.go` to satisfy the typed parameter — `postgres.NewScraperSourceRepository(pool)` returns the concrete type.
 
-### Phase 4: Scheduling + Production (Future)
+### Phase 4: Scheduling + Production ✅ COMPLETE
 
 1. River job worker for periodic scraping — `srv-pfeud`
-2. Config-driven schedules (daily, weekly)
-3. Prometheus metrics for scrape success/failure rates
-4. Admin UI page for scrape status — `srv-5127b`
+2. Config-driven schedules (daily, weekly) with `scraper_config` tunables
+3. Admin UI page for scrape status — `srv-5127b`
+4. Prometheus metrics for scraper runs — **pending** (`srv-sf4vs`)
 
 ### Phase 5: Agent Feedback + Quality (Future)
 
@@ -222,16 +222,21 @@ The normalizer must handle all of these gracefully.
 
 ### Follow-up Beads Filed
 
-| Bead | Title | Priority |
-|------|-------|----------|
-| `srv-aany8` | Validate and fix GTA source config URLs against live sites | P3 |
-| `srv-pfeud` | River job scheduling for periodic automated scrapes | P4 |
-| `srv-5127b` | Admin UI for source management and run history | P4 |
-| `srv-h264z` | Tier 2 headless browser support via Rod | P4 |
+| Bead | Title | Priority | Status |
+|------|-------|----------|--------|
+| `srv-aany8` | Validate and fix GTA source config URLs against live sites | P3 | Closed |
+| `srv-pfeud` | River job scheduling for periodic automated scrapes | P4 | Closed |
+| `srv-5127b` | Admin UI for source management and run history | P4 | Closed |
+| `srv-h264z` | Tier 2 headless browser support via Rod | P4 | Open |
+| `srv-sf4vs` | Scraper Prometheus metrics (success/failure rates, event counts, duration) | P3 | Ready |
 
 ---
 
 ## Source Config Findings (Phase 2 expansion)
+
+Selector authoring now leans on the `/generate-selectors` agent workflow (`agents/generate-selectors.md`).
+It inspects candidate URLs, proposes Tier 1 selectors, validates them with `server scrape test`,
+and writes vetted YAML configs via parallel subagents.
 
 ### Recon Script (`scripts/recon-venues.py`)
 
