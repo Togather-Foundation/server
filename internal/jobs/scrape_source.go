@@ -41,7 +41,10 @@ type ScrapeSourceWorker struct {
 	Scraper       scraperSourceScraper
 	ConfigQueries scraperConfigReader
 	Logger        *slog.Logger
-	Slot          string // deployment slot for metrics labeling
+	// Slot is the deployment slot (blue/green). It is reserved for structured
+	// logging; Prometheus metrics labels are controlled by the slot baked into
+	// the Scraper instance at construction time (NewScraperWithSourceRepoAndSlot).
+	Slot string
 }
 
 func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourceArgs]) error {

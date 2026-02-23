@@ -153,6 +153,42 @@ func TestRecordMetrics_EventCounts(t *testing.T) {
 	}
 }
 
+// TestRecordMetrics_DryRunWithError verifies that when both DryRun=true and
+// Error != nil, the result label is "error" — failures must never be silently
+// hidden behind the "dry_run" bucket.
+func TestRecordMetrics_DryRunWithError(t *testing.T) {
+	s := newMetricsTestScraper("test-slot")
+	result := ScrapeResult{
+		SourceName: "metrics-dryrun-err-src",
+		Tier:       0,
+		DryRun:     true,
+		Error:      errors.New("network timeout"),
+	}
+
+	beforeErr := testutil.ToFloat64(
+		metrics.ScraperRunsTotal.WithLabelValues("metrics-dryrun-err-src", "0", "error", "test-slot"),
+	)
+	beforeDry := testutil.ToFloat64(
+		metrics.ScraperRunsTotal.WithLabelValues("metrics-dryrun-err-src", "0", "dry_run", "test-slot"),
+	)
+
+	s.recordMetrics(result, time.Second)
+
+	afterErr := testutil.ToFloat64(
+		metrics.ScraperRunsTotal.WithLabelValues("metrics-dryrun-err-src", "0", "error", "test-slot"),
+	)
+	afterDry := testutil.ToFloat64(
+		metrics.ScraperRunsTotal.WithLabelValues("metrics-dryrun-err-src", "0", "dry_run", "test-slot"),
+	)
+
+	if afterErr-beforeErr != 1 {
+		t.Errorf("ScraperRunsTotal (error) delta = %v, want 1 when DryRun+Error", afterErr-beforeErr)
+	}
+	if afterDry-beforeDry != 0 {
+		t.Errorf("ScraperRunsTotal (dry_run) delta = %v, want 0 when Error is set", afterDry-beforeDry)
+	}
+}
+
 // TestRecordMetrics_ZeroCountsNotEmitted verifies that outcomes with zero
 // counts are not separately incremented (delta should be 0).
 func TestRecordMetrics_ZeroCountsNotEmitted(t *testing.T) {

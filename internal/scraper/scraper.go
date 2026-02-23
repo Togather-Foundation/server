@@ -480,12 +480,14 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 
 	tier := fmt.Sprintf("%d", result.Tier)
 
-	// Determine result label.
+	// Determine result label. Error takes priority: a dry-run that also
+	// returns an error should be counted as "error" so failures are never
+	// silently hidden behind the "dry_run" bucket.
 	resultLabel := "success"
-	if result.DryRun {
-		resultLabel = "dry_run"
-	} else if result.Error != nil {
+	if result.Error != nil {
 		resultLabel = "error"
+	} else if result.DryRun {
+		resultLabel = "dry_run"
 	}
 
 	// Observe run duration.
