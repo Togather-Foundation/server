@@ -14,6 +14,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
+	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
@@ -69,15 +70,23 @@ type Scraper struct {
 	queries    *postgres.Queries        // may be nil — DB tracking skipped when nil
 	sourceRepo domainScraper.Repository // may be nil — falls back to YAML when nil
 	logger     zerolog.Logger
+	slot       string // deployment slot for Prometheus metrics labeling; empty = no metrics
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
 // skipped in that case (useful in tests and dry-run contexts).
 func NewScraper(ingest *IngestClient, queries *postgres.Queries, logger zerolog.Logger) *Scraper {
+	return NewScraperWithSlot(ingest, queries, logger, "")
+}
+
+// NewScraperWithSlot constructs a Scraper with an explicit deployment slot for
+// Prometheus metrics labeling. When slot is empty, no metrics are recorded.
+func NewScraperWithSlot(ingest *IngestClient, queries *postgres.Queries, logger zerolog.Logger, slot string) *Scraper {
 	return &Scraper{
 		ingest:  ingest,
 		queries: queries,
 		logger:  logger,
+		slot:    slot,
 	}
 }
 
@@ -91,11 +100,25 @@ func NewScraperWithSourceRepo(
 	sourceRepo domainScraper.Repository,
 	logger zerolog.Logger,
 ) *Scraper {
+	return NewScraperWithSourceRepoAndSlot(ingest, queries, sourceRepo, logger, "")
+}
+
+// NewScraperWithSourceRepoAndSlot constructs a Scraper with a DB-backed source
+// repository and an explicit deployment slot for Prometheus metrics labeling.
+// When slot is empty, no metrics are recorded.
+func NewScraperWithSourceRepoAndSlot(
+	ingest *IngestClient,
+	queries *postgres.Queries,
+	sourceRepo domainScraper.Repository,
+	logger zerolog.Logger,
+	slot string,
+) *Scraper {
 	return &Scraper{
 		ingest:     ingest,
 		queries:    queries,
 		sourceRepo: sourceRepo,
 		logger:     logger,
+		slot:       slot,
 	}
 }
 
@@ -384,6 +407,8 @@ func (s *Scraper) runWithTracking(
 	result *ScrapeResult,
 	fn scrapeFunc,
 ) ScrapeResult {
+	start := time.Now()
+
 	// Insert run record (best-effort).
 	var runID int64
 	if s.queries != nil {
@@ -406,6 +431,7 @@ func (s *Scraper) runWithTracking(
 	if err != nil {
 		result.Error = err
 		s.updateRunFailed(ctx, runID, err)
+		s.recordMetrics(*result, time.Since(start))
 		return *result
 	}
 
@@ -413,6 +439,7 @@ func (s *Scraper) runWithTracking(
 
 	if len(validEvents) == 0 {
 		s.updateRunCompleted(ctx, runID, result)
+		s.recordMetrics(*result, time.Since(start))
 		return *result
 	}
 
@@ -420,6 +447,7 @@ func (s *Scraper) runWithTracking(
 	if err != nil {
 		result.Error = err
 		s.updateRunFailed(ctx, runID, err)
+		s.recordMetrics(*result, time.Since(start))
 		return *result
 	}
 
@@ -439,7 +467,58 @@ func (s *Scraper) runWithTracking(
 	}
 
 	s.updateRunCompleted(ctx, runID, result)
+	s.recordMetrics(*result, time.Since(start))
 	return *result
+}
+
+// recordMetrics records Prometheus metrics for a completed scrape run.
+// It is a no-op when s.slot is empty (metrics disabled).
+func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
+	if s.slot == "" {
+		return
+	}
+
+	tier := fmt.Sprintf("%d", result.Tier)
+
+	// Determine result label. Error takes priority: a dry-run that also
+	// returns an error should be counted as "error" so failures are never
+	// silently hidden behind the "dry_run" bucket.
+	resultLabel := "success"
+	if result.Error != nil {
+		resultLabel = "error"
+	} else if result.DryRun {
+		resultLabel = "dry_run"
+	}
+
+	// Observe run duration.
+	metrics.ScraperRunDuration.
+		WithLabelValues(result.SourceName, tier, s.slot).
+		Observe(duration.Seconds())
+
+	// Increment run counter.
+	metrics.ScraperRunsTotal.
+		WithLabelValues(result.SourceName, tier, resultLabel, s.slot).
+		Inc()
+
+	// Increment per-outcome event counters (skip zero values to avoid label pollution).
+	type outcomeCount struct {
+		outcome string
+		count   int
+	}
+	outcomes := []outcomeCount{
+		{"found", result.EventsFound},
+		{"submitted", result.EventsSubmitted},
+		{"created", result.EventsCreated},
+		{"duplicate", result.EventsDuplicate},
+		{"failed", result.EventsFailed},
+	}
+	for _, oc := range outcomes {
+		if oc.count != 0 {
+			metrics.ScraperEventsTotal.
+				WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).
+				Add(float64(oc.count))
+		}
+	}
 }
 
 // updateRunFailed updates the scraper_run record with a failure message.
