@@ -63,7 +63,10 @@ func TestScraperEventsTotal_LabelCardinality(t *testing.T) {
 }
 
 // TestScraperRunsTotal_CounterIncrements verifies that the counter increments
-// are observable via testutil.ToFloat64.
+// are observable via testutil.ToFloat64. The before/after delta pattern is
+// safe under t.Parallel() only when each test uses a label combination that no
+// other test in this process writes to. "label-test-src" / "0" / "success" /
+// "test-slot" is unique within this file — do not reuse it in future tests.
 func TestScraperRunsTotal_CounterIncrements(t *testing.T) {
 	t.Parallel()
 	before := testutil.ToFloat64(ScraperRunsTotal.WithLabelValues("label-test-src", "0", "success", "test-slot"))
@@ -76,6 +79,8 @@ func TestScraperRunsTotal_CounterIncrements(t *testing.T) {
 }
 
 // TestScraperEventsTotal_CounterIncrements verifies events counter increments.
+// Uses label combination "label-test-src" / "1" / "found" / "test-slot" which
+// is unique within this file — do not reuse in future parallel tests.
 func TestScraperEventsTotal_CounterIncrements(t *testing.T) {
 	t.Parallel()
 	before := testutil.ToFloat64(ScraperEventsTotal.WithLabelValues("label-test-src", "1", "found", "test-slot"))

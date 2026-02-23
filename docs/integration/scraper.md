@@ -531,9 +531,9 @@ The scraper emits three metrics, all in the `togather_scraper_*` namespace:
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `togather_scraper_runs_total` | Counter | `source`, `status` | Completed scrape runs (status: `ok` \| `error`) |
-| `togather_scraper_run_duration_seconds` | Histogram | `source` | Wall-clock time per scrape run |
-| `togather_scraper_events_total` | Counter | `source`, `outcome` | Events processed (outcome: `new` \| `duplicate` \| `failed`) |
+| `togather_scraper_runs_total` | Counter | `source`, `tier`, `result`, `slot` | Completed scrape runs (result: `success` \| `error` \| `dry_run`) |
+| `togather_scraper_run_duration_seconds` | Histogram | `source`, `tier`, `slot` | Wall-clock time per scrape run |
+| `togather_scraper_events_total` | Counter | `source`, `tier`, `outcome`, `slot` | Events processed (outcome: `found` \| `submitted` \| `created` \| `duplicate` \| `failed`) |
 
 The `source` label is set to the source config `name` for named sources, and to
 `parsedURL.Hostname()` for ad-hoc `ScrapeURL` calls (i.e. `server scrape url <URL>`).
