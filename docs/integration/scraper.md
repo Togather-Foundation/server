@@ -523,6 +523,32 @@ See `configs/sources/README.md` for full status including disabled sources and u
 
 ---
 
+## Observability
+
+### Prometheus Metrics
+
+The scraper emits three metrics, all in the `togather_scraper_*` namespace:
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `togather_scraper_runs_total` | Counter | `source`, `status` | Completed scrape runs (status: `ok` \| `error`) |
+| `togather_scraper_run_duration_seconds` | Histogram | `source` | Wall-clock time per scrape run |
+| `togather_scraper_events_total` | Counter | `source`, `outcome` | Events processed (outcome: `new` \| `duplicate` \| `failed`) |
+
+The `source` label is set to the source config `name` for named sources, and to
+`parsedURL.Hostname()` for ad-hoc `ScrapeURL` calls (i.e. `server scrape url <URL>`).
+
+**Cardinality note:** The hostname-derived label is safe today because `ScrapeURL`
+is only called from the CLI with a bounded set of operator-supplied URLs. Do NOT
+call `ScrapeURL` from a user-facing HTTP endpoint — the label would become unbounded
+and cause Prometheus memory growth. If that call-site is ever added, normalise the
+label (e.g. strip subdomains, cap length) or use a fixed `"ad_hoc"` value.
+
+For full metric documentation and dashboard guidance, see
+[docs/deploy/monitoring.md](../deploy/monitoring.md).
+
+---
+
 ## Security Design
 
 - **Body size limits**: HTML responses capped at 10 MiB; ingest API responses at 1 MiB

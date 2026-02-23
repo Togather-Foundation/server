@@ -159,6 +159,13 @@ func (s *Scraper) loadSourceConfigs(ctx context.Context, opts ScrapeOptions) ([]
 // ScrapeURL fetches rawURL, extracts JSON-LD events, normalises them, and
 // either submits or dry-runs the batch. The source name is derived from the
 // URL hostname.
+//
+// NOTE: The hostname is used as the Prometheus "source" label. This is safe
+// today because ScrapeURL is only called from the CLI (bounded set of URLs).
+// Do NOT expose this method from a user-facing HTTP endpoint with
+// operator-supplied URLs — the label would become unbounded and cause
+// Prometheus memory growth. If that call-site is ever added, normalise the
+// label (e.g. strip subdomains, cap length) or use a fixed "ad_hoc" value.
 func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptions) (ScrapeResult, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
