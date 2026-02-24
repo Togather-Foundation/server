@@ -3,5 +3,5 @@
   "jsonl_export": "issues.jsonl",
   "backend": "dolt",
   "dolt_database": "beads_srv",
-  "last_bd_version": "0.49.6"
+  "last_bd_version": "0.52.0"
 }
