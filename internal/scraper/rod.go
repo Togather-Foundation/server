@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -33,7 +32,6 @@ type RodExtractor struct {
 	sem         chan struct{} // semaphore
 	chromePath  string        // override SCRAPER_CHROME_PATH; "" = download-on-demand
 	headlessEnv bool          // mirrors SCRAPER_HEADLESS_ENABLED env var
-	mu          sync.Mutex
 }
 
 // NewRodExtractor returns a RodExtractor with the given max concurrency.
