@@ -72,6 +72,7 @@ type Scraper struct {
 	logger         zerolog.Logger
 	slot           string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
 	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
+	rodExtractor   *RodExtractor           // nil when headless is disabled/unconfigured
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -131,6 +132,13 @@ func NewScraperWithSourceRepoAndSlot(
 		slot:           slot,
 		scraperMetrics: sm,
 	}
+}
+
+// SetRodExtractor sets the Tier 2 headless browser extractor. Call after
+// construction to enable Tier 2 scraping. When r is nil, Tier 2 sources
+// return an error describing that headless scraping is unconfigured.
+func (s *Scraper) SetRodExtractor(r *RodExtractor) {
+	s.rodExtractor = r
 }
 
 // loadSourceConfigs returns the active SourceConfig slice. It tries the DB
@@ -245,6 +253,8 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 		return s.scrapeTier0(ctx, *found, opts)
 	case 1:
 		return s.scrapeTier1(ctx, *found, opts)
+	case 2:
+		return s.scrapeTier2(ctx, *found, opts)
 	default:
 		return ScrapeResult{}, fmt.Errorf("unknown tier %d for source %s", found.Tier, sourceName)
 	}
@@ -295,6 +305,8 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 			res, scrapeErr = s.scrapeTier0(ctx, cfg, opts)
 		case 1:
 			res, scrapeErr = s.scrapeTier1(ctx, cfg, opts)
+		case 2:
+			res, scrapeErr = s.scrapeTier2(ctx, cfg, opts)
 		default:
 			scrapeErr = fmt.Errorf("unknown tier %d for source %s", cfg.Tier, cfg.Name)
 		}
@@ -348,6 +360,53 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 1 events skipped during normalisation")
+		}
+
+		return len(rawEvents), validEvents, nil
+	}), nil
+}
+
+// scrapeTier2 fetches and processes a Tier 2 (headless browser) source.
+func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
+	result := ScrapeResult{
+		SourceName: source.Name,
+		SourceURL:  source.URL,
+		Tier:       2,
+		DryRun:     opts.DryRun,
+	}
+
+	if s.rodExtractor == nil {
+		result.Error = fmt.Errorf("tier 2 scraping requires a RodExtractor (set SCRAPER_HEADLESS_ENABLED=true)")
+		return result, nil
+	}
+
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+		rawEvents, err := s.rodExtractor.ScrapeWithBrowser(ctx, source)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		var validEvents []events.EventInput
+		skipped := 0
+		limit := opts.Limit
+
+		for i, raw := range rawEvents {
+			if limit > 0 && i >= limit {
+				break
+			}
+			input, normErr := NormalizeRawEvent(raw, source)
+			if normErr != nil {
+				s.logger.Warn().Str("source", source.Name).Err(normErr).
+					Msg("scraper: skipping raw event that failed normalisation (tier 2)")
+				skipped++
+				continue
+			}
+			validEvents = append(validEvents, input)
+		}
+
+		if skipped > 0 {
+			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
+				Msg("scraper: tier 2 events skipped during normalisation")
 		}
 
 		return len(rawEvents), validEvents, nil

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"os"
+	"strconv"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/scraper"
@@ -122,21 +123,40 @@ func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper
 	client := scraper.NewIngestClient(serverURL, apiKey)
 
 	dbURL := getDatabaseURL()
+	var s *scraper.Scraper
+	var cleanup func()
+
 	if dbURL == "" {
 		logger.Warn().Msg("scraper: DATABASE_URL not set — scraper_runs tracking and DB source configs disabled")
-		s := scraper.NewScraperWithSlot(client, nil, logger, "cli")
-		return s, func() {}, nil
+		s = scraper.NewScraperWithSlot(client, nil, logger, "cli")
+		cleanup = func() {}
+	} else {
+		pool, err := pgxpool.New(context.Background(), dbURL)
+		if err != nil {
+			logger.Warn().Err(err).Msg("scraper: failed to connect to DB — scraper_runs tracking and DB source configs disabled")
+			s = scraper.NewScraperWithSlot(client, nil, logger, "cli")
+			cleanup = func() {}
+		} else {
+			queries := postgres.New(pool)
+			sourceRepo := postgres.NewScraperSourceRepository(pool)
+			s = scraper.NewScraperWithSourceRepoAndSlot(client, queries, sourceRepo, logger, "cli")
+			cleanup = pool.Close
+		}
 	}
 
-	pool, err := pgxpool.New(context.Background(), dbURL)
-	if err != nil {
-		logger.Warn().Err(err).Msg("scraper: failed to connect to DB — scraper_runs tracking and DB source configs disabled")
-		s := scraper.NewScraperWithSlot(client, nil, logger, "cli")
-		return s, func() {}, nil
+	// Wire in Tier 2 headless extractor if enabled via env vars.
+	if os.Getenv("SCRAPER_HEADLESS_ENABLED") == "true" {
+		chromePath := os.Getenv("SCRAPER_CHROME_PATH")
+		maxConc := 2
+		if v := os.Getenv("SCRAPER_HEADLESS_MAX_CONC"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				maxConc = n
+			}
+		}
+		rodExt := scraper.NewRodExtractor(logger, maxConc, chromePath, true)
+		s.SetRodExtractor(rodExt)
+		logger.Info().Int("max_conc", maxConc).Msg("scraper: headless (Tier 2) extractor enabled")
 	}
 
-	queries := postgres.New(pool)
-	sourceRepo := postgres.NewScraperSourceRepository(pool)
-	s := scraper.NewScraperWithSourceRepoAndSlot(client, queries, sourceRepo, logger, "cli")
-	return s, pool.Close, nil
+	return s, cleanup, nil
 }

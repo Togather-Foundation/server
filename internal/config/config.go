@@ -24,8 +24,26 @@ type Config struct {
 	Dedup           DedupConfig
 	Geocoding       GeocodingConfig
 	Artsdata        ArtsdataConfig
+	Scraper         ScraperConfig
 	DefaultTimezone string
 	Environment     string
+}
+
+// ScraperConfig holds configuration for the event scraper, including optional
+// Tier 2 headless browser settings.
+type ScraperConfig struct {
+	// HeadlessEnabled controls whether Tier 2 headless browser scraping is active.
+	// Environment variable: SCRAPER_HEADLESS_ENABLED (default: false)
+	HeadlessEnabled bool
+
+	// ChromePath overrides the Chromium binary path used by go-rod.
+	// When empty, Rod uses its download-on-demand launcher.
+	// Environment variable: SCRAPER_CHROME_PATH (default: "")
+	ChromePath string
+
+	// HeadlessMaxConc is the maximum number of concurrent browser sessions.
+	// Environment variable: SCRAPER_HEADLESS_MAX_CONC (default: 2)
+	HeadlessMaxConc int
 }
 
 type ServerConfig struct {
@@ -327,6 +345,11 @@ func Load() (Config, error) {
 			TimeoutSeconds:  getEnvInt("ARTSDATA_TIMEOUT_SECONDS", 10),
 			CacheTTLDays:    getEnvInt("ARTSDATA_CACHE_TTL_DAYS", 30),
 			FailureTTLDays:  getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
+		},
+		Scraper: ScraperConfig{
+			HeadlessEnabled: getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
+			ChromePath:      getEnv("SCRAPER_CHROME_PATH", ""),
+			HeadlessMaxConc: getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
 		},
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),
