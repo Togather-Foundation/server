@@ -88,8 +88,53 @@ func TestValidateConfig(t *testing.T) {
 		},
 		{
 			name:    "valid tier 2",
-			cfg:     func() SourceConfig { c := validTier0; c.Tier = 2; return c }(),
+			cfg:     func() SourceConfig { c := validTier0; c.Tier = 2; c.Headless.WaitSelector = "body"; return c }(),
 			wantErr: "",
+		},
+		{
+			name: "valid tier 2 with wait_selector",
+			cfg: SourceConfig{
+				Name:       "Headless Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Headless: HeadlessConfig{
+					WaitSelector: ".events",
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid tier 2 with selectors.event_list",
+			cfg: SourceConfig{
+				Name:       "Headless Selector Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".events",
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "invalid tier 2 missing both wait_selector and event_list",
+			cfg: SourceConfig{
+				Name:       "Bad Headless Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+			},
+			wantErr: "tier 2 requires",
 		},
 		{
 			name:    "invalid tier negative",

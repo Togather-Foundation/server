@@ -145,6 +145,7 @@ Examples:
 
 // sourceConfigToUpsertParams converts a scraper.SourceConfig (from YAML) to
 // the domain UpsertParams. Selectors are JSON-encoded for the JSONB column.
+// Headless headers are JSON-encoded when present.
 func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertParams, error) {
 	var selectorsJSON []byte
 	if cfg.Tier == 1 {
@@ -154,16 +155,31 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 			return domainScraper.UpsertParams{}, fmt.Errorf("encode selectors: %w", encErr)
 		}
 	}
+
+	var headlessHeadersJSON []byte
+	if len(cfg.Headless.Headers) > 0 {
+		var encErr error
+		headlessHeadersJSON, encErr = json.Marshal(cfg.Headless.Headers)
+		if encErr != nil {
+			return domainScraper.UpsertParams{}, fmt.Errorf("encode headless headers: %w", encErr)
+		}
+	}
+
 	return domainScraper.UpsertParams{
-		Name:       cfg.Name,
-		URL:        cfg.URL,
-		Tier:       cfg.Tier,
-		Schedule:   cfg.Schedule,
-		TrustLevel: cfg.TrustLevel,
-		License:    cfg.License,
-		Enabled:    cfg.Enabled,
-		MaxPages:   cfg.MaxPages,
-		Selectors:  selectorsJSON,
-		Notes:      cfg.Notes,
+		Name:                  cfg.Name,
+		URL:                   cfg.URL,
+		Tier:                  cfg.Tier,
+		Schedule:              cfg.Schedule,
+		TrustLevel:            cfg.TrustLevel,
+		License:               cfg.License,
+		Enabled:               cfg.Enabled,
+		MaxPages:              cfg.MaxPages,
+		Selectors:             selectorsJSON,
+		Notes:                 cfg.Notes,
+		HeadlessWaitSelector:  cfg.Headless.WaitSelector,
+		HeadlessWaitTimeoutMs: cfg.Headless.WaitTimeoutMs,
+		HeadlessPaginationBtn: cfg.Headless.PaginationBtn,
+		HeadlessHeaders:       headlessHeadersJSON,
+		HeadlessRateLimitMs:   cfg.Headless.RateLimitMs,
 	}, nil
 }

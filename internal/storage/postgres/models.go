@@ -474,20 +474,25 @@ type ScraperRun struct {
 }
 
 type ScraperSource struct {
-	ID            int64              `json:"id"`
-	Name          string             `json:"name"`
-	Url           string             `json:"url"`
-	Tier          int32              `json:"tier"`
-	Schedule      string             `json:"schedule"`
-	TrustLevel    int32              `json:"trust_level"`
-	License       string             `json:"license"`
-	Enabled       bool               `json:"enabled"`
-	MaxPages      int32              `json:"max_pages"`
-	Selectors     []byte             `json:"selectors"`
-	Notes         pgtype.Text        `json:"notes"`
-	LastScrapedAt pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID                    int64              `json:"id"`
+	Name                  string             `json:"name"`
+	Url                   string             `json:"url"`
+	Tier                  int32              `json:"tier"`
+	Schedule              string             `json:"schedule"`
+	TrustLevel            int32              `json:"trust_level"`
+	License               string             `json:"license"`
+	Enabled               bool               `json:"enabled"`
+	MaxPages              int32              `json:"max_pages"`
+	Selectors             []byte             `json:"selectors"`
+	Notes                 pgtype.Text        `json:"notes"`
+	LastScrapedAt         pgtype.Timestamptz `json:"last_scraped_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	HeadlessWaitSelector  pgtype.Text        `json:"headless_wait_selector"`
+	HeadlessWaitTimeoutMs int32              `json:"headless_wait_timeout_ms"`
+	HeadlessPaginationBtn pgtype.Text        `json:"headless_pagination_btn"`
+	HeadlessHeaders       []byte             `json:"headless_headers"`
+	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
 }
 
 type Source struct {

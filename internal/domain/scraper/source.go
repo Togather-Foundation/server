@@ -27,6 +27,12 @@ type Source struct {
 	LastScrapedAt *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// Headless fields (Tier 2)
+	HeadlessWaitSelector  string
+	HeadlessWaitTimeoutMs int
+	HeadlessPaginationBtn string
+	HeadlessHeaders       []byte // JSONB; nil when empty
+	HeadlessRateLimitMs   int
 }
 
 // UpsertParams contains the fields used to create or update a scraper source.
@@ -42,6 +48,12 @@ type UpsertParams struct {
 	Selectors     []byte
 	Notes         string
 	LastScrapedAt *time.Time
+	// Headless fields (Tier 2)
+	HeadlessWaitSelector  string
+	HeadlessWaitTimeoutMs int
+	HeadlessPaginationBtn string
+	HeadlessHeaders       []byte // JSONB; nil when empty
+	HeadlessRateLimitMs   int
 }
 
 // Repository defines the persistence interface for scraper sources.
