@@ -2,6 +2,29 @@
 
 This directory contains YAML configuration files for each scrape source.
 
+## Tiers
+
+| Tier | Description | Tool |
+|------|-------------|------|
+| 0 | JSON-LD in static HTML — no selectors needed | `scrape url` |
+| 1 | CSS selectors on static HTML | `scrape url` / `scrape source` |
+| 2 | CSS selectors on JS-rendered HTML (headless Chromium via go-rod) | `scrape url --headless` / `scrape source` with `SCRAPER_HEADLESS_ENABLED=true` |
+
+Tier 2 sources require `SCRAPER_HEADLESS_ENABLED=true` in the environment. Set
+`SCRAPER_CHROME_PATH` to specify a custom Chromium binary (default: Rod download-on-demand).
+Use `server scrape capture <URL> --format inspect` to analyze a JS-rendered page before
+writing selectors.
+
+## Headless Config Fields (Tier 2 YAML)
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `headless.wait_selector` | string | `body` | CSS selector to wait for before extracting. Use the most specific stable element on the page. |
+| `headless.wait_timeout_ms` | int | 10000 | Max ms to wait for `wait_selector`. Increase for slow SPAs. |
+| `headless.pagination_button` | string | — | CSS selector for a JS "next page" button. If the site uses URL-based pagination, use `selectors.pagination` instead. |
+| `headless.rate_limit_ms` | int | 1000 | Delay between page loads in ms. |
+| `headless.headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
+
 ## Status Summary (validated 2026-02-21)
 
 | Source | Tier | Status | Events | Notes |
@@ -16,10 +39,10 @@ This directory contains YAML configuration files for each scrape source.
 | coc | 1 | **enabled** | 7/page | coc.ca/tickets/2526-season; season URL — needs annual update |
 | national-ballet | 1 | **enabled** | 9/page | national.ballet.ca/performances/202627-season/; season URL |
 | rom | 1 | **enabled** | 120/page | rom.on.ca/whats-on/events; Drupal hidden-span duplication in names |
-| hot-docs | — | disabled | — | JS-rendered; static `<main>` is empty — needs Tier 2 |
-| toronto-symphony-orchestra | — | disabled | — | JS-rendered React SPA — see bead srv-h264z |
-| roy-thomson-massey-hall | — | disabled | — | JS-rendered SPA (~75 bytes static HTML) — see bead srv-h264z |
-| thepowerplant | — | disabled | — | Next.js SPA — needs Tier 2 |
+| hot-docs | — | disabled | — | JS-rendered; static `<main>` is empty — needs Tier 2 selector authoring |
+| toronto-symphony-orchestra | — | disabled | — | JS-rendered React SPA — needs Tier 2 selector authoring |
+| roy-thomson-massey-hall | — | disabled | — | JS-rendered SPA (~75 bytes static HTML) — needs Tier 2 selector authoring |
+| thepowerplant | — | disabled | — | Next.js SPA — needs Tier 2 selector authoring |
 | rcmusic | — | disabled | — | AWS CloudSearch dynamic load — needs Tier 2 or API |
 | ago | — | disabled | — | 403 Cloudflare bot protection |
 | glad-day-bookshop | — | disabled | — | robots.txt `Disallow: /*` — contact site owner |
@@ -70,13 +93,13 @@ This directory contains YAML configuration files for each scrape source.
 - Provided URL `/en/whats-on` returns 404; correct URL is `/whats-on/events`.
 
 ### toronto-symphony-orchestra.yaml (disabled)
-- JS-rendered React SPA — requires Tier 2 headless browser. See bead srv-h264z.
+- JS-rendered React SPA — requires Tier 2. Use `server scrape capture https://tso.ca/concerts-and-events --format inspect` to analyze after enabling `SCRAPER_HEADLESS_ENABLED=true`.
 
 ### roy-thomson-massey-hall.yaml (disabled)
-- JS-rendered SPA (~75 bytes static HTML) — requires Tier 2. See bead srv-h264z.
+- JS-rendered SPA (~75 bytes static HTML) — requires Tier 2. Use `server scrape capture <URL> --format inspect` to analyze the rendered DOM.
 
 ### hot-docs.yaml (disabled)
-- 22KB static HTML; `<main>` is empty — JS-rendered, needs Tier 2.
+- 22KB static HTML; `<main>` is empty — JS-rendered, needs Tier 2. Use `server scrape capture https://hotdocs.ca/festival/films --format inspect`.
 
 ### thepowerplant (not configured)
 - Next.js SPA — only `jsx-` classes in static HTML, no event content. Needs Tier 2.
