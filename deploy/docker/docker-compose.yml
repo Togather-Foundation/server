@@ -172,6 +172,12 @@ services:
       ENABLE_VECTOR_SEARCH: ${ENABLE_VECTOR_SEARCH:-false}
       ENABLE_AUTO_RECONCILIATION: ${ENABLE_AUTO_RECONCILIATION:-false}
 
+      # Tier 2 headless browser scraping (requires Chromium inside the container)
+      # Uncomment and set SCRAPER_HEADLESS_ENABLED=true to enable.
+      # SCRAPER_HEADLESS_ENABLED: "false"
+      # SCRAPER_CHROME_PATH: ""
+      # SCRAPER_HEADLESS_MAX_CONC: "2"
+
       # Timeouts
       HTTP_READ_TIMEOUT_SECONDS: ${HTTP_READ_TIMEOUT_SECONDS:-30}
       HTTP_WRITE_TIMEOUT_SECONDS: ${HTTP_WRITE_TIMEOUT_SECONDS:-30}

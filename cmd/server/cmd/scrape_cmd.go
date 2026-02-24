@@ -77,6 +77,10 @@ func init() {
 	// Flags for `scrape all`
 	scrapeAllCmd.Flags().IntVar(&scrapeTier, "tier", -1, "filter sources by tier (-1 = all tiers, 0 = JSON-LD, 1 = CSS selectors)")
 
+	// Flags for `scrape url` and `scrape source` — headless override
+	scrapeURLCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Scrape URL using headless browser/Tier 2 (requires SCRAPER_HEADLESS_ENABLED=true)")
+	scrapeSourceCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Force Tier 2 headless browser scraping (requires SCRAPER_HEADLESS_ENABLED=true)")
+
 	// Flags for `scrape test`
 	scrapeTestCmd.Flags().StringVar(&scrapeTestSelectorFile, "config", "", "path to a YAML source config file to load selectors from")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestEventList, "event-list", "", "CSS selector for the event container element (required)")

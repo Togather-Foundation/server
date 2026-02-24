@@ -187,6 +187,96 @@ func FormatInspectResult(r *InspectResult) string {
 	return b.String()
 }
 
+// InspectHTML analyses an already-fetched HTML string and returns an
+// InspectResult. rawURL is used only for the URL field in the result (it is
+// not fetched). This is the counterpart of Inspect for callers that already
+// have the rendered HTML (e.g. from RodExtractor.RenderHTML).
+func InspectHTML(rawURL, html string) (*InspectResult, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		return nil, fmt.Errorf("inspect: parse HTML: %w", err)
+	}
+
+	result := &InspectResult{
+		URL:       rawURL,
+		BodyBytes: len(html),
+	}
+
+	// --- CSS class frequency ---
+	classCounts := map[string]int{}
+	doc.Find("[class]").Each(func(_ int, s *goquery.Selection) {
+		cls, _ := s.Attr("class")
+		for _, part := range strings.Fields(cls) {
+			classCounts[part]++
+		}
+	})
+	result.TopClasses = topN(classCounts, 30)
+
+	// --- data-* attribute frequency ---
+	dataCounts := map[string]int{}
+	doc.Find("*").Each(func(_ int, s *goquery.Selection) {
+		for _, node := range s.Nodes {
+			for _, attr := range node.Attr {
+				if strings.HasPrefix(attr.Key, "data-") {
+					dataCounts[attr.Key]++
+				}
+			}
+		}
+	})
+	result.DataAttrs = topN(dataCounts, 15)
+
+	// --- event/program href links ---
+	seen := map[string]bool{}
+	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+		href, _ := s.Attr("href")
+		lower := strings.ToLower(href)
+		if (strings.Contains(lower, "/event") || strings.Contains(lower, "/program")) && !seen[href] {
+			seen[href] = true
+			result.EventLinks = append(result.EventLinks, href)
+		}
+	})
+	if len(result.EventLinks) > 20 {
+		result.EventLinks = result.EventLinks[:20]
+	}
+
+	// --- candidate event container elements ---
+	eventWords := []string{"event", "film", "show", "program", "card", "item", "listing", "performance"}
+	cardSeen := map[string]bool{}
+	for _, tag := range []string{"article", "li", "div", "section"} {
+		doc.Find(tag + "[class]").Each(func(_ int, s *goquery.Selection) {
+			cls, _ := s.Attr("class")
+			lower := strings.ToLower(cls)
+			for _, w := range eventWords {
+				if strings.Contains(lower, w) {
+					firstClass := strings.Fields(cls)[0]
+					sel := tag + "." + firstClass
+					if cardSeen[sel] {
+						return
+					}
+					cardSeen[sel] = true
+					h, _ := goquery.OuterHtml(s)
+					if len(h) > 300 {
+						h = h[:300] + "…"
+					}
+					result.SampleCards = append(result.SampleCards, SampleCard{
+						Selector: sel,
+						HTML:     h,
+					})
+					if len(result.SampleCards) >= 8 {
+						return
+					}
+					break
+				}
+			}
+		})
+		if len(result.SampleCards) >= 8 {
+			break
+		}
+	}
+
+	return result, nil
+}
+
 // topN returns the N most frequent entries from a count map, sorted desc.
 func topN(m map[string]int, n int) []ClassCount {
 	out := make([]ClassCount, 0, len(m))

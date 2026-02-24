@@ -403,3 +403,99 @@ func sanitizeName(name string) string {
 	}
 	return b.String()
 }
+
+// RenderHTML navigates to rawURL in a headless Chromium browser, waits for
+// waitSelector to appear (default "body"), and returns the fully rendered HTML.
+// waitTimeoutMs controls the wait deadline (0 = 10 000 ms default).
+//
+// This is intended for CLI tooling (scrape capture) that needs the rendered
+// HTML for further analysis or selector discovery, without extracting events.
+func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector string, waitTimeoutMs int) (string, error) {
+	if !e.headlessEnv {
+		return "", ErrHeadlessDisabled
+	}
+
+	// Robots.txt check.
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, nil)
+	if robotsErr != nil {
+		e.logger.Warn().Err(robotsErr).Str("url", rawURL).Msg("rod: robots.txt check failed, proceeding as allowed")
+	} else if !allowed {
+		return "", fmt.Errorf("rod: scraping disallowed by robots.txt for %q", rawURL)
+	}
+
+	// Acquire semaphore.
+	select {
+	case e.sem <- struct{}{}:
+		defer func() { <-e.sem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+
+	// Build launcher.
+	l := launcher.New().
+		Headless(true).
+		Set("no-sandbox", "").
+		Set("disable-dev-shm-usage", "")
+
+	if e.chromePath != "" {
+		l = l.Bin(e.chromePath)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "rod-userdata-*")
+	if err == nil {
+		l = l.UserDataDir(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
+	}
+
+	u, launchErr := l.Launch()
+	if launchErr != nil {
+		return "", fmt.Errorf("rod: failed to launch browser: %w", launchErr)
+	}
+
+	browser := rod.New().ControlURL(u)
+	if connectErr := browser.Connect(); connectErr != nil {
+		return "", fmt.Errorf("rod: failed to connect to browser: %w", connectErr)
+	}
+	defer func() { _ = browser.Close() }()
+
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return "", fmt.Errorf("rod: failed to open new page: %w", err)
+	}
+	defer func() {
+		if closeErr := page.Close(); closeErr != nil {
+			e.logger.Debug().Err(closeErr).Msg("rod: page close error (RenderHTML)")
+		}
+	}()
+
+	page = page.Timeout(rodDefaultTimeout)
+
+	if navErr := page.Navigate(rawURL); navErr != nil {
+		return "", fmt.Errorf("rod: navigate to %q: %w", rawURL, navErr)
+	}
+
+	if waitSelector == "" {
+		waitSelector = "body"
+	}
+	waitTimeout := rodDefaultWaitTimeout
+	if waitTimeoutMs > 0 {
+		waitTimeout = time.Duration(waitTimeoutMs) * time.Millisecond
+	}
+
+	if waitErr := page.Timeout(waitTimeout).WaitElementsMoreThan(waitSelector, 0); waitErr != nil {
+		e.logger.Warn().
+			Err(waitErr).
+			Str("url", rawURL).
+			Str("selector", waitSelector).
+			Msg("rod: RenderHTML wait selector timed out, continuing anyway")
+	}
+
+	html, err := page.HTML()
+	if err != nil {
+		// Attempt screenshot for debugging.
+		e.captureScreenshot(page, "render-html")
+		return "", fmt.Errorf("rod: getting HTML from %q: %w", rawURL, err)
+	}
+
+	return html, nil
+}
