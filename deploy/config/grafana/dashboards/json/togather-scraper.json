@@ -115,7 +115,8 @@
           "editorMode": "code",
           "expr": "sum(increase(togather_scraper_runs_total{slot=~\"$slot\"}[24h]))",
           "legendFormat": "Runs",
-          "range": true,
+          "instant": true,
+          "range": false,
           "refId": "A"
         }
       ],
@@ -223,7 +224,8 @@
           "editorMode": "code",
           "expr": "100 * sum(increase(togather_scraper_runs_total{result=\"success\",slot=~\"$slot\"}[24h])) / sum(increase(togather_scraper_runs_total{slot=~\"$slot\"}[24h]))",
           "legendFormat": "Success Rate",
-          "range": true,
+          "instant": true,
+          "range": false,
           "refId": "A"
         }
       ],
@@ -324,7 +326,8 @@
           "editorMode": "code",
           "expr": "sum(increase(togather_scraper_events_total{outcome=\"created\",slot=~\"$slot\"}[24h]))",
           "legendFormat": "Created",
-          "range": true,
+          "instant": true,
+          "range": false,
           "refId": "A"
         }
       ],
@@ -423,9 +426,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(count by (source) (increase(togather_scraper_runs_total{slot=~\"$slot\"}[24h]) > 0))",
+          "expr": "count(count by (source) (increase(togather_scraper_runs_total{slot=~\"$slot\"}[24h])))",
           "legendFormat": "Sources",
-          "range": true,
+          "instant": true,
+          "range": false,
           "refId": "A"
         }
       ],
@@ -590,7 +594,7 @@
           "refId": "A"
         }
       ],
-      "title": "Scrape Success Rate by Source",
+      "title": "Successful Scrapes per Second by Source",
       "type": "timeseries"
     },
     {
@@ -649,7 +653,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Value"
+              "options": "Errors"
             },
             "properties": [
               {
@@ -953,7 +957,7 @@
         "yAxis": {
           "axisPlacement": "left",
           "decimals": 0,
-          "min": "0",
+          "min": 0,
           "reverse": false,
           "unit": "s"
         }
@@ -1230,9 +1234,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (source) (increase(togather_scraper_events_total{outcome=\"duplicate\",slot=~\"$slot\"}[1h])) / sum by (source) (increase(togather_scraper_events_total{outcome=\"found\",slot=~\"$slot\"}[1h]))",
+          "expr": "sum by (source) (increase(togather_scraper_events_total{outcome=\"duplicate\",slot=~\"$slot\"}[1h])) / clamp_min(sum by (source) (increase(togather_scraper_events_total{outcome=\"found\",slot=~\"$slot\"}[1h])), 1)",
           "legendFormat": "{{source}}",
-          "range": true,
+          "instant": true,
+          "range": false,
           "refId": "A"
         }
       ],
