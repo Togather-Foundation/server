@@ -67,6 +67,7 @@ Examples:
 		_, _, _ = loadScrapeConfig() // side-effect: loads env files
 
 		// Check headless is enabled before attempting to construct the extractor.
+		// Also checked internally by RodExtractor; early check here provides clearer UX.
 		if os.Getenv("SCRAPER_HEADLESS_ENABLED") != "true" {
 			fmt.Fprintln(os.Stderr, "Error: headless scraping is disabled.")
 			fmt.Fprintln(os.Stderr, "Set SCRAPER_HEADLESS_ENABLED=true and ensure Chromium is available.")

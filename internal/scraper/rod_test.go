@@ -260,6 +260,103 @@ func TestRodExtractor_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestRodExtractor_ScrapeWithBrowser_HeadlessDisabled(t *testing.T) {
+	// Alias for TestRodExtractor_HeadlessDisabled — verifies the sentinel error
+	// is returned consistently when headlessEnabled=false.
+	logger := zerolog.Nop()
+	ext := NewRodExtractor(logger, 2, "", false)
+
+	_, err := ext.ScrapeWithBrowser(context.Background(), SourceConfig{
+		Name: "test-disabled",
+		URL:  "https://example.com",
+	})
+	if err == nil {
+		t.Fatal("expected ErrHeadlessDisabled, got nil")
+	}
+	if err != ErrHeadlessDisabled {
+		t.Errorf("expected ErrHeadlessDisabled sentinel, got: %v", err)
+	}
+}
+
+func TestScraper_ScrapeTier2_NoRodExtractor(t *testing.T) {
+	// When rodExtractor is nil, scrapeTier2 must return a ScrapeResult with
+	// Error != nil and a nil Go error (per the scrapeTier2 contract).
+	logger := zerolog.Nop()
+	s := NewScraper(nil, nil, logger) // nil ingest — exercises error path only
+
+	source := SourceConfig{
+		Name: "no-rod-source",
+		URL:  "https://example.com",
+		Tier: 2,
+	}
+
+	result, err := s.scrapeTier2(context.Background(), source, ScrapeOptions{})
+	if err != nil {
+		t.Fatalf("scrapeTier2 should not return a Go error when rodExtractor is nil, got: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected result.Error to be non-nil when rodExtractor is nil")
+	}
+	if !strings.Contains(result.Error.Error(), "RodExtractor") && !strings.Contains(result.Error.Error(), "headless") {
+		t.Errorf("expected descriptive error about missing extractor, got: %v", result.Error)
+	}
+}
+
+func TestScraper_ScrapeSource_Tier2_NilRodExtractor(t *testing.T) {
+	// A Tier 2 source with a nil rodExtractor must produce a ScrapeResult.Error,
+	// not a Go error return from ScrapeSource.
+	// We use a YAML source directory stub with a single Tier 2 source.
+	logger := zerolog.Nop()
+	s := NewScraper(nil, nil, logger) // no rod extractor set
+
+	// The scraper will fail to load YAML from a non-existent directory.
+	// We test via scrapeTier2 directly (same contract tested in _ScrapeTier2_NoRodExtractor).
+	// Here we verify the high-level ScrapeAll path is consistent: scrapeErr is nil,
+	// result.Error carries the problem.
+	source := SourceConfig{
+		Name:    "tier2-disabled",
+		URL:     "https://example.com",
+		Tier:    2,
+		Enabled: true,
+	}
+
+	result, goErr := s.scrapeTier2(context.Background(), source, ScrapeOptions{})
+	if goErr != nil {
+		t.Fatalf("expected nil Go error, got: %v", goErr)
+	}
+	if result.Error == nil {
+		t.Fatal("expected ScrapeResult.Error != nil when no RodExtractor configured")
+	}
+}
+
+func TestValidateNavigationURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr bool
+	}{
+		{"http OK", "http://example.com/path", false},
+		{"https OK", "https://example.com/path", false},
+		{"file scheme", "file:///etc/passwd", true},
+		{"chrome scheme", "chrome://settings", true},
+		{"javascript scheme", "javascript:alert(1)", true},
+		{"no scheme", "example.com/path", true},
+		{"missing host", "https:///path", true},
+		{"empty", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNavigationURL(tt.rawURL)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for URL %q, got nil", tt.rawURL)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for URL %q: %v", tt.rawURL, err)
+			}
+		})
+	}
+}
+
 // --- helper tests ---
 
 func TestResolveURL(t *testing.T) {

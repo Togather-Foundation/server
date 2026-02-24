@@ -165,6 +165,18 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		ingestClient := scraper.NewIngestClient(cfg.Server.BaseURL, ingestAPIKey)
 		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
+
+		// Wire Tier 2 headless browser extractor when enabled (srv-1zrrt).
+		if cfg.Scraper.HeadlessEnabled {
+			rodExt := scraper.NewRodExtractor(
+				logger.With().Str("component", "rod").Logger(),
+				cfg.Scraper.HeadlessMaxConc,
+				cfg.Scraper.ChromePath,
+				true,
+			)
+			scraperSvc.SetRodExtractor(rodExt)
+			logger.Info().Msg("scraper: Tier 2 headless browser enabled")
+		}
 	} else {
 		logger.Warn().Msg("router: SEL_API_KEY/SEL_INGEST_KEY not set — periodic scrape jobs and admin trigger disabled")
 	}

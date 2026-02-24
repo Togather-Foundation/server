@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -71,7 +72,9 @@ func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfi
 	}
 
 	// Robots.txt check — reuse existing helper.
-	allowed, robotsErr := RobotsAllowed(ctx, config.URL, scraperUserAgent, nil)
+	// Also checked internally by RodExtractor; early check here provides clearer UX.
+	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
+	allowed, robotsErr := RobotsAllowed(ctx, config.URL, scraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		e.logger.Warn().Err(robotsErr).Str("url", config.URL).Msg("rod: robots.txt check failed, proceeding as allowed")
 	} else if !allowed {
@@ -89,10 +92,11 @@ func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfi
 	return e.scrapePages(ctx, config)
 }
 
-// scrapePages performs the actual browser-based scraping across potentially
-// multiple pages. Called after the semaphore is acquired.
-func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) (events []RawEvent, retErr error) {
-	// Build Rod launcher.
+// launchBrowser builds a Rod launcher, launches the browser, and returns the
+// connected *rod.Browser with ctx bound (so cancellation is respected) and a
+// cleanup func that must be deferred by the caller. The browser's context is
+// set to ctx so all page operations inherit the same deadline/cancellation.
+func (e *RodExtractor) launchBrowser(ctx context.Context) (*rod.Browser, func(), error) {
 	l := launcher.New().
 		Headless(true).
 		Set("no-sandbox", "").
@@ -104,21 +108,54 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) (ev
 
 	// Use a temp dir for user data to avoid conflicts between concurrent runs.
 	tmpDir, err := os.MkdirTemp("", "rod-userdata-*")
-	if err == nil {
+	if err != nil {
+		// non-fatal: proceed without a dedicated user-data dir
+		e.logger.Debug().Err(err).Msg("rod: failed to create temp user-data dir, proceeding without it")
+	} else {
 		l = l.UserDataDir(tmpDir)
-		defer func() { _ = os.RemoveAll(tmpDir) }()
 	}
 
 	u, launchErr := l.Launch()
 	if launchErr != nil {
-		return nil, fmt.Errorf("rod: failed to launch browser: %w", launchErr)
+		if tmpDir != "" {
+			_ = os.RemoveAll(tmpDir)
+		}
+		return nil, nil, fmt.Errorf("rod: failed to launch browser: %w", launchErr)
 	}
 
 	browser := rod.New().ControlURL(u)
 	if connectErr := browser.Connect(); connectErr != nil {
-		return nil, fmt.Errorf("rod: failed to connect to browser: %w", connectErr)
+		if tmpDir != "" {
+			_ = os.RemoveAll(tmpDir)
+		}
+		return nil, nil, fmt.Errorf("rod: failed to connect to browser: %w", connectErr)
 	}
-	defer func() { _ = browser.Close() }()
+
+	// Bind the caller's context so cancellations and timeouts are respected.
+	browser = browser.Context(ctx)
+
+	cleanup := func() {
+		_ = browser.Close()
+		if tmpDir != "" {
+			_ = os.RemoveAll(tmpDir)
+		}
+	}
+
+	return browser, cleanup, nil
+}
+
+// scrapePages performs the actual browser-based scraping across potentially
+// multiple pages. Called after the semaphore is acquired.
+func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]RawEvent, error) {
+	// Apply a hard timeout for the entire scrape operation.
+	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	defer cancel()
+
+	browser, cleanup, err := e.launchBrowser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	// Resolve settings with defaults.
 	waitSelector := config.Headless.WaitSelector
@@ -142,6 +179,7 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) (ev
 	}
 
 	pageURL := config.URL
+	var events []RawEvent
 
 	for pageNum := 0; pageNum < maxPages; pageNum++ {
 		// Rate limiting: delay between page loads (skip on first page).
@@ -153,16 +191,16 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) (ev
 			}
 		}
 
-		pageEvents, nextURL, err := e.scrapeSinglePage(ctx, browser, config, pageURL, waitSelector, waitTimeout)
-		if err != nil {
+		pageEvents, nextURL, pageErr := e.scrapeSinglePage(ctx, browser, config, pageURL, waitSelector, waitTimeout)
+		if pageErr != nil {
 			e.logger.Warn().
-				Err(err).
+				Err(pageErr).
 				Str("source", config.Name).
 				Str("url", pageURL).
 				Int("page", pageNum+1).
 				Msg("rod: error scraping page, stopping pagination")
-			// Return whatever we have so far rather than failing completely.
-			break
+			// Propagate the error so callers can distinguish failures from zero-result scrapes.
+			return events, pageErr
 		}
 
 		events = append(events, pageEvents...)
@@ -194,6 +232,11 @@ func (e *RodExtractor) scrapeSinglePage(
 	waitSelector string,
 	waitTimeout time.Duration,
 ) (events []RawEvent, nextURL string, retErr error) {
+	// Validate the navigation URL to prevent SSRF via non-http(s) schemes.
+	if err := validateNavigationURL(pageURL); err != nil {
+		return nil, "", err
+	}
+
 	page, err := browser.Page(proto.TargetCreateTarget{})
 	if err != nil {
 		return nil, "", fmt.Errorf("rod: failed to open new page: %w", err)
@@ -213,6 +256,13 @@ func (e *RodExtractor) scrapeSinglePage(
 
 	// Set page timeout.
 	page = page.Timeout(rodDefaultTimeout)
+
+	// Override the browser's default user-agent with the scraper UA.
+	if err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: rodUserAgent,
+	}); err != nil {
+		e.logger.Warn().Err(err).Str("source", config.Name).Msg("rod: failed to set user agent")
+	}
 
 	// Apply extra headers if configured.
 	if len(config.Headless.Headers) > 0 {
@@ -402,6 +452,22 @@ func sanitizeName(name string) string {
 	return b.String()
 }
 
+// validateNavigationURL returns an error if rawURL is not a safe http/https URL.
+// This prevents SSRF via file://, chrome://, javascript:, or other schemes.
+func validateNavigationURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("rod: invalid URL %q: %w", rawURL, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("rod: navigation URL must be http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("rod: navigation URL missing host: %q", rawURL)
+	}
+	return nil
+}
+
 // RenderHTML navigates to rawURL in a headless Chromium browser, waits for
 // waitSelector to appear (default "body"), and returns the fully rendered HTML.
 // waitTimeoutMs controls the wait deadline (0 = 10 000 ms default).
@@ -413,8 +479,15 @@ func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector stri
 		return "", ErrHeadlessDisabled
 	}
 
+	// Validate URL to prevent SSRF before launching any browser.
+	if err := validateNavigationURL(rawURL); err != nil {
+		return "", err
+	}
+
 	// Robots.txt check.
-	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, nil)
+	// Also checked internally by RodExtractor; early check here provides clearer UX.
+	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		e.logger.Warn().Err(robotsErr).Str("url", rawURL).Msg("rod: robots.txt check failed, proceeding as allowed")
 	} else if !allowed {
@@ -429,32 +502,15 @@ func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector stri
 		return "", ctx.Err()
 	}
 
-	// Build launcher.
-	l := launcher.New().
-		Headless(true).
-		Set("no-sandbox", "").
-		Set("disable-dev-shm-usage", "")
+	// Apply a hard timeout for the entire render operation.
+	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	defer cancel()
 
-	if e.chromePath != "" {
-		l = l.Bin(e.chromePath)
+	browser, cleanup, err := e.launchBrowser(ctx)
+	if err != nil {
+		return "", err
 	}
-
-	tmpDir, err := os.MkdirTemp("", "rod-userdata-*")
-	if err == nil {
-		l = l.UserDataDir(tmpDir)
-		defer func() { _ = os.RemoveAll(tmpDir) }()
-	}
-
-	u, launchErr := l.Launch()
-	if launchErr != nil {
-		return "", fmt.Errorf("rod: failed to launch browser: %w", launchErr)
-	}
-
-	browser := rod.New().ControlURL(u)
-	if connectErr := browser.Connect(); connectErr != nil {
-		return "", fmt.Errorf("rod: failed to connect to browser: %w", connectErr)
-	}
-	defer func() { _ = browser.Close() }()
+	defer cleanup()
 
 	page, err := browser.Page(proto.TargetCreateTarget{})
 	if err != nil {
@@ -467,6 +523,13 @@ func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector stri
 	}()
 
 	page = page.Timeout(rodDefaultTimeout)
+
+	// Override the browser's default user-agent with the scraper UA.
+	if err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: rodUserAgent,
+	}); err != nil {
+		e.logger.Warn().Err(err).Msg("rod: RenderHTML: failed to set user agent")
+	}
 
 	if navErr := page.Navigate(rawURL); navErr != nil {
 		return "", fmt.Errorf("rod: navigate to %q: %w", rawURL, navErr)
