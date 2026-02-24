@@ -83,11 +83,16 @@ func NewScraper(ingest *IngestClient, queries *postgres.Queries, logger zerolog.
 // NewScraperWithSlot constructs a Scraper with an explicit deployment slot for
 // Prometheus metrics labeling. When slot is empty, no metrics are recorded.
 func NewScraperWithSlot(ingest *IngestClient, queries *postgres.Queries, logger zerolog.Logger, slot string) *Scraper {
+	var sm *metrics.ScraperMetrics
+	if slot != "" {
+		sm = metrics.NewScraperMetrics(metrics.Registry)
+	}
 	return &Scraper{
-		ingest:  ingest,
-		queries: queries,
-		logger:  logger,
-		slot:    slot,
+		ingest:         ingest,
+		queries:        queries,
+		logger:         logger,
+		slot:           slot,
+		scraperMetrics: sm,
 	}
 }
 
@@ -114,12 +119,17 @@ func NewScraperWithSourceRepoAndSlot(
 	logger zerolog.Logger,
 	slot string,
 ) *Scraper {
+	var sm *metrics.ScraperMetrics
+	if slot != "" {
+		sm = metrics.NewScraperMetrics(metrics.Registry)
+	}
 	return &Scraper{
-		ingest:     ingest,
-		queries:    queries,
-		sourceRepo: sourceRepo,
-		logger:     logger,
-		slot:       slot,
+		ingest:         ingest,
+		queries:        queries,
+		sourceRepo:     sourceRepo,
+		logger:         logger,
+		slot:           slot,
+		scraperMetrics: sm,
 	}
 }
 
@@ -481,6 +491,8 @@ func (s *Scraper) runWithTracking(
 
 // recordMetrics records Prometheus metrics for a completed scrape run.
 // It is a no-op when s.slot is empty (metrics disabled).
+// s.scraperMetrics is guaranteed non-nil whenever s.slot is non-empty
+// (see NewScraperWithSlot and NewScraperWithSourceRepoAndSlot).
 func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 	if s.slot == "" {
 		return
@@ -498,18 +510,8 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 		resultLabel = "dry_run"
 	}
 
-	// Use injected metrics if available (e.g. in tests), otherwise fall back to globals.
-	runsTotal := metrics.ScraperRunsTotal
-	runDuration := metrics.ScraperRunDuration
-	eventsTotal := metrics.ScraperEventsTotal
-	if s.scraperMetrics != nil {
-		runsTotal = s.scraperMetrics.RunsTotal
-		runDuration = s.scraperMetrics.RunDuration
-		eventsTotal = s.scraperMetrics.EventsTotal
-	}
-
-	runDuration.WithLabelValues(result.SourceName, tier, s.slot).Observe(duration.Seconds())
-	runsTotal.WithLabelValues(result.SourceName, tier, resultLabel, s.slot).Inc()
+	s.scraperMetrics.RunDuration.WithLabelValues(result.SourceName, tier, s.slot).Observe(duration.Seconds())
+	s.scraperMetrics.RunsTotal.WithLabelValues(result.SourceName, tier, resultLabel, s.slot).Inc()
 
 	// Increment per-outcome event counters (skip zero values to avoid label pollution).
 	type outcomeCount struct {
@@ -525,7 +527,7 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 	}
 	for _, oc := range outcomes {
 		if oc.count != 0 {
-			eventsTotal.WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).Add(float64(oc.count))
+			s.scraperMetrics.EventsTotal.WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).Add(float64(oc.count))
 		}
 	}
 }

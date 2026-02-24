@@ -9,11 +9,11 @@ import (
 	. "github.com/Togather-Foundation/server/internal/metrics"
 )
 
-// TestScraperMetrics_Registered verifies that NewScraperMetrics registers all
+// TestNewScraperMetrics_RegistersAllFamilies verifies that NewScraperMetrics registers all
 // three metric families against the provided registry. We touch each Vec once
 // so that Gather returns a non-empty MetricFamily for each family (counters and
 // histograms are only included in Gather output once observed or touched).
-func TestScraperMetrics_Registered(t *testing.T) {
+func TestNewScraperMetrics_RegistersAllFamilies(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewRegistry()
 	sm := NewScraperMetrics(reg)
@@ -48,23 +48,26 @@ func TestScraperMetrics_Registered(t *testing.T) {
 }
 
 // TestScraperRunsTotal_LabelCardinality verifies the counter accepts the
-// expected label set without panicking.
+// expected label set without panicking, using a per-test registry.
 func TestScraperRunsTotal_LabelCardinality(t *testing.T) {
 	t.Parallel()
+	sm := NewScraperMetrics(prometheus.NewRegistry())
 	// This call will panic if label names don't match the registered set.
-	_ = ScraperRunsTotal.WithLabelValues("my-source", "0", "success", "blue")
+	_ = sm.RunsTotal.WithLabelValues("my-source", "0", "success", "blue")
 }
 
 // TestScraperRunDuration_LabelCardinality verifies histogram label set.
 func TestScraperRunDuration_LabelCardinality(t *testing.T) {
 	t.Parallel()
-	_ = ScraperRunDuration.WithLabelValues("my-source", "1", "blue")
+	sm := NewScraperMetrics(prometheus.NewRegistry())
+	_ = sm.RunDuration.WithLabelValues("my-source", "1", "blue")
 }
 
 // TestScraperEventsTotal_LabelCardinality verifies events counter label set.
 func TestScraperEventsTotal_LabelCardinality(t *testing.T) {
 	t.Parallel()
-	_ = ScraperEventsTotal.WithLabelValues("my-source", "0", "found", "blue")
+	sm := NewScraperMetrics(prometheus.NewRegistry())
+	_ = sm.EventsTotal.WithLabelValues("my-source", "0", "found", "blue")
 }
 
 // TestScraperRunsTotal_CounterIncrements verifies that the counter increments
