@@ -279,10 +279,29 @@ Pre-configured dashboard for monitoring blue/green deployment slots.
     - Identifies goroutine leaks
     - Normal growth with traffic
 
+### Togather Scraper
+
+Dashboard for scraper observability — tracks run outcomes, durations, and per-event processing results across all configured sources.
+
+**Location**: `deploy/config/grafana/dashboards/json/togather-scraper.json`
+
+**Panels**:
+
+1. **Total Scrape Runs (24h)** — Total completed scrape runs in the last 24 hours
+2. **Success Rate (24h)** — Percentage of successful runs; threshold: red < 60%, yellow < 80%, green ≥ 80%
+3. **Events Created (24h)** — New events added to the library in the last 24 hours
+4. **Active Sources (24h)** — Number of distinct sources that ran at least once in 24 hours
+5. **Successful Scrapes per Second by Source** — Per-second rate of successful runs, broken out by source
+6. **Sources with Errors (24h)** — Table of sources with at least one error run; sorted by error count
+7. **p95 Scrape Duration by Source** — 95th-percentile run time per source; red threshold line at 120 seconds
+8. **Duration Heatmap** — Distribution of run durations across all sources over time
+9. **Event Outcomes Over Time** — Stacked rate of `found`, `created`, `duplicate`, `submitted`, `failed` outcomes
+10. **Duplicate Rate by Source (1h)** — Duplicate events as a fraction of found events; threshold: yellow ≥ 25%, red ≥ 50%
+
 ### Dashboard Variables
 
 - **`$slot`**: Filter by deployment slot
-  - Options: `blue`, `green`, `All`
+  - Options: `blue`, `green`, `cli`, `All`
   - Default: `All`
 
 - **Time Range**: Adjustable via top-right controls
