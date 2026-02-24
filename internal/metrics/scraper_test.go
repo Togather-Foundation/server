@@ -3,24 +3,29 @@ package metrics_test
 import (
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	. "github.com/Togather-Foundation/server/internal/metrics"
 )
 
-// TestScraperMetrics_Registered verifies that all three scraper metric
-// families are registered in the global Registry. We trigger a label lookup
-// (which creates the time series) then gather to confirm presence.
+// TestScraperMetrics_Registered verifies that NewScraperMetrics registers all
+// three metric families against the provided registry. We touch each Vec once
+// so that Gather returns a non-empty MetricFamily for each family (counters and
+// histograms are only included in Gather output once observed or touched).
 func TestScraperMetrics_Registered(t *testing.T) {
 	t.Parallel()
-	// Touch each metric so Gather returns a non-empty descriptor for each family.
-	ScraperRunsTotal.WithLabelValues("_probe", "0", "success", "_probe")
-	ScraperRunDuration.WithLabelValues("_probe", "0", "_probe")
-	ScraperEventsTotal.WithLabelValues("_probe", "0", "found", "_probe")
+	reg := prometheus.NewRegistry()
+	sm := NewScraperMetrics(reg)
 
-	mfs, err := Registry.Gather()
+	// Touch each Vec to produce at least one time series per family.
+	sm.RunsTotal.WithLabelValues("_probe", "0", "success", "_probe")
+	sm.RunDuration.WithLabelValues("_probe", "0", "_probe")
+	sm.EventsTotal.WithLabelValues("_probe", "0", "found", "_probe")
+
+	mfs, err := reg.Gather()
 	if err != nil {
-		t.Fatalf("Registry.Gather() returned error: %v", err)
+		t.Fatalf("reg.Gather() returned error: %v", err)
 	}
 
 	want := map[string]bool{
@@ -37,7 +42,7 @@ func TestScraperMetrics_Registered(t *testing.T) {
 
 	for name, found := range want {
 		if !found {
-			t.Errorf("metric %q not found in Registry", name)
+			t.Errorf("metric %q not found in registry", name)
 		}
 	}
 }
@@ -63,31 +68,31 @@ func TestScraperEventsTotal_LabelCardinality(t *testing.T) {
 }
 
 // TestScraperRunsTotal_CounterIncrements verifies that the counter increments
-// are observable via testutil.ToFloat64. The before/after delta pattern is
-// safe under t.Parallel() only when each test uses a label combination that no
-// other test in this process writes to. "label-test-src" / "0" / "success" /
-// "test-slot" is unique within this file — do not reuse it in future tests.
+// are observable via testutil.ToFloat64 using a per-test registry.
 func TestScraperRunsTotal_CounterIncrements(t *testing.T) {
 	t.Parallel()
-	before := testutil.ToFloat64(ScraperRunsTotal.WithLabelValues("label-test-src", "0", "success", "test-slot"))
-	ScraperRunsTotal.WithLabelValues("label-test-src", "0", "success", "test-slot").Inc()
-	after := testutil.ToFloat64(ScraperRunsTotal.WithLabelValues("label-test-src", "0", "success", "test-slot"))
+	reg := prometheus.NewRegistry()
+	sm := NewScraperMetrics(reg)
 
-	if after-before != 1 {
-		t.Errorf("ScraperRunsTotal delta = %v, want 1", after-before)
+	sm.RunsTotal.WithLabelValues("src", "0", "success", "slot").Inc()
+	got := testutil.ToFloat64(sm.RunsTotal.WithLabelValues("src", "0", "success", "slot"))
+
+	if got != 1 {
+		t.Errorf("RunsTotal = %v, want 1", got)
 	}
 }
 
-// TestScraperEventsTotal_CounterIncrements verifies events counter increments.
-// Uses label combination "label-test-src" / "1" / "found" / "test-slot" which
-// is unique within this file — do not reuse in future parallel tests.
+// TestScraperEventsTotal_CounterIncrements verifies events counter increments
+// using a per-test registry.
 func TestScraperEventsTotal_CounterIncrements(t *testing.T) {
 	t.Parallel()
-	before := testutil.ToFloat64(ScraperEventsTotal.WithLabelValues("label-test-src", "1", "found", "test-slot"))
-	ScraperEventsTotal.WithLabelValues("label-test-src", "1", "found", "test-slot").Add(5)
-	after := testutil.ToFloat64(ScraperEventsTotal.WithLabelValues("label-test-src", "1", "found", "test-slot"))
+	reg := prometheus.NewRegistry()
+	sm := NewScraperMetrics(reg)
 
-	if after-before != 5 {
-		t.Errorf("ScraperEventsTotal delta = %v, want 5", after-before)
+	sm.EventsTotal.WithLabelValues("src", "1", "found", "slot").Add(5)
+	got := testutil.ToFloat64(sm.EventsTotal.WithLabelValues("src", "1", "found", "slot"))
+
+	if got != 5 {
+		t.Errorf("EventsTotal = %v, want 5", got)
 	}
 }

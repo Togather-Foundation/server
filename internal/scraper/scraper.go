@@ -66,11 +66,12 @@ type ScrapeResult struct {
 // Scraper orchestrates fetching, normalising, and ingesting events from
 // configured sources.
 type Scraper struct {
-	ingest     *IngestClient
-	queries    *postgres.Queries        // may be nil — DB tracking skipped when nil
-	sourceRepo domainScraper.Repository // may be nil — falls back to YAML when nil
-	logger     zerolog.Logger
-	slot       string // deployment slot for Prometheus metrics labeling; empty = no metrics
+	ingest         *IngestClient
+	queries        *postgres.Queries        // may be nil — DB tracking skipped when nil
+	sourceRepo     domainScraper.Repository // may be nil — falls back to YAML when nil
+	logger         zerolog.Logger
+	slot           string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
+	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -497,15 +498,18 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 		resultLabel = "dry_run"
 	}
 
-	// Observe run duration.
-	metrics.ScraperRunDuration.
-		WithLabelValues(result.SourceName, tier, s.slot).
-		Observe(duration.Seconds())
+	// Use injected metrics if available (e.g. in tests), otherwise fall back to globals.
+	runsTotal := metrics.ScraperRunsTotal
+	runDuration := metrics.ScraperRunDuration
+	eventsTotal := metrics.ScraperEventsTotal
+	if s.scraperMetrics != nil {
+		runsTotal = s.scraperMetrics.RunsTotal
+		runDuration = s.scraperMetrics.RunDuration
+		eventsTotal = s.scraperMetrics.EventsTotal
+	}
 
-	// Increment run counter.
-	metrics.ScraperRunsTotal.
-		WithLabelValues(result.SourceName, tier, resultLabel, s.slot).
-		Inc()
+	runDuration.WithLabelValues(result.SourceName, tier, s.slot).Observe(duration.Seconds())
+	runsTotal.WithLabelValues(result.SourceName, tier, resultLabel, s.slot).Inc()
 
 	// Increment per-outcome event counters (skip zero values to avoid label pollution).
 	type outcomeCount struct {
@@ -521,9 +525,7 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 	}
 	for _, oc := range outcomes {
 		if oc.count != 0 {
-			metrics.ScraperEventsTotal.
-				WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).
-				Add(float64(oc.count))
+			eventsTotal.WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).Add(float64(oc.count))
 		}
 	}
 }
