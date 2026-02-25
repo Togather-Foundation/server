@@ -1,10 +1,29 @@
 name: "tranzac"
-# Tranzac Club (Toronto). Nuxt.js + DatoCMS SPA — full event calendar is JS-rendered.
-# 698KB page with Nuxt/Stripe deps. Disabled until Tier 2 (Rod) implemented (srv-h264z).
+# Tranzac Club (Toronto). Nuxt.js + DatoCMS SPA — events are JS-rendered by DatoCMS GraphQL.
+# Tier 2 (Rod) confirmed working: 25 events render after ~15s wait; li.event/h3/a/p.room selectors work.
+#
+# DATE LIMITATION: The rendered DOM has no ISO dates — only time-range text (e.g. "5:30pm–9:00pm")
+# in span.time. The parent .date container shows human-readable labels ("Today", "Thursday, February 26")
+# but no machine-readable date. Omitting start_date drops all events; using span.time fails RFC3339 ingest.
+#
+# Resolution: Needs a DatoCMS GraphQL API adapter.
+# Public read-only token (embedded in page): 553eb2d73268311308d1647a8ff60b
+# API endpoint: https://graphql.datocms.com/
+# Fields: allEvents { title startDate endDate slug description photo { url } rooms { name } }
+# See bead srv-2db1q for tracking.
 url: "https://tranzac.org/calendar"
 tier: 2
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
-notes: "Nuxt.js SPA backed by DatoCMS. Calendar content is JS-rendered. Tier 2 required."
+max_pages: 1
+headless:
+  wait_selector: ".date"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "li.event"
+  name: "h3"
+  start_date: "span.time"
+  url: "a"
+  location: "p.room"
