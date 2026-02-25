@@ -224,6 +224,9 @@ func TestValidateConfig(t *testing.T) {
 		},
 		// srv-wrjl4: when urls is set, the url field validation is skipped so
 		// an invalid url alone should not block an otherwise valid config.
+		// srv-d5b70: no warning is asserted here because the warning about this
+		// url-skip behaviour lives in the ValidateConfig godoc (not in its return
+		// value) — adding a []string warnings return would be a breaking API change.
 		{
 			name: "url invalid but urls is set — url field skipped",
 			cfg: SourceConfig{

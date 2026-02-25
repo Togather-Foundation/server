@@ -94,6 +94,7 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 10*1024*1024)).Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("graphql: decoding response: %w", err)
 	}
+	// Conservative: treat any errors as a failure even if partial data is present (GraphQL spec allows both).
 	if len(envelope.Errors) > 0 {
 		msgs := make([]string, len(envelope.Errors))
 		for i, e := range envelope.Errors {
@@ -184,7 +185,16 @@ func mapToRawEvent(item map[string]any, urlTmpl *template.Template, logger zerol
 		if err := urlTmpl.Execute(&buf, item); err != nil {
 			logger.Debug().Err(err).Msg("graphql: url_template execution failed")
 		} else if buf.Len() > 0 {
-			raw.URL = buf.String()
+			rendered := buf.String()
+			// text/template renders missing map keys as "<no value>". A URL
+			// containing that literal is malformed and would cause all events
+			// with a missing field to share the same dedup key in eventIDFromRaw.
+			// Clear the URL so each event gets a unique content-based ID instead.
+			if strings.Contains(rendered, "<no value>") {
+				logger.Debug().Str("rendered", rendered).Msg("graphql: url_template rendered <no value> — clearing URL")
+			} else {
+				raw.URL = rendered
+			}
 		}
 	}
 

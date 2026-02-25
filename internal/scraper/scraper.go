@@ -381,6 +381,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 			}
 			allRaw = append(allRaw, rawEvts...)
 		}
+		// failCount > 0 guards against the empty-list case (0 == 0 would fire spuriously).
 		if failCount > 0 && failCount == len(urlList) {
 			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
 				Msg("scraper: all URLs failed for source — returning 0 events")
@@ -444,6 +445,7 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 			}
 			allRaw = append(allRaw, rawEvts...)
 		}
+		// failCount > 0 guards against the empty-list case (0 == 0 would fire spuriously).
 		if failCount > 0 && failCount == len(urlList) {
 			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
 				Msg("scraper: all URLs failed for source — returning 0 events")
@@ -500,6 +502,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 			}
 			allRawEvents = append(allRawEvents, rawEvts...)
 		}
+		// failCount > 0 guards against the empty-list case (0 == 0 would fire spuriously).
 		if failCount > 0 && failCount == len(urlList) {
 			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
 				Msg("scraper: all URLs failed for source — returning 0 events")
@@ -563,6 +566,9 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 	extractor := NewGraphQLExtractor(s.logger)
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+		// Tier 3 uses the single cfg.GraphQL.Endpoint rather than iterating GetURLs().
+		// source.URL is stored as metadata (SourceURL in scraper_run records) but
+		// is not used for fetching — only Endpoint drives the HTTP request.
 		rawEvents, err := extractor.FetchAndExtractGraphQL(ctx, source, opts.HTTPClient(fetchTimeout))
 		if err != nil {
 			return 0, nil, err

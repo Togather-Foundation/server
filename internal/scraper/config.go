@@ -14,7 +14,11 @@ import (
 
 // SourceConfig defines a scrape source loaded from a YAML config file.
 type SourceConfig struct {
-	Name            string         `yaml:"name"              json:"name"`
+	Name string `yaml:"name"            json:"name"`
+	// URL is the primary entry-point URL for this source. When URLs is also
+	// set, URL is not validated and not used for fetching — GetURLs() returns
+	// URLs instead, and URL is stored only as human-readable metadata (e.g. in
+	// scraper_run records). See also: ValidateConfig for the url-skip behaviour.
 	URL             string         `yaml:"url"               json:"url"`
 	URLs            []string       `yaml:"urls,omitempty"    json:"urls,omitempty"`
 	Tier            int            `yaml:"tier"              json:"tier"`
@@ -80,6 +84,12 @@ type HeadlessConfig struct {
 }
 
 // GraphQLConfig holds Tier 3 GraphQL API options.
+//
+// Note on URL fields: the url/urls fields on SourceConfig are NOT used for
+// fetching by Tier 3 — only Endpoint is used to make the GraphQL request.
+// source.URL is persisted as human-readable metadata in scraper_run records
+// (SourceURL column) so operators can identify the source in dashboards and
+// logs, but it is never passed to the HTTP client.
 type GraphQLConfig struct {
 	// Endpoint is the GraphQL API URL (e.g. https://graphql.datocms.com/).
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
@@ -134,6 +144,14 @@ func DefaultSourceConfig() SourceConfig {
 
 // ValidateConfig validates a SourceConfig and returns an error describing all
 // problems found, or nil if the config is valid.
+//
+// URL-skip behaviour: when the URLs field is non-empty the URL field is not
+// validated and not used for fetching (GetURLs returns URLs). A malformed URL
+// field will not block an otherwise valid config in that case. This is
+// intentional — URL is treated as human-readable metadata when URLs is set.
+// Callers relying on URL for display or logging should be aware that it may
+// not be a valid http/https URL when URLs is also present. See SourceConfig.URL
+// godoc for details.
 func ValidateConfig(cfg SourceConfig) error {
 	var errs []string
 

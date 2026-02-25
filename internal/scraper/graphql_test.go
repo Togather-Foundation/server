@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -204,10 +205,9 @@ func TestFetchAndExtractGraphQL_PartialFields(t *testing.T) {
 func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	t.Parallel()
 
-	// Event has no slug key. text/template renders missing map keys as "<no value>",
-	// so the resulting URL is non-empty but malformed. This documents the current
-	// behaviour: sources should ensure the template field is always present, or
-	// use a conditional in the template.
+	// Event has no slug key. text/template renders missing map keys as "<no value>".
+	// The fix in mapToRawEvent detects this and clears the URL to prevent all
+	// slug-less events from colliding on the same dedup key in eventIDFromRaw.
 	events := []map[string]any{
 		{
 			"title":     "No Slug Event",
@@ -220,9 +220,9 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	// text/template renders missing keys as "<no value>" — URL will be set but
-	// contain that placeholder. NormalizeRawEvent will reject it as invalid.
-	assert.Contains(t, got[0].URL, "<no value>")
+	// URL must be cleared (not set to a "<no value>" string) so each event
+	// gets a unique content-based EventID rather than colliding as duplicates.
+	assert.Equal(t, "", got[0].URL)
 }
 
 // TestFetchAndExtractGraphQL_NullDataField verifies that a response with a
@@ -240,6 +240,105 @@ func TestFetchAndExtractGraphQL_NullDataField(t *testing.T) {
 	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "allEvents", "should report missing event field, not panic")
+}
+
+// TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents verifies that
+// multiple events all missing the slug field are returned individually (not
+// collapsed to one) after the <no value> URL fix.
+func TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents(t *testing.T) {
+	t.Parallel()
+
+	events := []map[string]any{
+		{"title": "No Slug Event A", "startDate": "2026-04-01T18:00:00+00:00"},
+		{"title": "No Slug Event B", "startDate": "2026-04-02T18:00:00+00:00"},
+	}
+	srv := newGraphQLServer(t, tranzacResponse(events))
+	source := newGraphQLSource(t, srv.URL, "", "https://tranzac.org/events/{{.slug}}")
+	extractor := NewGraphQLExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	require.NoError(t, err)
+	// Both events must be returned — without the fix they would be collapsed
+	// to one because both would share the same "<no value>" dedup URL.
+	require.Len(t, got, 2)
+	assert.Equal(t, "", got[0].URL)
+	assert.Equal(t, "", got[1].URL)
+	assert.Equal(t, "No Slug Event A", got[0].Name)
+	assert.Equal(t, "No Slug Event B", got[1].Name)
+}
+
+// TestFetchAndExtractGraphQL_PartialSuccess verifies the conservative error
+// handling: when the GraphQL response contains both errors and partial data,
+// the extractor returns an error and does NOT return the partial events.
+// This is intentional — partial data from a misbehaving endpoint is less
+// trustworthy than a clean failure (GraphQL spec allows both errors and data).
+func TestFetchAndExtractGraphQL_PartialSuccess(t *testing.T) {
+	t.Parallel()
+
+	resp := map[string]any{
+		"errors": []any{
+			map[string]any{"message": "partial"},
+		},
+		"data": map[string]any{
+			"allEvents": []any{
+				map[string]any{
+					"title":     "Partial Event",
+					"startDate": "2026-04-01T18:00:00+00:00",
+				},
+			},
+		},
+	}
+	srv := newGraphQLServer(t, resp)
+	source := newGraphQLSource(t, srv.URL, "", "")
+	extractor := NewGraphQLExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "partial")
+	assert.Nil(t, got, "no events should be returned when errors are present")
+}
+
+// TestFetchAndExtractGraphQL_TimeoutOverride verifies that cfg.TimeoutMs
+// overrides a too-short client.Timeout when the cfg value is larger.
+func TestFetchAndExtractGraphQL_TimeoutOverride(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cfg timeout longer than client timeout — request succeeds", func(t *testing.T) {
+		t.Parallel()
+
+		// Server sleeps 30ms before responding. A 10ms client.Timeout would fail
+		// without the override; cfg.TimeoutMs=5000 extends it so the request succeeds.
+		slowSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(30 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(tranzacResponse(nil))
+		}))
+		t.Cleanup(slowSrv.Close)
+
+		source := newGraphQLSource(t, slowSrv.URL, "", "")
+		source.GraphQL.TimeoutMs = 5000 // 5 s — much longer than the 30 ms server delay
+
+		clientWithShortTimeout := &http.Client{Timeout: 10 * time.Millisecond}
+		extractor := NewGraphQLExtractor(zerolog.Nop())
+		got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, clientWithShortTimeout)
+		require.NoError(t, err, "cfg timeout should override the 10ms client timeout")
+		assert.Empty(t, got)
+	})
+
+	t.Run("cfg timeout shorter than client timeout — client timeout preserved", func(t *testing.T) {
+		t.Parallel()
+
+		// Quick server (no delay). cfg.TimeoutMs is shorter than client.Timeout,
+		// so the client.Timeout is preserved and the request completes fine.
+		fastSrv := newGraphQLServer(t, tranzacResponse(nil))
+
+		source := newGraphQLSource(t, fastSrv.URL, "", "")
+		source.GraphQL.TimeoutMs = 10 // 10ms — shorter than client's 5s
+
+		clientWithLongTimeout := &http.Client{Timeout: 5000 * time.Millisecond}
+		extractor := NewGraphQLExtractor(zerolog.Nop())
+		got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, clientWithLongTimeout)
+		require.NoError(t, err, "client timeout should be preserved when cfg is shorter")
+		assert.Empty(t, got)
+	})
 }
 
 // --------------------------------------------------------------------------
@@ -331,6 +430,27 @@ func TestMapToRawEvent(t *testing.T) {
 				Name: "ID Event",
 				URL:  "https://example.com/events/42",
 			},
+		},
+		{
+			// srv-oyv17: photo field as a plain string (not an object) is silently
+			// ignored — Image remains empty. Documents current behaviour.
+			name: "photo field as plain string — not object, silently ignored",
+			item: map[string]any{
+				"title": "String Photo Event",
+				"photo": "https://example.com/photo.jpg",
+			},
+			want: RawEvent{Name: "String Photo Event"},
+		},
+		{
+			// srv-oyv17: rooms first element is a plain string (not a map) — silently
+			// ignored because the type assertion to map[string]any fails. Location
+			// remains empty. Documents current behaviour.
+			name: "rooms first element is not a map — silently ignored",
+			item: map[string]any{
+				"title": "String Room Event",
+				"rooms": []any{"Main Stage"},
+			},
+			want: RawEvent{Name: "String Room Event"},
 		},
 	}
 
