@@ -15,6 +15,7 @@ import (
 type SourceConfig struct {
 	Name            string         `yaml:"name"              json:"name"`
 	URL             string         `yaml:"url"               json:"url"`
+	URLs            []string       `yaml:"urls,omitempty"    json:"urls,omitempty"`
 	Tier            int            `yaml:"tier"              json:"tier"`
 	Schedule        string         `yaml:"schedule"          json:"schedule"`
 	TrustLevel      int            `yaml:"trust_level"       json:"trust_level"`
@@ -40,6 +41,8 @@ type SourceConfig struct {
 	MultiSessionDurationThreshold string `yaml:"multi_session_duration_threshold,omitempty" json:"multi_session_duration_threshold,omitempty"`
 	// Headless holds Tier 2 headless-browser options. Ignored for tier 0/1.
 	Headless HeadlessConfig `yaml:"headless,omitempty" json:"headless,omitempty"`
+	// GraphQL holds Tier 3 GraphQL API options. Ignored for tier 0/1/2.
+	GraphQL *GraphQLConfig `yaml:"graphql,omitempty" json:"graphql,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
@@ -75,6 +78,40 @@ type HeadlessConfig struct {
 	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
 }
 
+// GraphQLConfig holds Tier 3 GraphQL API options.
+type GraphQLConfig struct {
+	// Endpoint is the GraphQL API URL (e.g. https://graphql.datocms.com/).
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	// Token is the Bearer auth token. Optional — omit for public APIs that
+	// don't require authentication.
+	Token string `yaml:"token" json:"token"`
+	// Query is the full GraphQL query string.
+	Query string `yaml:"query" json:"query"`
+	// EventField is the top-level key in data{} that holds the events array
+	// (e.g. "allEvents").
+	EventField string `yaml:"event_field" json:"event_field"`
+	// TimeoutMs is the HTTP request timeout in milliseconds. 0 = use default (30s).
+	TimeoutMs int `yaml:"timeout_ms" json:"timeout_ms"`
+	// URLTemplate is an optional Go text/template string used to construct the
+	// canonical URL for each event. The template receives the raw event map as
+	// its data (e.g. "https://tranzac.org/events/{{.slug}}").
+	// If empty, no URL is constructed from the API response.
+	URLTemplate string `yaml:"url_template" json:"url_template"`
+}
+
+// GetURLs returns the list of entry-point URLs for this source.
+// If URLs is non-empty it is returned as-is. Otherwise, URL is
+// wrapped in a single-element slice for backwards compatibility.
+func (c SourceConfig) GetURLs() []string {
+	if len(c.URLs) > 0 {
+		return c.URLs
+	}
+	if c.URL != "" {
+		return []string{c.URL}
+	}
+	return nil
+}
+
 // DefaultSourceConfig returns a SourceConfig with sensible defaults applied.
 func DefaultSourceConfig() SourceConfig {
 	return SourceConfig{
@@ -95,17 +132,27 @@ func ValidateConfig(cfg SourceConfig) error {
 		errs = append(errs, "name: required")
 	}
 
-	if strings.TrimSpace(cfg.URL) == "" {
-		errs = append(errs, "url: required")
-	} else {
+	hasURL := strings.TrimSpace(cfg.URL) != ""
+	hasURLs := len(cfg.URLs) > 0
+
+	if !hasURL && !hasURLs {
+		errs = append(errs, "url: required (set url or urls)")
+	}
+	if hasURL {
 		u, err := url.Parse(cfg.URL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			errs = append(errs, fmt.Sprintf("url: must be a valid http/https URL, got %q", cfg.URL))
 		}
 	}
+	for i, u := range cfg.URLs {
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			errs = append(errs, fmt.Sprintf("urls[%d]: must be a valid http/https URL, got %q", i, u))
+		}
+	}
 
-	if cfg.Tier < 0 || cfg.Tier > 2 {
-		errs = append(errs, fmt.Sprintf("tier: must be 0, 1, or 2, got %d", cfg.Tier))
+	if cfg.Tier < 0 || cfg.Tier > 3 {
+		errs = append(errs, fmt.Sprintf("tier: must be 0, 1, 2, or 3, got %d", cfg.Tier))
 	}
 
 	if cfg.TrustLevel != 0 && (cfg.TrustLevel < 1 || cfg.TrustLevel > 10) {
@@ -119,6 +166,27 @@ func ValidateConfig(cfg SourceConfig) error {
 	if cfg.Tier == 2 && strings.TrimSpace(cfg.Headless.WaitSelector) == "" &&
 		strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "tier 2 requires either headless.wait_selector or selectors.event_list")
+	}
+
+	if cfg.Tier == 3 {
+		if cfg.GraphQL == nil {
+			errs = append(errs, "tier 3 requires a graphql config block")
+		} else {
+			if strings.TrimSpace(cfg.GraphQL.Endpoint) == "" {
+				errs = append(errs, "graphql.endpoint: required for tier 3")
+			} else {
+				u, err := url.Parse(cfg.GraphQL.Endpoint)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					errs = append(errs, fmt.Sprintf("graphql.endpoint: must be a valid http/https URL, got %q", cfg.GraphQL.Endpoint))
+				}
+			}
+			if strings.TrimSpace(cfg.GraphQL.Query) == "" {
+				errs = append(errs, "graphql.query: required for tier 3")
+			}
+			if strings.TrimSpace(cfg.GraphQL.EventField) == "" {
+				errs = append(errs, "graphql.event_field: required for tier 3")
+			}
+		}
 	}
 
 	if cfg.Schedule != "" {

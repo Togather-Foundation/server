@@ -752,7 +752,7 @@ increase(togather_river_jobs_completed_total{result="error"}[15m]) >= 3
 
 ### Scraper Metrics
 
-The Togather server instruments its two-tier event scraper (Tier 0: JSON-LD extraction, Tier 1: Colly CSS selectors). These metrics track scrape run outcomes, duration, and per-event processing results across configured sources and ad-hoc URL scrapes.
+The Togather server instruments its four-tier event scraper (Tier 0: JSON-LD extraction, Tier 1: Colly CSS selectors, Tier 2: headless browser, Tier 3: GraphQL API). These metrics track scrape run outcomes, duration, and per-event processing results across configured sources and ad-hoc URL scrapes.
 
 #### Metric Summary
 
@@ -765,7 +765,7 @@ The Togather server instruments its two-tier event scraper (Tier 0: JSON-LD extr
 #### Label Values
 
 - **`source`**: Configured source name (e.g., `harbourfront-centre`) or the hostname for ad-hoc `ScrapeURL` calls
-- **`tier`**: Scraper tier — `"0"` (JSON-LD / Tier 0) or `"1"` (Colly CSS / Tier 1)
+- **`tier`**: Scraper tier — `"0"` (JSON-LD / Tier 0), `"1"` (Colly CSS / Tier 1), `"2"` (headless browser / Tier 2), or `"3"` (GraphQL API / Tier 3)
 - **`result`** (`scraper_runs_total` only): `"success"`, `"error"`, `"dry_run"`
   - **Note**: `"error"` takes priority over `"dry_run"` — a dry-run that returns an error is classified as `"error"`, not `"dry_run"`
 - **`outcome`** (`scraper_events_total` only): `"found"`, `"submitted"`, `"created"`, `"duplicate"`, `"failed"`

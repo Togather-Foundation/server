@@ -141,12 +141,12 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name:    "invalid tier negative",
 			cfg:     func() SourceConfig { c := validTier0; c.Tier = -1; return c }(),
-			wantErr: "tier: must be 0, 1, or 2",
+			wantErr: "tier: must be 0, 1, 2, or 3",
 		},
 		{
-			name:    "invalid tier 3",
-			cfg:     func() SourceConfig { c := validTier0; c.Tier = 3; return c }(),
-			wantErr: "tier: must be 0, 1, or 2",
+			name:    "invalid tier 4",
+			cfg:     func() SourceConfig { c := validTier0; c.Tier = 4; return c }(),
+			wantErr: "tier: must be 0, 1, 2, or 3",
 		},
 		{
 			name:    "invalid trust_level 11",
@@ -180,6 +180,124 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "zero max_pages is allowed (default applied before validation)",
 			cfg:  func() SourceConfig { c := validTier0; c.MaxPages = 0; return c }(),
+		},
+		// Multi-URL (srv-71948)
+		{
+			name: "valid with urls only (no url field)",
+			cfg: SourceConfig{
+				Name:       "Multi URL Source",
+				URLs:       []string{"https://example.com/events", "https://example.com/workshops"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+		},
+		{
+			name: "valid with both url and urls",
+			cfg: SourceConfig{
+				Name:       "Both Fields Source",
+				URL:        "https://example.com/events",
+				URLs:       []string{"https://example.com/workshops"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+		},
+		{
+			name:    "neither url nor urls",
+			cfg:     func() SourceConfig { c := validTier0; c.URL = ""; return c }(),
+			wantErr: "url: required",
+		},
+		{
+			name: "invalid url in urls slice",
+			cfg: SourceConfig{
+				Name:       "Bad URLs Source",
+				URLs:       []string{"https://example.com/events", "not-a-url"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "urls[1]:",
+		},
+		// Tier 3 / GraphQL (srv-wz0h7)
+		{
+			name: "valid tier 3 with graphql config",
+			cfg: SourceConfig{
+				Name:       "GraphQL Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://graphql.example.com/",
+					Query:      "{ allEvents { title startDate } }",
+					EventField: "allEvents",
+				},
+			},
+		},
+		{
+			name: "tier 3 missing graphql block",
+			cfg: SourceConfig{
+				Name:       "No GraphQL Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "tier 3 requires a graphql config block",
+		},
+		{
+			name: "tier 3 graphql missing endpoint",
+			cfg: SourceConfig{
+				Name:       "No Endpoint Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Query:      "{ allEvents { title } }",
+					EventField: "allEvents",
+				},
+			},
+			wantErr: "graphql.endpoint: required",
+		},
+		{
+			name: "tier 3 graphql missing query",
+			cfg: SourceConfig{
+				Name:       "No Query Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://graphql.example.com/",
+					EventField: "allEvents",
+				},
+			},
+			wantErr: "graphql.query: required",
+		},
+		{
+			name: "tier 3 graphql missing event_field",
+			cfg: SourceConfig{
+				Name:       "No EventField Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint: "https://graphql.example.com/",
+					Query:    "{ allEvents { title } }",
+				},
+			},
+			wantErr: "graphql.event_field: required",
 		},
 	}
 
@@ -736,4 +854,70 @@ func TestSourceConfigFromDomain_InvalidJSON(t *testing.T) {
 	_, err := SourceConfigFromDomain(src)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad-source")
+}
+
+// --------------------------------------------------------------------------
+// GetURLs
+// --------------------------------------------------------------------------
+
+func TestSourceConfig_GetURLs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  SourceConfig
+		want []string
+	}{
+		{
+			name: "url only returns single-element slice",
+			cfg:  SourceConfig{URL: "https://example.com/events"},
+			want: []string{"https://example.com/events"},
+		},
+		{
+			name: "urls only returns urls slice",
+			cfg:  SourceConfig{URLs: []string{"https://example.com/a", "https://example.com/b"}},
+			want: []string{"https://example.com/a", "https://example.com/b"},
+		},
+		{
+			name: "urls takes precedence when both set",
+			cfg:  SourceConfig{URL: "https://example.com/events", URLs: []string{"https://example.com/a"}},
+			want: []string{"https://example.com/a"},
+		},
+		{
+			name: "neither returns nil",
+			cfg:  SourceConfig{},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.cfg.GetURLs()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// LoadSourceConfigs — urls field
+// --------------------------------------------------------------------------
+
+func TestLoadSourceConfigs_URLsField(t *testing.T) {
+	t.Parallel()
+
+	yamlContent := `
+name: "Multi URL Source"
+urls:
+  - "https://example.com/events"
+  - "https://example.com/workshops"
+tier: 0
+`
+	dir := t.TempDir()
+	writeYAML(t, dir, "multi.yaml", yamlContent)
+
+	configs, err := LoadSourceConfigs(dir)
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+	assert.Equal(t, []string{"https://example.com/events", "https://example.com/workshops"}, configs[0].URLs)
 }

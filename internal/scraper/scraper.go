@@ -282,6 +282,8 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 		return s.scrapeTier1(ctx, *found, opts)
 	case 2:
 		return s.scrapeTier2(ctx, *found, opts)
+	case 3:
+		return s.scrapeTier3(ctx, *found, opts)
 	default:
 		return ScrapeResult{}, fmt.Errorf("unknown tier %d for source %s", found.Tier, sourceName)
 	}
@@ -334,6 +336,8 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 			res, scrapeErr = s.scrapeTier1(ctx, cfg, opts)
 		case 2:
 			res, scrapeErr = s.scrapeTier2(ctx, cfg, opts)
+		case 3:
+			res, scrapeErr = s.scrapeTier3(ctx, cfg, opts)
 		default:
 			scrapeErr = fmt.Errorf("unknown tier %d for source %s", cfg.Tier, cfg.Name)
 		}
@@ -361,10 +365,20 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		if opts.RateLimitMs > 0 {
 			extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
 		}
-		rawEvents, err := extractor.ScrapeWithSelectors(ctx, source)
-		if err != nil {
-			return 0, nil, err
+
+		var allRaw []RawEvent
+		for _, u := range source.GetURLs() {
+			clone := source
+			clone.URL = u
+			rawEvts, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
+			if fetchErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
+					Msg("scraper: tier 1 URL failed, continuing")
+				continue
+			}
+			allRaw = append(allRaw, rawEvts...)
 		}
+		rawEvents := allRaw
 
 		limit := opts.Limit
 		var validEvents []events.EventInput
@@ -408,10 +422,19 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
-		rawEvents, err := s.rodExtractor.ScrapeWithBrowser(ctx, source)
-		if err != nil {
-			return 0, nil, err
+		var allRaw []RawEvent
+		for _, u := range source.GetURLs() {
+			clone := source
+			clone.URL = u
+			rawEvts, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
+			if fetchErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
+					Msg("scraper: tier 2 URL failed, continuing")
+				continue
+			}
+			allRaw = append(allRaw, rawEvts...)
 		}
+		rawEvents := allRaw
 
 		var validEvents []events.EventInput
 		skipped := 0
@@ -450,10 +473,18 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
-		rawEvents, err := FetchAndExtractJSONLD(ctx, source.URL, opts.HTTPClient(fetchTimeout))
-		if err != nil {
-			return 0, nil, err
+		var allRawEvents []json.RawMessage
+		for _, u := range source.GetURLs() {
+			rawEvts, fetchErr := FetchAndExtractJSONLD(ctx, u, opts.HTTPClient(fetchTimeout))
+			if fetchErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
+					Msg("scraper: tier 0 URL failed, continuing")
+				continue
+			}
+			allRawEvents = append(allRawEvents, rawEvts...)
 		}
+		rawEvents := allRawEvents
+
 		valid, skipped := s.normalizeJSONLDEvents(rawEvents, source, opts.Limit)
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
@@ -496,6 +527,50 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 		}
 
 		return len(rawEvents), valid, nil
+	}), nil
+}
+
+// scrapeTier3 fetches and processes a Tier 3 (GraphQL API) source.
+func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
+	result := ScrapeResult{
+		SourceName: source.Name,
+		SourceURL:  source.URL,
+		Tier:       3,
+		DryRun:     opts.DryRun,
+	}
+
+	extractor := NewGraphQLExtractor(s.logger)
+
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+		rawEvents, err := extractor.FetchAndExtractGraphQL(ctx, source, opts.HTTPClient(fetchTimeout))
+		if err != nil {
+			return 0, nil, err
+		}
+
+		var validEvents []events.EventInput
+		skipped := 0
+		limit := opts.Limit
+
+		for i, raw := range rawEvents {
+			if limit > 0 && i >= limit {
+				break
+			}
+			input, normErr := NormalizeRawEvent(raw, source)
+			if normErr != nil {
+				s.logger.Warn().Str("source", source.Name).Err(normErr).
+					Msg("scraper: skipping raw event that failed normalisation (tier 3)")
+				skipped++
+				continue
+			}
+			validEvents = append(validEvents, input)
+		}
+
+		if skipped > 0 {
+			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
+				Msg("scraper: tier 3 events skipped during normalisation")
+		}
+
+		return len(rawEvents), validEvents, nil
 	}), nil
 }
 
