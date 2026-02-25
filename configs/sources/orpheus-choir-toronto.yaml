@@ -1,9 +1,15 @@
 name: "orpheus-choir-toronto"
-# Disabled — concert season page is a static WordPress editorial page (not a listing).
-# Concerts are described in Gutenberg blocks (wp-block-columns) without structured
-# repeating containers; no JSON-LD Events and no parseable CSS selector pattern.
-# notes: Custom static season page, no tribe_events or repeating card structure.
-#        Would need Tier 2 (headless) or a custom parser to extract from freeform HTML.
+# Disabled. WordPress page with Gutenberg blocks containing ~3-4 concerts per season.
+# Analysis (2026-02-25):
+# - Page uses freeform Gutenberg layout (wp-block-columns, spacers, separators)
+# - Concerts are titled with h2.wp-block-heading (Rejoice in the Lamb, Sound | Space, etc.)
+# - Each concert followed by wp-block-columns div with two columns:
+#   Left: date (h3 with "Saturday YYYY-MM-DD – H:MM pm"), location (h3), description (p)
+#   Right: poster image, ticketspice booking link
+# - No repeating container wrapper (hr separator between concerts, not a div)
+# - CSS selectors cannot extract "all siblings until next h2" without per-concert wrapper
+# - Content is stable and scrapeable, but needs Rod JavaScript extraction or page restructuring
+# - Consider: custom extractor, OR ask site to wrap each concert in a div.concert class
 url: "https://orpheuschoirtoronto.com/2025-2026-concert-season/"
 tier: 2
 schedule: "manual"
