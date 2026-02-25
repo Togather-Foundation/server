@@ -1,10 +1,10 @@
 # Integrated Event Scraper
 
-**Version:** 0.3.0
-**Date:** 2026-02-22
-**Status:** Implemented (Tier 0 + Tier 1, DB-backed source configs, periodic River scheduling)
+**Version:** 0.4.0
+**Date:** 2026-02-25
+**Status:** Implemented (Tier 0–3, DB-backed source configs, periodic River scheduling)
 
-The Togather SEL server includes a built-in two-tier event scraper for automatically
+The Togather SEL server includes a built-in four-tier event scraper for automatically
 extracting events from Toronto-area arts and culture websites. This document covers
 usage, configuration, and how to contribute new source configs.
 
@@ -155,6 +155,8 @@ server scrape all --tier 1          # CSS-selector sources only
 | `-1` | All tiers (default) |
 | `0` | Tier 0 — JSON-LD sources only |
 | `1` | Tier 1 — CSS-selector sources only |
+| `2` | Tier 2 — headless browser sources only |
+| `3` | Tier 3 — GraphQL API sources only |
 
 Output: per-source table with totals row.
 
@@ -195,6 +197,35 @@ Used when a site lacks JSON-LD or has unreliable JSON-LD quality.
 
 **User-Agent:** `Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)`
 
+### Tier 2 — Headless Browser (requires per-site config)
+
+Used when JavaScript rendering is required and CSS selectors are insufficient or
+when the site requires browser-level interaction (e.g. lazy loading, shadow DOM).
+
+1. Launch a Rod-controlled Chromium instance
+2. Navigate to the source URL and wait for a configurable selector or fixed delay
+3. Extract the rendered DOM with configured CSS selectors (same `selectors` block as Tier 1)
+4. Normalize and submit
+
+Headless config block (`headless:`) controls timeouts, wait selectors, and navigation
+options. See [Full Config with Tier 2 Headless](#full-config-with-tier-2-headless) below.
+
+### Tier 3 — GraphQL API (requires per-site config)
+
+Used when a site exposes a GraphQL API (e.g. DatoCMS-powered venues). This is the
+most structured and reliable extraction method when available.
+
+1. POST a configured GraphQL query to the endpoint (with optional Bearer token)
+2. Decode the response envelope: `{"data": {"<event_field>": [...]}}`
+3. Map each record to a `RawEvent` using known field names
+4. If `url_template` is set, render the Go `text/template` with the raw record to
+   produce each event's canonical URL
+5. Normalize and submit
+
+Response body is capped at 10 MiB. `User-Agent` header is set to the standard
+scraper agent string. Timeout behaviour: `graphql.timeout_ms` applies only when it
+exceeds the global request timeout; the larger of the two wins.
+
 ---
 
 ## Source Configuration
@@ -210,6 +241,22 @@ url: "https://example.com/events"
 tier: 0
 enabled: true
 ```
+
+### Multiple Entry-Point URLs (any tier)
+
+Use `urls` instead of `url` when a source's events are spread across multiple pages:
+
+```yaml
+name: "Multi-page Venue"
+urls:
+  - "https://example.com/events/music"
+  - "https://example.com/events/theatre"
+tier: 0
+enabled: true
+```
+
+`url` and `urls` are mutually exclusive. All listed URLs are scraped in sequence
+during a single run.
 
 ### Full Config with Tier 1 Selectors
 
@@ -236,13 +283,65 @@ selectors:
   pagination: "a.next-page"
 ```
 
+### Full Config with Tier 2 Headless
+
+```yaml
+name: "JS-Rendered Venue"
+url: "https://example.com/events"
+tier: 2
+enabled: true
+
+headless:
+  wait_selector: "div.event-card"   # Wait for this element before extracting
+  timeout_ms: 15000                 # Navigation timeout (default: 15000)
+  scroll: true                      # Scroll to bottom to trigger lazy-load
+
+selectors:
+  event_list: "div.event-card"
+  name: "h2.event-title"
+  start_date: "time[datetime]"
+  url: "a.event-link"
+```
+
+### Full Config with Tier 3 GraphQL
+
+```yaml
+name: "DatoCMS Venue"
+url: "https://example.com/events"   # Canonical source URL (informational)
+tier: 3
+enabled: true
+
+graphql:
+  endpoint: "https://graphql.datocms.com/"
+  token: "abc123publictoken"          # Read-only public token — safe to commit
+  event_field: "allEvents"            # Top-level key in the GraphQL data response
+  timeout_ms: 30000                   # Optional; uses global timeout if not set or smaller
+  url_template: "https://example.com/events/{{.slug}}"  # Go text/template; fields from event record
+  query: |
+    query AllEvents {
+      allEvents(orderBy: startDate_ASC, first: 100) {
+        title
+        slug
+        startDate
+        endDate
+        location
+        description
+        image { url }
+      }
+    }
+```
+
+`url_template` is a Go `text/template` string rendered with the raw GraphQL record as
+data (field names are the query response keys). A missing key renders as `<no value>`;
+template execution errors are logged at debug level and the URL is left empty.
+
 ### Required Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Unique identifier (used in `server scrape source <name>`) |
-| `url` | string | Entry-point URL to scrape |
-| `tier` | int | `0` = JSON-LD, `1` = CSS selectors |
+| `url` or `urls` | string or []string | Entry-point URL(s) to scrape (mutually exclusive) |
+| `tier` | int | `0` = JSON-LD, `1` = CSS selectors, `2` = headless browser, `3` = GraphQL API |
 
 ### Optional Fields
 
@@ -255,7 +354,20 @@ selectors:
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
-| `selectors` | — | Required when `tier: 1` |
+| `selectors` | — | Required when `tier: 1` or `tier: 2` |
+| `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
+| `graphql` | — | Required for `tier: 3` (see GraphQL fields below) |
+
+### GraphQL Config Fields (`graphql:`)
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `endpoint` | yes | GraphQL API URL |
+| `query` | yes | Full GraphQL query string |
+| `event_field` | yes | Key in `data` response containing the events array |
+| `token` | no | Bearer token for Authorization header |
+| `url_template` | no | Go `text/template` string to construct each event's URL |
+| `timeout_ms` | no | Request timeout; the larger of this and the global timeout applies |
 
 ---
 
@@ -497,12 +609,13 @@ org database for a match, and writes `configs/sources/<name>.yaml`. It runs up t
    # Look for "Event hrefs" and top CSS classes in the output
    ```
 2. If JSON-LD exists, create a minimal Tier 0 config.
-3. If no JSON-LD, use `server scrape test` to iterate on selectors before writing the config.
-4. Test with `--dry-run`:
+3. If the site exposes a GraphQL API (e.g. DatoCMS), create a Tier 3 config with a `graphql:` block.
+4. If no JSON-LD and no GraphQL, use `server scrape test` to iterate on selectors before writing the config. Use `tier: 2` if the site requires JavaScript rendering.
+5. Test with `--dry-run`:
    ```bash
    server scrape source my-new-source --dry-run
    ```
-5. Submit a PR with the new `configs/sources/<slug>.yaml` file.
+6. Submit a PR with the new `configs/sources/<slug>.yaml` file.
 
 ### Currently Configured Sources (Tier 1)
 
@@ -518,6 +631,12 @@ org database for a match, and writes `configs/sources/<name>.yaml`. It runs up t
 | coc | coc.ca/tickets/2526-season | 7 | Season URL — annual update needed |
 | national-ballet | national.ballet.ca/performances/202627-season/ | 9 | Season URL — annual update needed |
 | rom | rom.on.ca/whats-on/events | 120 | 3 pages; Drupal span duplication |
+
+### Currently Configured Sources (Tier 3)
+
+| Name | Endpoint | Notes |
+|------|----------|-------|
+| tranzac | graphql.datocms.com | DatoCMS public token; url_template constructs `/events/<slug>` |
 
 See `configs/sources/README.md` for full status including disabled sources and unverified candidates.
 
@@ -537,6 +656,8 @@ The scraper emits three metrics, all in the `togather_scraper_*` namespace:
 
 The `source` label is set to the source config `name` for named sources, and to
 `parsedURL.Hostname()` for ad-hoc `ScrapeURL` calls (i.e. `server scrape url <URL>`).
+The `tier` label reflects the extraction tier used: `"0"` (JSON-LD), `"1"` (Colly CSS),
+`"2"` (headless browser), or `"3"` (GraphQL API).
 
 **Cardinality note:** The hostname-derived label is safe today because `ScrapeURL`
 is only called from the CLI with a bounded set of operator-supplied URLs. Do NOT
