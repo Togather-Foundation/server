@@ -42,7 +42,9 @@ type SourceConfig struct {
 	Headless HeadlessConfig `yaml:"headless,omitempty"`
 }
 
-// SelectorConfig holds CSS selectors used for Tier 1 (Colly) scraping.
+// SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
+// (Rod headless) scraping. All fields map to their YAML and JSONB column
+// names via the yaml/json struct tags.
 type SelectorConfig struct {
 	EventList   string `yaml:"event_list" json:"event_list"`
 	Name        string `yaml:"name" json:"name"`
