@@ -1,11 +1,21 @@
 name: "toronto-holocaust-museum"
-# Disabled — custom JavaScript SPA (Angular/custom controller). Events are loaded
-# dynamically via JS with an infinite scroll controller; the static HTML only contains
-# template elements (li.event.template) with empty fields.
-# notes: JS-rendered event list — needs Tier 2 (headless browser) to render events.
+# Tier 2 headless scraper for Toronto Holocaust Museum events page.
+# The page uses a custom Angular/JS controller with list and calendar views.
+# Events are JS-rendered; static HTML contains templates only (not populated until JS runs).
+# Tested with Rod headless browser; 4 events confirmed 2026-02-25.
 url: "https://torontoholocaustmuseum.org/events"
 tier: 2
-schedule: "manual"
+schedule: "weekly"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
+enabled: true
+max_pages: 3
+headless:
+  wait_selector: "li.event"
+  wait_timeout_ms: 20000
+selectors:
+  event_list: "li.event"
+  name: "span[event='title']"
+  start_date: "strong[event='times']"
+  url: "a"
+  image: "img"
