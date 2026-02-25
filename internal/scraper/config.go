@@ -44,15 +44,15 @@ type SourceConfig struct {
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) scraping.
 type SelectorConfig struct {
-	EventList   string `yaml:"event_list"`
-	Name        string `yaml:"name"`
-	StartDate   string `yaml:"start_date"`
-	EndDate     string `yaml:"end_date"`
-	Location    string `yaml:"location"`
-	Description string `yaml:"description"`
-	URL         string `yaml:"url"`
-	Image       string `yaml:"image"`
-	Pagination  string `yaml:"pagination"`
+	EventList   string `yaml:"event_list" json:"event_list"`
+	Name        string `yaml:"name" json:"name"`
+	StartDate   string `yaml:"start_date" json:"start_date"`
+	EndDate     string `yaml:"end_date" json:"end_date"`
+	Location    string `yaml:"location" json:"location"`
+	Description string `yaml:"description" json:"description"`
+	URL         string `yaml:"url" json:"url"`
+	Image       string `yaml:"image" json:"image"`
+	Pagination  string `yaml:"pagination" json:"pagination"`
 }
 
 // HeadlessConfig holds Tier 2 headless-browser-specific options.

@@ -1,12 +1,21 @@
 name: "images-festival"
-# Tier 2 (disabled). React/Tailwind SPA — no server-rendered event cards found.
-# Requires Rod headless browser (srv-h264z).
+# Tier 2. Astro/React SPA with Tailwind. Event cards rendered via headless browser.
+# Cards are grid of `a.group` links with nested h3 title, img thumbnail, date/time.
 # Toronto-based international contemporary art and media festival.
-# URL: https://imagesfestival.com/events
+# Fixed: added JSON tags to SelectorConfig struct for proper DB unmarshal
 url: "https://imagesfestival.com/events"
 tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "a.group"
+  name: "h3"
+  start_date: "div.flex.flex-col.gap-1 div.font-bold"
+  url: "a"
+  image: "img"
