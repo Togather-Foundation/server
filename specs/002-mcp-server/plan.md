@@ -298,7 +298,7 @@ opencode  # or your OpenCode command
 **Key Points**:
 - OpenCode instances work independently per terminal/directory
 - Each can track its own beads for the respective branch
-- Use `bd sync` regularly to push bead state to git
+- Use `bd dolt push` regularly to push bead state to git
 - Merge conflicts are minimal due to additive nature of MCP work
 
 ### Merge Strategy

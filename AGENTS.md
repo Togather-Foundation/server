@@ -107,7 +107,7 @@ For full workflow details: `bd prime`
 4. **Push to remote:**
    ```bash
    git pull --rebase
-   bd sync
+   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
