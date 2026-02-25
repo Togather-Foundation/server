@@ -1,9 +1,21 @@
 name: "obsidian-theatre"
-# Tier 2 (DISABLED). WordPress but returns empty body — likely JS-rendered or blocked.
-# Major Black-led theatre company in Toronto.
+# Tier 2 headless. WordPress Gutenberg-based season page. Custom 'proditem' container per show.
+# Events are organized in a grid with show title, image, and "Learn More" link to detail page.
+# Uses div.proditem for repeating show cards. Empty .meta divs — no visible dates on listing.
+# Major Black-led theatre company in Toronto (trust_level: 8).
 url: "https://www.obsidiantheatre.com/season-listings/"
 tier: 2
 schedule: "weekly"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
+enabled: true
+max_pages: 3
+headless:
+  wait_selector: "div.proditem"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "div.proditem"
+  name: "p.title a"
+  start_date: "div.meta"
+  url: "a[href*='/show/']"
+  image: "img"
