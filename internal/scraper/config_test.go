@@ -222,6 +222,21 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: "urls[1]:",
 		},
+		// srv-wrjl4: when urls is set, the url field validation is skipped so
+		// an invalid url alone should not block an otherwise valid config.
+		{
+			name: "url invalid but urls is set — url field skipped",
+			cfg: SourceConfig{
+				Name:       "Skip URL Validation",
+				URL:        "not-a-url",
+				URLs:       []string{"https://example.com/events"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "",
+		},
 		// Tier 3 / GraphQL (srv-wz0h7)
 		{
 			name: "valid tier 3 with graphql config",

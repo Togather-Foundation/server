@@ -329,6 +329,58 @@ func TestScrapeOptions_HTTPClient_RequestTimeout(t *testing.T) {
 	}
 }
 
+// TestScrapeAll_AllURLsFail verifies that when every URL for a multi-URL
+// source fails to fetch, the result has EventsFound==0, result.Error==nil
+// (the source result is not an error — it's a silent empty result), and the
+// scraper continues past the source. This is the srv-68jdf scenario.
+func TestScrapeAll_AllURLsFail(t *testing.T) {
+	t.Parallel()
+
+	// A server that always returns 503 to simulate all URLs failing.
+	failSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/robots.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(failSrv.Close)
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`name: failing-source
+urls:
+  - %s/events/a
+  - %s/events/b
+tier: 0
+enabled: true
+trust_level: 5
+schedule: manual
+`, failSrv.URL, failSrv.URL)
+	if err := os.WriteFile(filepath.Join(dir, "failing.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	scraper := newTestScraper(t, "http://unused")
+	results, err := scraper.ScrapeAll(t.Context(), ScrapeOptions{
+		DryRun:     true,
+		SourcesDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("ScrapeAll returned error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	res := results[0]
+	// All URLs failed but the source result itself must not be an error.
+	if res.Error != nil {
+		t.Errorf("result.Error = %v, want nil (all-URLs-fail is silent)", res.Error)
+	}
+	if res.EventsFound != 0 {
+		t.Errorf("EventsFound = %d, want 0", res.EventsFound)
+	}
+}
+
 func TestScrapeAll(t *testing.T) {
 	pageSrv := serveFile(t, "single_event.html")
 

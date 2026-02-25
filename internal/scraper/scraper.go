@@ -367,16 +367,23 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		}
 
 		var allRaw []RawEvent
-		for _, u := range source.GetURLs() {
+		urlList := source.GetURLs()
+		failCount := 0
+		for _, u := range urlList {
 			clone := source
 			clone.URL = u
 			rawEvts, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
 			if fetchErr != nil {
 				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
 					Msg("scraper: tier 1 URL failed, continuing")
+				failCount++
 				continue
 			}
 			allRaw = append(allRaw, rawEvts...)
+		}
+		if failCount > 0 && failCount == len(urlList) {
+			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
+				Msg("scraper: all URLs failed for source — returning 0 events")
 		}
 		rawEvents := allRaw
 
@@ -423,16 +430,23 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
 		var allRaw []RawEvent
-		for _, u := range source.GetURLs() {
+		urlList := source.GetURLs()
+		failCount := 0
+		for _, u := range urlList {
 			clone := source
 			clone.URL = u
 			rawEvts, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
 			if fetchErr != nil {
 				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
 					Msg("scraper: tier 2 URL failed, continuing")
+				failCount++
 				continue
 			}
 			allRaw = append(allRaw, rawEvts...)
+		}
+		if failCount > 0 && failCount == len(urlList) {
+			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
+				Msg("scraper: all URLs failed for source — returning 0 events")
 		}
 		rawEvents := allRaw
 
@@ -474,14 +488,21 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
 		var allRawEvents []json.RawMessage
-		for _, u := range source.GetURLs() {
+		urlList := source.GetURLs()
+		failCount := 0
+		for _, u := range urlList {
 			rawEvts, fetchErr := FetchAndExtractJSONLD(ctx, u, opts.HTTPClient(fetchTimeout))
 			if fetchErr != nil {
 				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
 					Msg("scraper: tier 0 URL failed, continuing")
+				failCount++
 				continue
 			}
 			allRawEvents = append(allRawEvents, rawEvts...)
+		}
+		if failCount > 0 && failCount == len(urlList) {
+			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
+				Msg("scraper: all URLs failed for source — returning 0 events")
 		}
 		rawEvents := allRawEvents
 

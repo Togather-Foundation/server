@@ -85,6 +85,12 @@ type GraphQLConfig struct {
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
 	// Token is the Bearer auth token. Optional — omit for public APIs that
 	// don't require authentication.
+	//
+	// Only commit public/read-only tokens (e.g. DatoCMS public API tokens
+	// that are embedded in the site's JavaScript). Never commit tokens with
+	// write access or private data access. If a token must stay out of version
+	// control, use an env-var reference: set token to the empty string and
+	// pass the value via environment variable in the deploy config instead.
 	Token string `yaml:"token" json:"token"`
 	// Query is the full GraphQL query string.
 	Query string `yaml:"query" json:"query"`
@@ -101,8 +107,10 @@ type GraphQLConfig struct {
 }
 
 // GetURLs returns the list of entry-point URLs for this source.
-// If URLs is non-empty it is returned as-is. Otherwise, URL is
-// wrapped in a single-element slice for backwards compatibility.
+// When URLs is non-empty it is returned directly and URL is ignored (URLs
+// takes precedence). When URLs is empty and URL is set, URL is wrapped in a
+// single-element slice for backwards compatibility. Returns nil when neither
+// field is set (should not happen after validation).
 func (c SourceConfig) GetURLs() []string {
 	if len(c.URLs) > 0 {
 		return c.URLs
@@ -139,7 +147,10 @@ func ValidateConfig(cfg SourceConfig) error {
 	if !hasURL && !hasURLs {
 		errs = append(errs, "url: required (set url or urls)")
 	}
-	if hasURL {
+	// Validate url only when it will actually be used (i.e. urls is not set).
+	// When urls is present, url is ignored by GetURLs(), so a malformed url
+	// should not block a valid config.
+	if hasURL && !hasURLs {
 		u, err := url.Parse(cfg.URL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			errs = append(errs, fmt.Sprintf("url: must be a valid http/https URL, got %q", cfg.URL))

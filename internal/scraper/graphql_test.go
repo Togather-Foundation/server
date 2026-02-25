@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"text/template"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -222,6 +223,132 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	// text/template renders missing keys as "<no value>" — URL will be set but
 	// contain that placeholder. NormalizeRawEvent will reject it as invalid.
 	assert.Contains(t, got[0].URL, "<no value>")
+}
+
+// TestFetchAndExtractGraphQL_NullDataField verifies that a response with a
+// null "data" field ({"data": null}) does not panic and returns an error
+// about the missing event field. This is the srv-rstvo scenario: Go's nil
+// map lookup returns (zero, false), so the "event field not found" path is
+// reached without a nil-pointer dereference.
+func TestFetchAndExtractGraphQL_NullDataField(t *testing.T) {
+	t.Parallel()
+
+	// JSON: {"data": null} — data decodes to a nil map[string]json.RawMessage
+	srv := newGraphQLServer(t, map[string]any{"data": nil})
+	source := newGraphQLSource(t, srv.URL, "", "")
+	extractor := NewGraphQLExtractor(zerolog.Nop())
+	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allEvents", "should report missing event field, not panic")
+}
+
+// --------------------------------------------------------------------------
+// mapToRawEvent unit tests (srv-8ddm0)
+// --------------------------------------------------------------------------
+
+func TestMapToRawEvent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		item        map[string]any
+		urlTemplate string
+		want        RawEvent
+	}{
+		{
+			name: "all fields populated",
+			item: map[string]any{
+				"title":       "Full Event",
+				"startDate":   "2026-06-01T19:00:00+00:00",
+				"endDate":     "2026-06-01T22:00:00+00:00",
+				"description": "A fully populated event.",
+				"photo":       map[string]any{"url": "https://example.com/photo.jpg"},
+				"rooms":       []any{map[string]any{"name": "Main Stage"}},
+				"slug":        "full-event-2026-06-01",
+			},
+			urlTemplate: "https://example.com/events/{{.slug}}",
+			want: RawEvent{
+				Name:        "Full Event",
+				StartDate:   "2026-06-01T19:00:00+00:00",
+				EndDate:     "2026-06-01T22:00:00+00:00",
+				Description: "A fully populated event.",
+				Image:       "https://example.com/photo.jpg",
+				Location:    "Main Stage",
+				URL:         "https://example.com/events/full-event-2026-06-01",
+			},
+		},
+		{
+			name: "photo field present",
+			item: map[string]any{
+				"title": "Photo Event",
+				"photo": map[string]any{"url": "https://cdn.example.com/img.png"},
+			},
+			want: RawEvent{
+				Name:  "Photo Event",
+				Image: "https://cdn.example.com/img.png",
+			},
+		},
+		{
+			name: "photo field nil — no panic",
+			item: map[string]any{
+				"title": "No Photo",
+				"photo": nil,
+			},
+			want: RawEvent{Name: "No Photo"},
+		},
+		{
+			name: "rooms field present — uses first room",
+			item: map[string]any{
+				"title": "Rooms Event",
+				"rooms": []any{
+					map[string]any{"name": "Bar Room"},
+					map[string]any{"name": "Back Room"},
+				},
+			},
+			want: RawEvent{Name: "Rooms Event", Location: "Bar Room"},
+		},
+		{
+			name: "rooms field empty slice — no location",
+			item: map[string]any{
+				"title": "No Room Event",
+				"rooms": []any{},
+			},
+			want: RawEvent{Name: "No Room Event"},
+		},
+		{
+			name: "empty item — zero RawEvent",
+			item: map[string]any{},
+			want: RawEvent{},
+		},
+		{
+			name: "url_template with non-slug field",
+			item: map[string]any{
+				"title": "ID Event",
+				"id":    "42",
+			},
+			urlTemplate: "https://example.com/events/{{.id}}",
+			want: RawEvent{
+				Name: "ID Event",
+				URL:  "https://example.com/events/42",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var tmpl *template.Template
+			if tt.urlTemplate != "" {
+				var err error
+				tmpl, err = template.New("url").Parse(tt.urlTemplate)
+				require.NoError(t, err)
+			}
+
+			got := mapToRawEvent(tt.item, tmpl, zerolog.Nop())
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestScrapeTier3_Integration(t *testing.T) {
