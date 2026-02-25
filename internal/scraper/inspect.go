@@ -65,85 +65,8 @@ func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectR
 		return nil, fmt.Errorf("inspect: parse HTML: %w", err)
 	}
 
-	result := &InspectResult{
-		URL:        rawURL,
-		StatusCode: resp.StatusCode,
-		BodyBytes:  len(body),
-	}
-
-	// --- CSS class frequency ---
-	classCounts := map[string]int{}
-	doc.Find("[class]").Each(func(_ int, s *goquery.Selection) {
-		cls, _ := s.Attr("class")
-		for _, part := range strings.Fields(cls) {
-			classCounts[part]++
-		}
-	})
-	result.TopClasses = topN(classCounts, 30)
-
-	// --- data-* attribute frequency ---
-	dataCounts := map[string]int{}
-	doc.Find("*").Each(func(_ int, s *goquery.Selection) {
-		for _, node := range s.Nodes {
-			for _, attr := range node.Attr {
-				if strings.HasPrefix(attr.Key, "data-") {
-					dataCounts[attr.Key]++
-				}
-			}
-		}
-	})
-	result.DataAttrs = topN(dataCounts, 15)
-
-	// --- event/program href links ---
-	seen := map[string]bool{}
-	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
-		href, _ := s.Attr("href")
-		lower := strings.ToLower(href)
-		if (strings.Contains(lower, "/event") || strings.Contains(lower, "/program")) && !seen[href] {
-			seen[href] = true
-			result.EventLinks = append(result.EventLinks, href)
-		}
-	})
-	if len(result.EventLinks) > 20 {
-		result.EventLinks = result.EventLinks[:20]
-	}
-
-	// --- candidate event container elements ---
-	eventWords := []string{"event", "film", "show", "program", "card", "item", "listing", "performance"}
-	cardSeen := map[string]bool{}
-	for _, tag := range []string{"article", "li", "div", "section"} {
-		doc.Find(tag + "[class]").Each(func(_ int, s *goquery.Selection) {
-			cls, _ := s.Attr("class")
-			lower := strings.ToLower(cls)
-			for _, w := range eventWords {
-				if strings.Contains(lower, w) {
-					// Build a short selector
-					firstClass := strings.Fields(cls)[0]
-					sel := tag + "." + firstClass
-					if cardSeen[sel] {
-						return
-					}
-					cardSeen[sel] = true
-					h, _ := goquery.OuterHtml(s)
-					if len(h) > 300 {
-						h = h[:300] + "…"
-					}
-					result.SampleCards = append(result.SampleCards, SampleCard{
-						Selector: sel,
-						HTML:     h,
-					})
-					if len(result.SampleCards) >= 8 {
-						return
-					}
-					break
-				}
-			}
-		})
-		if len(result.SampleCards) >= 8 {
-			break
-		}
-	}
-
+	result := analyseDoc(doc, rawURL, len(body))
+	result.StatusCode = resp.StatusCode
 	return result, nil
 }
 
@@ -196,10 +119,16 @@ func InspectHTML(rawURL, html string) (*InspectResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect: parse HTML: %w", err)
 	}
+	return analyseDoc(doc, rawURL, len(html)), nil
+}
 
+// analyseDoc performs DOM analysis on an already-parsed goquery document.
+// It extracts CSS class frequencies, data-* attribute frequencies, event hrefs,
+// and candidate event container elements. rawURL and bodyBytes are metadata only.
+func analyseDoc(doc *goquery.Document, rawURL string, bodyBytes int) *InspectResult {
 	result := &InspectResult{
 		URL:       rawURL,
-		BodyBytes: len(html),
+		BodyBytes: bodyBytes,
 	}
 
 	// --- CSS class frequency ---
@@ -274,7 +203,7 @@ func InspectHTML(rawURL, html string) (*InspectResult, error) {
 		}
 	}
 
-	return result, nil
+	return result
 }
 
 // topN returns the N most frequent entries from a count map, sorted desc.

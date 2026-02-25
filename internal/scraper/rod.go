@@ -96,6 +96,18 @@ func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfi
 // connected *rod.Browser with ctx bound (so cancellation is respected) and a
 // cleanup func that must be deferred by the caller. The browser's context is
 // set to ctx so all page operations inherit the same deadline/cancellation.
+//
+// Design note — one browser process per scrape call (no persistent pool):
+// Each ScrapeWithBrowser / RenderHTML call launches a fresh Chromium process
+// and closes it when done. This is intentional: it provides strong isolation
+// between scrape operations (no shared cookies, cache, or session state), avoids
+// the need for browser-level cleanup or crash-recovery logic, and keeps memory
+// bounded (a crashed browser never affects subsequent calls). The concurrency
+// semaphore (maxConc) limits simultaneous launches, so the startup cost (~300ms)
+// is acceptable for background scraping where throughput matters more than
+// per-call latency. If cold-start latency becomes a bottleneck (e.g. interactive
+// use, high-frequency scheduled scrapes), replace with a long-lived browser pool
+// and open a new page per call instead.
 func (e *RodExtractor) launchBrowser(ctx context.Context) (*rod.Browser, func(), error) {
 	l := launcher.New().
 		Headless(true).
