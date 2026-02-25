@@ -1,12 +1,14 @@
 package scraper
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -609,4 +611,129 @@ func TestParseMultiSessionThreshold(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// --------------------------------------------------------------------------
+// SourceConfigFromDomain — JSON round-trip (srv-r7nov)
+// --------------------------------------------------------------------------
+
+// TestSourceConfigFromDomain_JSONRoundTrip verifies that SelectorConfig
+// marshals to snake_case JSON keys and that SourceConfigFromDomain correctly
+// reconstructs it from a domain.Source whose Selectors field contains the
+// snake_case JSONB payload written by the DB.
+//
+// This is a regression test for the silent failure fixed in srv-2db1q: without
+// json: struct tags, json.Marshal produced PascalCase keys ("EventList"), but
+// the DB stored snake_case keys ("event_list"), so Unmarshal silently produced
+// a zero-valued SelectorConfig on every read.
+func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		selectors SelectorConfig
+	}{
+		{
+			name: "all fields populated",
+			selectors: SelectorConfig{
+				EventList:   "div.event-card",
+				Name:        "h2.title",
+				StartDate:   "time[datetime]",
+				EndDate:     "time.end",
+				Location:    "span.venue",
+				Description: "p.summary",
+				URL:         "a.event-link",
+				Image:       "img.thumb",
+				Pagination:  "a.next-page",
+			},
+		},
+		{
+			name: "partial fields (Tier 2 typical)",
+			selectors: SelectorConfig{
+				EventList: ".eventon_list_event",
+				Name:      ".evcal_event_title",
+				StartDate: ".evcal_desc2",
+				URL:       ".evcal_list_a a",
+			},
+		},
+		{
+			name:      "empty (Tier 0 — no selectors)",
+			selectors: SelectorConfig{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Marshal the SelectorConfig to JSON (simulates what scrape_sync writes to DB).
+			raw, err := json.Marshal(tt.selectors)
+			require.NoError(t, err)
+
+			// Verify keys are snake_case, not PascalCase.
+			if tt.selectors.EventList != "" {
+				assert.Contains(t, string(raw), `"event_list"`,
+					"json.Marshal must produce snake_case key event_list")
+				assert.NotContains(t, string(raw), `"EventList"`,
+					"json.Marshal must not produce PascalCase key EventList")
+			}
+			if tt.selectors.StartDate != "" {
+				assert.Contains(t, string(raw), `"start_date"`)
+				assert.NotContains(t, string(raw), `"StartDate"`)
+			}
+
+			// Build a domain Source with the marshalled JSONB payload (simulates a DB read).
+			src := domainScraper.Source{
+				Name:       "test-source",
+				URL:        "https://example.com/events",
+				Tier:       1,
+				TrustLevel: 5,
+				License:    "CC0-1.0",
+				Enabled:    true,
+				MaxPages:   10,
+				Schedule:   "weekly",
+				Selectors:  raw,
+			}
+
+			// SourceConfigFromDomain must reconstruct the original SelectorConfig.
+			cfg, err := SourceConfigFromDomain(src)
+			require.NoError(t, err)
+			assert.Equal(t, tt.selectors, cfg.Selectors,
+				"SourceConfigFromDomain must round-trip SelectorConfig through JSON")
+		})
+	}
+}
+
+// TestSourceConfigFromDomain_EmptySelectors verifies that a nil/empty Selectors
+// field (Tier 0 source) produces a zero SelectorConfig without error.
+func TestSourceConfigFromDomain_EmptySelectors(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:      "tier0-source",
+		URL:       "https://example.com/events",
+		Tier:      0,
+		Selectors: nil,
+	}
+
+	cfg, err := SourceConfigFromDomain(src)
+	require.NoError(t, err)
+	assert.Equal(t, SelectorConfig{}, cfg.Selectors)
+}
+
+// TestSourceConfigFromDomain_InvalidJSON verifies that malformed JSONB in the
+// Selectors field returns a wrapped error rather than silently zero-initialising.
+func TestSourceConfigFromDomain_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:      "bad-source",
+		URL:       "https://example.com/events",
+		Tier:      1,
+		Selectors: []byte(`{not valid json`),
+	}
+
+	_, err := SourceConfigFromDomain(src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bad-source")
 }

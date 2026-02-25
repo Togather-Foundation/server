@@ -13,33 +13,33 @@ import (
 
 // SourceConfig defines a scrape source loaded from a YAML config file.
 type SourceConfig struct {
-	Name            string         `yaml:"name"`
-	URL             string         `yaml:"url"`
-	Tier            int            `yaml:"tier"`
-	Schedule        string         `yaml:"schedule"`
-	TrustLevel      int            `yaml:"trust_level"`
-	License         string         `yaml:"license"`
-	Enabled         bool           `yaml:"enabled"`
-	EventURLPattern string         `yaml:"event_url_pattern"`
-	MaxPages        int            `yaml:"max_pages"`
-	Notes           string         `yaml:"notes,omitempty"`
-	Selectors       SelectorConfig `yaml:"selectors"`
+	Name            string         `yaml:"name"              json:"name"`
+	URL             string         `yaml:"url"               json:"url"`
+	Tier            int            `yaml:"tier"              json:"tier"`
+	Schedule        string         `yaml:"schedule"          json:"schedule"`
+	TrustLevel      int            `yaml:"trust_level"       json:"trust_level"`
+	License         string         `yaml:"license"           json:"license"`
+	Enabled         bool           `yaml:"enabled"           json:"enabled"`
+	EventURLPattern string         `yaml:"event_url_pattern" json:"event_url_pattern"`
+	MaxPages        int            `yaml:"max_pages"         json:"max_pages"`
+	Notes           string         `yaml:"notes,omitempty"   json:"notes,omitempty"`
+	Selectors       SelectorConfig `yaml:"selectors"         json:"selectors"`
 	// FollowEventURLs instructs the Tier 0 scraper to fetch each event's detail
 	// page to retrieve the full description when the JSON-LD description appears
 	// truncated (e.g. Tribe Events WordPress sources always truncate).
-	FollowEventURLs bool `yaml:"follow_event_urls"`
+	FollowEventURLs bool `yaml:"follow_event_urls" json:"follow_event_urls"`
 	// SkipMultiSessionCheck disables the multi-session event heuristic for this
 	// source. Use for sources that legitimately emit long-duration single events
 	// (e.g., festivals, art installations).
-	SkipMultiSessionCheck bool `yaml:"skip_multi_session_check"`
+	SkipMultiSessionCheck bool `yaml:"skip_multi_session_check" json:"skip_multi_session_check"`
 	// MultiSessionDurationThreshold overrides the default 168h (1 week) duration
 	// threshold used by the multi-session heuristic. Use for sources that
 	// legitimately publish events longer than 1 week but shorter than 30 days
 	// (e.g., festivals spanning multiple weeks). Value is a Go duration string
 	// like "720h" (30 days). Zero value means use the default (168h).
-	MultiSessionDurationThreshold string `yaml:"multi_session_duration_threshold,omitempty"`
+	MultiSessionDurationThreshold string `yaml:"multi_session_duration_threshold,omitempty" json:"multi_session_duration_threshold,omitempty"`
 	// Headless holds Tier 2 headless-browser options. Ignored for tier 0/1.
-	Headless HeadlessConfig `yaml:"headless,omitempty"`
+	Headless HeadlessConfig `yaml:"headless,omitempty" json:"headless,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
@@ -61,18 +61,18 @@ type SelectorConfig struct {
 type HeadlessConfig struct {
 	// WaitSelector is a CSS selector to wait for before extracting events.
 	// Required for tier 2. Defaults to "body" if empty after validation.
-	WaitSelector string `yaml:"wait_selector"`
+	WaitSelector string `yaml:"wait_selector" json:"wait_selector"`
 	// WaitTimeoutMs is the maximum time (ms) to wait for WaitSelector.
 	// 0 means use the RodExtractor default (10 000 ms).
-	WaitTimeoutMs int `yaml:"wait_timeout_ms"`
+	WaitTimeoutMs int `yaml:"wait_timeout_ms" json:"wait_timeout_ms"`
 	// PaginationBtn is a CSS selector for a "load more" / "next" button to click
 	// for JS-rendered pagination. Empty means no pagination.
-	PaginationBtn string `yaml:"pagination_button"`
+	PaginationBtn string `yaml:"pagination_button" json:"pagination_button"`
 	// Headers are extra HTTP headers injected into every browser request.
-	Headers map[string]string `yaml:"headers,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// RateLimitMs overrides the per-domain delay between page loads (ms).
 	// 0 means use the RodExtractor default.
-	RateLimitMs int `yaml:"rate_limit_ms"`
+	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
 }
 
 // DefaultSourceConfig returns a SourceConfig with sensible defaults applied.
