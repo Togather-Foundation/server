@@ -16,16 +16,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var scrapeHeadless bool
+
 // scrapeURLCmd scrapes a single URL.
 var scrapeURLCmd = &cobra.Command{
 	Use:   "url <URL>",
 	Short: "Scrape events from a single URL",
 	Long: `Fetch and extract JSON-LD events from the given URL, then ingest them.
 
+Use --headless to scrape JS-rendered pages via the Tier 2 headless browser path.
+Requires SCRAPER_HEADLESS_ENABLED=true and Chromium to be available.
+
 Examples:
   server scrape url https://tso.ca/concerts
   server scrape url https://example.com/events --dry-run
-  server scrape url https://example.com/events --limit 10`,
+  server scrape url https://example.com/events --limit 10
+  server scrape url https://example.com/events --headless`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rawURL := args[0]
@@ -44,9 +50,14 @@ Examples:
 		defer cleanup()
 
 		opts := scraper.ScrapeOptions{
-			DryRun:    scrapeDryRun,
-			Limit:     scrapeLimit,
-			Transport: buildScrapeTransport(cmd, logger),
+			DryRun:           scrapeDryRun,
+			Limit:            scrapeLimit,
+			Transport:        buildScrapeTransport(cmd, logger),
+			HeadlessOverride: scrapeHeadless,
+		}
+
+		if scrapeHeadless {
+			logger.Info().Str("url", rawURL).Msg("scraper: --headless flag set; using Tier 2 headless browser path (WaitSelector=body)")
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -140,10 +151,15 @@ var scrapeSourceCmd = &cobra.Command{
 	Short: "Scrape events from a named configured source",
 	Long: `Load the named source from the sources directory and scrape it.
 
+If the source config has tier: 2, headless browser scraping is used automatically
+(requires SCRAPER_HEADLESS_ENABLED=true). The --headless flag forces Tier 2 mode
+even for sources not configured with tier: 2.
+
 Examples:
   server scrape source toronto-symphony-orch
   server scrape source toronto-symphony-orch --dry-run
-  server scrape source toronto-symphony-orch --limit 5`,
+  server scrape source toronto-symphony-orch --limit 5
+  server scrape source mysite --headless`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sourceName := args[0]
@@ -162,10 +178,15 @@ Examples:
 		defer cleanup()
 
 		opts := scraper.ScrapeOptions{
-			DryRun:     scrapeDryRun,
-			Limit:      scrapeLimit,
-			SourcesDir: scrapeSourceDir,
-			Transport:  buildScrapeTransport(cmd, logger),
+			DryRun:           scrapeDryRun,
+			Limit:            scrapeLimit,
+			SourcesDir:       scrapeSourceDir,
+			Transport:        buildScrapeTransport(cmd, logger),
+			HeadlessOverride: scrapeHeadless,
+		}
+
+		if scrapeHeadless {
+			logger.Info().Str("source", sourceName).Msg("scraper: --headless flag set; will override source tier to 2 if not already")
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

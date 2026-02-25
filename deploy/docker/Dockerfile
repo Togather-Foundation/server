@@ -76,9 +76,13 @@ ARG GIT_COMMIT=unknown
 ENV BUILD_COMMIT=${GIT_COMMIT}
 
 # Install runtime dependencies
+# chromium: required for Tier 2 headless scraping via go-rod
+# (Rod download-on-demand fetches a glibc binary which fails on Alpine/musl;
+#  use the distro package instead and point SCRAPER_CHROME_PATH at it)
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
+    chromium \
     && update-ca-certificates
 
 # Create non-root user and group

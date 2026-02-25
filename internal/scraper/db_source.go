@@ -29,5 +29,15 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		}
 	}
 
+	cfg.Headless.WaitSelector = src.HeadlessWaitSelector
+	cfg.Headless.WaitTimeoutMs = src.HeadlessWaitTimeoutMs
+	cfg.Headless.PaginationBtn = src.HeadlessPaginationBtn
+	cfg.Headless.RateLimitMs = src.HeadlessRateLimitMs
+	if len(src.HeadlessHeaders) > 0 {
+		if err := json.Unmarshal(src.HeadlessHeaders, &cfg.Headless.Headers); err != nil {
+			return SourceConfig{}, fmt.Errorf("decode headless headers for %q: %w", src.Name, err)
+		}
+	}
+
 	return cfg, nil
 }

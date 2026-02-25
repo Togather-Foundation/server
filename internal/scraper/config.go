@@ -38,6 +38,8 @@ type SourceConfig struct {
 	// (e.g., festivals spanning multiple weeks). Value is a Go duration string
 	// like "720h" (30 days). Zero value means use the default (168h).
 	MultiSessionDurationThreshold string `yaml:"multi_session_duration_threshold,omitempty"`
+	// Headless holds Tier 2 headless-browser options. Ignored for tier 0/1.
+	Headless HeadlessConfig `yaml:"headless,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) scraping.
@@ -51,6 +53,24 @@ type SelectorConfig struct {
 	URL         string `yaml:"url"`
 	Image       string `yaml:"image"`
 	Pagination  string `yaml:"pagination"`
+}
+
+// HeadlessConfig holds Tier 2 headless-browser-specific options.
+type HeadlessConfig struct {
+	// WaitSelector is a CSS selector to wait for before extracting events.
+	// Required for tier 2. Defaults to "body" if empty after validation.
+	WaitSelector string `yaml:"wait_selector"`
+	// WaitTimeoutMs is the maximum time (ms) to wait for WaitSelector.
+	// 0 means use the RodExtractor default (10 000 ms).
+	WaitTimeoutMs int `yaml:"wait_timeout_ms"`
+	// PaginationBtn is a CSS selector for a "load more" / "next" button to click
+	// for JS-rendered pagination. Empty means no pagination.
+	PaginationBtn string `yaml:"pagination_button"`
+	// Headers are extra HTTP headers injected into every browser request.
+	Headers map[string]string `yaml:"headers,omitempty"`
+	// RateLimitMs overrides the per-domain delay between page loads (ms).
+	// 0 means use the RodExtractor default.
+	RateLimitMs int `yaml:"rate_limit_ms"`
 }
 
 // DefaultSourceConfig returns a SourceConfig with sensible defaults applied.
@@ -92,6 +112,11 @@ func ValidateConfig(cfg SourceConfig) error {
 
 	if cfg.Tier == 1 && strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "selectors.event_list: required for tier 1")
+	}
+
+	if cfg.Tier == 2 && strings.TrimSpace(cfg.Headless.WaitSelector) == "" &&
+		strings.TrimSpace(cfg.Selectors.EventList) == "" {
+		errs = append(errs, "tier 2 requires either headless.wait_selector or selectors.event_list")
 	}
 
 	if cfg.Schedule != "" {
