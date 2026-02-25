@@ -31,7 +31,7 @@ IMPORTANT:
 - `server cleanup` — Clean up deployment artifacts (Docker images, snapshots, logs)
 - `server api-key` — API key management (create, list, revoke)
 - `server developer` — Developer account management (invite, list, deactivate)
-- `server scrape` — Scrape events from URLs or configured sources (url, list, source, all); `source <name>` accepts `--dry-run` to display extracted events without submitting
+- `server scrape` — Scrape events from URLs or configured sources (url, list, source, all, capture); `source <name>` accepts `--dry-run`; `capture <URL> --format html|inspect` renders via headless browser for selector authoring
 - `server reconcile` — Bulk reconciliation against knowledge graphs (places, organizations, all)
 - `server webfiles` — Generate robots.txt and sitemap.xml for deployment
 - `server version` — Print version information
@@ -49,7 +49,7 @@ internal/auth/        — Authentication (JWT, API keys)
 internal/config/      — Configuration and logging setup
 internal/jobs/        — River background job workers
 internal/jsonld/      — JSON-LD processing
-internal/scraper/     — Two-tier event scraper (JSON-LD + Colly CSS selectors)
+internal/scraper/     — Three-tier event scraper (JSON-LD, Colly CSS selectors, Rod headless browser)
 internal/kg/          — Knowledge graph reconciliation (Artsdata adapter)
 internal/validation/  — Input validation
 web/                  — Frontend/web assets
@@ -72,7 +72,7 @@ Run `bd prime` for workflow context, or install hooks (`bd hooks install`) for a
 - `bd create "Title" --type task --priority 2` — Create issue
 - `bd update <id> --status in_progress` — Claim work
 - `bd close <id>` — Complete work
-- `bd sync` — Sync with git (run at session end)
+- `bd dolt push` — Push beads state to remote (replaces deprecated `bd sync`)
 
 For full workflow details: `bd prime`
 
@@ -80,7 +80,7 @@ For full workflow details: `bd prime`
 ## Workflow (do this every coding or documentation task)
 
 1) Pick work:
-   - `bd list --status ready` (or equivalent) and choose ONE task.
+   - `bd ready` and choose ONE task.
 2) Bind to the spec:
    - Ensure the bead description links to the relevant spec section.
 3) Claim bead:
@@ -89,9 +89,9 @@ For full workflow details: `bd prime`
    - Small commits, tests where appropriate, keep diffs reviewable.
    - Run `make ci` before pushing to catch CI failures locally.
 5) Update bead:
-   - `bd update <id> --status closed --close-reason "<what changed + why>"` when done.
+   - `bd close <id> --reason "<what changed + why>"` when done.
 6) Sync Beads state:
-   - `bd sync` (safe to run often).
+   - `bd dolt push` (safe to run often; `bd sync` is deprecated).
 7) Never merge `beads-sync` into main.
 
 
