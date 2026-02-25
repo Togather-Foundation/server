@@ -28,6 +28,12 @@ func NewGraphQLExtractor(logger zerolog.Logger) *GraphQLExtractor {
 // maps each returned event object to a RawEvent using the field names, and
 // returns the slice. URLTemplate (if non-empty) is rendered per-event using
 // the raw event map as template data.
+//
+// Timeout precedence: the effective HTTP timeout is the larger of the
+// caller-supplied client.Timeout and cfg.TimeoutMs. This allows a source
+// config to extend the global timeout for unusually slow GraphQL endpoints
+// without ever tightening it below what the caller already provides.
+// If cfg.TimeoutMs is zero the caller's timeout is used unchanged.
 func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 	ctx context.Context,
 	source SourceConfig,
@@ -38,7 +44,8 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 		return nil, fmt.Errorf("graphql config is nil for source %q", source.Name)
 	}
 
-	// Apply config timeout when it exceeds the caller-supplied timeout.
+	// Apply config timeout when it exceeds the caller-supplied timeout
+	// (see godoc for precedence rationale).
 	if cfg.TimeoutMs > 0 {
 		if cfgTimeout := time.Duration(cfg.TimeoutMs) * time.Millisecond; cfgTimeout > client.Timeout {
 			client = &http.Client{

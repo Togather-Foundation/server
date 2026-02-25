@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -185,6 +186,11 @@ func ValidateConfig(cfg SourceConfig) error {
 			}
 			if strings.TrimSpace(cfg.GraphQL.EventField) == "" {
 				errs = append(errs, "graphql.event_field: required for tier 3")
+			}
+			if t := strings.TrimSpace(cfg.GraphQL.URLTemplate); t != "" {
+				if _, err := template.New("url_template").Parse(t); err != nil {
+					errs = append(errs, fmt.Sprintf("graphql.url_template: invalid Go template: %v", err))
+				}
 			}
 		}
 	}

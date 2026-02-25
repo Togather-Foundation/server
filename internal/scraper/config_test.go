@@ -299,6 +299,42 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: "graphql.event_field: required",
 		},
+		{
+			name: "tier 3 graphql invalid url_template",
+			cfg: SourceConfig{
+				Name:       "Bad Template Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:    "https://graphql.example.com/",
+					Query:       "{ allEvents { title } }",
+					EventField:  "allEvents",
+					URLTemplate: "https://example.com/events/{{.slug", // unclosed action
+				},
+			},
+			wantErr: "graphql.url_template: invalid Go template",
+		},
+		{
+			name: "tier 3 graphql valid url_template",
+			cfg: SourceConfig{
+				Name:       "Good Template Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:    "https://graphql.example.com/",
+					Query:       "{ allEvents { title } }",
+					EventField:  "allEvents",
+					URLTemplate: "https://example.com/events/{{.slug}}",
+				},
+			},
+			wantErr: "",
+		},
 	}
 
 	for _, tt := range tests {
