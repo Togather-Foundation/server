@@ -25,7 +25,7 @@ const getScraperSourceByID = `-- name: GetScraperSourceByID :one
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
        max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms
+       headless_headers, headless_rate_limit_ms, graphql_config
   FROM scraper_sources
  WHERE id = $1
 `
@@ -54,6 +54,7 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (ScraperSo
 		&i.HeadlessPaginationBtn,
 		&i.HeadlessHeaders,
 		&i.HeadlessRateLimitMs,
+		&i.GraphqlConfig,
 	)
 	return i, err
 }
@@ -62,7 +63,7 @@ const getScraperSourceByName = `-- name: GetScraperSourceByName :one
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
        max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms
+       headless_headers, headless_rate_limit_ms, graphql_config
   FROM scraper_sources
  WHERE name = $1
 `
@@ -91,6 +92,7 @@ func (q *Queries) GetScraperSourceByName(ctx context.Context, name string) (Scra
 		&i.HeadlessPaginationBtn,
 		&i.HeadlessHeaders,
 		&i.HeadlessRateLimitMs,
+		&i.GraphqlConfig,
 	)
 	return i, err
 }
@@ -133,7 +135,7 @@ const listScraperSources = `-- name: ListScraperSources :many
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
        max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms
+       headless_headers, headless_rate_limit_ms, graphql_config
   FROM scraper_sources
  WHERE ($1::boolean IS NULL OR enabled = $1)
  ORDER BY name ASC
@@ -169,6 +171,7 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 			&i.HeadlessPaginationBtn,
 			&i.HeadlessHeaders,
 			&i.HeadlessRateLimitMs,
+			&i.GraphqlConfig,
 		); err != nil {
 			return nil, err
 		}
@@ -184,7 +187,7 @@ const listScraperSourcesByOrg = `-- name: ListScraperSourcesByOrg :many
 SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
        s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms
+       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = $1
@@ -221,6 +224,7 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 			&i.HeadlessPaginationBtn,
 			&i.HeadlessHeaders,
 			&i.HeadlessRateLimitMs,
+			&i.GraphqlConfig,
 		); err != nil {
 			return nil, err
 		}
@@ -236,7 +240,7 @@ const listScraperSourcesByPlace = `-- name: ListScraperSourcesByPlace :many
 SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
        s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms
+       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = $1
@@ -273,6 +277,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 			&i.HeadlessPaginationBtn,
 			&i.HeadlessHeaders,
 			&i.HeadlessRateLimitMs,
+			&i.GraphqlConfig,
 		); err != nil {
 			return nil, err
 		}
@@ -289,7 +294,7 @@ SELECT
   s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
   s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
   s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-  s.headless_headers, s.headless_rate_limit_ms,
+  s.headless_headers, s.headless_rate_limit_ms, s.graphql_config,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
@@ -331,6 +336,7 @@ type ListScraperSourcesWithLatestRunRow struct {
 	HeadlessPaginationBtn pgtype.Text        `json:"headless_pagination_btn"`
 	HeadlessHeaders       []byte             `json:"headless_headers"`
 	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
+	GraphqlConfig         []byte             `json:"graphql_config"`
 	LastRunStartedAt      pgtype.Timestamptz `json:"last_run_started_at"`
 	LastRunCompletedAt    pgtype.Timestamptz `json:"last_run_completed_at"`
 	LastRunStatus         string             `json:"last_run_status"`
@@ -374,6 +380,7 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 			&i.HeadlessPaginationBtn,
 			&i.HeadlessHeaders,
 			&i.HeadlessRateLimitMs,
+			&i.GraphqlConfig,
 			&i.LastRunStartedAt,
 			&i.LastRunCompletedAt,
 			&i.LastRunStatus,
@@ -447,6 +454,7 @@ INSERT INTO scraper_sources (
   max_pages, selectors, notes, last_scraped_at,
   headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
   headless_headers, headless_rate_limit_ms,
+  graphql_config,
   updated_at
 ) VALUES (
   $1,
@@ -465,6 +473,7 @@ INSERT INTO scraper_sources (
   $14,
   $15,
   $16,
+  $17,
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -483,11 +492,12 @@ ON CONFLICT (name) DO UPDATE SET
   headless_pagination_btn  = EXCLUDED.headless_pagination_btn,
   headless_headers         = EXCLUDED.headless_headers,
   headless_rate_limit_ms   = EXCLUDED.headless_rate_limit_ms,
+  graphql_config           = EXCLUDED.graphql_config,
   updated_at               = NOW()
 RETURNING id, name, url, tier, schedule, trust_level, license, enabled,
           max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms
+          headless_headers, headless_rate_limit_ms, graphql_config
 `
 
 type UpsertScraperSourceParams struct {
@@ -507,6 +517,7 @@ type UpsertScraperSourceParams struct {
 	HeadlessPaginationBtn pgtype.Text        `json:"headless_pagination_btn"`
 	HeadlessHeaders       []byte             `json:"headless_headers"`
 	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
+	GraphqlConfig         []byte             `json:"graphql_config"`
 }
 
 // SQLc queries for scraper_sources and linkage tables.
@@ -529,6 +540,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		arg.HeadlessPaginationBtn,
 		arg.HeadlessHeaders,
 		arg.HeadlessRateLimitMs,
+		arg.GraphqlConfig,
 	)
 	var i ScraperSource
 	err := row.Scan(
@@ -551,6 +563,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		&i.HeadlessPaginationBtn,
 		&i.HeadlessHeaders,
 		&i.HeadlessRateLimitMs,
+		&i.GraphqlConfig,
 	)
 	return i, err
 }

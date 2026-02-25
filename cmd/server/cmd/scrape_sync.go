@@ -145,7 +145,7 @@ Examples:
 
 // sourceConfigToUpsertParams converts a scraper.SourceConfig (from YAML) to
 // the domain UpsertParams. Selectors are JSON-encoded for the JSONB column.
-// Headless headers are JSON-encoded when present.
+// Headless headers and GraphQL config are JSON-encoded when present.
 func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertParams, error) {
 	var selectorsJSON []byte
 	if cfg.Tier == 1 || cfg.Tier == 2 {
@@ -165,6 +165,15 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		}
 	}
 
+	var graphqlConfigJSON []byte
+	if cfg.Tier == 3 && cfg.GraphQL != nil {
+		var encErr error
+		graphqlConfigJSON, encErr = json.Marshal(cfg.GraphQL)
+		if encErr != nil {
+			return domainScraper.UpsertParams{}, fmt.Errorf("encode graphql config: %w", encErr)
+		}
+	}
+
 	return domainScraper.UpsertParams{
 		Name:                  cfg.Name,
 		URL:                   cfg.URL,
@@ -181,5 +190,6 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		HeadlessPaginationBtn: cfg.Headless.PaginationBtn,
 		HeadlessHeaders:       headlessHeadersJSON,
 		HeadlessRateLimitMs:   cfg.Headless.RateLimitMs,
+		GraphQLConfig:         graphqlConfigJSON,
 	}, nil
 }

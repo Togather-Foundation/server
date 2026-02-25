@@ -910,6 +910,82 @@ func TestSourceConfigFromDomain_InvalidJSON(t *testing.T) {
 	assert.Contains(t, err.Error(), "bad-source")
 }
 
+// TestSourceConfigFromDomain_GraphQLRoundTrip verifies that a Tier 3 GraphQL
+// config is correctly JSON-encoded on sync (sourceConfigToUpsertParams path) and
+// decoded back by SourceConfigFromDomain (load path), preserving all fields.
+func TestSourceConfigFromDomain_GraphQLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := &GraphQLConfig{
+		Endpoint:    "https://graphql.datocms.com/",
+		Token:       "abc123token",
+		Query:       "{ allEvents { title slug } }",
+		EventField:  "allEvents",
+		TimeoutMs:   30000,
+		URLTemplate: "https://example.com/events/{{.slug}}",
+	}
+
+	// Simulate what sourceConfigToUpsertParams does: JSON-encode for DB.
+	rawJSON, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	src := domainScraper.Source{
+		Name:          "graphql-test",
+		URL:           "https://example.com/calendar",
+		Tier:          3,
+		TrustLevel:    7,
+		License:       "CC0-1.0",
+		Enabled:       true,
+		MaxPages:      10,
+		Schedule:      "daily",
+		GraphQLConfig: rawJSON,
+	}
+
+	cfg, err := SourceConfigFromDomain(src)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.GraphQL, "GraphQL config must be non-nil for Tier 3 source")
+	assert.Equal(t, original.Endpoint, cfg.GraphQL.Endpoint)
+	assert.Equal(t, original.Token, cfg.GraphQL.Token)
+	assert.Equal(t, original.Query, cfg.GraphQL.Query)
+	assert.Equal(t, original.EventField, cfg.GraphQL.EventField)
+	assert.Equal(t, original.TimeoutMs, cfg.GraphQL.TimeoutMs)
+	assert.Equal(t, original.URLTemplate, cfg.GraphQL.URLTemplate)
+}
+
+// TestSourceConfigFromDomain_GraphQLNilForTier0 verifies that a Tier 0 source
+// with no graphql_config produces a nil GraphQL field (no panic or error).
+func TestSourceConfigFromDomain_GraphQLNilForTier0(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:          "tier0-source",
+		URL:           "https://example.com/events",
+		Tier:          0,
+		GraphQLConfig: nil,
+	}
+
+	cfg, err := SourceConfigFromDomain(src)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.GraphQL, "GraphQL config must be nil for Tier 0 source")
+}
+
+// TestSourceConfigFromDomain_GraphQLInvalidJSON verifies that malformed
+// graphql_config JSONB returns a wrapped error.
+func TestSourceConfigFromDomain_GraphQLInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:          "bad-graphql-source",
+		URL:           "https://example.com/calendar",
+		Tier:          3,
+		GraphQLConfig: []byte(`{not valid json`),
+	}
+
+	_, err := SourceConfigFromDomain(src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bad-graphql-source")
+}
+
 // --------------------------------------------------------------------------
 // GetURLs
 // --------------------------------------------------------------------------

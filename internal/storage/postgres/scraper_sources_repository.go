@@ -57,6 +57,7 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		},
 		HeadlessHeaders:     params.HeadlessHeaders,
 		HeadlessRateLimitMs: int32(params.HeadlessRateLimitMs),
+		GraphqlConfig:       params.GraphQLConfig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
@@ -225,6 +226,8 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		HeadlessWaitTimeoutMs: int(row.HeadlessWaitTimeoutMs),
 		HeadlessHeaders:       row.HeadlessHeaders,
 		HeadlessRateLimitMs:   int(row.HeadlessRateLimitMs),
+		// GraphQL fields (Tier 3)
+		GraphQLConfig: row.GraphqlConfig,
 	}
 	if row.Notes.Valid {
 		s.Notes = row.Notes.String

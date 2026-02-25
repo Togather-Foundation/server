@@ -33,6 +33,8 @@ type Source struct {
 	HeadlessPaginationBtn string
 	HeadlessHeaders       []byte // JSONB; nil when empty
 	HeadlessRateLimitMs   int
+	// GraphQL fields (Tier 3)
+	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
 }
 
 // UpsertParams contains the fields used to create or update a scraper source.
@@ -54,6 +56,8 @@ type UpsertParams struct {
 	HeadlessPaginationBtn string
 	HeadlessHeaders       []byte // JSONB; nil when empty
 	HeadlessRateLimitMs   int
+	// GraphQL fields (Tier 3)
+	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
 }
 
 // Repository defines the persistence interface for scraper sources.
