@@ -1,9 +1,22 @@
 name: "roy-thomson-hall"
-# Tier 2 (DISABLED). React/Next.js SPA hosted on Heroku. Empty body without JS.
-# Major Toronto concert hall (Toronto Symphony Orchestra, etc.).
-url: "https://roythomsonhall.mhrth.com/whats-on"
+# Tier 2 headless scraper for Roy Thomson Hall / Massey Hall (mhrth.com ticket listings).
+# The /tickets/ page is a React SPA — JS must execute to render event cards.
+# Confirmed working with Rod headless browser (see bead srv-h264z).
+# Selectors verified 2026-02-24 via `scrape capture --format inspect`.
+url: "https://roythomsonhall.mhrth.com/tickets/"
 tier: 2
-schedule: "weekly"
+schedule: "daily"
 trust_level: 9
 license: "CC0-1.0"
-enabled: false
+enabled: true
+max_pages: 3
+headless:
+  wait_selector: ".c-card--event"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "div.c-card--event"
+  name: "a.c-card__cover-link span.u-hidden-visually"
+  start_date: "div.c-card__time time"
+  url: "a.c-card__cover-link"
+  image: "figure.c-card__image img"
+  pagination: "li.c-pagination__item a"
