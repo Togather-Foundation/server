@@ -244,11 +244,11 @@ make test-production-smoke
 
 ```bash
 # Update beads: close any release-related issues
-bd list --status=open --json | jq -r '.[] | select(.title | test("release|v$VERSION"; "i")) | .id'
+bd query 'title~"release" AND status=open'
 # bd close <id> --reason "Released in v$VERSION"
 
 # Sync beads state
-bd sync
+bd dolt push
 
 # Announce to stakeholders
 ```
