@@ -148,7 +148,7 @@ Examples:
 // Headless headers are JSON-encoded when present.
 func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertParams, error) {
 	var selectorsJSON []byte
-	if cfg.Tier == 1 {
+	if cfg.Tier == 1 || cfg.Tier == 2 {
 		var encErr error
 		selectorsJSON, encErr = json.Marshal(cfg.Selectors)
 		if encErr != nil {
