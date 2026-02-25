@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"text/template"
@@ -12,8 +13,6 @@ import (
 
 	"github.com/rs/zerolog"
 )
-
-const graphqlDefaultTimeoutMs = 30_000
 
 // GraphQLExtractor fetches events from a GraphQL API endpoint.
 type GraphQLExtractor struct {
@@ -39,11 +38,13 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 		return nil, fmt.Errorf("graphql config is nil for source %q", source.Name)
 	}
 
-	// Apply timeout from config.
-	if cfg.TimeoutMs > 0 && client.Timeout == 0 {
-		client = &http.Client{
-			Timeout:   time.Duration(cfg.TimeoutMs) * time.Millisecond,
-			Transport: client.Transport,
+	// Apply config timeout when it exceeds the caller-supplied timeout.
+	if cfg.TimeoutMs > 0 {
+		if cfgTimeout := time.Duration(cfg.TimeoutMs) * time.Millisecond; cfgTimeout > client.Timeout {
+			client = &http.Client{
+				Timeout:   cfgTimeout,
+				Transport: client.Transport,
+			}
 		}
 	}
 
@@ -59,6 +60,7 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", scraperUserAgent)
 	if cfg.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Token)
 	}
@@ -74,13 +76,15 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 	}
 
 	// Decode: {"data": {"<eventField>": [...]}}
+	// Limit the response body to 10 MiB to prevent memory exhaustion from
+	// misbehaving or hostile endpoints (consistent with jsonld.go).
 	var envelope struct {
 		Data   map[string]json.RawMessage `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 10*1024*1024)).Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("graphql: decoding response: %w", err)
 	}
 	if len(envelope.Errors) > 0 {
@@ -112,7 +116,7 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 
 	events := make([]RawEvent, 0, len(items))
 	for _, item := range items {
-		raw := mapToRawEvent(item, urlTmpl)
+		raw := mapToRawEvent(item, urlTmpl, e.logger)
 		events = append(events, raw)
 	}
 
@@ -128,7 +132,11 @@ func (e *GraphQLExtractor) FetchAndExtractGraphQL(
 // mapToRawEvent maps a GraphQL event object (map[string]any) to a RawEvent.
 // Field names follow the DatoCMS schema used by Tranzac but are generic enough
 // for any source using the same conventions.
-func mapToRawEvent(item map[string]any, urlTmpl *template.Template) RawEvent {
+//
+// urlTmpl, if non-nil, is rendered with the raw item map as data to produce the
+// event's canonical URL. The template string comes from operator-supplied YAML
+// config (not user input), so text/template (not html/template) is appropriate.
+func mapToRawEvent(item map[string]any, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
 	raw := RawEvent{}
 
 	if v, ok := item["title"].(string); ok {
@@ -160,13 +168,16 @@ func mapToRawEvent(item map[string]any, urlTmpl *template.Template) RawEvent {
 		}
 	}
 
-	// Construct event URL from template (e.g. "https://tranzac.org/events/{{.slug}}")
+	// Construct event URL from template (e.g. "https://tranzac.org/events/{{.slug}}").
+	// The template is executed unconditionally so sources can use any field (not
+	// just "slug") as the URL key. Template execution errors are logged at debug
+	// level rather than failing the whole event.
 	if urlTmpl != nil {
-		if slug, ok := item["slug"].(string); ok && slug != "" {
-			var buf bytes.Buffer
-			if err := urlTmpl.Execute(&buf, item); err == nil {
-				raw.URL = buf.String()
-			}
+		var buf bytes.Buffer
+		if err := urlTmpl.Execute(&buf, item); err != nil {
+			logger.Debug().Err(err).Msg("graphql: url_template execution failed")
+		} else if buf.Len() > 0 {
+			raw.URL = buf.String()
 		}
 	}
 

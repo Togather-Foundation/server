@@ -67,14 +67,13 @@ type ScrapeResult struct {
 // Scraper orchestrates fetching, normalising, and ingesting events from
 // configured sources.
 type Scraper struct {
-	ingest           *IngestClient
-	queries          *postgres.Queries        // may be nil — DB tracking skipped when nil
-	sourceRepo       domainScraper.Repository // may be nil — falls back to YAML when nil
-	logger           zerolog.Logger
-	slot             string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
-	scraperMetrics   *metrics.ScraperMetrics // may be nil — falls back to package-level globals
-	rodExtractor     *RodExtractor           // nil when headless is disabled/unconfigured
-	graphqlExtractor *GraphQLExtractor       // nil until first tier 3 scrape
+	ingest         *IngestClient
+	queries        *postgres.Queries        // may be nil — DB tracking skipped when nil
+	sourceRepo     domainScraper.Repository // may be nil — falls back to YAML when nil
+	logger         zerolog.Logger
+	slot           string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
+	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
+	rodExtractor   *RodExtractor           // nil when headless is disabled/unconfigured
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
