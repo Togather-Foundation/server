@@ -1,11 +1,20 @@
 name: "amici-ensemble"
-# Disabled — Elementor-built WordPress site. Concerts are Elementor widget sections,
-# not repeating CSS-selectable cards. No JSON-LD Event data present.
-# notes: Elementor/JetEngine layout — concerts in custom elementor sections on homepage.
-#        Needs Tier 2 (headless browser) or manual data entry.
+# Elementor-built WordPress site. Concerts displayed as columns in grid layout under
+# "2025-2026 Season Concerts" section on homepage. No JSON-LD Event schema.
+# Tier 2 headless browser required to render Elementor page layout.
 url: "https://amiciensemble.com/"
 tier: 2
-schedule: "manual"
+schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
-enabled: false
+enabled: true
+max_pages: 1
+headless:
+  wait_selector: "#concerts h2.heading-title"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "#concerts .elementor-col-25"
+  name: "h3.elementor-heading-title a, h2.elementor-heading-title a"
+  start_date: ".elementor-widget-text-editor .elementor-widget-container"
+  url: "h3.elementor-heading-title a, h2.elementor-heading-title a"
+  image: ".elementor-widget-image img"
