@@ -4,6 +4,7 @@ Go 1.24+ SEL backend (Togather server). PostgreSQL 16+/PostGIS, SQLc, River, net
 
 ## Defaults
 
+- Spec driven red/green TDD.
 - Use parallel tools whenever applicable.
 - Use `bd` (beads) for task tracking — not markdown todo lists.
 - Use `context7` MCP server for external library docs.
@@ -15,10 +16,11 @@ Go 1.24+ SEL backend (Togather server). PostgreSQL 16+/PostGIS, SQLc, River, net
 Before planning or writing code, search the project docs:
 
 - `docs/` — architecture, API design, interop profile, operations, deployment
-- `specs/` — Spec Kit artifacts (constitution → spec → tasks); source of intent for every feature
+- `specs/` — Spec artifacts (constitution → spec → tasks); source of intent for every feature
 - `@internal/storage/postgres/AGENTS.md`, `@web/AGENTS.md`, `@tests/e2e/AGENTS.md` — read before touching files in those directories
 
 Use Grep/Glob/Read to find relevant docs. Do not assume — the project is well-documented and docs often contain decisions that must be preserved.
+You MUST update docs as needed.
 
 ## Fast Path
 
@@ -39,7 +41,7 @@ make fmt
 make build
 ```
 
-**Always wrap build/test/lint with `scripts/agent-run.sh`** — captures verbose output to `.agent-output/`, shows only summary. Alternatively: `AGENT=1 make test`.
+**Always wrap build/test/lint/long output commands with `scripts/agent-run.sh`** — captures verbose output to `.agent-output/`, shows only summary. Alternatively: `AGENT=1 make test`.
 
 ## Repo-Specific Constraints
 
@@ -87,7 +89,7 @@ Never merge `beads-sync` into main. For full workflow: `bd prime`.
 
 ## Session Close Protocol
 
-Work is NOT complete until `git push` succeeds.
+Work is NOT complete until docs are updated and `git push` succeeds.
 
 ```bash
 scripts/agent-run.sh make ci          # quality gate (if code changed)
@@ -99,12 +101,24 @@ git status                            # must show "up to date with origin"
 scripts/agent-cleanup.sh              # remove agent output files
 ```
 
+**Commit messages** use Conventional Commits and must include a `Generated-by` trailer:
+
+```
+feat(scope): short description
+
+Generated-by: <your-model-name>
+```
+
+Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`. Scope is optional (e.g. `scraper`, `events`, `deploy`).
+
+
 ## Deployment
 
-**Never guess domain names or SSH hosts** — always read from `.deploy.conf.{environment}` (gitignored).
+Environments: **local** → **staging** → **production**. Iterate locally until solid, then confirm on staging before closing work. Production is live.
+
+**Never guess domain names or SSH hosts** — always read from `.deploy.conf.{environment}` (gitignored). `deploy.sh` auto-sources it.
 
 ```bash
-source .deploy.conf.staging           # load env (if exists)
 scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
 scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
 ```
@@ -112,7 +126,13 @@ scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
 - Feature branches: always use `--version HEAD`, never omit it
 - New env vars: run `./deploy/scripts/env-audit.sh staging` before deploying
 - Do NOT create beads for deployment tasks
-- Full docs: `docs/deploy/deployment-testing.md`
+
+Docs:
+- `docs/deploy/remote-deployment.md` — how `deploy.sh` works, options, first-time setup
+- `docs/deploy/deployment-testing.md` — post-deploy verification checklist
+- `docs/deploy/env-management.md` — adding/changing env vars
+- `docs/deploy/rollback.md` — when health checks fail
+- `docs/deploy/troubleshooting.md` — diagnosing failures
 
 ## Entry Points
 
