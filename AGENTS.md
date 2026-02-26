@@ -16,9 +16,9 @@ Before planning or writing code, search the project docs:
 
 - `docs/` — architecture, API design, interop profile, operations, deployment
 - `specs/` — Spec Kit artifacts (constitution → spec → tasks); source of intent for every feature
-- Subdirectory `AGENTS.md` files — storage, web, e2e each have their own constraints
+- `@internal/storage/postgres/AGENTS.md`, `@web/AGENTS.md`, `@tests/e2e/AGENTS.md` — read before touching files in those directories
 
-Use the Grep/Glob/Read tools to find relevant docs. Do not assume — the project is well-documented and the docs often contain decisions that must be preserved.
+Use Grep/Glob/Read to find relevant docs. Do not assume — the project is well-documented and docs often contain decisions that must be preserved.
 
 ## Fast Path
 
