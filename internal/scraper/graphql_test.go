@@ -106,6 +106,28 @@ func TestFetchAndExtractGraphQL_BearerTokenSent(t *testing.T) {
 	assert.Equal(t, "Bearer my-secret-token", gotAuth)
 }
 
+func TestFetchAndExtractGraphQL_RequestHeaders(t *testing.T) {
+	t.Parallel()
+
+	var gotContentType, gotAccept, gotUserAgent string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		gotAccept = r.Header.Get("Accept")
+		gotUserAgent = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(tranzacResponse(nil))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := newGraphQLSource(t, srv.URL, "", "")
+	extractor := NewGraphQLExtractor(zerolog.Nop())
+	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", gotContentType, "Content-Type must be application/json")
+	assert.Equal(t, "application/json", gotAccept, "Accept must be application/json")
+	assert.Equal(t, scraperUserAgent, gotUserAgent, "User-Agent must be the Togather scraper identity string")
+}
+
 func TestFetchAndExtractGraphQL_NoToken(t *testing.T) {
 	t.Parallel()
 
