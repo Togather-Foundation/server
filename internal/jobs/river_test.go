@@ -184,8 +184,8 @@ func TestInsertOptsForKind(t *testing.T) {
 func TestNewPeriodicJobs(t *testing.T) {
 	jobs := NewPeriodicJobs()
 
-	if len(jobs) != 5 {
-		t.Errorf("NewPeriodicJobs() returned %d jobs, want 5", len(jobs))
+	if len(jobs) != 6 {
+		t.Errorf("NewPeriodicJobs() returned %d jobs, want 6", len(jobs))
 	}
 
 	// Verify jobs are created
