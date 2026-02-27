@@ -314,7 +314,9 @@ internal/api/handlers/
 
 Two layers:
 
-1. **Per-IP submission rate limit** (5 URLs / 24 hours): Enforced by the `SubmissionService` via DB query (`CountRecentSubmissionsByIP`). Shared across all server instances (green/blue deploys). Counts individual URLs, not requests (a batch of 3 uses 3 of the 5 slots).
+1. **Per-IP submission rate limit** (5 URLs / 24 hours): Enforced by the `SubmissionService` via DB query (`CountRecentSubmissionsByIP`). Shared across all server instances (green/blue deploys).
+
+   **Pre-check-only policy**: The rate limit is checked once before processing any URLs. If the IP already has ≥5 accepted submissions in the last 24h, the entire request returns 429. If at least one slot remains, the whole batch goes through — there is no mid-batch quota tracking and no `rate_limited` per-URL status. The maximum over-quota exposure across two back-to-back requests is 2N-1 URLs, which is acceptable for MVP. Valid per-URL statuses are `accepted`, `duplicate`, and `rejected` only.
 
 2. **General public rate limit middleware**: The existing `publicRateLimit` middleware applies to this endpoint like any other public route (60 req/min per IP).
 
