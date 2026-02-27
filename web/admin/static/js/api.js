@@ -415,6 +415,11 @@ const API = {
         patchConfig: (patch) => API.request('/api/v1/admin/scraper/config', {
             method: 'PATCH',
             body: JSON.stringify(patch)
-        })
+        }),
+
+        listSubmissions: (params = {}) => {
+            const query = new URLSearchParams(params).toString();
+            return API.request(`/api/v1/admin/scraper/submissions${query ? '?' + query : ''}`);
+        }
     }
 };

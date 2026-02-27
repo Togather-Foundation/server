@@ -60,9 +60,34 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="subheader">
+                                            <a href="/api/v1/admin/scraper/submissions" target="_blank" class="text-reset">URL Submissions</a>
+                                        </div>
+                                    </div>
+                                    <div class="h1 mb-1" id="submissions-pending-count">
+                                        <div class="spinner-border spinner-border-sm" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="text-muted small text-truncate me-2" style="max-width: 160px;">/api/v1/admin/scraper/submissions</span>
+                                        <button class="btn btn-sm btn-ghost-secondary p-1" id="submissions-copy-url-btn" title="Copy API URL">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-copy" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                                <rect x="8" y="8" width="12" height="12" rx="2" />
+                                                <path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-secondary" id="submissions-copy-json-btn">Copy JSON</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <!-- Monitoring Links -->
                     <div class="row row-deck row-cards mt-3">
                         <div class="col-12">
                             <div class="card">
