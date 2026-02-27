@@ -225,6 +225,39 @@ func TestScraperSubmission_MalformedBody_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+// TestScraperSubmission_OversizedBody_400 verifies that payloads exceeding the
+// body-size limit are rejected with 400 and an RFC 7807 error (srv-puwjd).
+// The body must be valid JSON (to bypass the decode error) but exceed 1 MiB,
+// to confirm MaxBytesReader fires rather than a generic JSON parse error.
+func TestScraperSubmission_OversizedBody_400(t *testing.T) {
+	repo := newMockSubmissionRepo()
+	svc := scraper.NewSubmissionService(repo)
+	h := NewScraperSubmissionHandler(svc, "test")
+
+	// Build a valid-JSON body that exceeds the 1 MiB limit:
+	// {"urls":["https://example.com/events","<1MB padding>"]}
+	padding := make([]byte, 2*1024*1024) // 2 MiB
+	for i := range padding {
+		padding[i] = 'a'
+	}
+	body := `{"urls":["https://example.com/events","` + string(padding) + `"]}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scraper/submissions", bytes.NewBufferString(body))
+	req.RemoteAddr = "1.2.3.4:1234"
+	w := httptest.NewRecorder()
+
+	h.SubmitURLs(w, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+
+	var prob struct {
+		Type   string `json:"type"`
+		Status int    `json:"status"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&prob))
+	assert.Equal(t, http.StatusRequestEntityTooLarge, prob.Status)
+}
+
 // ----------------------------------------------------------------------------
 // Admin handler tests
 // ----------------------------------------------------------------------------

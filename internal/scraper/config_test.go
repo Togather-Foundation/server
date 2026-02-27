@@ -89,12 +89,18 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: "url: must be a valid http/https URL",
 		},
 		{
-			name:    "valid tier 2",
-			cfg:     func() SourceConfig { c := validTier0; c.Tier = 2; c.Headless.WaitSelector = "body"; return c }(),
+			name: "valid tier 2",
+			cfg: func() SourceConfig {
+				c := validTier0
+				c.Tier = 2
+				c.Headless.WaitSelector = "body"
+				c.Selectors.EventList = ".event-card"
+				return c
+			}(),
 			wantErr: "",
 		},
 		{
-			name: "valid tier 2 with wait_selector",
+			name: "valid tier 2 with wait_selector but no event_list — should fail (srv-wgb5p)",
 			cfg: SourceConfig{
 				Name:       "Headless Source",
 				URL:        "https://example.com/events",
@@ -107,7 +113,7 @@ func TestValidateConfig(t *testing.T) {
 					WaitSelector: ".events",
 				},
 			},
-			wantErr: "",
+			wantErr: "selectors.event_list: required for tier 2",
 		},
 		{
 			name: "valid tier 2 with selectors.event_list",
@@ -126,7 +132,7 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: "",
 		},
 		{
-			name: "invalid tier 2 missing both wait_selector and event_list",
+			name: "invalid tier 2 missing event_list",
 			cfg: SourceConfig{
 				Name:       "Bad Headless Source",
 				URL:        "https://example.com/events",
@@ -136,7 +142,7 @@ func TestValidateConfig(t *testing.T) {
 				Schedule:   "daily",
 				Enabled:    true,
 			},
-			wantErr: "tier 2 requires",
+			wantErr: "selectors.event_list: required for tier 2",
 		},
 		{
 			name:    "invalid tier negative",

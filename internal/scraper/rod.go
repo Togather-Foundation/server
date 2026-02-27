@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -358,10 +359,11 @@ func (e *RodExtractor) captureScreenshot(page *rod.Page, sourceName string) {
 
 // extractEventsFromHTML parses an HTML string with goquery and applies the
 // CSS selectors from config to collect RawEvents. pageURL is used to resolve
-// relative URLs (href/src attributes).
+// relative URLs (href/src attributes). Returns an error if config.Selectors.EventList
+// is empty — callers should ensure the config is validated before calling.
 func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]RawEvent, error) {
 	if config.Selectors.EventList == "" {
-		return nil, nil
+		return nil, fmt.Errorf("rod: extractEventsFromHTML: selectors.event_list is required but empty (source %q)", config.Name)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
@@ -464,8 +466,34 @@ func sanitizeName(name string) string {
 	return b.String()
 }
 
+// blockedCIDRs is the set of private/loopback/link-local ranges blocked for
+// headless navigation URLs to prevent SSRF (srv-tbg24). Mirrors the list in
+// internal/jobs/validate_submissions.go (newSSRFBlockingTransport).
+var blockedCIDRs = func() []*net.IPNet {
+	cidrs := []string{
+		"127.0.0.0/8",    // IPv4 loopback
+		"10.0.0.0/8",     // RFC 1918 private
+		"172.16.0.0/12",  // RFC 1918 private
+		"192.168.0.0/16", // RFC 1918 private
+		"169.254.0.0/16", // link-local / cloud metadata
+		"::1/128",        // IPv6 loopback
+		"fc00::/7",       // IPv6 ULA
+		"fe80::/10",      // IPv6 link-local
+	}
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Sprintf("rod: invalid blocked CIDR %q: %v", cidr, err))
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets
+}()
+
 // validateNavigationURL returns an error if rawURL is not a safe http/https URL.
-// This prevents SSRF via file://, chrome://, javascript:, or other schemes.
+// This prevents SSRF via file://, chrome://, javascript:, or other schemes, as
+// well as navigation to private/loopback/link-local IP addresses (srv-tbg24).
 func validateNavigationURL(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -476,6 +504,35 @@ func validateNavigationURL(rawURL string) error {
 	}
 	if u.Host == "" {
 		return fmt.Errorf("rod: navigation URL missing host: %q", rawURL)
+	}
+
+	// Resolve hostname and block private/loopback/link-local addresses.
+	host := u.Hostname()
+	// If the host is already an IP literal (e.g. [::1] or 1.2.3.4), check directly.
+	if ip := net.ParseIP(host); ip != nil {
+		for _, blocked := range blockedCIDRs {
+			if blocked.Contains(ip) {
+				return fmt.Errorf("rod: SSRF check: navigation URL %q resolves to blocked address %s", rawURL, ip)
+			}
+		}
+		return nil
+	}
+
+	// Resolve hostname to IPs.
+	ips, resolveErr := net.LookupHost(host)
+	if resolveErr != nil {
+		return fmt.Errorf("rod: SSRF check: resolve %q: %w", host, resolveErr)
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		for _, blocked := range blockedCIDRs {
+			if blocked.Contains(ip) {
+				return fmt.Errorf("rod: SSRF check: %s resolves to blocked address %s", host, ip)
+			}
+		}
 	}
 	return nil
 }

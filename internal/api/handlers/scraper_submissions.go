@@ -9,6 +9,11 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/scraper"
 )
 
+// submissionMaxBodyBytes is the maximum accepted request body size for
+// POST /api/v1/scraper/submissions. 1 MiB is generous for a payload of up to
+// 10 URLs; anything larger is almost certainly an attack or misconfigured client.
+const submissionMaxBodyBytes = 1 << 20 // 1 MiB
+
 // ScraperSubmissionHandler handles the public URL submission endpoint.
 type ScraperSubmissionHandler struct {
 	service *scraper.SubmissionService
@@ -23,10 +28,21 @@ func NewScraperSubmissionHandler(service *scraper.SubmissionService, env string)
 // SubmitURLs handles POST /api/v1/scraper/submissions.
 // No authentication required — uses public rate limit middleware.
 func (h *ScraperSubmissionHandler) SubmitURLs(w http.ResponseWriter, r *http.Request) {
+	// Limit request body size to prevent DoS via oversized payloads (srv-puwjd).
+	r.Body = http.MaxBytesReader(w, r.Body, submissionMaxBodyBytes)
+
 	var body struct {
 		URLs []string `json:"urls"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		// Distinguish body-too-large from generic decode errors.
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			problem.Write(w, r, http.StatusRequestEntityTooLarge,
+				"https://sel.events/problems/request-too-large",
+				"Request body too large", err, h.env)
+			return
+		}
 		problem.Write(w, r, http.StatusBadRequest,
 			"https://sel.events/problems/validation-error",
 			"Invalid request body", err, h.env)

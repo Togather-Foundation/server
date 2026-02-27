@@ -160,7 +160,9 @@ func TestExtractEventsFromHTML_MissingFields(t *testing.T) {
 }
 
 func TestExtractEventsFromHTML_NoEventListSelector(t *testing.T) {
-	// When EventList selector is empty, return nil (no extraction possible).
+	// When EventList selector is empty, return an error (srv-wgb5p: validation
+	// now requires event_list for tier 2, but extractEventsFromHTML should also
+	// surface this clearly rather than silently returning nil).
 	cfg := SourceConfig{
 		Name:      "test-source",
 		URL:       "https://example.com",
@@ -168,8 +170,8 @@ func TestExtractEventsFromHTML_NoEventListSelector(t *testing.T) {
 	}
 
 	events, err := extractEventsFromHTML("<html><body></body></html>", cfg, "https://example.com")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error when EventList selector is empty, got nil")
 	}
 	if events != nil {
 		t.Errorf("expected nil events when no EventList selector, got %v", events)
@@ -335,14 +337,23 @@ func TestValidateNavigationURL(t *testing.T) {
 		rawURL  string
 		wantErr bool
 	}{
-		{"http OK", "http://example.com/path", false},
-		{"https OK", "https://example.com/path", false},
+		// Use IP literals for "should pass" cases to avoid DNS dependency in tests.
+		{"http public IP OK", "http://93.184.216.34/path", false},   // example.com IP
+		{"https public IP OK", "https://93.184.216.34/path", false}, // example.com IP
 		{"file scheme", "file:///etc/passwd", true},
 		{"chrome scheme", "chrome://settings", true},
 		{"javascript scheme", "javascript:alert(1)", true},
 		{"no scheme", "example.com/path", true},
 		{"missing host", "https:///path", true},
 		{"empty", "", true},
+		// srv-tbg24: private/loopback IPs must be blocked
+		{"loopback 127.0.0.1", "http://127.0.0.1/events", true},
+		{"localhost resolves to loopback", "http://localhost/events", true},
+		{"RFC1918 10.x", "http://10.0.0.1/events", true},
+		{"RFC1918 172.16.x", "http://172.16.0.1/events", true},
+		{"RFC1918 192.168.x", "http://192.168.1.1/events", true},
+		{"link-local 169.254.x", "http://169.254.169.254/events", true},
+		{"IPv6 loopback ::1", "http://[::1]/events", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

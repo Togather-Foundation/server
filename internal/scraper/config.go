@@ -193,9 +193,8 @@ func ValidateConfig(cfg SourceConfig) error {
 		errs = append(errs, "selectors.event_list: required for tier 1")
 	}
 
-	if cfg.Tier == 2 && strings.TrimSpace(cfg.Headless.WaitSelector) == "" &&
-		strings.TrimSpace(cfg.Selectors.EventList) == "" {
-		errs = append(errs, "tier 2 requires either headless.wait_selector or selectors.event_list")
+	if cfg.Tier == 2 && strings.TrimSpace(cfg.Selectors.EventList) == "" {
+		errs = append(errs, "selectors.event_list: required for tier 2")
 	}
 
 	if cfg.Tier == 3 {
