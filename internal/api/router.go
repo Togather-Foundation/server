@@ -25,6 +25,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 
 	"github.com/Togather-Foundation/server/internal/domain/users"
 	"github.com/Togather-Foundation/server/internal/email"
@@ -333,6 +334,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create Admin Review Queue handler (srv-bjo)
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
+	// Create scraper submission handlers (srv-1cxmi)
+	submissionRepo := postgres.NewScraperSubmissionRepository(pool)
+	submissionService := domainScraper.NewSubmissionService(submissionRepo)
+	submissionHandler := handlers.NewScraperSubmissionHandler(submissionService, cfg.Environment)
+	adminSubmissionHandler := handlers.NewAdminScraperSubmissionHandler(submissionRepo, cfg.Environment)
+
 	// Create Admin Scraper handler (srv-5127b)
 	adminScraperHandler := &handlers.AdminScraperHandler{
 		Queries: queries,
@@ -487,6 +494,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	publicReverseGeocode := rateLimitPublic(http.HandlerFunc(geocodingHandler.ReverseGeocode))
 	mux.Handle("/api/v1/geocode", publicGeocode)
 	mux.Handle("/api/v1/reverse-geocode", publicReverseGeocode)
+
+	// Public URL submission endpoint (srv-1cxmi)
+	publicSubmitURLs := rateLimitPublic(http.HandlerFunc(submissionHandler.SubmitURLs))
+	mux.Handle("POST /api/v1/scraper/submissions", publicSubmitURLs)
 
 	// Public HTML and Turtle placeholders for content negotiation tests
 	mux.Handle("/events/{id}", publicEventPage)
@@ -652,6 +663,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("PATCH /api/v1/admin/scraper/sources/{name}", adminScraperSetEnabled)
 	mux.Handle("GET /api/v1/admin/scraper/config", adminScraperGetConfig)
 	mux.Handle("PATCH /api/v1/admin/scraper/config", adminScraperPatchConfig)
+
+	// Admin scraper submission management (srv-1cxmi)
+	adminListSubmissions := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminSubmissionHandler.ListSubmissions))))
+	adminUpdateSubmission := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminSubmissionHandler.UpdateSubmission))))
+	mux.Handle("GET /api/v1/admin/scraper/submissions", adminListSubmissions)
+	mux.Handle("PATCH /api/v1/admin/scraper/submissions/{id}", adminUpdateSubmission)
 
 	// Public invitation acceptance endpoint (NO AUTH)
 	publicAcceptInvitation := rateLimitPublic(middleware.AdminRequestSize()(http.HandlerFunc(invitationsHandler.AcceptInvitation)))
