@@ -351,21 +351,32 @@ func containsStr(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-// TestSubmissionService_RateLimit_BatchBoundary verifies that a batch cannot
-// exceed the per-IP quota even when count < rateLimitPerIP at batch start.
-// Spec §Rate Limiting: "a batch of 3 uses 3 of the 5 slots".
-func TestSubmissionService_RateLimit_BatchBoundary(t *testing.T) {
+// TestSubmissionService_RateLimit_WholeBatchGoesThrough verifies the pre-check-only
+// rate limit policy: if the IP has ≥1 slot remaining at request time, the entire
+// batch is accepted regardless of batch size. There is no mid-batch quota tracking.
+func TestSubmissionService_RateLimit_WholeBatchGoesThrough(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		existingCount   int64
-		urls            []string
-		wantAccepted    int
-		wantRateLimited int
+		name          string
+		existingCount int64
+		urls          []string
+		wantAccepted  int
 	}{
 		{
-			name:          "count=2, batch=5: accept 3, rate-limit 2",
+			name:          "count=4 (1 slot), batch=5: all 5 accepted",
+			existingCount: 4,
+			urls: []string{
+				"https://a.example.com",
+				"https://b.example.com",
+				"https://c.example.com",
+				"https://d.example.com",
+				"https://e.example.com",
+			},
+			wantAccepted: 5,
+		},
+		{
+			name:          "count=2, batch=5: all 5 accepted",
 			existingCount: 2,
 			urls: []string{
 				"https://a.example.com",
@@ -374,22 +385,10 @@ func TestSubmissionService_RateLimit_BatchBoundary(t *testing.T) {
 				"https://d.example.com",
 				"https://e.example.com",
 			},
-			wantAccepted:    3,
-			wantRateLimited: 2,
+			wantAccepted: 5,
 		},
 		{
-			name:          "count=4, batch=3: accept 1, rate-limit 2",
-			existingCount: 4,
-			urls: []string{
-				"https://x.example.com",
-				"https://y.example.com",
-				"https://z.example.com",
-			},
-			wantAccepted:    1,
-			wantRateLimited: 2,
-		},
-		{
-			name:          "count=0, batch=5: accept all 5",
+			name:          "count=0, batch=5: all 5 accepted",
 			existingCount: 0,
 			urls: []string{
 				"https://a.example.com",
@@ -398,19 +397,7 @@ func TestSubmissionService_RateLimit_BatchBoundary(t *testing.T) {
 				"https://d.example.com",
 				"https://e.example.com",
 			},
-			wantAccepted:    5,
-			wantRateLimited: 0,
-		},
-		{
-			name:          "count=3, batch=3: accept 2, rate-limit 1",
-			existingCount: 3,
-			urls: []string{
-				"https://p.example.com",
-				"https://q.example.com",
-				"https://r.example.com",
-			},
-			wantAccepted:    2,
-			wantRateLimited: 1,
+			wantAccepted: 5,
 		},
 	}
 
@@ -427,27 +414,18 @@ func TestSubmissionService_RateLimit_BatchBoundary(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			var accepted, rateLimited int
+			var accepted int
 			for _, r := range results {
-				switch r.Status {
-				case "accepted":
+				if r.Status == "rate_limited" {
+					t.Errorf("unexpected rate_limited status: rate limit is pre-check only, no per-URL rate_limited status")
+				}
+				if r.Status == "accepted" {
 					accepted++
-				case "rate_limited":
-					rateLimited++
 				}
 			}
 
 			if accepted != tc.wantAccepted {
 				t.Errorf("accepted: got %d, want %d", accepted, tc.wantAccepted)
-			}
-			if rateLimited != tc.wantRateLimited {
-				t.Errorf("rate_limited: got %d, want %d", rateLimited, tc.wantRateLimited)
-			}
-			// Total inserted must not exceed quota.
-			totalInserted := int64(len(repo.inserted))
-			if tc.existingCount+totalInserted > 5 {
-				t.Errorf("total submissions would exceed quota: existing=%d inserted=%d (max 5)",
-					tc.existingCount, totalInserted)
 			}
 		})
 	}

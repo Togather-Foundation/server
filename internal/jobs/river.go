@@ -196,6 +196,14 @@ func NewPeriodicJobs() []*river.PeriodicJob {
 			},
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
+		// Submissions cleanup - daily (90-day retention for accepted/rejected rows) (srv-3sac0)
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return SubmissionsCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
 		// Submission validation scheduler - every 5 minutes (srv-m9bja)
 		river.NewPeriodicJob(
 			river.PeriodicInterval(validateSchedulerInterval),

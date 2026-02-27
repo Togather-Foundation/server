@@ -1009,5 +1009,11 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 		Logger: logger,
 	})
 
+	// Submissions cleanup worker (srv-3sac0)
+	river.AddWorker[SubmissionsCleanupArgs](workers, SubmissionsCleanupWorker{
+		Pool:   pool,
+		Logger: logger,
+	})
+
 	return workers
 }

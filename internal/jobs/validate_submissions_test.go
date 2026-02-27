@@ -3,8 +3,10 @@ package jobs
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,6 +150,17 @@ func TestValidateSubmissionsBatchWorker_MaxAttempts(t *testing.T) {
 	}
 }
 
+// plainClient returns an http.Client without SSRF blocking, for use in tests
+// that bind to 127.0.0.1 via httptest.NewServer.
+func plainClient() *http.Client {
+	return &http.Client{
+		Timeout: validateHeadTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ValidateSubmissionsSchedulerWorker.Work
 // ---------------------------------------------------------------------------
@@ -251,7 +264,7 @@ func TestValidateBatchWorker_ValidURL_Accepted(t *testing.T) {
 		},
 		pendingCount: 0, // no re-enqueue needed
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -289,7 +302,7 @@ func TestValidateBatchWorker_HeadReturns404_Rejected(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("expected no top-level error (batch continues on per-URL failures), got %v", err)
@@ -326,7 +339,7 @@ func TestValidateBatchWorker_HeadReturns301_Accepted(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -361,7 +374,7 @@ func TestValidateBatchWorker_RobotsDisallows_Rejected(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -398,7 +411,7 @@ func TestValidateBatchWorker_RobotsError_TreatedAsAllowed(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -428,7 +441,7 @@ func TestValidateBatchWorker_UnreachableURL_Rejected(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("expected no top-level error (batch continues), got %v", err)
@@ -483,7 +496,7 @@ func TestValidateBatchWorker_MultiplURLs_AllProcessed(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -520,7 +533,7 @@ func TestValidateBatchWorker_OneErrorDoesNotAbortBatch(t *testing.T) {
 		},
 		pendingCount: 0,
 	}
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("expected no top-level error (batch continues), got %v", err)
@@ -566,17 +579,13 @@ func TestValidateBatchWorker_CountAfterBatchFails_NonFatal(t *testing.T) {
 	// The simplest approach: set countErr so the post-batch count fails.
 	repo.countErr = errors.New("db transient error")
 
-	w := ValidateSubmissionsBatchWorker{Repo: repo}
+	w := ValidateSubmissionsBatchWorker{Repo: repo, HTTPClient: plainClient()}
 	err := w.Work(context.Background(), newBatchJob())
 	if err != nil {
 		t.Fatalf("expected nil (count error after batch is non-fatal), got %v", err)
 	}
 	_ = callCount // suppress unused warning
 }
-
-// ---------------------------------------------------------------------------
-// isTimeoutError
-// ---------------------------------------------------------------------------
 
 func TestIsTimeoutError_Nil(t *testing.T) {
 	if isTimeoutError(nil) {
@@ -600,6 +609,109 @@ func TestIsTimeoutError_Timeout(t *testing.T) {
 		got := isTimeoutError(errors.New(tt.msg))
 		if got != tt.want {
 			t.Errorf("isTimeoutError(%q) = %v, want %v", tt.msg, got, tt.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// newSSRFBlockingTransport
+// ---------------------------------------------------------------------------
+
+// TestSSRFBlockingTransport_BlocksPrivateIPs verifies that the SSRF-blocking
+// transport refuses connections to addresses in RFC-1918, loopback, and
+// link-local ranges (srv-exv8k).
+func TestSSRFBlockingTransport_BlocksPrivateIPs(t *testing.T) {
+	t.Parallel()
+
+	// Start a real local server on 127.0.0.1 so we can confirm that the
+	// transport rejects the dial before data reaches the server.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: newSSRFBlockingTransport(),
+	}
+
+	// The test server listens on 127.0.0.1 — should be blocked.
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodHead, srv.URL, nil)
+	_, err := client.Do(req)
+	if err == nil {
+		t.Fatal("expected SSRF block for 127.0.0.1, got nil error")
+	}
+
+	// Confirm the error is SSRF-related, not some other transport error.
+	errStr := err.Error()
+	if !strings.Contains(errStr, "SSRF") && !strings.Contains(errStr, "blocked") {
+		t.Errorf("expected SSRF/blocked error, got: %v", err)
+	}
+}
+
+// TestSSRFBlockingTransport_AllowsPublicIPs verifies that the transport does
+// NOT block connections to public IP addresses.  We use a real httptest server
+// bound to a loopback-adjacent address and override the dialer to connect to
+// 127.0.0.1 only in tests — instead we just confirm the transport doesn't
+// block the normal test server by checking the blocked-CIDRs helper directly.
+func TestSSRFBlockingTransport_BlockedCIDRs(t *testing.T) {
+	t.Parallel()
+
+	blocked := mustParseCIDRs([]string{
+		"127.0.0.0/8",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	})
+
+	shouldBlock := []string{
+		"127.0.0.1", "10.0.0.1", "10.255.255.255",
+		"172.16.0.1", "172.31.255.255",
+		"192.168.0.1", "192.168.255.255",
+		"169.254.169.254", // AWS IMDS
+		"::1",
+		"fc00::1", "fdff::1",
+		"fe80::1",
+	}
+	shouldAllow := []string{
+		"8.8.8.8", "1.1.1.1", "203.0.113.1", "2001:db8::1",
+	}
+
+	for _, ipStr := range shouldBlock {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			t.Fatalf("test setup: invalid IP %q", ipStr)
+		}
+		inBlocked := false
+		for _, cidr := range blocked {
+			if cidr.Contains(ip) {
+				inBlocked = true
+				break
+			}
+		}
+		if !inBlocked {
+			t.Errorf("IP %s should be blocked but is not in any blocked CIDR", ipStr)
+		}
+	}
+
+	for _, ipStr := range shouldAllow {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			t.Fatalf("test setup: invalid IP %q", ipStr)
+		}
+		inBlocked := false
+		for _, cidr := range blocked {
+			if cidr.Contains(ip) {
+				inBlocked = true
+				break
+			}
+		}
+		if inBlocked {
+			t.Errorf("IP %s should be allowed but is in a blocked CIDR", ipStr)
 		}
 	}
 }

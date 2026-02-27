@@ -74,6 +74,9 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	// Delete processed/rejected submissions older than the given interval.
+	// Used by the daily cleanup job to prevent unbounded table growth (srv-3sac0).
+	DeleteOldScraperSubmissions(ctx context.Context, olderThan pgtype.Interval) (int64, error)
 	// Delete a scraper source by name.
 	DeleteScraperSource(ctx context.Context, name string) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error

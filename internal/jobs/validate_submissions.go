@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -132,6 +133,9 @@ type ValidateSubmissionsBatchWorker struct {
 	river.WorkerDefaults[ValidateSubmissionsBatchArgs]
 	Repo   domainScraper.SubmissionRepository
 	Logger *slog.Logger
+
+	// HTTPClient overrides the default SSRF-blocking client. Set in tests only.
+	HTTPClient *http.Client
 }
 
 // MaxAttempts returns 1 so that the job is not retried on failure; the scheduler
@@ -157,11 +161,18 @@ func (w ValidateSubmissionsBatchWorker) Work(ctx context.Context, job *river.Job
 
 	// Create a single HTTP client for the whole batch to enable TCP connection
 	// reuse across HEAD requests to the same host (srv-b22wi).
-	batchClient := &http.Client{
-		Timeout: validateHeadTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	// The transport blocks connections to private/loopback/link-local addresses
+	// to prevent SSRF via submitted URLs (srv-exv8k).
+	// In tests, HTTPClient may be injected to bypass SSRF blocking.
+	batchClient := w.HTTPClient
+	if batchClient == nil {
+		batchClient = &http.Client{
+			Timeout:   validateHeadTimeout,
+			Transport: newSSRFBlockingTransport(),
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 
 	for _, sub := range rows {
@@ -272,4 +283,74 @@ func isTimeoutError(err error) bool {
 	return strings.Contains(s, "timeout") ||
 		strings.Contains(s, "deadline exceeded") ||
 		strings.Contains(s, "context deadline")
+}
+
+// newSSRFBlockingTransport returns an http.Transport whose DialContext resolves
+// each hostname and rejects connections to private, loopback, or link-local
+// addresses before any data is sent.  This prevents SSRF via submitted URLs
+// that target RFC-1918 ranges, loopback, or cloud metadata endpoints
+// (e.g. 169.254.169.254).
+//
+// Blocked ranges:
+//   - 127.0.0.0/8    — IPv4 loopback
+//   - 10.0.0.0/8     — RFC 1918 private
+//   - 172.16.0.0/12  — RFC 1918 private
+//   - 192.168.0.0/16 — RFC 1918 private
+//   - 169.254.0.0/16 — link-local / cloud metadata
+//   - ::1/128         — IPv6 loopback
+//   - fc00::/7        — IPv6 ULA
+//   - fe80::/10       — IPv6 link-local
+func newSSRFBlockingTransport() *http.Transport {
+	blockedCIDRs := mustParseCIDRs([]string{
+		"127.0.0.0/8",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	})
+
+	dialer := &net.Dialer{Timeout: validateHeadTimeout}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("SSRF check: parse addr %q: %w", addr, err)
+		}
+
+		ips, err := net.DefaultResolver.LookupHost(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("SSRF check: resolve %q: %w", host, err)
+		}
+
+		for _, ipStr := range ips {
+			ip := net.ParseIP(ipStr)
+			if ip == nil {
+				continue
+			}
+			for _, blocked := range blockedCIDRs {
+				if blocked.Contains(ip) {
+					return nil, fmt.Errorf("SSRF check: %s resolves to blocked address %s", host, ip)
+				}
+			}
+		}
+
+		return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	}
+	return transport
+}
+
+func mustParseCIDRs(cidrs []string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Sprintf("invalid CIDR %q: %v", cidr, err))
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets
 }
