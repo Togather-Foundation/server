@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
@@ -917,13 +918,13 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string) *river.Workers {
-	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, nil)
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
+	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, nil, submissionRepo)
 }
 
 // NewWorkersWithScraper creates workers like NewWorkersWithPool but also
 // registers ScrapeSourceWorker when a non-nil scraper is provided.
-func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperConfigReader) *river.Workers {
+func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperConfigReader, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -997,6 +998,16 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 			Slot:          slot,
 		})
 	}
+
+	// URL submission validation workers (srv-m9bja)
+	river.AddWorker[ValidateSubmissionsSchedulerArgs](workers, ValidateSubmissionsSchedulerWorker{
+		Repo:   submissionRepo,
+		Logger: logger,
+	})
+	river.AddWorker[ValidateSubmissionsBatchArgs](workers, ValidateSubmissionsBatchWorker{
+		Repo:   submissionRepo,
+		Logger: logger,
+	})
 
 	return workers
 }

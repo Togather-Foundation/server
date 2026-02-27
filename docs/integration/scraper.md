@@ -670,6 +670,88 @@ For full metric documentation and dashboard guidance, see
 
 ---
 
+## Public URL Submission
+
+External contributors can suggest event source URLs without an API key via the
+public URL submission endpoint. Submitted URLs are stored as `pending_validation`
+and asynchronously checked (HEAD request + robots.txt) by a River background worker
+before an admin reviews them.
+
+### Endpoint
+
+```
+POST /api/v1/scraper/submissions
+```
+
+No authentication required. Rate-limited to **5 URLs per IP per 24 hours**.
+Maximum 10 URLs per request. URLs submitted within 30 days are deduplicated.
+
+### Request
+
+```http
+POST /api/v1/scraper/submissions
+Content-Type: application/json
+
+{
+  "urls": [
+    "https://example.com/events",
+    "https://another-venue.ca/calendar"
+  ]
+}
+```
+
+### Response
+
+```json
+{
+  "results": [
+    {
+      "url": "https://example.com/events",
+      "status": "accepted",
+      "message": "URL queued for review"
+    },
+    {
+      "url": "https://another-venue.ca/calendar",
+      "status": "duplicate",
+      "message": "Already submitted within 30 days"
+    }
+  ]
+}
+```
+
+Per-URL `status` values:
+
+| Status | Meaning |
+|--------|---------|
+| `accepted` | URL queued for async validation |
+| `duplicate` | Same normalized URL already submitted within 30 days |
+| `rejected` | Invalid URL (bad scheme, no host, etc.) |
+| `rate_limited` | IP quota exhausted; remaining URLs in batch not accepted |
+
+### Admin Endpoints
+
+Admins can list and review submissions with a JWT:
+
+```
+GET  /api/v1/admin/scraper/submissions?status=pending_validation&limit=50&offset=0
+PATCH /api/v1/admin/scraper/submissions/{id}
+```
+
+**List query params:** `status` (optional filter), `limit` (1–200, default 50),
+`offset` (default 0).
+
+**PATCH body:**
+```json
+{
+  "status": "processed",
+  "notes": "Good source, added to configs/sources/example.yaml"
+}
+```
+
+Valid `status` values for admin PATCH: `processed` | `rejected`.
+
+---
+
 ## Security Design
 
 - **Body size limits**: HTML responses capped at 10 MiB; ingest API responses at 1 MiB

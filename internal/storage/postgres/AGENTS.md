@@ -53,6 +53,30 @@ if row.Description.Valid {
 
 When ORDER BY is parameterized, create separate named SQLc queries per sort/order combo (e.g. `ListPlacesByCreatedAt`, `ListPlacesByCreatedAtDesc`). Repository selects via type switch. See `places_repository.go:396`.
 
+### 7. INET columns → `netip.Addr`
+
+SQLc maps PostgreSQL `INET` columns to `netip.Addr` (not `string`). Parse before use:
+
+```go
+addr, err := netip.ParseAddr(ipString)
+if err != nil {
+    return fmt.Errorf("parse IP %q: %w", ipString, err)
+}
+// Pass addr directly to SQLc params.
+// Convert back with: addr.String()
+```
+
+### 8. `pgtype.Interval` — hours must use Microseconds
+
+`pgtype.Interval` has `Days` and `Microseconds` but **no `Hours` field**. Express hours
+as microseconds:
+
+```go
+const microsPerHour = int64(3600 * 1_000_000)
+interval := pgtype.Interval{Microseconds: 24 * microsPerHour, Valid: true} // 24 h
+interval := pgtype.Interval{Days: 30, Valid: true}                         // 30 days
+```
+
 ## Commands
 
 ```bash
