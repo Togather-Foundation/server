@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"strings"
+
 	"github.com/Togather-Foundation/server/internal/domain/scraper"
 )
 
@@ -343,14 +345,110 @@ func TestSubmissionService_MixedBatch(t *testing.T) {
 
 // --- helpers ---
 
+// containsStr reports whether substr is within s (wraps strings.Contains for
+// readability in test assertions).
 func containsStr(s, substr string) bool {
-	return len(substr) == 0 || len(s) >= len(substr) && (s == substr ||
-		func() bool {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
+	return strings.Contains(s, substr)
+}
+
+// TestSubmissionService_RateLimit_BatchBoundary verifies that a batch cannot
+// exceed the per-IP quota even when count < rateLimitPerIP at batch start.
+// Spec §Rate Limiting: "a batch of 3 uses 3 of the 5 slots".
+func TestSubmissionService_RateLimit_BatchBoundary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		existingCount   int64
+		urls            []string
+		wantAccepted    int
+		wantRateLimited int
+	}{
+		{
+			name:          "count=2, batch=5: accept 3, rate-limit 2",
+			existingCount: 2,
+			urls: []string{
+				"https://a.example.com",
+				"https://b.example.com",
+				"https://c.example.com",
+				"https://d.example.com",
+				"https://e.example.com",
+			},
+			wantAccepted:    3,
+			wantRateLimited: 2,
+		},
+		{
+			name:          "count=4, batch=3: accept 1, rate-limit 2",
+			existingCount: 4,
+			urls: []string{
+				"https://x.example.com",
+				"https://y.example.com",
+				"https://z.example.com",
+			},
+			wantAccepted:    1,
+			wantRateLimited: 2,
+		},
+		{
+			name:          "count=0, batch=5: accept all 5",
+			existingCount: 0,
+			urls: []string{
+				"https://a.example.com",
+				"https://b.example.com",
+				"https://c.example.com",
+				"https://d.example.com",
+				"https://e.example.com",
+			},
+			wantAccepted:    5,
+			wantRateLimited: 0,
+		},
+		{
+			name:          "count=3, batch=3: accept 2, rate-limit 1",
+			existingCount: 3,
+			urls: []string{
+				"https://p.example.com",
+				"https://q.example.com",
+				"https://r.example.com",
+			},
+			wantAccepted:    2,
+			wantRateLimited: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			repo := newMockRepo()
+			repo.recentByIPCount = tc.existingCount
+			svc := scraper.NewSubmissionService(repo)
+
+			results, err := svc.Submit(context.Background(), tc.urls, "1.2.3.4")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			var accepted, rateLimited int
+			for _, r := range results {
+				switch r.Status {
+				case "accepted":
+					accepted++
+				case "rate_limited":
+					rateLimited++
 				}
 			}
-			return false
-		}())
+
+			if accepted != tc.wantAccepted {
+				t.Errorf("accepted: got %d, want %d", accepted, tc.wantAccepted)
+			}
+			if rateLimited != tc.wantRateLimited {
+				t.Errorf("rate_limited: got %d, want %d", rateLimited, tc.wantRateLimited)
+			}
+			// Total inserted must not exceed quota.
+			totalInserted := int64(len(repo.inserted))
+			if tc.existingCount+totalInserted > 5 {
+				t.Errorf("total submissions would exceed quota: existing=%d inserted=%d (max 5)",
+					tc.existingCount, totalInserted)
+			}
+		})
+	}
 }

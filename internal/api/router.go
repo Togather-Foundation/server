@@ -147,7 +147,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		)
 	}
 
-	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, postgres.NewScraperSubmissionRepository(pool))
+	// Create a single ScraperSubmissionRepository shared by workers and handlers (srv-rgmjl).
+	submissionRepo := postgres.NewScraperSubmissionRepository(pool)
+
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, submissionRepo)
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{
@@ -196,7 +199,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Register scrape worker when scraper is available.
 	if scraperSvc != nil {
-		workers = jobs.NewWorkersWithScraper(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, scraperSvc, queries, postgres.NewScraperSubmissionRepository(pool))
+		workers = jobs.NewWorkersWithScraper(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, scraperSvc, queries, submissionRepo)
 	}
 
 	// Configure periodic cleanup jobs and per-source scrape jobs.
@@ -334,8 +337,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create Admin Review Queue handler (srv-bjo)
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
-	// Create scraper submission handlers (srv-1cxmi)
-	submissionRepo := postgres.NewScraperSubmissionRepository(pool)
+	// Create scraper submission handlers (srv-1cxmi); uses the shared submissionRepo declared above.
 	submissionService := domainScraper.NewSubmissionService(submissionRepo)
 	submissionHandler := handlers.NewScraperSubmissionHandler(submissionService, cfg.Environment)
 	adminSubmissionHandler := handlers.NewAdminScraperSubmissionHandler(submissionRepo, cfg.Environment)

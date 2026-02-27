@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -151,6 +152,12 @@ func (h *AdminScraperSubmissionHandler) UpdateSubmission(w http.ResponseWriter, 
 
 	updated, err := h.repo.UpdateAdminReview(r.Context(), id, body.Status, body.Notes)
 	if err != nil {
+		if errors.Is(err, scraper.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound,
+				"https://sel.events/problems/not-found",
+				"Submission not found", err, h.env)
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError,
 			"https://sel.events/problems/server-error",
 			"Failed to update submission", err, h.env)

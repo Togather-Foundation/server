@@ -155,8 +155,17 @@ func (w ValidateSubmissionsBatchWorker) Work(ctx context.Context, job *river.Job
 
 	logger.InfoContext(ctx, "validate_submissions_batch: processing rows", "count", len(rows))
 
+	// Create a single HTTP client for the whole batch to enable TCP connection
+	// reuse across HEAD requests to the same host (srv-b22wi).
+	batchClient := &http.Client{
+		Timeout: validateHeadTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	for _, sub := range rows {
-		if err := w.validateOne(ctx, logger, sub); err != nil {
+		if err := w.validateOne(ctx, logger, sub, batchClient); err != nil {
 			// Log but don't abort the batch — process remaining rows.
 			logger.WarnContext(ctx, "validate_submissions_batch: error validating URL",
 				"id", sub.ID,
@@ -180,7 +189,23 @@ func (w ValidateSubmissionsBatchWorker) Work(ctx context.Context, job *river.Job
 			logger.WarnContext(ctx, "validate_submissions_batch: river client unavailable for chaining", "error", err)
 			return nil
 		}
-		if _, err = riverClient.Insert(ctx, ValidateSubmissionsBatchArgs{}, &river.InsertOpts{MaxAttempts: 1}); err != nil {
+		if _, err = riverClient.Insert(ctx, ValidateSubmissionsBatchArgs{}, &river.InsertOpts{
+			MaxAttempts: 1,
+			// Mirror the scheduler's UniqueOpts so a chained re-enqueue cannot
+			// produce a second concurrent batch if the scheduler fires at the
+			// same moment (srv-ltv8c).
+			UniqueOpts: river.UniqueOpts{
+				ByArgs:   false,
+				ByPeriod: 5 * time.Minute,
+				ByState: []rivertype.JobState{
+					rivertype.JobStateAvailable,
+					rivertype.JobStateRunning,
+					rivertype.JobStateScheduled,
+					rivertype.JobStatePending,
+					rivertype.JobStateRetryable,
+				},
+			},
+		}); err != nil {
 			logger.WarnContext(ctx, "validate_submissions_batch: re-enqueue failed", "error", err)
 		} else {
 			logger.InfoContext(ctx, "validate_submissions_batch: re-enqueued for remaining rows", "remaining", remaining)
@@ -191,15 +216,9 @@ func (w ValidateSubmissionsBatchWorker) Work(ctx context.Context, job *river.Job
 }
 
 // validateOne performs the HEAD + robots.txt check for a single submission and
-// updates its status in the repository.
-func (w ValidateSubmissionsBatchWorker) validateOne(ctx context.Context, logger *slog.Logger, sub *domainScraper.Submission) error {
-	client := &http.Client{
-		Timeout: validateHeadTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
+// updates its status in the repository. client is shared across the batch for
+// TCP connection reuse.
+func (w ValidateSubmissionsBatchWorker) validateOne(ctx context.Context, logger *slog.Logger, sub *domainScraper.Submission, client *http.Client) error {
 	// HEAD request.
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, sub.URL, nil)
 	if err != nil {

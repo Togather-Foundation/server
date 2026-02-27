@@ -360,3 +360,25 @@ func TestAdminScraperSubmission_Update_RepoError_500(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
+
+func TestAdminScraperSubmission_Update_NotFound_404(t *testing.T) {
+	repo := newMockSubmissionRepo()
+	repo.updateErr = scraper.ErrNotFound
+	h := NewAdminScraperSubmissionHandler(repo, "test")
+
+	body := `{"status":"processed"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/scraper/submissions/999", bytes.NewBufferString(body))
+	req.SetPathValue("id", "999")
+	w := httptest.NewRecorder()
+
+	h.UpdateSubmission(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+
+	var prob struct {
+		Type   string `json:"type"`
+		Status int    `json:"status"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&prob))
+	assert.Equal(t, http.StatusNotFound, prob.Status)
+}

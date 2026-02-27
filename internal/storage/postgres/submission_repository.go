@@ -124,6 +124,7 @@ func (r *ScraperSubmissionRepository) UpdateStatus(ctx context.Context, id int64
 }
 
 // UpdateAdminReview updates status and notes for a submission, returning the updated row.
+// Returns scraper.ErrNotFound if no submission with the given id exists.
 func (r *ScraperSubmissionRepository) UpdateAdminReview(ctx context.Context, id int64, status string, notes *string) (*scraper.Submission, error) {
 	var n pgtype.Text
 	if notes != nil {
@@ -135,6 +136,9 @@ func (r *ScraperSubmissionRepository) UpdateAdminReview(ctx context.Context, id 
 		Notes:  n,
 	})
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, scraper.ErrNotFound
+		}
 		return nil, fmt.Errorf("update admin review id=%d: %w", id, err)
 	}
 	return rowToSubmission(row), nil

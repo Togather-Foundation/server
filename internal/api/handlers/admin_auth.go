@@ -3,7 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"html/template"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/middleware"
@@ -241,19 +243,31 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// extractClientIP gets the client IP from request headers or RemoteAddr
+// extractClientIP returns a valid, parseable IP address for the client.
+//
+// It checks X-Forwarded-For first (taking only the first comma-delimited
+// entry), then X-Real-IP, then falls back to RemoteAddr.  In all cases it
+// strips any trailing port so that the result is a bare IP that can be parsed
+// by netip.ParseAddr in the repository layer.
+//
+// Note: spoofing protection for rate-limit purposes is handled separately by
+// the rate-limit middleware (middleware.RateLimit) which validates proxy CIDRs.
+// This function is used only to record the submitter IP in the database.
 func extractClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (set by reverse proxies)
+	// X-Forwarded-For may be "client, proxy1, proxy2" — take the first entry.
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For can contain multiple IPs, take the first
-		return xff
+		parts := strings.SplitN(xff, ",", 2)
+		return strings.TrimSpace(parts[0])
 	}
 
-	// Check X-Real-IP header (alternative proxy header)
+	// X-Real-IP is set by some proxies as a single value.
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		return strings.TrimSpace(xri)
 	}
 
-	// Fall back to RemoteAddr
+	// RemoteAddr is "ip:port" — strip the port.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
 	return r.RemoteAddr
 }

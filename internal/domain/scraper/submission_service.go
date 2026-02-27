@@ -22,7 +22,11 @@ func NewSubmissionService(repo SubmissionRepository) *SubmissionService {
 
 // Submit processes a batch of URLs. It validates format, dedup, and rate limit,
 // then inserts accepted URLs. Returns per-URL results.
-// Returns ErrRateLimitExceeded if the IP has exceeded 5 URLs in 24h.
+// Returns ErrRateLimitExceeded if the IP has already reached 5 URLs in 24h.
+//
+// Per-batch quota accounting: a batch of N valid URLs uses N of the remaining
+// slots.  Once the remaining capacity drops to zero, additional URLs in the
+// same batch receive a "rate_limited" status rather than "accepted".
 func (s *SubmissionService) Submit(ctx context.Context, urls []string, submitterIP string) ([]SubmissionResult, error) {
 	// Check per-IP rate limit before processing any URL.
 	count, err := s.repo.CountRecentByIP(ctx, submitterIP)
@@ -33,12 +37,29 @@ func (s *SubmissionService) Submit(ctx context.Context, urls []string, submitter
 		return nil, ErrRateLimitExceeded
 	}
 
+	// Track remaining capacity for this batch so that a single request cannot
+	// exceed the per-IP quota across multiple URLs (spec §Rate Limiting).
+	remaining := rateLimitPerIP - count
+
 	results := make([]SubmissionResult, 0, len(urls))
 
 	for _, rawURL := range urls {
+		if remaining <= 0 {
+			// Quota exhausted within this batch — report remaining URLs as rate-limited.
+			results = append(results, SubmissionResult{
+				URL:     rawURL,
+				Status:  "rate_limited",
+				Message: "Rate limit reached; remaining URLs in this batch were not accepted",
+			})
+			continue
+		}
+
 		result, err := s.processURL(ctx, rawURL, submitterIP)
 		if err != nil {
 			return nil, fmt.Errorf("process URL %q: %w", rawURL, err)
+		}
+		if result.Status == "accepted" {
+			remaining--
 		}
 		results = append(results, result)
 	}
