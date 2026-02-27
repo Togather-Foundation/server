@@ -50,16 +50,16 @@ Supporting assets:
 - Source quality trend metrics surfaced in admin UI and MCP tooling.
 - MCP workflow for curators to flag/resolve scraper regressions directly from SEL.
 
-### S029 — Public URL Submission Endpoint *(srv-1cxmi, P2, open)*
+### S029 — Public URL Submission Endpoint *(srv-1cxmi, P2, closed)*
 - Spec: `specs/003-scraper/url-submissions-spec.md`
-- ⏳ `srv-v5rlp` — DB migration: `000037_scraper_submissions` table + indexes
-- ⏳ `srv-mdh2i` — SQLc queries (insert, dedup check, rate-limit count, admin list, status update)
-- ⏳ `srv-d01em` — Domain layer: `Submission` types, `SubmissionRepository`, `SubmissionService` (sync validation)
-- ⏳ `srv-m9bja` — River workers: `ValidateSubmissionsScheduler` (5-min periodic) + `ValidateSubmissionsBatch` (HEAD + robots.txt)
-- ⏳ `srv-nggrk` — Public handler: `POST /api/v1/scraper/submissions` (no auth, per-IP rate limit)
-- ⏳ `srv-iwoy6` — Admin handler: `GET/PATCH /api/v1/admin/scraper/submissions` (JWT auth)
-- ⏳ `srv-xrfyh` — Router wiring for public + admin routes
-- ⏳ `srv-cu3ws` — Tests: service unit, worker integration, handler integration
+- ✅ `srv-v5rlp` — DB migration: `000037_scraper_submissions` table + indexes
+- ✅ `srv-mdh2i` — SQLc queries (insert, dedup check, rate-limit count, admin list, status update)
+- ✅ `srv-d01em` — Domain layer: `Submission` types, `SubmissionRepository`, `SubmissionService` (sync validation)
+- ✅ `srv-m9bja` — River workers: `ValidateSubmissionsScheduler` (5-min periodic) + `ValidateSubmissionsBatch` (HEAD + robots.txt)
+- ✅ `srv-nggrk` — Public handler: `POST /api/v1/scraper/submissions` (no auth, per-IP rate limit)
+- ✅ `srv-iwoy6` — Admin handler: `GET/PATCH /api/v1/admin/scraper/submissions` (JWT auth)
+- ✅ `srv-xrfyh` — Router wiring for public + admin routes
+- ✅ `srv-cu3ws` — Tests: service unit, worker integration, handler integration
 - ✅ `srv-msbmm` — Spec doc
 
 ### Operational Hygiene
