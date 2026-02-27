@@ -45,6 +45,11 @@ make build
 
 ## Repo-Specific Constraints
 
+**API changes — update the spec:**
+- Any new or modified HTTP endpoint **must** be reflected in `docs/api/openapi.yaml` before the work is closed.
+- `make lint-openapi` enforces this — CI will fail if the spec is invalid.
+- OAS 3.1 note: use `type: [string, 'null']` instead of `nullable: true`.
+
 **Generated files — never edit directly:**
 - `internal/storage/postgres/*.sql.go` and `querier.go` — run `make sqlc` after changing `.sql` files
 - `web/` static assets are Go-embedded; changes require rebuild
