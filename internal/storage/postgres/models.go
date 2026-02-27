@@ -5,6 +5,8 @@
 package postgres
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -494,6 +496,18 @@ type ScraperSource struct {
 	HeadlessHeaders       []byte             `json:"headless_headers"`
 	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
 	GraphqlConfig         []byte             `json:"graphql_config"`
+}
+
+type ScraperSubmission struct {
+	ID              int64              `json:"id"`
+	Url             string             `json:"url"`
+	UrlNorm         string             `json:"url_norm"`
+	SubmittedAt     pgtype.Timestamptz `json:"submitted_at"`
+	SubmitterIp     netip.Addr         `json:"submitter_ip"`
+	Status          string             `json:"status"`
+	RejectionReason pgtype.Text        `json:"rejection_reason"`
+	Notes           pgtype.Text        `json:"notes"`
+	ValidatedAt     pgtype.Timestamptz `json:"validated_at"`
 }
 
 type Source struct {

@@ -46,6 +46,14 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
   templating for canonical event URLs. `server scrape capture` renders JS pages for
   selector discovery.
 
+- **Public URL submission endpoint**: Rate-limited `POST /api/v1/scraper/submissions`
+  allows community members to suggest URLs for scraping without admin access. URLs are
+  validated asynchronously (HEAD + robots.txt) by a self-throttling River worker, then
+  held in an admin-reviewable queue. Admins download pending URLs and trigger scraping
+  manually via CLI. Per-IP rate limit (5/24h), 30-day dedup window, max 10 URLs per
+  request. Full spec in `specs/003-scraper/url-submissions-spec.md`.
+  Epic: srv-1cxmi.
+
 ## User Scenarios & Testing
 
 ### User Story 1 — Operator Scrapes a URL for JSON-LD Events (Priority: P1)

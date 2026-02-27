@@ -36,8 +36,14 @@ type Querier interface {
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	CountPastEvents(ctx context.Context) (int64, error)
+	// Count rows currently awaiting async URL validation.
+	CountPendingValidation(ctx context.Context) (int64, error)
+	// Count submissions from a given IP within the provided interval (for rate limiting).
+	CountRecentSubmissionsByIP(ctx context.Context, arg CountRecentSubmissionsByIPParams) (int64, error)
 	// Count total reviews by status (for badge display)
 	CountReviewQueueByStatus(ctx context.Context, status pgtype.Text) (int64, error)
+	// Count submissions with optional status filter (for pagination total).
+	CountScraperSubmissions(ctx context.Context, status pgtype.Text) (int64, error)
 	// Count entities of a type that have no external identifiers
 	CountUnreconciledEntities(ctx context.Context) (int64, error)
 	CountUpcomingEvents(ctx context.Context) (int64, error)
@@ -134,6 +140,9 @@ type Querier interface {
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
+	// Check if a url_norm was submitted within the given interval (for dedup).
+	// Returns the most recent matching row if found.
+	GetRecentSubmissionByURLNorm(ctx context.Context, arg GetRecentSubmissionByURLNormParams) (ScraperSubmission, error)
 	// Check cache for a previous reconciliation result
 	GetReconciliationCache(ctx context.Context, arg GetReconciliationCacheParams) (ReconciliationCache, error)
 	// Get single review by ID
@@ -167,6 +176,9 @@ type Querier interface {
 	// SQLc queries for scraper runs tracking.
 	// Insert a new scraper run record and return its id.
 	InsertScraperRun(ctx context.Context, arg InsertScraperRunParams) (int64, error)
+	// SQLc queries for scraper_submissions.
+	// Insert a new URL submission and return the full row.
+	InsertScraperSubmission(ctx context.Context, arg InsertScraperSubmissionParams) (ScraperSubmission, error)
 	// Check if a pair of events has been marked as not-duplicates.
 	// Uses canonical ordering to match regardless of argument order.
 	IsNotDuplicate(ctx context.Context, arg IsNotDuplicateParams) (bool, error)
@@ -192,6 +204,8 @@ type Querier interface {
 	ListOrganizationsByName(ctx context.Context, arg ListOrganizationsByNameParams) ([]ListOrganizationsByNameRow, error)
 	ListOrganizationsByNameDesc(ctx context.Context, arg ListOrganizationsByNameDescParams) ([]ListOrganizationsByNameDescRow, error)
 	ListPendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) ([]ListPendingInvitationsForUserRow, error)
+	// Fetch up to N rows awaiting async URL validation, oldest first.
+	ListPendingValidation(ctx context.Context, limit int32) ([]ScraperSubmission, error)
 	// SQLc queries for places domain.
 	ListPlacesByCreatedAt(ctx context.Context, arg ListPlacesByCreatedAtParams) ([]ListPlacesByCreatedAtRow, error)
 	ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesByCreatedAtDescParams) ([]ListPlacesByCreatedAtDescRow, error)
@@ -214,6 +228,8 @@ type Querier interface {
 	// has never been run). status and event counts use COALESCE to return non-nullable
 	// defaults so SQLc generates simple string/int32 types for those columns.
 	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error)
+	// Paginated list of submissions, optionally filtered by status (for admin).
+	ListScraperSubmissions(ctx context.Context, arg ListScraperSubmissionsParams) ([]ScraperSubmission, error)
 	// Get organizations that have no external identifiers, ordered by creation date
 	ListUnreconciledOrganizations(ctx context.Context, maxResults int32) ([]ListUnreconciledOrganizationsRow, error)
 	// Get places that have no external identifiers, ordered by creation date
@@ -267,6 +283,12 @@ type Querier interface {
 	UpdateScraperRunFailed(ctx context.Context, arg UpdateScraperRunFailedParams) error
 	// Update last_scraped_at timestamp after a successful scrape run.
 	UpdateScraperSourceLastScraped(ctx context.Context, name string) error
+	// Update status and optional notes for a given row (admin PATCH).
+	// Returns the full updated row.
+	UpdateSubmissionAdminReview(ctx context.Context, arg UpdateSubmissionAdminReviewParams) (ScraperSubmission, error)
+	// Update status, optional rejection_reason, and optional validated_at for a given row.
+	// Used by the background validation worker.
+	UpdateSubmissionStatus(ctx context.Context, arg UpdateSubmissionStatusParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	// SQLc queries for API key usage tracking.
