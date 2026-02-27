@@ -83,3 +83,10 @@ SELECT id, url, url_norm, submitted_at, submitter_ip, status,
 SELECT COUNT(*)
   FROM scraper_submissions
  WHERE (sqlc.narg('status')::TEXT IS NULL OR status = sqlc.narg('status'));
+
+-- name: DeleteOldScraperSubmissions :execrows
+-- Delete processed/rejected submissions older than the given interval.
+-- Used by the daily cleanup job to prevent unbounded table growth (srv-3sac0).
+DELETE FROM scraper_submissions
+ WHERE status     IN ('accepted', 'rejected')
+   AND submitted_at < NOW() - sqlc.arg('older_than')::INTERVAL;

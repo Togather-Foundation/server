@@ -60,6 +60,22 @@ func (q *Queries) CountScraperSubmissions(ctx context.Context, status pgtype.Tex
 	return count, err
 }
 
+const deleteOldScraperSubmissions = `-- name: DeleteOldScraperSubmissions :execrows
+DELETE FROM scraper_submissions
+ WHERE status     IN ('accepted', 'rejected')
+   AND submitted_at < NOW() - $1::INTERVAL
+`
+
+// Delete processed/rejected submissions older than the given interval.
+// Used by the daily cleanup job to prevent unbounded table growth (srv-3sac0).
+func (q *Queries) DeleteOldScraperSubmissions(ctx context.Context, olderThan pgtype.Interval) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldScraperSubmissions, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getRecentSubmissionByURLNorm = `-- name: GetRecentSubmissionByURLNorm :one
 SELECT id, url, url_norm, submitted_at, submitter_ip, status,
        rejection_reason, notes, validated_at
