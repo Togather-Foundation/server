@@ -28,6 +28,9 @@ You MUST update docs as needed.
 # CI before pushing (required)
 scripts/agent-run.sh make ci
 
+# Before merging a feature branch to main (required — catches data races)
+scripts/agent-run.sh make test-ci-race
+
 # Targeted tests
 scripts/agent-run.sh make test-ci
 
