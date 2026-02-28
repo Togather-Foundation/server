@@ -957,21 +957,23 @@ generate_web_files() {
 #   check_disk_space 10 || true
 check_disk_space() {
     local min_gb="${1:-5}"
-    local available_kb
+    local available_kb min_kb available_gb
     available_kb=$(df / | awk 'NR==2{print $4}')
-    local available_gb=$((available_kb / 1024 / 1024))
+    min_kb=$((min_gb * 1024 * 1024))
+    # Human-readable GB for display only (may truncate; comparison uses KB)
+    available_gb=$((available_kb / 1024 / 1024))
 
-    if [[ $available_gb -lt $min_gb ]]; then
-        log "WARN" "Low disk space: ${available_gb}GB available (threshold: ${min_gb}GB)"
+    if [[ $available_kb -lt $min_kb ]]; then
+        log "WARN" "Low disk space: ~${available_gb}GB available (threshold: ${min_gb}GB)"
         log "WARN" "Consider running: docker system prune -af"
     else
-        log "INFO" "Disk space OK: ${available_gb}GB available (threshold: ${min_gb}GB)"
+        log "INFO" "Disk space OK: ~${available_gb}GB available (threshold: ${min_gb}GB)"
     fi
     return 0
 }
 
 # prune_docker_cache - Conservatively prunes Docker build cache and dangling images
-# Removes dangling images and build cache objects older than 24 hours.
+# Removes stopped containers, dangling images, and build cache objects older than 24 hours.
 # Conservative: no -a flag (running containers/images are preserved), no --volumes.
 # Safe to run during a deploy — only cleans objects older than 24h.
 # Args:
@@ -1168,6 +1170,11 @@ run_migrations() {
         if [[ -f "${locked_at_file}" ]]; then
             local locked_timestamp
             locked_timestamp=$(cat "${locked_at_file}" 2>/dev/null || echo "0")
+            if [[ "$locked_timestamp" -eq 0 || "$locked_timestamp" -lt 1000000000 ]]; then
+                log "ERROR" "Migration lock timestamp is invalid or unreadable"
+                log "ERROR" "Manual intervention required: rm -rf ${migration_lock_dir}"
+                return 1
+            fi
             local now_timestamp
             now_timestamp=$(date +%s)
             lock_age=$((now_timestamp - locked_timestamp))
@@ -1176,11 +1183,11 @@ run_migrations() {
         if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
             log "WARN" "Stale migration lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
             log "WARN" "Removing stale migration lock: ${migration_lock_dir}"
-            if rm -rf "${migration_lock_dir}" 2>/dev/null && mkdir "${migration_lock_dir}" 2>/dev/null; then
+            if rmdir "${migration_lock_dir}" 2>/dev/null && mkdir "${migration_lock_dir}" 2>/dev/null; then
                 echo "$(date +%s)" > "${migration_lock_dir}/locked_at"
                 log "WARN" "Stale migration lock removed and re-acquired"
             else
-                log "ERROR" "Failed to re-acquire migration lock after removing stale lock"
+                log "ERROR" "Failed to re-acquire migration lock (another process may have acquired it)"
                 return 1
             fi
         else
@@ -1794,7 +1801,7 @@ deploy() {
     fi
     
     # Pre-deploy disk check and cache prune
-    check_disk_space || true
+    check_disk_space 5 || true
     prune_docker_cache "$env" || true
 
     # T016: Build Docker image (web files generated during build via DOMAIN build arg)
