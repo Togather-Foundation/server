@@ -437,12 +437,51 @@ For comprehensive migration troubleshooting, see [migrations.md](./migrations.md
 
 | Issue | Quick Fix |
 |-------|-----------|
-| **Migration lock exists** | `rm /tmp/togather-migration-production.lock` (if stale) |
+| **Migration lock exists** | deploy.sh auto-removes stale locks (>30 min); for fresh locks wait or `rm -rf /tmp/togather-migration-{env}.lock` only if confirmed no migration is running |
 | **Dirty migration state** | Restore from snapshot, fix migration, redeploy (see rollback.md) |
 | **Migration failed** | Restore from snapshot, fix SQL syntax, test locally (see rollback.md) |
 | **Version mismatch** | Check git branch, ensure codebase matches database state |
 | **Connection timeout** | Increase migration timeout in deploy.sh |
 | **Permission denied** | Grant necessary privileges to database user |
+
+---
+
+## Disk Space Management
+
+`deploy.sh` performs automatic disk space checks and cleanup before every build
+to prevent out-of-space failures during Docker image builds.
+
+### Pre-build checks
+
+1. **Available space warning** — If the build host has less than 5 GB free,
+   deploy.sh logs a warning before proceeding. The build is not aborted, but
+   you should investigate before the next deploy.
+2. **Docker layer prune** — `docker system prune -f --filter "until=24h"` runs
+   before each build, removing dangling images, stopped containers, unused
+   networks, and build cache older than 24 hours.
+
+### Diagnosis
+
+```bash
+# Check available disk space on the server
+df -h /var/lib/docker
+df -h /opt
+
+# Check Docker disk usage
+docker system df
+
+# Manual cleanup (removes everything unused, including volumes)
+docker system prune --volumes -f
+```
+
+### Common causes of disk pressure
+
+| Cause | Fix |
+|-------|-----|
+| Accumulated Docker image layers | `docker image prune -a -f` |
+| Unused Docker volumes | `docker volume prune -f` |
+| Large deployment log files | `find ~/.togather/logs -mtime +30 -delete` |
+| PostgreSQL WAL files | Review `wal_keep_size` in postgresql.conf |
 
 ---
 
@@ -979,4 +1018,4 @@ For production incidents, follow the incident response process in your organizat
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-02-28
