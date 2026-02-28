@@ -88,6 +88,13 @@ info:
     - **Agents**: API key in `Authorization: Bearer <key>` header
     - **Admins**: JWT token in `Authorization: Bearer <token>` header
     - **Developers**: JWT token in `dev_auth_token` cookie or `Authorization: Bearer <token>` header
+
+    ## Rate Limits
+    All public (unauthenticated) read endpoints share a single rate limit tier, configurable
+    via `RATE_LIMIT_PUBLIC` (default 60 requests per minute per IP). Individual endpoints
+    may have tighter per-endpoint limits:
+    - `POST /api/v1/dev/login`: configurable via `RATE_LIMIT_LOGIN`, default 5 attempts per 15-minute window per IP
+    - `POST /scraper/submissions`: configurable via `RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H`, default 20 URLs per 24 hours per IP
     
     ## Content Negotiation
     API endpoints return JSON/JSON-LD via `Accept` header:
@@ -1192,7 +1199,7 @@ paths:
     post:
       operationId: developerLogin
       summary: Developer login
-      description: Authenticate developer with email/password and receive JWT token. Rate limited to prevent brute force attacks.
+      description: Authenticate developer with email/password and receive JWT token. Rate limited to 5 attempts per 15-minute window per IP (configurable via `RATE_LIMIT_LOGIN`, default 5).
       tags: [Developer]
       security: []
       requestBody:
