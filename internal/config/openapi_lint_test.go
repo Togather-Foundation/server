@@ -33,6 +33,14 @@ var openapiConfigEntries = []struct {
 		envVar:     "RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H",
 		wantSubstr: "RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H",
 	},
+	{
+		envVar:     "VALIDATION_MAX_EVENT_NAME_LENGTH",
+		wantSubstr: "VALIDATION_MAX_EVENT_NAME_LENGTH",
+	},
+	{
+		envVar:     "DEVELOPER_PASSWORD_MIN_LENGTH",
+		wantSubstr: "DEVELOPER_PASSWORD_MIN_LENGTH",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

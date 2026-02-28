@@ -1442,7 +1442,7 @@ paths:
                   type: string
                   format: password
                   minLength: 8
-                  description: Password for future logins
+                  description: Password for future logins (configurable via DEVELOPER_PASSWORD_MIN_LENGTH, default 8)
       responses:
         '200':
           description: Invitation accepted, developer account created
@@ -2330,6 +2330,7 @@ components:
           type: string
           minLength: 1
           maxLength: 500
+          description: Event name (configurable via VALIDATION_MAX_EVENT_NAME_LENGTH, default 500)
         description:
           type: string
           maxLength: 10000
