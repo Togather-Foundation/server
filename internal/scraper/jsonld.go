@@ -84,7 +84,7 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string, client *http.Clie
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 5. Parse HTML with goquery (body capped at 10 MiB to prevent OOM).
 	limitedBody := io.LimitReader(resp.Body, 10*1024*1024) // 10 MiB
@@ -342,7 +342,7 @@ func FetchFullDescription(ctx context.Context, eventURL string, client *http.Cli
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	limitedBody := io.LimitReader(resp.Body, 10*1024*1024) // 10 MiB
 	doc, err := goquery.NewDocumentFromReader(limitedBody)
@@ -405,7 +405,7 @@ func RobotsAllowed(ctx context.Context, rawURL string, userAgent string, client 
 	if err != nil {
 		return false, fmt.Errorf("fetching robots.txt from %q: %w", robotsURL.String(), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 3. 404 (or any 4xx that signals absence) → allow.
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
