@@ -945,6 +945,60 @@ generate_web_files() {
     return 0
 }
 
+# check_disk_space - Checks available disk space on root filesystem
+# Warns if available space falls below a configurable threshold
+# Args:
+#   $1 - min_gb: minimum acceptable free gigabytes (default: 5)
+# Returns:
+#   0 always (non-fatal; advisory only)
+# Side effects:
+#   - Logs WARN if disk space is below threshold, INFO otherwise
+# Example:
+#   check_disk_space 10 || true
+check_disk_space() {
+    local min_gb="${1:-5}"
+    local available_kb
+    available_kb=$(df / | awk 'NR==2{print $4}')
+    local available_gb=$((available_kb / 1024 / 1024))
+
+    if [[ $available_gb -lt $min_gb ]]; then
+        log "WARN" "Low disk space: ${available_gb}GB available (threshold: ${min_gb}GB)"
+        log "WARN" "Consider running: docker system prune -af"
+    else
+        log "INFO" "Disk space OK: ${available_gb}GB available (threshold: ${min_gb}GB)"
+    fi
+    return 0
+}
+
+# prune_docker_cache - Conservatively prunes Docker build cache and dangling images
+# Removes dangling images and build cache objects older than 24 hours.
+# Conservative: no -a flag (running containers/images are preserved), no --volumes.
+# Safe to run during a deploy — only cleans objects older than 24h.
+# Args:
+#   $1 - env: environment label (used for logging only)
+# Returns:
+#   0 always (non-fatal; continues on prune failure)
+# Side effects:
+#   - Runs docker system prune -f --filter "until=24h"
+#   - Logs before/after available disk space
+# Example:
+#   prune_docker_cache "staging" || true
+prune_docker_cache() {
+    local env="$1"
+    local before_space
+    before_space=$(df -h / | awk 'NR==2{print $4}')
+    log "INFO" "Docker cache prune (${env}): disk available before: ${before_space}"
+
+    docker system prune -f --filter "until=24h" || {
+        log "WARN" "docker system prune failed — continuing anyway"
+    }
+
+    local after_space
+    after_space=$(df -h / | awk 'NR==2{print $4}')
+    log "INFO" "Docker cache prune (${env}): disk available after:  ${after_space}"
+    return 0
+}
+
 # Build Docker image with version metadata
 build_docker_image() {
     local env="$1"
@@ -1102,15 +1156,39 @@ run_migrations() {
     
     # T032: Acquire migration lock atomically to prevent concurrent migrations
     if mkdir "$migration_lock_dir" 2>/dev/null; then
-        # Lock acquired - set trap to cleanup on ALL exit paths
-        # Note: RETURN is function-scoped only, removed to ensure cleanup on script exit
-        # Cleanup will be handled explicitly at function exit to avoid unbound variable error
+        # Lock acquired - write timestamp for stale detection
+        echo "$(date +%s)" > "${migration_lock_dir}/locked_at"
         log "INFO" "Migration lock acquired"
     else
-        log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
-        log "ERROR" "Another migration may be in progress"
-        log "ERROR" "If stale, remove: rm -rf ${migration_lock_dir}"
-        return 1
+        # Lock directory exists - check if stale
+        log "INFO" "Migration lock exists, checking if stale"
+        local locked_at_file="${migration_lock_dir}/locked_at"
+        local lock_age=0
+
+        if [[ -f "${locked_at_file}" ]]; then
+            local locked_timestamp
+            locked_timestamp=$(cat "${locked_at_file}" 2>/dev/null || echo "0")
+            local now_timestamp
+            now_timestamp=$(date +%s)
+            lock_age=$((now_timestamp - locked_timestamp))
+        fi
+
+        if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
+            log "WARN" "Stale migration lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
+            log "WARN" "Removing stale migration lock: ${migration_lock_dir}"
+            if rm -rf "${migration_lock_dir}" 2>/dev/null && mkdir "${migration_lock_dir}" 2>/dev/null; then
+                echo "$(date +%s)" > "${migration_lock_dir}/locked_at"
+                log "WARN" "Stale migration lock removed and re-acquired"
+            else
+                log "ERROR" "Failed to re-acquire migration lock after removing stale lock"
+                return 1
+            fi
+        else
+            log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
+            log "ERROR" "Another migration may be in progress (lock age: ${lock_age}s)"
+            log "ERROR" "If stale, remove: rm -rf ${migration_lock_dir}"
+            return 1
+        fi
     fi
     
     # Check current migration version
@@ -1715,6 +1793,10 @@ deploy() {
         DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
     fi
     
+    # Pre-deploy disk check and cache prune
+    check_disk_space || true
+    prune_docker_cache "$env" || true
+
     # T016: Build Docker image (web files generated during build via DOMAIN build arg)
     build_docker_image "$env" || return 1
     
