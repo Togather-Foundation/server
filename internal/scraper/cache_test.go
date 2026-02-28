@@ -38,7 +38,7 @@ func TestCachingTransport_CacheMiss(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if string(body) != "hello from server" {
 		t.Errorf("body = %q, want %q", body, "hello from server")
@@ -70,7 +70,7 @@ func TestCachingTransport_CacheHit(t *testing.T) {
 		t.Fatalf("first request error: %v", err)
 	}
 	body1, _ := io.ReadAll(resp1.Body)
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 
 	// Second request — should come from cache.
 	resp2, err := client.Get(srv.URL + "/page")
@@ -78,7 +78,7 @@ func TestCachingTransport_CacheHit(t *testing.T) {
 		t.Fatalf("second request error: %v", err)
 	}
 	body2, _ := io.ReadAll(resp2.Body)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	if string(body2) != string(body1) {
 		t.Errorf("cached body = %q, want %q", body2, body1)
@@ -109,7 +109,7 @@ func TestCachingTransport_Refresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate error: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Second pass: use Refresh=true — should bypass cache and hit server again.
 	refreshTransport := NewCachingTransport(counter, cacheDir, true)
@@ -119,7 +119,7 @@ func TestCachingTransport_Refresh(t *testing.T) {
 		t.Fatalf("refresh error: %v", err)
 	}
 	body, _ := io.ReadAll(resp2.Body)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	if string(body) != "fresh content" {
 		t.Errorf("body = %q, want %q", body, "fresh content")
@@ -151,14 +151,14 @@ func TestCachingTransport_NonGetNotCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST 1 error: %v", err)
 	}
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 
 	// Second POST — should also hit real server (not cached).
 	resp2, err := client.Post(srv.URL+"/api", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST 2 error: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	if counter.calls != 2 {
 		t.Errorf("real server calls = %d, want 2 (POSTs not cached)", counter.calls)
@@ -183,14 +183,14 @@ func TestCachingTransport_NonSuccessNotCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first request error: %v", err)
 	}
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 
 	// Second request — should still hit real server (not cached).
 	resp2, err := client.Get(srv.URL + "/missing")
 	if err != nil {
 		t.Fatalf("second request error: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	if counter.calls != 2 {
 		t.Errorf("real server calls = %d, want 2 (non-2xx not cached)", counter.calls)

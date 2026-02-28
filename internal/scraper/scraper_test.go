@@ -184,7 +184,7 @@ func TestScrapeTier0_FollowEventURLs(t *testing.T) {
 
 	detailSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<html><body><div class="tribe-events-content"><p>%s</p></div></body></html>`, fullDescription)
+		_, _ = fmt.Fprintf(w, `<html><body><div class="tribe-events-content"><p>%s</p></div></body></html>`, fullDescription)
 	}))
 	t.Cleanup(detailSrv.Close)
 

@@ -110,7 +110,7 @@ func (t *CachingTransport) writeCache(path string, resp *http.Response) error {
 	if err != nil {
 		return fmt.Errorf("read response body: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Replace body so caller can still read it.
 	resp.Body = io.NopCloser(strings.NewReader(string(body)))
