@@ -657,6 +657,79 @@ generate_id() {
     echo "${prefix}_${timestamp_hex}_${random}"
 }
 
+# acquire_named_lock LOCK_DIR
+#   Acquires a named lock using atomic mkdir. Writes a locked_at Unix timestamp
+#   file inside the lock directory for stale detection.
+#   Args:
+#     $1 - lock_dir: full path to the lock directory (e.g. /tmp/togather-foo.lock)
+#   Returns:
+#     0 on success, 1 if lock is held by another process or timestamp is corrupt
+#   Side effects:
+#     - Creates $lock_dir
+#     - Writes $lock_dir/locked_at (Unix timestamp)
+acquire_named_lock() {
+    local lock_dir="$1"
+    local lock_name
+    lock_name=$(basename "$lock_dir")
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+        echo "$(date +%s)" > "${lock_dir}/locked_at"
+        log "INFO" "Lock acquired: ${lock_name}"
+        return 0
+    fi
+
+    # Lock dir exists — check staleness
+    log "INFO" "Lock exists, checking if stale: ${lock_name}"
+    local locked_at_file="${lock_dir}/locked_at"
+    local lock_age=0
+
+    if [[ -f "$locked_at_file" ]]; then
+        local locked_timestamp
+        locked_timestamp=$(cat "$locked_at_file" 2>/dev/null || echo "0")
+        if [[ "$locked_timestamp" -eq 0 || "$locked_timestamp" -lt 1000000000 ]]; then
+            log "ERROR" "Lock timestamp is invalid or unreadable: ${lock_name}"
+            log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
+            return 1
+        fi
+        lock_age=$(( $(date +%s) - locked_timestamp ))
+    fi
+
+    if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
+        log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s): ${lock_name}"
+        log "WARN" "Removing stale lock: ${lock_dir}"
+        if rmdir "$lock_dir" 2>/dev/null && mkdir "$lock_dir" 2>/dev/null; then
+            echo "$(date +%s)" > "${lock_dir}/locked_at"
+            log "WARN" "Stale lock removed and re-acquired: ${lock_name}"
+            return 0
+        else
+            log "ERROR" "Failed to re-acquire lock after removing stale lock (another process may have acquired it): ${lock_name}"
+            return 1
+        fi
+    fi
+
+    log "ERROR" "Lock already held (age: ${lock_age}s, timeout: ${LOCK_TIMEOUT}s): ${lock_name}"
+    log "ERROR" "If stale, remove: rm -rf ${lock_dir}"
+    return 1
+}
+
+# release_named_lock LOCK_DIR
+#   Releases a named lock acquired with acquire_named_lock.
+#   Args:
+#     $1 - lock_dir: full path to the lock directory
+#   Returns:
+#     0 always (best-effort; logs warning on failure)
+release_named_lock() {
+    local lock_dir="$1"
+    local lock_name
+    lock_name=$(basename "$lock_dir")
+    if rmdir "$lock_dir" 2>/dev/null; then
+        log "INFO" "Lock released: ${lock_name}"
+    else
+        log "WARN" "Failed to remove lock directory (may need manual cleanup): ${lock_dir}"
+    fi
+    return 0
+}
+
 # acquire_lock - Acquires deployment lock using atomic directory creation
 # Implements distributed locking using POSIX-atomic mkdir operation
 # Handles stale lock detection with configurable timeout (LOCK_TIMEOUT)
@@ -703,69 +776,7 @@ STATE_EOF
         chmod 600 "${STATE_FILE}"
     fi
     
-    # Try to create lock directory atomically (mkdir is atomic in POSIX)
-    if mkdir "$lock_dir" 2>/dev/null; then
-        # Lock acquired - set trap to cleanup on exit
-        log "INFO" "Lock directory created: ${lock_dir}"
-    else
-        # Lock directory exists - check if stale
-        log "INFO" "Lock directory exists, checking if stale"
-        
-        # Read lock info from state file
-        local locked=$(jq -r '.lock.locked // false' "${STATE_FILE}")
-        local locked_at=$(jq -r '.lock.locked_at // ""' "${STATE_FILE}")
-        
-        if [[ "$locked" != "true" ]] || [[ -z "$locked_at" ]]; then
-            # Inconsistent state - lock dir exists but state file says unlocked
-            log "WARN" "Inconsistent lock state detected"
-            log "WARN" "Lock directory exists but state file shows unlocked"
-            log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
-            return 1
-        fi
-        
-        # Parse lock timestamp with explicit error handling
-        local locked_timestamp=$(date -d "$locked_at" +%s 2>/dev/null || echo "0")
-        
-        if [[ $locked_timestamp -eq 0 ]]; then
-            log "WARN" "Could not parse lock timestamp: ${locked_at}"
-            log "ERROR" "Lock may be corrupted, manual intervention required"
-            log "ERROR" "To override: rm -rf ${lock_dir} && edit ${STATE_FILE}"
-            return 1
-        fi
-        
-        local now_timestamp=$(date +%s)
-        local lock_age=$((now_timestamp - locked_timestamp))
-        
-        if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
-            log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
-            log "WARN" "Attempting to remove stale lock"
-            
-            if rmdir "$lock_dir" 2>/dev/null; then
-                log "WARN" "Stale lock removed, retrying acquisition"
-                # Retry lock acquisition
-                if mkdir "$lock_dir" 2>/dev/null; then
-                    log "INFO" "Lock acquired after removing stale lock"
-                else
-                    log "ERROR" "Failed to acquire lock after removing stale lock"
-                    log "ERROR" "Another process may have acquired it first"
-                    return 1
-                fi
-            else
-                log "ERROR" "Failed to remove stale lock directory"
-                log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
-                return 1
-            fi
-        else
-            local locked_by=$(jq -r '.lock.locked_by // "unknown"' "${STATE_FILE}")
-            local deployment_id=$(jq -r '.lock.deployment_id // "unknown"' "${STATE_FILE}")
-            log "ERROR" "Deployment already in progress"
-            log "ERROR" "Locked by: ${locked_by}"
-            log "ERROR" "Deployment ID: ${deployment_id}"
-            log "ERROR" "Lock age: ${lock_age}s (timeout: ${LOCK_TIMEOUT}s)"
-            log "ERROR" "Lock directory: ${lock_dir}"
-            return 1
-        fi
-    fi
+    acquire_named_lock "$lock_dir" || return 1
     
     # Generate lock ID and deployment ID
     DEPLOYMENT_ID=$(generate_id "dep")
@@ -825,11 +836,7 @@ release_lock() {
     
     # Remove lock directory
     local lock_dir="/tmp/togather-deploy-${env}.lock"
-    if ! rmdir "$lock_dir" 2>/dev/null; then
-        log "WARN" "Failed to remove lock directory: ${lock_dir}"
-        log "WARN" "Lock state updated but directory may need manual cleanup"
-        # Don't fail - state file is already updated
-    fi
+    release_named_lock "$lock_dir"
     
     log "SUCCESS" "Deployment lock released"
     return 0
@@ -1185,46 +1192,7 @@ run_migrations() {
     fi
     
     # T032: Acquire migration lock atomically to prevent concurrent migrations
-    if mkdir "$migration_lock_dir" 2>/dev/null; then
-        # Lock acquired - write timestamp for stale detection
-        echo "$(date +%s)" > "${migration_lock_dir}/locked_at"
-        log "INFO" "Migration lock acquired"
-    else
-        # Lock directory exists - check if stale
-        log "INFO" "Migration lock exists, checking if stale"
-        local locked_at_file="${migration_lock_dir}/locked_at"
-        local lock_age=0
-
-        if [[ -f "${locked_at_file}" ]]; then
-            local locked_timestamp
-            locked_timestamp=$(cat "${locked_at_file}" 2>/dev/null || echo "0")
-            if [[ "$locked_timestamp" -eq 0 || "$locked_timestamp" -lt 1000000000 ]]; then
-                log "ERROR" "Migration lock timestamp is invalid or unreadable"
-                log "ERROR" "Manual intervention required: rm -rf ${migration_lock_dir}"
-                return 1
-            fi
-            local now_timestamp
-            now_timestamp=$(date +%s)
-            lock_age=$((now_timestamp - locked_timestamp))
-        fi
-
-        if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
-            log "WARN" "Stale migration lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
-            log "WARN" "Removing stale migration lock: ${migration_lock_dir}"
-            if rmdir "${migration_lock_dir}" 2>/dev/null && mkdir "${migration_lock_dir}" 2>/dev/null; then
-                echo "$(date +%s)" > "${migration_lock_dir}/locked_at"
-                log "WARN" "Stale migration lock removed and re-acquired"
-            else
-                log "ERROR" "Failed to re-acquire migration lock (another process may have acquired it)"
-                return 1
-            fi
-        else
-            log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
-            log "ERROR" "Another migration may be in progress (lock age: ${lock_age}s)"
-            log "ERROR" "If stale, remove: rm -rf ${migration_lock_dir}"
-            return 1
-        fi
-    fi
+    acquire_named_lock "$migration_lock_dir" || return 1
     
     # Check current migration version
     local current_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
@@ -1238,7 +1206,7 @@ run_migrations() {
         log "ERROR" "  1. Review the failed migration in: ${migrations_dir}"
         log "ERROR" "  2. Fix the database manually or restore from snapshot"
         log "ERROR" "  3. Force migration version: migrate -path ${migrations_dir} -database \$DATABASE_URL force <version>"
-        rmdir "$migration_lock_dir" 2>/dev/null || true
+        release_named_lock "$migration_lock_dir"
         return 1
     fi
     
@@ -1278,7 +1246,7 @@ run_migrations() {
         log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         
         # Explicit lock cleanup
-        rmdir "$migration_lock_dir" 2>/dev/null || true
+        release_named_lock "$migration_lock_dir"
         return 1
     fi
     
@@ -1294,8 +1262,7 @@ run_migrations() {
     fi
     
     # Explicit lock cleanup
-    rmdir "$migration_lock_dir" 2>/dev/null || true
-    log "INFO" "Migration lock released"
+    release_named_lock "$migration_lock_dir"
     return 0
 }
 
