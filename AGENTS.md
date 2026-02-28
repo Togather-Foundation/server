@@ -66,7 +66,7 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 - Runtime tunables (limits, thresholds, timeouts) belong in `internal/config/config.go` — add a typed field to the relevant struct (e.g. `RateLimitConfig`) and wire it via `getEnvInt`/`getEnvFloat`/`getEnv` with a sensible default.
 - Pass the value into constructors (`NewFooService(repo, cfg.X)`) rather than hardcoding constants inside domain packages.
 - If you find a magic number in domain code that an operator might reasonably want to change, move it to config in the same PR.
-- **OpenAPI spec must reflect config-tunable defaults:** if an endpoint behaviour (rate limit, batch size, threshold) is controlled by an env var, the endpoint's `description` in `docs/api/openapi.yaml` must mention the env var name and its default (e.g. `configurable via RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H, default 20`).
+- **OpenAPI spec must reflect config-tunable defaults:** if an endpoint behaviour (rate limit, batch size, threshold) or schema constraint (minLength, maxLength) is controlled by an env var, the relevant `description` in `docs/api/openapi.yaml` must mention the env var name and its default (e.g. `configurable via RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H, default 20`). This applies to both endpoint descriptions and individual schema property descriptions. The lint test in `internal/config/openapi_lint_test.go` enforces a manifest of known tunables — add new entries there whenever you add a new guard.
 
 
 - HTTP handlers stay thin — business logic in `internal/domain/`
