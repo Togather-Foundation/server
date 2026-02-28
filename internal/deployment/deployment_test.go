@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSlot_Opposite(t *testing.T) {
@@ -114,6 +116,13 @@ func TestSaveState(t *testing.T) {
 	// Verify file exists
 	if _, err := os.Stat(tmpFile); os.IsNotExist(err) {
 		t.Error("SaveState() did not create file")
+	}
+
+	// Verify file permissions are exactly 0644
+	fi, err := os.Stat(tmpFile)
+	require.NoError(t, err)
+	if got := fi.Mode().Perm(); got != 0644 {
+		t.Errorf("saved file permissions: got %04o, want 0644", got)
 	}
 
 	// Verify content
