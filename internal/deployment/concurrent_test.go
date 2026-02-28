@@ -259,10 +259,10 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 
 	// Simulate concurrent file access
 	var wg sync.WaitGroup
-	errors := make(chan error, 20)
+	errors := make(chan error, 100)
 
 	// Multiple readers and writers
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -274,7 +274,7 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
