@@ -1806,7 +1806,8 @@ paths:
       summary: Submit URLs for scraping
       description: |
         Submits up to 10 URLs for review and eventual scraping. No authentication
-        required. Rate limited to 20 URLs per IP per 24 hours.
+        required. Rate limited to 20 URLs per IP per 24 hours (configurable via
+        `RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H`).
 
         Each URL is normalised and deduplicated before insertion. The response
         includes a per-URL result indicating whether the URL was accepted,
