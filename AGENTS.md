@@ -92,8 +92,9 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 bd ready                              # find unblocked work
 bd update <id> --status in_progress  # claim before starting
 bd close <id> --reason "..."         # close when done
-bd dolt push                         # sync beads state to remote
 ```
+
+Beads state is persisted in a local Dolt SQL server and auto-flushed to `.beads/issues.jsonl`, which is committed to git. There is no Dolt remote — `bd dolt push` will fail. Beads travel with the repo via normal `git push`.
 
 Never merge `beads-sync` into main. For full workflow: `bd prime`.
 
@@ -105,7 +106,6 @@ Work is NOT complete until docs are updated and `git push` succeeds.
 scripts/agent-run.sh make ci          # quality gate (if code changed)
 bd close <id> --reason "..."          # close finished beads
 git pull --rebase
-bd dolt push
 git push
 git status                            # must show "up to date with origin"
 scripts/agent-cleanup.sh              # remove agent output files
