@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
@@ -343,7 +344,7 @@ func TestCreateDeveloper(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockRepository{}
 			tt.setupMock(mock)
-			svc := NewService(mock, zerolog.Nop())
+			svc := NewService(mock, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
 
 			dev, err := svc.CreateDeveloper(context.Background(), tt.params)
 
@@ -436,7 +437,7 @@ func TestAuthenticateDeveloper(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockRepository{}
 			tt.setupMock(mock)
-			svc := NewService(mock, zerolog.Nop())
+			svc := NewService(mock, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
 
 			dev, err := svc.AuthenticateDeveloper(context.Background(), tt.email, tt.password)
 
@@ -590,7 +591,7 @@ func TestCreateAPIKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockRepository{}
 			tt.setupMock(mock)
-			svc := NewService(mock, zerolog.Nop())
+			svc := NewService(mock, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
 
 			plainKey, keyInfo, err := svc.CreateAPIKey(context.Background(), tt.params)
 
@@ -679,7 +680,7 @@ func TestRevokeOwnKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockRepository{}
 			tt.setupMock(mock)
-			svc := NewService(mock, zerolog.Nop())
+			svc := NewService(mock, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
 
 			err := svc.RevokeOwnKey(context.Background(), tt.developerID, tt.keyID)
 
@@ -764,7 +765,7 @@ func TestInviteDeveloper(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockRepository{}
 			tt.setupMock(mock)
-			svc := NewService(mock, zerolog.Nop())
+			svc := NewService(mock, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
 
 			token, err := svc.InviteDeveloper(context.Background(), tt.email, tt.invitedBy)
 
@@ -930,7 +931,7 @@ func TestAcceptInvitation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockRepository{}
 			tt.setupMock(mock)
-			svc := NewService(mock, zerolog.Nop())
+			svc := NewService(mock, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
 
 			dev, err := svc.AcceptInvitation(context.Background(), tt.token, tt.devName, tt.password)
 
@@ -997,7 +998,8 @@ func TestValidatePassword(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePassword(tt.password)
+			svc := NewService(nil, zerolog.Nop(), config.DeveloperConfig{PasswordMinLength: 8, PasswordMaxLength: 128, UsageFlushTimeoutSeconds: 10})
+			err := svc.validatePassword(tt.password)
 
 			if tt.wantErr {
 				if err == nil {

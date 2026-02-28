@@ -1,8 +1,13 @@
 name: "burdock-brewery"
-# Tier 2 (DISABLED). Shopify + Showpass iframe + InLight Labs Events Calendar JS embed.
-# No static event data in page source. Headless browser required.
-# NOTE: Showpass public API at https://www.showpass.com/api/public/events/?venue=17330
-#       may be a viable alternative data source without T2.
+# INVESTIGATION COMPLETE: Burdock Brewery uses InLight Labs Events Calendar JS embed.
+# Website events do NOT render statically or in headless captures (events loaded async via JS).
+# Showpass API (venue 17330) is publicly available and working:
+#   - 31 events returned with name, date, image, URL
+#   - https://www.showpass.com/api/public/events/?venue=17330
+# HOWEVER: The SEL scraper requires either:
+#   - CSS selectors on rendered HTML (Tier 2 headless) — events won't render within wait window
+#   - JSON-LD in page HTML (Tier 1) — Showpass API is raw JSON, not JSON-LD
+# DECISION: Keep disabled until events reliably render in headless or alternative approach found.
 url: "https://burdockbrewery.com/pages/music-hall"
 tier: 2
 schedule: "weekly"

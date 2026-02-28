@@ -1,11 +1,13 @@
 name: "xtsc"
-# Tier 2 (disabled). JS-required site (< 300 bytes returned without JS).
-# XTSC is a trans/queer arts organization in Toronto.
-# Requires Rod headless browser (srv-h264z).
-url: "https://xtsc.ca/events/"
+# XTSC (eXperience the Best League in Town). Toronto trans/queer sports league.
+# Zuluru platform stores event names in data-event HTML attributes, not in DOM text.
+# CSS selectors cannot extract attribute values directly. Would require headless browser
+# or custom parsing logic. Disabled until Tier 2 can be implemented.
+url: "https://www.xtsc.ca/zuluru/events/"
 tier: 2
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
 enabled: false
 max_pages: 2
+notes: "Event titles stored in data-event attributes, inaccessible via CSS selectors. Requires headless browser."

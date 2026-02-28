@@ -4,7 +4,11 @@
 -- Insert or update a scraper source by name (used by 'server scrape sync').
 INSERT INTO scraper_sources (
   name, url, tier, schedule, trust_level, license, enabled,
-  max_pages, selectors, notes, last_scraped_at, updated_at
+  max_pages, selectors, notes, last_scraped_at,
+  headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+  headless_headers, headless_rate_limit_ms,
+  graphql_config,
+  updated_at
 ) VALUES (
   sqlc.arg('name'),
   sqlc.arg('url'),
@@ -17,41 +21,61 @@ INSERT INTO scraper_sources (
   sqlc.arg('selectors'),
   sqlc.arg('notes'),
   sqlc.arg('last_scraped_at'),
+  sqlc.arg('headless_wait_selector'),
+  sqlc.arg('headless_wait_timeout_ms'),
+  sqlc.arg('headless_pagination_btn'),
+  sqlc.arg('headless_headers'),
+  sqlc.arg('headless_rate_limit_ms'),
+  sqlc.arg('graphql_config'),
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
-  url             = EXCLUDED.url,
-  tier            = EXCLUDED.tier,
-  schedule        = EXCLUDED.schedule,
-  trust_level     = EXCLUDED.trust_level,
-  license         = EXCLUDED.license,
-  enabled         = EXCLUDED.enabled,
-  max_pages       = EXCLUDED.max_pages,
-  selectors       = EXCLUDED.selectors,
-  notes           = EXCLUDED.notes,
-  last_scraped_at = COALESCE(EXCLUDED.last_scraped_at, scraper_sources.last_scraped_at),
-  updated_at      = NOW()
+  url                      = EXCLUDED.url,
+  tier                     = EXCLUDED.tier,
+  schedule                 = EXCLUDED.schedule,
+  trust_level              = EXCLUDED.trust_level,
+  license                  = EXCLUDED.license,
+  enabled                  = EXCLUDED.enabled,
+  max_pages                = EXCLUDED.max_pages,
+  selectors                = EXCLUDED.selectors,
+  notes                    = EXCLUDED.notes,
+  last_scraped_at          = COALESCE(EXCLUDED.last_scraped_at, scraper_sources.last_scraped_at),
+  headless_wait_selector   = EXCLUDED.headless_wait_selector,
+  headless_wait_timeout_ms = EXCLUDED.headless_wait_timeout_ms,
+  headless_pagination_btn  = EXCLUDED.headless_pagination_btn,
+  headless_headers         = EXCLUDED.headless_headers,
+  headless_rate_limit_ms   = EXCLUDED.headless_rate_limit_ms,
+  graphql_config           = EXCLUDED.graphql_config,
+  updated_at               = NOW()
 RETURNING id, name, url, tier, schedule, trust_level, license, enabled,
-          max_pages, selectors, notes, last_scraped_at, created_at, updated_at;
+          max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+          headless_headers, headless_rate_limit_ms, graphql_config;
 
 -- name: GetScraperSourceByName :one
 -- Get a single scraper source by unique name.
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
-       max_pages, selectors, notes, last_scraped_at, created_at, updated_at
+       max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+       headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+       headless_headers, headless_rate_limit_ms, graphql_config
   FROM scraper_sources
  WHERE name = sqlc.arg('name');
 
 -- name: GetScraperSourceByID :one
 -- Get a single scraper source by primary key.
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
-       max_pages, selectors, notes, last_scraped_at, created_at, updated_at
+       max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+       headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+       headless_headers, headless_rate_limit_ms, graphql_config
   FROM scraper_sources
  WHERE id = sqlc.arg('id');
 
 -- name: ListScraperSources :many
 -- List all scraper sources, optionally filtered by enabled flag.
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
-       max_pages, selectors, notes, last_scraped_at, created_at, updated_at
+       max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+       headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+       headless_headers, headless_rate_limit_ms, graphql_config
   FROM scraper_sources
  WHERE (sqlc.narg('enabled')::boolean IS NULL OR enabled = sqlc.narg('enabled'))
  ORDER BY name ASC;
@@ -82,7 +106,9 @@ DELETE FROM org_scraper_sources
 -- name: ListScraperSourcesByOrg :many
 -- List all scraper sources linked to a given organization.
 SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
-       s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at
+       s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+       s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
+       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = sqlc.arg('organization_id')
@@ -103,7 +129,9 @@ DELETE FROM place_scraper_sources
 -- name: ListScraperSourcesByPlace :many
 -- List all scraper sources linked to a given place.
 SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
-       s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at
+       s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+       s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
+       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = sqlc.arg('place_id')
@@ -117,6 +145,8 @@ SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enab
 SELECT
   s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
   s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+  s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
+  s.headless_headers, s.headless_rate_limit_ms, s.graphql_config,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
@@ -136,3 +166,4 @@ LEFT JOIN LATERAL (
 ) r ON true
 WHERE (sqlc.narg('enabled')::boolean IS NULL OR s.enabled = sqlc.narg('enabled'))
 ORDER BY s.name ASC;
+

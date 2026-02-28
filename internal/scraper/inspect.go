@@ -53,7 +53,7 @@ func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectR
 	if err != nil {
 		return nil, fmt.Errorf("inspect: fetch: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -65,10 +65,70 @@ func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectR
 		return nil, fmt.Errorf("inspect: parse HTML: %w", err)
 	}
 
+	result := analyseDoc(doc, rawURL, len(body))
+	result.StatusCode = resp.StatusCode
+	return result, nil
+}
+
+// FormatInspectResult formats an InspectResult as human-readable terminal output.
+func FormatInspectResult(r *InspectResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "URL:    %s\n", r.URL)
+	fmt.Fprintf(&b, "Status: %d\n", r.StatusCode)
+	fmt.Fprintf(&b, "Size:   %d bytes\n\n", r.BodyBytes)
+
+	b.WriteString("── Top CSS Classes ─────────────────────────────────────\n")
+	for i, c := range r.TopClasses {
+		fmt.Fprintf(&b, "  %-40s %d\n", c.Name, c.Count)
+		if i >= 19 {
+			break
+		}
+	}
+
+	if len(r.DataAttrs) > 0 {
+		b.WriteString("\n── data-* Attributes ────────────────────────────────────\n")
+		for _, c := range r.DataAttrs {
+			fmt.Fprintf(&b, "  %-40s %d\n", c.Name, c.Count)
+		}
+	}
+
+	if len(r.EventLinks) > 0 {
+		b.WriteString("\n── Event/Program hrefs (sample) ─────────────────────────\n")
+		for _, l := range r.EventLinks {
+			fmt.Fprintf(&b, "  %s\n", l)
+		}
+	}
+
+	if len(r.SampleCards) > 0 {
+		b.WriteString("\n── Candidate Event Containers ───────────────────────────\n")
+		for _, card := range r.SampleCards {
+			fmt.Fprintf(&b, "\n  selector: %s\n  html:     %s\n", card.Selector, card.HTML)
+		}
+	}
+
+	return b.String()
+}
+
+// InspectHTML analyses an already-fetched HTML string and returns an
+// InspectResult. rawURL is used only for the URL field in the result (it is
+// not fetched). This is the counterpart of Inspect for callers that already
+// have the rendered HTML (e.g. from RodExtractor.RenderHTML).
+func InspectHTML(rawURL, html string) (*InspectResult, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		return nil, fmt.Errorf("inspect: parse HTML: %w", err)
+	}
+	return analyseDoc(doc, rawURL, len(html)), nil
+}
+
+// analyseDoc performs DOM analysis on an already-parsed goquery document.
+// It extracts CSS class frequencies, data-* attribute frequencies, event hrefs,
+// and candidate event container elements. rawURL and bodyBytes are metadata only.
+func analyseDoc(doc *goquery.Document, rawURL string, bodyBytes int) *InspectResult {
 	result := &InspectResult{
-		URL:        rawURL,
-		StatusCode: resp.StatusCode,
-		BodyBytes:  len(body),
+		URL:       rawURL,
+		BodyBytes: bodyBytes,
 	}
 
 	// --- CSS class frequency ---
@@ -117,7 +177,6 @@ func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectR
 			lower := strings.ToLower(cls)
 			for _, w := range eventWords {
 				if strings.Contains(lower, w) {
-					// Build a short selector
 					firstClass := strings.Fields(cls)[0]
 					sel := tag + "." + firstClass
 					if cardSeen[sel] {
@@ -144,47 +203,7 @@ func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectR
 		}
 	}
 
-	return result, nil
-}
-
-// FormatInspectResult formats an InspectResult as human-readable terminal output.
-func FormatInspectResult(r *InspectResult) string {
-	var b strings.Builder
-
-	fmt.Fprintf(&b, "URL:    %s\n", r.URL)
-	fmt.Fprintf(&b, "Status: %d\n", r.StatusCode)
-	fmt.Fprintf(&b, "Size:   %d bytes\n\n", r.BodyBytes)
-
-	b.WriteString("── Top CSS Classes ─────────────────────────────────────\n")
-	for i, c := range r.TopClasses {
-		fmt.Fprintf(&b, "  %-40s %d\n", c.Name, c.Count)
-		if i >= 19 {
-			break
-		}
-	}
-
-	if len(r.DataAttrs) > 0 {
-		b.WriteString("\n── data-* Attributes ────────────────────────────────────\n")
-		for _, c := range r.DataAttrs {
-			fmt.Fprintf(&b, "  %-40s %d\n", c.Name, c.Count)
-		}
-	}
-
-	if len(r.EventLinks) > 0 {
-		b.WriteString("\n── Event/Program hrefs (sample) ─────────────────────────\n")
-		for _, l := range r.EventLinks {
-			fmt.Fprintf(&b, "  %s\n", l)
-		}
-	}
-
-	if len(r.SampleCards) > 0 {
-		b.WriteString("\n── Candidate Event Containers ───────────────────────────\n")
-		for _, card := range r.SampleCards {
-			fmt.Fprintf(&b, "\n  selector: %s\n  html:     %s\n", card.Selector, card.HTML)
-		}
-	}
-
-	return b.String()
+	return result
 }
 
 // topN returns the N most frequent entries from a count map, sorted desc.

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-scraper`
 **Created**: 2026-02-20
-**Status**: Implemented (Phases 1–4 complete; metrics + Tier 2 pending)
+**Status**: Implemented (Tier 0–3, DB-backed configs, scheduling, metrics)
 **Input**: Need to populate the SEL with real event data from Toronto arts/culture websites for dogfooding and agent curation testing via SEL MCP.
 
 ## Context
@@ -20,7 +20,7 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
 ### Non-Goals (current)
 
 - Email/newsletter parsing (Tier 3 — future)
-- Tier 2 headless browser/JS rendering (Rod-based extractor; see bead srv-h264z)
+- Email/newsletter parsing (Tier 4 — future)
 - API-first ingestion outside `server scrape` workflows (e.g., bespoke REST harvesters)
 - Prometheus dashboards beyond scraper metrics (tracked separately)
 
@@ -40,6 +40,19 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
   /api/admin/scraper/config` powers the admin UI toggle, and `ScrapeSourceWorker`
   + `NewPeriodicJobsFromSources` enqueue River jobs automatically when schedules are
   set to `daily`/`weekly`. Delivered in srv-pfeud and deployed to staging.
+- **Tier 2 headless + Tier 3 GraphQL**: JS-rendered sources use Rod-based headless
+  scraping (`tier: 2` with a `headless` config block). GraphQL-backed sources use
+  API extraction (`tier: 3` with a `graphql` config block) with optional URL
+  templating for canonical event URLs. `server scrape capture` renders JS pages for
+  selector discovery.
+
+- **Public URL submission endpoint**: Rate-limited `POST /api/v1/scraper/submissions`
+  allows community members to suggest URLs for scraping without admin access. URLs are
+  validated asynchronously (HEAD + robots.txt) by a self-throttling River worker, then
+  held in an admin-reviewable queue. Admins download pending URLs and trigger scraping
+  manually via CLI. Per-IP rate limit (5/24h), 30-day dedup window, max 10 URLs per
+  request. Full spec in `specs/003-scraper/url-submissions-spec.md`.
+  Epic: srv-1cxmi.
 
 ## User Scenarios & Testing
 
@@ -71,6 +84,8 @@ An operator maintains a set of known event sources as YAML configuration files, 
 2. **Given** a valid source config, **When** the operator runs `server scrape source <name>`, **Then** the system scrapes that source using the configured tier and settings
 3. **Given** an invalid source config (missing required fields), **When** the system loads configs, **Then** it reports validation errors with the file path and field name
 4. **Given** a Tier 1 source config with CSS selectors, **When** scraping, **Then** the system uses Colly with the configured selectors to extract event data
+5. **Given** a Tier 2 source config with `headless` settings, **When** scraping, **Then** the system renders the page via Rod/Chromium and extracts events from the rendered DOM
+6. **Given** a Tier 3 source config with `graphql` settings, **When** scraping, **Then** the system queries the GraphQL endpoint and maps response records into events
 
 ---
 
@@ -113,6 +128,7 @@ Each scrape execution is recorded in the database for monitoring, debugging, and
 |---------|---------|-------|
 | `github.com/PuerkitoBio/goquery` | HTML parsing, JSON-LD extraction | jQuery-like CSS selectors |
 | `github.com/gocolly/colly/v2` | Web crawling framework | Rate limiting, robots.txt, caching |
+| `github.com/go-rod/rod` | Headless Chromium scraping | Tier 2 JS-rendered sources |
 
 ### Package Structure
 
@@ -121,13 +137,16 @@ internal/scraper/
   scraper.go           — Scraper service: orchestrates tiers, manages runs
   jsonld.go            — Tier 0: fetch URL, extract JSON-LD Event blocks
   colly.go             — Tier 1: Colly-based CSS selector extraction
+  rod.go               — Tier 2: Headless Chromium + CSS selector extraction
+  graphql.go           — Tier 3: GraphQL API extraction
   normalize.go         — Map schema.org JSON-LD variants → EventInput
   config.go            — Source config types, YAML loader, validation (DB or YAML)
   db_source.go         — Domain → scraper SourceConfig translation helpers
   ingest.go            — HTTP client for SEL batch ingest API
 
 cmd/server/cmd/
-  scrape.go            — CLI: server scrape {url,source,all,list,sync,export}
+  scrape_cmd.go         — CLI: server scrape {url,source,all,list,inspect,test, sync,export}
+  scrape_capture.go     — CLI: server scrape capture (headless render)
 
 configs/sources/
   _example.yaml        — Documented example source config
@@ -158,7 +177,7 @@ rate_limit_ms: 1000                    # Overrides global rate limiting when set
 headers:
   User-Agent: "Mozilla/5.0..."         # Optional per-source headers
 
-# Tier 1 selectors (required when tier=1)
+# Tier 1 selectors (required when tier=1 or tier=2)
 selectors:
   event_list: "div.event-card"         # Container for each event
   name: "h2.event-title"
@@ -169,13 +188,32 @@ selectors:
   url: "a.event-link"                  # Link to detail page
   image: "img.event-image"
   pagination: "a.next-page"
+
+# Tier 2 headless options (required when tier=2)
+headless:
+  wait_selector: "div.event-card"       # Wait for selector before extract
+  wait_timeout_ms: 15000                # Navigation timeout
+  pagination_button: "button.next"      # Optional JS pagination click
+  rate_limit_ms: 1000                   # Delay between pages
+  headers:
+    Accept-Language: "en-CA"
+
+# Tier 3 GraphQL options (required when tier=3)
+graphql:
+  endpoint: "https://graphql.example.com/"
+  query: |
+    query AllEvents { events { title startDate } }
+  event_field: "events"
+  token: "public-token"
+  url_template: "https://example.com/events/{{.slug}}"
+  timeout_ms: 30000
 ```
 
-Tier assignments now map to both YAML configs and `scraper_sources.tier`. Tier 2 is reserved for Rod/headless support (srv-h264z) and is not yet implemented.
+Tier assignments map to both YAML configs and `scraper_sources.tier`: Tier 0 (JSON-LD), Tier 1 (CSS selectors), Tier 2 (headless Chromium), Tier 3 (GraphQL API).
 
 ### Database Schema
 
-#### `scraper_sources` (planned — srv-65kvw)
+#### `scraper_sources` (implemented)
 
 ```sql
 CREATE TABLE scraper_sources (
@@ -190,6 +228,12 @@ CREATE TABLE scraper_sources (
   enabled         BOOL NOT NULL DEFAULT true,
   max_pages       INT NOT NULL DEFAULT 10,
   selectors       JSONB,           -- null for tier 0
+  headless_wait_selector   TEXT,
+  headless_wait_timeout_ms INT NOT NULL DEFAULT 0,
+  headless_pagination_btn  TEXT,
+  headless_headers         JSONB,
+  headless_rate_limit_ms   INT NOT NULL DEFAULT 0,
+  graphql_config JSONB,    -- null for non-GraphQL sources
   notes           TEXT,            -- curator freetext, exposed in API
   last_scraped_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -258,6 +302,18 @@ The scraper submits events via the existing HTTP batch ingest API (`POST /api/v1
    - Follow detail page links if URL selector is configured
 4. Follow pagination links if configured
 5. Normalize extracted data to `EventInput` and submit
+
+**Tier 2 — Headless Browser Scraping** (requires per-site config):
+1. Launch Rod-controlled Chromium with rate limiting
+2. Navigate to source URL and wait for `headless.wait_selector`
+3. Extract rendered DOM using CSS selectors
+4. Normalize extracted data to `EventInput` and submit
+
+**Tier 3 — GraphQL API Scraping** (requires per-site config):
+1. POST GraphQL query to `graphql.endpoint`
+2. Map response records to `RawEvent` fields
+3. Render optional `graphql.url_template` for canonical URLs
+4. Normalize extracted data to `EventInput` and submit
 
 ### User-Agent and Identification
 

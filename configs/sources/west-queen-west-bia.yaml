@@ -1,11 +1,19 @@
 name: "west-queen-west-bia"
 # West Queen West BIA (Toronto). Divi Builder WP site with EventON AJAX calendar.
-# The happenings page injects an EventON calendar via shortcode — all events are
-# AJAX-loaded. Disabled until Tier 2 (Rod) implemented (srv-h264z).
+# EventON injects events via AJAX. Headless browser waits for events to render
+# before extracting CSS selectors from the loaded DOM.
 url: "https://westqueenwest.ca/happenings/?event_category=upcoming"
 tier: 2
 schedule: "weekly"
 trust_level: 5
 license: "CC0-1.0"
-enabled: false
-notes: "EventON AJAX calendar plugin. Events injected via shortcode, not server-rendered. Tier 2 required."
+enabled: true
+max_pages: 1
+headless:
+  wait_selector: "#evcal_list:has(> div:not(.evo_loading_bar_holder))"
+  wait_timeout_ms: 25000
+selectors:
+  event_list: ".eventon_list_event"
+  name: ".evoet_cx span.evcal_event_title"
+  start_date: ".evoet_cx span.evcal_desc2"
+  url: ".evcal_list_a a"

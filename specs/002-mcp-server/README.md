@@ -127,7 +127,7 @@ git checkout main  # or another feature branch
 
 **Key Points:**
 - Each terminal/OpenCode instance tracks its own beads independently
-- Use `bd sync` regularly to push bead state to git
+- Use `bd dolt push` regularly to push bead state to git
 - The 002-mcp-server branch is additive, so merge conflicts are minimal
 - Beads are tracked per-branch via git commit metadata
 
@@ -148,26 +148,26 @@ All MCP work is tracked in beads. View MCP-related beads:
 
 ```bash
 # List all MCP beads
-bd list --status open | grep -i mcp
+bd query 'title~"mcp" AND status=open'
 
 # Show bead details
 bd show server-66za
 
 # Check what's ready to work
-bd ready | grep -i mcp
+bd ready
 
 # Work on a bead
 bd update server-66za --status in_progress
 # ... do work ...
 bd close server-66za --reason "Added mcp-go dependency and verified compatibility"
-bd sync
+bd dolt push
 ```
 
 ## Dependencies
 
 ### Beads Summary
 
-All MCP beads have been completed. See `bd list --status closed | grep -i mcp` for full history.
+All MCP beads have been completed. See `bd query 'title~"mcp" AND status=closed'` for full history.
 
 ## Testing Strategy
 

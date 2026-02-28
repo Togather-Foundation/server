@@ -116,6 +116,15 @@ func TestSaveState(t *testing.T) {
 		t.Error("SaveState() did not create file")
 	}
 
+	// Verify file permissions are exactly 0644
+	fi, err := os.Stat(tmpFile)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0644 {
+		t.Errorf("saved file permissions: got %04o, want 0644", got)
+	}
+
 	// Verify content
 	data, err := os.ReadFile(tmpFile)
 	if err != nil {

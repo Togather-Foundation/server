@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,25 @@ import (
 // ----------------------------------------------------------------------------
 // Fakes / stubs
 // ----------------------------------------------------------------------------
+
+// lockedBuffer is a thread-safe bytes.Buffer for use in tests where a
+// goroutine writes log output concurrently with the test goroutine reading it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // fakeScraperQueries is a test double for the postgres.Queries subset used by
 // AdminScraperHandler. Only the methods exercised in this file are implemented.
@@ -424,7 +444,7 @@ func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
 		t.Parallel()
 
 		fake := newFakeScraper(errStubNotImplemented)
-		var logBuf bytes.Buffer
+		var logBuf lockedBuffer
 		q := &fakeScraperQueries{}
 		h := &AdminScraperHandler{
 			Queries: q,
@@ -452,7 +472,7 @@ func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
 		// done is closed). Yield briefly to let the log write complete.
 		deadline := time.Now().Add(500 * time.Millisecond)
 		for time.Now().Before(deadline) {
-			if logBuf.Len() > 0 {
+			if logBuf.String() != "" {
 				break
 			}
 			time.Sleep(5 * time.Millisecond)

@@ -153,6 +153,7 @@ func NewClient(pool *pgxpool.Pool, workers *river.Workers, logger *slog.Logger, 
 // - Review queue cleanup: daily at 4 AM UTC
 // - Usage rollup: daily at 5 AM UTC
 // - Geocoding cache cleanup: daily at 6 AM UTC
+// - Submission validation scheduler: every 5 minutes
 func NewPeriodicJobs() []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		// Idempotency key cleanup - daily at 2 AM UTC
@@ -192,6 +193,22 @@ func NewPeriodicJobs() []*river.PeriodicJob {
 			river.PeriodicInterval(24*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) {
 				return CleanupGeocodingCacheArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		// Submissions cleanup - daily (90-day retention for accepted/rejected rows) (srv-3sac0)
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return SubmissionsCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		// Submission validation scheduler - every 5 minutes (srv-m9bja)
+		river.NewPeriodicJob(
+			river.PeriodicInterval(validateSchedulerInterval),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return ValidateSubmissionsSchedulerArgs{}, nil
 			},
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),

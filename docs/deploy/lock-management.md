@@ -188,6 +188,13 @@ cd /opt/togather/src
 - Locks >30 minutes are auto-removed
 - Next deployment attempt cleans them up
 
+**Migration lock stale detection:** `run_migrations()` writes a `locked_at` Unix
+timestamp file inside `/tmp/togather-migration-{env}.lock/` when the lock is
+acquired. If a subsequent deploy finds the lock directory, it reads the timestamp
+and auto-removes locks older than `LOCK_TIMEOUT` (30 minutes), matching the
+deployment lock behaviour. Locks with an unreadable/corrupt timestamp require
+manual removal.
+
 ### 4. Process Validation
 - Checks if deployment PID is still running
 - Warns if process crashed
@@ -196,7 +203,29 @@ cd /opt/togather/src
 - Script installs cleanup traps
 - Releases lock on exit (normal or error)
 
+### 6. Atomic State File Writes
+State is written via a temp-file → fsync → rename sequence (`os.CreateTemp` +
+`Sync` + `Rename`). Readers never observe a partially written file even under
+concurrent access. A failed write leaves the previous state intact. The temp
+file is created in the same directory as the target to guarantee a same-filesystem
+(POSIX atomic) rename.
+
 ## Troubleshooting
+
+### Migration Lock: Stale Detection
+
+Migration locks are automatically removed if stale (>30 min). The `locked_at`
+file inside the lock directory is used for age detection. If the timestamp file
+is missing or corrupt, the lock is treated as permanently stale and requires
+manual removal:
+
+```bash
+# Check migration lock age
+cat /tmp/togather-migration-staging.lock/locked_at
+
+# Manual removal (only if confirmed no migration is running)
+rm -rf /tmp/togather-migration-staging.lock
+```
 
 ### Lock Directory Won't Delete
 
@@ -246,4 +275,4 @@ ssh deploy@server "cd /opt/togather/src && ./deploy/scripts/unlock.sh staging --
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-02-28

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
@@ -32,27 +33,31 @@ type usageDelta struct {
 // UsageRecorder buffers API key usage metrics in memory and periodically flushes them to the database.
 // It's safe for concurrent use.
 type UsageRecorder struct {
-	mu       sync.Mutex
-	counts   map[uuid.UUID]*usageDelta
-	repo     UsageRepository
-	ticker   *time.Ticker
-	done     chan struct{}
-	wg       sync.WaitGroup
-	maxSize  int
-	logger   zerolog.Logger
-	shutdown sync.Once
-	started  bool
+	mu           sync.Mutex
+	counts       map[uuid.UUID]*usageDelta
+	repo         UsageRepository
+	ticker       *time.Ticker
+	done         chan struct{}
+	wg           sync.WaitGroup
+	maxSize      int
+	flushTimeout time.Duration
+	logger       zerolog.Logger
+	shutdown     sync.Once
+	started      bool
 }
 
 // NewUsageRecorder creates a new UsageRecorder instance.
 // Call Start() to begin the background flush goroutine.
-func NewUsageRecorder(repo UsageRepository, logger zerolog.Logger) *UsageRecorder {
+func NewUsageRecorder(repo UsageRepository, logger zerolog.Logger, cfg config.DeveloperConfig) *UsageRecorder {
+	cfg = cfg.WithDefaults()
+	flushTimeout := time.Duration(cfg.UsageFlushTimeoutSeconds) * time.Second
 	return &UsageRecorder{
-		counts:  make(map[uuid.UUID]*usageDelta),
-		repo:    repo,
-		maxSize: MaxBufferSize,
-		done:    make(chan struct{}),
-		logger:  logger.With().Str("component", "usage_recorder").Logger(),
+		counts:       make(map[uuid.UUID]*usageDelta),
+		repo:         repo,
+		maxSize:      MaxBufferSize,
+		flushTimeout: flushTimeout,
+		done:         make(chan struct{}),
+		logger:       logger.With().Str("component", "usage_recorder").Logger(),
 	}
 }
 
@@ -141,7 +146,7 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[uuid.UUID]*usageDelta) {
 	}
 
 	// Use background context since the original request context is gone
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), r.flushTimeout)
 	defer cancel()
 
 	now := time.Now()

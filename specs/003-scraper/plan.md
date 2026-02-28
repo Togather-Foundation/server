@@ -1,7 +1,7 @@
 # Implementation Plan: Integrated Event Scraper
 
 **Branch**: `003-scraper` | **Date**: 2026-02-21 | **Spec**: [spec.md](./spec.md)
-**Status**: Phases 1–4 delivered (Tier 0/1, DB-backed configs, scheduling, admin UI). Code review fixes **COMPLETE** — all 13 review beads closed across 3 waves (Wave 1: srv-43rad, srv-i0lhn, srv-e3sk8, srv-kezsj; Wave 2: srv-v5a2n, srv-14cib, srv-9nwr7, srv-ewuhx, srv-0z4fu, srv-ooakk; Wave 3: srv-r1x5p, srv-0b33l, srv-dnq72). Remaining work tracked via beads (`srv-h264z`, `srv-sf4vs`).
+**Status**: Phases 1–4 delivered (Tier 0–3, DB-backed configs, scheduling, admin UI, metrics). Code review fixes **COMPLETE** — all 13 review beads closed across 3 waves (Wave 1: srv-43rad, srv-i0lhn, srv-e3sk8, srv-kezsj; Wave 2: srv-v5a2n, srv-14cib, srv-9nwr7, srv-ewuhx, srv-0z4fu, srv-ooakk; Wave 3: srv-r1x5p, srv-0b33l, srv-dnq72). Remaining work tracked via beads (`srv-h264z` for Tier 2 future enhancements, `srv-sf4vs` closed for metrics).
 **Input**: Feature specification from `/specs/003-scraper/spec.md`
 
 ## Summary
@@ -25,8 +25,7 @@ Add an integrated event scraper to the SEL server that extracts events from Toro
 - zerolog for structured logging
 
 **Not Used (Yet)**:
-- River job queue (Phase 3 — scheduling)
-- Rod/Chromedp (Tier 2 — JS-heavy sites, future)
+- Rod/Chromedp beyond existing Tier 2 headless selector support (future enhancements)
 
 ## Architecture
 
@@ -163,7 +162,13 @@ The normalizer must handle all of these gracefully.
 1. River job worker for periodic scraping — `srv-pfeud`
 2. Config-driven schedules (daily, weekly) with `scraper_config` tunables
 3. Admin UI page for scrape status — `srv-5127b`
-4. Prometheus metrics for scraper runs — **pending** (`srv-sf4vs`)
+4. Prometheus metrics for scraper runs — ✅ complete (`srv-sf4vs`)
+
+### Phase 5: Tier 2 Headless + Tier 3 GraphQL ✅ COMPLETE
+
+1. Rod-based headless extractor with `headless` config block and CLI capture (`srv-h264z` follow-on work remains for advanced features)
+2. GraphQL API extractor with `graphql` config block and URL templating
+3. DB migrations for headless + GraphQL config (`000035`, `000036`)
 
 ### Phase 5: Agent Feedback + Quality (Future)
 
@@ -219,6 +224,12 @@ The normalizer must handle all of these gracefully.
 
 - SQLc field names differ slightly from spec: `SourceUrl` (not `SourceURL`), `EventsNew` (not `EventsCreated`), `EventsDup` (not `EventsDuplicate`). Column semantics are correct.
 - Batch ingest response is async (202 Accepted); event created/dup counts come from the async status result, not the initial submit response. `IngestResult` handles both shapes.
+
+### Additional Deliverables (post-spec additions)
+
+- Tier 2 headless scraping via Rod (`internal/scraper/rod.go`) and `server scrape capture`
+- Tier 3 GraphQL scraping via `internal/scraper/graphql.go`
+- Multi-URL support with `urls` in source configs
 
 ### Follow-up Beads Filed
 

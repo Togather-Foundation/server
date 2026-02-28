@@ -46,6 +46,18 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		Selectors:     params.Selectors,
 		Notes:         pgtype.Text{String: params.Notes, Valid: params.Notes != ""},
 		LastScrapedAt: lastScraped,
+		HeadlessWaitSelector: pgtype.Text{
+			String: params.HeadlessWaitSelector,
+			Valid:  params.HeadlessWaitSelector != "",
+		},
+		HeadlessWaitTimeoutMs: int32(params.HeadlessWaitTimeoutMs),
+		HeadlessPaginationBtn: pgtype.Text{
+			String: params.HeadlessPaginationBtn,
+			Valid:  params.HeadlessPaginationBtn != "",
+		},
+		HeadlessHeaders:     params.HeadlessHeaders,
+		HeadlessRateLimitMs: int32(params.HeadlessRateLimitMs),
+		GraphqlConfig:       params.GraphQLConfig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
@@ -210,6 +222,12 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		Selectors:  row.Selectors,
 		CreatedAt:  row.CreatedAt.Time,
 		UpdatedAt:  row.UpdatedAt.Time,
+		// Headless fields
+		HeadlessWaitTimeoutMs: int(row.HeadlessWaitTimeoutMs),
+		HeadlessHeaders:       row.HeadlessHeaders,
+		HeadlessRateLimitMs:   int(row.HeadlessRateLimitMs),
+		// GraphQL fields (Tier 3)
+		GraphQLConfig: row.GraphqlConfig,
 	}
 	if row.Notes.Valid {
 		s.Notes = row.Notes.String
@@ -217,6 +235,12 @@ func rowToSource(row ScraperSource) *scraper.Source {
 	if row.LastScrapedAt.Valid {
 		t := row.LastScrapedAt.Time
 		s.LastScrapedAt = &t
+	}
+	if row.HeadlessWaitSelector.Valid {
+		s.HeadlessWaitSelector = row.HeadlessWaitSelector.String
+	}
+	if row.HeadlessPaginationBtn.Valid {
+		s.HeadlessPaginationBtn = row.HeadlessPaginationBtn.String
 	}
 	return s
 }

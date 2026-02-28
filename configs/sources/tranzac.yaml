@@ -1,10 +1,28 @@
 name: "tranzac"
-# Tranzac Club (Toronto). Nuxt.js + DatoCMS SPA — full event calendar is JS-rendered.
-# 698KB page with Nuxt/Stripe deps. Disabled until Tier 2 (Rod) implemented (srv-h264z).
+# Tranzac Club (Toronto). Nuxt.js + DatoCMS SPA.
+# Tier 3 (GraphQL): queries DatoCMS directly for structured event data with ISO dates.
+# Public read-only token embedded in page JS.
 url: "https://tranzac.org/calendar"
-tier: 2
+tier: 3
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
-notes: "Nuxt.js SPA backed by DatoCMS. Calendar content is JS-rendered. Tier 2 required."
+enabled: true
+graphql:
+  endpoint: "https://graphql.datocms.com/"
+  token: "553eb2d73268311308d1647a8ff60b"
+  query: |
+    {
+      allEvents {
+        title
+        startDate
+        endDate
+        slug
+        description
+        photo { url }
+        rooms { name }
+      }
+    }
+  event_field: "allEvents"
+  timeout_ms: 30000
+  url_template: "https://tranzac.org/events/{{.slug}}"

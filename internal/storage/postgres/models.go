@@ -5,6 +5,8 @@
 package postgres
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -474,20 +476,38 @@ type ScraperRun struct {
 }
 
 type ScraperSource struct {
-	ID            int64              `json:"id"`
-	Name          string             `json:"name"`
-	Url           string             `json:"url"`
-	Tier          int32              `json:"tier"`
-	Schedule      string             `json:"schedule"`
-	TrustLevel    int32              `json:"trust_level"`
-	License       string             `json:"license"`
-	Enabled       bool               `json:"enabled"`
-	MaxPages      int32              `json:"max_pages"`
-	Selectors     []byte             `json:"selectors"`
-	Notes         pgtype.Text        `json:"notes"`
-	LastScrapedAt pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID                    int64              `json:"id"`
+	Name                  string             `json:"name"`
+	Url                   string             `json:"url"`
+	Tier                  int32              `json:"tier"`
+	Schedule              string             `json:"schedule"`
+	TrustLevel            int32              `json:"trust_level"`
+	License               string             `json:"license"`
+	Enabled               bool               `json:"enabled"`
+	MaxPages              int32              `json:"max_pages"`
+	Selectors             []byte             `json:"selectors"`
+	Notes                 pgtype.Text        `json:"notes"`
+	LastScrapedAt         pgtype.Timestamptz `json:"last_scraped_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	HeadlessWaitSelector  pgtype.Text        `json:"headless_wait_selector"`
+	HeadlessWaitTimeoutMs int32              `json:"headless_wait_timeout_ms"`
+	HeadlessPaginationBtn pgtype.Text        `json:"headless_pagination_btn"`
+	HeadlessHeaders       []byte             `json:"headless_headers"`
+	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
+	GraphqlConfig         []byte             `json:"graphql_config"`
+}
+
+type ScraperSubmission struct {
+	ID              int64              `json:"id"`
+	Url             string             `json:"url"`
+	UrlNorm         string             `json:"url_norm"`
+	SubmittedAt     pgtype.Timestamptz `json:"submitted_at"`
+	SubmitterIp     netip.Addr         `json:"submitter_ip"`
+	Status          string             `json:"status"`
+	RejectionReason pgtype.Text        `json:"rejection_reason"`
+	Notes           pgtype.Text        `json:"notes"`
+	ValidatedAt     pgtype.Timestamptz `json:"validated_at"`
 }
 
 type Source struct {

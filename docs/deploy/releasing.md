@@ -276,11 +276,11 @@ NODE_DOMAIN=$(grep '^NODE_DOMAIN=' .deploy.conf.production | cut -d= -f2)
 curl "https://${NODE_DOMAIN}/version" | jq .
 
 # Close any release-related beads
-bd list --status=open --json | jq -r '.[] | "\(.id) \(.title)"'
+bd query 'status=open'
 # bd close <id> --reason "Released in vX.Y.Z"
 
 # Sync beads
-bd sync
+bd dolt push
 
 # Push any final state changes
 git push

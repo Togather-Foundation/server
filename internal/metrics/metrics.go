@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -158,13 +160,19 @@ var GeocodingFailuresTotal = promauto.With(Registry).NewCounterVec(
 	[]string{"type", "reason"}, // type: forward|reverse, reason: timeout|rate_limit|not_found|error
 )
 
-// Init initializes the metrics registry and sets version information
-func Init(version, commit, buildDate, activeSlot string) {
-	// Register default Go metrics (memory, goroutines, GC, etc.)
-	Registry.MustRegister(collectors.NewGoCollector())
+// Init initializes the metrics registry and sets version information.
+// It is idempotent: the Go and process collectors are registered only once
+// even if Init is called multiple times (e.g. in tests with -count=N).
+var initOnce sync.Once
 
-	// Register process metrics (CPU, memory, file descriptors)
-	Registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+func Init(version, commit, buildDate, activeSlot string) {
+	initOnce.Do(func() {
+		// Register default Go metrics (memory, goroutines, GC, etc.)
+		Registry.MustRegister(collectors.NewGoCollector())
+
+		// Register process metrics (CPU, memory, file descriptors)
+		Registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	})
 
 	// Set application version info (value is always 1, info is in labels)
 	// activeSlot will be "true" for the active slot, "false" for inactive, or "unknown" if not set

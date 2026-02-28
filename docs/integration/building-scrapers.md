@@ -220,11 +220,15 @@ def scrape_and_submit(source_url):
 
 ## Batch Submission
 
-Batch submission is not available. Submit events individually and rely on idempotency keys plus duplicate detection.
+The SEL server provides a batch ingest endpoint (`POST /api/v1/events:batch`) that
+accepts multiple events in a single request. Use batch submission when scraping
+multiple events per source to reduce HTTP overhead.
 
 ### Batch Size Recommendations
 
-Batch sizing guidance is omitted until batch submission is available.
+- Default batch sizes of 50–100 events are reasonable for most sources.
+- Use smaller batches for sources with large payloads (long descriptions/images).
+- Respect `429` responses and retry with backoff as needed.
 
 ---
 

@@ -7,9 +7,56 @@
     
     function init() {
         loadDashboardStats();
+        loadSubmissionsPending();
         checkMonitoringServices();
+        setupSubmissionsButtons();
     }
     
+    async function loadSubmissionsPending() {
+        try {
+            // Fetch both pending statuses in parallel
+            const [pv, p] = await Promise.all([
+                API.scraper.listSubmissions({ status: 'pending_validation', limit: 1 }),
+                API.scraper.listSubmissions({ status: 'pending', limit: 1 }),
+            ]);
+            const total = (pv.total || 0) + (p.total || 0);
+            const el = document.getElementById('submissions-pending-count');
+            if (el) el.textContent = total;
+        } catch (e) {
+            const el = document.getElementById('submissions-pending-count');
+            if (el) el.textContent = '—';
+        }
+    }
+
+    function setupSubmissionsButtons() {
+        // Copy URL button — points to actionable (pending) submissions only
+        document.getElementById('submissions-copy-url-btn')?.addEventListener('click', () => {
+            const url = window.location.origin + '/api/v1/admin/scraper/submissions?status=pending';
+            copyToClipboard(url);
+        });
+
+        // Copy JSON button — fetch pending_validation + pending in parallel, merge results
+        document.getElementById('submissions-copy-json-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('submissions-copy-json-btn');
+            setLoading(btn, true);
+            try {
+                const [pv, p] = await Promise.all([
+                    API.scraper.listSubmissions({ status: 'pending_validation', limit: 200 }),
+                    API.scraper.listSubmissions({ status: 'pending', limit: 200 }),
+                ]);
+                const merged = {
+                    submissions: [...(pv.submissions || []), ...(p.submissions || [])],
+                    total: (pv.total || 0) + (p.total || 0),
+                };
+                copyToClipboard(JSON.stringify(merged, null, 2));
+            } catch (e) {
+                showToast('Failed to fetch submissions', 'error');
+            } finally {
+                setLoading(btn, false);
+            }
+        });
+    }
+
     async function loadDashboardStats() {
         try {
             // Fetch stats from efficient COUNT endpoint (server-m11c)

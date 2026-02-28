@@ -1,12 +1,14 @@
 package scraper
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,19 +89,70 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: "url: must be a valid http/https URL",
 		},
 		{
-			name:    "valid tier 2",
-			cfg:     func() SourceConfig { c := validTier0; c.Tier = 2; return c }(),
+			name: "valid tier 2",
+			cfg: func() SourceConfig {
+				c := validTier0
+				c.Tier = 2
+				c.Headless.WaitSelector = "body"
+				c.Selectors.EventList = ".event-card"
+				return c
+			}(),
 			wantErr: "",
+		},
+		{
+			name: "valid tier 2 with wait_selector but no event_list — should fail (srv-wgb5p)",
+			cfg: SourceConfig{
+				Name:       "Headless Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Headless: HeadlessConfig{
+					WaitSelector: ".events",
+				},
+			},
+			wantErr: "selectors.event_list: required for tier 2",
+		},
+		{
+			name: "valid tier 2 with selectors.event_list",
+			cfg: SourceConfig{
+				Name:       "Headless Selector Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".events",
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "invalid tier 2 missing event_list",
+			cfg: SourceConfig{
+				Name:       "Bad Headless Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+			},
+			wantErr: "selectors.event_list: required for tier 2",
 		},
 		{
 			name:    "invalid tier negative",
 			cfg:     func() SourceConfig { c := validTier0; c.Tier = -1; return c }(),
-			wantErr: "tier: must be 0, 1, or 2",
+			wantErr: "tier: must be 0, 1, 2, or 3",
 		},
 		{
-			name:    "invalid tier 3",
-			cfg:     func() SourceConfig { c := validTier0; c.Tier = 3; return c }(),
-			wantErr: "tier: must be 0, 1, or 2",
+			name:    "invalid tier 4",
+			cfg:     func() SourceConfig { c := validTier0; c.Tier = 4; return c }(),
+			wantErr: "tier: must be 0, 1, 2, or 3",
 		},
 		{
 			name:    "invalid trust_level 11",
@@ -133,6 +186,178 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "zero max_pages is allowed (default applied before validation)",
 			cfg:  func() SourceConfig { c := validTier0; c.MaxPages = 0; return c }(),
+		},
+		// Multi-URL (srv-71948)
+		{
+			name: "valid with urls only (no url field)",
+			cfg: SourceConfig{
+				Name:       "Multi URL Source",
+				URLs:       []string{"https://example.com/events", "https://example.com/workshops"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+		},
+		{
+			name: "valid with both url and urls",
+			cfg: SourceConfig{
+				Name:       "Both Fields Source",
+				URL:        "https://example.com/events",
+				URLs:       []string{"https://example.com/workshops"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+		},
+		{
+			name:    "neither url nor urls",
+			cfg:     func() SourceConfig { c := validTier0; c.URL = ""; return c }(),
+			wantErr: "url: required",
+		},
+		{
+			name: "invalid url in urls slice",
+			cfg: SourceConfig{
+				Name:       "Bad URLs Source",
+				URLs:       []string{"https://example.com/events", "not-a-url"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "urls[1]:",
+		},
+		// srv-wrjl4: when urls is set, the url field validation is skipped so
+		// an invalid url alone should not block an otherwise valid config.
+		// srv-d5b70: no warning is asserted here because the warning about this
+		// url-skip behaviour lives in the ValidateConfig godoc (not in its return
+		// value) — adding a []string warnings return would be a breaking API change.
+		{
+			name: "url invalid but urls is set — url field skipped",
+			cfg: SourceConfig{
+				Name:       "Skip URL Validation",
+				URL:        "not-a-url",
+				URLs:       []string{"https://example.com/events"},
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "",
+		},
+		// Tier 3 / GraphQL (srv-wz0h7)
+		{
+			name: "valid tier 3 with graphql config",
+			cfg: SourceConfig{
+				Name:       "GraphQL Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://graphql.example.com/",
+					Query:      "{ allEvents { title startDate } }",
+					EventField: "allEvents",
+				},
+			},
+		},
+		{
+			name: "tier 3 missing graphql block",
+			cfg: SourceConfig{
+				Name:       "No GraphQL Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "tier 3 requires a graphql config block",
+		},
+		{
+			name: "tier 3 graphql missing endpoint",
+			cfg: SourceConfig{
+				Name:       "No Endpoint Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Query:      "{ allEvents { title } }",
+					EventField: "allEvents",
+				},
+			},
+			wantErr: "graphql.endpoint: required",
+		},
+		{
+			name: "tier 3 graphql missing query",
+			cfg: SourceConfig{
+				Name:       "No Query Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://graphql.example.com/",
+					EventField: "allEvents",
+				},
+			},
+			wantErr: "graphql.query: required",
+		},
+		{
+			name: "tier 3 graphql missing event_field",
+			cfg: SourceConfig{
+				Name:       "No EventField Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint: "https://graphql.example.com/",
+					Query:    "{ allEvents { title } }",
+				},
+			},
+			wantErr: "graphql.event_field: required",
+		},
+		{
+			name: "tier 3 graphql invalid url_template",
+			cfg: SourceConfig{
+				Name:       "Bad Template Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:    "https://graphql.example.com/",
+					Query:       "{ allEvents { title } }",
+					EventField:  "allEvents",
+					URLTemplate: "https://example.com/events/{{.slug", // unclosed action
+				},
+			},
+			wantErr: "graphql.url_template: invalid Go template",
+		},
+		{
+			name: "tier 3 graphql valid url_template",
+			cfg: SourceConfig{
+				Name:       "Good Template Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:    "https://graphql.example.com/",
+					Query:       "{ allEvents { title } }",
+					EventField:  "allEvents",
+					URLTemplate: "https://example.com/events/{{.slug}}",
+				},
+			},
+			wantErr: "",
 		},
 	}
 
@@ -564,4 +789,271 @@ func TestParseMultiSessionThreshold(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// --------------------------------------------------------------------------
+// SourceConfigFromDomain — JSON round-trip (srv-r7nov)
+// --------------------------------------------------------------------------
+
+// TestSourceConfigFromDomain_JSONRoundTrip verifies that SelectorConfig
+// marshals to snake_case JSON keys and that SourceConfigFromDomain correctly
+// reconstructs it from a domain.Source whose Selectors field contains the
+// snake_case JSONB payload written by the DB.
+//
+// This is a regression test for the silent failure fixed in srv-2db1q: without
+// json: struct tags, json.Marshal produced PascalCase keys ("EventList"), but
+// the DB stored snake_case keys ("event_list"), so Unmarshal silently produced
+// a zero-valued SelectorConfig on every read.
+func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		selectors SelectorConfig
+	}{
+		{
+			name: "all fields populated",
+			selectors: SelectorConfig{
+				EventList:   "div.event-card",
+				Name:        "h2.title",
+				StartDate:   "time[datetime]",
+				EndDate:     "time.end",
+				Location:    "span.venue",
+				Description: "p.summary",
+				URL:         "a.event-link",
+				Image:       "img.thumb",
+				Pagination:  "a.next-page",
+			},
+		},
+		{
+			name: "partial fields (Tier 2 typical)",
+			selectors: SelectorConfig{
+				EventList: ".eventon_list_event",
+				Name:      ".evcal_event_title",
+				StartDate: ".evcal_desc2",
+				URL:       ".evcal_list_a a",
+			},
+		},
+		{
+			name:      "empty (Tier 0 — no selectors)",
+			selectors: SelectorConfig{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Marshal the SelectorConfig to JSON (simulates what scrape_sync writes to DB).
+			raw, err := json.Marshal(tt.selectors)
+			require.NoError(t, err)
+
+			// Verify keys are snake_case, not PascalCase.
+			if tt.selectors.EventList != "" {
+				assert.Contains(t, string(raw), `"event_list"`,
+					"json.Marshal must produce snake_case key event_list")
+				assert.NotContains(t, string(raw), `"EventList"`,
+					"json.Marshal must not produce PascalCase key EventList")
+			}
+			if tt.selectors.StartDate != "" {
+				assert.Contains(t, string(raw), `"start_date"`)
+				assert.NotContains(t, string(raw), `"StartDate"`)
+			}
+
+			// Build a domain Source with the marshalled JSONB payload (simulates a DB read).
+			src := domainScraper.Source{
+				Name:       "test-source",
+				URL:        "https://example.com/events",
+				Tier:       1,
+				TrustLevel: 5,
+				License:    "CC0-1.0",
+				Enabled:    true,
+				MaxPages:   10,
+				Schedule:   "weekly",
+				Selectors:  raw,
+			}
+
+			// SourceConfigFromDomain must reconstruct the original SelectorConfig.
+			cfg, err := SourceConfigFromDomain(src)
+			require.NoError(t, err)
+			assert.Equal(t, tt.selectors, cfg.Selectors,
+				"SourceConfigFromDomain must round-trip SelectorConfig through JSON")
+		})
+	}
+}
+
+// TestSourceConfigFromDomain_EmptySelectors verifies that a nil/empty Selectors
+// field (Tier 0 source) produces a zero SelectorConfig without error.
+func TestSourceConfigFromDomain_EmptySelectors(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:      "tier0-source",
+		URL:       "https://example.com/events",
+		Tier:      0,
+		Selectors: nil,
+	}
+
+	cfg, err := SourceConfigFromDomain(src)
+	require.NoError(t, err)
+	assert.Equal(t, SelectorConfig{}, cfg.Selectors)
+}
+
+// TestSourceConfigFromDomain_InvalidJSON verifies that malformed JSONB in the
+// Selectors field returns a wrapped error rather than silently zero-initialising.
+func TestSourceConfigFromDomain_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:      "bad-source",
+		URL:       "https://example.com/events",
+		Tier:      1,
+		Selectors: []byte(`{not valid json`),
+	}
+
+	_, err := SourceConfigFromDomain(src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bad-source")
+}
+
+// TestSourceConfigFromDomain_GraphQLRoundTrip verifies that a Tier 3 GraphQL
+// config is correctly JSON-encoded on sync (sourceConfigToUpsertParams path) and
+// decoded back by SourceConfigFromDomain (load path), preserving all fields.
+func TestSourceConfigFromDomain_GraphQLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := &GraphQLConfig{
+		Endpoint:    "https://graphql.datocms.com/",
+		Token:       "abc123token",
+		Query:       "{ allEvents { title slug } }",
+		EventField:  "allEvents",
+		TimeoutMs:   30000,
+		URLTemplate: "https://example.com/events/{{.slug}}",
+	}
+
+	// Simulate what sourceConfigToUpsertParams does: JSON-encode for DB.
+	rawJSON, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	src := domainScraper.Source{
+		Name:          "graphql-test",
+		URL:           "https://example.com/calendar",
+		Tier:          3,
+		TrustLevel:    7,
+		License:       "CC0-1.0",
+		Enabled:       true,
+		MaxPages:      10,
+		Schedule:      "daily",
+		GraphQLConfig: rawJSON,
+	}
+
+	cfg, err := SourceConfigFromDomain(src)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.GraphQL, "GraphQL config must be non-nil for Tier 3 source")
+	assert.Equal(t, original.Endpoint, cfg.GraphQL.Endpoint)
+	assert.Equal(t, original.Token, cfg.GraphQL.Token)
+	assert.Equal(t, original.Query, cfg.GraphQL.Query)
+	assert.Equal(t, original.EventField, cfg.GraphQL.EventField)
+	assert.Equal(t, original.TimeoutMs, cfg.GraphQL.TimeoutMs)
+	assert.Equal(t, original.URLTemplate, cfg.GraphQL.URLTemplate)
+}
+
+// TestSourceConfigFromDomain_GraphQLNilForTier0 verifies that a Tier 0 source
+// with no graphql_config produces a nil GraphQL field (no panic or error).
+func TestSourceConfigFromDomain_GraphQLNilForTier0(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:          "tier0-source",
+		URL:           "https://example.com/events",
+		Tier:          0,
+		GraphQLConfig: nil,
+	}
+
+	cfg, err := SourceConfigFromDomain(src)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.GraphQL, "GraphQL config must be nil for Tier 0 source")
+}
+
+// TestSourceConfigFromDomain_GraphQLInvalidJSON verifies that malformed
+// graphql_config JSONB returns a wrapped error.
+func TestSourceConfigFromDomain_GraphQLInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	src := domainScraper.Source{
+		Name:          "bad-graphql-source",
+		URL:           "https://example.com/calendar",
+		Tier:          3,
+		GraphQLConfig: []byte(`{not valid json`),
+	}
+
+	_, err := SourceConfigFromDomain(src)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bad-graphql-source")
+}
+
+// --------------------------------------------------------------------------
+// GetURLs
+// --------------------------------------------------------------------------
+
+func TestSourceConfig_GetURLs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  SourceConfig
+		want []string
+	}{
+		{
+			name: "url only returns single-element slice",
+			cfg:  SourceConfig{URL: "https://example.com/events"},
+			want: []string{"https://example.com/events"},
+		},
+		{
+			name: "urls only returns urls slice",
+			cfg:  SourceConfig{URLs: []string{"https://example.com/a", "https://example.com/b"}},
+			want: []string{"https://example.com/a", "https://example.com/b"},
+		},
+		{
+			name: "urls takes precedence when both set",
+			cfg:  SourceConfig{URL: "https://example.com/events", URLs: []string{"https://example.com/a"}},
+			want: []string{"https://example.com/a"},
+		},
+		{
+			name: "neither returns nil",
+			cfg:  SourceConfig{},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.cfg.GetURLs()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// LoadSourceConfigs — urls field
+// --------------------------------------------------------------------------
+
+func TestLoadSourceConfigs_URLsField(t *testing.T) {
+	t.Parallel()
+
+	yamlContent := `
+name: "Multi URL Source"
+urls:
+  - "https://example.com/events"
+  - "https://example.com/workshops"
+tier: 0
+`
+	dir := t.TempDir()
+	writeYAML(t, dir, "multi.yaml", yamlContent)
+
+	configs, err := LoadSourceConfigs(dir)
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+	assert.Equal(t, []string{"https://example.com/events", "https://example.com/workshops"}, configs[0].URLs)
 }

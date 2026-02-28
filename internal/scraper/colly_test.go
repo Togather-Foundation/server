@@ -26,7 +26,7 @@ func newTestExtractor() *CollyExtractor {
 // event cards is scraped correctly.
 func TestScrapeWithSelectors_Basic(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="events">
   <div class="event-card">
     <h2 class="title">Jazz Night</h2>
@@ -98,7 +98,7 @@ func TestScrapeWithSelectors_Basic(t *testing.T) {
 // skipped and not included in the results.
 func TestScrapeWithSelectors_EmptyName(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="events">
   <div class="event-card">
     <h2 class="title">Valid Event</h2>
@@ -151,7 +151,7 @@ func TestScrapeWithSelectors_Pagination(t *testing.T) {
 		// Page 1 — has a "next" link to page 2.
 		// The pagination link href is set dynamically after the test server starts,
 		// so we embed a path that will be resolved as absolute by Colly.
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="events">
   <div class="event-card">
     <h2 class="title">Page 1 Event A</h2>
@@ -168,7 +168,7 @@ func TestScrapeWithSelectors_Pagination(t *testing.T) {
 
 	mux.HandleFunc("/events/", func(w http.ResponseWriter, r *http.Request) {
 		// Handles /events?page=2 (Go mux routes by path)
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="events">
   <div class="event-card">
     <h2 class="title">Page 2 Event A</h2>
@@ -182,7 +182,7 @@ func TestScrapeWithSelectors_Pagination(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page := r.URL.Query().Get("page")
 		if page == "2" {
-			fmt.Fprint(w, `<!DOCTYPE html><html><body>
+			_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="events">
   <div class="event-card">
     <h2 class="title">Page 2 Event A</h2>
@@ -197,7 +197,7 @@ func TestScrapeWithSelectors_Pagination(t *testing.T) {
 			return
 		}
 		// Default: page 1.
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="events">
   <div class="event-card">
     <h2 class="title">Page 1 Event A</h2>
@@ -248,7 +248,7 @@ func TestScrapeWithSelectors_Pagination(t *testing.T) {
 // preferred over text content for date extraction.
 func TestScrapeWithSelectors_DatetimeAttr(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="event-card">
   <h2 class="title">Concert</h2>
   <time class="date" datetime="2026-06-21T19:30:00-04:00">June 21, 2026 at 7:30 PM</time>
@@ -282,7 +282,7 @@ func TestScrapeWithSelectors_DatetimeAttr(t *testing.T) {
 // results in an immediate return (no error, empty-or-partial results).
 func TestScrapeWithSelectors_ContextCancellation(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
 <div class="event-card"><h2 class="title">Event</h2></div>
 </body></html>`)
 	}))

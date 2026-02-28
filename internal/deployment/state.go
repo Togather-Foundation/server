@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/fileutil"
 )
 
 // Slot represents a deployment slot (blue or green)
@@ -125,29 +127,14 @@ func LoadState(path string) (*State, error) {
 
 // SaveState writes the deployment state to the JSON file
 func SaveState(path string, state *State) error {
-	// Ensure directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create state directory: %w", err)
-	}
-
 	// Marshal with indentation for readability
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
-
-	// Write to temporary file first, then rename (atomic operation)
-	tmpFile := path + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
+	if err := fileutil.AtomicWrite(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
 	}
-
-	if err := os.Rename(tmpFile, path); err != nil {
-		_ = os.Remove(tmpFile) // Clean up temp file
-		return fmt.Errorf("failed to rename state file: %w", err)
-	}
-
 	return nil
 }
 

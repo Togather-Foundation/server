@@ -239,6 +239,7 @@ func TestDeploymentLockPreventsRollback(t *testing.T) {
 
 // TestDeploymentLockFileRaceCondition tests for file-level race conditions
 func TestDeploymentLockFileRaceCondition(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	stateFile := filepath.Join(tmpDir, "state.json")
 
@@ -259,10 +260,10 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 
 	// Simulate concurrent file access
 	var wg sync.WaitGroup
-	errors := make(chan error, 20)
+	errors := make(chan error, 100)
 
 	// Multiple readers and writers
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -274,7 +275,7 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -295,13 +296,15 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 	wg.Wait()
 	close(errors)
 
-	// Collect errors (some expected due to race conditions, but file should remain valid)
+	// Collect errors — with atomic writes there should be none.
 	var errorList []error
 	for err := range errors {
 		errorList = append(errorList, err)
 	}
+	// SaveState uses atomic writes — concurrent readers must never see a partial
+	// file, so LoadState should never error. Any error here is a real failure.
 	if len(errorList) > 0 {
-		t.Logf("Concurrent access produced %d errors (expected due to file-level races)", len(errorList))
+		t.Errorf("atomic SaveState produced %d unexpected errors: %v", len(errorList), errorList)
 	}
 
 	// SaveState uses atomic writes, so corruption should not happen despite races.
@@ -313,7 +316,7 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 
 	var finalState State
 	if err := json.Unmarshal(data, &finalState); err != nil {
-		t.Errorf("state file corrupted after concurrent access: %v", err)
+		t.Fatalf("state file corrupted after concurrent access: %v", err)
 	}
 }
 

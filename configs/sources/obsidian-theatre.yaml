@@ -1,9 +1,23 @@
 name: "obsidian-theatre"
-# Tier 2 (DISABLED). WordPress but returns empty body — likely JS-rendered or blocked.
-# Major Black-led theatre company in Toronto.
+# Tier 2 (DISABLED). WordPress Gutenberg season page with JS-rendered show cards (div.proditem).
+# Successfully extracts: show title, image, URL to detail page.
+# PROBLEM: No performance dates visible on listing page — dates only on individual show pages.
+# Events require startDate per domain model; all extracted events are skipped due to missing date.
+# Would need to: (1) scrape individual show pages for dates, or (2) use contact form to request schedule.
+# Recommendation: Mark as aggregator (trust_level: 3) if dates can be extracted from detail pages.
+# Major Black-led theatre company in Toronto (trust_level: 8 for organization).
 url: "https://www.obsidiantheatre.com/season-listings/"
 tier: 2
 schedule: "weekly"
 trust_level: 8
 license: "CC0-1.0"
 enabled: false
+max_pages: 3
+headless:
+  wait_selector: "div.proditem"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "div.proditem"
+  name: "p.title a"
+  url: "a[href*='/show/']"
+  image: "img"

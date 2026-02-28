@@ -1689,6 +1689,11 @@
                 ? '<span class="badge bg-secondary">Date Issue</span>'
                 : '<span class="badge bg-warning">Date Issue</span>';
             message = 'Date ordering problem';
+        } else if (firstWarning.code === 'near_duplicate_of_new_event') {
+            badge = isResolved
+                ? '<span class="badge bg-secondary">Near Duplicate</span>'
+                : '<span class="badge bg-purple">Near Duplicate</span>';
+            message = firstWarning.message || 'This existing event may be a near-duplicate of a newly ingested event';
         } else if (firstWarning.code === 'potential_duplicate') {
             badge = isResolved
                 ? '<span class="badge bg-secondary">Possible Duplicate</span>'
@@ -1748,6 +1753,7 @@
             'link_check_failed': { label: 'Bad Link', color: 'warning' },
             
             // Duplicate detection
+            'near_duplicate_of_new_event': { label: 'Near Duplicate', color: 'purple' },
             'potential_duplicate': { label: 'Possible Duplicate', color: 'purple' },
             'place_possible_duplicate': { label: 'Place Duplicate', color: 'purple' },
             'org_possible_duplicate': { label: 'Org Duplicate', color: 'purple' },

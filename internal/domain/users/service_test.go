@@ -8,11 +8,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 )
 
+// defaultTestService returns a Service with default password policy for unit tests.
+func defaultTestService() *Service {
+	return NewService(nil, nil, nil, "", zerolog.Nop(), config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128})
+}
+
 func TestValidatePassword_TooShort(t *testing.T) {
+	svc := defaultTestService()
 	passwords := []string{
 		"Short1!",    // 7 chars
 		"Pass123!",   // 8 chars
@@ -21,7 +28,7 @@ func TestValidatePassword_TooShort(t *testing.T) {
 
 	for _, pwd := range passwords {
 		t.Run(fmt.Sprintf("password_%d_chars", len(pwd)), func(t *testing.T) {
-			err := validatePassword(pwd)
+			err := svc.validatePassword(pwd)
 			if !errors.Is(err, ErrPasswordTooShort) {
 				t.Errorf("Expected ErrPasswordTooShort for: %s, got: %v", pwd, err)
 			}
@@ -30,15 +37,17 @@ func TestValidatePassword_TooShort(t *testing.T) {
 }
 
 func TestValidatePassword_TooLong(t *testing.T) {
+	svc := defaultTestService()
 	// 129 characters - exceeds maximum
 	longPwd := strings.Repeat("aA1!", 33) // 132 chars
-	err := validatePassword(longPwd)
+	err := svc.validatePassword(longPwd)
 	if !errors.Is(err, ErrPasswordTooLong) {
 		t.Errorf("Expected ErrPasswordTooLong for 129+ char password, got: %v", err)
 	}
 }
 
 func TestValidatePassword_MissingRequirements(t *testing.T) {
+	svc := defaultTestService()
 	tests := []struct {
 		name     string
 		password string
@@ -59,7 +68,7 @@ func TestValidatePassword_MissingRequirements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePassword(tt.password)
+			err := svc.validatePassword(tt.password)
 			if !errors.Is(err, ErrPasswordTooWeak) {
 				t.Errorf("Expected ErrPasswordTooWeak for %s: %s, got: %v", tt.name, tt.password, err)
 			}
@@ -68,6 +77,7 @@ func TestValidatePassword_MissingRequirements(t *testing.T) {
 }
 
 func TestValidatePassword_Valid(t *testing.T) {
+	svc := defaultTestService()
 	validPasswords := []string{
 		"Password123!",                    // Basic valid
 		"MyP@ssw0rd2024",                  // Another valid
@@ -81,7 +91,7 @@ func TestValidatePassword_Valid(t *testing.T) {
 
 	for _, pwd := range validPasswords {
 		t.Run(fmt.Sprintf("valid_%d_chars", len(pwd)), func(t *testing.T) {
-			err := validatePassword(pwd)
+			err := svc.validatePassword(pwd)
 			if err != nil {
 				t.Errorf("Expected valid password for: %s (len=%d), got error: %v", pwd, len(pwd), err)
 			}
@@ -90,6 +100,7 @@ func TestValidatePassword_Valid(t *testing.T) {
 }
 
 func TestValidatePassword_EdgeCases(t *testing.T) {
+	svc := defaultTestService()
 	tests := []struct {
 		name        string
 		password    string
@@ -129,7 +140,7 @@ func TestValidatePassword_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePassword(tt.password)
+			err := svc.validatePassword(tt.password)
 			if tt.expectedErr == nil {
 				if err != nil {
 					t.Errorf("Expected no error, got: %v", err)
@@ -466,7 +477,7 @@ func TestCreateUserParams_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a fresh validator for each test
-			svc.validator = NewService(nil, nil, nil, "", zerolog.Nop()).validator
+			svc.validator = NewService(nil, nil, nil, "", zerolog.Nop(), config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128}).validator
 
 			err := svc.validator.Struct(tt.params)
 
@@ -562,7 +573,7 @@ func TestUpdateUserParams_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a fresh validator for each test
-			svc.validator = NewService(nil, nil, nil, "", zerolog.Nop()).validator
+			svc.validator = NewService(nil, nil, nil, "", zerolog.Nop(), config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128}).validator
 
 			err := svc.validator.Struct(tt.params)
 
@@ -587,7 +598,7 @@ func TestCreateUserAndInvite_ValidationIntegration(t *testing.T) {
 	// Full integration tests would require database setup
 
 	logger := zerolog.Nop()
-	svc := NewService(nil, nil, nil, "", logger)
+	svc := NewService(nil, nil, nil, "", logger, config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128})
 	ctx := context.Background()
 
 	tests := []struct {
@@ -639,7 +650,7 @@ func TestUpdateUser_ValidationIntegration(t *testing.T) {
 	// Full integration tests would require database setup
 
 	logger := zerolog.Nop()
-	svc := NewService(nil, nil, nil, "", logger)
+	svc := NewService(nil, nil, nil, "", logger, config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128})
 	ctx := context.Background()
 
 	tests := []struct {
@@ -741,7 +752,7 @@ func TestNewService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zerolog.Nop()
-			svc := NewService(nil, nil, nil, tt.baseURL, logger)
+			svc := NewService(nil, nil, nil, tt.baseURL, logger, config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128})
 
 			if svc == nil {
 				t.Error("NewService() returned nil")

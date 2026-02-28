@@ -24,8 +24,28 @@ type Config struct {
 	Dedup           DedupConfig
 	Geocoding       GeocodingConfig
 	Artsdata        ArtsdataConfig
+	Scraper         ScraperConfig
+	Developer       DeveloperConfig
+	Users           UsersConfig
 	DefaultTimezone string
 	Environment     string
+}
+
+// ScraperConfig holds configuration for the event scraper, including optional
+// Tier 2 headless browser settings.
+type ScraperConfig struct {
+	// HeadlessEnabled controls whether Tier 2 headless browser scraping is active.
+	// Environment variable: SCRAPER_HEADLESS_ENABLED (default: false)
+	HeadlessEnabled bool
+
+	// ChromePath overrides the Chromium binary path used by go-rod.
+	// When empty, Rod uses its download-on-demand launcher.
+	// Environment variable: SCRAPER_CHROME_PATH (default: "")
+	ChromePath string
+
+	// HeadlessMaxConc is the maximum number of concurrent browser sessions.
+	// Environment variable: SCRAPER_HEADLESS_MAX_CONC (default: 2)
+	HeadlessMaxConc int
 }
 
 type ServerConfig struct {
@@ -58,12 +78,13 @@ type GitHubOAuthConfig struct {
 }
 
 type RateLimitConfig struct {
-	PublicPerMinute     int
-	AgentPerMinute      int
-	AdminPerMinute      int
-	LoginPer15Minutes   int      // Login attempts allowed per 15-minute window per IP
-	FederationPerMinute int      // Federation sync rate limit
-	TrustedProxyCIDRs   []string // CIDRs of trusted proxies (e.g., load balancers) for X-Forwarded-For validation
+	PublicPerMinute        int
+	AgentPerMinute         int
+	AdminPerMinute         int
+	LoginPer15Minutes      int      // Login attempts allowed per 15-minute window per IP
+	FederationPerMinute    int      // Federation sync rate limit
+	SubmissionsPerIPPer24h int      // Max URLs a single IP may submit via POST /scraper/submissions in 24 hours
+	TrustedProxyCIDRs      []string // CIDRs of trusted proxies (e.g., load balancers) for X-Forwarded-For validation
 }
 
 type AdminBootstrapConfig struct {
@@ -181,6 +202,102 @@ type ValidationConfig struct {
 	//   - internal/domain/events/ingest.go:reviewConfidence() - Confidence scoring
 	//   - internal/domain/events/ingest.go:appendQualityWarnings() - Warning generation
 	RequireImage bool
+
+	// ReviewConfidenceThreshold is the minimum quality-confidence score [0.0–1.0] an
+	// event must achieve to bypass the review queue.  Events that score below this
+	// threshold are flagged for manual review and receive a "low_confidence" warning.
+	// Environment variable: VALIDATION_REVIEW_CONFIDENCE_THRESHOLD (default: 0.6)
+	ReviewConfidenceThreshold float64
+
+	// MaxFutureDays is the maximum number of days in the future an event's start date
+	// may be before it is sent to the review queue and receives a "too_far_future"
+	// warning.  730 ≈ 2 years.
+	// Environment variable: VALIDATION_MAX_FUTURE_DAYS (default: 730)
+	MaxFutureDays int
+
+	// MaxEventNameLength is the maximum byte length allowed for an event name in
+	// admin update operations.
+	// Environment variable: VALIDATION_MAX_EVENT_NAME_LENGTH (default: 500)
+	MaxEventNameLength int
+}
+
+// WithDefaults returns a copy of ValidationConfig with zero-values replaced by
+// their production defaults.  Call this in service constructors so that tests
+// that only set RequireImage (the original field) continue to behave correctly
+// even after new fields were added.
+func (v ValidationConfig) WithDefaults() ValidationConfig {
+	if v.ReviewConfidenceThreshold == 0 {
+		v.ReviewConfidenceThreshold = 0.6
+	}
+	if v.MaxFutureDays == 0 {
+		v.MaxFutureDays = 730
+	}
+	if v.MaxEventNameLength == 0 {
+		v.MaxEventNameLength = 500
+	}
+	return v
+}
+
+// WithDefaults returns a copy of DeveloperConfig with zero-values replaced by
+// their production defaults.  Call this in service constructors so that tests
+// that use DeveloperConfig{} continue to behave correctly.
+func (d DeveloperConfig) WithDefaults() DeveloperConfig {
+	if d.PasswordMinLength == 0 {
+		d.PasswordMinLength = 8
+	}
+	if d.PasswordMaxLength == 0 {
+		d.PasswordMaxLength = 128
+	}
+	if d.UsageFlushTimeoutSeconds == 0 {
+		d.UsageFlushTimeoutSeconds = 10
+	}
+	return d
+}
+
+// DeveloperConfig holds tunables for the developer account and API-key subsystem.
+type DeveloperConfig struct {
+	// PasswordMinLength is the minimum number of Unicode code points required for a
+	// developer account password.  Developer passwords are intentionally less strict
+	// than user passwords because developers typically use password managers.
+	// Environment variable: DEVELOPER_PASSWORD_MIN_LENGTH (default: 8)
+	PasswordMinLength int
+
+	// PasswordMaxLength is the maximum number of Unicode code points allowed for a
+	// developer account password.  Consistent with NIST SP 800-63B upper bound.
+	// Environment variable: DEVELOPER_PASSWORD_MAX_LENGTH (default: 128)
+	PasswordMaxLength int
+
+	// UsageFlushTimeoutSeconds is the context timeout (in seconds) used when
+	// flushing buffered API-key usage metrics to the database.
+	// Environment variable: DEVELOPER_USAGE_FLUSH_TIMEOUT_SECONDS (default: 10)
+	UsageFlushTimeoutSeconds int
+}
+
+// WithDefaults returns a copy of UsersConfig with zero-values replaced by
+// their production defaults.  Call this in service constructors so that tests
+// that use UsersConfig{} continue to behave correctly.
+func (u UsersConfig) WithDefaults() UsersConfig {
+	if u.PasswordMinLength == 0 {
+		u.PasswordMinLength = 12
+	}
+	if u.PasswordMaxLength == 0 {
+		u.PasswordMaxLength = 128
+	}
+	return u
+}
+
+// UsersConfig holds tunables for the end-user account subsystem.
+type UsersConfig struct {
+	// PasswordMinLength is the minimum byte length required for a user account
+	// password.  Follows NIST SP 800-63B guidelines; higher than developer minimum
+	// because regular users are less likely to use password managers.
+	// Environment variable: USERS_PASSWORD_MIN_LENGTH (default: 12)
+	PasswordMinLength int
+
+	// PasswordMaxLength is the maximum byte length allowed for a user account
+	// password.  Consistent with NIST SP 800-63B upper bound.
+	// Environment variable: USERS_PASSWORD_MAX_LENGTH (default: 128)
+	PasswordMaxLength int
 }
 
 // GeocodingConfig holds configuration for the Nominatim geocoding client and cache.
@@ -261,12 +378,13 @@ func Load() (Config, error) {
 			},
 		},
 		RateLimit: RateLimitConfig{
-			PublicPerMinute:     getEnvInt("RATE_LIMIT_PUBLIC", 60),
-			AgentPerMinute:      getEnvInt("RATE_LIMIT_AGENT", 300),
-			AdminPerMinute:      getEnvInt("RATE_LIMIT_ADMIN", 0),
-			LoginPer15Minutes:   getEnvInt("RATE_LIMIT_LOGIN", 5),
-			FederationPerMinute: getEnvInt("RATE_LIMIT_FEDERATION", 500),
-			TrustedProxyCIDRs:   parseTrustedProxies(getEnv("TRUSTED_PROXY_CIDRS", "")),
+			PublicPerMinute:        getEnvInt("RATE_LIMIT_PUBLIC", 60),
+			AgentPerMinute:         getEnvInt("RATE_LIMIT_AGENT", 300),
+			AdminPerMinute:         getEnvInt("RATE_LIMIT_ADMIN", 0),
+			LoginPer15Minutes:      getEnvInt("RATE_LIMIT_LOGIN", 5),
+			FederationPerMinute:    getEnvInt("RATE_LIMIT_FEDERATION", 500),
+			SubmissionsPerIPPer24h: getEnvInt("RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H", 20),
+			TrustedProxyCIDRs:      parseTrustedProxies(getEnv("TRUSTED_PROXY_CIDRS", "")),
 		},
 		AdminBootstrap: AdminBootstrapConfig{
 			Username: getEnv("ADMIN_USERNAME", ""),
@@ -294,7 +412,10 @@ func Load() (Config, error) {
 			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
 		},
 		Validation: ValidationConfig{
-			RequireImage: getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
+			RequireImage:              getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
+			ReviewConfidenceThreshold: getEnvFloat("VALIDATION_REVIEW_CONFIDENCE_THRESHOLD", 0.6),
+			MaxFutureDays:             getEnvInt("VALIDATION_MAX_FUTURE_DAYS", 730),
+			MaxEventNameLength:        getEnvInt("VALIDATION_MAX_EVENT_NAME_LENGTH", 500),
 		},
 		Tracing: TracingConfig{
 			Enabled:      getEnvBool("TRACING_ENABLED", false),
@@ -327,6 +448,20 @@ func Load() (Config, error) {
 			TimeoutSeconds:  getEnvInt("ARTSDATA_TIMEOUT_SECONDS", 10),
 			CacheTTLDays:    getEnvInt("ARTSDATA_CACHE_TTL_DAYS", 30),
 			FailureTTLDays:  getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
+		},
+		Scraper: ScraperConfig{
+			HeadlessEnabled: getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
+			ChromePath:      getEnv("SCRAPER_CHROME_PATH", ""),
+			HeadlessMaxConc: getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
+		},
+		Developer: DeveloperConfig{
+			PasswordMinLength:        getEnvInt("DEVELOPER_PASSWORD_MIN_LENGTH", 8),
+			PasswordMaxLength:        getEnvInt("DEVELOPER_PASSWORD_MAX_LENGTH", 128),
+			UsageFlushTimeoutSeconds: getEnvInt("DEVELOPER_USAGE_FLUSH_TIMEOUT_SECONDS", 10),
+		},
+		Users: UsersConfig{
+			PasswordMinLength: getEnvInt("USERS_PASSWORD_MIN_LENGTH", 12),
+			PasswordMaxLength: getEnvInt("USERS_PASSWORD_MAX_LENGTH", 128),
 		},
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),

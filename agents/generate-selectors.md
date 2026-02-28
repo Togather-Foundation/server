@@ -1,8 +1,12 @@
 # Generate Scraper Selectors
 
-Given one or more URLs, generate working Tier 1 CSS selector configs for the SEL scraper,
-validate them live, check the database for a matching organization, and write the result
-to `configs/sources/<name>.yaml`.
+Given one or more URLs, generate working CSS selector configs (Tier 1 or Tier 2) for the
+SEL scraper, validate them live, check the database for a matching organization, and write
+the result to `configs/sources/<name>.yaml`.
+
+**Tier 1** (static HTML): uses `server scrape inspect <URL>` on the raw static response.
+**Tier 2** (JS-rendered): uses `server scrape capture <URL> --format inspect` which renders
+the page via headless Chromium before analysis. Requires `SCRAPER_HEADLESS_ENABLED=true`.
 
 You are an **orchestrator**. Parse the input, build the URL list, then delegate each URL
 to a parallel subagent via the Task tool. Collect results and print a summary.
@@ -95,6 +99,8 @@ Follow these steps in order:
 
 ### Step 1 — Inspect the page
 
+First attempt a **Tier 1 static inspect**:
+
 ```bash
 ./server scrape inspect <URL>
 ```
@@ -108,8 +114,18 @@ Read the output carefully:
 - **Event hrefs** — confirm the page actually has event links
 
 If the page returns < 5KB body or the candidate containers section is empty, the page is
-likely JS-rendered. Return:
-`RESULT | <URL> | - | - | js-rendered | <body_size>KB body, candidate containers empty`
+likely JS-rendered. Before giving up, attempt a **Tier 2 headless inspect**:
+
+```bash
+SCRAPER_HEADLESS_ENABLED=true ./server scrape capture <URL> --format inspect
+```
+
+If the headless inspect also returns empty candidate containers (or fails with
+`headless scraping disabled`), return:
+`RESULT | <URL> | - | - | js-rendered | <body_size>KB body, candidate containers empty even after headless render`
+
+Otherwise, continue using the headless inspect output for subsequent steps and set
+`tier: 2` in the final config.
 
 ### Step 2 — Derive a source name
 
@@ -161,6 +177,7 @@ Based on the inspect output, reason about the DOM structure and propose values f
 
 ### Step 6 — Validate with scrape test
 
+**Tier 1** (static):
 ```bash
 ./server scrape test <URL> \
   --event-list "<event_list>" \
@@ -169,6 +186,19 @@ Based on the inspect output, reason about the DOM structure and propose values f
   --location "<location_selector>" \
   --url "<url_selector>" \
   --image "<image_selector>"
+```
+
+**Tier 2** (JS-rendered — use when inspect was done via `scrape capture`):
+```bash
+SCRAPER_HEADLESS_ENABLED=true \
+./server scrape url <URL> --headless \
+  --event-list "<event_list>" \
+  --name "<name_selector>" \
+  --start-date "<start_date_selector>" \
+  --location "<location_selector>" \
+  --url "<url_selector>" \
+  --image "<image_selector>" \
+  --dry-run
 ```
 
 Evaluate:
@@ -185,6 +215,7 @@ Retry up to **3 rounds**. If still failing after 3 rounds, return:
 
 ### Step 7 — Write the config
 
+**Tier 1 (static HTML):**
 ```yaml
 name: "<derived-name>"
 url: "<URL>"
@@ -202,6 +233,29 @@ selectors:
   url: "<selector>"
 ```
 
+**Tier 2 (JS-rendered — headless browser):**
+```yaml
+name: "<derived-name>"
+url: "<URL>"
+tier: 2
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+# Organization match: <org name> (<ulid>) — or "no match found in database"
+headless:
+  wait_selector: "<CSS selector to wait for before extracting, e.g. .event-list>"
+  wait_timeout_ms: 10000
+  # pagination_button: "<CSS selector for next-page button, if JS-paginated>"
+  # rate_limit_ms: 1000
+selectors:
+  event_list: "<selector>"
+  name: "<selector>"
+  start_date: "<selector>"
+  url: "<selector>"
+```
+
 Omit any selector line whose value is empty — do not write `field: ""`.
 
 `trust_level`: `8` for official government/library/museum sites, `3` for aggregators,
@@ -209,8 +263,14 @@ Omit any selector line whose value is empty — do not write `field: ""`.
 
 ### Step 8 — Final dry-run
 
+**Tier 1:**
 ```bash
 ./server scrape source <name> --dry-run
+```
+
+**Tier 2:**
+```bash
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run
 ```
 
 If the binary is missing, build first:

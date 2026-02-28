@@ -7,23 +7,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestInit(t *testing.T) {
-	// Create a new registry for testing (avoid conflicts with global registry)
-	testRegistry := prometheus.NewRegistry()
-
-	// Test that Init doesn't panic
+	// Init is idempotent: calling it multiple times must not panic (e.g. -count=N).
 	Init("v1.0.0", "abc123", "2026-01-30", "true")
+	Init("v1.0.1", "def456", "2026-02-01", "false") // second call must not panic
 
-	// Verify app_info metric exists
+	// Verify app_info metric is registered and has at least one labeled series.
 	if testutil.CollectAndCount(AppInfo) == 0 {
 		t.Error("AppInfo metric should be registered")
 	}
-
-	_ = testRegistry // unused but shows pattern for isolated tests
 }
 
 func TestHTTPMiddleware(t *testing.T) {

@@ -28,26 +28,39 @@ Supporting assets:
 
 ## Remaining / Upcoming Tasks
 
-### S025 — Scraper Prometheus Metrics *(srv-sf4vs, P3, ready)*
-- Instrument `internal/scraper/scraper.go`, `internal/jobs/scrape_source.go`, and CLI flows in `cmd/server/cmd/scrape.go` to emit Prometheus counters/histograms:
-  - `scraper_runs_total{tier,status}` success/failure counts
-  - `scraper_events_total{tier,result}` for new/dup/failed counts
-  - `scraper_run_duration_seconds{tier}` histogram
-- Wire metrics registration into `internal/config/metrics.go` (or equivalent) so they surface on the existing `/metrics` endpoint.
-- Update `docs/deploy/monitoring.md` with metric names and troubleshooting guidance.
-- Tests: unit tests covering metric increments (use `promauto.With(reg)` and `testutil.ToFloat64`).
+### S025 — Scraper Prometheus Metrics *(srv-sf4vs, P3, closed)*
+- ✅ Implemented metrics counters/histograms and registration.
+- ✅ Updated `docs/deploy/monitoring.md`.
+- ✅ Added unit tests covering metric increments.
 
 ### S026 — Tier 2 Headless Scraping *(srv-h264z, P4, open)*
-- Add Rod dependency (`github.com/go-rod/rod`) and a new `internal/scraper/rod.go` implementing tier=2 extraction for JS-rendered event listings.
-- Extend `SourceConfig`/`scraper_sources` schema to allow `tier: 2` plus headless-specific fields (timeouts, wait selectors).
-- Update `scraper.go` tier dispatcher, CLI flags, and River jobs to honor tier 2, including robots.txt + rate limiting compliance.
-- Ensure Docker/staging images include Chromium and document required env vars.
-- Tests: Rod extractor unit tests with `rodmock`, plus integration smoke on staging-only flag.
+- ✅ Rod-based Tier 2 extraction (`internal/scraper/rod.go`) with `headless` config block.
+- ✅ `scraper_sources` schema extended via `000035_scraper_sources_headless`.
+- ✅ CLI support (`--headless`, `server scrape capture`).
+- ✅ Tests for headless extractor and round-trip DB config.
+- ⏳ Remaining: advanced headless enhancements (browser pool, additional selectors, staging-only smoke).
 
-### S027 — Data Quality & Agent Feedback *(future backlog)*
+### S027 — Tier 3 GraphQL Scraping *(implemented)*
+- ✅ GraphQL extractor and config block (`internal/scraper/graphql.go`).
+- ✅ DB JSONB column (`graphql_config`) via migration `000036_scraper_sources_graphql_config`.
+- ✅ Tests for GraphQL fetch/extract mapping.
+
+### S028 — Data Quality & Agent Feedback *(future backlog)*
 - Event completeness scoring per scrape (percentage of populated fields) persisted to `scraper_runs.metadata`.
 - Source quality trend metrics surfaced in admin UI and MCP tooling.
 - MCP workflow for curators to flag/resolve scraper regressions directly from SEL.
+
+### S029 — Public URL Submission Endpoint *(srv-1cxmi, P2, closed)*
+- Spec: `specs/003-scraper/url-submissions-spec.md`
+- ✅ `srv-v5rlp` — DB migration: `000037_scraper_submissions` table + indexes
+- ✅ `srv-mdh2i` — SQLc queries (insert, dedup check, rate-limit count, admin list, status update)
+- ✅ `srv-d01em` — Domain layer: `Submission` types, `SubmissionRepository`, `SubmissionService` (sync validation)
+- ✅ `srv-m9bja` — River workers: `ValidateSubmissionsScheduler` (5-min periodic) + `ValidateSubmissionsBatch` (HEAD + robots.txt)
+- ✅ `srv-nggrk` — Public handler: `POST /api/v1/scraper/submissions` (no auth, per-IP rate limit)
+- ✅ `srv-iwoy6` — Admin handler: `GET/PATCH /api/v1/admin/scraper/submissions` (JWT auth)
+- ✅ `srv-xrfyh` — Router wiring for public + admin routes
+- ✅ `srv-cu3ws` — Tests: service unit, worker integration, handler integration
+- ✅ `srv-msbmm` — Spec doc
 
 ### Operational Hygiene
 - Keep `/agents/generate-selectors.md` workflow up-to-date with new CLI options (e.g., tier 2 flags) and ensure new configs round-trip via `server scrape sync/export`.

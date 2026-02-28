@@ -1,11 +1,20 @@
 name: "mercer-union"
-# Tier 2 (disabled). Vue SPA — event data embedded as JSON payload in page script,
-# not as HTML elements. No server-rendered event listing.
-# Requires Rod headless browser (srv-h264z).
+# Tier 2 (headless). Vue SPA with client-side rendered event grid.
+# Events appear as div.grid-item cards after Vue hydration.
+# Selectors: event_list=div.grid-item, name=h3.grid-title, start_date=h4.date, url=a.gray-hover
 url: "https://mercerunion.org/programs"
 tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 2
+headless:
+  wait_selector: "div.grid-item"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "div.grid-item"
+  name: "h3.grid-title, h3.grid-title-override"
+  start_date: "h4.date"
+  url: "a.gray-hover"
+  image: "img[data-src]"

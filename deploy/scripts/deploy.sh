@@ -657,6 +657,79 @@ generate_id() {
     echo "${prefix}_${timestamp_hex}_${random}"
 }
 
+# acquire_named_lock LOCK_DIR
+#   Acquires a named lock using atomic mkdir. Writes a locked_at Unix timestamp
+#   file inside the lock directory for stale detection.
+#   Args:
+#     $1 - lock_dir: full path to the lock directory (e.g. /tmp/togather-foo.lock)
+#   Returns:
+#     0 on success, 1 if lock is held by another process or timestamp is corrupt
+#   Side effects:
+#     - Creates $lock_dir
+#     - Writes $lock_dir/locked_at (Unix timestamp)
+acquire_named_lock() {
+    local lock_dir="$1"
+    local lock_name
+    lock_name=$(basename "$lock_dir")
+
+    if mkdir "$lock_dir" 2>/dev/null; then
+        echo "$(date +%s)" > "${lock_dir}/locked_at"
+        log "INFO" "Lock acquired: ${lock_name}"
+        return 0
+    fi
+
+    # Lock dir exists — check staleness
+    log "INFO" "Lock exists, checking if stale: ${lock_name}"
+    local locked_at_file="${lock_dir}/locked_at"
+    local lock_age=0
+
+    if [[ -f "$locked_at_file" ]]; then
+        local locked_timestamp
+        locked_timestamp=$(cat "$locked_at_file" 2>/dev/null || echo "0")
+        if [[ "$locked_timestamp" -eq 0 || "$locked_timestamp" -lt 1000000000 ]]; then
+            log "ERROR" "Lock timestamp is invalid or unreadable: ${lock_name}"
+            log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
+            return 1
+        fi
+        lock_age=$(( $(date +%s) - locked_timestamp ))
+    fi
+
+    if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
+        log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s): ${lock_name}"
+        log "WARN" "Removing stale lock: ${lock_dir}"
+        if rmdir "$lock_dir" 2>/dev/null && mkdir "$lock_dir" 2>/dev/null; then
+            echo "$(date +%s)" > "${lock_dir}/locked_at"
+            log "WARN" "Stale lock removed and re-acquired: ${lock_name}"
+            return 0
+        else
+            log "ERROR" "Failed to re-acquire lock after removing stale lock (another process may have acquired it): ${lock_name}"
+            return 1
+        fi
+    fi
+
+    log "ERROR" "Lock already held (age: ${lock_age}s, timeout: ${LOCK_TIMEOUT}s): ${lock_name}"
+    log "ERROR" "If stale, remove: rm -rf ${lock_dir}"
+    return 1
+}
+
+# release_named_lock LOCK_DIR
+#   Releases a named lock acquired with acquire_named_lock.
+#   Args:
+#     $1 - lock_dir: full path to the lock directory
+#   Returns:
+#     0 always (best-effort; logs warning on failure)
+release_named_lock() {
+    local lock_dir="$1"
+    local lock_name
+    lock_name=$(basename "$lock_dir")
+    if rmdir "$lock_dir" 2>/dev/null; then
+        log "INFO" "Lock released: ${lock_name}"
+    else
+        log "WARN" "Failed to remove lock directory (may need manual cleanup): ${lock_dir}"
+    fi
+    return 0
+}
+
 # acquire_lock - Acquires deployment lock using atomic directory creation
 # Implements distributed locking using POSIX-atomic mkdir operation
 # Handles stale lock detection with configurable timeout (LOCK_TIMEOUT)
@@ -703,69 +776,7 @@ STATE_EOF
         chmod 600 "${STATE_FILE}"
     fi
     
-    # Try to create lock directory atomically (mkdir is atomic in POSIX)
-    if mkdir "$lock_dir" 2>/dev/null; then
-        # Lock acquired - set trap to cleanup on exit
-        log "INFO" "Lock directory created: ${lock_dir}"
-    else
-        # Lock directory exists - check if stale
-        log "INFO" "Lock directory exists, checking if stale"
-        
-        # Read lock info from state file
-        local locked=$(jq -r '.lock.locked // false' "${STATE_FILE}")
-        local locked_at=$(jq -r '.lock.locked_at // ""' "${STATE_FILE}")
-        
-        if [[ "$locked" != "true" ]] || [[ -z "$locked_at" ]]; then
-            # Inconsistent state - lock dir exists but state file says unlocked
-            log "WARN" "Inconsistent lock state detected"
-            log "WARN" "Lock directory exists but state file shows unlocked"
-            log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
-            return 1
-        fi
-        
-        # Parse lock timestamp with explicit error handling
-        local locked_timestamp=$(date -d "$locked_at" +%s 2>/dev/null || echo "0")
-        
-        if [[ $locked_timestamp -eq 0 ]]; then
-            log "WARN" "Could not parse lock timestamp: ${locked_at}"
-            log "ERROR" "Lock may be corrupted, manual intervention required"
-            log "ERROR" "To override: rm -rf ${lock_dir} && edit ${STATE_FILE}"
-            return 1
-        fi
-        
-        local now_timestamp=$(date +%s)
-        local lock_age=$((now_timestamp - locked_timestamp))
-        
-        if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
-            log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s)"
-            log "WARN" "Attempting to remove stale lock"
-            
-            if rmdir "$lock_dir" 2>/dev/null; then
-                log "WARN" "Stale lock removed, retrying acquisition"
-                # Retry lock acquisition
-                if mkdir "$lock_dir" 2>/dev/null; then
-                    log "INFO" "Lock acquired after removing stale lock"
-                else
-                    log "ERROR" "Failed to acquire lock after removing stale lock"
-                    log "ERROR" "Another process may have acquired it first"
-                    return 1
-                fi
-            else
-                log "ERROR" "Failed to remove stale lock directory"
-                log "ERROR" "Manual intervention required: rm -rf ${lock_dir}"
-                return 1
-            fi
-        else
-            local locked_by=$(jq -r '.lock.locked_by // "unknown"' "${STATE_FILE}")
-            local deployment_id=$(jq -r '.lock.deployment_id // "unknown"' "${STATE_FILE}")
-            log "ERROR" "Deployment already in progress"
-            log "ERROR" "Locked by: ${locked_by}"
-            log "ERROR" "Deployment ID: ${deployment_id}"
-            log "ERROR" "Lock age: ${lock_age}s (timeout: ${LOCK_TIMEOUT}s)"
-            log "ERROR" "Lock directory: ${lock_dir}"
-            return 1
-        fi
-    fi
+    acquire_named_lock "$lock_dir" || return 1
     
     # Generate lock ID and deployment ID
     DEPLOYMENT_ID=$(generate_id "dep")
@@ -825,11 +836,7 @@ release_lock() {
     
     # Remove lock directory
     local lock_dir="/tmp/togather-deploy-${env}.lock"
-    if ! rmdir "$lock_dir" 2>/dev/null; then
-        log "WARN" "Failed to remove lock directory: ${lock_dir}"
-        log "WARN" "Lock state updated but directory may need manual cleanup"
-        # Don't fail - state file is already updated
-    fi
+    release_named_lock "$lock_dir"
     
     log "SUCCESS" "Deployment lock released"
     return 0
@@ -942,6 +949,90 @@ generate_web_files() {
     fi
     
     log "SUCCESS" "Web files generated for domain: ${domain}"
+    return 0
+}
+
+# check_disk_space - Checks available disk space on root and Docker data root filesystems
+# Warns if available space falls below a configurable threshold on either filesystem.
+# Checks the Docker data root separately because /var/lib/docker is often on its own
+# volume; a full Docker volume won't show up in a check of /.
+# Args:
+#   $1 - min_gb: minimum acceptable free gigabytes per checked filesystem (default: 5)
+# Returns:
+#   0 always (non-fatal; advisory only)
+# Side effects:
+#   - Logs WARN if any checked filesystem is below threshold, INFO otherwise
+# Example:
+#   check_disk_space 10 || true
+check_disk_space() {
+    local min_gb="${1:-5}"
+    local min_kb
+    min_kb=$((min_gb * 1024 * 1024))
+
+    # Inner helper: check one filesystem path
+    _check_one_fs() {
+        local label="$1"
+        local path="$2"
+        local available_kb available_gb
+        available_kb=$(df "$path" 2>/dev/null | awk 'NR==2{print $4}')
+        if [[ -z "$available_kb" ]]; then
+            log "WARN" "Could not determine disk space for ${label} (${path})"
+            return
+        fi
+        # Human-readable GB for display only (may truncate; comparison uses KB)
+        available_gb=$((available_kb / 1024 / 1024))
+        if [[ $available_kb -lt $min_kb ]]; then
+            log "WARN" "Low disk space on ${label}: ~${available_gb}GB available (threshold: ${min_gb}GB)"
+            log "WARN" "Consider running: docker system prune -af"
+        else
+            log "INFO" "Disk space OK on ${label}: ~${available_gb}GB available (threshold: ${min_gb}GB)"
+        fi
+    }
+
+    # Always check root filesystem
+    _check_one_fs "root (/)" "/"
+
+    # Check Docker data root if it's on a different filesystem than /
+    local docker_root
+    docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "")
+    if [[ -n "$docker_root" && "$docker_root" != "/" ]]; then
+        local root_dev docker_dev
+        root_dev=$(df / 2>/dev/null | awk 'NR==2{print $1}')
+        docker_dev=$(df "$docker_root" 2>/dev/null | awk 'NR==2{print $1}')
+        if [[ -n "$docker_dev" && "$docker_dev" != "$root_dev" ]]; then
+            _check_one_fs "Docker data root (${docker_root})" "$docker_root"
+        fi
+    fi
+
+    return 0
+}
+
+# prune_docker_cache - Conservatively prunes Docker build cache and dangling images
+# Removes stopped containers, dangling images, and build cache objects older than 24 hours.
+# Conservative: no -a flag (running containers/images are preserved), no --volumes.
+# Safe to run during a deploy — only cleans objects older than 24h.
+# Args:
+#   $1 - env: environment label (used for logging only)
+# Returns:
+#   0 always (non-fatal; continues on prune failure)
+# Side effects:
+#   - Runs docker system prune -f --filter "until=24h"
+#   - Logs before/after available disk space
+# Example:
+#   prune_docker_cache "staging" || true
+prune_docker_cache() {
+    local env="$1"
+    local before_space
+    before_space=$(df -h / | awk 'NR==2{print $4}')
+    log "INFO" "Docker cache prune (${env}): disk available before: ${before_space}"
+
+    docker system prune -f --filter "until=24h" || {
+        log "WARN" "docker system prune failed — continuing anyway"
+    }
+
+    local after_space
+    after_space=$(df -h / | awk 'NR==2{print $4}')
+    log "INFO" "Docker cache prune (${env}): disk available after:  ${after_space}"
     return 0
 }
 
@@ -1101,17 +1192,7 @@ run_migrations() {
     fi
     
     # T032: Acquire migration lock atomically to prevent concurrent migrations
-    if mkdir "$migration_lock_dir" 2>/dev/null; then
-        # Lock acquired - set trap to cleanup on ALL exit paths
-        # Note: RETURN is function-scoped only, removed to ensure cleanup on script exit
-        # Cleanup will be handled explicitly at function exit to avoid unbound variable error
-        log "INFO" "Migration lock acquired"
-    else
-        log "ERROR" "Migration lock directory already exists: ${migration_lock_dir}"
-        log "ERROR" "Another migration may be in progress"
-        log "ERROR" "If stale, remove: rm -rf ${migration_lock_dir}"
-        return 1
-    fi
+    acquire_named_lock "$migration_lock_dir" || return 1
     
     # Check current migration version
     local current_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
@@ -1125,7 +1206,7 @@ run_migrations() {
         log "ERROR" "  1. Review the failed migration in: ${migrations_dir}"
         log "ERROR" "  2. Fix the database manually or restore from snapshot"
         log "ERROR" "  3. Force migration version: migrate -path ${migrations_dir} -database \$DATABASE_URL force <version>"
-        rmdir "$migration_lock_dir" 2>/dev/null || true
+        release_named_lock "$migration_lock_dir"
         return 1
     fi
     
@@ -1165,7 +1246,7 @@ run_migrations() {
         log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         
         # Explicit lock cleanup
-        rmdir "$migration_lock_dir" 2>/dev/null || true
+        release_named_lock "$migration_lock_dir"
         return 1
     fi
     
@@ -1181,8 +1262,7 @@ run_migrations() {
     fi
     
     # Explicit lock cleanup
-    rmdir "$migration_lock_dir" 2>/dev/null || true
-    log "INFO" "Migration lock released"
+    release_named_lock "$migration_lock_dir"
     return 0
 }
 
@@ -1715,6 +1795,10 @@ deploy() {
         DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
     fi
     
+    # Pre-deploy disk check and cache prune
+    check_disk_space 5 || true
+    prune_docker_cache "$env" || true
+
     # T016: Build Docker image (web files generated during build via DOMAIN build arg)
     build_docker_image "$env" || return 1
     

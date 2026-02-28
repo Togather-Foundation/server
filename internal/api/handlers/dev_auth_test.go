@@ -12,6 +12,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -345,7 +346,7 @@ func TestDevLogin(t *testing.T) {
 			mockRepo := new(MockDeveloperRepository)
 			tt.mockSetup(mockRepo)
 
-			service := developers.NewService(mockRepo, zerolog.Nop())
+			service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 			auditLogger := audit.NewLogger()
 			handler := NewDeveloperAuthHandler(
 				service,
@@ -504,7 +505,7 @@ func TestDevAcceptInvitation(t *testing.T) {
 			mockRepo := new(MockDeveloperRepository)
 			tt.mockSetup(mockRepo)
 
-			service := developers.NewService(mockRepo, zerolog.Nop())
+			service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 			auditLogger := audit.NewLogger()
 			handler := NewDeveloperAuthHandler(
 				service,
@@ -536,7 +537,7 @@ func TestDevAcceptInvitation(t *testing.T) {
 // TestDevLogout tests logout functionality
 func TestDevLogout(t *testing.T) {
 	mockRepo := new(MockDeveloperRepository)
-	service := developers.NewService(mockRepo, zerolog.Nop())
+	service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 	auditLogger := audit.NewLogger()
 	handler := NewDeveloperAuthHandler(
 		service,

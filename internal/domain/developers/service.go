@@ -29,6 +29,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -94,11 +95,13 @@ const (
 // own API keys.
 //
 // Passwords use bcrypt hashing with cost factor 12. Minimum password length is
-// 8 characters (less strict than user accounts, which require 12 characters).
+// 8 characters by default (less strict than user accounts, which require 12
+// characters). Both bounds are configurable via DeveloperConfig.
 type Service struct {
 	repo      Repository
 	logger    zerolog.Logger
 	validator *validator.Validate
+	cfg       config.DeveloperConfig
 }
 
 // NewService creates and initializes a new developer service instance.
@@ -106,13 +109,15 @@ type Service struct {
 // Parameters:
 //   - repo: Repository implementation for data access
 //   - logger: Structured logger for service-level logging
+//   - cfg: DeveloperConfig with password policy and other tunables
 //
 // Returns a fully initialized Service ready to handle developer operations.
-func NewService(repo Repository, logger zerolog.Logger) *Service {
+func NewService(repo Repository, logger zerolog.Logger, cfg config.DeveloperConfig) *Service {
 	return &Service{
 		repo:      repo,
 		logger:    logger.With().Str("component", "developers").Logger(),
 		validator: validator.New(),
+		cfg:       cfg.WithDefaults(),
 	}
 }
 
@@ -160,7 +165,7 @@ func (s *Service) CreateDeveloper(ctx context.Context, params CreateDeveloperPar
 		passwordHashPtr = nil
 	} else {
 		// Non-empty password: validate and hash
-		if err := validatePassword(params.Password); err != nil {
+		if err := s.validatePassword(params.Password); err != nil {
 			return nil, err
 		}
 
@@ -592,7 +597,7 @@ func (s *Service) InviteDeveloper(ctx context.Context, email string, invitedBy *
 //   - Sets developer is_active=true
 func (s *Service) AcceptInvitation(ctx context.Context, token, name, password string) (*Developer, error) {
 	// Validate password
-	if err := validatePassword(password); err != nil {
+	if err := s.validatePassword(password); err != nil {
 		return nil, err
 	}
 
@@ -715,16 +720,16 @@ func (s *Service) UpdateDeveloperLastLogin(ctx context.Context, id uuid.UUID) er
 }
 
 // validatePassword enforces password length requirements:
-// - Minimum 8 characters (less strict than user accounts)
-// - Maximum 128 characters
+// - Minimum s.cfg.PasswordMinLength characters (default: 8 — less strict than user accounts)
+// - Maximum s.cfg.PasswordMaxLength characters (default: 128)
 //
 // Developer passwords have simpler requirements than user passwords since
 // developers are typically more security-aware and may use password managers.
-func validatePassword(password string) error {
-	if utf8.RuneCountInString(password) < 8 {
+func (s *Service) validatePassword(password string) error {
+	if utf8.RuneCountInString(password) < s.cfg.PasswordMinLength {
 		return ErrPasswordTooShort
 	}
-	if utf8.RuneCountInString(password) > 128 {
+	if utf8.RuneCountInString(password) > s.cfg.PasswordMaxLength {
 		return ErrPasswordTooLong
 	}
 	return nil

@@ -62,7 +62,7 @@ git checkout 002-mcp-server
 git pull origin 002-mcp-server
 
 # Check ready MCP tasks
-bd ready | grep -i mcp
+bd query 'title~"mcp" AND status=open'
 # Output: server-66za: Add mcp-go dependency to project
 
 # Start work
@@ -78,7 +78,7 @@ git add go.mod go.sum
 git commit -m "Add mcp-go dependency"
 
 # Sync beads state
-bd sync
+bd dolt push
 
 # Push to remote
 git push origin 002-mcp-server
@@ -102,7 +102,7 @@ bd ready
 bd update server-k694 --status in_progress
 # ... do work ...
 bd close server-k694
-bd sync
+bd dolt push
 git push origin main
 ```
 
@@ -110,7 +110,7 @@ git push origin main
 
 ### Beads Are Branch-Aware
 - Beads are stored in `.beads/` directory
-- `bd sync` commits bead state to git
+- `bd dolt push` commits bead state to git
 - When you switch branches, beads state switches too
 - Each branch has its own bead state tracked in git
 
@@ -121,15 +121,15 @@ git push origin main
 - You can merge MCP branch to main anytime
 
 ### Syncing Beads
-Always run `bd sync` before switching branches:
+Always run `bd dolt push` before switching branches:
 
 ```bash
 # Terminal 1 - MCP branch
-bd sync
+bd dolt push
 git push origin 002-mcp-server
 
 # Terminal 2 - Main branch  
-bd sync
+bd dolt push
 git push origin main
 ```
 
@@ -164,7 +164,7 @@ go get github.com/mark3labs/mcp-go
 git add go.mod go.sum
 git commit -m "Add mcp-go dependency"
 bd close server-66za --reason "Dependency added and verified"
-bd sync
+bd dolt push
 git push origin 002-mcp-server
 
 # Work on MCP server infrastructure
@@ -175,7 +175,7 @@ mkdir -p internal/mcp
 git add internal/mcp/server.go
 git commit -m "Create MCP server core infrastructure"
 bd close server-b33c
-bd sync
+bd dolt push
 git push origin 002-mcp-server
 ```
 
@@ -196,7 +196,7 @@ make sqlc
 git add internal/storage/postgres/feeds.sql.go
 git commit -m "Fix nullable parameter bug in ListEventChanges"
 bd close server-k694
-bd sync
+bd dolt push
 git push origin main
 ```
 
@@ -207,11 +207,11 @@ When MCP server is complete:
 ```bash
 # Make sure both branches are synced
 git checkout 002-mcp-server
-bd sync
+bd dolt push
 git push origin 002-mcp-server
 
 git checkout main
-bd sync
+bd dolt push
 git push origin main
 
 # Merge MCP branch
@@ -240,9 +240,9 @@ Make sure beads CLI is installed: `go install github.com/togather-foundation/bd@
 
 ### Beads out of sync between branches
 ```bash
-# Force sync from git
+# Check beads health
 git checkout 002-mcp-server
-bd sync --status
+bd doctor
 # This shows if beads are in sync with git
 ```
 
@@ -253,20 +253,20 @@ git checkout --ours .beads/
 # Or use the version from the branch you're merging
 git checkout --theirs .beads/
 # Then re-sync
-bd sync
+bd dolt push
 ```
 
 ### Changes not showing in beads
 ```bash
 # Verify beads are being tracked
-bd list --status open | grep server-66za
+bd show server-66za
 # If not found, check git log for bead commits
 git log --oneline | grep beads
 ```
 
 ## Best Practices
 
-1. **Sync Often**: Run `bd sync` after closing beads
+1. **Sync Often**: Run `bd dolt push` after closing beads
 2. **Commit Frequently**: Small commits are easier to merge
 3. **Push Regularly**: Share your progress with the team
 4. **Rebase Periodically**: Keep MCP branch updated with main
@@ -276,7 +276,7 @@ git log --oneline | grep beads
 ## Summary
 
 - ✅ Use separate terminals for different branches
-- ✅ Run `bd sync` before switching branches
+- ✅ Run `bd dolt push` before switching branches
 - ✅ MCP branch is additive (minimal conflicts)
 - ✅ Merge anytime without blocking other work
 - ✅ Beads track independently per branch

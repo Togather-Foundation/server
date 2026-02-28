@@ -20,13 +20,14 @@ import (
 
 // ScrapeOptions controls scraper behaviour.
 type ScrapeOptions struct {
-	DryRun         bool
-	Limit          int               // 0 = no limit
-	SourcesDir     string            // default: "configs/sources"
-	TierFilter     int               // -1 = all tiers; 0, 1, … = restrict to that tier
-	Transport      http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
-	RequestTimeout time.Duration     // 0 = use the fetchTimeout package const
-	RateLimitMs    int32             // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
+	DryRun           bool
+	Limit            int               // 0 = no limit
+	SourcesDir       string            // default: "configs/sources"
+	TierFilter       int               // -1 = all tiers; 0, 1, … = restrict to that tier
+	Transport        http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
+	RequestTimeout   time.Duration     // 0 = use the fetchTimeout package const
+	RateLimitMs      int32             // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
+	HeadlessOverride bool              // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
 }
 
 // HTTPClient returns an http.Client using the configured transport (if any).
@@ -66,11 +67,13 @@ type ScrapeResult struct {
 // Scraper orchestrates fetching, normalising, and ingesting events from
 // configured sources.
 type Scraper struct {
-	ingest     *IngestClient
-	queries    *postgres.Queries        // may be nil — DB tracking skipped when nil
-	sourceRepo domainScraper.Repository // may be nil — falls back to YAML when nil
-	logger     zerolog.Logger
-	slot       string // deployment slot for Prometheus metrics labeling; empty = no metrics
+	ingest         *IngestClient
+	queries        *postgres.Queries        // may be nil — DB tracking skipped when nil
+	sourceRepo     domainScraper.Repository // may be nil — falls back to YAML when nil
+	logger         zerolog.Logger
+	slot           string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
+	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
+	rodExtractor   *RodExtractor           // nil when headless is disabled/unconfigured
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -82,11 +85,16 @@ func NewScraper(ingest *IngestClient, queries *postgres.Queries, logger zerolog.
 // NewScraperWithSlot constructs a Scraper with an explicit deployment slot for
 // Prometheus metrics labeling. When slot is empty, no metrics are recorded.
 func NewScraperWithSlot(ingest *IngestClient, queries *postgres.Queries, logger zerolog.Logger, slot string) *Scraper {
+	var sm *metrics.ScraperMetrics
+	if slot != "" {
+		sm = metrics.NewScraperMetrics(metrics.Registry)
+	}
 	return &Scraper{
-		ingest:  ingest,
-		queries: queries,
-		logger:  logger,
-		slot:    slot,
+		ingest:         ingest,
+		queries:        queries,
+		logger:         logger,
+		slot:           slot,
+		scraperMetrics: sm,
 	}
 }
 
@@ -113,13 +121,25 @@ func NewScraperWithSourceRepoAndSlot(
 	logger zerolog.Logger,
 	slot string,
 ) *Scraper {
-	return &Scraper{
-		ingest:     ingest,
-		queries:    queries,
-		sourceRepo: sourceRepo,
-		logger:     logger,
-		slot:       slot,
+	var sm *metrics.ScraperMetrics
+	if slot != "" {
+		sm = metrics.NewScraperMetrics(metrics.Registry)
 	}
+	return &Scraper{
+		ingest:         ingest,
+		queries:        queries,
+		sourceRepo:     sourceRepo,
+		logger:         logger,
+		slot:           slot,
+		scraperMetrics: sm,
+	}
+}
+
+// SetRodExtractor sets the Tier 2 headless browser extractor. Call after
+// construction to enable Tier 2 scraping. When r is nil, Tier 2 sources
+// return an error describing that headless scraping is unconfigured.
+func (s *Scraper) SetRodExtractor(r *RodExtractor) {
+	s.rodExtractor = r
 }
 
 // loadSourceConfigs returns the active SourceConfig slice. It tries the DB
@@ -159,12 +179,37 @@ func (s *Scraper) loadSourceConfigs(ctx context.Context, opts ScrapeOptions) ([]
 // ScrapeURL fetches rawURL, extracts JSON-LD events, normalises them, and
 // either submits or dry-runs the batch. The source name is derived from the
 // URL hostname.
+//
+// When opts.HeadlessOverride is true and a RodExtractor is configured, the URL
+// is scraped using the Tier 2 headless browser path instead (with WaitSelector
+// defaulting to "body"). This is intended for CLI use only.
+//
+// NOTE: The hostname is used as the Prometheus "source" label. This is safe
+// today because ScrapeURL is only called from the CLI (bounded set of URLs).
+// Do NOT expose this method from a user-facing HTTP endpoint with
+// operator-supplied URLs — the label would become unbounded and cause
+// Prometheus memory growth. If that call-site is ever added, normalise the
+// label (e.g. strip subdomains, cap length) or use a fixed "ad_hoc" value.
 func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptions) (ScrapeResult, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return ScrapeResult{Error: err}, nil
 	}
 	sourceName := parsedURL.Hostname()
+
+	// When --headless is requested, route to Tier 2.
+	if opts.HeadlessOverride {
+		source := SourceConfig{
+			Name:       sourceName,
+			URL:        rawURL,
+			Tier:       2,
+			TrustLevel: 5,
+			Headless: HeadlessConfig{
+				WaitSelector: "body",
+			},
+		}
+		return s.scrapeTier2(ctx, source, opts)
+	}
 
 	source := SourceConfig{
 		Name:       sourceName,
@@ -222,11 +267,23 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 		return ScrapeResult{}, fmt.Errorf("source is disabled: %s", sourceName)
 	}
 
+	// --headless flag: override source tier to 2 and set a default WaitSelector.
+	if opts.HeadlessOverride && found.Tier != 2 {
+		found.Tier = 2
+		if found.Headless.WaitSelector == "" {
+			found.Headless.WaitSelector = "body"
+		}
+	}
+
 	switch found.Tier {
 	case 0:
 		return s.scrapeTier0(ctx, *found, opts)
 	case 1:
 		return s.scrapeTier1(ctx, *found, opts)
+	case 2:
+		return s.scrapeTier2(ctx, *found, opts)
+	case 3:
+		return s.scrapeTier3(ctx, *found, opts)
 	default:
 		return ScrapeResult{}, fmt.Errorf("unknown tier %d for source %s", found.Tier, sourceName)
 	}
@@ -277,6 +334,10 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 			res, scrapeErr = s.scrapeTier0(ctx, cfg, opts)
 		case 1:
 			res, scrapeErr = s.scrapeTier1(ctx, cfg, opts)
+		case 2:
+			res, scrapeErr = s.scrapeTier2(ctx, cfg, opts)
+		case 3:
+			res, scrapeErr = s.scrapeTier3(ctx, cfg, opts)
 		default:
 			scrapeErr = fmt.Errorf("unknown tier %d for source %s", cfg.Tier, cfg.Name)
 		}
@@ -304,10 +365,28 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		if opts.RateLimitMs > 0 {
 			extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
 		}
-		rawEvents, err := extractor.ScrapeWithSelectors(ctx, source)
-		if err != nil {
-			return 0, nil, err
+
+		var allRaw []RawEvent
+		urlList := source.GetURLs()
+		failCount := 0
+		for _, u := range urlList {
+			clone := source
+			clone.URL = u
+			rawEvts, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
+			if fetchErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
+					Msg("scraper: tier 1 URL failed, continuing")
+				failCount++
+				continue
+			}
+			allRaw = append(allRaw, rawEvts...)
 		}
+		// failCount > 0 guards against the empty-list case (0 == 0 would fire spuriously).
+		if failCount > 0 && failCount == len(urlList) {
+			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
+				Msg("scraper: all URLs failed for source — returning 0 events")
+		}
+		rawEvents := allRaw
 
 		limit := opts.Limit
 		var validEvents []events.EventInput
@@ -336,6 +415,70 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	}), nil
 }
 
+// scrapeTier2 fetches and processes a Tier 2 (headless browser) source.
+func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
+	result := ScrapeResult{
+		SourceName: source.Name,
+		SourceURL:  source.URL,
+		Tier:       2,
+		DryRun:     opts.DryRun,
+	}
+
+	if s.rodExtractor == nil {
+		result.Error = fmt.Errorf("tier 2 scraping requires a RodExtractor (set SCRAPER_HEADLESS_ENABLED=true)")
+		return result, nil
+	}
+
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+		var allRaw []RawEvent
+		urlList := source.GetURLs()
+		failCount := 0
+		for _, u := range urlList {
+			clone := source
+			clone.URL = u
+			rawEvts, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
+			if fetchErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
+					Msg("scraper: tier 2 URL failed, continuing")
+				failCount++
+				continue
+			}
+			allRaw = append(allRaw, rawEvts...)
+		}
+		// failCount > 0 guards against the empty-list case (0 == 0 would fire spuriously).
+		if failCount > 0 && failCount == len(urlList) {
+			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
+				Msg("scraper: all URLs failed for source — returning 0 events")
+		}
+		rawEvents := allRaw
+
+		var validEvents []events.EventInput
+		skipped := 0
+		limit := opts.Limit
+
+		for i, raw := range rawEvents {
+			if limit > 0 && i >= limit {
+				break
+			}
+			input, normErr := NormalizeRawEvent(raw, source)
+			if normErr != nil {
+				s.logger.Warn().Str("source", source.Name).Err(normErr).
+					Msg("scraper: skipping raw event that failed normalisation (tier 2)")
+				skipped++
+				continue
+			}
+			validEvents = append(validEvents, input)
+		}
+
+		if skipped > 0 {
+			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
+				Msg("scraper: tier 2 events skipped during normalisation")
+		}
+
+		return len(rawEvents), validEvents, nil
+	}), nil
+}
+
 // scrapeTier0 fetches and processes a Tier 0 (JSON-LD) source.
 func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
 	result := ScrapeResult{
@@ -346,10 +489,26 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
-		rawEvents, err := FetchAndExtractJSONLD(ctx, source.URL, opts.HTTPClient(fetchTimeout))
-		if err != nil {
-			return 0, nil, err
+		var allRawEvents []json.RawMessage
+		urlList := source.GetURLs()
+		failCount := 0
+		for _, u := range urlList {
+			rawEvts, fetchErr := FetchAndExtractJSONLD(ctx, u, opts.HTTPClient(fetchTimeout))
+			if fetchErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
+					Msg("scraper: tier 0 URL failed, continuing")
+				failCount++
+				continue
+			}
+			allRawEvents = append(allRawEvents, rawEvts...)
 		}
+		// failCount > 0 guards against the empty-list case (0 == 0 would fire spuriously).
+		if failCount > 0 && failCount == len(urlList) {
+			s.logger.Warn().Str("source", source.Name).Int("urls", len(urlList)).
+				Msg("scraper: all URLs failed for source — returning 0 events")
+		}
+		rawEvents := allRawEvents
+
 		valid, skipped := s.normalizeJSONLDEvents(rawEvents, source, opts.Limit)
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
@@ -392,6 +551,53 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 		}
 
 		return len(rawEvents), valid, nil
+	}), nil
+}
+
+// scrapeTier3 fetches and processes a Tier 3 (GraphQL API) source.
+func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
+	result := ScrapeResult{
+		SourceName: source.Name,
+		SourceURL:  source.URL,
+		Tier:       3,
+		DryRun:     opts.DryRun,
+	}
+
+	extractor := NewGraphQLExtractor(s.logger)
+
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+		// Tier 3 uses the single cfg.GraphQL.Endpoint rather than iterating GetURLs().
+		// source.URL is stored as metadata (SourceURL in scraper_run records) but
+		// is not used for fetching — only Endpoint drives the HTTP request.
+		rawEvents, err := extractor.FetchAndExtractGraphQL(ctx, source, opts.HTTPClient(fetchTimeout))
+		if err != nil {
+			return 0, nil, err
+		}
+
+		var validEvents []events.EventInput
+		skipped := 0
+		limit := opts.Limit
+
+		for i, raw := range rawEvents {
+			if limit > 0 && i >= limit {
+				break
+			}
+			input, normErr := NormalizeRawEvent(raw, source)
+			if normErr != nil {
+				s.logger.Warn().Str("source", source.Name).Err(normErr).
+					Msg("scraper: skipping raw event that failed normalisation (tier 3)")
+				skipped++
+				continue
+			}
+			validEvents = append(validEvents, input)
+		}
+
+		if skipped > 0 {
+			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
+				Msg("scraper: tier 3 events skipped during normalisation")
+		}
+
+		return len(rawEvents), validEvents, nil
 	}), nil
 }
 
@@ -473,6 +679,8 @@ func (s *Scraper) runWithTracking(
 
 // recordMetrics records Prometheus metrics for a completed scrape run.
 // It is a no-op when s.slot is empty (metrics disabled).
+// s.scraperMetrics is guaranteed non-nil whenever s.slot is non-empty
+// (see NewScraperWithSlot and NewScraperWithSourceRepoAndSlot).
 func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 	if s.slot == "" {
 		return
@@ -490,15 +698,8 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 		resultLabel = "dry_run"
 	}
 
-	// Observe run duration.
-	metrics.ScraperRunDuration.
-		WithLabelValues(result.SourceName, tier, s.slot).
-		Observe(duration.Seconds())
-
-	// Increment run counter.
-	metrics.ScraperRunsTotal.
-		WithLabelValues(result.SourceName, tier, resultLabel, s.slot).
-		Inc()
+	s.scraperMetrics.RunDuration.WithLabelValues(result.SourceName, tier, s.slot).Observe(duration.Seconds())
+	s.scraperMetrics.RunsTotal.WithLabelValues(result.SourceName, tier, resultLabel, s.slot).Inc()
 
 	// Increment per-outcome event counters (skip zero values to avoid label pollution).
 	type outcomeCount struct {
@@ -514,9 +715,7 @@ func (s *Scraper) recordMetrics(result ScrapeResult, duration time.Duration) {
 	}
 	for _, oc := range outcomes {
 		if oc.count != 0 {
-			metrics.ScraperEventsTotal.
-				WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).
-				Add(float64(oc.count))
+			s.scraperMetrics.EventsTotal.WithLabelValues(result.SourceName, tier, oc.outcome, s.slot).Add(float64(oc.count))
 		}
 	}
 }

@@ -1,9 +1,24 @@
 name: "church-wellesley-village-bia"
-# Tier 2 (DISABLED). Wix Events App, event container renders empty server-side.
-# No static event data in SSR output. Headless browser required.
 url: "https://www.churchwellesleyvillage.ca/events"
 tier: 2
 schedule: "weekly"
 trust_level: 5
 license: "CC0-1.0"
+# Wix Events OOI widget never renders within the 30s Rod hard timeout.
+# The widget container (#comp-mbl3z9lq) is always an empty div — no event
+# data-hooks appear in the DOM regardless of wait selector used.
+# Wix Thunderbolt OOI requires full JS platform bootstrap which does not
+# complete under headless Rod. Events sitemap exists at
+# /dynamic-events-sitemap.xml (13 events) but individual pages also lack
+# JSON-LD Event structured data.
 enabled: false
+max_pages: 3
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 20000
+selectors:
+  event_list: "[data-hook='event-list-item']"
+  name: "[data-hook='ev-title']"
+  start_date: "[data-hook='ev-date']"
+  url: "a[data-hook='ev-rsvp-button']"
+  image: "[data-hook='ev-image'] img"

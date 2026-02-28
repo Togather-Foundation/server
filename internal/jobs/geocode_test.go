@@ -76,6 +76,7 @@ func TestNewWorkersWithPool_RegistersGeocodingWorkers(t *testing.T) {
 		nil, // orgService
 		logger,
 		"test",
+		nil, // submissionRepo
 	)
 
 	assert.NotNil(t, workers)
@@ -95,6 +96,7 @@ func TestNewWorkersWithPool_NilGeocodingService(t *testing.T) {
 		nil, // orgService
 		logger,
 		"test",
+		nil, // submissionRepo
 	)
 
 	assert.NotNil(t, workers)

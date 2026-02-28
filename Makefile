@@ -32,7 +32,7 @@ help:
 	@echo "  make test-ci       - Run all test suites (fast, no race detector)"
 	@echo "  make test-ci-race  - Run tests exactly as CI does (with race detector, ~10min)"
 	@echo "  make lint          - Run golangci-lint"
-	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
+	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (no cache, 5m timeout)"
 	@echo "  make lint-openapi  - Validate OpenAPI specification"
 	@echo "  make lint-yaml     - Validate YAML files (GitHub workflows, configs)"
 	@echo "  make lint-js       - Validate JavaScript syntax (web/admin/static/js)"
@@ -44,7 +44,7 @@ help:
 	@echo "  make coverage      - Run tests with coverage report (enforces 35% min threshold)"
 	@echo "  make coverage-check - Check if coverage meets 35% min threshold"
 	@echo "  make lint          - Run golangci-lint"
-	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (with 5m timeout)"
+	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (no cache, 5m timeout)"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server (kills existing first)"
@@ -304,15 +304,15 @@ lint:
 		exit 1; \
 	fi
 
-# Run linter exactly as CI does
+# Run linter exactly as CI does (cold cache, matches GitHub Actions behaviour)
 lint-ci:
-	@echo "Running linter as CI does (with 5m timeout)..."
+	@echo "Running linter as CI does (no cache, 5m timeout)..."
 	@if command -v golangci-lint > /dev/null 2>&1; then \
-		golangci-lint run --timeout=5m ./...; \
+		golangci-lint run --no-cache --timeout=5m ./...; \
 	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
-		$(HOME)/go/bin/golangci-lint run --timeout=5m ./...; \
+		$(HOME)/go/bin/golangci-lint run --no-cache --timeout=5m ./...; \
 	elif [ -f $(GOPATH)/bin/golangci-lint ]; then \
-		$(GOPATH)/bin/golangci-lint run --timeout=5m ./...; \
+		$(GOPATH)/bin/golangci-lint run --no-cache --timeout=5m ./...; \
 	else \
 		echo "golangci-lint not found. Install with 'make install-tools'"; \
 		exit 1; \
