@@ -368,21 +368,21 @@ func ParseDatabaseURL(dbURL string) (host, port, database, user, password string
 func createPgpassFile(host, port, database, user, password string) (string, error) {
 	tmpFile, err := os.CreateTemp("", "pgpass-*")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create pgpass temp file: %w", err)
 	}
 	defer func() { _ = tmpFile.Close() }()
 
 	// Set restrictive permissions
 	if err := os.Chmod(tmpFile.Name(), 0600); err != nil {
 		_ = os.Remove(tmpFile.Name())
-		return "", err
+		return "", fmt.Errorf("chmod pgpass file: %w", err)
 	}
 
 	// Write pgpass entry: hostname:port:database:username:password
 	line := fmt.Sprintf("%s:%s:%s:%s:%s\n", host, port, database, user, password)
 	if _, err := tmpFile.WriteString(line); err != nil {
 		_ = os.Remove(tmpFile.Name())
-		return "", err
+		return "", fmt.Errorf("write pgpass entry: %w", err)
 	}
 
 	return tmpFile.Name(), nil
