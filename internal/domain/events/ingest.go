@@ -39,7 +39,7 @@ func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string
 		repo:             repo,
 		nodeDomain:       nodeDomain,
 		defaultTZ:        defaultTimezone,
-		validationConfig: validationConfig,
+		validationConfig: validationConfig.WithDefaults(),
 	}
 }
 
@@ -1077,7 +1077,7 @@ func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationC
 	// This should never happen in practice since all callers pass initialized config,
 	// but defensive check prevents potential panics.
 
-	if reviewConfidence(input, false, validationConfig) < 0.6 {
+	if reviewConfidence(input, false, validationConfig) < validationConfig.ReviewConfidenceThreshold {
 		return true
 	}
 	if strings.TrimSpace(input.Description) == "" {
@@ -1086,7 +1086,7 @@ func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationC
 	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		return true
 	}
-	if isTooFarFuture(input.StartDate, 730) {
+	if isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
 		return true
 	}
 	if !input.SkipMultiSessionCheck {
@@ -1110,7 +1110,7 @@ func reviewConfidence(input EventInput, flagged bool, validationConfig config.Va
 	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		confidence -= 0.2
 	}
-	if isTooFarFuture(input.StartDate, 730) {
+	if isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
 		confidence -= 0.2
 	}
 	if flagged {
@@ -1186,8 +1186,8 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 		})
 	}
 
-	// Check for too far in future (>730 days = ~2 years)
-	if isTooFarFuture(input.StartDate, 730) {
+	// Check for too far in future (> MaxFutureDays)
+	if isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
 		result = append(result, ValidationWarning{
 			Field:   "startDate",
 			Message: "Event is scheduled more than 2 years in the future. This may indicate a data quality issue.",
@@ -1197,7 +1197,7 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 
 	// Check for low confidence score
 	confidence := reviewConfidence(input, false, validationConfig)
-	if confidence < 0.6 {
+	if confidence < validationConfig.ReviewConfidenceThreshold {
 		result = append(result, ValidationWarning{
 			Field:   "event",
 			Message: fmt.Sprintf("Event has low data quality score (%.0f%%). Review recommended.", confidence*100),

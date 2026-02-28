@@ -250,7 +250,7 @@ func setupUserService(t *testing.T, pool *pgxpool.Pool) *Service {
 
 	auditLogger := audit.NewLoggerWithZerolog(zerolog.Nop())
 
-	return NewService(pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	return NewService(pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{PasswordMinLength: 12, PasswordMaxLength: 128})
 }
 
 // Integration tests for service methods

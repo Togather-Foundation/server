@@ -38,7 +38,7 @@ func TestUsersService_CreateUserAndInvite_Success(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	params := users.CreateUserParams{
 		Username: "testuser",
@@ -60,7 +60,7 @@ func TestUsersService_CreateUserAndInvite_EmailTaken(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create first user
 	_, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -88,7 +88,7 @@ func TestUsersService_CreateUserAndInvite_UsernameTaken(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create first user
 	_, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -116,7 +116,7 @@ func TestUsersService_AcceptInvitation_InvalidToken(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	_, err := svc.AcceptInvitation(env.Context, "invalid-token", "SecurePassword123!")
 	require.Error(t, err)
@@ -128,7 +128,7 @@ func TestUsersService_UpdateUser_Success(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create user
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -160,7 +160,7 @@ func TestUsersService_UpdateUser_NotFound(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	nonExistentID := pgtype.UUID{
 		Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
@@ -181,7 +181,7 @@ func TestUsersService_DeactivateUser_Success(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create and activate user
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -210,7 +210,7 @@ func TestUsersService_DeactivateUser_AlreadyInactive(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create user (starts inactive)
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -231,7 +231,7 @@ func TestUsersService_ActivateUser_Success(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create user (starts inactive)
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -257,7 +257,7 @@ func TestUsersService_DeleteUser_Success(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create user
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -287,7 +287,7 @@ func TestUsersService_GetUser_Success(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create user
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -309,7 +309,7 @@ func TestUsersService_ResendInvitation_UserAlreadyActive(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 
 	// Create and activate user
 	user, err := svc.CreateUserAndInvite(env.Context, users.CreateUserParams{
@@ -334,7 +334,7 @@ func TestUserCreationFlow_E2E(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 	queries := postgres.New(env.Pool)
 
 	// Step 1: Create user and generate invitation
@@ -369,7 +369,7 @@ func TestInvitationAcceptanceFlow_E2E(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 	queries := postgres.New(env.Pool)
 
 	// Step 1: Create user with invitation
@@ -423,7 +423,7 @@ func TestUserUpdateFlow_E2E(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 	queries := postgres.New(env.Pool)
 
 	// Step 1: Create user
@@ -462,7 +462,7 @@ func TestTransactionRollback(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 	queries := postgres.New(env.Pool)
 
 	// Test 1: Create user with invalid role should fail validation before DB insert
@@ -517,7 +517,7 @@ func TestConcurrentUserOperations(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 	queries := postgres.New(env.Pool)
 
 	// Create initial user
@@ -610,7 +610,7 @@ func TestUserDeletionAndInvitationCleanup(t *testing.T) {
 	env := setupTestEnv(t)
 	emailSvc, auditLogger := setupUserServiceDeps(t)
 
-	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop())
+	svc := users.NewService(env.Pool, emailSvc, auditLogger, "http://localhost:8080", zerolog.Nop(), config.UsersConfig{})
 	queries := postgres.New(env.Pool)
 
 	// Step 1: Create user with invitation

@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -745,7 +746,7 @@ func TestApproveReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -905,7 +906,7 @@ func TestRejectReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1104,7 +1105,7 @@ func TestFixReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1130,7 +1131,7 @@ func TestFixReview(t *testing.T) {
 // TestApproveReview_InvalidJSON tests handling of malformed JSON
 func TestApproveReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1152,7 +1153,7 @@ func TestApproveReview_InvalidJSON(t *testing.T) {
 // TestRejectReview_InvalidJSON tests handling of malformed JSON
 func TestRejectReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1174,7 +1175,7 @@ func TestRejectReview_InvalidJSON(t *testing.T) {
 // TestFixReview_InvalidJSON tests handling of malformed JSON
 func TestFixReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,

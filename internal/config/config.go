@@ -25,6 +25,8 @@ type Config struct {
 	Geocoding       GeocodingConfig
 	Artsdata        ArtsdataConfig
 	Scraper         ScraperConfig
+	Developer       DeveloperConfig
+	Users           UsersConfig
 	DefaultTimezone string
 	Environment     string
 }
@@ -200,6 +202,102 @@ type ValidationConfig struct {
 	//   - internal/domain/events/ingest.go:reviewConfidence() - Confidence scoring
 	//   - internal/domain/events/ingest.go:appendQualityWarnings() - Warning generation
 	RequireImage bool
+
+	// ReviewConfidenceThreshold is the minimum quality-confidence score [0.0–1.0] an
+	// event must achieve to bypass the review queue.  Events that score below this
+	// threshold are flagged for manual review and receive a "low_confidence" warning.
+	// Environment variable: VALIDATION_REVIEW_CONFIDENCE_THRESHOLD (default: 0.6)
+	ReviewConfidenceThreshold float64
+
+	// MaxFutureDays is the maximum number of days in the future an event's start date
+	// may be before it is sent to the review queue and receives a "too_far_future"
+	// warning.  730 ≈ 2 years.
+	// Environment variable: VALIDATION_MAX_FUTURE_DAYS (default: 730)
+	MaxFutureDays int
+
+	// MaxEventNameLength is the maximum byte length allowed for an event name in
+	// admin update operations.
+	// Environment variable: VALIDATION_MAX_EVENT_NAME_LENGTH (default: 500)
+	MaxEventNameLength int
+}
+
+// WithDefaults returns a copy of ValidationConfig with zero-values replaced by
+// their production defaults.  Call this in service constructors so that tests
+// that only set RequireImage (the original field) continue to behave correctly
+// even after new fields were added.
+func (v ValidationConfig) WithDefaults() ValidationConfig {
+	if v.ReviewConfidenceThreshold == 0 {
+		v.ReviewConfidenceThreshold = 0.6
+	}
+	if v.MaxFutureDays == 0 {
+		v.MaxFutureDays = 730
+	}
+	if v.MaxEventNameLength == 0 {
+		v.MaxEventNameLength = 500
+	}
+	return v
+}
+
+// WithDefaults returns a copy of DeveloperConfig with zero-values replaced by
+// their production defaults.  Call this in service constructors so that tests
+// that use DeveloperConfig{} continue to behave correctly.
+func (d DeveloperConfig) WithDefaults() DeveloperConfig {
+	if d.PasswordMinLength == 0 {
+		d.PasswordMinLength = 8
+	}
+	if d.PasswordMaxLength == 0 {
+		d.PasswordMaxLength = 128
+	}
+	if d.UsageFlushTimeoutSeconds == 0 {
+		d.UsageFlushTimeoutSeconds = 10
+	}
+	return d
+}
+
+// DeveloperConfig holds tunables for the developer account and API-key subsystem.
+type DeveloperConfig struct {
+	// PasswordMinLength is the minimum number of Unicode code points required for a
+	// developer account password.  Developer passwords are intentionally less strict
+	// than user passwords because developers typically use password managers.
+	// Environment variable: DEVELOPER_PASSWORD_MIN_LENGTH (default: 8)
+	PasswordMinLength int
+
+	// PasswordMaxLength is the maximum number of Unicode code points allowed for a
+	// developer account password.  Consistent with NIST SP 800-63B upper bound.
+	// Environment variable: DEVELOPER_PASSWORD_MAX_LENGTH (default: 128)
+	PasswordMaxLength int
+
+	// UsageFlushTimeoutSeconds is the context timeout (in seconds) used when
+	// flushing buffered API-key usage metrics to the database.
+	// Environment variable: DEVELOPER_USAGE_FLUSH_TIMEOUT_SECONDS (default: 10)
+	UsageFlushTimeoutSeconds int
+}
+
+// WithDefaults returns a copy of UsersConfig with zero-values replaced by
+// their production defaults.  Call this in service constructors so that tests
+// that use UsersConfig{} continue to behave correctly.
+func (u UsersConfig) WithDefaults() UsersConfig {
+	if u.PasswordMinLength == 0 {
+		u.PasswordMinLength = 12
+	}
+	if u.PasswordMaxLength == 0 {
+		u.PasswordMaxLength = 128
+	}
+	return u
+}
+
+// UsersConfig holds tunables for the end-user account subsystem.
+type UsersConfig struct {
+	// PasswordMinLength is the minimum byte length required for a user account
+	// password.  Follows NIST SP 800-63B guidelines; higher than developer minimum
+	// because regular users are less likely to use password managers.
+	// Environment variable: USERS_PASSWORD_MIN_LENGTH (default: 12)
+	PasswordMinLength int
+
+	// PasswordMaxLength is the maximum byte length allowed for a user account
+	// password.  Consistent with NIST SP 800-63B upper bound.
+	// Environment variable: USERS_PASSWORD_MAX_LENGTH (default: 128)
+	PasswordMaxLength int
 }
 
 // GeocodingConfig holds configuration for the Nominatim geocoding client and cache.
@@ -314,7 +412,10 @@ func Load() (Config, error) {
 			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
 		},
 		Validation: ValidationConfig{
-			RequireImage: getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
+			RequireImage:              getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
+			ReviewConfidenceThreshold: getEnvFloat("VALIDATION_REVIEW_CONFIDENCE_THRESHOLD", 0.6),
+			MaxFutureDays:             getEnvInt("VALIDATION_MAX_FUTURE_DAYS", 730),
+			MaxEventNameLength:        getEnvInt("VALIDATION_MAX_EVENT_NAME_LENGTH", 500),
 		},
 		Tracing: TracingConfig{
 			Enabled:      getEnvBool("TRACING_ENABLED", false),
@@ -352,6 +453,15 @@ func Load() (Config, error) {
 			HeadlessEnabled: getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
 			ChromePath:      getEnv("SCRAPER_CHROME_PATH", ""),
 			HeadlessMaxConc: getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
+		},
+		Developer: DeveloperConfig{
+			PasswordMinLength:        getEnvInt("DEVELOPER_PASSWORD_MIN_LENGTH", 8),
+			PasswordMaxLength:        getEnvInt("DEVELOPER_PASSWORD_MAX_LENGTH", 128),
+			UsageFlushTimeoutSeconds: getEnvInt("DEVELOPER_USAGE_FLUSH_TIMEOUT_SECONDS", 10),
+		},
+		Users: UsersConfig{
+			PasswordMinLength: getEnvInt("USERS_PASSWORD_MIN_LENGTH", 12),
+			PasswordMaxLength: getEnvInt("USERS_PASSWORD_MAX_LENGTH", 128),
 		},
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),

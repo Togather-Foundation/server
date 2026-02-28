@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -55,7 +56,7 @@ func contextWithAgentKey(ctx context.Context, key *auth.APIKey) context.Context 
 func TestUsageTracking_Success(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := developers.NewUsageRecorder(repo, logger)
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	// Create test API key
 	apiKeyID := uuid.New()
@@ -94,7 +95,7 @@ func TestUsageTracking_Success(t *testing.T) {
 func TestUsageTracking_Error(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := developers.NewUsageRecorder(repo, logger)
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID := uuid.New()
 	apiKey := &auth.APIKey{
@@ -129,7 +130,7 @@ func TestUsageTracking_Error(t *testing.T) {
 func TestUsageTracking_NoAPIKey(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := developers.NewUsageRecorder(repo, logger)
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -154,7 +155,7 @@ func TestUsageTracking_NoAPIKey(t *testing.T) {
 func TestUsageTracking_InvalidUUID(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := developers.NewUsageRecorder(repo, logger)
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	// API key with invalid UUID
 	apiKey := &auth.APIKey{
@@ -204,7 +205,7 @@ func TestUsageTracking_MultipleStatusCodes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zerolog.Nop()
 			repo := &mockUsageRepo{}
-			recorder := developers.NewUsageRecorder(repo, logger)
+			recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 			apiKeyID := uuid.New()
 			apiKey := &auth.APIKey{
@@ -239,7 +240,7 @@ func TestUsageTracking_MultipleStatusCodes(t *testing.T) {
 func TestUsageTracking_ImplicitStatusOK(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := developers.NewUsageRecorder(repo, logger)
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID := uuid.New()
 	apiKey := &auth.APIKey{

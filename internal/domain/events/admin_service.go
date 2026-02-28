@@ -8,22 +8,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/validation"
 	"github.com/rs/zerolog/log"
 )
 
 // AdminService provides admin operations for event management
 type AdminService struct {
-	repo         Repository
-	requireHTTPS bool
-	defaultTZ    string
+	repo             Repository
+	requireHTTPS     bool
+	defaultTZ        string
+	validationConfig config.ValidationConfig
 }
 
-func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string) *AdminService {
+func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig) *AdminService {
 	return &AdminService{
-		repo:         repo,
-		requireHTTPS: requireHTTPS,
-		defaultTZ:    defaultTimezone,
+		repo:             repo,
+		requireHTTPS:     requireHTTPS,
+		defaultTZ:        defaultTimezone,
+		validationConfig: validationConfig.WithDefaults(),
 	}
 }
 
@@ -610,8 +613,8 @@ func (s *AdminService) validateUpdateParams(params UpdateEventParams) error {
 		if name == "" {
 			return FilterError{Field: "name", Message: "cannot be empty"}
 		}
-		if len(name) > 500 {
-			return FilterError{Field: "name", Message: "exceeds maximum length of 500 characters"}
+		if len(name) > s.validationConfig.MaxEventNameLength {
+			return FilterError{Field: "name", Message: fmt.Sprintf("exceeds maximum length of %d characters", s.validationConfig.MaxEventNameLength)}
 		}
 	}
 

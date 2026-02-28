@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/config"
 )
 
 // TestMergeEvents_AtomicRollback verifies that MergeEvents rolls back on error
@@ -28,7 +30,7 @@ func TestMergeEvents_AtomicRollback(t *testing.T) {
 		},
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
 
 	params := MergeEventsParams{
 		PrimaryULID:   "01HZTEST1",
@@ -74,7 +76,7 @@ func TestMergeEvents_AtomicCommit(t *testing.T) {
 		},
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
 
 	params := MergeEventsParams{
 		PrimaryULID:   "01HZTEST1",
@@ -118,7 +120,7 @@ func TestMergeEvents_RollbackOnMergeError(t *testing.T) {
 		},
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
 
 	params := MergeEventsParams{
 		PrimaryULID:   "01HZTEST1",

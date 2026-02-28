@@ -249,15 +249,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Initialize user service
 	baseURL := fmt.Sprintf("https://%s", cfg.Server.PublicURL) // For invitation links
-	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger)
+	userService := users.NewService(pool, emailService, auditLogger, baseURL, logger, cfg.Users)
 
 	// Initialize developer service (srv-x7vv0)
 	developerRepo := postgres.NewDeveloperRepositoryAdapter(pool)
-	developerService := developers.NewService(developerRepo, logger)
+	developerService := developers.NewService(developerRepo, logger, cfg.Developer)
 
 	// Initialize API key usage recorder (srv-8r58k)
 	usageRepo := postgres.NewUsageRepository(pool)
-	usageRecorder := developers.NewUsageRecorder(usageRepo, logger)
+	usageRecorder := developers.NewUsageRecorder(usageRepo, logger, cfg.Developer)
 	// Note: usageRecorder.Start() is called in cmd/server/cmd/serve.go for proper lifecycle management
 	// DO NOT call usageRecorder.Start() here
 
@@ -328,7 +328,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
-	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone)
+	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create API Key handler

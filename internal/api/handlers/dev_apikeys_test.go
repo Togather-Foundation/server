@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/audit"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -161,7 +162,7 @@ func TestDevKeyCreate(t *testing.T) {
 			mockRepo := new(MockDeveloperRepository)
 			tt.mockSetup(mockRepo)
 
-			service := developers.NewService(mockRepo, zerolog.Nop())
+			service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 			auditLogger := audit.NewLogger()
 			handler := NewDeveloperAPIKeyHandler(
 				service,
@@ -237,7 +238,7 @@ func TestDevKeyList(t *testing.T) {
 		mockRepo.On("GetAPIKeyUsageTotal", mock.Anything, key2ID, mock.Anything, mock.Anything).
 			Return(int64(200), int64(10), nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		handler := NewDeveloperAPIKeyHandler(
 			service,
@@ -283,7 +284,7 @@ func TestDevKeyList(t *testing.T) {
 
 		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, developer2ID).Return([]developers.APIKey{}, nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		handler := NewDeveloperAPIKeyHandler(
 			service,
@@ -387,7 +388,7 @@ func TestDevKeyRevoke(t *testing.T) {
 			mockRepo := new(MockDeveloperRepository)
 			tt.mockSetup(mockRepo)
 
-			service := developers.NewService(mockRepo, zerolog.Nop())
+			service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 			auditLogger := audit.NewLogger()
 			handler := NewDeveloperAPIKeyHandler(
 				service,
@@ -440,7 +441,7 @@ func TestDevUsageStats(t *testing.T) {
 		mockRepo.On("GetDeveloperUsageTotal", mock.Anything, developerID, mock.Anything, mock.Anything).
 			Return(int64(1000), int64(50), nil).Maybe()
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		handler := NewDeveloperAPIKeyHandler(
 			service,
@@ -476,7 +477,7 @@ func TestDevUsageStats(t *testing.T) {
 		// Mock key ownership - returns false (key doesn't belong to this developer)
 		mockRepo.On("CheckAPIKeyOwnership", mock.Anything, keyID, otherDevID).Return(false, nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		handler := NewDeveloperAPIKeyHandler(
 			service,
@@ -574,7 +575,7 @@ func TestAdminDeveloperInvite(t *testing.T) {
 			mockRepo := new(MockDeveloperRepository)
 			tt.mockSetup(mockRepo)
 
-			service := developers.NewService(mockRepo, zerolog.Nop())
+			service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 			auditLogger := audit.NewLogger()
 			handler := NewAdminDevelopersHandler(service, mockRepo, auditLogger, "test")
 
@@ -643,7 +644,7 @@ func TestAdminDeveloperList(t *testing.T) {
 		mockRepo.On("GetDeveloperUsageTotal", mock.Anything, dev2ID, mock.Anything, mock.Anything).
 			Return(int64(0), int64(0), nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		handler := NewAdminDevelopersHandler(service, mockRepo, auditLogger, "test")
 
@@ -687,7 +688,7 @@ func TestAdminDeveloperList(t *testing.T) {
 		mockRepo.On("ListDevelopers", mock.Anything, 50, 0).Return([]*developers.Developer{}, nil)
 		mockRepo.On("CountDevelopers", mock.Anything).Return(int64(0), nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		handler := NewAdminDevelopersHandler(service, mockRepo, auditLogger, "test")
 
@@ -732,7 +733,7 @@ func TestAuthIsolation(t *testing.T) {
 		mockRepo.On("ListDeveloperAPIKeys", mock.Anything, developerID).
 			Return([]developers.APIKey{}, nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		devHandler := NewDeveloperAPIKeyHandler(service, zerolog.Nop(), "test", auditLogger)
 
@@ -752,7 +753,7 @@ func TestAuthIsolation(t *testing.T) {
 
 	t.Run("developer endpoint fails without claims in context", func(t *testing.T) {
 		mockRepo := new(MockDeveloperRepository)
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		devHandler := NewDeveloperAPIKeyHandler(service, zerolog.Nop(), "test", auditLogger)
 
@@ -776,7 +777,7 @@ func TestAuthIsolation(t *testing.T) {
 			Return([]*developers.Developer{}, nil)
 		mockRepo.On("CountDevelopers", mock.Anything).Return(int64(0), nil)
 
-		service := developers.NewService(mockRepo, zerolog.Nop())
+		service := developers.NewService(mockRepo, zerolog.Nop(), config.DeveloperConfig{})
 		auditLogger := audit.NewLogger()
 		adminHandler := NewAdminDevelopersHandler(service, mockRepo, auditLogger, "test")
 

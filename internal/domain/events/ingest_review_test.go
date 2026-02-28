@@ -94,8 +94,10 @@ func TestNeedsReview(t *testing.T) {
 			// Most tests use RequireImage: true, but the last test uses zero-value (RequireImage: false)
 			var cfg config.ValidationConfig
 			if tt.name != "zero-value config (RequireImage=false) - missing image should pass" {
-				cfg = config.ValidationConfig{RequireImage: true}
-			} // else: zero-value config with RequireImage: false
+				cfg = config.ValidationConfig{RequireImage: true}.WithDefaults()
+			} else {
+				cfg = config.ValidationConfig{}.WithDefaults() // zero-value config with RequireImage: false
+			}
 
 			result := eventNeedsReview(tt.input, tt.linkStatuses, cfg)
 			if result != tt.expected {
@@ -209,8 +211,10 @@ func TestReviewConfidence(t *testing.T) {
 			// Most tests use RequireImage: true, but the last test uses zero-value (RequireImage: false)
 			var cfg config.ValidationConfig
 			if tt.name != "zero-value config (RequireImage=false) - missing image should not reduce confidence" {
-				cfg = config.ValidationConfig{RequireImage: true}
-			} // else: zero-value config with RequireImage: false
+				cfg = config.ValidationConfig{RequireImage: true}.WithDefaults()
+			} else {
+				cfg = config.ValidationConfig{}.WithDefaults() // zero-value config with RequireImage: false
+			}
 
 			result := reviewConfidence(tt.input, tt.flagged, cfg)
 			// Use epsilon for floating point comparison

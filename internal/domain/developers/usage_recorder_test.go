@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
@@ -53,7 +54,7 @@ func (m *mockUsageRepo) getCalls() []usageCall {
 func TestUsageRecorder_RecordRequest(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID := uuid.New()
 
@@ -72,7 +73,7 @@ func TestUsageRecorder_RecordRequest(t *testing.T) {
 func TestUsageRecorder_ManualFlush(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID := uuid.New()
 
@@ -104,7 +105,7 @@ func TestUsageRecorder_PeriodicFlush(t *testing.T) {
 
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID := uuid.New()
 
@@ -132,7 +133,7 @@ func TestUsageRecorder_PeriodicFlush(t *testing.T) {
 func TestUsageRecorder_SizeBasedFlush(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 	recorder.maxSize = 3 // Set low threshold for testing
 
 	// Record usage for multiple keys to exceed buffer size
@@ -152,7 +153,7 @@ func TestUsageRecorder_SizeBasedFlush(t *testing.T) {
 func TestUsageRecorder_ConcurrentAccess(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID1 := uuid.New()
 	apiKeyID2 := uuid.New()
@@ -184,7 +185,7 @@ func TestUsageRecorder_ConcurrentAccess(t *testing.T) {
 func TestUsageRecorder_GracefulShutdown(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 	recorder.Start()
 
 	apiKeyID := uuid.New()
@@ -207,7 +208,7 @@ func TestUsageRecorder_GracefulShutdown(t *testing.T) {
 func TestUsageRecorder_MultipleClose(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	// Multiple closes should not panic
 	err1 := recorder.Close()
@@ -222,7 +223,7 @@ func TestUsageRecorder_MultipleClose(t *testing.T) {
 func TestUsageRecorder_MultipleStart(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	// Multiple starts should not panic or create multiple goroutines
 	recorder.Start()
@@ -237,7 +238,7 @@ func TestUsageRecorder_MultipleStart(t *testing.T) {
 func TestUsageRecorder_MultipleAPIKeys(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	// Create multiple API keys
 	keys := make([]uuid.UUID, 10)
@@ -269,7 +270,7 @@ func TestUsageRecorder_MultipleAPIKeys(t *testing.T) {
 func TestUsageRecorder_EmptyFlush(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	// Flush with no data should not panic
 	recorder.flush()
@@ -282,7 +283,7 @@ func TestUsageRecorder_EmptyFlush(t *testing.T) {
 func TestUsageRecorder_ErrorCategorization(t *testing.T) {
 	logger := zerolog.Nop()
 	repo := &mockUsageRepo{}
-	recorder := NewUsageRecorder(repo, logger)
+	recorder := NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
 
 	apiKeyID := uuid.New()
 

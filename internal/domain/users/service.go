@@ -31,6 +31,7 @@ import (
 	"unicode"
 
 	"github.com/Togather-Foundation/server/internal/audit"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 
@@ -95,8 +96,8 @@ const (
 // This ensures email ownership verification before granting access.
 //
 // All password operations use bcrypt hashing with a cost factor of 12. Passwords must
-// meet NIST SP 800-63B requirements: minimum 12 characters with uppercase, lowercase,
-// number, and special character.
+// meet NIST SP 800-63B requirements: minimum 12 characters (configurable) with uppercase,
+// lowercase, number, and special character.
 type Service struct {
 	db          *pgxpool.Pool
 	queries     *postgres.Queries
@@ -105,6 +106,7 @@ type Service struct {
 	baseURL     string
 	logger      zerolog.Logger
 	validator   *validator.Validate
+	cfg         config.UsersConfig
 }
 
 // NewService creates and initializes a new user service instance with all required dependencies.
@@ -115,6 +117,7 @@ type Service struct {
 //   - auditLogger: Logger for recording all user management operations
 //   - baseURL: Base URL for the application, used to construct invitation links
 //   - logger: Structured logger for service-level logging
+//   - cfg: UsersConfig with password policy tunables
 //
 // Returns a fully initialized Service ready to handle user management operations.
 func NewService(
@@ -123,6 +126,7 @@ func NewService(
 	auditLogger *audit.Logger,
 	baseURL string,
 	logger zerolog.Logger,
+	cfg config.UsersConfig,
 ) *Service {
 	return &Service{
 		db:          db,
@@ -132,6 +136,7 @@ func NewService(
 		baseURL:     baseURL,
 		logger:      logger.With().Str("component", "users").Logger(),
 		validator:   validator.New(),
+		cfg:         cfg.WithDefaults(),
 	}
 }
 
@@ -349,20 +354,20 @@ func (s *Service) CreateUserAndInvite(ctx context.Context, params CreateUserPara
 }
 
 // validatePassword enforces password strength requirements:
-// - Minimum 12 characters
-// - Maximum 128 characters
+// - Minimum s.cfg.PasswordMinLength characters (default: 12)
+// - Maximum s.cfg.PasswordMaxLength characters (default: 128)
 // - Must contain at least one uppercase letter
 // - Must contain at least one lowercase letter
 // - Must contain at least one number
 // - Must contain at least one special character (punctuation or symbol)
 //
 // These requirements follow NIST SP 800-63B guidelines for user-chosen secrets.
-func validatePassword(password string) error {
+func (s *Service) validatePassword(password string) error {
 	// Check length
-	if len(password) < 12 {
+	if len(password) < s.cfg.PasswordMinLength {
 		return ErrPasswordTooShort
 	}
-	if len(password) > 128 {
+	if len(password) > s.cfg.PasswordMaxLength {
 		return ErrPasswordTooLong
 	}
 
@@ -419,7 +424,7 @@ func validatePassword(password string) error {
 //   - Emits "user.invitation_accepted" audit log event
 func (s *Service) AcceptInvitation(ctx context.Context, token, password string) (postgres.GetUserByIDRow, error) {
 	// Validate password strength
-	if err := validatePassword(password); err != nil {
+	if err := s.validatePassword(password); err != nil {
 		return postgres.GetUserByIDRow{}, fmt.Errorf("invalid password: %w", err)
 	}
 
