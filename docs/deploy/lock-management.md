@@ -196,6 +196,13 @@ cd /opt/togather/src
 - Script installs cleanup traps
 - Releases lock on exit (normal or error)
 
+### 6. Atomic State File Writes
+State is written via a temp-file → fsync → rename sequence (`os.CreateTemp` +
+`Sync` + `Rename`). Readers never observe a partially written file even under
+concurrent access. A failed write leaves the previous state intact. The temp
+file is created in the same directory as the target to guarantee a same-filesystem
+(POSIX atomic) rename.
+
 ## Troubleshooting
 
 ### Lock Directory Won't Delete
