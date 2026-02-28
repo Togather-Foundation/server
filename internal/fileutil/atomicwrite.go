@@ -9,8 +9,9 @@ import (
 // AtomicWrite writes data to path atomically using a write-temp→fsync→rename
 // sequence. The temp file is created in the same directory as path to guarantee
 // a same-filesystem (POSIX atomic) rename. perm sets the file mode; callers
-// typically pass 0644. On any error the temp file is removed and path is left
-// unchanged.
+// typically pass 0644. Unlike os.WriteFile, the process umask does not affect
+// the final mode — perm is applied exactly via os.Chmod after the file is
+// written. On any error the temp file is removed and path is left unchanged.
 func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -24,9 +25,12 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	tmpName := f.Name()
 
 	ok := false
+	closed := false
 	defer func() {
 		if !ok {
-			f.Close()
+			if !closed {
+				f.Close()
+			}
 			os.Remove(tmpName)
 		}
 	}()
@@ -40,6 +44,7 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
+	closed = true
 	// os.CreateTemp creates files with 0600; set the requested permissions
 	// before rename so the target inherits the correct mode atomically.
 	if err := os.Chmod(tmpName, perm); err != nil {

@@ -1,6 +1,7 @@
 package fileutil_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,7 +94,10 @@ func TestAtomicWrite_UnwritableDirectory(t *testing.T) {
 	if err := os.Chmod(dir, 0555); err != nil {
 		t.Fatalf("Chmod dir: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(dir, 0755) })
+	t.Cleanup(func() {
+		// Restore permissions so TempDir cleanup can remove the directory.
+		_ = os.Chmod(dir, 0755)
+	})
 
 	// Skip if running as root (root ignores permission bits).
 	if os.Getuid() == 0 {
@@ -137,8 +141,13 @@ func TestAtomicWrite_ConcurrentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile after concurrent writes: %v", err)
 	}
-	// Validate it looks like one of our payloads (starts with '{' and ends with '}').
-	if len(got) < 2 || got[0] != '{' || got[len(got)-1] != '}' {
-		t.Errorf("file appears corrupted after concurrent writes: %q", got)
+	var result struct {
+		Writer int `json:"writer"`
+	}
+	if err := json.Unmarshal(got, &result); err != nil {
+		t.Fatalf("file not valid JSON after concurrent writes: %v — content: %q", err, got)
+	}
+	if result.Writer < 0 || result.Writer >= goroutines {
+		t.Errorf("writer index out of range: got %d, want [0,%d)", result.Writer, goroutines)
 	}
 }
