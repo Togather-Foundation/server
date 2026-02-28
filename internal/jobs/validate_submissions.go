@@ -247,7 +247,7 @@ func (w ValidateSubmissionsBatchWorker) validateOne(ctx context.Context, logger 
 			"id", sub.ID, "url", sub.URL, "reason", reason)
 		return w.Repo.UpdateStatus(ctx, sub.ID, "rejected", &reason, nil)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		reason := fmt.Sprintf("HEAD request returned %d", resp.StatusCode)
