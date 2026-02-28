@@ -458,7 +458,7 @@ func validateSnapshot(path string) error {
 func writeMetadata(path string, metadata Metadata) error {
 	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal metadata: %w", err)
 	}
 	return fileutil.AtomicWrite(path, data, 0644)
 }
@@ -469,6 +469,8 @@ func loadMetadata(path string) (Metadata, error) {
 	if err != nil {
 		return metadata, err
 	}
-	err = json.Unmarshal(data, &metadata)
-	return metadata, err
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return metadata, fmt.Errorf("unmarshal metadata: %w", err)
+	}
+	return metadata, nil
 }
