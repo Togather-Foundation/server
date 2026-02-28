@@ -85,6 +85,7 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 - `go test ./internal/storage/postgres` — needs live DB (see `.env`)
 - `make e2e` — browser E2E tests; requires running server + `uvx`; see `tests/e2e/AGENTS.md`
 - Run targeted package tests first; expand to `make ci` only when needed
+- **Fault injection pattern:** for packages that call `os.*` directly (like `internal/fileutil`), introduce an unexported interface (e.g. `atomicFS`) with a `defaultFS` production impl and a `failFS` test impl. Use same-package tests (`package foo`, not `package foo_test`) to access the seam. See `internal/fileutil/atomicwrite.go` + `atomicwrite_fault_test.go` as a reference.
 
 ## Beads Workflow
 
