@@ -213,7 +213,7 @@ func TestSubmissionService_FormatValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			repo := newMockRepo()
-			svc := scraper.NewSubmissionService(repo)
+			svc := scraper.NewSubmissionService(repo, 20)
 
 			results, err := svc.Submit(context.Background(), []string{tc.url}, "1.2.3.4")
 			if err != nil {
@@ -245,7 +245,7 @@ func TestSubmissionService_DedupCheck(t *testing.T) {
 		Status:  "pending_validation",
 	}
 
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	results, err := svc.Submit(context.Background(), []string{"https://example.com/events"}, "1.2.3.4")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -269,9 +269,9 @@ func TestSubmissionService_RateLimit(t *testing.T) {
 	t.Parallel()
 
 	repo := newMockRepo()
-	repo.recentByIPCount = 5 // at or above the limit
+	repo.recentByIPCount = 20 // at or above the limit
 
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	_, err := svc.Submit(context.Background(), []string{"https://example.com/events"}, "1.2.3.4")
 	if !errors.Is(err, scraper.ErrRateLimitExceeded) {
 		t.Errorf("expected ErrRateLimitExceeded, got %v", err)
@@ -284,7 +284,7 @@ func TestSubmissionService_AcceptedURL(t *testing.T) {
 	repo := newMockRepo()
 	repo.recentByIPCount = 0
 
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	results, err := svc.Submit(context.Background(), []string{"https://example.com/events"}, "1.2.3.4")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -314,7 +314,7 @@ func TestSubmissionService_MixedBatch(t *testing.T) {
 		URLNorm: "https://dup.example.com/events",
 	}
 
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	batch := []string{
 		"https://new.example.com/events", // accepted
 		"ftp://bad.example.com",          // rejected (bad scheme)
@@ -407,7 +407,7 @@ func TestSubmissionService_RateLimit_WholeBatchGoesThrough(t *testing.T) {
 			t.Parallel()
 			repo := newMockRepo()
 			repo.recentByIPCount = tc.existingCount
-			svc := scraper.NewSubmissionService(repo)
+			svc := scraper.NewSubmissionService(repo, 20)
 
 			results, err := svc.Submit(context.Background(), tc.urls, "1.2.3.4")
 			if err != nil {

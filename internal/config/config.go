@@ -76,12 +76,13 @@ type GitHubOAuthConfig struct {
 }
 
 type RateLimitConfig struct {
-	PublicPerMinute     int
-	AgentPerMinute      int
-	AdminPerMinute      int
-	LoginPer15Minutes   int      // Login attempts allowed per 15-minute window per IP
-	FederationPerMinute int      // Federation sync rate limit
-	TrustedProxyCIDRs   []string // CIDRs of trusted proxies (e.g., load balancers) for X-Forwarded-For validation
+	PublicPerMinute        int
+	AgentPerMinute         int
+	AdminPerMinute         int
+	LoginPer15Minutes      int      // Login attempts allowed per 15-minute window per IP
+	FederationPerMinute    int      // Federation sync rate limit
+	SubmissionsPerIPPer24h int      // Max URLs a single IP may submit via POST /scraper/submissions in 24 hours
+	TrustedProxyCIDRs      []string // CIDRs of trusted proxies (e.g., load balancers) for X-Forwarded-For validation
 }
 
 type AdminBootstrapConfig struct {
@@ -279,12 +280,13 @@ func Load() (Config, error) {
 			},
 		},
 		RateLimit: RateLimitConfig{
-			PublicPerMinute:     getEnvInt("RATE_LIMIT_PUBLIC", 60),
-			AgentPerMinute:      getEnvInt("RATE_LIMIT_AGENT", 300),
-			AdminPerMinute:      getEnvInt("RATE_LIMIT_ADMIN", 0),
-			LoginPer15Minutes:   getEnvInt("RATE_LIMIT_LOGIN", 5),
-			FederationPerMinute: getEnvInt("RATE_LIMIT_FEDERATION", 500),
-			TrustedProxyCIDRs:   parseTrustedProxies(getEnv("TRUSTED_PROXY_CIDRS", "")),
+			PublicPerMinute:        getEnvInt("RATE_LIMIT_PUBLIC", 60),
+			AgentPerMinute:         getEnvInt("RATE_LIMIT_AGENT", 300),
+			AdminPerMinute:         getEnvInt("RATE_LIMIT_ADMIN", 0),
+			LoginPer15Minutes:      getEnvInt("RATE_LIMIT_LOGIN", 5),
+			FederationPerMinute:    getEnvInt("RATE_LIMIT_FEDERATION", 500),
+			SubmissionsPerIPPer24h: getEnvInt("RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H", 20),
+			TrustedProxyCIDRs:      parseTrustedProxies(getEnv("TRUSTED_PROXY_CIDRS", "")),
 		},
 		AdminBootstrap: AdminBootstrapConfig{
 			Username: getEnv("ADMIN_USERNAME", ""),

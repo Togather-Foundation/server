@@ -338,7 +338,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create scraper submission handlers (srv-1cxmi); uses the shared submissionRepo declared above.
-	submissionService := domainScraper.NewSubmissionService(submissionRepo)
+	submissionService := domainScraper.NewSubmissionService(submissionRepo, cfg.RateLimit.SubmissionsPerIPPer24h)
 	submissionHandler := handlers.NewScraperSubmissionHandler(submissionService, cfg.Environment)
 	adminSubmissionHandler := handlers.NewAdminScraperSubmissionHandler(submissionRepo, cfg.Environment)
 

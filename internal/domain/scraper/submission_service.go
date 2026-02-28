@@ -5,37 +5,35 @@ import (
 	"fmt"
 )
 
-const (
-	// rateLimitPerIP is the maximum number of URLs a single IP may submit in 24 hours.
-	rateLimitPerIP = 5
-)
-
 // SubmissionService handles the synchronous validation and queuing of URL submissions.
 type SubmissionService struct {
-	repo SubmissionRepository
+	repo           SubmissionRepository
+	rateLimitPerIP int
 }
 
 // NewSubmissionService creates a new SubmissionService backed by the given repository.
-func NewSubmissionService(repo SubmissionRepository) *SubmissionService {
-	return &SubmissionService{repo: repo}
+// rateLimitPerIP is the maximum number of URLs a single IP may submit in 24 hours;
+// the value comes from config.RateLimit.SubmissionsPerIPPer24h.
+func NewSubmissionService(repo SubmissionRepository, rateLimitPerIP int) *SubmissionService {
+	return &SubmissionService{repo: repo, rateLimitPerIP: rateLimitPerIP}
 }
 
 // Submit processes a batch of URLs. It validates format, dedup, and rate limit,
 // then inserts accepted URLs. Returns per-URL results.
 //
-// Rate limit is a pre-check only: if the IP already has ≥5 accepted submissions
-// in the last 24h, the entire request is rejected with ErrRateLimitExceeded (429).
-// If the IP has at least one slot remaining when the request arrives, the whole
-// batch goes through regardless of how many URLs are in it. Attack surface is
-// bounded to 2N-1 accepted URLs across two back-to-back requests, which is
-// acceptable for MVP.
+// Rate limit is a pre-check only: if the IP already has ≥rateLimitPerIP accepted
+// submissions in the last 24h, the entire request is rejected with
+// ErrRateLimitExceeded (429). If the IP has at least one slot remaining when the
+// request arrives, the whole batch goes through regardless of how many URLs are in
+// it. Attack surface is bounded to 2N-1 accepted URLs across two back-to-back
+// requests, which is acceptable for MVP.
 func (s *SubmissionService) Submit(ctx context.Context, urls []string, submitterIP string) ([]SubmissionResult, error) {
 	// Pre-check: reject the entire request if the IP is already at quota.
 	count, err := s.repo.CountRecentByIP(ctx, submitterIP)
 	if err != nil {
 		return nil, fmt.Errorf("count recent submissions by IP: %w", err)
 	}
-	if count >= rateLimitPerIP {
+	if int(count) >= s.rateLimitPerIP {
 		return nil, ErrRateLimitExceeded
 	}
 

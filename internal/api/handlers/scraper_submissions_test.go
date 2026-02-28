@@ -97,7 +97,7 @@ func (m *mockSubmissionRepository) Count(_ context.Context, _ *string) (int64, e
 
 func TestScraperSubmission_ValidBatch(t *testing.T) {
 	repo := newMockSubmissionRepo()
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	body := `{"urls":["https://example.com/events","https://other.org/cal"]}`
@@ -122,7 +122,7 @@ func TestScraperSubmission_ValidBatch(t *testing.T) {
 
 func TestScraperSubmission_EmptyURLs_400(t *testing.T) {
 	repo := newMockSubmissionRepo()
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	body := `{"urls":[]}`
@@ -137,7 +137,7 @@ func TestScraperSubmission_EmptyURLs_400(t *testing.T) {
 
 func TestScraperSubmission_TooManyURLs_400(t *testing.T) {
 	repo := newMockSubmissionRepo()
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	urls := make([]string, 11)
@@ -162,8 +162,8 @@ func TestScraperSubmission_TooManyURLs_400(t *testing.T) {
 
 func TestScraperSubmission_RateLimitExceeded_429(t *testing.T) {
 	repo := newMockSubmissionRepo()
-	repo.recentByIP = 5 // at limit
-	svc := scraper.NewSubmissionService(repo)
+	repo.recentByIP = 20 // at limit
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	body := `{"urls":["https://example.com/events"]}`
@@ -181,7 +181,7 @@ func TestScraperSubmission_MixedBatch_200(t *testing.T) {
 	repo := newMockSubmissionRepo()
 	// Pre-seed duplicate.
 	repo.recentByNorm["https://dup.example.com/events"] = &scraper.Submission{ID: 99}
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	bodyPayload := map[string]any{
@@ -213,7 +213,7 @@ func TestScraperSubmission_MixedBatch_200(t *testing.T) {
 
 func TestScraperSubmission_MalformedBody_400(t *testing.T) {
 	repo := newMockSubmissionRepo()
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scraper/submissions", bytes.NewBufferString(`{not json`))
@@ -231,7 +231,7 @@ func TestScraperSubmission_MalformedBody_400(t *testing.T) {
 // to confirm MaxBytesReader fires rather than a generic JSON parse error.
 func TestScraperSubmission_OversizedBody_400(t *testing.T) {
 	repo := newMockSubmissionRepo()
-	svc := scraper.NewSubmissionService(repo)
+	svc := scraper.NewSubmissionService(repo, 20)
 	h := NewScraperSubmissionHandler(svc, "test")
 
 	// Build a valid-JSON body that exceeds the 1 MiB limit:
