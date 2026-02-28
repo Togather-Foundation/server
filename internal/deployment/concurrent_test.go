@@ -301,7 +301,7 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 		errorList = append(errorList, err)
 	}
 	if len(errorList) > 0 {
-		t.Logf("Concurrent access produced %d errors (expected due to file-level races)", len(errorList))
+		t.Logf("Concurrent access produced %d transient I/O errors (acceptable)", len(errorList))
 	}
 
 	// SaveState uses atomic writes, so corruption should not happen despite races.
@@ -313,7 +313,7 @@ func TestDeploymentLockFileRaceCondition(t *testing.T) {
 
 	var finalState State
 	if err := json.Unmarshal(data, &finalState); err != nil {
-		t.Errorf("state file corrupted after concurrent access: %v", err)
+		t.Fatalf("state file corrupted after concurrent access: %v", err)
 	}
 }
 

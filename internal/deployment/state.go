@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/fileutil"
 )
 
 // Slot represents a deployment slot (blue or green)
@@ -125,62 +127,14 @@ func LoadState(path string) (*State, error) {
 
 // SaveState writes the deployment state to the JSON file
 func SaveState(path string, state *State) error {
-	// Ensure directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create state directory: %w", err)
-	}
-
 	// Marshal with indentation for readability
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
-
-	// Create temp file in the same directory as the target so rename is
-	// guaranteed to be on the same filesystem (POSIX atomic rename).
-	f, err := os.CreateTemp(dir, "state-*.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp state file: %w", err)
+	if err := fileutil.AtomicWrite(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
 	}
-	tmpName := f.Name()
-
-	// Clean up temp file on any error path.
-	success := false
-	defer func() {
-		if !success {
-			f.Close()
-			os.Remove(tmpName)
-		}
-	}()
-
-	if _, err := f.Write(data); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
-	}
-
-	// Flush kernel page cache to disk before rename so the data is durable.
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("failed to sync state file: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("failed to close state file: %w", err)
-	}
-
-	// os.CreateTemp creates files with 0600; restore world-readable permissions
-	// to match the previous os.WriteFile(..., 0644) behaviour so that non-owner
-	// processes (monitoring scripts, deploy user) can read the state file.
-	if err := os.Chmod(tmpName, 0644); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("failed to set state file permissions: %w", err)
-	}
-
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("failed to rename state file: %w", err)
-	}
-
-	success = true
 	return nil
 }
 

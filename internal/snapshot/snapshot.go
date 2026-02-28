@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/fileutil"
 )
 
 // Metadata contains information about a database snapshot
@@ -458,7 +460,7 @@ func writeMetadata(path string, metadata Metadata) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return fileutil.AtomicWrite(path, data, 0644)
 }
 
 func loadMetadata(path string) (Metadata, error) {

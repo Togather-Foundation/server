@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Togather-Foundation/server/internal/fileutil"
 	"github.com/rs/zerolog/log"
 )
 
@@ -104,11 +105,6 @@ func (t *CachingTransport) readCache(path string, req *http.Request) (*http.Resp
 }
 
 func (t *CachingTransport) writeCache(path string, resp *http.Response) error {
-	// Ensure cache directory exists.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create cache dir: %w", err)
-	}
-
 	// Read body.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -136,7 +132,7 @@ func (t *CachingTransport) writeCache(path string, resp *http.Response) error {
 		return fmt.Errorf("marshal cache: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	return fileutil.AtomicWrite(path, data, 0o644)
 }
 
 // cacheKey returns a hex-encoded SHA256 hash of the URL string, used as the
