@@ -126,7 +126,6 @@ func TestAtomicWrite_ConcurrentWrites(t *testing.T) {
 	wg.Add(goroutines)
 
 	for i := 0; i < goroutines; i++ {
-		i := i
 		go func() {
 			defer wg.Done()
 			data := []byte(fmt.Sprintf(`{"writer":%d}`, i))
