@@ -945,30 +945,58 @@ generate_web_files() {
     return 0
 }
 
-# check_disk_space - Checks available disk space on root filesystem
-# Warns if available space falls below a configurable threshold
+# check_disk_space - Checks available disk space on root and Docker data root filesystems
+# Warns if available space falls below a configurable threshold on either filesystem.
+# Checks the Docker data root separately because /var/lib/docker is often on its own
+# volume; a full Docker volume won't show up in a check of /.
 # Args:
-#   $1 - min_gb: minimum acceptable free gigabytes (default: 5)
+#   $1 - min_gb: minimum acceptable free gigabytes per checked filesystem (default: 5)
 # Returns:
 #   0 always (non-fatal; advisory only)
 # Side effects:
-#   - Logs WARN if disk space is below threshold, INFO otherwise
+#   - Logs WARN if any checked filesystem is below threshold, INFO otherwise
 # Example:
 #   check_disk_space 10 || true
 check_disk_space() {
     local min_gb="${1:-5}"
-    local available_kb min_kb available_gb
-    available_kb=$(df / | awk 'NR==2{print $4}')
+    local min_kb
     min_kb=$((min_gb * 1024 * 1024))
-    # Human-readable GB for display only (may truncate; comparison uses KB)
-    available_gb=$((available_kb / 1024 / 1024))
 
-    if [[ $available_kb -lt $min_kb ]]; then
-        log "WARN" "Low disk space: ~${available_gb}GB available (threshold: ${min_gb}GB)"
-        log "WARN" "Consider running: docker system prune -af"
-    else
-        log "INFO" "Disk space OK: ~${available_gb}GB available (threshold: ${min_gb}GB)"
+    # Inner helper: check one filesystem path
+    _check_one_fs() {
+        local label="$1"
+        local path="$2"
+        local available_kb available_gb
+        available_kb=$(df "$path" 2>/dev/null | awk 'NR==2{print $4}')
+        if [[ -z "$available_kb" ]]; then
+            log "WARN" "Could not determine disk space for ${label} (${path})"
+            return
+        fi
+        # Human-readable GB for display only (may truncate; comparison uses KB)
+        available_gb=$((available_kb / 1024 / 1024))
+        if [[ $available_kb -lt $min_kb ]]; then
+            log "WARN" "Low disk space on ${label}: ~${available_gb}GB available (threshold: ${min_gb}GB)"
+            log "WARN" "Consider running: docker system prune -af"
+        else
+            log "INFO" "Disk space OK on ${label}: ~${available_gb}GB available (threshold: ${min_gb}GB)"
+        fi
+    }
+
+    # Always check root filesystem
+    _check_one_fs "root (/)" "/"
+
+    # Check Docker data root if it's on a different filesystem than /
+    local docker_root
+    docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "")
+    if [[ -n "$docker_root" && "$docker_root" != "/" ]]; then
+        local root_dev docker_dev
+        root_dev=$(df / 2>/dev/null | awk 'NR==2{print $1}')
+        docker_dev=$(df "$docker_root" 2>/dev/null | awk 'NR==2{print $1}')
+        if [[ -n "$docker_dev" && "$docker_dev" != "$root_dev" ]]; then
+            _check_one_fs "Docker data root (${docker_root})" "$docker_root"
+        fi
     fi
+
     return 0
 }
 
