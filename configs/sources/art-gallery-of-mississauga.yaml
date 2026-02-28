@@ -1,0 +1,18 @@
+name: "art-gallery-of-mississauga"
+# Tier 1 (Colly CSS selectors). Art Gallery of Mississauga, exhibitions listing.
+# WordPress + Bricks builder; no Event JSON-LD on listing or detail pages (WebPage type only).
+# Selectors validated with `server scrape test`.
+url: "https://www.artgalleryofmississauga.com/exhibitions/"
+tier: 1
+schedule: "weekly"
+trust_level: 7
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+skip_multi_session_check: true
+selectors:
+  event_list: "div.event-card"
+  name: "a.event-card__meta h5"
+  url: "a.event-card__meta"
+  start_date: "a.event-card__meta .brxe-text-basic"
+  image: "div.event-card__image img"

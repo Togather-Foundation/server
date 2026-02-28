@@ -1,0 +1,34 @@
+name: "artnow-global"
+# Art Now Global — art and ecology interdisciplinary events (Switzerland/global).
+# Wix.com site using the Wix Events widget (JS-rendered). No JSON-LD on the listing
+# page; event detail pages embed full schema.org/Event JSON-LD including startDate,
+# endDate, location, and image. Tier 2 headless scraper collects event URLs from the
+# listing page; follow_event_urls fetches JSON-LD from each detail page.
+#
+# Selectors validated against rendered DOM 2026-02-28:
+#   event_list: li[data-hook="event-list-item"]  — Wix Events list items (17 found)
+#   url: a[data-hook="ev-rsvp-button"]           — "Details" link to event page
+#   name: [data-hook="ev-list-item-title"]       — event title span
+#   start_date: [data-hook="ev-date"] span       — abbreviated date (e.g. "Mon, Jan 19")
+#   location: [data-hook="location"]             — expanded location text in accordion
+#
+# NOTE: The abbreviated date on the listing page (e.g. "Mon, Jan 19") lacks a year;
+# prefer the full date from the detail page JSON-LD via follow_event_urls.
+url: "https://www.artnow.global/art-labs"
+tier: 2
+schedule: "weekly"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 1
+follow_event_urls: true
+event_url_pattern: "/event-details/*"
+headless:
+  wait_selector: "li[data-hook=\"event-list-item\"]"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "li[data-hook=\"event-list-item\"]"
+  url: "a[data-hook=\"ev-rsvp-button\"]"
+  name: "[data-hook=\"ev-list-item-title\"]"
+  start_date: "[data-hook=\"ev-date\"] span"
+  location: "[data-hook=\"location\"]"

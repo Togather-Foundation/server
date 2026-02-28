@@ -15,9 +15,3 @@ selectors:
   name: "a"
   start_date: "span.weak"
   url: "a"
-max_pages: 3
-selectors:
-  event_list: "div.events li"
-  name: "a"
-  start_date: "span.weak"
-  url: "a"

@@ -1,0 +1,23 @@
+name: "art-museum-utoronto"
+# Tier 1 (Colly CSS selectors). Art Museum at the University of Toronto (UTAC + JMB Gallery).
+# Programs listing page has 9 events (discrete dates). No Event JSON-LD — only WebSite/CollectionPage schema.
+# Selectors validated via Playwright 2026-02-28: div.program.item with h3.item-title + p.date.
+# Exhibitions page uses same card structure (div.exhibition.item) but events span months; skip_multi_session_check
+# required. Programs are the primary event-style content (tours, workshops, receptions, lectures).
+url: "https://artmuseum.utoronto.ca/programs/"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+event_url_pattern: "/program/*"
+# Programs include long-running residencies and installations spanning months; skip the
+# multi-session heuristic to avoid sending legitimate long-duration events to the review queue.
+skip_multi_session_check: true
+selectors:
+  event_list: "div.program.item"
+  name: "h3.item-title"
+  start_date: "p.date"
+  url: "a"
+  image: "img"

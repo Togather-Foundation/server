@@ -1,0 +1,27 @@
+name: "ludwig-van-toronto"
+# Ludwig Van Toronto — classical music and arts news/events aggregator.
+# Uses WordPress + The Events Calendar (Tribe) plugin.
+# Tier 0: Tribe Events embeds JSON-LD Event schema on the list page.
+# 25 events confirmed via dry-run 2026-02-28.
+# follow_event_urls: Tribe Events truncates descriptions on list pages;
+# fetching detail pages yields full description text.
+# Tier 1 selectors below are retained as reference for future fallback.
+url: "https://www.ludwig-van.com/toronto/events/"
+tier: 0
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 5
+follow_event_urls: true
+# Tier 1 fallback selectors (validated against HTML 2026-02-28):
+# selectors:
+#   event_list: "div.tribe-events-loop > div.type-tribe_events"
+#   name: "h3.tribe-events-list-event-title a"
+#   start_date: "div.tribe-event-schedule-details span.tribe-event-date-start"
+#   end_date: "div.tribe-event-schedule-details span.tribe-event-time"
+#   location: "div.tribe-events-venue-details a:first-child"
+#   description: "div.tribe-events-list-event-description"
+#   url: "h3.tribe-events-list-event-title a"
+#   image: "div.tribe-events-event-image img"
+#   pagination: "nav.tribe-events-nav-pagination a[rel=next]"
