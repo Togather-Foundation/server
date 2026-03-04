@@ -132,23 +132,20 @@ Get a free API key at `/dev/login` (GitHub OAuth, instant).
 
 | Tool | Description |
 |---|---|
-| `list_events` | Query events by date, location, keyword, category |
-| `get_event` | Fetch a single event by ID (full JSON-LD) |
-| `search` | Full-text search across events, places, organizations |
-| `create_event` | Submit a new event |
-| `list_places` | Query venues and locations |
-| `get_place` | Fetch a single place by ID |
-| `list_organizations` | Query event organizers |
-| `get_organization` | Fetch a single organization by ID |
+| `events` | List events with filters (date, location, keyword, category) or get a single event by ULID |
+| `add_event` | Submit a new event from JSON-LD (requires API key) |
+| `places` | List venues/locations with filters or get a single place by ULID |
+| `organizations` | List event organizers with filters or get a single organization by ULID |
+| `search` | Full-text search across events, places, and organizations |
 
 ### Claude Desktop Configuration
 
 ```json
 {
   "mcpServers": {
-    "togather-toronto": {
+    "togather": {
       "type": "http",
-      "url": "https://toronto.togather.foundation/mcp",
+      "url": "https://<your-node>/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -160,7 +157,7 @@ Get a free API key at `/dev/login` (GitHub OAuth, instant).
 ### Resources
 
 - [Full MCP Integration Guide](docs/integration/mcp-server.md)
-- [API Key Signup](https://toronto.togather.foundation/dev/login)
+- API Key Signup: `/dev/login` (GitHub OAuth, instant)
 - [Machine-readable discovery](/llms.txt)
 
 ---

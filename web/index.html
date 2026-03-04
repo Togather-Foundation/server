@@ -38,7 +38,7 @@
             {
                 "@type": "SoftwareApplication",
                 "name": "Togather MCP Server",
-                "description": "Model Context Protocol (MCP) server providing AI agents with structured tool access to local event data. Supports list_events, get_event, search, create_event, and more.",
+                "description": "Model Context Protocol (MCP) server providing AI agents with structured tool access to local event data. Tools: events, add_event, places, organizations, search.",
                 "applicationCategory": "DeveloperApplication",
                 "url": "https://togather.foundation/",
                 "offers": {
@@ -53,9 +53,12 @@
                     "email": "info@togather.foundation"
                 },
                 "potentialAction": {
-                    "@type": "EntryPoint",
-                    "urlTemplate": "/mcp",
-                    "description": "MCP streamable HTTP endpoint. Requires API key (Bearer token). Get free key at /dev/login."
+                    "@type": "UseAction",
+                    "target": {
+                        "@type": "EntryPoint",
+                        "urlTemplate": "/mcp",
+                        "description": "MCP streamable HTTP endpoint. Requires API key (Bearer token). Get free key at /dev/login."
+                    }
                 }
             }
         ]
@@ -273,9 +276,9 @@
             </p>
             <ul>
                 <li><strong>MCP Endpoint:</strong> <code>/mcp</code> (streamable HTTP, API key required)</li>
-                <li><strong>Available Tools:</strong> <code>list_events</code>, <code>get_event</code>, <code>search</code>, <code>create_event</code>, <code>list_places</code>, <code>get_place</code>, <code>list_organizations</code>, <code>get_organization</code></li>
+                <li><strong>Available Tools:</strong> <code>events</code>, <code>add_event</code>, <code>places</code>, <code>organizations</code>, <code>search</code></li>
                 <li><strong>Get an API Key (free):</strong> <a href="/dev/login">/dev/login</a> — sign in with GitHub, instant access</li>
-                <li><strong>Full Integration Guide:</strong> <a href="/api/docs">API Docs</a> → MCP Server section</li>
+                <li><strong>Full Integration Guide:</strong> <a href="/api/docs">Interactive API Docs</a> and <a href="https://github.com/Togather-Foundation/server/blob/main/docs/integration/mcp-server.md">MCP Server guide</a></li>
                 <li><strong>Machine-readable discovery:</strong> <a href="/llms.txt">/llms.txt</a></li>
             </ul>
         </section>

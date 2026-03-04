@@ -20,16 +20,12 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 
 ### Available MCP Tools
 
-- list_events       — query events by date, location, keyword, category
-- get_event         — fetch a single event by ID (returns full JSON-LD)
-- search            — full-text search across events, places, organizations
-- create_event      — submit a new event (requires API key)
-- list_places       — query venues and locations
-- get_place         — fetch a single place by ID
-- list_organizations — query event organizers
-- get_organization  — fetch a single organization by ID
-- create_place      — submit a new place (requires API key)
-- create_organization — submit a new organization (requires API key)
+- events             — list events with filters (date, location, keyword, category) OR get a
+                       single event by ULID (returns full JSON-LD)
+- add_event          — submit a new event from JSON-LD (requires API key)
+- places             — list venues/locations with filters OR get a single place by ULID
+- organizations      — list event organizers with filters OR get a single organization by ULID
+- search             — full-text search across events, places, and organizations
 
 ### MCP Resources
 
@@ -37,7 +33,7 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 - OpenAPI specification
 - Server metadata
 
-Full MCP integration guide: /api/docs → "MCP Server" or see docs/integration/mcp-server.md
+Full MCP integration guide: /api/docs
 
 ## REST API
 
