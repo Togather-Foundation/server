@@ -272,12 +272,13 @@
         <section>
             <h2>For AI Agents (MCP)</h2>
             <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
-                Connect directly via the <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> for structured tool access to events, places, and organizations — no scraping needed.
+                Connect directly via the <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> for structured tool access to events, places, and organizations — one call, no scraping, no JSON parsing.
             </p>
             <ul>
-                <li><strong>MCP Endpoint:</strong> <code>/mcp</code> (streamable HTTP, API key required)</li>
-                <li><strong>Available Tools:</strong> <code>events</code>, <code>add_event</code>, <code>places</code>, <code>organizations</code>, <code>search</code></li>
-                <li><strong>Get an API Key (free):</strong> <a href="/dev/login">/dev/login</a> — sign in with GitHub, instant access</li>
+                <li><strong>MCP Endpoint (preferred):</strong> <code>/mcp</code> (streamable HTTP, API key required — get one free at <a href="/dev/login">/dev/login</a>)</li>
+                <li><strong>MCP Tools:</strong> <code>events</code>, <code>add_event</code>, <code>places</code>, <code>organizations</code>, <code>search</code></li>
+                <li><strong>No MCP? Use REST directly</strong> — filter server-side to avoid large payloads:<br>
+                    <code>GET /api/v1/events?search=open+source&amp;start_date=2026-03-01&amp;limit=10</code></li>
                 <li><strong>Full Integration Guide:</strong> <a href="/api/docs">Interactive API Docs</a> and <a href="https://github.com/Togather-Foundation/server/blob/main/docs/integration/mcp-server.md">MCP Server guide</a></li>
                 <li><strong>Machine-readable discovery:</strong> <a href="/llms.txt">/llms.txt</a></li>
             </ul>

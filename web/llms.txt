@@ -11,7 +11,10 @@ commons under CC0 license.
 Each SEL instance serves a geographic node (e.g. Toronto). Nodes federate via
 ActivityPub.
 
-## MCP Endpoint (for AI Agents)
+## Preferred: MCP Endpoint (for agents with MCP configured)
+
+If your agent runtime supports MCP (Claude Desktop, OpenCode, etc.), connect directly
+for structured tool access — one call returns typed, filtered results with no JSON parsing.
 
 Protocol: Model Context Protocol (MCP), streamable HTTP transport
 Endpoint: /mcp
@@ -35,15 +38,42 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 
 Full MCP integration guide: /api/docs
 
-## REST API
+## Fallback: REST API (no MCP required, no auth for reads)
 
-Read events (no auth):     GET /api/v1/events
-Read places (no auth):     GET /api/v1/places
-Read organizations (no auth): GET /api/v1/organizations
-Submit events (API key):   POST /api/v1/events
-Interactive docs:          /api/docs
-OpenAPI spec (JSON):       /api/v1/openapi.json
-OpenAPI spec (YAML):       /api/v1/openapi.yaml
+If MCP is not available, use the REST API directly. Filter server-side to avoid
+fetching large result sets.
+
+### Quick-start queries (no auth needed)
+
+Search by keyword:
+  GET /api/v1/events?search=open+source&limit=10
+
+Filter by date range:
+  GET /api/v1/events?start_date=2026-03-01&end_date=2026-03-31&limit=20
+
+Combine keyword + date:
+  GET /api/v1/events?search=tech&start_date=2026-03-01&limit=10
+
+Get a single event by ULID:
+  GET /api/v1/events/{ulid}
+
+### Query parameters for GET /api/v1/events
+
+- search       — full-text keyword search (title, description)
+- keywords     — comma-separated keyword tags
+- start_date   — ISO 8601 date, e.g. 2026-03-01
+- end_date     — ISO 8601 date, e.g. 2026-03-31
+- limit        — max results (default 50, max 100)
+- after        — pagination cursor (from previous response next_cursor)
+
+### Other endpoints
+
+Read places (no auth):        GET /api/v1/places?search=...&limit=10
+Read organizations (no auth): GET /api/v1/organizations?search=...&limit=10
+Submit events (API key):      POST /api/v1/events
+Interactive docs:             /api/docs
+OpenAPI spec (JSON):          /api/v1/openapi.json
+OpenAPI spec (YAML):          /api/v1/openapi.yaml
 
 ## Key URLs
 
