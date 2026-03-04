@@ -16,22 +16,49 @@
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
-        "@type": "WebAPI",
-        "name": "Shared Events Library API",
-        "description": "RESTful API for discovering and publishing local events in Toronto. Part of the Togather ecosystem.",
-        "url": "https://togather.foundation/",
-        "documentation": "/api/docs",
-        "provider": {
-            "@type": "Organization",
-            "name": "Togather Foundation",
-            "url": "https://togather.foundation",
-            "email": "info@togather.foundation"
-        },
-        "potentialAction": {
-            "@type": "SearchAction",
-            "target": "/api/v1/events?search={search_term}",
-            "query-input": "required name=search_term"
-        }
+        "@graph": [
+            {
+                "@type": "WebAPI",
+                "name": "Shared Events Library API",
+                "description": "RESTful API for discovering and publishing local events in Toronto. Part of the Togather ecosystem.",
+                "url": "https://togather.foundation/",
+                "documentation": "/api/docs",
+                "provider": {
+                    "@type": "Organization",
+                    "name": "Togather Foundation",
+                    "url": "https://togather.foundation",
+                    "email": "info@togather.foundation"
+                },
+                "potentialAction": {
+                    "@type": "SearchAction",
+                    "target": "/api/v1/events?search={search_term}",
+                    "query-input": "required name=search_term"
+                }
+            },
+            {
+                "@type": "SoftwareApplication",
+                "name": "Togather MCP Server",
+                "description": "Model Context Protocol (MCP) server providing AI agents with structured tool access to local event data. Supports list_events, get_event, search, create_event, and more.",
+                "applicationCategory": "DeveloperApplication",
+                "url": "https://togather.foundation/",
+                "offers": {
+                    "@type": "Offer",
+                    "price": "0",
+                    "priceCurrency": "USD"
+                },
+                "provider": {
+                    "@type": "Organization",
+                    "name": "Togather Foundation",
+                    "url": "https://togather.foundation",
+                    "email": "info@togather.foundation"
+                },
+                "potentialAction": {
+                    "@type": "EntryPoint",
+                    "urlTemplate": "/mcp",
+                    "description": "MCP streamable HTTP endpoint. Requires API key (Bearer token). Get free key at /dev/login."
+                }
+            }
+        ]
     }
     </script>
     
@@ -236,6 +263,20 @@
                 </li>
                 <li><strong>Developer Portal:</strong> <a href="/dev/login">/dev/login</a> (create and manage API keys)</li>
                 <li><strong>Comprehensive Guides:</strong> <a href="/api/docs">Interactive API Docs</a> with authentication details</li>
+            </ul>
+        </section>
+        
+        <section>
+            <h2>For AI Agents (MCP)</h2>
+            <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
+                Connect directly via the <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> for structured tool access to events, places, and organizations — no scraping needed.
+            </p>
+            <ul>
+                <li><strong>MCP Endpoint:</strong> <code>/mcp</code> (streamable HTTP, API key required)</li>
+                <li><strong>Available Tools:</strong> <code>list_events</code>, <code>get_event</code>, <code>search</code>, <code>create_event</code>, <code>list_places</code>, <code>get_place</code>, <code>list_organizations</code>, <code>get_organization</code></li>
+                <li><strong>Get an API Key (free):</strong> <a href="/dev/login">/dev/login</a> — sign in with GitHub, instant access</li>
+                <li><strong>Full Integration Guide:</strong> <a href="/api/docs">API Docs</a> → MCP Server section</li>
+                <li><strong>Machine-readable discovery:</strong> <a href="/llms.txt">/llms.txt</a></li>
             </ul>
         </section>
         

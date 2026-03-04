@@ -11,6 +11,25 @@ var robotsTxt []byte
 //go:embed sitemap.xml
 var sitemapXML []byte
 
+//go:embed llms.txt
+var llmsTxt []byte
+
+// LLMsTxtHandler serves the llms.txt file for LLM and AI agent discovery.
+func LLMsTxtHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(llmsTxt) // Error is ignored as WriteHeader already sent status
+	})
+}
+
 //go:embed admin/static
 var AdminStaticFiles embed.FS
 

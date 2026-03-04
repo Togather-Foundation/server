@@ -1,0 +1,67 @@
+# Togather / Shared Events Library (SEL)
+# llms.txt — LLM and AI agent discovery file
+# See: https://llmstxt.org
+
+## What is this?
+
+Togather is open infrastructure for local event discovery. The Shared Events
+Library (SEL) aggregates, validates, and serves local event data as a public
+commons under CC0 license.
+
+Each SEL instance serves a geographic node (e.g. Toronto). Nodes federate via
+ActivityPub.
+
+## MCP Endpoint (for AI Agents)
+
+Protocol: Model Context Protocol (MCP), streamable HTTP transport
+Endpoint: /mcp
+Auth: API key required (Bearer token)
+Get a free key: /dev/login (GitHub OAuth, instant)
+
+### Available MCP Tools
+
+- list_events       — query events by date, location, keyword, category
+- get_event         — fetch a single event by ID (returns full JSON-LD)
+- search            — full-text search across events, places, organizations
+- create_event      — submit a new event (requires API key)
+- list_places       — query venues and locations
+- get_place         — fetch a single place by ID
+- list_organizations — query event organizers
+- get_organization  — fetch a single organization by ID
+- create_place      — submit a new place (requires API key)
+- create_organization — submit a new organization (requires API key)
+
+### MCP Resources
+
+- JSON-LD context for events
+- OpenAPI specification
+- Server metadata
+
+Full MCP integration guide: /api/docs → "MCP Server" or see docs/integration/mcp-server.md
+
+## REST API
+
+Read events (no auth):     GET /api/v1/events
+Read places (no auth):     GET /api/v1/places
+Read organizations (no auth): GET /api/v1/organizations
+Submit events (API key):   POST /api/v1/events
+Interactive docs:          /api/docs
+OpenAPI spec (JSON):       /api/v1/openapi.json
+OpenAPI spec (YAML):       /api/v1/openapi.yaml
+
+## Key URLs
+
+Health check:   /health
+Server version: /version
+SEL profile:    /.well-known/sel-profile
+Sitemap:        /sitemap.xml
+
+## License
+
+All event data served by this node is CC0 (public domain dedication).
+Source attribution is preserved in provenance metadata.
+
+## Contact
+
+Togather Foundation: info@togather.foundation
+Website: https://togather.foundation

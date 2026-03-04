@@ -399,6 +399,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/", web.IndexHandler())
 	mux.Handle("/robots.txt", web.RobotsTxtHandler())
 	mux.Handle("/sitemap.xml", web.SitemapHandler())
+	mux.Handle("/llms.txt", web.LLMsTxtHandler())
 	mux.Handle("/health", healthChecker.Health()) // Comprehensive health check (T011)
 	mux.Handle("/healthz", handlers.Healthz())    // Legacy liveness check
 	mux.Handle("/readyz", healthChecker.Readyz()) // Readiness check with dependency verification
