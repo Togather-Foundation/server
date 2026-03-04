@@ -66,6 +66,28 @@ Get a single event by ULID:
 - limit        — max results (default 50, max 100)
 - after        — pagination cursor (from previous response next_cursor)
 
+### Response shape (JSON-LD — field names are Schema.org, not REST conventions)
+
+The API returns JSON-LD. Field names differ from typical REST APIs:
+
+  Response envelope:
+    .items[]          — array of events (NOT .events[] or .data[])
+    .next_cursor      — pagination cursor for the next page
+
+  Per event:
+    .name             — event title (NOT .title)
+    .startDate        — ISO 8601 start time (NOT .start_date or .starts_at)
+    .endDate          — ISO 8601 end time
+    .location.name    — venue name (NOT .location_name or .venue)
+    .location.address.streetAddress   — street
+    .location.address.addressLocality — city
+    .["@id"]          — canonical URL, e.g. https://<node>/events/<ulid>
+    .description      — event description
+    .organizer.name   — organizer name
+
+  Minimal jq to extract title + time + venue:
+    curl -s '<url>' | jq -r '.items[] | "\(.startDate) — \(.name) — \(.location.name // "?")"'
+
 ### Other endpoints
 
 Read places (no auth):        GET /api/v1/places?search=...&limit=10
