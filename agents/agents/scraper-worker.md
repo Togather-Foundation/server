@@ -34,6 +34,8 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `graphql.datocms.com` in source → DatoCMS → **Tier 3** GraphQL
 - `showpass.com` link or `showpass-widget` → Showpass → **Tier 3** REST
 - `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite → **Tier 2** (no public API; scrape organizer page)
+- `geteventviewer.com` or `ticketspotapp.com` iframe → Ticket Spot (Wix embed) → **Tier 2** with `iframe:` config block
+- `elevent-cdn.azureedge.net` iframe → Elevent → **Tier 2** with `iframe:` config block
 - `data-wf-site` → Webflow → **Tier 1** static
 - `wp-block-post` → WordPress Gutenberg → **Tier 1**
 - `elementor-*` → WordPress + Elementor → **Tier 1/2**
@@ -125,7 +127,7 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file config
 ./server scrape source <name> --dry-run
 ```
 
-**Do not use third-party embed URLs** (Showpass, Eventbrite, Ticketmaster iframes) as the config `url`. The config `url` must be the venue's own page. If the venue page only contains a cross-origin iframe, document the blocker and return `failed`.
+**Do not use third-party embed URLs** (Showpass, Eventbrite, Ticketmaster iframes) as the config `url`. The config `url` must be the venue's own page. Cross-origin iframe sources (Ticket Spot, Elevent) ARE now supported when using the `iframe:` config block — the config `url` is still the venue's own page, but the scraper navigates into the iframe's execution context to extract its rendered HTML. If the venue page contains a cross-origin iframe from an unsupported platform, document the blocker and return `failed`.
 
 ### Step 5 — If unscrapeable after 3 rounds
 
@@ -184,6 +186,10 @@ headless:
   wait_timeout_ms: 15000        # increase to 20000–30000 for Wix/Nuxt
   # wait_network_idle: true     # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch)
   # undetected: true            # uncomment for Cloudflare JS challenge / bot-detection
+  # iframe:                           # uncomment for cross-origin iframe extraction
+  #   selector: "iframe[title='...']" # CSS selector for the target iframe element
+  #   wait_selector: ".events-container" # wait for content inside iframe
+  #   wait_timeout_ms: 10000
   # pagination_button: "<sel>"  # uncomment if JS-paginated
   # rate_limit_ms: 1000
 selectors:

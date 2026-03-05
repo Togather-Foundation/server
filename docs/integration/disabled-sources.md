@@ -3,6 +3,7 @@
 **Last reviewed:** 2026-03-05  
 **Audit bead:** `srv-2oipr` (closed)  
 **Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)  
+**Cross-origin iframe extraction added:** 2026-03-05 (`srv-mwy3y`, closed) — adds `headless.iframe:` config block; unblocks reel-asian and lula-lounge  
 **T3 REST tier bead:** `srv-hi014` (open) — adds `rest:` config block; unblocks burdock-brewery, workman-arts, and others
 
 This document summarises every source currently set `enabled: false`, the reason it
@@ -18,13 +19,17 @@ For scraper architecture and how to add new sources see `docs/integration/scrape
 
 Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-rendered headless (Rod), T3 = API (GraphQL or REST JSON — `srv-hi014`).
 
+**Cross-origin iframe extraction implemented:** bead `srv-mwy3y` (closed) adds `headless.iframe:` config block. The same-origin blocker that previously prevented CSS access to cross-origin iframe content is now resolved via CDP frame navigation.
+
 | Category | Sources | Effort |
 |----------|---------|--------|
 | Seasonal — re-enable on a calendar trigger | heritage-toronto, imagine-native, inside-out | None |
 | T3 REST API — unblocked by `srv-hi014` | burdock-brewery, workman-arts | Low (config only once `srv-hi014` lands) |
 | T2 widget never renders (third-party embed) | rcmusic, hot-docs | Low–Medium (find underlying API endpoint) |
 | Need depth-2 (detail-page) scraping | obsidian-theatre, east-end-arts, theatre-passe-muraille, orpheus-choir-toronto | Medium (new feature) |
-| Blocked by third-party widget / no listing page | luminato, reel-asian, church-wellesley-village-bia, lula-lounge | Low–Medium (contact/API) |
+| Cross-origin iframe — config written, pending verification | lula-lounge | Low (verify selectors, flip enabled) |
+| Cross-origin iframe — config written, pending verification | reel-asian | Low (verify selectors, flip enabled) |
+| Blocked by third-party widget / no listing page | luminato, church-wellesley-village-bia | Low–Medium (contact/API) |
 | Blocked by bot protection | ago, crows-theatre, st-lawrence-market, glad-day-bookshop | Medium–High |
 | No events listing page | mammalian-diving-reflex | Blocked |
 
@@ -233,8 +238,14 @@ events page no longer exists.
 ### reel-asian
 - **URL:** `https://www.reelasian.com/year-round/current-events/`
 - **Widget:** Elevent (cross-origin iframe, `elevent-cdn.azureedge.net`)
-- **Blocked by:** Same-origin policy prevents CSS access to iframe content.
-- **Action:** Elevent offers an API for venue partners. Contact Reel Asian to ask
+- **Cross-origin iframe blocker resolved:** The same-origin policy that previously
+  prevented CSS access to Elevent iframe content is now resolved via the
+  `headless.iframe:` config block (implemented in srv-mwy3y).
+- **Status:** A working iframe config has been written for reel-asian but the source
+  remains `enabled: false` pending manual verification that selectors correctly extract
+  events from the Elevent iframe DOM.
+- **Next step:** Run `SCRAPER_HEADLESS_ENABLED=true server scrape source reel-asian --source-file configs/sources/reel-asian.yaml --dry-run` to confirm ≥ 3 events are extracted, then set `enabled: true`.
+- **Fallback:** Elevent offers an API for venue partners. Contact Reel Asian to ask
   whether their Elevent account has API access that could be shared for aggregation.
 
 ### church-wellesley-village-bia
@@ -248,10 +259,19 @@ events page no longer exists.
   API to retrieve structured event data. Needs a Wix API key from the venue.
 
 ### lula-lounge
-- **URL:** `https://www.lula.ca/events` (404)
-- **Situation:** Wix removed the events page. The homepage now links to Eventbrite
-  and Fever for ticketing; no dedicated events listing exists on the site.
-- **Action:** Use the Eventbrite public API with the organizer ID
+- **URL:** `https://www.lula.ca/events` (404 — Wix removed the events page)
+- **Situation:** The homepage now links to Eventbrite and Fever for ticketing, and to
+  a Ticket Spot iframe widget (Wix embed from `geteventviewer.com`/`ticketspotapp.com`)
+  on some pages. No dedicated events listing exists directly in the Wix page DOM.
+- **Cross-origin iframe blocker resolved:** The same-origin policy that previously
+  prevented CSS access to Ticket Spot iframe content is now resolved via the
+  `headless.iframe:` config block (implemented in srv-mwy3y). The scraper uses CDP
+  frame navigation to enter the iframe's execution context.
+- **Status:** A working iframe config has been written for lula-lounge but the source
+  remains `enabled: false` pending manual verification that selectors correctly extract
+  events from the Ticket Spot iframe DOM.
+- **Next step:** Run `SCRAPER_HEADLESS_ENABLED=true server scrape source lula-lounge --source-file configs/sources/lula-lounge.yaml --dry-run` to confirm ≥ 3 events are extracted, then set `enabled: true`.
+- **Fallback:** Use the Eventbrite public API with the organizer ID
   (`4108527983` — `eventbrite.ca/o/lula-lounge-toronto-4108527983`) once `srv-hi014`
   (T3 REST tier) lands. Alternatively contact the venue to restore their events page.
 

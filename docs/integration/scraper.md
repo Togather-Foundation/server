@@ -329,6 +329,10 @@ headless:
   wait_timeout_ms: 15000            # Max ms to wait for wait_selector (default: 10000)
   wait_network_idle: true           # Also wait for XHR/fetch requests to settle
   undetected: false                 # Enable stealth evasions for bot-detection bypass
+  # iframe:                         # optional — extract content from a cross-origin iframe
+  #   selector: "iframe[title='Ticket Spot']"  # CSS selector for the target iframe element
+  #   wait_selector: ".events-container"         # wait for content inside iframe
+  #   wait_timeout_ms: 10000                      # timeout for iframe content (default: 10000)
 
 selectors:
   event_list: "div.event-card"
@@ -336,6 +340,11 @@ selectors:
   start_date: "time[datetime]"
   url: "a.event-link"
 ```
+
+When `iframe:` is set, the scraper uses Chrome DevTools Protocol (CDP) frame navigation
+to enter the iframe's execution context and extracts HTML from the iframe. CSS selectors
+in `selectors:` then apply to the iframe DOM, not the parent page. This enables
+extraction from cross-origin iframes such as Ticket Spot (Wix embed) and Elevent.
 
 ### Full Config with Tier 3 GraphQL
 
@@ -433,6 +442,9 @@ missing key renders as `<no value>`; template errors are logged at debug level.
 | `pagination_button` | string | — | CSS selector for a JS "next page" / "load more" button. For URL-based pagination use `selectors.pagination` instead. |
 | `rate_limit_ms` | int | `1000` | Delay between page loads in ms. |
 | `headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
+| `iframe.selector` | string | — | CSS selector for the target cross-origin iframe element. When set, the scraper enters the iframe's execution context via CDP frame navigation and extracts HTML from inside the iframe. |
+| `iframe.wait_selector` | string | — | CSS selector to wait for inside the iframe DOM before extracting. |
+| `iframe.wait_timeout_ms` | int | `10000` | Timeout (ms) for `iframe.wait_selector`. |
 
 ### GraphQL Config Fields (`graphql:`)
 

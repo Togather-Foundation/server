@@ -158,6 +158,8 @@ Signals to look for (check full page source, not just first 8KB — use
 - `graphql.datocms.com` in source → DatoCMS (T3 GraphQL)
 - `showpass.com` link or `showpass-widget` → Showpass (T3 REST API)
 - `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite (**T2 headless** — no public API; scrape organizer page or venue's own page)
+- `geteventviewer.com` or `ticketspotapp.com` iframe → Ticket Spot (Wix embed) → **T2 with `iframe:` config block**
+- `elevent-cdn.azureedge.net` iframe → Elevent → **T2 with `iframe:` config block**
 - `__NEXT_DATA__` → Next.js (T0 preferred)
 - Cloudflare challenge body → `undetected: true`
 
@@ -192,7 +194,14 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape capture <URL> --format inspect
 ```
 
 If the headless inspect also returns empty candidate containers (or fails with
-`headless scraping disabled`), return:
+`headless scraping disabled`), check whether an `<iframe>` from a known platform is
+present in the static page source. If a Ticket Spot (`geteventviewer.com` /
+`ticketspotapp.com`) or Elevent (`elevent-cdn.azureedge.net`) iframe is detected, the
+page requires an `iframe:` config block rather than being classified as unscrapeable —
+configure the `headless.iframe:` block with the iframe's CSS selector and proceed to
+Step 7. Do NOT return `js-rendered` for these platforms.
+
+If no known iframe platform is detected and containers remain empty, return:
 `RESULT | <URL> | - | - | js-rendered | <body_size>KB body, candidate containers empty even after headless render`
 
 Otherwise, continue using the headless inspect output for subsequent steps and set
@@ -324,6 +333,10 @@ headless:
   wait_timeout_ms: 10000
   # wait_network_idle: true   # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch)
   # undetected: true          # uncomment for Cloudflare JS challenge / bot-detection
+  # iframe:                           # uncomment for cross-origin iframe extraction (Ticket Spot, Elevent)
+  #   selector: "iframe[title='...']" # CSS selector for the target iframe element
+  #   wait_selector: ".events-container" # wait for content inside iframe
+  #   wait_timeout_ms: 10000
   # pagination_button: "<CSS selector for next-page button, if JS-paginated>"
   # rate_limit_ms: 1000
 selectors:

@@ -27,7 +27,8 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `class="eventlist-*"` on articles | **Squarespace (event block)** | T1 |
 | `graphql.datocms.com` token in page JS | **DatoCMS (GraphQL)** | T3 (GraphQL) |
 | `data-template="TPSPT.*"` | **AWS CloudSearch widget** | T2 (`wait_network_idle: true`) |
-| `elevent-cdn.azureedge.net` in source/network | **Elevent widget** | blocked (cross-origin iframe) |
+| `elevent-cdn.azureedge.net` in source/network | **Elevent widget** | T2 (`iframe:` config block) |
+| `geteventviewer.com` or `ticketspotapp.com` iframe | **Ticket Spot** (Wix embed) | T2 (`iframe:` config block) |
 | `.ashx?orgid=` URL pattern | **Agile Technologies box office** | T2 (`wait_network_idle: true`) |
 | `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
@@ -598,17 +599,71 @@ organizer to share an iCal feed or event data export).
 - `<iframe src="*elevent-cdn.azureedge.net*">` in HTML
 - Elevent branding on the embedded ticket widget
 
-**Status:** Blocked. The widget renders inside a cross-origin iframe; CSS selectors
-cannot reach the iframe content from the parent page.
+**Status:** Supported via `headless.iframe:` config block (added in srv-mwy3y). Configure `iframe.selector` to target the Elevent iframe element. The scraper uses CDP frame navigation to enter the iframe's execution context and extract its rendered HTML. CSS selectors in `selectors:` then apply to the iframe DOM, not the parent page.
 
-**Only viable path:** Elevent venue partner API (requires coordination with venue).
+**Example config:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[src*='elevent-cdn.azureedge.net']"
+    wait_selector: ".event-list"
+    wait_timeout_ms: 10000
+```
 
 **Known examples:**
-- `reel-asian.yaml` — disabled, Elevent cross-origin iframe
+- `reel-asian.yaml` — disabled, Elevent cross-origin iframe (working iframe config; pending manual verification)
 
 ---
 
-### 18. AWS CloudSearch widget
+### 18. Ticket Spot (Wix embed)
+
+**What it is:** A Wix-native event widget embedded as a cross-origin iframe from
+`geteventviewer.com` or `ticketspotapp.com`. Venues that use Wix's Ticket Spot app
+have their event listings rendered entirely inside the iframe.
+
+**Detection signals:**
+- `<iframe src="*geteventviewer.com*">` or `<iframe src="*ticketspotapp.com*">` in HTML
+- `<iframe title="Ticket Spot">` title attribute
+- CSS class `ticket-spot-iframe` or similar on the iframe wrapper
+- `data-app-id` attribute on the iframe with a known Ticket Spot app ID
+
+**API status:** The widget requires a signed Wix JWT to access its internal API.
+T3 REST is not viable without venue cooperation.
+
+**Status:** Supported via `headless.iframe:` config block (added in srv-mwy3y). The
+scraper uses CDP frame navigation to enter the iframe's execution context and extract
+its rendered HTML. CSS selectors in `selectors:` then apply to the iframe DOM, not
+the parent page.
+
+**Example config:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[title='Ticket Spot']"
+    wait_selector: ".events-container"
+    wait_timeout_ms: 10000
+selectors:
+  event_list: ".event-card"
+  name: ".event-title"
+  start_date: ".event-date"
+  url: "a.event-link"
+```
+
+See `configs/sources/lula-lounge.yaml` for a working example.
+
+**Known app IDs:**
+- Lula Lounge: `14409d52-2a79-437b-9b54-3d6a44e8a6ab` (Wix Ticket Spot app ID, visible in iframe `src`)
+
+**Known examples:**
+- `lula-lounge.yaml` — working iframe config; disabled pending manual verification
+
+---
+
+### 19. AWS CloudSearch widget
 
 **What it is:** A custom JS widget backed by AWS CloudSearch. The page renders empty
 containers; event data arrives via XHR.
@@ -635,7 +690,7 @@ URL. If unauthenticated, configure as T3 REST.
 
 ---
 
-### 19. Agile Technologies box office
+### 20. Agile Technologies box office
 
 **What it is:** A venue ticketing system. Embeds via a `.ashx` URL widget.
 
@@ -653,21 +708,77 @@ accept `?format=json`.
 
 ## Headless Flags Reference
 
-Added 2026-03-05 (bead `srv-n8qi1`):
+Added 2026-03-05 (bead `srv-n8qi1`); `iframe:` block added 2026-03-05 (bead `srv-mwy3y`):
 
 | Flag | Effect | When to use |
 |------|--------|-------------|
 | `wait_network_idle: true` | After `wait_selector` resolves, waits 500 ms with no in-flight XHR/fetch | Async widgets (eventscalendar.co, AWS CloudSearch, Agile) |
 | `undetected: true` | Launches via go-rod/stealth (patches `navigator.webdriver`, fake plugins) | Cloudflare JS challenge, bot-detection widgets |
+| `iframe.selector` | CSS selector for the target cross-origin iframe element | Ticket Spot, Elevent, and other cross-origin iframe embeds |
+| `iframe.wait_selector` | CSS selector to wait for inside the iframe DOM before extracting | Any iframe target — waits for content to render inside the frame |
+| `iframe.wait_timeout_ms` | Timeout (ms) for `iframe.wait_selector` (default: 10000) | Increase for slow-loading iframe content |
+
+**`iframe:` block config example:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[title='Ticket Spot']"   # CSS selector for the iframe element
+    wait_selector: ".events-container"          # wait for content inside iframe
+    wait_timeout_ms: 10000                      # timeout for iframe content
+```
+
+When `iframe:` is configured, the scraper uses Chrome DevTools Protocol (CDP) frame
+navigation to enter the iframe's execution context and extract its fully rendered HTML.
+CSS selectors in `selectors:` apply to the iframe DOM, not the parent page.
 
 **Test sequence for unknown/blocked sources:**
 1. Try T2 with `wait_network_idle: true` + `wait_timeout_ms: 20000`
 2. If still empty, add `undetected: true`
-3. Confirm DOM content via `server scrape capture <URL> --format inspect`
-4. If both flags fail, fall back to API/contact approach
+3. If content is in a cross-origin iframe, add an `iframe:` block with the iframe selector
+4. Confirm DOM content via `server scrape capture <URL> --format inspect`
+5. If both flags and iframe block fail, fall back to API/contact approach
 
 **`--source-file` flag (test without DB):**
 ```bash
 SCRAPER_HEADLESS_ENABLED=true server scrape source \
   --source-file /tmp/draft.yaml --dry-run
+```
+
+---
+
+## Cross-Origin Iframe Support
+
+Cross-origin iframe extraction is supported via the `headless.iframe:` config block
+(implemented in bead `srv-mwy3y`).
+
+**How it works:** When `iframe:` is configured, the scraper uses Chrome DevTools Protocol
+(CDP) frame navigation to enter the iframe's execution context. Rather than trying to
+reach iframe content from the parent page (which the same-origin policy blocks), the
+scraper navigates into the frame's document directly, waits for the specified selector,
+and extracts the fully rendered iframe HTML. CSS selectors in `selectors:` then apply
+to the iframe DOM.
+
+**Supported platforms:**
+- **Ticket Spot** (Wix embed from `geteventviewer.com` / `ticketspotapp.com`) — use `iframe[title='Ticket Spot']`
+- **Elevent** (`elevent-cdn.azureedge.net`) — use `iframe[src*='elevent-cdn.azureedge.net']`
+
+**Important:** The config `url` must be the venue's own page — not the iframe `src`.
+Iframe targeting requires explicit configuration; there is no auto-detection.
+
+**Config example:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[title='Ticket Spot']"   # CSS selector targeting the iframe
+    wait_selector: ".events-container"          # selector to wait for inside the iframe
+    wait_timeout_ms: 10000
+selectors:
+  event_list: ".event-card"
+  name: ".event-title"
+  start_date: ".event-date"
+  url: "a.event-link"
 ```
