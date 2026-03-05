@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -101,12 +102,12 @@ func TestFetchAndExtractREST_Pagination(t *testing.T) {
 	page1Events := []map[string]any{sampleEvent("slug-1", "Event 1", "2026-04-01T19:00:00Z", "")}
 	page2Events := []map[string]any{sampleEvent("slug-2", "Event 2", "2026-04-02T19:00:00Z", "")}
 
-	requestCount := 0
+	requestCount := int32(0)
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		requestCount++
-		switch requestCount {
+		n := atomic.AddInt32(&requestCount, 1)
+		switch n {
 		case 1:
 			_, _ = w.Write(showpassPage(t, page1Events, srv.URL+"?page=2"))
 		default:
@@ -124,17 +125,17 @@ func TestFetchAndExtractREST_Pagination(t *testing.T) {
 
 	assert.Equal(t, "Event 1", got[0].Name)
 	assert.Equal(t, "Event 2", got[1].Name)
-	assert.Equal(t, 2, requestCount, "must have fetched exactly 2 pages")
+	assert.Equal(t, int32(2), atomic.LoadInt32(&requestCount), "must have fetched exactly 2 pages")
 }
 
 func TestFetchAndExtractREST_MaxPagesRespected(t *testing.T) {
 	t.Parallel()
 
-	requestCount := 0
+	requestCount := int32(0)
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		requestCount++
+		atomic.AddInt32(&requestCount, 1)
 		events := []map[string]any{sampleEvent("slug", "Event", "2026-04-01T19:00:00Z", "")}
 		// Always return a next page — max_pages should stop us.
 		_, _ = w.Write(showpassPage(t, events, srv.URL+"?page=next"))
@@ -148,7 +149,7 @@ func TestFetchAndExtractREST_MaxPagesRespected(t *testing.T) {
 	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Len(t, got, 2, "must return 2 events (1 per page, 2 pages)")
-	assert.Equal(t, 2, requestCount, "must stop at max_pages=2")
+	assert.Equal(t, int32(2), atomic.LoadInt32(&requestCount), "must stop at max_pages=2")
 }
 
 func TestFetchAndExtractREST_FieldMapMapping(t *testing.T) {
@@ -256,10 +257,10 @@ func TestFetchAndExtractREST_NullNextFieldStopsPagination(t *testing.T) {
 
 	events := []map[string]any{sampleEvent("only-event", "Only Event", "2026-04-01T19:00:00Z", "")}
 
-	requestCount := 0
+	requestCount := int32(0)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		requestCount++
+		atomic.AddInt32(&requestCount, 1)
 		// Explicit null next field.
 		_, _ = w.Write(showpassPage(t, events, ""))
 	}))
@@ -271,7 +272,7 @@ func TestFetchAndExtractREST_NullNextFieldStopsPagination(t *testing.T) {
 	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
-	assert.Equal(t, 1, requestCount, "must stop after one page when next is null")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&requestCount), "must stop after one page when next is null")
 }
 
 func TestFetchAndExtractREST_EmptyResultsField(t *testing.T) {
@@ -294,9 +295,10 @@ func TestFetchAndExtractREST_EmptyResultsField(t *testing.T) {
 func TestFetchAndExtractREST_CustomHeaders(t *testing.T) {
 	t.Parallel()
 
-	var receivedAuthHeader string
+	var receivedAuthHeader atomic.Pointer[string]
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedAuthHeader = r.Header.Get("Authorization")
+		v := r.Header.Get("Authorization")
+		receivedAuthHeader.Store(&v)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(showpassPage(t, []map[string]any{}, ""))
 	}))
@@ -320,7 +322,11 @@ func TestFetchAndExtractREST_CustomHeaders(t *testing.T) {
 	extractor := NewRestExtractor(zerolog.Nop())
 	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
-	assert.Equal(t, "Bearer test-token", receivedAuthHeader, "custom Authorization header must be sent")
+	gotHeader := ""
+	if p := receivedAuthHeader.Load(); p != nil {
+		gotHeader = *p
+	}
+	assert.Equal(t, "Bearer test-token", gotHeader, "custom Authorization header must be sent")
 }
 
 func TestFetchAndExtractREST_IdentityMapping(t *testing.T) {
@@ -365,16 +371,16 @@ func TestFetchAndExtractREST_IdentityMapping(t *testing.T) {
 func TestFetchAndExtractREST_MaxPagesZeroNoLimit(t *testing.T) {
 	t.Parallel()
 
-	requestCount := 0
+	requestCount := int32(0)
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		requestCount++
+		n := atomic.AddInt32(&requestCount, 1)
 		events := []map[string]any{sampleEvent("slug", "Event", "2026-04-01T19:00:00Z", "")}
 		// Return a next page for exactly 3 pages, then stop.
 		next := ""
-		if requestCount < 3 {
-			next = srv.URL + "?page=" + string(rune('0'+requestCount+1))
+		if n < 3 {
+			next = srv.URL + "?page=" + string(rune('0'+n+1))
 		}
 		_, _ = w.Write(showpassPage(t, events, next))
 	}))
@@ -387,5 +393,5 @@ func TestFetchAndExtractREST_MaxPagesZeroNoLimit(t *testing.T) {
 	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Len(t, got, 3, "must return all events when max_pages=0")
-	assert.Equal(t, 3, requestCount)
+	assert.Equal(t, int32(3), atomic.LoadInt32(&requestCount))
 }
