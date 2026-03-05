@@ -136,6 +136,20 @@ server scrape source glad-day-bookshop --dry-run
 Source name matching is case-insensitive. Returns an error if the source is not
 found or is disabled.
 
+**`--source-file <path>`** — load a YAML config file directly, bypassing the DB
+and sources directory lookup. The source runs regardless of its `enabled` flag,
+making it easy to test draft or disabled configs without a DB sync. The `<name>`
+argument is optional when `--source-file` is set (the name is read from the file).
+
+```bash
+# Test a draft config without adding it to the sources directory
+server scrape source --source-file /tmp/my-draft.yaml --dry-run
+
+# Test a disabled source with headless flags
+SCRAPER_HEADLESS_ENABLED=true server scrape source \
+  --source-file configs/sources/burdock-brewery.yaml --dry-run
+```
+
 ### `server scrape all`
 
 Scrape all enabled sources sequentially. Per-source errors are reported in the
