@@ -1,13 +1,23 @@
 name: "workman-arts"
-# Disabled: Events are loaded via AJAX filter interaction (WPBakery + custom theme).
-# Currently off-season — "There are currently no upcoming events" (2026-03-04).
-# Main programming is the Rendezvous With Madness festival (October/November).
-# Tickets via Showpass widget, further complicating extraction.
-# Tier 2 headless would still face the AJAX filter barrier; not viable for scraping.
+# WordPress + Showpass/Eventbrite — RWM (Rendezvous with Madness) festival
+# Main event listing: /events/ (filters dynamically via JS)
+# Archive: /rwm-archive-events/ (RSS feed at /rwm-archive-events/feed/)
+# Headless inspection (2026-03-05): events page renders but no specific event containers found
+# Currently off-season; main programming in Oct-Nov
+# Tier 2: headless rendering needed for dynamic JS-filtered event list
+# Issue: /events/?filter=* URLs are filter parameters, not direct event pages
 url: "https://workmanarts.com/events/"
-tier: 0
-schedule: "weekly"
+tier: 2
+schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
-max_pages: 3
+max_pages: 2
+headless:
+  wait_selector: "body, div[class*='event'], article"
+  wait_timeout_ms: 10000
+selectors:
+  event_list: "article.tribe-events-calendar-list__event-article, div.event-card, li.event-item"
+  name: "h3.tribe-events-calendar-list__event-title a, h3 a, a.event-title-link"
+  start_date: "time.tribe-events-calendar-list__event-datetime, time[datetime], span.event-date"
+  url: "h3 a, a.event-link"
