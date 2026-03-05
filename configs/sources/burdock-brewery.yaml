@@ -1,12 +1,13 @@
 name: "burdock-brewery"
-# Disabled: Uses eventscalendar.co embed (data-project-id="proj_T8vacNv8cWWeEQAQwLKHb"),
-# same widget vendor as luminato. The Shopify page renders the embed container but widget
-# JS never populates it within Rod T2 timeout. No public eventscalendar.co API found.
-# Earlier investigation found a Showpass API (showpass.com/api/public/events/?venue=17330)
-# which may be a legacy/parallel ticketing integration — verify before using.
-# Fix: contact venue or eventscalendar.co for API key/iCal export, or identify the
-# underlying XHR endpoint via browser DevTools network capture.
+# DISABLED: Showpass iframe widget uses AngularJS templates that never render in headless context
+# Shopify page embeds: <iframe src="https://www.showpass.com/w/tickets/events/list/17330/...">
+# Direct capture of both parent page and Showpass iframe shows [[event.name]] template syntax
+# instead of rendered event names, indicating cross-origin JS context barrier.
+# Original eventscalendar.co embed (data-project-id="proj_T8vacNv8cWWeEQAQwLKHb") also unscrapeable.
+# Showpass API (https://showpass.com/api/public/events/?venue=17330) returns 301 redirect.
+# No public Showpass GraphQL or REST API found.
 # Related bead: srv-71948
+# Fix: Contact Burdock or Showpass for iCal export or API token; or use manual venue import.
 url: "https://burdockbrewery.com/pages/music-hall"
 tier: 2
 schedule: "weekly"
