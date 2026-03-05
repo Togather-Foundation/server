@@ -614,7 +614,7 @@ psql "$DATABASE_URL" -c "
 
 ### Quickest path: AI-assisted generation (recommended)
 
-Use the `/generate-selectors` OpenCode slash command (see `agents/generate-selectors.md`):
+Use the `/generate-selectors` OpenCode slash command (see `agents/commands/generate-selectors.md`):
 
 ```bash
 # Single URL

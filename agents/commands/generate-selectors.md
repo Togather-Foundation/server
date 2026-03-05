@@ -145,6 +145,12 @@ Signals to look for:
 - `__NEXT_DATA__` → Next.js (T0 preferred)
 - Cloudflare challenge body → `undetected: true`
 
+**After Step 0, branch by detected tier:**
+
+- **T0 detected** (JSON-LD present, `tribe-events`, `__NEXT_DATA__`, iCal feed): skip to Step 7 and write a `tier: 0` config — no CSS selectors needed. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 0 (feed/JSON-LD)`.
+- **T3 detected** (DatoCMS / `graphql.datocms.com` in source): find the API token in the page JS (`curl -sL "<URL>" | grep -o 'datocms[^"]*token[^"]*"[A-Za-z0-9_-]*"'` or similar), then skip to Step 7 and write a `tier: 3` graphql config. Return `RESULT | <URL> | <name> | - | written | platform: DatoCMS, tier: 3`.
+- **T1/T2**: continue with Step 1 below.
+
 ### Step 1 — Inspect the page
 
 First attempt a **Tier 1 static inspect**:
@@ -263,6 +269,18 @@ Retry up to **3 rounds**. If still failing after 3 rounds, return:
 
 ### Step 7 — Write the config
 
+**Tier 0 (JSON-LD / iCal feed — no selectors needed):**
+```yaml
+name: "<derived-name>"
+url: "<feed-or-events-URL>"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+# Organization match: <org name> (<ulid>) — or "no match found in database"
+```
+
 **Tier 1 (static HTML):**
 ```yaml
 name: "<derived-name>"
@@ -304,6 +322,23 @@ selectors:
   name: "<selector>"
   start_date: "<selector>"
   url: "<selector>"
+```
+
+**Tier 3 (GraphQL / DatoCMS):**
+```yaml
+name: "<derived-name>"
+url: "<events-page-URL>"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+# Organization match: <org name> (<ulid>) — or "no match found in database"
+graphql:
+  endpoint: "https://graphql.datocms.com/"
+  token: "<API_TOKEN>"
+  query: |
+    { allEvents(orderBy: startDate_ASC) { title startDate endDate slug } }
 ```
 
 Omit any selector line whose value is empty — do not write `field: ""`.

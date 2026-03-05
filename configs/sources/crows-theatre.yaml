@@ -1,11 +1,17 @@
 name: "crows-theatre"
-# Disabled: site times out consistently on both Tier 1 (context deadline exceeded) and
-# Tier 2 headless (Rod navigate timeout). Tried 2026-03-04. Likely bot protection or slow CDN.
-# Manual investigation required (e.g., check if site is behind Cloudflare).
 url: "https://crowstheatre.com/shows-events/"
-tier: 0
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 1
+selectors:
+  event_list: ".postgrid .post"
+  name: ".txtbox .title"
+  start_date: ".txtbox .date"
+  url: ".imgbox"
+  image: ".imgbox img"
+headless:
+  wait_selector: ".postgrid .post"
+  wait_network_idle: true
