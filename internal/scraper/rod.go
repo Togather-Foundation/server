@@ -14,6 +14,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/go-rod/stealth"
 	"github.com/rs/zerolog"
 )
 
@@ -250,7 +251,13 @@ func (e *RodExtractor) scrapeSinglePage(
 		return nil, "", err
 	}
 
-	page, err := browser.Page(proto.TargetCreateTarget{})
+	var page *rod.Page
+	var err error
+	if config.Headless.Undetected {
+		page, err = stealth.Page(browser)
+	} else {
+		page, err = browser.Page(proto.TargetCreateTarget{})
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("rod: failed to open new page: %w", err)
 	}
@@ -303,6 +310,15 @@ func (e *RodExtractor) scrapeSinglePage(
 			Str("source", config.Name).
 			Str("selector", waitSelector).
 			Msg("rod: wait selector timed out, attempting extraction anyway")
+	}
+
+	// Optionally wait for in-flight XHR/fetch requests to settle before
+	// extracting HTML. The idle window is 500 ms (no new requests for 500 ms).
+	// This is the key fix for async widget embeds (eventscalendar.co etc.) that
+	// populate the DOM after the initial selector is present.
+	if config.Headless.WaitNetworkIdle {
+		waitIdle := page.Timeout(waitTimeout).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)
+		waitIdle()
 	}
 
 	// Extract rendered HTML.

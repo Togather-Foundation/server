@@ -293,8 +293,9 @@ enabled: true
 
 headless:
   wait_selector: "div.event-card"   # Wait for this element before extracting
-  timeout_ms: 15000                 # Navigation timeout (default: 15000)
-  scroll: true                      # Scroll to bottom to trigger lazy-load
+  wait_timeout_ms: 15000            # Max ms to wait for wait_selector (default: 10000)
+  wait_network_idle: true           # Also wait for XHR/fetch requests to settle
+  undetected: false                 # Enable stealth evasions for bot-detection bypass
 
 selectors:
   event_list: "div.event-card"
@@ -357,6 +358,18 @@ template execution errors are logged at debug level and the URL is left empty.
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
 | `graphql` | — | Required for `tier: 3` (see GraphQL fields below) |
+
+### Headless Config Fields (`headless:`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `wait_selector` | string | `body` | CSS selector to wait for before extracting. Use the most specific stable element. |
+| `wait_timeout_ms` | int | `10000` | Max ms to wait for `wait_selector`. Increase for slow SPAs. |
+| `wait_network_idle` | bool | `false` | After `wait_selector` resolves, additionally wait for in-flight XHR/fetch requests to settle (500 ms idle window). Use for pages that load content via async requests after the DOM is ready (e.g. third-party event widget embeds). |
+| `undetected` | bool | `false` | Launch page with stealth evasions (patches `navigator.webdriver`, fake plugins, etc.) to reduce bot-detection by sites that check for headless Chrome fingerprints. |
+| `pagination_button` | string | — | CSS selector for a JS "next page" / "load more" button. For URL-based pagination use `selectors.pagination` instead. |
+| `rate_limit_ms` | int | `1000` | Delay between page loads in ms. |
+| `headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
 
 ### GraphQL Config Fields (`graphql:`)
 

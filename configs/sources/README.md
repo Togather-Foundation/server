@@ -21,6 +21,8 @@ writing selectors.
 |-------|------|---------|-------|
 | `headless.wait_selector` | string | `body` | CSS selector to wait for before extracting. Use the most specific stable element on the page. |
 | `headless.wait_timeout_ms` | int | 10000 | Max ms to wait for `wait_selector`. Increase for slow SPAs. |
+| `headless.wait_network_idle` | bool | false | After `wait_selector` resolves, also wait for XHR/fetch requests to settle (500 ms idle window). Use for async widget embeds that populate the DOM after the initial selector appears. |
+| `headless.undetected` | bool | false | Enable stealth evasions (patches `navigator.webdriver`, fake plugins) for sites that block headless Chrome. |
 | `headless.pagination_button` | string | — | CSS selector for a JS "next page" button. If the site uses URL-based pagination, use `selectors.pagination` instead. |
 | `headless.rate_limit_ms` | int | 1000 | Delay between page loads in ms. |
 | `headless.headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
