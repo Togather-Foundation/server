@@ -1,14 +1,16 @@
 name: "dance-immersion"
-# Events are in a content slider (article.slide-entry) in static HTML.
-# Previous selector (div.post-entry) was the page wrapper, not the slide items.
-url: "https://danceimmersion.ca/events/"
+# WordPress category archive; article.post-entry containers with time.date-container
+# (datePublished, ISO 8601 datetime attr). /events/ slider has no dates.
+# Date is post-publication date, not performance date — acceptable for discovery.
+url: "https://danceimmersion.ca/category/events/"
 tier: 1
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
 enabled: true
-max_pages: 1
+max_pages: 3
 selectors:
-  event_list: "article.slide-entry"
-  name: "h3.entry-title a"
-  url: "h3.entry-title a"
+  event_list: "article.post-entry"
+  name: "h2.entry-title a"
+  start_date: "time.date-container"
+  url: "h2.entry-title a"

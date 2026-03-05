@@ -1,6 +1,7 @@
 name: "crows-theatre"
-# Disabled: site times out consistently (context deadline exceeded) on both scrape url and inspect.
-# Likely slow server or bot protection; needs manual investigation or Tier 2 (Rod).
+# Disabled: site times out consistently on both Tier 1 (context deadline exceeded) and
+# Tier 2 headless (Rod navigate timeout). Tried 2026-03-04. Likely bot protection or slow CDN.
+# Manual investigation required (e.g., check if site is behind Cloudflare).
 url: "https://crowstheatre.com/shows-events/"
 tier: 0
 schedule: "weekly"
