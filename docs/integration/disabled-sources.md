@@ -28,9 +28,9 @@ Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-r
 | T2 widget never renders (third-party embed) | rcmusic, hot-docs | Low–Medium (find underlying API endpoint) |
 | Need depth-2 (detail-page) scraping | obsidian-theatre, east-end-arts, theatre-passe-muraille, orpheus-choir-toronto | Medium (new feature) |
 | Cross-origin iframe — config written, pending verification | lula-lounge | Low (verify selectors, flip enabled) |
-| Cross-origin iframe — config written, pending verification | reel-asian | Low (verify selectors, flip enabled) |
+| ~~Cross-origin iframe~~ — **now Tier 1 static** | reel-asian | **Done** (enabled) |
 | Blocked by third-party widget / no listing page | luminato, church-wellesley-village-bia | Low–Medium (contact/API) |
-| Blocked by bot protection | ago, crows-theatre, st-lawrence-market, glad-day-bookshop | Medium–High |
+| Blocked by bot protection | ago, ~~crows-theatre~~, st-lawrence-market, glad-day-bookshop | Medium–High |
 | No events listing page | mammalian-diving-reflex | Blocked |
 
 ---
@@ -235,18 +235,13 @@ events page no longer exists.
 - **Fallback:** Contact Luminato to request an iCal feed or JSON export. Eventscalendar.co
   may offer an export to the venue — worth asking.
 
-### reel-asian
+### reel-asian ✅ RESOLVED
 - **URL:** `https://www.reelasian.com/year-round/current-events/`
-- **Widget:** Elevent (cross-origin iframe, `elevent-cdn.azureedge.net`)
-- **Cross-origin iframe blocker resolved:** The same-origin policy that previously
-  prevented CSS access to Elevent iframe content is now resolved via the
-  `headless.iframe:` config block (implemented in srv-mwy3y).
-- **Status:** A working iframe config has been written for reel-asian but the source
-  remains `enabled: false` pending manual verification that selectors correctly extract
-  events from the Elevent iframe DOM.
-- **Next step:** Run `SCRAPER_HEADLESS_ENABLED=true server scrape source reel-asian --source-file configs/sources/reel-asian.yaml --dry-run` to confirm ≥ 3 events are extracted, then set `enabled: true`.
-- **Fallback:** Elevent offers an API for venue partners. Contact Reel Asian to ask
-  whether their Elevent account has API access that could be shared for aggregation.
+- **Widget:** Elevent JS library is loaded but only handles cart/account UI — events
+  are static HTML in WordPress + Visual Composer columns.
+- **Resolution:** Downgraded from Tier 2 to **Tier 1 static**. Selectors target
+  `.vc_col-sm-4:has(.wpb_text_column)` event cards. 2 events extracted (Oscars
+  Watch-Along Party, Fire Horse Award Gala). Config `enabled: true`.
 
 ### church-wellesley-village-bia
 - **URL:** `https://www.churchwellesleyvillage.ca/events`
@@ -286,15 +281,15 @@ events page no longer exists.
   feed is exposed under the same platform. Alternatively, AGO is a high-profile venue
   worth a direct contact request for a data feed.
 
-### crows-theatre
+### ~~crows-theatre~~ — ✅ RESOLVED
+
 - **URL:** `https://crowstheatre.com/shows-events/`
-- **Blocked by:** Context deadline exceeded on static fetch; Rod navigate timeout on
-  headless. Consistent across attempts (2026-03-04). Likely Cloudflare JS challenge.
-- **Next step:** Try T2 with `undetected: true` — stealth evasions patch the
-  `navigator.webdriver` property that Cloudflare checks. Also try a realistic
-  `Accept-Language` header via `headless.headers`.
-- **Fallback:** Contact the venue — Crows is a major mid-size Toronto theatre and
-  likely receptive to an aggregation partnership.
+- **Was blocked by:** Context deadline exceeded — Cloudflare JS challenge.
+- **Fix:** T2 headless with `wait_network_idle: true`. No `undetected: true` needed.
+  Uses `date_selectors: [".txtbox .date"]` for date-range parsing (e.g.
+  "Feb 3, 2026 - Mar 8, 2026"). 7 events extracted. `all_midnight` quality warning
+  is expected — listing page shows date ranges, not individual showtimes.
+- **Status:** `enabled: true` as of 2026-03-05. Config: `configs/sources/crows-theatre.yaml`.
 
 ### st-lawrence-market
 - **URL:** `https://www.stlawrencemarket.com/events/`
@@ -335,13 +330,13 @@ events page no longer exists.
    burdock-brewery is a config-only enable (Showpass API confirmed working). Workman-arts
    follows once its Showpass venue ID is found. Lula-lounge follows via Eventbrite API.
 
-3. **Try new T2 flags** — for rcmusic, hot-docs, luminato, crows-theatre,
+3. **Try new T2 flags** — for rcmusic, hot-docs, luminato,
    st-lawrence-market: test `wait_network_idle: true` and/or `undetected: true` using
    `server scrape source --source-file /tmp/draft.yaml --dry-run`. If any widget
    now renders, add selectors and re-enable. Use `server scrape capture <URL> --format inspect`
    to confirm DOM content before writing selectors.
 
-4. **Contact campaign** — email glad-day, luminato, lula-lounge, crows-theatre, church-wellesley
+4. **Contact campaign** — email glad-day, luminato, lula-lounge, church-wellesley
    requesting an iCal/JSON feed or scraping permission. Low effort, potentially high yield
    for venues that are community-oriented.
 
@@ -352,5 +347,5 @@ events page no longer exists.
 6. **Depth-2 scraping** — unlocks obsidian-theatre, east-end-arts, and potentially
    theatre-passe-muraille. Medium engineering effort.
 
-7. **Bot-protected sites** (ago, crows-theatre, st-lawrence-market) — defer if T2 stealth
+7. **Bot-protected sites** (ago, st-lawrence-market) — defer if T2 stealth
    fails. High complexity, low reliability. Prefer contact/feed approach first.
