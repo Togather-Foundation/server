@@ -1,5 +1,11 @@
 name: "inside-out"
-# Disabled: Programme page redirects and 0 events in static HTML 2026-02-21. Needs Tier 2 (Rod).
+# Disabled: Film programme page at /initiatives/toronto-festival/festival/program/ 2026-03-05.
+# Page loads but film list is rendered by Eventive JS widget (div.eventive-login);
+# the div.tab-pane > div.program-film-wrap is empty in the rendered DOM.
+# No static or headless-extractable event containers found.
+# Festival is annual (May); off-season the page has no content.
+# Re-enable only if Eventive widget is replaced with server-side rendered content,
+# or if an RSS/API feed becomes available.
 url: "https://insideout.ca/"
 tier: 0
 schedule: "weekly"

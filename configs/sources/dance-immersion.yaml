@@ -1,10 +1,14 @@
 name: "dance-immersion"
-# Disabled: inspect shows div.post-entry containers but scrape test returns 0 events 2026-02-21.
-# Possible nested JS rendering or selector mismatch. Needs further investigation / Tier 2 (Rod).
+# Events are in a content slider (article.slide-entry) in static HTML.
+# Previous selector (div.post-entry) was the page wrapper, not the slide items.
 url: "https://danceimmersion.ca/events/"
-tier: 0
+tier: 1
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
-enabled: false
-max_pages: 3
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "article.slide-entry"
+  name: "h3.entry-title a"
+  url: "h3.entry-title a"

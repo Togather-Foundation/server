@@ -1,12 +1,16 @@
 name: "beaches-jazz"
-# Tier 2 (disabled). Wix site — JS-rendered events, no server-rendered event HTML.
-# Toronto International Jazz Festival at the Beaches.
-# Requires Rod headless browser (srv-h264z).
-# URL: https://www.beachesjazz.com/events-1
+# Tier 2. Wix site — but server pre-renders ~1MB of HTML, Colly works without headless.
+# Toronto International Jazz Festival at the Beaches (seasonal: July only).
+# 6 events confirmed in test. Zero events expected off-season.
 url: "https://www.beachesjazz.com/events-1"
 tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
+selectors:
+  event_list: "div.KaEeLN"
+  name: "h5.font_5"
+  start_date: "h5.font_5"
+  url: "a.j7pOnl"

@@ -1,10 +1,16 @@
 name: "four-oh-one-richmond"
-# Disabled: Event cards use Tailwind utility classes with no standard containers 2026-02-21.
-# 0 events extracted from static HTML. Needs Tier 2 (Rod) for JS rendering.
 url: "https://401richmond.com/events/"
-tier: 0
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
+headless:
+  wait_selector: "a.tiles__tile--event"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "a.tiles__tile--event"
+  name: "h2"
+  start_date: "small[role='doc-subtitle']"
+  url: "self"

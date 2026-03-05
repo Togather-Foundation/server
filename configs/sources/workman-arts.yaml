@@ -1,6 +1,9 @@
 name: "workman-arts"
-# Disabled: Events loaded via AJAX filter; no event containers in static HTML 2026-02-21.
-# Needs Tier 2 (Rod) for JS rendering.
+# Disabled: Events are loaded via AJAX filter interaction (WPBakery + custom theme).
+# Currently off-season — "There are currently no upcoming events" (2026-03-04).
+# Main programming is the Rendezvous With Madness festival (October/November).
+# Tickets via Showpass widget, further complicating extraction.
+# Tier 2 headless would still face the AJAX filter barrier; not viable for scraping.
 url: "https://workmanarts.com/events/"
 tier: 0
 schedule: "weekly"

@@ -1,6 +1,9 @@
 name: "imagine-native"
-# Disabled: Elementor-based; event links appear to be external (libraries/partner sites) 2026-02-21.
-# 0 events extracted from static HTML. Needs Tier 2 (Rod) or manual curation.
+# Disabled: /year-round/events/ returns 404 (URL no longer exists) 2026-03-05.
+# Homepage has article.elementor-post with h3.elementor-post__title + span.elementor-post-date
+# but these are news/blog post announcements, not structured events with start times.
+# Festival programming is seasonal (Oct); year-round page was removed.
+# Re-enable only if a structured event listing page is added to the site.
 url: "https://imaginenative.org/year-round/events/"
 tier: 0
 schedule: "weekly"
