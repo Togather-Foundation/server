@@ -17,6 +17,7 @@ var (
 	scrapeServerURL string
 	scrapeAPIKey    string
 	scrapeDryRun    bool
+	scrapeVerbose   bool
 	scrapeLimit     int
 	scrapeSourceDir string
 	scrapeTier      int
@@ -68,6 +69,7 @@ func init() {
 	scrapeCmd.PersistentFlags().StringVar(&scrapeServerURL, "server", "", "SEL server base URL (default: SEL_SERVER_URL or http://localhost:8080)")
 	scrapeCmd.PersistentFlags().StringVar(&scrapeAPIKey, "key", "", "API key for ingest (default: SEL_API_KEY or SEL_INGEST_KEY env var)")
 	scrapeCmd.PersistentFlags().BoolVar(&scrapeDryRun, "dry-run", false, "display extracted events without submitting")
+	scrapeCmd.PersistentFlags().BoolVar(&scrapeVerbose, "verbose", false, "show individual events in dry-run mode (requires --dry-run)")
 	scrapeCmd.PersistentFlags().IntVar(&scrapeLimit, "limit", 0, "max events per source (0 = no limit)")
 	scrapeCmd.PersistentFlags().StringVar(&scrapeSourceDir, "sources", "configs/sources", "path to sources directory")
 	scrapeCmd.PersistentFlags().Bool("cache", false, "Enable local HTTP cache for scraper requests (dev/testing)")

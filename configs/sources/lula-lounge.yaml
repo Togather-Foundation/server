@@ -54,4 +54,4 @@ selectors:
   # then the smart date assembler combines them into RFC 3339.
   date_selectors:
     - ".first [class^='time-container-']"                          # e.g. "Thu 5th March"
-    - "[style*='display: flex'] [class^='time-container-']"        # e.g. "9:30 PM"
+    - "[style*='display: flex']:not(.first) [class^='time-container-']"  # e.g. "9:30 PM"
