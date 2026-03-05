@@ -181,7 +181,7 @@ func (t *OrganizationTools) listOrganizations(ctx context.Context, query string,
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, err := organizations.ParseFilters(values)
+	filters, pagination, err := organizations.ParseFilters(values, time.UTC)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

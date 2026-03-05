@@ -52,7 +52,7 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Parse filters from query parameters
-	filters, pagination, err := events.ParseFilters(r.URL.Query())
+	filters, pagination, err := events.ParseFilters(r.URL.Query(), time.UTC)
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
@@ -103,7 +103,7 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filters, pagination, err := events.ParseFilters(r.URL.Query())
+	filters, pagination, err := events.ParseFilters(r.URL.Query(), time.UTC)
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return

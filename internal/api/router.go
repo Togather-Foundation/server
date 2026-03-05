@@ -216,11 +216,21 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Note: River workers are started in cmd/server/cmd/serve.go with proper lifecycle management
 	// DO NOT call riverClient.Start() here - it's handled during server initialization for proper graceful shutdown
 
+	// Load configured timezone for default date filtering (srv-h7j38)
+	loc, err := time.LoadLocation(cfg.DefaultTimezone)
+	if err != nil {
+		logger.Warn().Err(err).Str("timezone", cfg.DefaultTimezone).Msg("invalid DefaultTimezone, falling back to UTC")
+		loc = time.UTC
+	}
+
 	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL).
 		WithPlaceResolver(placesService).
 		WithOrgResolver(orgService)
+	eventsHandler.Loc = loc
 	placesHandler := handlers.NewPlacesHandler(placesService, cfg.Environment, cfg.Server.BaseURL).WithGeocodingService(geocodingService)
+	placesHandler.Loc = loc
 	orgHandler := handlers.NewOrganizationsHandler(orgService, cfg.Environment, cfg.Server.BaseURL)
+	orgHandler.Loc = loc
 
 	// Wire scraper source repo into org/place handlers for sel:scraperSource linkage (best-effort).
 	scraperSourceRepo := postgres.NewScraperSourceRepository(pool)

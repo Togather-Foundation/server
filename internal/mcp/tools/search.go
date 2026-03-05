@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -166,7 +167,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := events.ParseFilters(values)
+	filters, pagination, err := events.ParseFilters(values, time.UTC)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +188,7 @@ func (t *SearchTools) searchPlaces(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := places.ParseFilters(values)
+	filters, pagination, err := places.ParseFilters(values, time.UTC)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +209,7 @@ func (t *SearchTools) searchOrganizations(ctx context.Context, query string, lim
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := organizations.ParseFilters(values)
+	filters, pagination, err := organizations.ParseFilters(values, time.UTC)
 	if err != nil {
 		return nil, err
 	}

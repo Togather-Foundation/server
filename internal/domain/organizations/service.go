@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
@@ -60,7 +61,8 @@ func (e FilterError) Error() string {
 	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
 }
 
-func ParseFilters(values url.Values) (Filters, Pagination, error) {
+func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, error) {
+	_ = loc // loc reserved for future use; organizations params are already snake_case
 	filters := Filters{}
 	pagination := Pagination{Limit: 50}
 

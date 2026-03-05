@@ -43,6 +43,7 @@ type EventsHandler struct {
 	Queries           *postgres.Queries
 	Env               string
 	BaseURL           string
+	Loc               *time.Location // configured timezone for default date filtering
 }
 
 func NewEventsHandler(service *events.Service, ingest *events.IngestService, provenanceService *provenance.Service, riverClient *river.Client[pgx.Tx], queries *postgres.Queries, env string, baseURL string) *EventsHandler {
@@ -70,9 +71,10 @@ func (h *EventsHandler) WithOrgResolver(resolver EventOrgResolver) *EventsHandle
 }
 
 type listResponse struct {
-	Items      any    `json:"items"` // Accepts any slice type for JSON encoding
-	NextCursor string `json:"next_cursor"`
-	Total      int64  `json:"total,omitempty"` // Optional: total count for filtered results
+	Items      any      `json:"items"` // Accepts any slice type for JSON encoding
+	NextCursor string   `json:"next_cursor"`
+	Total      int64    `json:"total,omitempty"`    // Optional: total count for filtered results
+	Warnings   []string `json:"warnings,omitempty"` // Alias warnings from query param parsing
 }
 
 func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +83,7 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filters, pagination, err := events.ParseFilters(r.URL.Query())
+	filters, pagination, err := events.ParseFilters(r.URL.Query(), h.Loc)
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
@@ -115,7 +117,7 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor}, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor, Warnings: filters.Warnings}, contentTypeFromRequest(r))
 }
 
 func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
