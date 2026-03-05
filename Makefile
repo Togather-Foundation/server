@@ -308,11 +308,11 @@ lint:
 lint-ci:
 	@echo "Running linter as CI does (no cache, 5m timeout)..."
 	@if command -v golangci-lint > /dev/null 2>&1; then \
-		golangci-lint run --no-cache --timeout=5m ./...; \
+		GOLANGCI_LINT_CACHE=$$(mktemp -d) golangci-lint run --timeout=5m ./...; \
 	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
-		$(HOME)/go/bin/golangci-lint run --no-cache --timeout=5m ./...; \
+		GOLANGCI_LINT_CACHE=$$(mktemp -d) $(HOME)/go/bin/golangci-lint run --timeout=5m ./...; \
 	elif [ -f $(GOPATH)/bin/golangci-lint ]; then \
-		$(GOPATH)/bin/golangci-lint run --no-cache --timeout=5m ./...; \
+		GOLANGCI_LINT_CACHE=$$(mktemp -d) $(GOPATH)/bin/golangci-lint run --timeout=5m ./...; \
 	else \
 		echo "golangci-lint not found. Install with 'make install-tools'"; \
 		exit 1; \
