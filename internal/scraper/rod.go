@@ -422,8 +422,9 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 }
 
 // extractDateFromSelection finds a child element matching selector in the goquery
-// selection and returns the value of its datetime attribute, falling back to its
-// text content.
+// selection and returns the value of its datetime attribute, falling back to an
+// ISO 8601 date extracted from its id attribute (e.g. id="date-2026-03-04"),
+// then falling back to its text content.
 func extractDateFromSelection(s *goquery.Selection, selector string) string {
 	el := s.Find(selector).First()
 	if el.Length() == 0 {
@@ -432,6 +433,15 @@ func extractDateFromSelection(s *goquery.Selection, selector string) string {
 	// Prefer datetime attribute (standard HTML5 time element).
 	if dt, exists := el.Attr("datetime"); exists && dt != "" {
 		return strings.TrimSpace(dt)
+	}
+	// Some sites encode the date in the element's id attribute with a well-known
+	// prefix, e.g. id="date-2026-03-04". Extract the ISO date portion.
+	if id, exists := el.Attr("id"); exists && strings.HasPrefix(id, "date-") {
+		candidate := strings.TrimPrefix(id, "date-")
+		// Validate it looks like YYYY-MM-DD before returning.
+		if len(candidate) == 10 && candidate[4] == '-' && candidate[7] == '-' {
+			return candidate
+		}
 	}
 	return strings.TrimSpace(el.Text())
 }
