@@ -51,7 +51,7 @@ func resolveAlias(values url.Values, canonical, alias string, warnings *[]string
 		return values.Get(canonical)
 	}
 	if v := values.Get(alias); v != "" {
-		*warnings = append(*warnings, fmt.Sprintf("Unknown parameter %q — did you mean %q?", alias, canonical))
+		*warnings = append(*warnings, fmt.Sprintf("Unrecognised parameter alias %q — use %q instead", alias, canonical))
 		return v
 	}
 	return ""

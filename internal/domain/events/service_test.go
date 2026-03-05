@@ -335,16 +335,25 @@ func TestParseFilters_DefaultStartDateToday(t *testing.T) {
 	loc, err := time.LoadLocation("America/Toronto")
 	require.NoError(t, err)
 
+	// Capture now before and after the call; compute today in both snapshots.
+	// If the call does not straddle midnight both will agree. If it does, we
+	// accept either value so the test stays green during the one-second window
+	// where a real midnight crossing could occur.
+	before := time.Now().In(loc)
 	filters, _, err := ParseFilters(url.Values{}, loc)
+	after := time.Now().In(loc)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate, "startDate should default to today when no date params provided")
 	require.Nil(t, filters.EndDate)
 
-	// Should be today at midnight in the configured timezone.
-	now := time.Now().In(loc)
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	require.Equal(t, today, *filters.StartDate)
+	todayBefore := time.Date(before.Year(), before.Month(), before.Day(), 0, 0, 0, 0, loc)
+	todayAfter := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, loc)
+	require.True(t,
+		*filters.StartDate == todayBefore || *filters.StartDate == todayAfter,
+		"startDate %v should be today at midnight in %s (before=%v, after=%v)",
+		*filters.StartDate, loc, todayBefore, todayAfter,
+	)
 }
 
 func TestParseFilters_ExplicitStartDateNoDefault(t *testing.T) {

@@ -340,6 +340,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	requireHTTPS := cfg.Environment == "production"
 	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
+	adminHandler.Loc = loc
 
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
@@ -448,6 +449,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				orgService,
 				developerService,
 				geocodingService,
+				loc,
 				cfg.Server.BaseURL,
 			)
 

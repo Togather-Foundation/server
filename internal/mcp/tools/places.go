@@ -19,6 +19,7 @@ import (
 // PlaceTools provides MCP tools for querying and managing places.
 type PlaceTools struct {
 	placesService *places.Service
+	loc           *time.Location
 	baseURL       string
 }
 
@@ -28,6 +29,12 @@ func NewPlaceTools(placesService *places.Service, baseURL string) *PlaceTools {
 		placesService: placesService,
 		baseURL:       strings.TrimSpace(baseURL),
 	}
+}
+
+// WithLoc sets the server timezone (passed through to ParseFilters for future use).
+func (t *PlaceTools) WithLoc(loc *time.Location) *PlaceTools {
+	t.loc = loc
+	return t
 }
 
 // PlacesTool returns the MCP tool definition for listing or getting places.
@@ -206,7 +213,7 @@ func (t *PlaceTools) listPlaces(ctx context.Context, query string, nearLat *floa
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, err := places.ParseFilters(values, time.UTC)
+	filters, pagination, err := places.ParseFilters(values, t.loc)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

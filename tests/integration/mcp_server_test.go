@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -41,8 +42,9 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
@@ -95,8 +97,9 @@ func TestMCPResources(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
@@ -167,8 +170,9 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
@@ -241,8 +245,9 @@ func TestMCPAuthValidKey(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
@@ -297,8 +302,9 @@ func TestMCPAuthInvalidKey(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
@@ -365,8 +371,9 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
@@ -994,8 +1001,9 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 		ingestService,
 		placesService,
 		orgService,
-		nil, // developerService
-		nil, // geocodingService
+		nil,      // developerService
+		nil,      // geocodingService
+		time.UTC, // loc
 		env.Config.Server.BaseURL,
 	)
 
