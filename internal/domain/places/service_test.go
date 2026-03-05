@@ -12,7 +12,7 @@ import (
 )
 
 func TestParseFiltersDefaults(t *testing.T) {
-	filters, pagination, err := ParseFilters(url.Values{}, nil)
+	filters, pagination, _, err := ParseFilters(url.Values{}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 50, pagination.Limit)
@@ -29,7 +29,7 @@ func TestParseFiltersTrimsFields(t *testing.T) {
 	values.Set("q", "  live music ")
 	values.Set("after", "  "+validCursor+" ")
 
-	filters, pagination, err := ParseFilters(values, nil)
+	filters, pagination, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "Austin", filters.City)
@@ -41,13 +41,13 @@ func TestParseFiltersLimitValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("limit", "abc")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "limit", "must be a number")
 
 	values.Set("limit", "0")
 
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "limit", "must be between 1 and 200")
 }
@@ -56,7 +56,7 @@ func TestParseFiltersLimitSuccess(t *testing.T) {
 	values := url.Values{}
 	values.Set("limit", "200")
 
-	_, pagination, err := ParseFilters(values, nil)
+	_, pagination, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 200, pagination.Limit)
@@ -68,7 +68,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", validCursor)
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Equal(t, validCursor, pagination.After)
@@ -78,7 +78,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "")
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Empty(t, pagination.After)
@@ -88,7 +88,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "   ")
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Empty(t, pagination.After)
@@ -98,7 +98,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "2026-01-01T00:00:00Z")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -107,7 +107,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "not-a-valid-cursor")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -116,7 +116,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "01HYX3KQW7ERTV9XNBM2P8QJZF")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -125,7 +125,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "123")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -160,7 +160,7 @@ func TestParseFiltersProximityValid(t *testing.T) {
 	values.Set("near_lon", "-79.3832")
 	values.Set("radius", "5")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.Latitude)
@@ -176,7 +176,7 @@ func TestParseFiltersProximityDefaultRadius(t *testing.T) {
 	values.Set("near_lat", "43.6532")
 	values.Set("near_lon", "-79.3832")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.RadiusKm)
@@ -188,12 +188,12 @@ func TestParseFiltersProximityLatOutOfRange(t *testing.T) {
 	values.Set("near_lat", "91")
 	values.Set("near_lon", "-79.3832")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lat", "must be between -90 and 90")
 
 	values.Set("near_lat", "-91")
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lat", "must be between -90 and 90")
 }
@@ -203,12 +203,12 @@ func TestParseFiltersProximityLonOutOfRange(t *testing.T) {
 	values.Set("near_lat", "43.6532")
 	values.Set("near_lon", "181")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lon", "must be between -180 and 180")
 
 	values.Set("near_lon", "-181")
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lon", "must be between -180 and 180")
 }
@@ -219,7 +219,7 @@ func TestParseFiltersProximityRadiusTooLarge(t *testing.T) {
 	values.Set("near_lon", "-79.3832")
 	values.Set("radius", "101")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "radius", "must be 100km or less")
 }
@@ -230,7 +230,7 @@ func TestParseFiltersProximityRadiusZero(t *testing.T) {
 	values.Set("near_lon", "-79.3832")
 	values.Set("radius", "0")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "radius", "must be greater than 0")
 }
@@ -239,7 +239,7 @@ func TestParseFiltersProximityLatWithoutLon(t *testing.T) {
 	values := url.Values{}
 	values.Set("near_lat", "43.6532")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lat,near_lon", "both near_lat and near_lon must be provided for proximity search")
 }
@@ -248,7 +248,7 @@ func TestParseFiltersProximityLonWithoutLat(t *testing.T) {
 	values := url.Values{}
 	values.Set("near_lon", "-79.3832")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lat,near_lon", "both near_lat and near_lon must be provided for proximity search")
 }
@@ -258,7 +258,7 @@ func TestParseFiltersProximityInvalidLatNumber(t *testing.T) {
 	values.Set("near_lat", "not-a-number")
 	values.Set("near_lon", "-79.3832")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lat", "must be a valid number")
 }
@@ -268,7 +268,7 @@ func TestParseFiltersProximityInvalidLonNumber(t *testing.T) {
 	values.Set("near_lat", "43.6532")
 	values.Set("near_lon", "not-a-number")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_lon", "must be a valid number")
 }
@@ -279,7 +279,7 @@ func TestParseFiltersProximityInvalidRadiusNumber(t *testing.T) {
 	values.Set("near_lon", "-79.3832")
 	values.Set("radius", "not-a-number")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "radius", "must be a valid number")
 }
@@ -291,7 +291,7 @@ func TestParseFiltersNearPlaceWithRadiusOnly(t *testing.T) {
 	values.Set("near_place", "Toronto City Hall")
 	values.Set("radius", "5")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.NearPlace)
@@ -307,7 +307,7 @@ func TestParseFiltersNearPlaceWithoutRadius(t *testing.T) {
 	values := url.Values{}
 	values.Set("near_place", "Toronto City Hall")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.NearPlace)
@@ -322,7 +322,7 @@ func TestParseFiltersNearPlaceConflictsWithLatLon(t *testing.T) {
 	values.Set("near_lat", "43.6532")
 	values.Set("near_lon", "-79.3832")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "near_place,near_lat,near_lon", "cannot use both near_place and near_lat/near_lon - choose one proximity method")
 }

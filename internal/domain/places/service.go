@@ -56,7 +56,7 @@ func (e FilterError) Error() string {
 	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
 }
 
-func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, error) {
+func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, []string, error) {
 	_ = loc // loc reserved for future use; places params are already snake_case
 	filters := Filters{}
 	pagination := Pagination{Limit: 50}
@@ -72,7 +72,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	case "":
 		filters.Sort = "created_at"
 	default:
-		return filters, pagination, FilterError{Field: "sort", Message: "must be 'name' or 'created_at'"}
+		return filters, pagination, nil, FilterError{Field: "sort", Message: "must be 'name' or 'created_at'"}
 	}
 
 	// Parse order parameter (default: asc)
@@ -83,7 +83,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	case "":
 		filters.Order = "asc"
 	default:
-		return filters, pagination, FilterError{Field: "order", Message: "must be 'asc' or 'desc'"}
+		return filters, pagination, nil, FilterError{Field: "order", Message: "must be 'asc' or 'desc'"}
 	}
 
 	// Parse near_place parameter
@@ -95,7 +95,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	// Parse proximity parameters
 	lat, lon, radius, err := parseProximityParams(values)
 	if err != nil {
-		return filters, pagination, err
+		return filters, pagination, nil, err
 	}
 	filters.Latitude = lat
 	filters.Longitude = lon
@@ -103,7 +103,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 
 	// Validate that near_place and near_lat/near_lon are mutually exclusive
 	if filters.NearPlace != nil && (filters.Latitude != nil || filters.Longitude != nil) {
-		return filters, pagination, FilterError{
+		return filters, pagination, nil, FilterError{
 			Field:   "near_place,near_lat,near_lon",
 			Message: "cannot use both near_place and near_lat/near_lon - choose one proximity method",
 		}
@@ -111,7 +111,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 
 	limit, err := parseLimit(values)
 	if err != nil {
-		return filters, pagination, err
+		return filters, pagination, nil, err
 	}
 	pagination.Limit = limit
 
@@ -120,12 +120,12 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 		// Validate cursor format by attempting to decode it
 		_, err := paginationpkg.DecodeEventCursor(after)
 		if err != nil {
-			return filters, pagination, FilterError{Field: "after", Message: "must be a valid cursor"}
+			return filters, pagination, nil, FilterError{Field: "after", Message: "must be a valid cursor"}
 		}
 	}
 	pagination.After = after
 
-	return filters, pagination, nil
+	return filters, pagination, nil, nil
 }
 
 func parseLimit(values url.Values) (int, error) {

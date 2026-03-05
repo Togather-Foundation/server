@@ -278,7 +278,7 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, err := events.ParseFilters(values, t.loc)
+	filters, pagination, _, err := events.ParseFilters(values, t.loc)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

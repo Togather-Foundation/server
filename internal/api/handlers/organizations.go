@@ -38,7 +38,7 @@ func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filters, pagination, err := organizations.ParseFilters(r.URL.Query(), h.Loc)
+	filters, pagination, warnings, err := organizations.ParseFilters(r.URL.Query(), h.Loc)
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
@@ -64,7 +64,7 @@ func (h *OrganizationsHandler) List(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor, Warnings: filters.Warnings}, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor, Warnings: warnings}, contentTypeFromRequest(r))
 }
 
 func (h *OrganizationsHandler) Get(w http.ResponseWriter, r *http.Request) {

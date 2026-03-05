@@ -174,7 +174,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := events.ParseFilters(values, t.loc)
+	filters, pagination, _, err := events.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (t *SearchTools) searchPlaces(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := places.ParseFilters(values, t.loc)
+	filters, pagination, _, err := places.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (t *SearchTools) searchOrganizations(ctx context.Context, query string, lim
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := organizations.ParseFilters(values, t.loc)
+	filters, pagination, _, err := organizations.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}

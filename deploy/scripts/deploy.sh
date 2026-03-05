@@ -697,7 +697,7 @@ acquire_named_lock() {
     if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
         log "WARN" "Stale lock detected (age: ${lock_age}s > ${LOCK_TIMEOUT}s): ${lock_name}"
         log "WARN" "Removing stale lock: ${lock_dir}"
-        if rmdir "$lock_dir" 2>/dev/null && mkdir "$lock_dir" 2>/dev/null; then
+        if rm -rf "$lock_dir" 2>/dev/null && mkdir "$lock_dir" 2>/dev/null; then
             echo "$(date +%s)" > "${lock_dir}/locked_at"
             log "WARN" "Stale lock removed and re-acquired: ${lock_name}"
             return 0
@@ -722,7 +722,7 @@ release_named_lock() {
     local lock_dir="$1"
     local lock_name
     lock_name=$(basename "$lock_dir")
-    if rmdir "$lock_dir" 2>/dev/null; then
+    if rm -rf "$lock_dir" 2>/dev/null; then
         log "INFO" "Lock released: ${lock_name}"
     else
         log "WARN" "Failed to remove lock directory (may need manual cleanup): ${lock_dir}"
@@ -803,7 +803,7 @@ STATE_EOF
           hostname: $hostname
         }' || {
         log "ERROR" "Failed to update state file with lock"
-        rmdir "$lock_dir" 2>/dev/null || true
+        rm -rf "$lock_dir" 2>/dev/null || true
         return 1
     }
     
