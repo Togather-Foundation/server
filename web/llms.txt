@@ -49,20 +49,23 @@ Search by keyword:
   GET /api/v1/events?search=open+source&limit=10
 
 Filter by date range:
-  GET /api/v1/events?start_date=2026-03-01&end_date=2026-03-31&limit=20
+  GET /api/v1/events?startDate=2026-03-01&endDate=2026-03-31&limit=20
 
 Combine keyword + date:
-  GET /api/v1/events?search=tech&start_date=2026-03-01&limit=10
+  GET /api/v1/events?search=tech&startDate=2026-03-01&limit=10
 
 Get a single event by ULID:
   GET /api/v1/events/{ulid}
 
 ### Query parameters for GET /api/v1/events
 
+Note: param names are camelCase (matching JSON-LD field names). Snake_case
+aliases (start_date, end_date) are silently ignored — use the forms below.
+
 - search       — full-text keyword search (title, description)
 - keywords     — comma-separated keyword tags
-- start_date   — ISO 8601 date, e.g. 2026-03-01
-- end_date     — ISO 8601 date, e.g. 2026-03-31
+- startDate    — ISO 8601 date, e.g. 2026-03-01  (NOT start_date)
+- endDate      — ISO 8601 date, e.g. 2026-03-31  (NOT end_date)
 - limit        — max results (default 50, max 100)
 - after        — pagination cursor (from previous response next_cursor)
 
