@@ -48,5 +48,10 @@ selectors:
   # Prefix-based attribute selectors survive CSS Modules hash rotation.
   event_list: "[class^='list-'] > div"
   name: "[class^='title-']"
-  start_date: "time[datetime]"
   url: "a[href*='eventbrite']"
+  # Ticket Spot has no <time> elements — dates are in plain <div>s with CSS
+  # Module classes. Use date_selectors to extract date and time text separately,
+  # then the smart date assembler combines them into RFC 3339.
+  date_selectors:
+    - ".first [class^='time-container-']"                          # e.g. "Thu 5th March"
+    - "[style*='display: flex'] [class^='time-container-']"        # e.g. "9:30 PM"

@@ -51,6 +51,13 @@ type SourceConfig struct {
 	// REST holds Tier 3 REST JSON feed options. Ignored for tier 0/1/2.
 	// Exactly one of GraphQL or REST must be set for tier 3.
 	REST *RestConfig `yaml:"rest,omitempty" json:"rest,omitempty"`
+	// Timezone is an IANA timezone name (e.g. "America/Toronto") used when
+	// parsing human-readable dates that lack timezone information (common in
+	// Tier 1/2 CSS selector scraping). When empty, falls back to the
+	// DEFAULT_TIMEZONE environment variable (server-wide setting — each SEL
+	// node serves one geographic location). If that is also unset, defaults
+	// to "America/Toronto".
+	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
@@ -66,6 +73,21 @@ type SelectorConfig struct {
 	URL         string `yaml:"url" json:"url"`
 	Image       string `yaml:"image" json:"image"`
 	Pagination  string `yaml:"pagination" json:"pagination"`
+	// DateSelectors is a list of CSS selectors that each extract a text
+	// fragment containing part of the event date/time information (e.g.
+	// one selector for the date, another for the time). The scraper
+	// extracts text from each selector and passes all fragments to the
+	// smart date assembler, which infers start and end datetimes.
+	//
+	// When set, DateSelectors takes priority over StartDate/EndDate for
+	// date extraction. StartDate/EndDate are still used as fallback if
+	// DateSelectors produces no result.
+	//
+	// Example:
+	//   date_selectors:
+	//     - ".first [class^='time-container-']"     # "Thu 5th March"
+	//     - "[style*='display: flex'] [class^='time-container-']"  # "9:30 PM"
+	DateSelectors []string `yaml:"date_selectors,omitempty" json:"date_selectors,omitempty"`
 }
 
 // HeadlessConfig holds Tier 2 headless-browser-specific options.
@@ -197,6 +219,20 @@ func (c SourceConfig) GetURLs() []string {
 		return []string{c.URL}
 	}
 	return nil
+}
+
+// GetTimezone returns the effective IANA timezone name for this source.
+// Priority: per-source Timezone field → DEFAULT_TIMEZONE env var →
+// "America/Toronto" fallback. Each SEL node runs for one geographic
+// location, so the env var covers all sources on that node.
+func (c SourceConfig) GetTimezone() string {
+	if c.Timezone != "" {
+		return c.Timezone
+	}
+	if tz := os.Getenv("DEFAULT_TIMEZONE"); tz != "" {
+		return tz
+	}
+	return "America/Toronto"
 }
 
 // DefaultSourceConfig returns a SourceConfig with sensible defaults applied.

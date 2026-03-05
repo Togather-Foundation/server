@@ -316,6 +316,41 @@ selectors:
   pagination: "a.next-page"
 ```
 
+#### Composite Date Selectors (`date_selectors`)
+
+When a site doesn't use `<time>` elements (common with CSS Modules frameworks
+like Ticket Spot), use `date_selectors` to extract date and time text from
+multiple DOM elements. The smart date assembler combines the fragments into
+RFC 3339 start/end datetimes.
+
+```yaml
+selectors:
+  event_list: "[class^='list-'] > div"
+  name: "[class^='title-']"
+  url: "a[href*='eventbrite']"
+  # Extract date and time from separate elements:
+  date_selectors:
+    - ".first [class^='time-container-']"                    # e.g. "Thu 5th March"
+    - "[style*='display: flex'] [class^='time-container-']"  # e.g. "9:30 PM"
+```
+
+**How it works:**
+
+1. Each selector in `date_selectors` extracts text from within the event card
+2. Text fragments are classified as date-only, time-only, or combined
+3. The assembler strips ordinal suffixes (`1st`, `2nd`, `3rd`, `th`), removes
+   day-of-week prefixes, recognises month names, and handles 12h/24h time formats
+4. First date + first time = `startDate`; second time (if present) = `endDate`
+5. Missing year is inferred (current year, or next year if >30 days in the past)
+6. Timezone comes from `DEFAULT_TIMEZONE` env var (default: `America/Toronto`)
+
+When `date_selectors` is set, it takes priority over `start_date`/`end_date`.
+If `date_selectors` produces no result, the scraper falls back to `start_date`/`end_date`.
+
+Existing configs using `start_date` with ISO 8601 dates (e.g. `"2026-05-10T19:00:00"`)
+or `<time datetime="...">` attributes continue to work unchanged — the fuzzy parser
+detects partial ISO 8601 and passes through without modification.
+
 ### Full Config with Tier 2 Headless
 
 ```yaml
