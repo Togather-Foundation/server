@@ -75,40 +75,33 @@ If headless inspect also returns empty containers, keep `enabled: false` and not
 - `image`: thumbnail `<img>` (omit if absent)
 - `wait_selector`: (Tier 2 only) most specific stable element to wait for before extracting
 
-### Step 3 — Validate with dry-run (Tier 1/2 path only)
+### Step 3 — Validate with dry-run (Tier 1 only)
 
-**If Step 0 determined `undetected: true` or `wait_network_idle: true` is needed, skip inline validation** — those flags only exist in the YAML `headless:` block, not as CLI flags. Go directly to Step 4: write the config with `enabled: false`, validate via `--source-file --dry-run`, then flip to `enabled: true` once passing.
-
-**Tier 1** (static, no headless flags needed):
+**Tier 1** (static HTML, no headless needed):
 ```bash
 ./server scrape test <URL> \
   --event-list "<sel>" --name "<sel>" --start-date "<sel>" --url "<sel>"
 ```
 
-**Tier 2** (headless, no `undetected`/`wait_network_idle` needed):
-```bash
-SCRAPER_HEADLESS_ENABLED=true ./server scrape url <URL> --headless \
-  --event-list "<sel>" --name "<sel>" --start-date "<sel>" --url "<sel>" --dry-run
-```
+**Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 4: write the config with `enabled: false` and validate via `--source-file --dry-run`.
 
 Need ≥ 3 events with non-empty `name`. Retry up to 3 rounds with refined selectors.
 
 ### Step 4 — Write the config
 
-Write the config with `enabled: false` first, then validate, then flip to `enabled: true`.
+Write the config with `enabled: false` first, then validate via `--source-file --dry-run`, then flip to `enabled: true` once ≥ 3 events with non-empty `name` are confirmed.
 
-**For sites needing `undetected: true` or `wait_network_idle: true`** — always use `--source-file` to validate, since these flags are YAML-only (no CLI equivalent):
+**Always use `--source-file` for Tier 2** — it is the only way to pass `headless:` block flags (including `wait_selector`, `undetected`, `wait_network_idle`) to the scraper:
 ```bash
 SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
 ```
 
-**For standard Tier 1/2 configs** — use the source name directly after writing:
+**Tier 1** — can use the source name directly after writing (no headless block needed):
 ```bash
-./server scrape source <name> --dry-run                                # Tier 1
-SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run  # Tier 2
+./server scrape source <name> --dry-run
 ```
 
-Once ≥ 3 events with non-empty `name` are confirmed, set `enabled: true` in the config.
+**Do not use third-party embed URLs** (Showpass, Eventbrite, Ticketmaster iframes) as the config `url`. The config `url` must be the venue's own page. If the venue page only contains a cross-origin iframe, document the blocker and return `failed`.
 
 ### Step 5 — If unscrapeable after 3 rounds
 

@@ -231,13 +231,12 @@ Based on the inspect output, reason about the DOM structure and propose values f
 
 ### Step 6 — Validate with scrape test
 
-**If Step 0 determined `undetected: true` or `wait_network_idle: true` is needed**, skip inline validation — those flags are YAML-only. Go directly to Step 7: write the config with `enabled: false`, then validate via:
+**Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 7: write the config with `enabled: false`, validate via `--source-file --dry-run`, then flip `enabled: true` once passing:
 ```bash
 SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
 ```
-Once ≥ 3 events pass, flip `enabled: true`.
 
-**Tier 1** (static):
+**Tier 1** (static only):
 ```bash
 ./server scrape test <URL> \
   --event-list "<event_list>" \
@@ -246,19 +245,6 @@ Once ≥ 3 events pass, flip `enabled: true`.
   --location "<location_selector>" \
   --url "<url_selector>" \
   --image "<image_selector>"
-```
-
-**Tier 2** (JS-rendered — use when inspect was done via `scrape capture`):
-```bash
-SCRAPER_HEADLESS_ENABLED=true \
-./server scrape url <URL> --headless \
-  --event-list "<event_list>" \
-  --name "<name_selector>" \
-  --start-date "<start_date_selector>" \
-  --location "<location_selector>" \
-  --url "<url_selector>" \
-  --image "<image_selector>" \
-  --dry-run
 ```
 
 Evaluate:
