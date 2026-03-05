@@ -11,7 +11,7 @@ import (
 )
 
 func TestParseFiltersDefaults(t *testing.T) {
-	filters, pagination, err := ParseFilters(url.Values{}, nil)
+	filters, pagination, _, err := ParseFilters(url.Values{}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 50, pagination.Limit)
@@ -26,7 +26,7 @@ func TestParseFiltersTrimsFields(t *testing.T) {
 	values.Set("q", "  local org ")
 	values.Set("after", "  "+validCursor+" ")
 
-	filters, pagination, err := ParseFilters(values, nil)
+	filters, pagination, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "local org", filters.Query)
@@ -37,13 +37,13 @@ func TestParseFiltersLimitValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("limit", "abc")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "limit", "must be a number")
 
 	values.Set("limit", "0")
 
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "limit", "must be between 1 and 200")
 }
@@ -52,7 +52,7 @@ func TestParseFiltersLimitSuccess(t *testing.T) {
 	values := url.Values{}
 	values.Set("limit", "200")
 
-	_, pagination, err := ParseFilters(values, nil)
+	_, pagination, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 200, pagination.Limit)
@@ -64,7 +64,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", validCursor)
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Equal(t, validCursor, pagination.After)
@@ -74,7 +74,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "")
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Empty(t, pagination.After)
@@ -84,7 +84,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "   ")
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Empty(t, pagination.After)
@@ -94,7 +94,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "2026-01-01T00:00:00Z")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -103,7 +103,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "not-a-valid-cursor")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -112,7 +112,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "01HYX3KQW7ERTV9XNBM2P8QJZF")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -121,7 +121,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "123")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})

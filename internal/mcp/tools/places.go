@@ -213,7 +213,7 @@ func (t *PlaceTools) listPlaces(ctx context.Context, query string, nearLat *floa
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, err := places.ParseFilters(values, t.loc)
+	filters, pagination, _, err := places.ParseFilters(values, t.loc)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

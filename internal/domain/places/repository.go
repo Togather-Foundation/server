@@ -41,7 +41,6 @@ type Filters struct {
 	Latitude  *float64
 	Longitude *float64
 	RadiusKm  *float64
-	Warnings  []string // side-channel: alias warnings from ParseFilters
 }
 
 type Pagination struct {

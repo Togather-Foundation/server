@@ -57,32 +57,33 @@ func resolveAlias(values url.Values, canonical, alias string, warnings *[]string
 	return ""
 }
 
-func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, error) {
+func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, []string, error) {
 	if loc == nil {
 		loc = time.UTC
 	}
 
 	filters := Filters{}
 	pagination := Pagination{Limit: 50}
+	var warnings []string
 
 	// Resolve snake_case aliases before parsing.
-	startDateRaw := resolveAlias(values, "startDate", "start_date", &filters.Warnings)
-	endDateRaw := resolveAlias(values, "endDate", "end_date", &filters.Warnings)
-	venueIDRaw := resolveAlias(values, "venueId", "venue_id", &filters.Warnings)
-	organizerIDRaw := resolveAlias(values, "organizerId", "organizer_id", &filters.Warnings)
-	stateRaw := resolveAlias(values, "state", "lifecycle_state", &filters.Warnings)
-	domainRaw := resolveAlias(values, "domain", "event_domain", &filters.Warnings)
+	startDateRaw := resolveAlias(values, "startDate", "start_date", &warnings)
+	endDateRaw := resolveAlias(values, "endDate", "end_date", &warnings)
+	venueIDRaw := resolveAlias(values, "venueId", "venue_id", &warnings)
+	organizerIDRaw := resolveAlias(values, "organizerId", "organizer_id", &warnings)
+	stateRaw := resolveAlias(values, "state", "lifecycle_state", &warnings)
+	domainRaw := resolveAlias(values, "domain", "event_domain", &warnings)
 
 	startDate, err := parseDate("startDate", startDateRaw, loc)
 	if err != nil {
-		return filters, pagination, err
+		return filters, pagination, nil, err
 	}
 	endDate, err := parseDate("endDate", endDateRaw, loc)
 	if err != nil {
-		return filters, pagination, err
+		return filters, pagination, nil, err
 	}
 	if startDate != nil && endDate != nil && endDate.Before(*startDate) {
-		return filters, pagination, FilterError{Field: "endDate", Message: "must be on or after startDate"}
+		return filters, pagination, nil, FilterError{Field: "endDate", Message: "must be on or after startDate"}
 	}
 	filters.StartDate = startDate
 	filters.EndDate = endDate
@@ -101,21 +102,21 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	filters.VenueULID = strings.TrimSpace(venueIDRaw)
 	if filters.VenueULID != "" {
 		if err := ids.ValidateULID(filters.VenueULID); err != nil {
-			return filters, pagination, FilterError{Field: "venueId", Message: "invalid ULID"}
+			return filters, pagination, nil, FilterError{Field: "venueId", Message: "invalid ULID"}
 		}
 	}
 
 	filters.OrganizerULID = strings.TrimSpace(organizerIDRaw)
 	if filters.OrganizerULID != "" {
 		if err := ids.ValidateULID(filters.OrganizerULID); err != nil {
-			return filters, pagination, FilterError{Field: "organizerId", Message: "invalid ULID"}
+			return filters, pagination, nil, FilterError{Field: "organizerId", Message: "invalid ULID"}
 		}
 	}
 
 	filters.LifecycleState = parseLifecycleStateFromString(stateRaw)
 	if filters.LifecycleState == "" {
 		if err := parseLifecycleStateErrFromString(stateRaw); err != nil {
-			return filters, pagination, err
+			return filters, pagination, nil, err
 		}
 	}
 
@@ -124,7 +125,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	filters.Domain = parseDomainFromString(domainRaw)
 	if filters.Domain == "" {
 		if err := parseDomainErrFromString(domainRaw); err != nil {
-			return filters, pagination, err
+			return filters, pagination, nil, err
 		}
 	}
 
@@ -132,7 +133,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 
 	limit, err := parseLimit(values)
 	if err != nil {
-		return filters, pagination, err
+		return filters, pagination, nil, err
 	}
 	pagination.Limit = limit
 
@@ -141,12 +142,12 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 		// Validate cursor format by attempting to decode it
 		_, err := paginationpkg.DecodeEventCursor(after)
 		if err != nil {
-			return filters, pagination, FilterError{Field: "after", Message: "must be a valid cursor"}
+			return filters, pagination, nil, FilterError{Field: "after", Message: "must be a valid cursor"}
 		}
 	}
 	pagination.After = after
 
-	return filters, pagination, nil
+	return filters, pagination, warnings, nil
 }
 
 func parseDate(field string, value string, loc *time.Location) (*time.Time, error) {

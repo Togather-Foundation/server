@@ -13,7 +13,7 @@ import (
 )
 
 func TestParseFiltersDefaults(t *testing.T) {
-	filters, pagination, err := ParseFilters(url.Values{}, nil)
+	filters, pagination, _, err := ParseFilters(url.Values{}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 50, pagination.Limit)
@@ -40,7 +40,7 @@ func TestParseFiltersTrimsFields(t *testing.T) {
 	values.Set("q", "  jazz night ")
 	values.Set("after", "  "+validCursor+" ")
 
-	filters, pagination, err := ParseFilters(values, nil)
+	filters, pagination, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "Portland", filters.City)
@@ -54,7 +54,7 @@ func TestParseFiltersDateValidation(t *testing.T) {
 	values.Set("startDate", "2024-01-02")
 	values.Set("endDate", "2024-01-01")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "endDate", "must be on or after startDate")
 }
@@ -63,7 +63,7 @@ func TestParseFiltersDateFormat(t *testing.T) {
 	values := url.Values{}
 	values.Set("startDate", "01-02-2024")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "startDate", "must be ISO8601 date")
 }
@@ -73,7 +73,7 @@ func TestParseFiltersDateSuccess(t *testing.T) {
 	values.Set("startDate", "2024-01-01")
 	values.Set("endDate", "2024-01-02")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate)
@@ -86,7 +86,7 @@ func TestParseFiltersVenueULIDValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("venueId", "not-a-ulid")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "venueId", "invalid ULID")
 }
@@ -95,7 +95,7 @@ func TestParseFiltersOrganizerULIDValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("organizerId", "not-a-ulid")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "organizerId", "invalid ULID")
 }
@@ -104,14 +104,14 @@ func TestParseFiltersLifecycleStateValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("state", "PUBLISHED")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "published", filters.LifecycleState)
 
 	values.Set("state", "unknown")
 
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "state", "unsupported lifecycle state")
 }
@@ -120,14 +120,14 @@ func TestParseFiltersDomainValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("domain", "Arts")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "arts", filters.Domain)
 
 	values.Set("domain", "invalid")
 
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "domain", "unsupported event domain")
 }
@@ -136,7 +136,7 @@ func TestParseFiltersKeywords(t *testing.T) {
 	values := url.Values{}
 	values.Set("keywords", " jazz, , blues ,rock ")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"jazz", "blues", "rock"}, filters.Keywords)
@@ -146,13 +146,13 @@ func TestParseFiltersLimitValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("limit", "abc")
 
-	_, _, err := ParseFilters(values, nil)
+	_, _, _, err := ParseFilters(values, nil)
 
 	assertFilterError(t, err, "limit", "must be a number")
 
 	values.Set("limit", "0")
 
-	_, _, err = ParseFilters(values, nil)
+	_, _, _, err = ParseFilters(values, nil)
 
 	assertFilterError(t, err, "limit", "must be between 1 and 200")
 }
@@ -161,7 +161,7 @@ func TestParseFiltersLimitSuccess(t *testing.T) {
 	values := url.Values{}
 	values.Set("limit", "200")
 
-	_, pagination, err := ParseFilters(values, nil)
+	_, pagination, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 200, pagination.Limit)
@@ -173,7 +173,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", validCursor)
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Equal(t, validCursor, pagination.After)
@@ -183,7 +183,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "")
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Empty(t, pagination.After)
@@ -193,7 +193,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "   ")
 
-		_, pagination, err := ParseFilters(values, nil)
+		_, pagination, _, err := ParseFilters(values, nil)
 
 		require.NoError(t, err)
 		require.Empty(t, pagination.After)
@@ -203,7 +203,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "2026-01-01T00:00:00Z")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -212,7 +212,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "not-a-valid-cursor")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -221,7 +221,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "01HYX3KQW7ERTV9XNBM2P8QJZF")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -230,7 +230,7 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "123")
 
-		_, _, err := ParseFilters(values, nil)
+		_, _, _, err := ParseFilters(values, nil)
 
 		assertFilterError(t, err, "after", "must be a valid cursor")
 	})
@@ -340,7 +340,7 @@ func TestParseFilters_DefaultStartDateToday(t *testing.T) {
 	// accept either value so the test stays green during the one-second window
 	// where a real midnight crossing could occur.
 	before := time.Now().In(loc)
-	filters, _, err := ParseFilters(url.Values{}, loc)
+	filters, _, _, err := ParseFilters(url.Values{}, loc)
 	after := time.Now().In(loc)
 
 	require.NoError(t, err)
@@ -360,7 +360,7 @@ func TestParseFilters_ExplicitStartDateNoDefault(t *testing.T) {
 	values := url.Values{}
 	values.Set("startDate", "2026-06-01")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate)
@@ -374,7 +374,7 @@ func TestParseFilters_ExplicitEndDateOnlyNoDefault(t *testing.T) {
 	values := url.Values{}
 	values.Set("endDate", "2026-12-31")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Nil(t, filters.StartDate, "startDate must NOT be defaulted when endDate is explicitly provided")
@@ -387,14 +387,14 @@ func TestParseFilters_SnakeCaseStartDate(t *testing.T) {
 	values := url.Values{}
 	values.Set("start_date", "2026-06-01")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate)
 	require.Equal(t, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), *filters.StartDate)
-	require.Len(t, filters.Warnings, 1)
-	require.Contains(t, filters.Warnings[0], "start_date")
-	require.Contains(t, filters.Warnings[0], "startDate")
+	require.Len(t, warnings, 1)
+	require.Contains(t, warnings[0], "start_date")
+	require.Contains(t, warnings[0], "startDate")
 }
 
 func TestParseFilters_SnakeCaseEndDate(t *testing.T) {
@@ -402,12 +402,12 @@ func TestParseFilters_SnakeCaseEndDate(t *testing.T) {
 	values.Set("start_date", "2026-06-01")
 	values.Set("end_date", "2026-06-30")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate)
 	require.NotNil(t, filters.EndDate)
-	require.Len(t, filters.Warnings, 2)
+	require.Len(t, warnings, 2)
 }
 
 func TestParseFilters_SnakeCaseVenueId(t *testing.T) {
@@ -415,13 +415,13 @@ func TestParseFilters_SnakeCaseVenueId(t *testing.T) {
 	values.Set("start_date", "2026-06-01") // prevent default-today from interfering
 	values.Set("venue_id", "01ARZ3NDEKTSV4RRFFQ69G5FAV")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "01ARZ3NDEKTSV4RRFFQ69G5FAV", filters.VenueULID)
-	require.True(t, len(filters.Warnings) >= 1)
+	require.True(t, len(warnings) >= 1)
 	var found bool
-	for _, w := range filters.Warnings {
+	for _, w := range warnings {
 		if strings.Contains(w, "venue_id") {
 			found = true
 		}
@@ -434,13 +434,13 @@ func TestParseFilters_SnakeCaseOrganizerId(t *testing.T) {
 	values.Set("start_date", "2026-06-01")
 	values.Set("organizer_id", "01ARZ3NDEKTSV4RRFFQ69G5FAV")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "01ARZ3NDEKTSV4RRFFQ69G5FAV", filters.OrganizerULID)
-	require.True(t, len(filters.Warnings) >= 1)
+	require.True(t, len(warnings) >= 1)
 	var found bool
-	for _, w := range filters.Warnings {
+	for _, w := range warnings {
 		if strings.Contains(w, "organizer_id") {
 			found = true
 		}
@@ -453,13 +453,13 @@ func TestParseFilters_SnakeCaseLifecycleState(t *testing.T) {
 	values.Set("start_date", "2026-06-01")
 	values.Set("lifecycle_state", "published")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "published", filters.LifecycleState)
-	require.True(t, len(filters.Warnings) >= 1)
+	require.True(t, len(warnings) >= 1)
 	var found bool
-	for _, w := range filters.Warnings {
+	for _, w := range warnings {
 		if strings.Contains(w, "lifecycle_state") {
 			found = true
 		}
@@ -472,13 +472,13 @@ func TestParseFilters_SnakeCaseEventDomain(t *testing.T) {
 	values.Set("start_date", "2026-06-01")
 	values.Set("event_domain", "arts")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "arts", filters.Domain)
-	require.True(t, len(filters.Warnings) >= 1)
+	require.True(t, len(warnings) >= 1)
 	var found bool
-	for _, w := range filters.Warnings {
+	for _, w := range warnings {
 		if strings.Contains(w, "event_domain") {
 			found = true
 		}
@@ -492,12 +492,12 @@ func TestParseFilters_CanonicalWinsOverAlias(t *testing.T) {
 	values.Set("startDate", "2026-06-01")
 	values.Set("start_date", "2026-01-01")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate)
 	require.Equal(t, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), *filters.StartDate, "canonical startDate should win")
-	for _, w := range filters.Warnings {
+	for _, w := range warnings {
 		require.NotContains(t, w, "start_date", "no warning when canonical param is present")
 	}
 }
@@ -507,10 +507,10 @@ func TestParseFilters_MultipleAliasesMultipleWarnings(t *testing.T) {
 	values.Set("start_date", "2026-06-01")
 	values.Set("end_date", "2026-06-30")
 
-	filters, _, err := ParseFilters(values, nil)
+	_, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
-	require.Len(t, filters.Warnings, 2)
+	require.Len(t, warnings, 2)
 }
 
 // ─── srv-1uvo0: nil-loc guard coverage ───────────────────────────────────────
@@ -522,10 +522,10 @@ func TestParseFilters_NilLocEqualsUTC(t *testing.T) {
 	values := url.Values{}
 	values.Set("startDate", "2026-06-01")
 
-	filtersNil, _, err := ParseFilters(values, nil)
+	filtersNil, _, _, err := ParseFilters(values, nil)
 	require.NoError(t, err)
 
-	filtersUTC, _, err := ParseFilters(values, time.UTC)
+	filtersUTC, _, _, err := ParseFilters(values, time.UTC)
 	require.NoError(t, err)
 
 	require.NotNil(t, filtersNil.StartDate)
@@ -541,13 +541,13 @@ func TestParseFilters_NilLocAliasWarning(t *testing.T) {
 	values := url.Values{}
 	values.Set("start_date", "2026-06-01")
 
-	filters, _, err := ParseFilters(values, nil)
+	filters, _, warnings, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.StartDate)
 	require.Equal(t, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), *filters.StartDate,
 		"date should be parsed correctly even when loc=nil")
-	require.Len(t, filters.Warnings, 1, "alias warning must still be emitted when loc=nil")
-	require.Contains(t, filters.Warnings[0], "start_date")
-	require.Contains(t, filters.Warnings[0], "startDate")
+	require.Len(t, warnings, 1, "alias warning must still be emitted when loc=nil")
+	require.Contains(t, warnings[0], "start_date")
+	require.Contains(t, warnings[0], "startDate")
 }
