@@ -160,7 +160,7 @@ func TestParseFiltersProximityValid(t *testing.T) {
 	values.Set("near_lon", "-79.3832")
 	values.Set("radius", "5")
 
-	filters, _, _, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.Latitude)
@@ -176,7 +176,7 @@ func TestParseFiltersProximityDefaultRadius(t *testing.T) {
 	values.Set("near_lat", "43.6532")
 	values.Set("near_lon", "-79.3832")
 
-	filters, _, _, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.RadiusKm)
@@ -291,7 +291,7 @@ func TestParseFiltersNearPlaceWithRadiusOnly(t *testing.T) {
 	values.Set("near_place", "Toronto City Hall")
 	values.Set("radius", "5")
 
-	filters, _, _, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.NearPlace)
@@ -307,7 +307,7 @@ func TestParseFiltersNearPlaceWithoutRadius(t *testing.T) {
 	values := url.Values{}
 	values.Set("near_place", "Toronto City Hall")
 
-	filters, _, _, _, err := ParseFilters(values, nil)
+	filters, _, _, err := ParseFilters(values, nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, filters.NearPlace)
