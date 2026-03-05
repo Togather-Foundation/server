@@ -327,6 +327,20 @@ func (e *RodExtractor) scrapeSinglePage(
 		return nil, "", fmt.Errorf("rod: getting HTML from %q: %w", pageURL, err)
 	}
 
+	// If iframe extraction is configured, navigate into the iframe's execution
+	// context and extract HTML from there instead of the parent page.
+	if config.Headless.Iframe != nil {
+		iframeHTML, iframeErr := e.extractIframeHTML(page, config)
+		if iframeErr != nil {
+			e.logger.Warn().Err(iframeErr).
+				Str("source", config.Name).
+				Str("iframe_selector", config.Headless.Iframe.Selector).
+				Msg("rod: iframe extraction failed, falling back to parent HTML")
+		} else {
+			html = iframeHTML
+		}
+	}
+
 	// Extract events from rendered HTML using goquery + selectors.
 	pageEvents, extractErr := extractEventsFromHTML(html, config, pageURL)
 	if extractErr != nil {
@@ -371,6 +385,47 @@ func (e *RodExtractor) captureScreenshot(page *rod.Page, sourceName string) {
 			e.logger.Info().Str("path", path).Msg("rod: failure screenshot saved")
 		}
 	}
+}
+
+// extractIframeHTML navigates into a cross-origin iframe and extracts its rendered HTML.
+// It uses Rod's CDP frame navigation to enter the iframe's execution context.
+func (e *RodExtractor) extractIframeHTML(page *rod.Page, config SourceConfig) (string, error) {
+	iframeCfg := config.Headless.Iframe
+
+	// Find the iframe element in the parent page.
+	el, err := page.Timeout(5 * time.Second).Element(iframeCfg.Selector)
+	if err != nil {
+		return "", fmt.Errorf("iframe element %q not found: %w", iframeCfg.Selector, err)
+	}
+
+	// Enter the iframe's execution context. Rod's Element.Frame() returns a
+	// *Page representing the frame, which supports the same API as any page.
+	frame, err := el.Frame()
+	if err != nil {
+		return "", fmt.Errorf("entering iframe frame context: %w", err)
+	}
+
+	// Wait for the target content inside the iframe.
+	iframeTimeout := time.Duration(iframeCfg.WaitTimeoutMs) * time.Millisecond
+	if iframeTimeout == 0 {
+		iframeTimeout = 10 * time.Second
+	}
+	waitErr := frame.Timeout(iframeTimeout).WaitElementsMoreThan(iframeCfg.WaitSelector, 0)
+	if waitErr != nil {
+		e.logger.Warn().
+			Err(waitErr).
+			Str("source", config.Name).
+			Str("iframe_wait_selector", iframeCfg.WaitSelector).
+			Msg("rod: iframe wait selector timed out, attempting extraction anyway")
+	}
+
+	// Extract rendered HTML from the iframe.
+	html, err := frame.HTML()
+	if err != nil {
+		return "", fmt.Errorf("extracting iframe HTML: %w", err)
+	}
+
+	return html, nil
 }
 
 // extractEventsFromHTML parses an HTML string with goquery and applies the

@@ -5,12 +5,20 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/go-rod/rod"
 	"github.com/rs/zerolog"
 )
+
+// headlessEnabled reports whether the SCRAPER_HEADLESS_ENABLED env var is set to "true".
+// Tests that require a real headless browser must call t.Skip when this returns false.
+func headlessEnabled() bool {
+	return os.Getenv("SCRAPER_HEADLESS_ENABLED") == "true"
+}
 
 // --- extractEventsFromHTML tests ---
 
@@ -418,4 +426,208 @@ func TestExtractDateFromSelection(t *testing.T) {
 	if got != "" {
 		t.Errorf("expected empty string for missing selector, got %q", got)
 	}
+}
+
+// --- RodExtractor iframe extraction tests (require headless browser) ---
+
+// parentPageHTML is served at / and contains a same-origin iframe.
+const parentPageHTML = `<!DOCTYPE html>
+<html>
+<head><title>Test Venue</title></head>
+<body>
+    <h1>Test Venue Events</h1>
+    <iframe id="events-frame" title="Event Widget" src="/iframe-events"></iframe>
+</body>
+</html>`
+
+// iframePageHTML is served at /iframe-events and contains the event cards.
+const iframePageHTML = `<!DOCTYPE html>
+<html>
+<body>
+<div class="events-container">
+    <div class="event-card">
+        <h3 class="event-title">Concert A</h3>
+        <time datetime="2025-07-15T20:00:00">July 15, 2025</time>
+        <a href="/events/concert-a">Details</a>
+    </div>
+    <div class="event-card">
+        <h3 class="event-title">Concert B</h3>
+        <time datetime="2025-07-22T20:00:00">July 22, 2025</time>
+        <a href="/events/concert-b">Details</a>
+    </div>
+    <div class="event-card">
+        <h3 class="event-title">Concert C</h3>
+        <time datetime="2025-08-01T19:00:00">Aug 1, 2025</time>
+        <a href="/events/concert-c">Details</a>
+    </div>
+</div>
+</body>
+</html>`
+
+// newTestBrowser launches a real headless Chromium browser for tests and
+// returns it along with a cleanup function. It calls t.Fatal if the browser
+// cannot be launched.
+func newTestBrowser(t *testing.T, ext *RodExtractor) (*rod.Browser, func()) {
+	t.Helper()
+	browser, cleanup, err := ext.launchBrowser(context.Background())
+	if err != nil {
+		t.Fatalf("failed to launch test browser: %v", err)
+	}
+	return browser, cleanup
+}
+
+// allowLocalhostSSRF temporarily clears the blockedCIDRs list for the duration
+// of a test so that httptest servers (which bind to 127.0.0.1) can be reached.
+// The original list is restored via t.Cleanup.
+func allowLocalhostSSRF(t *testing.T) {
+	t.Helper()
+	orig := blockedCIDRs
+	blockedCIDRs = nil
+	t.Cleanup(func() { blockedCIDRs = orig })
+}
+
+func TestScrapeSinglePage_Iframe(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	// Allow httptest servers (127.0.0.1) to be navigated by the headless browser.
+	allowLocalhostSSRF(t)
+
+	// Single httptest server serves both the parent page and iframe content.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/iframe-events":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, iframePageHTML)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, parentPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	waitTimeout := rodDefaultWaitTimeout
+
+	t.Run("iframe extraction succeeds", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", true)
+		browser, cleanup := newTestBrowser(t, ext)
+		defer cleanup()
+
+		cfg := SourceConfig{
+			Name:    "test-iframe-source",
+			URL:     srv.URL + "/",
+			Tier:    2,
+			Enabled: true,
+			Headless: HeadlessConfig{
+				WaitSelector: "body",
+				Iframe: &IframeConfig{
+					Selector:      "iframe#events-frame",
+					WaitSelector:  ".events-container",
+					WaitTimeoutMs: 10000,
+				},
+			},
+			Selectors: SelectorConfig{
+				EventList: ".event-card",
+				Name:      ".event-title",
+				StartDate: "time",
+				URL:       "a",
+			},
+		}
+
+		events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
+		if err != nil {
+			t.Fatalf("scrapeSinglePage returned error: %v", err)
+		}
+
+		if len(events) != 3 {
+			t.Fatalf("expected 3 events from iframe, got %d", len(events))
+		}
+
+		wantNames := []string{"Concert A", "Concert B", "Concert C"}
+		wantDates := []string{"2025-07-15T20:00:00", "2025-07-22T20:00:00", "2025-08-01T19:00:00"}
+
+		for i, ev := range events {
+			if ev.Name != wantNames[i] {
+				t.Errorf("event[%d].Name = %q; want %q", i, ev.Name, wantNames[i])
+			}
+			if ev.StartDate != wantDates[i] {
+				t.Errorf("event[%d].StartDate = %q; want %q", i, ev.StartDate, wantDates[i])
+			}
+		}
+	})
+
+	t.Run("no iframe config extracts parent HTML", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", true)
+		browser, cleanup := newTestBrowser(t, ext)
+		defer cleanup()
+
+		// Config without iframe block — selectors target event cards that only
+		// exist inside the iframe, not the parent page. Expect 0 events.
+		cfg := SourceConfig{
+			Name:    "test-no-iframe-source",
+			URL:     srv.URL + "/",
+			Tier:    2,
+			Enabled: true,
+			Headless: HeadlessConfig{
+				WaitSelector: "body",
+			},
+			Selectors: SelectorConfig{
+				EventList: ".event-card",
+				Name:      ".event-title",
+				StartDate: "time",
+				URL:       "a",
+			},
+		}
+
+		events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
+		if err != nil {
+			t.Fatalf("scrapeSinglePage returned error: %v", err)
+		}
+
+		// The parent page has no .event-card elements, so we expect 0 events.
+		if len(events) != 0 {
+			t.Errorf("expected 0 events from parent HTML (no iframe config), got %d", len(events))
+		}
+	})
+
+	t.Run("iframe selector not found falls back to parent", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", true)
+		browser, cleanup := newTestBrowser(t, ext)
+		defer cleanup()
+
+		// Use a selector that matches no iframe in the parent page.
+		cfg := SourceConfig{
+			Name:    "test-iframe-fallback",
+			URL:     srv.URL + "/",
+			Tier:    2,
+			Enabled: true,
+			Headless: HeadlessConfig{
+				WaitSelector: "body",
+				Iframe: &IframeConfig{
+					Selector:      "iframe#nonexistent",
+					WaitSelector:  ".events-container",
+					WaitTimeoutMs: 3000,
+				},
+			},
+			Selectors: SelectorConfig{
+				EventList: ".event-card",
+				Name:      ".event-title",
+				StartDate: "time",
+				URL:       "a",
+			},
+		}
+
+		// Should not return an error — graceful fallback to parent HTML.
+		events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
+		if err != nil {
+			t.Fatalf("scrapeSinglePage should not error on iframe fallback, got: %v", err)
+		}
+
+		// Parent has no .event-card elements, so 0 events expected after fallback.
+		if len(events) != 0 {
+			t.Errorf("expected 0 events after iframe fallback to parent HTML, got %d", len(events))
+		}
+	})
 }
