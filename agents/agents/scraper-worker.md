@@ -37,7 +37,7 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `elementor-*` → WordPress + Elementor → **Tier 1/2**
 - `wixBiSession` or `data-hook=` → Wix → **Tier 2**
 - `data-events-calendar-app` → eventscalendar.co → **Tier 2** (`wait_network_idle: true`)
-- Cloudflare challenge body → add `undetected: true`
+- `<title>Just a moment...</title>`, `window._cf_chl_opt`, or `id="challenge-error-text"` in curl output → Cloudflare → add `undetected: true`
 
 If a known platform is matched, skip or abbreviate DOM inspection — use the known selectors/tier as a starting point.
 
@@ -77,13 +77,15 @@ If headless inspect also returns empty containers, keep `enabled: false` and not
 
 ### Step 3 — Validate with dry-run (Tier 1/2 path only)
 
-**Tier 1:**
+**If Step 0 determined `undetected: true` or `wait_network_idle: true` is needed, skip inline validation** — those flags only exist in the YAML `headless:` block, not as CLI flags. Go directly to Step 4: write the config with `enabled: false`, validate via `--source-file --dry-run`, then flip to `enabled: true` once passing.
+
+**Tier 1** (static, no headless flags needed):
 ```bash
 ./server scrape test <URL> \
   --event-list "<sel>" --name "<sel>" --start-date "<sel>" --url "<sel>"
 ```
 
-**Tier 2:**
+**Tier 2** (headless, no `undetected`/`wait_network_idle` needed):
 ```bash
 SCRAPER_HEADLESS_ENABLED=true ./server scrape url <URL> --headless \
   --event-list "<sel>" --name "<sel>" --start-date "<sel>" --url "<sel>" --dry-run
@@ -93,18 +95,20 @@ Need ≥ 3 events with non-empty `name`. Retry up to 3 rounds with refined selec
 
 ### Step 4 — Write the config
 
-Use the appropriate template below. Then do a final dry-run:
+Write the config with `enabled: false` first, then validate, then flip to `enabled: true`.
 
-**Tier 1/2:**
+**For sites needing `undetected: true` or `wait_network_idle: true`** — always use `--source-file` to validate, since these flags are YAML-only (no CLI equivalent):
 ```bash
-./server scrape source <name> --dry-run                           # Tier 1
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
+```
+
+**For standard Tier 1/2 configs** — use the source name directly after writing:
+```bash
+./server scrape source <name> --dry-run                                # Tier 1
 SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run  # Tier 2
 ```
 
-**Testing a disabled/draft config** (if the config has `enabled: false`):
-```bash
-./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
-```
+Once ≥ 3 events with non-empty `name` are confirmed, set `enabled: true` in the config.
 
 ### Step 5 — If unscrapeable after 3 rounds
 
@@ -196,7 +200,7 @@ Omit selector/graphql lines whose value is empty. `trust_level: 8` for museums/l
 
 ## Return format
 
-Return exactly one line:
+Return exactly one line — do **not** commit to git (that is the orchestrator's responsibility):
 
 ```
 RESULT | <URL> | <name> | <event_count> | <status> | <notes>

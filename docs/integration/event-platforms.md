@@ -29,7 +29,7 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `data-template="TPSPT.*"` | **AWS CloudSearch widget** | T2 (`wait_network_idle: true`) |
 | `elevent-cdn.azureedge.net` in source/network | **Elevent widget** | blocked (cross-origin iframe) |
 | `.ashx?orgid=` URL pattern | **Agile Technologies box office** | T2 (`wait_network_idle: true`) |
-| Cloudflare challenge page body (`<title>Just a moment...</title>`) | **Cloudflare-protected** | T2 (`undetected: true`) |
+| `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
 | `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T3 (REST API) |
 | `class="nuxt-*"` or `window.__NUXT__` | **Nuxt.js** | T0 or T3 (check DatoCMS) |

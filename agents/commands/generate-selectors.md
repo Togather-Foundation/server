@@ -231,6 +231,12 @@ Based on the inspect output, reason about the DOM structure and propose values f
 
 ### Step 6 — Validate with scrape test
 
+**If Step 0 determined `undetected: true` or `wait_network_idle: true` is needed**, skip inline validation — those flags are YAML-only. Go directly to Step 7: write the config with `enabled: false`, then validate via:
+```bash
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
+```
+Once ≥ 3 events pass, flip `enabled: true`.
+
 **Tier 1** (static):
 ```bash
 ./server scrape test <URL> \
