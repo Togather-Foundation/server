@@ -496,6 +496,7 @@ type ScraperSource struct {
 	HeadlessHeaders       []byte             `json:"headless_headers"`
 	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
 	GraphqlConfig         []byte             `json:"graphql_config"`
+	RestConfig            []byte             `json:"rest_config"`
 }
 
 type ScraperSubmission struct {

@@ -48,5 +48,13 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		cfg.GraphQL = &gql
 	}
 
+	if len(src.RestConfig) > 0 {
+		var rest RestConfig
+		if err := json.Unmarshal(src.RestConfig, &rest); err != nil {
+			return SourceConfig{}, fmt.Errorf("decode rest config for %q: %w", src.Name, err)
+		}
+		cfg.REST = &rest
+	}
+
 	return cfg, nil
 }

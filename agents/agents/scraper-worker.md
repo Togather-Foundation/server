@@ -32,6 +32,7 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `tribe-events*` classes → WordPress + Tribe → **Tier 0** (iCalendar feed)
 - `__NEXT_DATA__` → Next.js → **Tier 0** preferred
 - `graphql.datocms.com` in source → DatoCMS → **Tier 3** GraphQL
+- `showpass.com` link or `showpass-widget` → Showpass → **Tier 3** REST
 - `data-wf-site` → Webflow → **Tier 1** static
 - `wp-block-post` → WordPress Gutenberg → **Tier 1**
 - `elementor-*` → WordPress + Elementor → **Tier 1/2**
@@ -44,6 +45,8 @@ If a known platform is matched, skip or abbreviate DOM inspection — use the kn
 **Tier 0 path** (JSON-LD or iCal feed detected): skip to Step 4 and write a tier: 0 config — no CSS selectors needed.
 
 **Tier 3 path** (DatoCMS/GraphQL detected): find the API token in the page JS source, write a tier: 3 graphql config. Refer to `docs/integration/event-platforms.md` for the DatoCMS profile.
+
+**Tier 3 path** (Showpass/REST API detected): find the venue ID, write a tier: 3 rest config. Refer to `docs/integration/event-platforms.md` for the Showpass profile.
 
 **Tier 1/2 path**: continue with Steps 1–5 below.
 
@@ -185,6 +188,28 @@ graphql:
   token: "<API_TOKEN>"
   query: |
     { allEvents(orderBy: startDate_ASC) { title startDate endDate slug } }
+```
+
+### Tier 3 (REST JSON / Showpass or similar)
+
+```yaml
+name: "<name>"
+url: "<events-page-URL>"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+rest:
+  endpoint: "<API_URL>"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://example.com/{{.slug}}"
+  field_map:
+    name: "<source_key>"
+    start_date: "<source_key>"
+    end_date: "<source_key>"
+    image: "<source_key>"
 ```
 
 Omit selector/graphql lines whose value is empty. `trust_level: 8` for museums/libraries/government, `3` for aggregators, `5` otherwise.
