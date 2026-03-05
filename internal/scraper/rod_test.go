@@ -631,3 +631,116 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 		}
 	})
 }
+
+func TestRenderHTMLWithConfig(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	allowLocalhostSSRF(t)
+
+	// Same httptest server as the iframe tests.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/iframe-events":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, iframePageHTML)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, parentPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+
+	t.Run("returns iframe HTML when iframe config set", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", true)
+
+		cfg := SourceConfig{
+			Name:    "test-render-iframe",
+			URL:     srv.URL + "/",
+			Tier:    2,
+			Enabled: true,
+			Headless: HeadlessConfig{
+				WaitSelector: "body",
+				Iframe: &IframeConfig{
+					Selector:      "iframe#events-frame",
+					WaitSelector:  ".events-container",
+					WaitTimeoutMs: 10000,
+				},
+			},
+		}
+
+		html, err := ext.RenderHTMLWithConfig(context.Background(), cfg)
+		if err != nil {
+			t.Fatalf("RenderHTMLWithConfig returned error: %v", err)
+		}
+
+		// The returned HTML should be from the iframe, not the parent page.
+		if !strings.Contains(html, "events-container") {
+			t.Error("expected HTML to contain 'events-container' from iframe")
+		}
+		if !strings.Contains(html, "Concert A") {
+			t.Error("expected HTML to contain 'Concert A' from iframe")
+		}
+		// Should NOT contain the parent page's unique content.
+		if strings.Contains(html, "Test Venue Events") {
+			t.Error("HTML should be iframe content, not parent page (contains 'Test Venue Events')")
+		}
+	})
+
+	t.Run("returns parent HTML when no iframe config", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", true)
+
+		cfg := SourceConfig{
+			Name:    "test-render-no-iframe",
+			URL:     srv.URL + "/",
+			Tier:    2,
+			Enabled: true,
+			Headless: HeadlessConfig{
+				WaitSelector: "body",
+			},
+		}
+
+		html, err := ext.RenderHTMLWithConfig(context.Background(), cfg)
+		if err != nil {
+			t.Fatalf("RenderHTMLWithConfig returned error: %v", err)
+		}
+
+		// Without iframe config, should return parent page HTML.
+		if !strings.Contains(html, "Test Venue Events") {
+			t.Error("expected parent page HTML containing 'Test Venue Events'")
+		}
+	})
+
+	t.Run("returns error for empty URL", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", true)
+
+		cfg := SourceConfig{
+			Name: "test-empty-url",
+		}
+
+		_, err := ext.RenderHTMLWithConfig(context.Background(), cfg)
+		if err == nil {
+			t.Fatal("expected error for empty URL, got nil")
+		}
+		if !strings.Contains(err.Error(), "has no URL") {
+			t.Errorf("expected 'has no URL' in error, got: %v", err)
+		}
+	})
+
+	t.Run("returns error when headless disabled", func(t *testing.T) {
+		ext := NewRodExtractor(logger, 2, "", false) // headless disabled
+
+		cfg := SourceConfig{
+			Name: "test-disabled",
+			URL:  srv.URL + "/",
+		}
+
+		_, err := ext.RenderHTMLWithConfig(context.Background(), cfg)
+		if err != ErrHeadlessDisabled {
+			t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
+		}
+	})
+}
