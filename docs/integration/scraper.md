@@ -638,7 +638,8 @@ org database for a match, and writes `configs/sources/<name>.yaml`. It runs up t
 |------|----------|-------|
 | tranzac | graphql.datocms.com | DatoCMS public token; url_template constructs `/events/<slug>` |
 
-See `configs/sources/README.md` for full status including disabled sources and unverified candidates.
+See `configs/sources/README.md` for full status including disabled sources and unverified candidates.  
+See `docs/integration/disabled-sources.md` for a detailed breakdown of every disabled source and its recommended fix path.
 
 ---
 
