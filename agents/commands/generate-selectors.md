@@ -142,13 +142,16 @@ Signals to look for:
 - `Shopify.theme` → Shopify (check for third-party embed)
 - `data-events-calendar-app` → eventscalendar.co (T2, `wait_network_idle: true`)
 - `graphql.datocms.com` in source → DatoCMS (T3 GraphQL)
+- `showpass.com` link or `showpass-widget` → Showpass (T3 REST API)
+- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite (T3 REST API)
 - `__NEXT_DATA__` → Next.js (T0 preferred)
 - Cloudflare challenge body → `undetected: true`
 
 **After Step 0, branch by detected tier:**
 
 - **T0 detected** (JSON-LD present, `tribe-events`, `__NEXT_DATA__`, iCal feed): skip to Step 7 and write a `tier: 0` config — no CSS selectors needed. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 0 (feed/JSON-LD)`.
-- **T3 detected** (DatoCMS / `graphql.datocms.com` in source): find the API token in the page JS (`curl -sL "<URL>" | grep -o 'datocms[^"]*token[^"]*"[A-Za-z0-9_-]*"'` or similar), then skip to Step 7 and write a `tier: 3` graphql config. Return `RESULT | <URL> | <name> | - | written | platform: DatoCMS, tier: 3`.
+- **T3 GraphQL detected** (DatoCMS / `graphql.datocms.com` in source): find the API token in the page JS (`curl -sL "<URL>" | grep -o 'datocms[^"]*token[^"]*"[A-Za-z0-9_-]*"'` or similar), then skip to Step 7 and write a `tier: 3` graphql config. Return `RESULT | <URL> | <name> | - | written | platform: DatoCMS, tier: 3`.
+- **T3 REST detected** (Showpass, Eventbrite, or other public REST API): identify the venue/org ID from page source links. Refer to `docs/integration/event-platforms.md` for the platform profile (API endpoint pattern, response shape, field_map values). Skip to Step 7 and write a `tier: 3` rest config. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 3 (REST)`.
 - **T1/T2**: continue with Step 1 below.
 
 ### Step 1 — Inspect the page
