@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"text/template"
 	"time"
@@ -155,7 +156,18 @@ func (e *RestExtractor) fetchPage(
 		// next can be a JSON string or null.
 		var nextStr string
 		if err := json.Unmarshal(rawNext, &nextStr); err == nil && nextStr != "" {
-			nextURL = nextStr
+			// SSRF guard: next URL host must match the configured endpoint host.
+			nu, parseErr := url.Parse(nextStr)
+			epURL, _ := url.Parse(cfg.Endpoint)
+			if parseErr != nil || nu.Host != epURL.Host {
+				e.logger.Warn().
+					Str("next_url", nextStr).
+					Str("endpoint_host", epURL.Host).
+					Msg("rest: next URL host mismatch — stopping pagination")
+				// Return accumulated results up to this point; treat as end of pagination.
+			} else {
+				nextURL = nextStr
+			}
 		}
 	}
 
