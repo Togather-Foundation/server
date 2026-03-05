@@ -1,17 +1,18 @@
 name: "art-metropole"
-# Tier 1 (Colly CSS selectors). Custom WP site — 139+ events confirmed 2026-02-21.
-# Date is text in <span class="weak"> e.g. "04 Feb. - 29 Mar. 2026" (no datetime attr).
-# Name and URL both from <a> in <li>; event_list scoped to div.events li.
-# BROKEN 2026-02-25: dry-run returns 0 events — site structure may have changed.
+# Tier 1 (Colly CSS selectors). Custom WP site — events confirmed working 2026-03-04.
+# Events are in <ol class="spaced"> with <li> items; each item is a single <a> that
+# contains <span class="weak"> (date text e.g. "04 Feb. - 29 Mar. 2026") + event name.
+# The full anchor text includes the date prefix; start_date extracted via span.weak.
+# All events are listed on a single page (archive style, no pagination needed).
 url: "https://artmetropole.com/events"
 tier: 1
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
 selectors:
-  event_list: "div.events li"
+  event_list: "ol.spaced li"
   name: "a"
   start_date: "span.weak"
   url: "a"
