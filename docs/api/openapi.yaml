@@ -2036,8 +2036,10 @@ components:
       in: query
       description: >
         Filter events starting on or after this date (ISO8601, e.g. 2026-06-01).
-        Defaults to today (server timezone) when neither startDate nor endDate is provided,
-        so past events are excluded by default. Pass an explicit startDate to override.
+        Defaults to today when neither startDate nor endDate is provided, so past events
+        are excluded by default. "Today" is midnight in the server timezone
+        (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+        Pass an explicit startDate to override.
         Snake_case alias start_date is accepted but triggers a warnings entry in the response.
       schema:
         type: string

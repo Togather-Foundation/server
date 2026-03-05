@@ -73,11 +73,11 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	stateRaw := resolveAlias(values, "state", "lifecycle_state", &filters.Warnings)
 	domainRaw := resolveAlias(values, "domain", "event_domain", &filters.Warnings)
 
-	startDate, err := parseDate("startDate", startDateRaw)
+	startDate, err := parseDate("startDate", startDateRaw, loc)
 	if err != nil {
 		return filters, pagination, err
 	}
-	endDate, err := parseDate("endDate", endDateRaw)
+	endDate, err := parseDate("endDate", endDateRaw, loc)
 	if err != nil {
 		return filters, pagination, err
 	}
@@ -161,12 +161,15 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 	return filters, pagination, nil
 }
 
-func parseDate(field string, value string) (*time.Time, error) {
+func parseDate(field string, value string, loc *time.Location) (*time.Time, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return nil, nil
 	}
-	parsed, err := time.Parse("2006-01-02", value)
+	// Parse as a calendar date in the server's configured timezone so that
+	// explicit date params (e.g. startDate=2026-01-01) are consistent with the
+	// default startDate=today, both of which resolve to midnight in loc.
+	parsed, err := time.ParseInLocation("2006-01-02", value, loc)
 	if err != nil {
 		return nil, FilterError{Field: field, Message: "must be ISO8601 date"}
 	}
