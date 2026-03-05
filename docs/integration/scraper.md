@@ -170,7 +170,7 @@ server scrape all --tier 1          # CSS-selector sources only
 | `0` | Tier 0 — JSON-LD sources only |
 | `1` | Tier 1 — CSS-selector sources only |
 | `2` | Tier 2 — headless browser sources only |
-| `3` | Tier 3 — GraphQL API sources only |
+| `3` | Tier 3 — API (GraphQL or REST JSON) sources only |
 
 Output: per-source table with totals row.
 
@@ -224,10 +224,14 @@ when the site requires browser-level interaction (e.g. lazy loading, shadow DOM)
 Headless config block (`headless:`) controls timeouts, wait selectors, and navigation
 options. See [Full Config with Tier 2 Headless](#full-config-with-tier-2-headless) below.
 
-### Tier 3 — GraphQL API (requires per-site config)
+### Tier 3 — API: GraphQL or REST JSON (requires per-site config)
 
-Used when a site exposes a GraphQL API (e.g. DatoCMS-powered venues). This is the
-most structured and reliable extraction method when available.
+Used when a site exposes a structured API. Two variants are supported — exactly one
+must be configured per source:
+
+#### GraphQL variant
+
+Used when a site exposes a GraphQL API (e.g. DatoCMS-powered venues).
 
 1. POST a configured GraphQL query to the endpoint (with optional Bearer token)
 2. Decode the response envelope: `{"data": {"<event_field>": [...]}}`
@@ -239,6 +243,21 @@ most structured and reliable extraction method when available.
 Response body is capped at 10 MiB. `User-Agent` header is set to the standard
 scraper agent string. Timeout behaviour: `graphql.timeout_ms` applies only when it
 exceeds the global request timeout; the larger of the two wins.
+
+#### REST JSON variant
+
+Used when a site exposes a paginated JSON REST API (e.g. Showpass).
+
+1. GET the configured endpoint
+2. Decode the `results_field` array (default: `"results"`) from the JSON response
+3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
+4. If `url_template` is set, render the Go `text/template` with the raw item map to
+   produce each event's canonical URL
+5. Follow `next_field` (default: `"next"`) for pagination until null or `max_pages` reached
+6. Normalize and submit
+
+Response body is capped at 10 MiB per page. Timeout behaviour: `rest.timeout_ms`
+applies only when it exceeds the global request timeout; the larger of the two wins.
 
 ---
 
@@ -350,13 +369,42 @@ graphql:
 data (field names are the query response keys). A missing key renders as `<no value>`;
 template execution errors are logged at debug level and the URL is left empty.
 
+### Full Config with Tier 3 REST
+
+```yaml
+name: "showpass-venue"
+url: "https://example.showpass.com"  # Canonical source URL (informational)
+tier: 3
+enabled: true
+
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=12345"
+  results_field: "results"           # JSON key containing the events array (default: "results")
+  next_field: "next"                 # JSON key for the next-page URL (default: "next")
+  url_template: "https://www.showpass.com/{{.slug}}"  # Go text/template; fields from raw item
+  timeout_ms: 30000                  # Optional; uses global timeout if not set or smaller
+  field_map:
+    name: "name"                     # RawEvent field: source JSON key
+    start_date: "starts_on"
+    end_date: "ends_on"
+    image: "image"
+    # url: omitted — populated by url_template above
+```
+
+`field_map` maps RawEvent field names (`name`, `start_date`, `end_date`, `url`, `image`,
+`location`, `description`) to source JSON keys. Omit `field_map` entirely for identity
+mapping (source keys must match RawEvent Go field names: `Name`, `StartDate`, etc.).
+
+`url_template` is a Go `text/template` rendered with the raw item map as data. A
+missing key renders as `<no value>`; template errors are logged at debug level.
+
 ### Required Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Unique identifier (used in `server scrape source <name>`) |
 | `url` or `urls` | string or []string | Entry-point URL(s) to scrape (mutually exclusive) |
-| `tier` | int | `0` = JSON-LD, `1` = CSS selectors, `2` = headless browser, `3` = GraphQL API |
+| `tier` | int | `0` = JSON-LD, `1` = CSS selectors, `2` = headless browser, `3` = API (GraphQL or REST) |
 
 ### Optional Fields
 
@@ -371,7 +419,8 @@ template execution errors are logged at debug level and the URL is left empty.
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
-| `graphql` | — | Required for `tier: 3` (see GraphQL fields below) |
+| `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
+| `rest` | — | Required for `tier: 3` REST variant (mutually exclusive with `graphql`) |
 
 ### Headless Config Fields (`headless:`)
 
@@ -395,6 +444,21 @@ template execution errors are logged at debug level and the URL is left empty.
 | `token` | no | Bearer token for Authorization header |
 | `url_template` | no | Go `text/template` string to construct each event's URL |
 | `timeout_ms` | no | Request timeout; the larger of this and the global timeout applies |
+
+### REST Config Fields (`rest:`)
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `endpoint` | yes | — | REST API URL (initial page URL) |
+| `results_field` | no | `"results"` | JSON key containing the events array on each page |
+| `next_field` | no | `"next"` | JSON key containing the next-page URL (string or null) |
+| `url_template` | no | — | Go `text/template` string to construct each event's URL |
+| `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
+| `headers` | no | — | Extra HTTP headers to inject (map[string]string) |
+| `field_map` | no | — | Map from RawEvent field names to source JSON keys (see below) |
+
+**`field_map` keys** (all optional; omit for identity mapping):
+`name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 
 ---
 
@@ -661,9 +725,10 @@ org database for a match, and writes `configs/sources/<name>.yaml`. It runs up t
 
 ### Currently Configured Sources (Tier 3)
 
-| Name | Endpoint | Notes |
-|------|----------|-------|
-| tranzac | graphql.datocms.com | DatoCMS public token; url_template constructs `/events/<slug>` |
+| Name | Variant | Endpoint | Notes |
+|------|---------|----------|-------|
+| tranzac | GraphQL | graphql.datocms.com | DatoCMS public token; url_template constructs `/events/<slug>` |
+| burdock-brewery | REST | showpass.com/api/public/events/?venue=17330 | Showpass venue API; paginated; 34 events across 2 pages |
 
 See `configs/sources/README.md` for full status including disabled sources and unverified candidates.  
 See `docs/integration/disabled-sources.md` for a detailed breakdown of every disabled source and its recommended fix path.

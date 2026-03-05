@@ -48,6 +48,9 @@ type SourceConfig struct {
 	Headless HeadlessConfig `yaml:"headless,omitempty" json:"headless,omitempty"`
 	// GraphQL holds Tier 3 GraphQL API options. Ignored for tier 0/1/2.
 	GraphQL *GraphQLConfig `yaml:"graphql,omitempty" json:"graphql,omitempty"`
+	// REST holds Tier 3 REST JSON feed options. Ignored for tier 0/1/2.
+	// Exactly one of GraphQL or REST must be set for tier 3.
+	REST *RestConfig `yaml:"rest,omitempty" json:"rest,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
@@ -124,6 +127,40 @@ type GraphQLConfig struct {
 	// its data (e.g. "https://tranzac.org/events/{{.slug}}").
 	// If empty, no URL is constructed from the API response.
 	URLTemplate string `yaml:"url_template" json:"url_template"`
+}
+
+// RestConfig holds Tier 3 REST JSON feed options.
+//
+// Note on URL fields: the url/urls fields on SourceConfig are NOT used for
+// fetching by Tier 3 REST — only Endpoint is used to make the HTTP request.
+// source.URL is persisted as human-readable metadata in scraper_run records
+// (SourceURL column) so operators can identify the source in dashboards and
+// logs, but it is never passed to the HTTP client.
+type RestConfig struct {
+	// Endpoint is the first page URL for the REST API (e.g.
+	// https://www.showpass.com/api/public/events/?venue=17330).
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	// ResultsField is the key in the JSON response that holds the array of
+	// event objects. Defaults to "results" when empty.
+	ResultsField string `yaml:"results_field" json:"results_field"`
+	// NextField is the key in the JSON response that holds the URL of the
+	// next page (null or absent = no more pages). Defaults to "next" when
+	// empty.
+	NextField string `yaml:"next_field" json:"next_field"`
+	// URLTemplate is an optional Go text/template string used to construct the
+	// canonical URL for each event. The template receives the raw item map as
+	// its data (e.g. "https://www.showpass.com/{{.slug}}").
+	// If empty, no URL is constructed from the field_map url key.
+	URLTemplate string `yaml:"url_template" json:"url_template"`
+	// TimeoutMs is the HTTP request timeout in milliseconds. 0 = use default.
+	TimeoutMs int `yaml:"timeout_ms" json:"timeout_ms"`
+	// Headers are extra HTTP headers sent with every request.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	// FieldMap maps RawEvent field names (keys) to source JSON field names
+	// (values). Supported keys: name, start_date, end_date, url, image,
+	// location, description. When empty, field names are used directly as-is
+	// (identity mapping using the RawEvent Go field names).
+	FieldMap map[string]string `yaml:"field_map,omitempty" json:"field_map,omitempty"`
 }
 
 // GetURLs returns the list of entry-point URLs for this source.
@@ -208,9 +245,11 @@ func ValidateConfig(cfg SourceConfig) error {
 	}
 
 	if cfg.Tier == 3 {
-		if cfg.GraphQL == nil {
-			errs = append(errs, "tier 3 requires a graphql config block")
-		} else {
+		if cfg.GraphQL != nil && cfg.REST != nil {
+			errs = append(errs, "tier 3: graphql and rest are mutually exclusive; set exactly one")
+		} else if cfg.GraphQL == nil && cfg.REST == nil {
+			errs = append(errs, "tier 3 requires a graphql or rest config block")
+		} else if cfg.GraphQL != nil {
 			if strings.TrimSpace(cfg.GraphQL.Endpoint) == "" {
 				errs = append(errs, "graphql.endpoint: required for tier 3")
 			} else {
@@ -228,6 +267,20 @@ func ValidateConfig(cfg SourceConfig) error {
 			if t := strings.TrimSpace(cfg.GraphQL.URLTemplate); t != "" {
 				if _, err := template.New("url_template").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("graphql.url_template: invalid Go template: %v", err))
+				}
+			}
+		} else { // cfg.REST != nil
+			if strings.TrimSpace(cfg.REST.Endpoint) == "" {
+				errs = append(errs, "rest.endpoint: required for tier 3")
+			} else {
+				u, err := url.Parse(cfg.REST.Endpoint)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					errs = append(errs, fmt.Sprintf("rest.endpoint: must be a valid http/https URL, got %q", cfg.REST.Endpoint))
+				}
+			}
+			if t := strings.TrimSpace(cfg.REST.URLTemplate); t != "" {
+				if _, err := template.New("url_template").Parse(t); err != nil {
+					errs = append(errs, fmt.Sprintf("rest.url_template: invalid Go template: %v", err))
 				}
 			}
 		}
@@ -342,6 +395,14 @@ func loadFile(path string) (SourceConfig, error) {
 	}
 	if cfg.MaxPages == 0 {
 		cfg.MaxPages = 10
+	}
+	if cfg.REST != nil {
+		if cfg.REST.ResultsField == "" {
+			cfg.REST.ResultsField = "results"
+		}
+		if cfg.REST.NextField == "" {
+			cfg.REST.NextField = "next"
+		}
 	}
 
 	return cfg, nil

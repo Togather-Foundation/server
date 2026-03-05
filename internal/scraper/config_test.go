@@ -246,6 +246,112 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: "",
 		},
+		// Tier 3 / REST (srv-hi014)
+		{
+			name: "tier 3 with valid rest config",
+			cfg: SourceConfig{
+				Name:       "REST Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				REST: &RestConfig{
+					Endpoint: "https://api.example.com/events",
+				},
+			},
+		},
+		{
+			name: "tier 3 with both graphql and rest",
+			cfg: SourceConfig{
+				Name:       "Both Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://graphql.example.com/",
+					Query:      "{ allEvents { title } }",
+					EventField: "allEvents",
+				},
+				REST: &RestConfig{
+					Endpoint: "https://api.example.com/events",
+				},
+			},
+			wantErr: "tier 3: graphql and rest are mutually exclusive",
+		},
+		{
+			name: "tier 3 with neither graphql nor rest",
+			cfg: SourceConfig{
+				Name:       "No API Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantErr: "tier 3 requires a graphql or rest config block",
+		},
+		{
+			name: "tier 3 rest missing endpoint",
+			cfg: SourceConfig{
+				Name:       "No Endpoint REST Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				REST:       &RestConfig{},
+			},
+			wantErr: "rest.endpoint: required for tier 3",
+		},
+		{
+			name: "tier 3 rest invalid endpoint URL",
+			cfg: SourceConfig{
+				Name:       "Bad Endpoint REST Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				REST: &RestConfig{
+					Endpoint: "not-a-url",
+				},
+			},
+			wantErr: "rest.endpoint: must be a valid http/https URL",
+		},
+		{
+			name: "tier 3 rest invalid url_template",
+			cfg: SourceConfig{
+				Name:       "Bad Template REST Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				REST: &RestConfig{
+					Endpoint:    "https://api.example.com/events",
+					URLTemplate: "https://example.com/events/{{.slug", // unclosed action
+				},
+			},
+			wantErr: "rest.url_template: invalid Go template",
+		},
+		{
+			name: "tier 3 rest valid url_template",
+			cfg: SourceConfig{
+				Name:       "Good Template REST Source",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				REST: &RestConfig{
+					Endpoint:    "https://api.example.com/events",
+					URLTemplate: "https://example.com/events/{{.slug}}",
+				},
+			},
+		},
 		// Tier 3 / GraphQL (srv-wz0h7)
 		{
 			name: "valid tier 3 with graphql config",
@@ -273,7 +379,7 @@ func TestValidateConfig(t *testing.T) {
 				MaxPages:   10,
 				Schedule:   "daily",
 			},
-			wantErr: "tier 3 requires a graphql config block",
+			wantErr: "tier 3 requires a graphql or rest config block",
 		},
 		{
 			name: "tier 3 graphql missing endpoint",
@@ -1056,4 +1162,69 @@ tier: 0
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 	assert.Equal(t, []string{"https://example.com/events", "https://example.com/workshops"}, configs[0].URLs)
+}
+
+// --------------------------------------------------------------------------
+// loadFile REST defaults (srv-hi014)
+// --------------------------------------------------------------------------
+
+// TestLoadFile_RESTDefaults verifies that results_field and next_field defaults
+// ("results" and "next" respectively) are applied by loadFile when not set in YAML.
+func TestLoadFile_RESTDefaults(t *testing.T) {
+	t.Parallel()
+
+	t.Run("applies results_field and next_field defaults when empty", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST Default Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.Equal(t, "results", cfg.REST.ResultsField, "results_field default must be 'results'")
+		assert.Equal(t, "next", cfg.REST.NextField, "next_field default must be 'next'")
+	})
+
+	t.Run("does not override explicitly set results_field", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST Custom Fields Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+  results_field: "data"
+  next_field: "pagination.next"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest_custom.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.Equal(t, "data", cfg.REST.ResultsField, "explicit results_field must not be overridden")
+		assert.Equal(t, "pagination.next", cfg.REST.NextField, "explicit next_field must not be overridden")
+	})
+
+	t.Run("nil REST config does not panic", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "No REST Source"
+url: "https://example.com"
+tier: 0
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "no_rest.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Nil(t, cfg.REST)
+	})
 }

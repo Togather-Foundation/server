@@ -333,6 +333,29 @@ graphql:
     { allEvents(orderBy: startDate_ASC) { title startDate endDate slug } }
 ```
 
+**Tier 3 (REST JSON / Showpass or similar):**
+```yaml
+name: "<derived-name>"
+url: "<events-page-URL>"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+# Organization match: <org name> (<ulid>) — or "no match found in database"
+rest:
+  endpoint: "<API_URL>"
+  results_field: "results"     # JSON key containing the events array
+  next_field: "next"           # JSON key for the next-page URL (null stops pagination)
+  url_template: "https://example.com/{{.slug}}"  # Go text/template using raw item fields
+  field_map:
+    name: "<source_key>"
+    start_date: "<source_key>"
+    end_date: "<source_key>"
+    image: "<source_key>"
+    # url: omit if url_template is used
+```
+
 Omit any selector line whose value is empty — do not write `field: ""`.
 
 `trust_level`: `8` for official government/library/museum sites, `3` for aggregators,

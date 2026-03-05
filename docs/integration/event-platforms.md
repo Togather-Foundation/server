@@ -532,13 +532,25 @@ events are accessible via a public REST API.
 **Recommended approach:** T3 (REST API). Find the venue ID and use:
 `GET https://showpass.com/api/public/events/?venue=<venue_id>`
 
+**API shape:** `{ count, next, results: [...] }` — `next` is a URL string or null.
+Key event fields: `name`, `starts_on`, `ends_on`, `slug`, `image` (URL string).
+
 ```yaml
 tier: 3
-# (Tier 3 REST adapter pending implementation)
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=<venue_id>"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://www.showpass.com/{{.slug}}"
+  field_map:
+    name: "name"
+    start_date: "starts_on"
+    end_date: "ends_on"
+    image: "image"
 ```
 
 **Known venue IDs:**
-- Burdock Brewery: `17330` (legacy/parallel integration, verify)
+- Burdock Brewery: `17330` (34 events; 2 paginated pages)
 
 ---
 
