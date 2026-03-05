@@ -261,12 +261,29 @@ but the hash suffix rotates on deploys. **Always use attribute prefix selectors*
 (`[class^='title-']`) instead of exact class selectors (`.title-2yNb5`). See
 `docs/integration/event-platforms.md` section "CSS Modules / Hashed Class Names".
 
+**Composite date selectors (`date_selectors`):** When the site has no `<time>` elements
+(common with CSS Modules frameworks, Wix embeds, Ticket Spot), use `date_selectors`
+instead of `start_date`. List CSS selectors that extract date and time text from separate
+DOM elements — the smart date assembler combines the fragments into RFC 3339 datetimes.
+
+```yaml
+selectors:
+  date_selectors:
+    - ".first [class^='time-container-']"       # e.g. "Thu 5th March"
+    - "[style*='display: flex'] [class^='time-container-']"  # e.g. "9:30 PM"
+```
+
+See `configs/sources/lula-lounge.yaml` as the canonical reference.
+
 ### Step 6 — Validate with scrape test
 
-**Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 7: write the config with `enabled: false`, validate via `--source-file --dry-run`, then flip `enabled: true` once passing:
+**Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 7: write the config with `enabled: false`, validate via `--source-file --dry-run --verbose`, then flip `enabled: true` once passing:
 ```bash
-SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> \
+  --source-file configs/sources/<name>.yaml --dry-run --verbose
 ```
+
+**The `--verbose` flag** shows individual event details (name, start date, end date, URL, venue) and quality warnings. Always use it during validation.
 
 **Tier 1** (static only):
 ```bash
@@ -350,6 +367,10 @@ selectors:
   name: "<selector>"
   start_date: "<selector>"
   url: "<selector>"
+  # date_selectors:                   # uncomment when no <time> elements exist
+  #   - "<date-text-selector>"        # e.g. ".first [class^='time-container-']"
+  #   - "<time-text-selector>"        # e.g. "[style*='display: flex'] [class^='time-container-']"
+# timezone: "America/Toronto"         # uncomment to override DEFAULT_TIMEZONE env var
 ```
 
 **Tier 3 (GraphQL / DatoCMS):**
@@ -401,18 +422,25 @@ Omit any selector line whose value is empty — do not write `field: ""`.
 
 **Tier 1:**
 ```bash
-./server scrape source <name> --dry-run
+./server scrape source <name> --dry-run --verbose
 ```
 
 **Tier 2:**
 ```bash
-SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run --verbose
 ```
 
 If the binary is missing, build first:
 ```bash
-go build -o ./server ./cmd/server && ./server scrape source <name> --dry-run
+go build -o ./server ./cmd/server && ./server scrape source <name> --dry-run --verbose
 ```
+
+**Check the `--verbose` output for quality warnings:**
+- `date_selector_never_matched: selector #N ("...") matched 0/M events` → that CSS selector finds no elements; fix it
+- `date_selector_partial_match: selector #N ("...") matched X/M events` → selector works for some events but not all; may need a more general selector
+- `all_midnight: N/N events have T00:00:00 start times` → time extraction failed; the time selector is broken or missing
+
+If quality warnings appear, fix the selectors and re-run. Repeat until clean or up to 3 rounds total.
 
 ### Return result
 
@@ -422,7 +450,7 @@ Return exactly one line in this format:
 RESULT | <URL> | <name> | <event_count> | <status> | <notes>
 ```
 
-**`notes` must always include** the detected platform and final tier (e.g. `platform: Drupal+Cloudflare, tier: 2, undetected: true`).
+**`notes` must always include** the detected platform and final tier (e.g. `platform: Drupal+Cloudflare, tier: 2, undetected: true`). Include any quality warnings from `--verbose` dry-run (e.g. `quality: all_midnight`).
 
 **On `failed`, `js-rendered`, or `blocked`, also include:**
 - What tiers were attempted and why each was rejected (e.g. `T1: 403; T2: containers empty after 25s`)

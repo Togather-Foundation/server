@@ -71,6 +71,7 @@ All subcommands are under `server scrape`. Persistent flags apply to all subcomm
 | `--server` | `SEL_SERVER_URL` | `http://localhost:8080` | SEL server base URL |
 | `--key` | `SEL_API_KEY` or `SEL_INGEST_KEY` | — | API key for ingest |
 | `--dry-run` | — | `false` | Display extracted events without submitting |
+| `--verbose` | — | `false` | Show individual event details and quality warnings in dry-run output |
 | `--limit N` | — | `0` (no limit) | Max events per source |
 | `--sources` | — | `configs/sources` | Path to sources directory |
 
@@ -351,6 +352,30 @@ Existing configs using `start_date` with ISO 8601 dates (e.g. `"2026-05-10T19:00
 or `<time datetime="...">` attributes continue to work unchanged — the fuzzy parser
 detects partial ISO 8601 and passes through without modification.
 
+### Quality Warnings
+
+The scraper performs automatic quality checks during extraction and reports warnings
+in the dry-run output. Use `--verbose` to see individual event details alongside
+quality warnings.
+
+```bash
+# Verbose dry-run — the primary validation workflow
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source lula-lounge \
+  --source-file configs/sources/lula-lounge.yaml --dry-run --verbose
+```
+
+#### Warning Types
+
+| Warning Code | Trigger | Meaning |
+|-------------|---------|---------|
+| `date_selector_never_matched` | A `date_selectors` entry matched 0 events | The CSS selector is wrong — inspect the DOM and fix it |
+| `date_selector_partial_match` | A `date_selectors` entry matched some but not all events | The selector may need to be more general, or some events genuinely lack that element |
+| `all_midnight` | All extracted events have `T00:00:00` start times | Time extraction failed — the time selector is broken or missing |
+
+Warnings are logged to stderr and also attached to the `ScrapeResult` as
+`QualityWarnings []string` for programmatic consumption. They do **not** prevent
+event ingestion — they are advisory signals for selector debugging.
+
 ### Full Config with Tier 2 Headless
 
 ```yaml
@@ -461,6 +486,7 @@ missing key renders as `<no value>`; template errors are logged at debug level.
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
+| `timezone` | `""` | IANA timezone for date parsing (e.g. `"America/Toronto"`). Overrides `DEFAULT_TIMEZONE` env var. Falls back to `America/Toronto` if neither is set. |
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
 | `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |

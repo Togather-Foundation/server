@@ -121,19 +121,64 @@ Need ≥ 3 events with non-empty `name`. Retry up to 3 rounds with refined selec
 
 ### Step 4 — Write the config
 
-Write the config with `enabled: false` first, then validate via `--source-file --dry-run`, then flip to `enabled: true` once ≥ 3 events with non-empty `name` are confirmed.
+Write the config with `enabled: false` first, then validate via `--source-file --dry-run --verbose`, then flip to `enabled: true` once ≥ 3 events with non-empty `name` are confirmed.
 
 **Always use `--source-file` for Tier 2** — it is the only way to pass `headless:` block flags (including `wait_selector`, `undetected`, `wait_network_idle`) to the scraper:
 ```bash
-SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> \
+  --source-file configs/sources/<name>.yaml --dry-run --verbose
 ```
 
 **Tier 1** — can use the source name directly after writing (no headless block needed):
 ```bash
-./server scrape source <name> --dry-run
+./server scrape source <name> --dry-run --verbose
 ```
 
+**The `--verbose` flag** shows individual event details (name, start date, end date, URL, venue) for each extracted event, plus any quality warnings. Always use it during validation — it is the primary tool for diagnosing selector problems.
+
 **Do not use third-party embed URLs** (Showpass, Eventbrite, Ticketmaster iframes) as the config `url`. The config `url` must be the venue's own page. Cross-origin iframe sources (Ticket Spot, Elevent) ARE now supported when using the `iframe:` config block — the config `url` is still the venue's own page, but the scraper navigates into the iframe's execution context to extract its rendered HTML. If the venue page contains a cross-origin iframe from an unsupported platform, document the blocker and return `failed`.
+
+#### Using `date_selectors` for sites without `<time>` elements
+
+When a site has no `<time>` elements (common with CSS Modules frameworks, Wix embeds,
+Ticket Spot), use `date_selectors` instead of `start_date`/`end_date`. This extracts
+date and time text from multiple DOM elements and assembles them into RFC 3339 datetimes.
+
+**When to use `date_selectors`:**
+- Site has no `<time>` elements in the event cards
+- Date and time are in separate DOM elements (e.g. one `<div>` for "Thu 5th March", another for "9:30 PM")
+- CSS Modules with hashed class names (the text is in plain `<div>`/`<span>` elements)
+
+**Config pattern:**
+```yaml
+selectors:
+  event_list: "[class^='list-'] > div"
+  name: "[class^='title-']"
+  url: "a[href*='eventbrite']"
+  # No <time> elements — extract date and time from separate elements:
+  date_selectors:
+    - ".first [class^='time-container-']"                          # e.g. "Thu 5th March"
+    - "[style*='display: flex']:not(.first) [class^='time-container-']"  # e.g. "9:30 PM"
+```
+
+The smart date assembler classifies each text fragment as date-only, time-only, or combined,
+then produces `startDate` (first date + first time) and `endDate` (second time if present).
+See `configs/sources/lula-lounge.yaml` as the canonical reference.
+
+When `date_selectors` is set, it takes priority over `start_date`/`end_date`.
+
+#### Interpreting quality warnings
+
+The `--verbose` dry-run output includes **quality warnings** that diagnose selector problems.
+Use these to iteratively fix selectors:
+
+| Warning | Meaning | Fix |
+|---------|---------|-----|
+| `date_selector_never_matched: selector #N ("...") matched 0/M events` | That CSS selector finds no elements in any event card | The selector is wrong — inspect the DOM and fix it |
+| `date_selector_partial_match: selector #N ("...") matched X/M events` | Selector works for some events but not all | May need a more general selector, or some events genuinely lack that element |
+| `all_midnight: N/N events have T00:00:00 start times` | Time extraction failed — all events have midnight start times | The time selector is broken or missing; add/fix a `date_selectors` entry for the time element |
+
+**Workflow: read warnings → fix selectors → re-run `--dry-run --verbose` → repeat until clean.**
 
 ### Step 5 — If unscrapeable after 3 rounds
 
@@ -203,6 +248,10 @@ selectors:
   name: "<selector>"
   start_date: "<selector>"
   url: "<selector>"
+  # date_selectors:                   # uncomment when no <time> elements exist
+  #   - "<date-text-selector>"        # e.g. ".first [class^='time-container-']"
+  #   - "<time-text-selector>"        # e.g. "[style*='display: flex'] [class^='time-container-']"
+# timezone: "America/Toronto"         # uncomment to override DEFAULT_TIMEZONE env var
 ```
 
 ### Tier 3 (GraphQL / DatoCMS)
@@ -263,6 +312,7 @@ Where `status` = `written` (enabled=true), `failed` (kept disabled), or `downgra
 - Detected platform (e.g. `platform: Drupal+Cloudflare`)
 - Final tier used (e.g. `tier: 2`)
 - Any headless flags set (e.g. `undetected: true`)
+- Any quality warnings from `--verbose` dry-run (e.g. `quality: all_midnight`)
 
 **On `failed` or `downgraded`, also include:**
 - What tiers were attempted and why each was rejected (e.g. `T1: 403; T2: containers empty after 25s`)
