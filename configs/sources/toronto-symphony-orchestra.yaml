@@ -14,7 +14,7 @@ headless:
   wait_selector: ".calendar-performance"
   wait_timeout_ms: 20000
 selectors:
-  event_list: "li:has(> a.calendar-performance)"
+  event_list: "li:has(a.calendar-performance)"
   name: "h4.calendar-performance__title"
   start_date: "a.calendar-performance"
   url: "a.calendar-performance"
