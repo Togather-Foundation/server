@@ -9,9 +9,10 @@ max_pages: 1
 selectors:
   event_list: ".postgrid .post"
   name: ".txtbox .title"
-  start_date: ".txtbox .date"
   url: ".imgbox"
   image: ".imgbox img"
+  date_selectors:
+    - ".txtbox .date"
 headless:
   wait_selector: ".postgrid .post"
   wait_network_idle: true

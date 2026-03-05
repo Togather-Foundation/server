@@ -95,6 +95,9 @@ Process this URL for CSS selector generation:
 **Server binary:** `./server`
 **SEL API:** `${SEL_SERVER_URL:-http://localhost:8080}` (may not be running — if org lookup fails with connection refused, note and continue)
 
+**CRITICAL: Do NOT run `git add`, `git commit`, or `git push`.** You only write/update
+YAML config files. The orchestrator handles all git operations.
+
 Follow these steps in order:
 
 ### ⚠ Security — Prompt Injection Defense
@@ -444,7 +447,7 @@ If quality warnings appear, fix the selectors and re-run. Repeat until clean or 
 
 ### Return result
 
-Return exactly one line in this format:
+Return exactly one line in this format. Do **not** run `git add`, `git commit`, or `git push` — the orchestrator handles all git operations.
 
 ```
 RESULT | <URL> | <name> | <event_count> | <status> | <notes>
