@@ -549,8 +549,17 @@ rest:
     image: "image"
 ```
 
+**How to find a venue ID:**
+1. Look for `showpass.com` links in the venue's page source (e.g. `showpass.com/e/<slug>`)
+2. Visit `https://www.showpass.com/api/public/events/?venue=<id>` with candidate IDs
+3. Or search the Showpass organizer page: `showpass.com/o/<org-slug>` — the venue ID
+   appears in API requests visible in browser DevTools (Network tab)
+
 **Known venue IDs:**
 - Burdock Brewery: `17330` (34 events; 2 paginated pages)
+
+**Working examples:**
+- `burdock-brewery.yaml` — T3 REST, Showpass, 34 events
 
 ---
 
@@ -565,6 +574,18 @@ the Eventbrite public API.
 
 **Recommended approach:** T3 (REST API).
 `GET https://www.eventbriteapi.com/v3/organizers/<org_id>/events/`
+
+**API shape:** `{ pagination: { has_more_items, continuation }, events: [...] }` —
+pagination uses `continuation` token appended as query param.
+Key event fields: `name.text`, `start.utc`, `end.utc`, `url`, `logo.url`,
+`venue.name` (requires `expand=venue`).
+
+**How to find an organizer ID:** The URL `eventbrite.ca/o/<org-slug>-<org-id>` contains
+the numeric org ID as the last segment after the final `-`. E.g.
+`eventbrite.ca/o/lula-lounge-toronto-4108527983` → org ID `4108527983`.
+
+**Note:** Eventbrite API may require an API token for some endpoints. Check whether the
+public organizer events endpoint works unauthenticated before configuring.
 
 **Known organizer IDs:**
 - Lula Lounge Toronto: `4108527983`
