@@ -41,6 +41,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "DEVELOPER_PASSWORD_MIN_LENGTH",
 		wantSubstr: "DEVELOPER_PASSWORD_MIN_LENGTH",
 	},
+	{
+		envVar:     "DEFAULT_TIMEZONE",
+		wantSubstr: "DEFAULT_TIMEZONE",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

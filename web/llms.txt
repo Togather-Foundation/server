@@ -59,15 +59,26 @@ Get a single event by ULID:
 
 ### Query parameters for GET /api/v1/events
 
-Note: param names are camelCase (matching JSON-LD field names). Snake_case
-aliases (start_date, end_date) are silently ignored — use the forms below.
+Note: param names are camelCase (matching JSON-LD field names). If you use a
+snake_case alias (e.g. start_date, venue_id), the server will accept it and
+apply it, but the response will include a "warnings" array telling you the
+correct canonical name. Use camelCase to suppress warnings.
 
-- search       — full-text keyword search (title, description)
-- keywords     — comma-separated keyword tags
-- startDate    — ISO 8601 date, e.g. 2026-03-01  (NOT start_date)
-- endDate      — ISO 8601 date, e.g. 2026-03-31  (NOT end_date)
-- limit        — max results (default 50, max 100)
-- after        — pagination cursor (from previous response next_cursor)
+Default date behaviour: when neither startDate nor endDate is supplied, the
+server automatically applies startDate=today (server timezone) so that past
+events are excluded. Pass startDate explicitly to override, or pass endDate
+alone to request a historical range.
+
+- search            — full-text keyword search (title, description)
+- keywords          — comma-separated keyword tags
+- startDate         — ISO 8601 date, e.g. 2026-03-01  (alias: start_date)
+- endDate           — ISO 8601 date, e.g. 2026-03-31  (alias: end_date)
+- venueId           — ULID of the venue/place to filter by  (alias: venue_id)
+- organizerId       — ULID of the organizer to filter by    (alias: organizer_id)
+- state             — lifecycle state filter                 (alias: lifecycle_state)
+- domain            — event domain filter                    (alias: event_domain)
+- limit             — max results (default 50, max 200)
+- after             — pagination cursor (from previous response next_cursor)
 
 ### Response shape (JSON-LD — field names are Schema.org, not REST conventions)
 
@@ -76,6 +87,7 @@ The API returns JSON-LD. Field names differ from typical REST APIs:
   Response envelope:
     .items[]          — array of events (NOT .events[] or .data[])
     .next_cursor      — pagination cursor for the next page
+    .warnings[]       — alias warnings, present only when snake_case params were used
 
   Per event:
     .name             — event title (NOT .title)

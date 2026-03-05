@@ -27,6 +27,7 @@ type PlacesHandler struct {
 	scraperRepo      domainScraper.Repository // optional; nil = omit sel:scraperSource
 	Env              string
 	BaseURL          string
+	Loc              *time.Location // configured timezone (reserved for future use)
 }
 
 func NewPlacesHandler(service *places.Service, env string, baseURL string) *PlacesHandler {
@@ -52,7 +53,7 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filters, pagination, err := places.ParseFilters(r.URL.Query())
+	filters, pagination, err := places.ParseFilters(r.URL.Query(), h.Loc)
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
@@ -138,6 +139,13 @@ func (h *PlacesHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if geocodingMeta != nil {
 		response["geocoding"] = geocodingMeta
+	}
+	// Warnings are injected into the raw map rather than via the typed listResponse
+	// struct (used by events.go and organizations.go) because this handler includes
+	// an extra "geocoding" metadata field that doesn't fit listResponse. The raw map
+	// is intentional, not an oversight.
+	if len(filters.Warnings) > 0 {
+		response["warnings"] = filters.Warnings
 	}
 
 	writeJSON(w, http.StatusOK, response, contentTypeFromRequest(r))

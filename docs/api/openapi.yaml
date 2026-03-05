@@ -2034,7 +2034,13 @@ components:
     startDate:
       name: startDate
       in: query
-      description: Filter events starting on or after this date (ISO8601)
+      description: >
+        Filter events starting on or after this date (ISO8601, e.g. 2026-06-01).
+        Defaults to today when neither startDate nor endDate is provided, so past events
+        are excluded by default. "Today" is midnight in the server timezone
+        (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+        Pass an explicit startDate to override.
+        Snake_case alias start_date is accepted but triggers a warnings entry in the response.
       schema:
         type: string
         format: date
@@ -2042,7 +2048,9 @@ components:
     endDate:
       name: endDate
       in: query
-      description: Filter events starting on or before this date (ISO8601)
+      description: >
+        Filter events starting on or before this date (ISO8601, e.g. 2026-06-30).
+        Snake_case alias end_date is accepted but triggers a warnings entry in the response.
       schema:
         type: string
         format: date
@@ -2057,14 +2065,18 @@ components:
     venueId:
       name: venueId
       in: query
-      description: Filter by venue ULID
+      description: >
+        Filter by venue ULID.
+        Snake_case alias venue_id is accepted but triggers a warnings entry in the response.
       schema:
         type: string
 
     organizerId:
       name: organizerId
       in: query
-      description: Filter by organizer ULID
+      description: >
+        Filter by organizer ULID.
+        Snake_case alias organizer_id is accepted but triggers a warnings entry in the response.
       schema:
         type: string
 
@@ -2576,6 +2588,14 @@ components:
         next_cursor:
           type: string
           description: Cursor for next page
+        warnings:
+          type: array
+          items:
+            type: string
+          description: >
+            Parameter alias warnings. Present when a snake_case alias (e.g. start_date) was
+            used instead of the canonical camelCase name. Each entry names the alias used and
+            the correct parameter name. Omitted when no aliases were detected.
 
     PlaceListResponse:
       description: Paginated list of places (venues) with cursor-based pagination
@@ -2588,6 +2608,11 @@ components:
             $ref: '#/components/schemas/Place'
         next_cursor:
           type: string
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Parameter alias warnings. See EventListResponse.warnings for details.
 
     OrganizationListResponse:
       description: Paginated list of organizations with cursor-based pagination
@@ -2600,6 +2625,11 @@ components:
             $ref: '#/components/schemas/Organization'
         next_cursor:
           type: string
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Parameter alias warnings. See EventListResponse.warnings for details.
 
     ChangeFeedResponse:
       description: Federation change feed containing sequential updates for event synchronization

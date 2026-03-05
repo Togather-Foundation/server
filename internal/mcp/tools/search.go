@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -19,11 +20,12 @@ const (
 	maxSearchLimit     = 200
 )
 
-// SearchTools provides MCP tools for cross-entity search.
+// SearchTools provides cross-entity search MCP tools.
 type SearchTools struct {
 	eventsService *events.Service
 	placesService *places.Service
 	orgService    *organizations.Service
+	loc           *time.Location
 	baseURL       string
 }
 
@@ -35,6 +37,12 @@ func NewSearchTools(eventsService *events.Service, placesService *places.Service
 		orgService:    orgService,
 		baseURL:       strings.TrimSpace(baseURL),
 	}
+}
+
+// WithLoc sets the server timezone used for default date filtering in event searches.
+func (t *SearchTools) WithLoc(loc *time.Location) *SearchTools {
+	t.loc = loc
+	return t
 }
 
 // SearchTool returns the MCP tool definition for cross-entity search.
@@ -166,7 +174,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := events.ParseFilters(values)
+	filters, pagination, err := events.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +195,7 @@ func (t *SearchTools) searchPlaces(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := places.ParseFilters(values)
+	filters, pagination, err := places.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +216,7 @@ func (t *SearchTools) searchOrganizations(ctx context.Context, query string, lim
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, err := organizations.ParseFilters(values)
+	filters, pagination, err := organizations.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}

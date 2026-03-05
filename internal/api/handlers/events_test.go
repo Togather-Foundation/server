@@ -368,3 +368,56 @@ func TestEventsHandlerCreateUsesIdempotencyHeader(t *testing.T) {
 
 	require.Contains(t, []int{http.StatusCreated, http.StatusConflict, http.StatusBadRequest}, rec.Code)
 }
+
+func TestEventsHandlerListDefaultStartDate(t *testing.T) {
+	// When no date params are provided, startDate should default to today so past events
+	// are excluded.
+	var capturedFilters events.Filters
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			capturedFilters = filters
+			return events.ListResult{}, nil
+		},
+		getFn: func(_ string) (*events.Event, error) {
+			return nil, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h.Loc = time.UTC
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	res := httptest.NewRecorder()
+
+	h.List(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	require.NotNil(t, capturedFilters.StartDate, "startDate should be defaulted to today")
+	now := time.Now().In(time.UTC)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	require.Equal(t, today, *capturedFilters.StartDate)
+}
+
+func TestEventsHandlerListSnakeCaseAliasWarning(t *testing.T) {
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{}, nil
+		},
+		getFn: func(_ string) (*events.Event, error) {
+			return nil, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h.Loc = time.UTC
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?start_date=2026-06-01", nil)
+	res := httptest.NewRecorder()
+
+	h.List(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload listResponse
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	require.NotEmpty(t, payload.Warnings, "response should include alias warning")
+	require.Contains(t, payload.Warnings[0], "start_date")
+}

@@ -19,6 +19,7 @@ import (
 // OrganizationTools provides MCP tools for querying and managing organizations.
 type OrganizationTools struct {
 	orgService *organizations.Service
+	loc        *time.Location
 	baseURL    string
 }
 
@@ -28,6 +29,12 @@ func NewOrganizationTools(orgService *organizations.Service, baseURL string) *Or
 		orgService: orgService,
 		baseURL:    strings.TrimSpace(baseURL),
 	}
+}
+
+// WithLoc sets the server timezone (passed through to ParseFilters for future use).
+func (t *OrganizationTools) WithLoc(loc *time.Location) *OrganizationTools {
+	t.loc = loc
+	return t
 }
 
 // OrganizationsTool returns the MCP tool definition for listing or getting organizations.
@@ -181,7 +188,7 @@ func (t *OrganizationTools) listOrganizations(ctx context.Context, query string,
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, err := organizations.ParseFilters(values)
+	filters, pagination, err := organizations.ParseFilters(values, t.loc)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

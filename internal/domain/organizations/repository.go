@@ -45,10 +45,11 @@ type CreateParams struct {
 }
 
 type Filters struct {
-	Query string
-	City  string
-	Sort  string // "name" or "created_at" (default: "created_at")
-	Order string // "asc" or "desc" (default: "asc")
+	Query    string
+	City     string
+	Sort     string   // "name" or "created_at" (default: "created_at")
+	Order    string   // "asc" or "desc" (default: "asc")
+	Warnings []string // side-channel: alias warnings from ParseFilters
 }
 
 type Pagination struct {

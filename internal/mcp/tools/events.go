@@ -35,6 +35,7 @@ type EventTools struct {
 	ingestService *events.IngestService
 	placeResolver PlaceResolver
 	orgResolver   OrgResolver
+	loc           *time.Location
 	baseURL       string
 }
 
@@ -56,6 +57,12 @@ func (t *EventTools) WithPlaceResolver(resolver PlaceResolver) *EventTools {
 // WithOrgResolver adds organization resolution for embedding organizer in event responses.
 func (t *EventTools) WithOrgResolver(resolver OrgResolver) *EventTools {
 	t.orgResolver = resolver
+	return t
+}
+
+// WithLoc sets the server timezone used for the default startDate filter.
+func (t *EventTools) WithLoc(loc *time.Location) *EventTools {
+	t.loc = loc
 	return t
 }
 
@@ -271,7 +278,7 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, err := events.ParseFilters(values)
+	filters, pagination, err := events.ParseFilters(values, t.loc)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

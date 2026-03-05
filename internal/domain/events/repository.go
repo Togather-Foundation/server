@@ -153,6 +153,7 @@ type Filters struct {
 	Query          string
 	Keywords       []string
 	Domain         string
+	Warnings       []string // side-channel: alias warnings from ParseFilters
 }
 
 type Pagination struct {

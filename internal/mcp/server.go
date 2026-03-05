@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -31,7 +32,7 @@ import (
 //
 // Example:
 //
-//	srv := mcp.NewServer(cfg, eventsService, ingestService, placesService, orgService, baseURL)
+//	srv := mcp.NewServer(cfg, eventsService, ingestService, placesService, orgService, developerService, geocodingService, loc, baseURL)
 //	defer srv.Shutdown(context.Background())
 //
 //	// Serve with configured transport
@@ -44,6 +45,7 @@ type Server struct {
 	orgService       *organizations.Service
 	developerService *developers.Service
 	geocodingService *geocoding.GeocodingService
+	loc              *time.Location // server timezone for default date filtering
 	baseURL          string
 	name             string
 	version          string
@@ -107,6 +109,7 @@ func NewServer(
 	orgService *organizations.Service,
 	developerService *developers.Service,
 	geocodingService *geocoding.GeocodingService,
+	loc *time.Location,
 	baseURL string,
 ) *Server {
 	// Initialize MCP server with full capabilities
@@ -128,6 +131,7 @@ func NewServer(
 		orgService:       orgService,
 		developerService: developerService,
 		geocodingService: geocodingService,
+		loc:              loc,
 		baseURL:          baseURL,
 		name:             cfg.Name,
 		version:          cfg.Version,
@@ -156,7 +160,8 @@ func (s *Server) registerTools() {
 	// Register event tools (server-gau4, server-wako)
 	eventTools := tools.NewEventTools(s.eventsService, s.ingestService, s.baseURL).
 		WithPlaceResolver(s.placesService).
-		WithOrgResolver(s.orgService)
+		WithOrgResolver(s.orgService).
+		WithLoc(s.loc)
 
 	// events tool - list events with filters OR get a specific event by ULID
 	s.mcp.AddTool(eventTools.EventsTool(), eventTools.EventsHandler)
@@ -165,7 +170,7 @@ func (s *Server) registerTools() {
 	s.mcp.AddTool(eventTools.AddEventTool(), eventTools.AddEventHandler)
 
 	// Register place tools (server-9185, server-g8q5)
-	placeTools := tools.NewPlaceTools(s.placesService, s.baseURL)
+	placeTools := tools.NewPlaceTools(s.placesService, s.baseURL).WithLoc(s.loc)
 
 	// places tool - list places with filters OR get a specific place by ULID
 	s.mcp.AddTool(placeTools.PlacesTool(), placeTools.PlacesHandler)
@@ -174,7 +179,7 @@ func (s *Server) registerTools() {
 	// s.mcp.AddTool(placeTools.AddPlaceTool(), placeTools.AddPlaceHandler)
 
 	// Register organization tools (server-slhh, server-5yr5)
-	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL)
+	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL).WithLoc(s.loc)
 
 	// organizations tool - list organizations with filters OR get a specific organization by ULID
 	s.mcp.AddTool(organizationTools.OrganizationsTool(), organizationTools.OrganizationsHandler)
@@ -183,7 +188,7 @@ func (s *Server) registerTools() {
 	// s.mcp.AddTool(organizationTools.AddOrganizationTool(), organizationTools.AddOrganizationHandler)
 
 	// Register search tools (server-rupi)
-	searchTools := tools.NewSearchTools(s.eventsService, s.placesService, s.orgService, s.baseURL)
+	searchTools := tools.NewSearchTools(s.eventsService, s.placesService, s.orgService, s.baseURL).WithLoc(s.loc)
 
 	// search tool - query events, places, and organizations
 	s.mcp.AddTool(searchTools.SearchTool(), searchTools.SearchHandler)
