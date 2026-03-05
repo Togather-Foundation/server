@@ -255,6 +255,12 @@ Based on the inspect output, reason about the DOM structure and propose values f
 | `image` | Selector for the event thumbnail `<img>`. Leave empty if not present. |
 | `pagination` | Selector for the "next page" link. Leave empty if single-page. |
 
+**CSS Modules / hashed class names:** If class names follow the pattern `word-XXXXX`
+(e.g. `title-2yNb5`, `list-3PgZT`), the site uses CSS Modules. The prefix is stable
+but the hash suffix rotates on deploys. **Always use attribute prefix selectors**
+(`[class^='title-']`) instead of exact class selectors (`.title-2yNb5`). See
+`docs/integration/event-platforms.md` section "CSS Modules / Hashed Class Names".
+
 ### Step 6 — Validate with scrape test
 
 **Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 7: write the config with `enabled: false`, validate via `--source-file --dry-run`, then flip `enabled: true` once passing:

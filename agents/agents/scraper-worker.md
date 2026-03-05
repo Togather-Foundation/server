@@ -101,6 +101,12 @@ If headless inspect also returns empty containers, keep `enabled: false` and not
 - `image`: thumbnail `<img>` (omit if absent)
 - `wait_selector`: (Tier 2 only) most specific stable element to wait for before extracting
 
+**CSS Modules / hashed class names:** If class names follow the pattern `word-XXXXX`
+(e.g. `title-2yNb5`, `list-3PgZT`), the site uses CSS Modules. The prefix is stable
+but the hash suffix rotates on deploys. **Always use attribute prefix selectors**
+(`[class^='title-']`) instead of exact class selectors (`.title-2yNb5`). See
+`docs/integration/event-platforms.md` section "CSS Modules / Hashed Class Names".
+
 ### Step 3 — Validate with dry-run (Tier 1 only)
 
 **Tier 1** (static HTML, no headless needed):

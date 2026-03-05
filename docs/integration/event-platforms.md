@@ -647,11 +647,17 @@ headless:
     wait_selector: ".events-container"
     wait_timeout_ms: 10000
 selectors:
-  event_list: ".event-card"
-  name: ".event-title"
-  start_date: ".event-date"
-  url: "a.event-link"
+  event_list: "[class^='list-'] > div"
+  name: "[class^='title-']"
+  start_date: "time[datetime]"
+  url: "a[href*='eventbrite']"
 ```
+
+**CSS Modules note:** Ticket Spot uses CSS Modules which produces class names with
+a stable prefix and a rotating hash suffix (e.g. `list-3PgZT`, `title-2yNb5`).
+Use attribute prefix selectors (`[class^='title-']`) instead of exact class selectors
+(`.title-2yNb5`) to survive hash rotation across deploys. See "CSS Modules / Hashed
+Class Names" below for the general pattern.
 
 See `configs/sources/lula-lounge.yaml` for a working example.
 
@@ -777,8 +783,62 @@ headless:
     wait_selector: ".events-container"          # selector to wait for inside the iframe
     wait_timeout_ms: 10000
 selectors:
-  event_list: ".event-card"
-  name: ".event-title"
-  start_date: ".event-date"
-  url: "a.event-link"
+  event_list: "[class^='list-'] > div"   # prefix selector survives CSS Modules hash rotation
+  name: "[class^='title-']"
+  start_date: "time[datetime]"
+  url: "a[href*='eventbrite']"
 ```
+
+---
+
+## CSS Modules / Hashed Class Names
+
+Some platforms (notably Ticket Spot, many React/Vue/Svelte apps) use **CSS Modules**
+or similar tooling that appends a hash suffix to class names at build time. The pattern
+is `<human-name>-<hash>`, e.g.:
+
+```
+list-3PgZT      →  prefix "list-"
+title-2yNb5     →  prefix "title-"
+details-JMKf7   →  prefix "details-"
+container-a1B2c →  prefix "container-"
+```
+
+The prefix is derived from the original class name in source code and is **stable
+across deploys**. The hash suffix rotates whenever the CSS is rebuilt.
+
+### How to detect
+
+- Multiple class names on the same page following the `word-xxxxx` pattern (5-character
+  alphanumeric suffix is the most common, but length varies)
+- Class names that look semantic but have a random tail
+- Typically seen in React (CSS Modules, styled-components), Vue (scoped styles),
+  Svelte, and build tools like Vite/Webpack
+
+### Selector strategy
+
+**Always use attribute prefix selectors** instead of exact class selectors:
+
+| Fragile (breaks on redeploy) | Resilient (survives hash rotation) |
+|---|---|
+| `.list-3PgZT` | `[class^='list-']` |
+| `.title-2yNb5` | `[class^='title-']` |
+| `.details-JMKf7 > a` | `[class^='details-'] > a` |
+
+CSS attribute selectors:
+- `[class^='prefix-']` — class attribute **starts with** prefix (use when the
+  element has only one class)
+- `[class*='prefix-']` — class attribute **contains** prefix (use when the element
+  has multiple classes and the target isn't first)
+
+**Prefer `^=` (starts-with)** when possible — it's more specific and avoids false
+matches. Fall back to `*=` (contains) only when the hashed class isn't the first
+class on the element.
+
+### Caveats
+
+- If the platform renames the source-level class (e.g. `title` → `heading`), the
+  prefix changes too. This is rare but possible on major redesigns.
+- Very short prefixes (e.g. `a-`, `b-`) may cause false matches. Prefer the most
+  specific prefix available.
+- Verify with `server scrape capture <URL> --format inspect` after writing selectors.

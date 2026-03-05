@@ -20,9 +20,11 @@ name: "lula-lounge"
 # iframe via CDP frame navigation, waits for the event container to render, and
 # extracts HTML from the iframe DOM. CSS selectors below target iframe content.
 #
-# NOTE: Ticket Spot CSS classes are obfuscated (e.g. list-3PgZT, title-2yNb5)
-# and may change without notice. If scraping breaks, re-inspect the iframe DOM
-# with: SCRAPER_HEADLESS_ENABLED=true ./server scrape capture https://www.lula.ca/ --format inspect
+# NOTE: Ticket Spot uses CSS Modules — class names have a stable human-readable
+# prefix with a hash suffix that rotates on deploys (e.g. list-3PgZT, title-2yNb5).
+# Selectors below use attribute prefix matching ([class^="title-"]) to survive
+# hash rotation. If scraping breaks, re-inspect the iframe DOM with:
+#   SCRAPER_HEADLESS_ENABLED=true ./server scrape capture https://www.lula.ca/ --format inspect
 #
 # Wix app instance ID: 40330713-f873-4545-99c5-64c0078156b6
 # Ticket Spot app def ID: 13628e78-3e5c-8b05-bd36-18fe0e00ada3
@@ -43,8 +45,8 @@ headless:
     wait_timeout_ms: 10000
 selectors:
   # Selectors target Ticket Spot iframe DOM (entered via iframe config above).
-  # These are obfuscated class names — verify if scraping breaks.
-  event_list: ".list-3PgZT > div"
-  name: ".title-2yNb5"
+  # Prefix-based attribute selectors survive CSS Modules hash rotation.
+  event_list: "[class^='list-'] > div"
+  name: "[class^='title-']"
   start_date: "time[datetime]"
   url: "a[href*='eventbrite']"
