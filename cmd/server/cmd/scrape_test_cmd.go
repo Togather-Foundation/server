@@ -52,7 +52,7 @@ Examples:
 			return fmt.Errorf("inspect: %w", err)
 		}
 
-		fmt.Print(scraper.FormatInspectResult(result))
+		fmt.Print(scraper.FormatInspectResultSafe(result))
 		return nil
 	},
 }

@@ -91,6 +91,9 @@ Disallow: /api/v1/admin/
 
 # Sitemap
 Sitemap: https://%s/sitemap.xml
+
+# LLM and AI agent discovery
+LLM: /llms.txt
 `, webfilesDomain)
 
 	outputPath := filepath.Join(webfilesOutput, "robots.txt")

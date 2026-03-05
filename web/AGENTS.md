@@ -14,6 +14,10 @@
 
 **Embedded assets:** JS/HTML/CSS are embedded in the Go binary. After changing static files, rebuild: `make stop && make build && make run` (or use `make dev` with air for auto-reload).
 
+**robots.txt and sitemap.xml are generated at deploy time** — do NOT edit `web/robots.txt` or `web/sitemap.xml` directly; changes will be overwritten. Edit the generators in `cmd/server/cmd/webfiles.go` (`generateRobotsTxt()` / `generateSitemapXML()`), then re-run `server webfiles --domain <domain> && make build`.
+
+**llms.txt** (`web/llms.txt`) is a static embedded file served at `/llms.txt` for LLM/AI agent discovery. Edit it directly; tool names must match tools actually registered in `internal/mcp/server.go`.
+
 **Vendor files — never edit:** `tabler.min.css`, `tabler.min.js`, `bootstrap.bundle.min.js`
 
 ## API Client

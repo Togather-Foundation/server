@@ -1,0 +1,118 @@
+# Togather / Shared Events Library (SEL)
+# llms.txt — LLM and AI agent discovery file
+# See: https://llmstxt.org
+
+## What is this?
+
+Togather is open infrastructure for local event discovery. The Shared Events
+Library (SEL) aggregates, validates, and serves local event data as a public
+commons under CC0 license.
+
+Each SEL instance serves a geographic node (e.g. Toronto). Nodes federate via
+ActivityPub.
+
+## Preferred: MCP Endpoint (for agents with MCP configured)
+
+If your agent runtime supports MCP (Claude Desktop, OpenCode, etc.), connect directly
+for structured tool access — one call returns typed, filtered results with no JSON parsing.
+
+Protocol: Model Context Protocol (MCP), streamable HTTP transport
+Endpoint: /mcp
+Auth: API key required (Bearer token)
+Get a free key: /dev/login (GitHub OAuth, instant)
+
+### Available MCP Tools
+
+- events             — list events with filters (date, location, keyword, category) OR get a
+                       single event by ULID (returns full JSON-LD)
+- add_event          — submit a new event from JSON-LD (requires API key)
+- places             — list venues/locations with filters OR get a single place by ULID
+- organizations      — list event organizers with filters OR get a single organization by ULID
+- search             — full-text search across events, places, and organizations
+
+### MCP Resources
+
+- JSON-LD context for events
+- OpenAPI specification
+- Server metadata
+
+Full MCP integration guide: /api/docs
+
+## Fallback: REST API (no MCP required, no auth for reads)
+
+If MCP is not available, use the REST API directly. Filter server-side to avoid
+fetching large result sets.
+
+### Quick-start queries (no auth needed)
+
+Search by keyword:
+  GET /api/v1/events?search=open+source&limit=10
+
+Filter by date range:
+  GET /api/v1/events?startDate=2026-03-01&endDate=2026-03-31&limit=20
+
+Combine keyword + date:
+  GET /api/v1/events?search=tech&startDate=2026-03-01&limit=10
+
+Get a single event by ULID:
+  GET /api/v1/events/{ulid}
+
+### Query parameters for GET /api/v1/events
+
+Note: param names are camelCase (matching JSON-LD field names). Snake_case
+aliases (start_date, end_date) are silently ignored — use the forms below.
+
+- search       — full-text keyword search (title, description)
+- keywords     — comma-separated keyword tags
+- startDate    — ISO 8601 date, e.g. 2026-03-01  (NOT start_date)
+- endDate      — ISO 8601 date, e.g. 2026-03-31  (NOT end_date)
+- limit        — max results (default 50, max 100)
+- after        — pagination cursor (from previous response next_cursor)
+
+### Response shape (JSON-LD — field names are Schema.org, not REST conventions)
+
+The API returns JSON-LD. Field names differ from typical REST APIs:
+
+  Response envelope:
+    .items[]          — array of events (NOT .events[] or .data[])
+    .next_cursor      — pagination cursor for the next page
+
+  Per event:
+    .name             — event title (NOT .title)
+    .startDate        — ISO 8601 start time (NOT .start_date or .starts_at)
+    .endDate          — ISO 8601 end time
+    .location.name    — venue name (NOT .location_name or .venue)
+    .location.address.streetAddress   — street
+    .location.address.addressLocality — city
+    .["@id"]          — canonical URL, e.g. https://<node>/events/<ulid>
+    .description      — event description
+    .organizer.name   — organizer name
+
+  Minimal jq to extract title + time + venue:
+    curl -s '<url>' | jq -r '.items[] | "\(.startDate) — \(.name) — \(.location.name // "?")"'
+
+### Other endpoints
+
+Read places (no auth):        GET /api/v1/places?search=...&limit=10
+Read organizations (no auth): GET /api/v1/organizations?search=...&limit=10
+Submit events (API key):      POST /api/v1/events
+Interactive docs:             /api/docs
+OpenAPI spec (JSON):          /api/v1/openapi.json
+OpenAPI spec (YAML):          /api/v1/openapi.yaml
+
+## Key URLs
+
+Health check:   /health
+Server version: /version
+SEL profile:    /.well-known/sel-profile
+Sitemap:        /sitemap.xml
+
+## License
+
+All event data served by this node is CC0 (public domain dedication).
+Source attribution is preserved in provenance metadata.
+
+## Contact
+
+Togather Foundation: info@togather.foundation
+Website: https://togather.foundation

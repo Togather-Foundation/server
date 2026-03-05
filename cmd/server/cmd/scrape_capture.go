@@ -119,7 +119,7 @@ Examples:
 			if inspErr != nil {
 				return fmt.Errorf("capture: inspect: %w", inspErr)
 			}
-			output := scraper.FormatInspectResult(result)
+			output := scraper.FormatInspectResultSafe(result)
 			if scrapeCaptureOutput != "" {
 				if writeErr := os.WriteFile(scrapeCaptureOutput, []byte(output), 0o644); writeErr != nil {
 					return fmt.Errorf("capture: write output file: %w", writeErr)

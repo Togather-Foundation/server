@@ -1,0 +1,14 @@
+name: "akin-collective"
+# Tier 0 (JSON-LD). Squarespace site — full JSON-LD on event detail pages.
+# Listing page uses a JS-rendered calendar block; only the noscript fallback
+# (~3 events) is visible to Colly. Full coverage would require Tier 2 headless.
+url: "https://www.akincollective.com/calendar"
+tier: 0
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+follow_event_urls: true
+event_url_pattern: "/calendar/*"
+skip_multi_session_check: true
