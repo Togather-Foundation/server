@@ -279,9 +279,6 @@ curl "https://${NODE_DOMAIN}/version" | jq .
 bd query 'status=open'
 # bd close <id> --reason "Released in vX.Y.Z"
 
-# Sync beads
-bd dolt push
-
 # Push any final state changes
 git push
 ```
