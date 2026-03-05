@@ -23,6 +23,7 @@ type ScrapeOptions struct {
 	DryRun           bool
 	Limit            int               // 0 = no limit
 	SourcesDir       string            // default: "configs/sources"
+	SourceFile       string            // if set, load a single YAML config from this path (bypasses DB and SourcesDir)
 	TierFilter       int               // -1 = all tiers; 0, 1, … = restrict to that tier
 	Transport        http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
 	RequestTimeout   time.Duration     // 0 = use the fetchTimeout package const
@@ -241,30 +242,45 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 
 // ScrapeSource loads source configs (DB-first, YAML fallback), locates the
 // named source, and scrapes it according to its Tier.
+//
+// When opts.SourceFile is set the config is loaded directly from that YAML
+// file, bypassing the DB and SourcesDir lookup entirely. The source is run
+// regardless of its enabled flag (useful for testing disabled or draft configs).
+// sourceName may be empty when SourceFile is set — the name is taken from the
+// file's name field.
 func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts ScrapeOptions) (ScrapeResult, error) {
-	if opts.SourcesDir == "" {
-		opts.SourcesDir = "configs/sources"
-	}
-
-	configs, err := s.loadSourceConfigs(ctx, opts)
-	if err != nil {
-		return ScrapeResult{}, fmt.Errorf("loading source configs: %w", err)
-	}
-
 	var found *SourceConfig
-	for i := range configs {
-		if strings.EqualFold(configs[i].Name, sourceName) {
-			found = &configs[i]
-			break
+
+	if opts.SourceFile != "" {
+		cfg, err := LoadSourceConfig(opts.SourceFile)
+		if err != nil {
+			return ScrapeResult{}, fmt.Errorf("loading source file %q: %w", opts.SourceFile, err)
 		}
-	}
+		found = &cfg
+	} else {
+		if opts.SourcesDir == "" {
+			opts.SourcesDir = "configs/sources"
+		}
 
-	if found == nil {
-		return ScrapeResult{}, fmt.Errorf("source not found: %s", sourceName)
-	}
+		configs, err := s.loadSourceConfigs(ctx, opts)
+		if err != nil {
+			return ScrapeResult{}, fmt.Errorf("loading source configs: %w", err)
+		}
 
-	if !found.Enabled {
-		return ScrapeResult{}, fmt.Errorf("source is disabled: %s", sourceName)
+		for i := range configs {
+			if strings.EqualFold(configs[i].Name, sourceName) {
+				found = &configs[i]
+				break
+			}
+		}
+
+		if found == nil {
+			return ScrapeResult{}, fmt.Errorf("source not found: %s", sourceName)
+		}
+
+		if !found.Enabled {
+			return ScrapeResult{}, fmt.Errorf("source is disabled: %s", sourceName)
+		}
 	}
 
 	// --headless flag: override source tier to 2 and set a default WaitSelector.

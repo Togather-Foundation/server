@@ -80,6 +80,7 @@ func init() {
 	// Flags for `scrape url` and `scrape source` — headless override
 	scrapeURLCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Scrape URL using headless browser/Tier 2 (requires SCRAPER_HEADLESS_ENABLED=true)")
 	scrapeSourceCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Force Tier 2 headless browser scraping (requires SCRAPER_HEADLESS_ENABLED=true)")
+	scrapeSourceCmd.Flags().StringVar(&scrapeSourceFile, "source-file", "", "path to a YAML source config file to load directly (bypasses DB and sources dir; runs even if disabled)")
 
 	// Flags for `scrape test`
 	scrapeTestCmd.Flags().StringVar(&scrapeTestSelectorFile, "config", "", "path to a YAML source config file to load selectors from")

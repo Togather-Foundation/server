@@ -17,6 +17,7 @@ import (
 )
 
 var scrapeHeadless bool
+var scrapeSourceFile string
 
 // scrapeURLCmd scrapes a single URL.
 var scrapeURLCmd = &cobra.Command{
@@ -147,7 +148,7 @@ Examples:
 
 // scrapeSourceCmd scrapes a named configured source.
 var scrapeSourceCmd = &cobra.Command{
-	Use:   "source <name>",
+	Use:   "source [name]",
 	Short: "Scrape events from a named configured source",
 	Long: `Load the named source from the sources directory and scrape it.
 
@@ -155,14 +156,36 @@ If the source config has tier: 2, headless browser scraping is used automaticall
 (requires SCRAPER_HEADLESS_ENABLED=true). The --headless flag forces Tier 2 mode
 even for sources not configured with tier: 2.
 
+Use --source-file to load a YAML config directly from a file path instead of
+the sources directory. This bypasses the DB and directory lookup, and runs the
+source regardless of its enabled flag — useful for testing draft or disabled
+configs. When --source-file is given the [name] argument is optional (the name
+is taken from the file's name field).
+
 Examples:
   server scrape source toronto-symphony-orch
   server scrape source toronto-symphony-orch --dry-run
   server scrape source toronto-symphony-orch --limit 5
-  server scrape source mysite --headless`,
-	Args: cobra.ExactArgs(1),
+  server scrape source mysite --headless
+  server scrape source --source-file /tmp/my-draft.yaml --dry-run`,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if scrapeSourceFile != "" {
+			// --source-file: name arg is optional
+			if len(args) > 1 {
+				return fmt.Errorf("accepts at most 1 arg when --source-file is set, received %d", len(args))
+			}
+			return nil
+		}
+		if len(args) != 1 {
+			return fmt.Errorf("accepts 1 arg (source name), received %d", len(args))
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		sourceName := args[0]
+		sourceName := ""
+		if len(args) > 0 {
+			sourceName = args[0]
+		}
 
 		logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 
@@ -181,6 +204,7 @@ Examples:
 			DryRun:           scrapeDryRun,
 			Limit:            scrapeLimit,
 			SourcesDir:       scrapeSourceDir,
+			SourceFile:       scrapeSourceFile,
 			Transport:        buildScrapeTransport(cmd, logger),
 			HeadlessOverride: scrapeHeadless,
 		}
