@@ -1,8 +1,12 @@
 name: "hot-docs"
-# URL is valid (200 OK) but site has no Event JSON-LD on any page (listing or detail).
-# Disabled: Tier 0 finds 0 events; would need Tier 1 CSS selectors to extract data.
-# Fix: implement Tier 1 selectors for hotdocs.ca event listing + detail pages.
-url: "https://hotdocs.ca/whats-on/films"
+# Disabled: Event data is served via Agile Technologies box office widget
+# (boxoffice.hotdocs.ca/websales/agile_widget.ashx?orgid=2338&epgid=210).
+# The widget JS loads event listings from a third-party domain; even with
+# Rod headless rendering (25s wait) the event items do not appear in the main
+# page DOM (body only shows the date-picker shell, ~30-82KB).
+# Fix: Use Agile box office API directly (if publicly accessible), or scrape
+# the dedicated film detail pages once individual film slugs are known.
+url: "https://hotdocs.ca/whats-on/watch-cinema"
 tier: 0
 schedule: "weekly"
 trust_level: 7

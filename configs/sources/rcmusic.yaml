@@ -1,6 +1,10 @@
 name: "rcmusic"
-# Disabled: Events loaded via AWS-backed search JS; static HTML has empty containers 2026-02-21.
-# Needs Tier 2 (Rod) for JS rendering.
+# Disabled: Events loaded via AWS CloudSearch-backed JS widget (data-template=
+# "TPSPT.AWSFacetedSearchResults_Events"). Even with Tier 2 headless (Rod, 25s wait)
+# the page renders only ~7KB with empty event containers — JS fetches results from
+# an AWS endpoint that does not appear publicly accessible. Tried 2026-03-04.
+# Fix: reverse-engineer the AWS CloudSearch API endpoint used by the JS widget,
+# or check if rcmusic.com exposes a calendar feed or API.
 url: "https://www.rcmusic.com/events-and-performances"
 tier: 0
 schedule: "daily"

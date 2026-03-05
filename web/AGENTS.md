@@ -14,9 +14,19 @@
 
 **Embedded assets:** JS/HTML/CSS are embedded in the Go binary. After changing static files, rebuild: `make stop && make build && make run` (or use `make dev` with air for auto-reload).
 
-**robots.txt and sitemap.xml are generated at deploy time** — do NOT edit `web/robots.txt` or `web/sitemap.xml` directly; changes will be overwritten. Edit the generators in `cmd/server/cmd/webfiles.go` (`generateRobotsTxt()` / `generateSitemapXML()`), then re-run `server webfiles --domain <domain> && make build`.
+## Generated files
 
-**llms.txt** (`web/llms.txt`) is a static embedded file served at `/llms.txt` for LLM/AI agent discovery. Edit it directly; tool names must match tools actually registered in `internal/mcp/server.go`.
+**`robots.txt` and `sitemap.xml` are generated at deploy time** by `cmd/server/cmd/webfiles.go` — do NOT edit `web/robots.txt` or `web/sitemap.xml` directly; changes will be wiped on the next deploy.
+
+To make permanent changes:
+1. Edit `generateRobotsTxt()` or `generateSitemapXML()` in `cmd/server/cmd/webfiles.go`.
+2. Regenerate and rebuild: `server webfiles --domain <domain> --output ./web && make build`.
+
+**Committed copies use `localhost:8080`** as a placeholder domain — this is expected and correct for local dev.
+
+**`robots.txt.template` / `sitemap.xml.template`** in `web/` are reference files only; the generator does NOT read them. Changes there have no effect.
+
+**`llms.txt`** (`web/llms.txt`) is a static file — edit it directly (unlike robots.txt/sitemap.xml). Tool names must match those registered in `internal/mcp/server.go`.
 
 **Vendor files — never edit:** `tabler.min.css`, `tabler.min.js`, `bootstrap.bundle.min.js`
 

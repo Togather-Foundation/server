@@ -247,9 +247,6 @@ make test-production-smoke
 bd query 'title~"release" AND status=open'
 # bd close <id> --reason "Released in v$VERSION"
 
-# Sync beads state
-bd dolt push
-
 # Announce to stakeholders
 ```
 

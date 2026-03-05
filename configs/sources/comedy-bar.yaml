@@ -1,12 +1,16 @@
 name: "comedy-bar"
-# Tier 2 (disabled). Custom JS calendar — events injected client-side via
-# $('<div class="render-event"...>') JavaScript. No server-rendered event HTML.
-# Requires Rod headless browser (srv-h264z).
-# URL: https://comedybar.ca/public/event
-url: "https://comedybar.ca/public/event"
+# Tier 2. Server-rendered event listings — Colly works without headless.
+# Previous URL https://comedybar.ca/public/event was broken (404).
+# New URL https://comedybar.ca/events/1 confirmed working (634 events).
+url: "https://comedybar.ca/events/1"
 tier: 2
 schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
+selectors:
+  event_list: "div.card"
+  name: ".card-title"
+  start_date: ".list-header"
+  url: "a.card-title"

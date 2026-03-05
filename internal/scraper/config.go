@@ -73,6 +73,16 @@ type HeadlessConfig struct {
 	// WaitTimeoutMs is the maximum time (ms) to wait for WaitSelector.
 	// 0 means use the RodExtractor default (10 000 ms).
 	WaitTimeoutMs int `yaml:"wait_timeout_ms" json:"wait_timeout_ms"`
+	// WaitNetworkIdle instructs the scraper to additionally wait for all
+	// in-flight network requests to settle (500 ms idle window) after
+	// WaitSelector resolves. Useful for pages whose content is loaded via
+	// async XHR/fetch requests that fire after the initial DOM is ready (e.g.
+	// third-party event widget embeds). Adds up to WaitTimeoutMs of extra wait.
+	WaitNetworkIdle bool `yaml:"wait_network_idle" json:"wait_network_idle"`
+	// Undetected launches the browser page with stealth evasions
+	// (patches navigator.webdriver, fake plugins, etc.) to reduce the chance
+	// of bot-detection by sites that check for headless Chrome fingerprints.
+	Undetected bool `yaml:"undetected" json:"undetected"`
 	// PaginationBtn is a CSS selector for a "load more" / "next" button to click
 	// for JS-rendered pagination. Empty means no pagination.
 	PaginationBtn string `yaml:"pagination_button" json:"pagination_button"`

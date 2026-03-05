@@ -1,12 +1,22 @@
 name: "roy-thomson-massey-hall"
-# Corrected URL: old mfrh.org/events 404s; roythomsonhall.com and masseyhall.com are
-# the canonical domains — both are JS-rendered SPAs returning ~75 bytes of static HTML.
-# Disabled: no Event JSON-LD extractable from static HTML.
-# Fix: needs Tier 2 (Rod headless browser) — see bead srv-h264z.
-url: "https://www.roythomsonhall.com/"
-tier: 0
+# Tier 2 headless scraper for Massey Hall ticket listings (masseyhall.mhrth.com).
+# The React SPA renders event cards once JS executes; wait for .c-card--event.
+# Roy Thomson Hall events are covered by the separate roy-thomson-hall.yaml config.
+# Selectors match the shared mhrth.com card component — same as roy-thomson-hall.yaml.
+url: "https://masseyhall.mhrth.com/tickets/"
+tier: 2
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
-max_pages: 5
+enabled: true
+max_pages: 3
+headless:
+  wait_selector: ".c-card--event"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "div.c-card--event"
+  name: "a.c-card__cover-link span.u-hidden-visually"
+  start_date: "div.c-card__time time"
+  url: "a.c-card__cover-link"
+  image: "figure.c-card__image img"
+  pagination: "li.c-pagination__item a"

@@ -14,6 +14,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/go-rod/stealth"
 	"github.com/rs/zerolog"
 )
 
@@ -250,7 +251,13 @@ func (e *RodExtractor) scrapeSinglePage(
 		return nil, "", err
 	}
 
-	page, err := browser.Page(proto.TargetCreateTarget{})
+	var page *rod.Page
+	var err error
+	if config.Headless.Undetected {
+		page, err = stealth.Page(browser)
+	} else {
+		page, err = browser.Page(proto.TargetCreateTarget{})
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("rod: failed to open new page: %w", err)
 	}
@@ -303,6 +310,15 @@ func (e *RodExtractor) scrapeSinglePage(
 			Str("source", config.Name).
 			Str("selector", waitSelector).
 			Msg("rod: wait selector timed out, attempting extraction anyway")
+	}
+
+	// Optionally wait for in-flight XHR/fetch requests to settle before
+	// extracting HTML. The idle window is 500 ms (no new requests for 500 ms).
+	// This is the key fix for async widget embeds (eventscalendar.co etc.) that
+	// populate the DOM after the initial selector is present.
+	if config.Headless.WaitNetworkIdle {
+		waitIdle := page.Timeout(waitTimeout).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)
+		waitIdle()
 	}
 
 	// Extract rendered HTML.
@@ -422,8 +438,9 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 }
 
 // extractDateFromSelection finds a child element matching selector in the goquery
-// selection and returns the value of its datetime attribute, falling back to its
-// text content.
+// selection and returns the value of its datetime attribute, falling back to an
+// ISO 8601 date extracted from its id attribute (e.g. id="date-2026-03-04"),
+// then falling back to its text content.
 func extractDateFromSelection(s *goquery.Selection, selector string) string {
 	el := s.Find(selector).First()
 	if el.Length() == 0 {
@@ -432,6 +449,15 @@ func extractDateFromSelection(s *goquery.Selection, selector string) string {
 	// Prefer datetime attribute (standard HTML5 time element).
 	if dt, exists := el.Attr("datetime"); exists && dt != "" {
 		return strings.TrimSpace(dt)
+	}
+	// Some sites encode the date in the element's id attribute with a well-known
+	// prefix, e.g. id="date-2026-03-04". Extract the ISO date portion.
+	if id, exists := el.Attr("id"); exists && strings.HasPrefix(id, "date-") {
+		candidate := strings.TrimPrefix(id, "date-")
+		// Validate it looks like YYYY-MM-DD before returning.
+		if len(candidate) == 10 && candidate[4] == '-' && candidate[7] == '-' {
+			return candidate
+		}
 	}
 	return strings.TrimSpace(el.Text())
 }

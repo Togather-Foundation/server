@@ -41,7 +41,6 @@ make ci
 
 # 5. Update bead and push
 bd close <id> --reason "description"
-bd dolt push
 git push
 ```
 

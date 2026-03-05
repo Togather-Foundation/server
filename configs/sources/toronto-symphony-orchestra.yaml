@@ -1,11 +1,20 @@
 name: "toronto-symphony-orchestra"
-# Corrected URL: /concerts-events 404s; the calendar lives at /concerts-and-events/calendar
-# Disabled: site is a JS-rendered React SPA — static HTML has no Event JSON-LD.
-# Fix: needs Tier 2 (Rod headless browser) — see bead srv-h264z.
+# Tier 2 headless scraper for TSO calendar listing at /concerts-and-events/calendar.
+# Events are rendered by a React SPA after an AJAX call; the calendar-performance
+# elements appear once the JS completes. Date is extracted from the id attribute
+# (id="date-YYYY-MM-DD") on each a.calendar-performance link.
 url: "https://www.tso.ca/concerts-and-events/calendar"
-tier: 0
+tier: 2
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 5
+headless:
+  wait_selector: ".calendar-performance"
+  wait_timeout_ms: 20000
+selectors:
+  event_list: "li:has(a.calendar-performance)"
+  name: "h4.calendar-performance__title"
+  start_date: "a.calendar-performance"
+  url: "a.calendar-performance"

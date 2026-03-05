@@ -1,11 +1,21 @@
 name: "electric-island"
-# Electric Island Festival (Toronto). Webflow site — events section shows only
-# season date headers (MAY/JUNE/AUG/SEPT); individual lineup cards are JS-rendered.
-# Tickets are on Ticketweb. Disabled until Tier 2 (Rod) is implemented (srv-h264z).
-url: "https://www.electricisland.to/events"
+# Tier 2 (headless). Webflow CMS — artist/event cards at /artists page.
+# Each card: div.artist-collection-item with artist name, date, stage info.
+# Date is inside div.date_stage_wrap as second div.u-text-large (e.g. "May 16, 2026").
+# Festival runs May–August; cards visible year-round as seasonal lineup.
+# Organization match: Electric Island (seasonal Toronto music festival)
+url: "https://www.electricisland.to/artists"
 tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
-notes: "Webflow site. Season date headers are server-rendered but individual event cards require JS. Tier 2 required."
+enabled: true
+max_pages: 1
+headless:
+  wait_selector: "div.artist-collection-item"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "div.artist-collection-item"
+  name: "div.u-h3"
+  start_date: "div.date_stage_wrap"
+  url: "a.artist_card"

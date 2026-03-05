@@ -1,13 +1,13 @@
 name: "burdock-brewery"
-# INVESTIGATION COMPLETE: Burdock Brewery uses InLight Labs Events Calendar JS embed.
-# Website events do NOT render statically or in headless captures (events loaded async via JS).
-# Showpass API (venue 17330) is publicly available and working:
-#   - 31 events returned with name, date, image, URL
-#   - https://www.showpass.com/api/public/events/?venue=17330
-# HOWEVER: The SEL scraper requires either:
-#   - CSS selectors on rendered HTML (Tier 2 headless) — events won't render within wait window
-#   - JSON-LD in page HTML (Tier 1) — Showpass API is raw JSON, not JSON-LD
-# DECISION: Keep disabled until events reliably render in headless or alternative approach found.
+# DISABLED: Showpass iframe widget uses AngularJS templates that never render in headless context
+# Shopify page embeds: <iframe src="https://www.showpass.com/w/tickets/events/list/17330/...">
+# Direct capture of both parent page and Showpass iframe shows [[event.name]] template syntax
+# instead of rendered event names, indicating cross-origin JS context barrier.
+# Original eventscalendar.co embed (data-project-id="proj_T8vacNv8cWWeEQAQwLKHb") also unscrapeable.
+# Showpass API (https://showpass.com/api/public/events/?venue=17330) returns 301 redirect.
+# No public Showpass GraphQL or REST API found.
+# Related bead: srv-71948
+# Fix: Contact Burdock or Showpass for iCal export or API token; or use manual venue import.
 url: "https://burdockbrewery.com/pages/music-hall"
 tier: 2
 schedule: "weekly"

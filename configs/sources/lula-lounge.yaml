@@ -1,7 +1,9 @@
 name: "lula-lounge"
-# Tier 2 (disabled). Wix + React site — events are JS-rendered.
-# Lula is a major Toronto music/arts venue (world music, jazz, afrobeat).
-# Requires Rod headless browser (srv-h264z).
+# Tier 2 (disabled). lula.ca/events returns 404 — Wix removed the events page.
+# lula.ca homepage links out to Eventbrite and Fever; no dedicated events listing.
+# Eventbrite organizer page (https://www.eventbrite.ca/o/lula-lounge-toronto-4108527983)
+# does not render event cards in the headless scraper.
+# Needs a new source URL before this can be enabled.
 url: "https://www.lula.ca/events"
 tier: 2
 schedule: "weekly"

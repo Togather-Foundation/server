@@ -1,10 +1,16 @@
 name: "heritage-toronto"
-# Disabled: Events loaded via JS/AJAX; no event hrefs in static HTML 2026-02-21.
-# Needs Tier 2 (Rod) for JS rendering.
+# Disabled: Currently off-season — no upcoming events listed (2026-03-04).
+# Page is static WordPress block theme (server-side rendered, no JS required).
+# When in season, events render as li.wp-block-post with h2.wp-block-post-title > a.
+# Re-enable and run scrape sync when season resumes (typically spring/summer).
 url: "https://www.heritagetoronto.org/events/"
-tier: 0
+tier: 1
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
 max_pages: 3
+selectors:
+  event_list: "li.wp-block-post"
+  name: "h2.wp-block-post-title a"
+  url: "h2.wp-block-post-title a"

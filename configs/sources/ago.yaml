@@ -1,9 +1,21 @@
 name: "ago"
-# Disabled: HTTP 403 on all event listing pages 2026-02-21. Needs Tier 2 (Rod/authenticated scrape).
-url: "https://ago.ca/whats-on"
-tier: 0
+# Art Gallery of Ontario (AGO) — Drupal 9 + Cloudflare. 
+# Tier 2 (headless) with undetected: true bypass for Cloudflare challenge.
+# Event listing at /events/browse shows 29 events on headless capture (2026-03-05).
+url: "https://ago.ca/events/browse"
+tier: 2
 schedule: "daily"
 trust_level: 9
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
+headless:
+  wait_selector: "div.ago-card"
+  wait_timeout_ms: 15000
+  undetected: true
+selectors:
+  event_list: "div.ago-card"
+  name: "span.views-field-title a"
+  start_date: "div.date-time-info"
+  url: "a[href*='/events/']"
+  image: "img"

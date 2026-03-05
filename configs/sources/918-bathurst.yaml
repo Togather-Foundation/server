@@ -1,13 +1,28 @@
 name: "918-bathurst"
-# Tier 2 (disabled). WordPress + The Events Calendar (Tribe) photo view —
-# events are JS-rendered (AJAX). The tribe-no-js flag confirms JS dependency.
-# /events/list/ returns 404; default /events/ uses photo view.
-# Requires Rod headless browser (srv-h264z).
-# URL: https://918bathurst.com/events/
-url: "https://918bathurst.com/events/"
+# Tier 2 (Rod headless). WordPress + The Events Calendar (Tribe) list view.
+# URL changed from /events/ (photo view, 404s and shows 0 events) to /ourevents/list/
+# (list view, confirmed working with headless).
+# Currently 0 upcoming events (off-season as of 2026-03-04); selectors correct for
+# when events are present. The Tribe list view renders event articles as:
+#   article.tribe-events-calendar-list__event-article
+#   - h3.tribe-events-calendar-list__event-title a (name + URL)
+#   - time.tribe-events-calendar-list__event-datetime (datetime attr or text)
+# Past events fallback (visible when no upcoming): uses
+#   article.tribe-events-calendar-latest-past__event with
+#   h3.tribe-events-calendar-latest-past__event-title a (title + url)
+#   time.tribe-events-calendar-latest-past__event-datetime (datetime attr)
+url: "https://918bathurst.com/ourevents/list/"
 tier: 2
-schedule: "daily"
+schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 3
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+selectors:
+  event_list: "article.tribe-events-calendar-list__event-article"
+  name: "h3.tribe-events-calendar-list__event-title a"
+  start_date: "time.tribe-events-calendar-list__event-datetime"
+  url: "h3.tribe-events-calendar-list__event-title a"

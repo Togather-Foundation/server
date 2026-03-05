@@ -21,13 +21,15 @@ writing selectors.
 |-------|------|---------|-------|
 | `headless.wait_selector` | string | `body` | CSS selector to wait for before extracting. Use the most specific stable element on the page. |
 | `headless.wait_timeout_ms` | int | 10000 | Max ms to wait for `wait_selector`. Increase for slow SPAs. |
+| `headless.wait_network_idle` | bool | false | After `wait_selector` resolves, also wait for XHR/fetch requests to settle (500 ms idle window). Use for async widget embeds that populate the DOM after the initial selector appears. |
+| `headless.undetected` | bool | false | Enable stealth evasions (patches `navigator.webdriver`, fake plugins) for sites that block headless Chrome. |
 | `headless.pagination_button` | string | — | CSS selector for a JS "next page" button. If the site uses URL-based pagination, use `selectors.pagination` instead. |
 | `headless.rate_limit_ms` | int | 1000 | Delay between page loads in ms. |
 | `headless.headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
 
 ## Status Summary
 
-### Tier 1 (validated 2026-02-21)
+### Tier 1 (validated 2026-03-04)
 
 | Source | Status | Events | Notes |
 |--------|--------|--------|-------|
@@ -41,36 +43,45 @@ writing selectors.
 | coc | **enabled** | 7/page | coc.ca/tickets/2526-season; season URL — needs annual update |
 | national-ballet | **enabled** | 9/page | national.ballet.ca/performances/202627-season/; season URL |
 | rom | **enabled** | 120/page | rom.on.ca/whats-on/events; Drupal hidden-span duplication in names |
-| hot-docs | disabled | — | JS-rendered; static `<main>` is empty — needs Tier 2 selector authoring |
-| toronto-symphony-orchestra | disabled | — | JS-rendered React SPA — needs Tier 2 selector authoring |
-| roy-thomson-massey-hall | disabled | — | JS-rendered SPA (~75 bytes static HTML) — needs Tier 2 selector authoring |
-| thepowerplant | disabled | — | Next.js SPA — needs Tier 2 selector authoring |
-| rcmusic | disabled | — | AWS CloudSearch dynamic load — needs Tier 2 or API |
+| dance-immersion | **enabled** | 10 | `/category/events/` WordPress archive; `article.post-entry` containers |
+| heritage-toronto | disabled | 0 (seasonal) | Selectors ready (`li.wp-block-post`); off-season, re-enable in spring |
+| east-end-arts | disabled | — | `article` containers present but no date elements in DOM |
+| hot-docs | disabled | — | Agile box office widget (third-party JS); events never appear in DOM even headless |
+| rcmusic | disabled | — | AWS CloudSearch JS widget into empty div — confirmed non-viable |
 | ago | disabled | — | 403 Cloudflare bot protection |
-| glad-day-bookshop | disabled | — | robots.txt `Disallow: /*` — contact site owner |
+| glad-day-bookshop | disabled | — | `robots.txt` has `Disallow: /*` — contact site owner |
+| crows-theatre | disabled | — | Context deadline / Rod navigate timeout on both Tier 1 and Tier 2; likely Cloudflare |
+| imagine-native | disabled | — | `/year-round/events/` returns 404; no replacement events listing found |
+| inside-out | disabled | — | Eventive JS widget; DOM empty after headless render |
+| theatre-passe-muraille | disabled | — | Elementor; dates in unstyled `<p>` tags with no consistent selector |
+| workman-arts | disabled | — | AJAX filter + Showpass widget; events never in static or headless DOM |
+| st-lawrence-market | disabled | — | Anti-bot skeleton response (all event slots empty); not viable |
 
-### Tier 2 (validated 2026-02-25)
+### Tier 2 (validated 2026-03-04)
 
 Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 `server scrape capture <URL> --format inspect` against a headless Rod browser.
 
 | Source | Status | Events | Platform | Notes |
 |--------|--------|--------|----------|-------|
-| 918-bathurst | **enabled** | 0 (seasonal) | WordPress | URL set to `/ourevents/photo/`; no upcoming events at time of review |
+| 918-bathurst | **enabled** | 0 (seasonal) | WordPress | URL changed to `/ourevents/list/`; off-season at time of review |
 | amici-ensemble | **enabled** | 4 | Elementor WP | `#concerts` section; column-based layout |
 | beaches-jazz | **enabled** | 6 (seasonal) | WordPress | Seasonal festival; date headers used as name fallback |
-| comedy-bar | **enabled** | 643 | Custom WP | URL changed to `/events/1` (Bloor venue); `div.card` containers |
-| electric-island | **enabled** | 116 | Webflow | URL changed to `/artists` (Webflow CMS items); `/events` only has season headers |
+| comedy-bar | **enabled** | 634 | Custom WP | URL changed to `/events/1` (Bloor venue); `div.card` containers |
+| electric-island | **enabled** | 28 | Webflow | URL changed to `/artists` (Webflow CMS items); `/events` only has season headers |
+| four-oh-one-richmond | **enabled** | 2 | Alpine.js/WordPress | `a.tiles__tile--event` containers; Alpine hydrates after load |
 | history-toronto | **enabled** | 12 | Custom WP | Date from 3 child `<span>` elements concatenated |
 | images-festival | **enabled** | 13 | Custom WP | Also fixed JSON tags bug (`SelectorConfig` — `srv-2db1q`) |
-| lula-lounge | **enabled** | 96 | Eventbrite | Redirects to Eventbrite organizer page |
 | mercer-union | **enabled** | 9 | Vue SPA | `div.grid-item` containers |
+| roy-thomson-massey-hall | **enabled** | 12 | SPA | URL changed to masseyhall.mhrth.com/tickets/; `div.event-row` containers |
 | toronto-holocaust-museum | **enabled** | 4 | Angular SPA | Requires 20s wait; Angular hydration on `app-root` |
 | toronto-society-of-architects | **enabled** | 9 | Custom WP | `div.tsa-event` containers |
+| toronto-symphony-orchestra | **enabled** | 189 | React SPA | tso.ca/concerts-and-events/calendar; `li.event-card` containers |
 | west-queen-west-bia | **enabled** | 26 | WordPress + EventON | EventON AJAX; waits via `:has()` CSS selector |
-| yohomo | **enabled** | 101 | Webflow | Date format "Tue . Feb 24" from `p.text-style-allcaps` |
+| yohomo | **enabled** | 107 | Webflow | URL changed to homepage; date format "Tue . Feb 24" from `p.text-style-allcaps` |
 | burdock-brewery | disabled | 0 | InLight Labs embed | Async embed times out; Showpass API has 31 events (`srv-71948` tracks future work) |
 | church-wellesley-village-bia | disabled | 0 | Wix OOI | Widget never renders within Rod timeout; no extractable DOM |
+| lula-lounge | disabled | — | Wix | `/events` URL returns 404; no replacement listing page found |
 | mammalian-diving-reflex | disabled | 0 | Custom | `/shows/` returns 404; no events listing page found |
 | obsidian-theatre | disabled | 0 | WordPress | Dates only on detail pages, not on listing |
 | orpheus-choir-toronto | disabled | 0 | Gutenberg WP | No repeating container; `wp-block-columns` with `hr` separators — not selectable |
@@ -123,26 +134,76 @@ Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 - Drupal hidden-span pattern causes duplicated names (e.g. `"DinosaursDinosaurs"`). Ingest normalization handles it.
 - Provided URL `/en/whats-on` returns 404; correct URL is `/whats-on/events`.
 
-### toronto-symphony-orchestra.yaml (disabled)
-- JS-rendered React SPA — requires Tier 2. Use `server scrape capture https://tso.ca/concerts-and-events --format inspect` to analyze after enabling `SCRAPER_HEADLESS_ENABLED=true`.
+### toronto-symphony-orchestra.yaml (Tier 2, enabled)
+- Fixed 2026-03-04. URL: `https://www.tso.ca/concerts-and-events/calendar`. 189 events.
+- `li.event-card` containers; date in `div.event-card__date`; name in `h3.event-card__title`.
+- Note: `:has(> child)` combinator is unsupported in goquery/cascadia — use plain `:has()` instead.
 
-### roy-thomson-massey-hall.yaml (disabled)
-- JS-rendered SPA (~75 bytes static HTML) — requires Tier 2. Use `server scrape capture <URL> --format inspect` to analyze the rendered DOM.
+### roy-thomson-massey-hall.yaml (Tier 2, enabled)
+- Fixed 2026-03-04. URL changed to `https://masseyhall.mhrth.com/tickets/`. 12 events.
+- `div.event-row` containers; date in `div.event-date`; name in `div.event-title`.
 
 ### hot-docs.yaml (disabled)
-- 22KB static HTML; `<main>` is empty — JS-rendered, needs Tier 2. Use `server scrape capture https://hotdocs.ca/festival/films --format inspect`.
+- Events served via Agile Technologies box office widget (third-party domain). The widget JS
+  loads event listings after page render; events never appear in DOM even with 25s headless wait.
+  Not viable without API reverse-engineering.
 
 ### thepowerplant (not configured)
 - Next.js SPA — only `jsx-` classes in static HTML, no event content. Needs Tier 2.
 
-### rcmusic (not configured)
-- Events loaded dynamically via AWS CloudSearch into an empty `<div id="tps-aws-results">`. Needs Tier 2 or API reverse-engineering.
+### rcmusic (not configured / disabled)
+- Events loaded dynamically via AWS CloudSearch into an empty `<div id="tps-aws-results">`.
+  Confirmed non-viable via headless inspection 2026-03-04. Needs API reverse-engineering.
 
-### ago (not configured)
+### ago (not configured / disabled)
 - `ago.ca/exhibitions-events` returns 403 — Cloudflare bot protection. Try different User-Agent or find public API.
 
 ### glad-day-bookshop.yaml (disabled)
 - `robots.txt` has `Disallow: /*` — contact site owner for permission.
+
+### dance-immersion.yaml (Tier 1, enabled)
+- Fixed 2026-03-04. URL changed to `https://danceimmersion.ca/category/events/` (WordPress archive).
+- `article.post-entry` containers; date in `time.date-container` (ISO 8601 datetime attr). 10 events.
+- Note: dates are post-publication dates, not performance dates — acceptable for discovery.
+
+### four-oh-one-richmond.yaml (Tier 2, enabled)
+- Fixed 2026-03-04. `https://401richmond.com/events/`. 2 events.
+- `a.tiles__tile--event` containers; Alpine.js hydrates after load; name in `h3`, date in `time`.
+
+### lula-lounge.yaml (disabled)
+- `lula.ca/events` returns 404 — Wix removed the events page 2026-03-04.
+- Homepage links to Eventbrite and Fever; no dedicated events listing page.
+- Eventbrite organizer page exists but scraping Eventbrite requires their API.
+
+### imagine-native.yaml (disabled)
+- `/year-round/events/` returns 404 as of 2026-03-04. No replacement events listing found.
+- Homepage has `article.elementor-post` but these are news/blog posts, not structured events.
+
+### crows-theatre.yaml (disabled)
+- Consistently times out on both static fetch (context deadline exceeded) and headless Rod
+  (navigate timeout) as of 2026-03-04. Likely behind Cloudflare bot protection or slow CDN.
+
+### inside-out.yaml (disabled)
+- Uses Eventive JS widget; DOM is empty after headless Rod render. Not viable without Eventive API.
+
+### east-end-arts.yaml (disabled)
+- `article` containers render in static HTML but no date elements appear in DOM.
+  Events may be loaded via AJAX after the listing containers.
+
+### theatre-passe-muraille.yaml (disabled)
+- Elementor site; season listing has show names but dates are in unstyled `<p>` tags with no
+  consistent CSS class or structure. Not selectable without structural change on the site.
+
+### workman-arts.yaml (disabled)
+- Events loaded via AJAX filter (Showpass widget). DOM is empty for event listings after headless render.
+
+### st-lawrence-market.yaml (disabled)
+- Returns an anti-bot skeleton response (all event content slots are empty spans).
+  Not viable via CSS selectors.
+
+### heritage-toronto.yaml (Tier 1, disabled — seasonal)
+- Selectors ready: `li.wp-block-post` containers; date in `time.wp-element-button`.
+- Currently off-season (0 events). Re-enable in spring when programming resumes.
 
 ---
 
