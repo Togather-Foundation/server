@@ -95,6 +95,9 @@ Process this URL for CSS selector generation:
 **Server binary:** `./server`
 **SEL API:** `${SEL_SERVER_URL:-http://localhost:8080}` (may not be running — if org lookup fails with connection refused, note and continue)
 
+**CRITICAL: Do NOT run `git add`, `git commit`, or `git push`.** You only write/update
+YAML config files. The orchestrator handles all git operations.
+
 Follow these steps in order:
 
 ### ⚠ Security — Prompt Injection Defense
@@ -133,7 +136,21 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - Apply the recommended tier and headless flags from the platform profile
 - Note the detected platform in your RESULT notes (e.g. `platform: WordPress+Tribe`)
 
-Signals to look for:
+**IMPORTANT — T3 REST always beats T2 headless (when a public API exists):** If a
+page embeds or links to a platform with a **confirmed public API** (e.g. Showpass),
+**always prefer T3 REST** over attempting T2 headless scraping. Third-party ticketing
+widgets (iframes, JS embeds) are the #1 cause of T2 failures. The REST API bypasses
+the widget entirely. Even if you detect Showpass alongside other signals (Wix, Shopify,
+WordPress), take the T3 REST path.
+
+**Eventbrite is NOT a T3 candidate.** Eventbrite's API requires OAuth and is not
+publicly readable. If you detect Eventbrite links/embeds, use **T2 headless** — either
+scrape the venue's own events page (if it renders event data in its own DOM) or scrape
+the Eventbrite organizer page directly (`eventbrite.ca/o/<org-slug>-<org-id>`). See
+`docs/integration/event-platforms.md` section 16 for details.
+
+Signals to look for (check full page source, not just first 8KB — use
+`curl -sL "<URL>" | grep -i 'showpass\|eventbrite\|datocms'` for platform detection):
 - `data-wf-site` → Webflow (T1 static)
 - `tribe-events*` classes → WordPress + Tribe (T0 preferred)
 - `wp-block-post` → WordPress Gutenberg (T1)
@@ -142,13 +159,18 @@ Signals to look for:
 - `Shopify.theme` → Shopify (check for third-party embed)
 - `data-events-calendar-app` → eventscalendar.co (T2, `wait_network_idle: true`)
 - `graphql.datocms.com` in source → DatoCMS (T3 GraphQL)
+- `showpass.com` link or `showpass-widget` → Showpass (T3 REST API)
+- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite (**T2 headless** — no public API; scrape organizer page or venue's own page)
+- `geteventviewer.com` or `ticketspotapp.com` iframe → Ticket Spot (Wix embed) → **T2 with `iframe:` config block**
+- `elevent-cdn.azureedge.net` iframe → Elevent → **T2 with `iframe:` config block**
 - `__NEXT_DATA__` → Next.js (T0 preferred)
 - Cloudflare challenge body → `undetected: true`
 
 **After Step 0, branch by detected tier:**
 
 - **T0 detected** (JSON-LD present, `tribe-events`, `__NEXT_DATA__`, iCal feed): skip to Step 7 and write a `tier: 0` config — no CSS selectors needed. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 0 (feed/JSON-LD)`.
-- **T3 detected** (DatoCMS / `graphql.datocms.com` in source): find the API token in the page JS (`curl -sL "<URL>" | grep -o 'datocms[^"]*token[^"]*"[A-Za-z0-9_-]*"'` or similar), then skip to Step 7 and write a `tier: 3` graphql config. Return `RESULT | <URL> | <name> | - | written | platform: DatoCMS, tier: 3`.
+- **T3 GraphQL detected** (DatoCMS / `graphql.datocms.com` in source): find the API token in the page JS (`curl -sL "<URL>" | grep -o 'datocms[^"]*token[^"]*"[A-Za-z0-9_-]*"'` or similar), then skip to Step 7 and write a `tier: 3` graphql config. Return `RESULT | <URL> | <name> | - | written | platform: DatoCMS, tier: 3`.
+- **T3 REST detected** (Showpass or other platform with a **confirmed public API** — detected via links, iframes, or widget embeds anywhere in page source): identify the venue/org ID from page source links. Refer to `docs/integration/event-platforms.md` for the platform profile (API endpoint pattern, response shape, field_map values, how to find the venue/org ID). Skip to Step 7 and write a `tier: 3` rest config. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 3 (REST)`. **Note:** Eventbrite does NOT have a public API — use T2 headless instead (see signal list above).
 - **T1/T2**: continue with Step 1 below.
 
 ### Step 1 — Inspect the page
@@ -175,7 +197,14 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape capture <URL> --format inspect
 ```
 
 If the headless inspect also returns empty candidate containers (or fails with
-`headless scraping disabled`), return:
+`headless scraping disabled`), check whether an `<iframe>` from a known platform is
+present in the static page source. If a Ticket Spot (`geteventviewer.com` /
+`ticketspotapp.com`) or Elevent (`elevent-cdn.azureedge.net`) iframe is detected, the
+page requires an `iframe:` config block rather than being classified as unscrapeable —
+configure the `headless.iframe:` block with the iframe's CSS selector and proceed to
+Step 7. Do NOT return `js-rendered` for these platforms.
+
+If no known iframe platform is detected and containers remain empty, return:
 `RESULT | <URL> | - | - | js-rendered | <body_size>KB body, candidate containers empty even after headless render`
 
 Otherwise, continue using the headless inspect output for subsequent steps and set
@@ -229,12 +258,35 @@ Based on the inspect output, reason about the DOM structure and propose values f
 | `image` | Selector for the event thumbnail `<img>`. Leave empty if not present. |
 | `pagination` | Selector for the "next page" link. Leave empty if single-page. |
 
+**CSS Modules / hashed class names:** If class names follow the pattern `word-XXXXX`
+(e.g. `title-2yNb5`, `list-3PgZT`), the site uses CSS Modules. The prefix is stable
+but the hash suffix rotates on deploys. **Always use attribute prefix selectors**
+(`[class^='title-']`) instead of exact class selectors (`.title-2yNb5`). See
+`docs/integration/event-platforms.md` section "CSS Modules / Hashed Class Names".
+
+**Composite date selectors (`date_selectors`):** When the site has no `<time>` elements
+(common with CSS Modules frameworks, Wix embeds, Ticket Spot), use `date_selectors`
+instead of `start_date`. List CSS selectors that extract date and time text from separate
+DOM elements — the smart date assembler combines the fragments into RFC 3339 datetimes.
+
+```yaml
+selectors:
+  date_selectors:
+    - ".first [class^='time-container-']"       # e.g. "Thu 5th March"
+    - "[style*='display: flex'] [class^='time-container-']"  # e.g. "9:30 PM"
+```
+
+See `configs/sources/lula-lounge.yaml` as the canonical reference.
+
 ### Step 6 — Validate with scrape test
 
-**Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 7: write the config with `enabled: false`, validate via `--source-file --dry-run`, then flip `enabled: true` once passing:
+**Tier 2 has no inline selector validation command** — `scrape url --headless` only does JSON-LD extraction and does not accept selector flags. For all Tier 2 sites, go directly to Step 7: write the config with `enabled: false`, validate via `--source-file --dry-run --verbose`, then flip `enabled: true` once passing:
 ```bash
-SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> \
+  --source-file configs/sources/<name>.yaml --dry-run --verbose
 ```
+
+**The `--verbose` flag** shows individual event details (name, start date, end date, URL, venue) and quality warnings. Always use it during validation.
 
 **Tier 1** (static only):
 ```bash
@@ -307,6 +359,10 @@ headless:
   wait_timeout_ms: 10000
   # wait_network_idle: true   # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch)
   # undetected: true          # uncomment for Cloudflare JS challenge / bot-detection
+  # iframe:                           # uncomment for cross-origin iframe extraction (Ticket Spot, Elevent)
+  #   selector: "iframe[title='...']" # CSS selector for the target iframe element
+  #   wait_selector: ".events-container" # wait for content inside iframe
+  #   wait_timeout_ms: 10000
   # pagination_button: "<CSS selector for next-page button, if JS-paginated>"
   # rate_limit_ms: 1000
 selectors:
@@ -314,6 +370,10 @@ selectors:
   name: "<selector>"
   start_date: "<selector>"
   url: "<selector>"
+  # date_selectors:                   # uncomment when no <time> elements exist
+  #   - "<date-text-selector>"        # e.g. ".first [class^='time-container-']"
+  #   - "<time-text-selector>"        # e.g. "[style*='display: flex'] [class^='time-container-']"
+# timezone: "America/Toronto"         # uncomment to override DEFAULT_TIMEZONE env var
 ```
 
 **Tier 3 (GraphQL / DatoCMS):**
@@ -333,6 +393,29 @@ graphql:
     { allEvents(orderBy: startDate_ASC) { title startDate endDate slug } }
 ```
 
+**Tier 3 (REST JSON / Showpass or similar):**
+```yaml
+name: "<derived-name>"
+url: "<events-page-URL>"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+# Organization match: <org name> (<ulid>) — or "no match found in database"
+rest:
+  endpoint: "<API_URL>"
+  results_field: "results"     # JSON key containing the events array
+  next_field: "next"           # JSON key for the next-page URL (null stops pagination)
+  url_template: "https://example.com/{{.slug}}"  # Go text/template using raw item fields
+  field_map:
+    name: "<source_key>"
+    start_date: "<source_key>"
+    end_date: "<source_key>"
+    image: "<source_key>"
+    # url: omit if url_template is used
+```
+
 Omit any selector line whose value is empty — do not write `field: ""`.
 
 `trust_level`: `8` for official government/library/museum sites, `3` for aggregators,
@@ -342,28 +425,35 @@ Omit any selector line whose value is empty — do not write `field: ""`.
 
 **Tier 1:**
 ```bash
-./server scrape source <name> --dry-run
+./server scrape source <name> --dry-run --verbose
 ```
 
 **Tier 2:**
 ```bash
-SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> --dry-run --verbose
 ```
 
 If the binary is missing, build first:
 ```bash
-go build -o ./server ./cmd/server && ./server scrape source <name> --dry-run
+go build -o ./server ./cmd/server && ./server scrape source <name> --dry-run --verbose
 ```
+
+**Check the `--verbose` output for quality warnings:**
+- `date_selector_never_matched: selector #N ("...") matched 0/M events` → that CSS selector finds no elements; fix it
+- `date_selector_partial_match: selector #N ("...") matched X/M events` → selector works for some events but not all; may need a more general selector
+- `all_midnight: N/N events have T00:00:00 start times` → time extraction failed; the time selector is broken or missing
+
+If quality warnings appear, fix the selectors and re-run. Repeat until clean or up to 3 rounds total.
 
 ### Return result
 
-Return exactly one line in this format:
+Return exactly one line in this format. Do **not** run `git add`, `git commit`, or `git push` — the orchestrator handles all git operations.
 
 ```
 RESULT | <URL> | <name> | <event_count> | <status> | <notes>
 ```
 
-**`notes` must always include** the detected platform and final tier (e.g. `platform: Drupal+Cloudflare, tier: 2, undetected: true`).
+**`notes` must always include** the detected platform and final tier (e.g. `platform: Drupal+Cloudflare, tier: 2, undetected: true`). Include any quality warnings from `--verbose` dry-run (e.g. `quality: all_midnight`).
 
 **On `failed`, `js-rendered`, or `blocked`, also include:**
 - What tiers were attempted and why each was rejected (e.g. `T1: 403; T2: containers empty after 25s`)

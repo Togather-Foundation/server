@@ -35,6 +35,8 @@ type Source struct {
 	HeadlessRateLimitMs   int
 	// GraphQL fields (Tier 3)
 	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
+	// REST fields (Tier 3)
+	RestConfig []byte // JSONB-encoded RestConfig; nil for non-Tier-3 REST sources
 }
 
 // UpsertParams contains the fields used to create or update a scraper source.
@@ -58,6 +60,8 @@ type UpsertParams struct {
 	HeadlessRateLimitMs   int
 	// GraphQL fields (Tier 3)
 	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
+	// REST fields (Tier 3)
+	RestConfig []byte // JSONB-encoded RestConfig; nil for non-Tier-3 REST sources
 }
 
 // Repository defines the persistence interface for scraper sources.

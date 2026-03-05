@@ -174,6 +174,15 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		}
 	}
 
+	var restConfigJSON []byte
+	if cfg.Tier == 3 && cfg.REST != nil {
+		var encErr error
+		restConfigJSON, encErr = json.Marshal(cfg.REST)
+		if encErr != nil {
+			return domainScraper.UpsertParams{}, fmt.Errorf("encode rest config: %w", encErr)
+		}
+	}
+
 	return domainScraper.UpsertParams{
 		Name:                  cfg.Name,
 		URL:                   cfg.URL,
@@ -191,5 +200,6 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		HeadlessHeaders:       headlessHeadersJSON,
 		HeadlessRateLimitMs:   cfg.Headless.RateLimitMs,
 		GraphQLConfig:         graphqlConfigJSON,
+		RestConfig:            restConfigJSON,
 	}, nil
 }

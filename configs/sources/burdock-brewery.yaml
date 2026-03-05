@@ -1,16 +1,17 @@
 name: "burdock-brewery"
-# DISABLED: Showpass iframe widget uses AngularJS templates that never render in headless context
-# Shopify page embeds: <iframe src="https://www.showpass.com/w/tickets/events/list/17330/...">
-# Direct capture of both parent page and Showpass iframe shows [[event.name]] template syntax
-# instead of rendered event names, indicating cross-origin JS context barrier.
-# Original eventscalendar.co embed (data-project-id="proj_T8vacNv8cWWeEQAQwLKHb") also unscrapeable.
-# Showpass API (https://showpass.com/api/public/events/?venue=17330) returns 301 redirect.
-# No public Showpass GraphQL or REST API found.
-# Related bead: srv-71948
-# Fix: Contact Burdock or Showpass for iCal export or API token; or use manual venue import.
 url: "https://burdockbrewery.com/pages/music-hall"
-tier: 2
+tier: 3
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
-enabled: false
+enabled: true
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=17330"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://www.showpass.com/{{.slug}}"
+  field_map:
+    name: "name"
+    start_date: "starts_on"
+    end_date: "ends_on"
+    image: "image"

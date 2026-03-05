@@ -327,6 +327,20 @@ func (e *RodExtractor) scrapeSinglePage(
 		return nil, "", fmt.Errorf("rod: getting HTML from %q: %w", pageURL, err)
 	}
 
+	// If iframe extraction is configured, navigate into the iframe's execution
+	// context and extract HTML from there instead of the parent page.
+	if config.Headless.Iframe != nil {
+		iframeHTML, iframeErr := e.extractIframeHTML(page, config)
+		if iframeErr != nil {
+			e.logger.Warn().Err(iframeErr).
+				Str("source", config.Name).
+				Str("iframe_selector", config.Headless.Iframe.Selector).
+				Msg("rod: iframe extraction failed, falling back to parent HTML")
+		} else {
+			html = iframeHTML
+		}
+	}
+
 	// Extract events from rendered HTML using goquery + selectors.
 	pageEvents, extractErr := extractEventsFromHTML(html, config, pageURL)
 	if extractErr != nil {
@@ -373,6 +387,49 @@ func (e *RodExtractor) captureScreenshot(page *rod.Page, sourceName string) {
 	}
 }
 
+// extractIframeHTML navigates into a cross-origin iframe and extracts its rendered HTML.
+// It uses Rod's CDP frame navigation to enter the iframe's execution context.
+func (e *RodExtractor) extractIframeHTML(page *rod.Page, config SourceConfig) (string, error) {
+	iframeCfg := config.Headless.Iframe
+
+	// Find the iframe element in the parent page.
+	el, err := page.Timeout(5 * time.Second).Element(iframeCfg.Selector)
+	if err != nil {
+		return "", fmt.Errorf("iframe element %q not found: %w", iframeCfg.Selector, err)
+	}
+
+	// Enter the iframe's execution context. Rod's Element.Frame() returns a
+	// *Page representing the frame, which supports the same API as any page.
+	// The frame page shares the parent page's browser lifecycle — closing the
+	// parent page cleans up all child frames, so we do NOT defer frame.Close().
+	frame, err := el.Frame()
+	if err != nil {
+		return "", fmt.Errorf("entering iframe frame context: %w", err)
+	}
+
+	// Wait for the target content inside the iframe.
+	iframeTimeout := time.Duration(iframeCfg.WaitTimeoutMs) * time.Millisecond
+	if iframeTimeout == 0 {
+		iframeTimeout = 10 * time.Second
+	}
+	waitErr := frame.Timeout(iframeTimeout).WaitElementsMoreThan(iframeCfg.WaitSelector, 0)
+	if waitErr != nil {
+		e.logger.Warn().
+			Err(waitErr).
+			Str("source", config.Name).
+			Str("iframe_wait_selector", iframeCfg.WaitSelector).
+			Msg("rod: iframe wait selector timed out, attempting extraction anyway")
+	}
+
+	// Extract rendered HTML from the iframe.
+	html, err := frame.HTML()
+	if err != nil {
+		return "", fmt.Errorf("extracting iframe HTML: %w", err)
+	}
+
+	return html, nil
+}
+
 // extractEventsFromHTML parses an HTML string with goquery and applies the
 // CSS selectors from config to collect RawEvents. pageURL is used to resolve
 // relative URLs (href/src attributes). Returns an error if config.Selectors.EventList
@@ -396,12 +453,26 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 			raw.Name = strings.TrimSpace(s.Find(config.Selectors.Name).First().Text())
 		}
 
-		if config.Selectors.StartDate != "" {
-			raw.StartDate = extractDateFromSelection(s, config.Selectors.StartDate)
-		}
+		// Date extraction: prefer date_selectors (smart assembler) over
+		// start_date/end_date (single-selector legacy path).
+		if len(config.Selectors.DateSelectors) > 0 {
+			for _, sel := range config.Selectors.DateSelectors {
+				el := s.Find(sel).First()
+				if el.Length() > 0 {
+					text := strings.TrimSpace(el.Text())
+					if text != "" {
+						raw.DateParts = append(raw.DateParts, text)
+					}
+				}
+			}
+		} else {
+			if config.Selectors.StartDate != "" {
+				raw.StartDate = extractDateFromSelection(s, config.Selectors.StartDate)
+			}
 
-		if config.Selectors.EndDate != "" {
-			raw.EndDate = extractDateFromSelection(s, config.Selectors.EndDate)
+			if config.Selectors.EndDate != "" {
+				raw.EndDate = extractDateFromSelection(s, config.Selectors.EndDate)
+			}
 		}
 
 		if config.Selectors.Location != "" {
@@ -651,6 +722,140 @@ func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector stri
 		// Attempt screenshot for debugging.
 		e.captureScreenshot(page, "render-html")
 		return "", fmt.Errorf("rod: getting HTML from %q: %w", rawURL, err)
+	}
+
+	return html, nil
+}
+
+// RenderHTMLWithConfig renders a page using the full SourceConfig — including
+// iframe extraction, network-idle waits, and all headless options. This is the
+// "capture" equivalent of scrapeSinglePage: it performs the same navigation and
+// wait logic but returns the final HTML instead of extracted events.
+//
+// Use this for debugging selectors: the returned HTML is exactly what
+// extractEventsFromHTML would receive, so you can inspect the DOM, check which
+// selectors match, and verify date/URL element structure.
+func (e *RodExtractor) RenderHTMLWithConfig(ctx context.Context, config SourceConfig) (string, error) {
+	if !e.headlessEnv {
+		return "", ErrHeadlessDisabled
+	}
+
+	pageURL := config.URL
+	if pageURL == "" {
+		return "", fmt.Errorf("RenderHTMLWithConfig: source %q has no URL", config.Name)
+	}
+
+	// Validate URL to prevent SSRF.
+	if err := validateNavigationURL(pageURL); err != nil {
+		return "", err
+	}
+
+	// Robots.txt check.
+	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
+	allowed, robotsErr := RobotsAllowed(ctx, pageURL, scraperUserAgent, robotsClient)
+	if robotsErr != nil {
+		e.logger.Warn().Err(robotsErr).Str("url", pageURL).Msg("rod: RenderHTMLWithConfig: robots.txt check failed, proceeding as allowed")
+	} else if !allowed {
+		return "", fmt.Errorf("rod: scraping disallowed by robots.txt for %q", pageURL)
+	}
+
+	// Acquire semaphore.
+	select {
+	case e.sem <- struct{}{}:
+		defer func() { <-e.sem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	defer cancel()
+
+	browser, cleanup, err := e.launchBrowser(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	// Open a new page (stealth or standard, matching scrapeSinglePage).
+	var page *rod.Page
+	if config.Headless.Undetected {
+		page, err = stealth.Page(browser)
+	} else {
+		page, err = browser.Page(proto.TargetCreateTarget{})
+	}
+	if err != nil {
+		return "", fmt.Errorf("rod: failed to open new page: %w", err)
+	}
+	defer func() {
+		if closeErr := page.Close(); closeErr != nil {
+			e.logger.Debug().Err(closeErr).Msg("rod: page close error (RenderHTMLWithConfig)")
+		}
+	}()
+
+	page = page.Timeout(rodDefaultTimeout)
+
+	// Set user-agent.
+	if uaErr := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: rodUserAgent,
+	}); uaErr != nil {
+		e.logger.Warn().Err(uaErr).Str("source", config.Name).Msg("rod: RenderHTMLWithConfig: failed to set user agent")
+	}
+
+	// Apply extra headers if configured.
+	if len(config.Headless.Headers) > 0 {
+		headers := make([]string, 0, len(config.Headless.Headers)*2)
+		for k, v := range config.Headless.Headers {
+			headers = append(headers, k, v)
+		}
+		if _, setErr := page.SetExtraHeaders(headers); setErr != nil {
+			e.logger.Warn().Err(setErr).Str("source", config.Name).Msg("rod: RenderHTMLWithConfig: failed to set extra headers")
+		}
+	}
+
+	// Navigate.
+	if navErr := page.Navigate(pageURL); navErr != nil {
+		return "", fmt.Errorf("rod: navigate to %q: %w", pageURL, navErr)
+	}
+
+	// Wait for target selector.
+	waitSelector := config.Headless.WaitSelector
+	if waitSelector == "" {
+		waitSelector = "body"
+	}
+	waitTimeout := rodDefaultWaitTimeout
+	if config.Headless.WaitTimeoutMs > 0 {
+		waitTimeout = time.Duration(config.Headless.WaitTimeoutMs) * time.Millisecond
+	}
+	if waitErr := page.Timeout(waitTimeout).WaitElementsMoreThan(waitSelector, 0); waitErr != nil {
+		e.logger.Warn().Err(waitErr).Str("source", config.Name).Str("selector", waitSelector).
+			Msg("rod: RenderHTMLWithConfig: wait selector timed out, continuing anyway")
+	}
+
+	// Optional network-idle wait (same as scrapeSinglePage).
+	if config.Headless.WaitNetworkIdle {
+		waitIdle := page.Timeout(waitTimeout).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)
+		waitIdle()
+	}
+
+	// Extract HTML from page.
+	html, htmlErr := page.HTML()
+	if htmlErr != nil {
+		e.captureScreenshot(page, config.Name)
+		return "", fmt.Errorf("rod: getting HTML from %q: %w", pageURL, htmlErr)
+	}
+
+	// If iframe extraction is configured, navigate into the iframe and return
+	// its HTML instead of the parent page HTML.
+	if config.Headless.Iframe != nil {
+		iframeHTML, iframeErr := e.extractIframeHTML(page, config)
+		if iframeErr != nil {
+			e.logger.Warn().Err(iframeErr).
+				Str("source", config.Name).
+				Str("iframe_selector", config.Headless.Iframe.Selector).
+				Msg("rod: RenderHTMLWithConfig: iframe extraction failed, returning parent HTML")
+		} else {
+			html = iframeHTML
+		}
 	}
 
 	return html, nil

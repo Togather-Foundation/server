@@ -27,11 +27,12 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `class="eventlist-*"` on articles | **Squarespace (event block)** | T1 |
 | `graphql.datocms.com` token in page JS | **DatoCMS (GraphQL)** | T3 (GraphQL) |
 | `data-template="TPSPT.*"` | **AWS CloudSearch widget** | T2 (`wait_network_idle: true`) |
-| `elevent-cdn.azureedge.net` in source/network | **Elevent widget** | blocked (cross-origin iframe) |
+| `elevent-cdn.azureedge.net` in source/network | **Elevent widget** | T2 (`iframe:` config block) |
+| `geteventviewer.com` or `ticketspotapp.com` iframe | **Ticket Spot** (Wix embed) | T2 (`iframe:` config block) |
 | `.ashx?orgid=` URL pattern | **Agile Technologies box office** | T2 (`wait_network_idle: true`) |
 | `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
-| `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T3 (REST API) |
+| `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T2 (no public API) |
 | `class="nuxt-*"` or `window.__NUXT__` | **Nuxt.js** | T0 or T3 (check DatoCMS) |
 | `class="elementor-post__title"` | **WordPress + Elementor (news loop)** | T1 |
 | `__vue_app__` in global JS | **Vue SPA** | T2 |
@@ -532,27 +533,58 @@ events are accessible via a public REST API.
 **Recommended approach:** T3 (REST API). Find the venue ID and use:
 `GET https://showpass.com/api/public/events/?venue=<venue_id>`
 
+**API shape:** `{ count, next, results: [...] }` — `next` is a URL string or null.
+Key event fields: `name`, `starts_on`, `ends_on`, `slug`, `image` (URL string).
+
 ```yaml
 tier: 3
-# (Tier 3 REST adapter pending implementation)
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=<venue_id>"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://www.showpass.com/{{.slug}}"
+  field_map:
+    name: "name"
+    start_date: "starts_on"
+    end_date: "ends_on"
+    image: "image"
 ```
 
+**How to find a venue ID:**
+1. Look for `showpass.com` links in the venue's page source (e.g. `showpass.com/e/<slug>`)
+2. Visit `https://www.showpass.com/api/public/events/?venue=<id>` with candidate IDs
+3. Or search the Showpass organizer page: `showpass.com/o/<org-slug>` — the venue ID
+   appears in API requests visible in browser DevTools (Network tab)
+
 **Known venue IDs:**
-- Burdock Brewery: `17330` (legacy/parallel integration, verify)
+- Burdock Brewery: `17330` (34 events; 2 paginated pages)
+
+**Working examples:**
+- `burdock-brewery.yaml` — T3 REST, Showpass, 34 events
 
 ---
 
 ### 16. Eventbrite
 
-**What it is:** Global ticketing platform. Organizer event lists are accessible via
-the Eventbrite public API.
+**What it is:** Global ticketing platform. Venues link to Eventbrite for ticket sales.
 
 **Detection signals:**
 - Links to `eventbrite.ca/o/<org-slug>-<org-id>` or `eventbrite.com/e/<id>`
 - Eventbrite search widget embed
 
-**Recommended approach:** T3 (REST API).
-`GET https://www.eventbriteapi.com/v3/organizers/<org_id>/events/`
+**API status:** Eventbrite's REST API (`eventbriteapi.com/v3/`) requires OAuth
+authentication and is designed for organizers to manage their own events — **not** a
+public read API. There is no unauthenticated endpoint for listing an organizer's events.
+T3 REST is **not viable** for Eventbrite.
+
+**Recommended approach:** T2 headless scraping of the organizer page
+(`eventbrite.ca/o/<org-slug>-<org-id>`) or the venue's own events page if it embeds
+Eventbrite widgets. The organizer page is server-rendered and may yield event cards
+via CSS selectors. If the organizer page is JS-rendered or behind Cloudflare, use
+`undetected: true`.
+
+**Fallback:** If scraping fails, the only reliable path is venue cooperation (ask the
+organizer to share an iCal feed or event data export).
 
 **Known organizer IDs:**
 - Lula Lounge Toronto: `4108527983`
@@ -567,17 +599,77 @@ the Eventbrite public API.
 - `<iframe src="*elevent-cdn.azureedge.net*">` in HTML
 - Elevent branding on the embedded ticket widget
 
-**Status:** Blocked. The widget renders inside a cross-origin iframe; CSS selectors
-cannot reach the iframe content from the parent page.
+**Status:** Supported via `headless.iframe:` config block (added in srv-mwy3y). Configure `iframe.selector` to target the Elevent iframe element. The scraper uses CDP frame navigation to enter the iframe's execution context and extract its rendered HTML. CSS selectors in `selectors:` then apply to the iframe DOM, not the parent page.
 
-**Only viable path:** Elevent venue partner API (requires coordination with venue).
+**Example config:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[src*='elevent-cdn.azureedge.net']"
+    wait_selector: ".event-list"
+    wait_timeout_ms: 10000
+```
 
 **Known examples:**
-- `reel-asian.yaml` — disabled, Elevent cross-origin iframe
+- `reel-asian.yaml` — disabled, Elevent cross-origin iframe (working iframe config; pending manual verification)
 
 ---
 
-### 18. AWS CloudSearch widget
+### 18. Ticket Spot (Wix embed)
+
+**What it is:** A Wix-native event widget embedded as a cross-origin iframe from
+`geteventviewer.com` or `ticketspotapp.com`. Venues that use Wix's Ticket Spot app
+have their event listings rendered entirely inside the iframe.
+
+**Detection signals:**
+- `<iframe src="*geteventviewer.com*">` or `<iframe src="*ticketspotapp.com*">` in HTML
+- `<iframe title="Ticket Spot">` title attribute
+- CSS class `ticket-spot-iframe` or similar on the iframe wrapper
+- `data-app-id` attribute on the iframe with a known Ticket Spot app ID
+
+**API status:** The widget requires a signed Wix JWT to access its internal API.
+T3 REST is not viable without venue cooperation.
+
+**Status:** Supported via `headless.iframe:` config block (added in srv-mwy3y). The
+scraper uses CDP frame navigation to enter the iframe's execution context and extract
+its rendered HTML. CSS selectors in `selectors:` then apply to the iframe DOM, not
+the parent page.
+
+**Example config:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[title='Ticket Spot']"
+    wait_selector: ".events-container"
+    wait_timeout_ms: 10000
+selectors:
+  event_list: "[class^='list-'] > div"
+  name: "[class^='title-']"
+  start_date: "time[datetime]"
+  url: "a[href*='eventbrite']"
+```
+
+**CSS Modules note:** Ticket Spot uses CSS Modules which produces class names with
+a stable prefix and a rotating hash suffix (e.g. `list-3PgZT`, `title-2yNb5`).
+Use attribute prefix selectors (`[class^='title-']`) instead of exact class selectors
+(`.title-2yNb5`) to survive hash rotation across deploys. See "CSS Modules / Hashed
+Class Names" below for the general pattern.
+
+See `configs/sources/lula-lounge.yaml` for a working example.
+
+**Known app IDs:**
+- Lula Lounge: `14409d52-2a79-437b-9b54-3d6a44e8a6ab` (Wix Ticket Spot app ID, visible in iframe `src`)
+
+**Known examples:**
+- `lula-lounge.yaml` — working iframe config; disabled pending manual verification
+
+---
+
+### 19. AWS CloudSearch widget
 
 **What it is:** A custom JS widget backed by AWS CloudSearch. The page renders empty
 containers; event data arrives via XHR.
@@ -604,7 +696,7 @@ URL. If unauthenticated, configure as T3 REST.
 
 ---
 
-### 19. Agile Technologies box office
+### 20. Agile Technologies box office
 
 **What it is:** A venue ticketing system. Embeds via a `.ashx` URL widget.
 
@@ -622,21 +714,131 @@ accept `?format=json`.
 
 ## Headless Flags Reference
 
-Added 2026-03-05 (bead `srv-n8qi1`):
+Added 2026-03-05 (bead `srv-n8qi1`); `iframe:` block added 2026-03-05 (bead `srv-mwy3y`):
 
 | Flag | Effect | When to use |
 |------|--------|-------------|
 | `wait_network_idle: true` | After `wait_selector` resolves, waits 500 ms with no in-flight XHR/fetch | Async widgets (eventscalendar.co, AWS CloudSearch, Agile) |
 | `undetected: true` | Launches via go-rod/stealth (patches `navigator.webdriver`, fake plugins) | Cloudflare JS challenge, bot-detection widgets |
+| `iframe.selector` | CSS selector for the target cross-origin iframe element | Ticket Spot, Elevent, and other cross-origin iframe embeds |
+| `iframe.wait_selector` | CSS selector to wait for inside the iframe DOM before extracting | Any iframe target — waits for content to render inside the frame |
+| `iframe.wait_timeout_ms` | Timeout (ms) for `iframe.wait_selector` (default: 10000) | Increase for slow-loading iframe content |
+
+**`iframe:` block config example:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[title='Ticket Spot']"   # CSS selector for the iframe element
+    wait_selector: ".events-container"          # wait for content inside iframe
+    wait_timeout_ms: 10000                      # timeout for iframe content
+```
+
+When `iframe:` is configured, the scraper uses Chrome DevTools Protocol (CDP) frame
+navigation to enter the iframe's execution context and extract its fully rendered HTML.
+CSS selectors in `selectors:` apply to the iframe DOM, not the parent page.
 
 **Test sequence for unknown/blocked sources:**
 1. Try T2 with `wait_network_idle: true` + `wait_timeout_ms: 20000`
 2. If still empty, add `undetected: true`
-3. Confirm DOM content via `server scrape capture <URL> --format inspect`
-4. If both flags fail, fall back to API/contact approach
+3. If content is in a cross-origin iframe, add an `iframe:` block with the iframe selector
+4. Confirm DOM content via `server scrape capture <URL> --format inspect`
+5. If both flags and iframe block fail, fall back to API/contact approach
 
 **`--source-file` flag (test without DB):**
 ```bash
 SCRAPER_HEADLESS_ENABLED=true server scrape source \
   --source-file /tmp/draft.yaml --dry-run
 ```
+
+---
+
+## Cross-Origin Iframe Support
+
+Cross-origin iframe extraction is supported via the `headless.iframe:` config block
+(implemented in bead `srv-mwy3y`).
+
+**How it works:** When `iframe:` is configured, the scraper uses Chrome DevTools Protocol
+(CDP) frame navigation to enter the iframe's execution context. Rather than trying to
+reach iframe content from the parent page (which the same-origin policy blocks), the
+scraper navigates into the frame's document directly, waits for the specified selector,
+and extracts the fully rendered iframe HTML. CSS selectors in `selectors:` then apply
+to the iframe DOM.
+
+**Supported platforms:**
+- **Ticket Spot** (Wix embed from `geteventviewer.com` / `ticketspotapp.com`) — use `iframe[title='Ticket Spot']`
+- **Elevent** (`elevent-cdn.azureedge.net`) — use `iframe[src*='elevent-cdn.azureedge.net']`
+
+**Important:** The config `url` must be the venue's own page — not the iframe `src`.
+Iframe targeting requires explicit configuration; there is no auto-detection.
+
+**Config example:**
+```yaml
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 15000
+  iframe:
+    selector: "iframe[title='Ticket Spot']"   # CSS selector targeting the iframe
+    wait_selector: ".events-container"          # selector to wait for inside the iframe
+    wait_timeout_ms: 10000
+selectors:
+  event_list: "[class^='list-'] > div"   # prefix selector survives CSS Modules hash rotation
+  name: "[class^='title-']"
+  start_date: "time[datetime]"
+  url: "a[href*='eventbrite']"
+```
+
+---
+
+## CSS Modules / Hashed Class Names
+
+Some platforms (notably Ticket Spot, many React/Vue/Svelte apps) use **CSS Modules**
+or similar tooling that appends a hash suffix to class names at build time. The pattern
+is `<human-name>-<hash>`, e.g.:
+
+```
+list-3PgZT      →  prefix "list-"
+title-2yNb5     →  prefix "title-"
+details-JMKf7   →  prefix "details-"
+container-a1B2c →  prefix "container-"
+```
+
+The prefix is derived from the original class name in source code and is **stable
+across deploys**. The hash suffix rotates whenever the CSS is rebuilt.
+
+### How to detect
+
+- Multiple class names on the same page following the `word-xxxxx` pattern (5-character
+  alphanumeric suffix is the most common, but length varies)
+- Class names that look semantic but have a random tail
+- Typically seen in React (CSS Modules, styled-components), Vue (scoped styles),
+  Svelte, and build tools like Vite/Webpack
+
+### Selector strategy
+
+**Always use attribute prefix selectors** instead of exact class selectors:
+
+| Fragile (breaks on redeploy) | Resilient (survives hash rotation) |
+|---|---|
+| `.list-3PgZT` | `[class^='list-']` |
+| `.title-2yNb5` | `[class^='title-']` |
+| `.details-JMKf7 > a` | `[class^='details-'] > a` |
+
+CSS attribute selectors:
+- `[class^='prefix-']` — class attribute **starts with** prefix (use when the
+  element has only one class)
+- `[class*='prefix-']` — class attribute **contains** prefix (use when the element
+  has multiple classes and the target isn't first)
+
+**Prefer `^=` (starts-with)** when possible — it's more specific and avoids false
+matches. Fall back to `*=` (contains) only when the hashed class isn't the first
+class on the element.
+
+### Caveats
+
+- If the platform renames the source-level class (e.g. `title` → `heading`), the
+  prefix changes too. This is rare but possible on major redesigns.
+- Very short prefixes (e.g. `a-`, `b-`) may cause false matches. Prefer the most
+  specific prefix available.
+- Verify with `server scrape capture <URL> --format inspect` after writing selectors.

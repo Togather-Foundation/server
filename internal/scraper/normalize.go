@@ -101,15 +101,28 @@ type RawEvent struct {
 	Description string
 	URL         string
 	Image       string
+	// DateParts holds text extracted from date_selectors (one entry per
+	// selector). When populated, the smart date assembler combines these
+	// into RFC 3339 start/end dates, replacing StartDate/EndDate.
+	DateParts []string
 }
 
 // NormalizeRawEvent converts a CSS-extracted RawEvent to EventInput.
 // More lenient than JSON-LD normalization since Tier 1 data is unstructured.
+//
+// Date handling: when DateParts is populated (from date_selectors config),
+// the smart date assembler combines the parts into RFC 3339. Otherwise,
+// StartDate/EndDate are normalized from human-readable text to RFC 3339 as
+// a fallback. If the date is already RFC 3339, it passes through unchanged.
 func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, error) {
 	if raw.Name == "" {
 		return events.EventInput{}, fmt.Errorf("raw event has no name")
 	}
-	if raw.StartDate == "" {
+
+	// Normalize dates: DateParts → assemble, or StartDate/EndDate → fuzzy parse.
+	startDate, endDate := normalizeStartDate(raw, source.GetTimezone())
+
+	if startDate == "" {
 		return events.EventInput{}, fmt.Errorf("raw event has no startDate")
 	}
 
@@ -126,8 +139,8 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, er
 	return events.EventInput{
 		Type:                          "Event",
 		Name:                          raw.Name,
-		StartDate:                     raw.StartDate,
-		EndDate:                       raw.EndDate,
+		StartDate:                     startDate,
+		EndDate:                       endDate,
 		Description:                   raw.Description,
 		URL:                           raw.URL,
 		Image:                         raw.Image,

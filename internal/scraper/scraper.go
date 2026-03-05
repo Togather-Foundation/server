@@ -21,6 +21,7 @@ import (
 // ScrapeOptions controls scraper behaviour.
 type ScrapeOptions struct {
 	DryRun           bool
+	Verbose          bool              // when true with DryRun, ScrapeResult.DryRunEvents is populated
 	Limit            int               // 0 = no limit
 	SourcesDir       string            // default: "configs/sources"
 	SourceFile       string            // if set, load a single YAML config from this path (bypasses DB and SourcesDir)
@@ -63,6 +64,19 @@ type ScrapeResult struct {
 	IngestErrors    []IngestError // per-event errors returned by the batch API
 	Error           error
 	DryRun          bool
+
+	// DryRunEvents holds the normalized EventInput payloads when DryRun &&
+	// Verbose are both true. Populated by runWithTracking so the CLI can
+	// display individual events. Empty in non-verbose or non-dry-run modes
+	// to avoid unnecessary memory allocation.
+	DryRunEvents []events.EventInput
+
+	// QualityWarnings holds structured quality warnings detected during
+	// extraction and normalisation. Examples: "date_selector_never_matched:
+	// selector #2 matched 0/15 events", "all_midnight: 15/15 events have
+	// T00:00:00 start times". These are logged at WARN level during the
+	// scrape and surfaced in CLI verbose mode.
+	QualityWarnings []string
 }
 
 // Scraper orchestrates fetching, normalising, and ingesting events from
@@ -226,17 +240,17 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 		DryRun:     opts.DryRun,
 	}
 
-	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		rawEvents, err := FetchAndExtractJSONLD(ctx, rawURL, opts.HTTPClient(fetchTimeout))
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 		valid, skipped := s.normalizeJSONLDEvents(rawEvents, source, opts.Limit)
 		if skipped > 0 {
 			s.logger.Warn().Str("source", sourceName).Int("skipped", skipped).
 				Msg("scraper: events skipped during normalisation")
 		}
-		return len(rawEvents), valid, nil
+		return len(rawEvents), valid, checkAllMidnight(valid), nil
 	}), nil
 }
 
@@ -375,7 +389,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		DryRun:     opts.DryRun,
 	}
 
-	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		extractor := NewCollyExtractor(s.logger)
 		extractor.SetTransport(opts.Transport)
 		if opts.RateLimitMs > 0 {
@@ -404,6 +418,10 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		}
 		rawEvents := allRaw
 
+		// Quality check: date_selectors partial match detection.
+		var warnings []string
+		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source)...)
+
 		limit := opts.Limit
 		var validEvents []events.EventInput
 		skipped := 0
@@ -427,7 +445,10 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: tier 1 events skipped during normalisation")
 		}
 
-		return len(rawEvents), validEvents, nil
+		// Quality check: all-midnight heuristic.
+		warnings = append(warnings, checkAllMidnight(validEvents)...)
+
+		return len(rawEvents), validEvents, warnings, nil
 	}), nil
 }
 
@@ -445,7 +466,7 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 		return result, nil
 	}
 
-	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		var allRaw []RawEvent
 		urlList := source.GetURLs()
 		failCount := 0
@@ -467,6 +488,10 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: all URLs failed for source — returning 0 events")
 		}
 		rawEvents := allRaw
+
+		// Quality check: date_selectors partial match detection.
+		var warnings []string
+		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source)...)
 
 		var validEvents []events.EventInput
 		skipped := 0
@@ -491,7 +516,10 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: tier 2 events skipped during normalisation")
 		}
 
-		return len(rawEvents), validEvents, nil
+		// Quality check: all-midnight heuristic.
+		warnings = append(warnings, checkAllMidnight(validEvents)...)
+
+		return len(rawEvents), validEvents, warnings, nil
 	}), nil
 }
 
@@ -504,7 +532,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 		DryRun:     opts.DryRun,
 	}
 
-	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		var allRawEvents []json.RawMessage
 		urlList := source.GetURLs()
 		failCount := 0
@@ -538,7 +566,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 				if i > 0 {
 					select {
 					case <-ctx.Done():
-						return len(rawEvents), valid, nil
+						return len(rawEvents), valid, checkAllMidnight(valid), nil
 					case <-time.After(500 * time.Millisecond):
 					}
 				}
@@ -566,11 +594,11 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 			}
 		}
 
-		return len(rawEvents), valid, nil
+		return len(rawEvents), valid, checkAllMidnight(valid), nil
 	}), nil
 }
 
-// scrapeTier3 fetches and processes a Tier 3 (GraphQL API) source.
+// scrapeTier3 fetches and processes a Tier 3 (API: GraphQL or REST JSON) source.
 func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
 	result := ScrapeResult{
 		SourceName: source.Name,
@@ -579,15 +607,24 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 		DryRun:     opts.DryRun,
 	}
 
-	extractor := NewGraphQLExtractor(s.logger)
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		var rawEvents []RawEvent
+		var err error
 
-	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, error) {
-		// Tier 3 uses the single cfg.GraphQL.Endpoint rather than iterating GetURLs().
-		// source.URL is stored as metadata (SourceURL in scraper_run records) but
-		// is not used for fetching — only Endpoint drives the HTTP request.
-		rawEvents, err := extractor.FetchAndExtractGraphQL(ctx, source, opts.HTTPClient(fetchTimeout))
+		if source.REST != nil {
+			// REST JSON feed path.
+			extractor := NewRestExtractor(s.logger)
+			rawEvents, err = extractor.FetchAndExtractREST(ctx, source, opts.HTTPClient(fetchTimeout))
+		} else {
+			// GraphQL API path.
+			// Tier 3 uses the single cfg.GraphQL.Endpoint rather than iterating GetURLs().
+			// source.URL is stored as metadata (SourceURL in scraper_run records) but
+			// is not used for fetching — only Endpoint drives the HTTP request.
+			extractor := NewGraphQLExtractor(s.logger)
+			rawEvents, err = extractor.FetchAndExtractGraphQL(ctx, source, opts.HTTPClient(fetchTimeout))
+		}
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 
 		var validEvents []events.EventInput
@@ -613,13 +650,16 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: tier 3 events skipped during normalisation")
 		}
 
-		return len(rawEvents), validEvents, nil
+		// Quality check: all-midnight heuristic.
+		return len(rawEvents), validEvents, checkAllMidnight(validEvents), nil
 	}), nil
 }
 
 // scrapeFunc is the signature for the inner scraping work done by each tier.
-// It returns the raw event count, submit-ready events, and any error.
-type scrapeFunc func(ctx context.Context) (eventsFound int, validEvents []events.EventInput, err error)
+// It returns the raw event count, submit-ready events, quality warnings, and
+// any error. Quality warnings are accumulated into ScrapeResult.QualityWarnings
+// by runWithTracking.
+type scrapeFunc func(ctx context.Context) (eventsFound int, validEvents []events.EventInput, qualityWarnings []string, err error)
 
 // runWithTracking wraps a scrapeFunc with DB scraper_run insert/update bookkeeping.
 // If queries is nil all DB operations are skipped (best-effort).
@@ -647,8 +687,16 @@ func (s *Scraper) runWithTracking(
 		}
 	}
 
-	eventsFound, validEvents, err := fn(ctx)
+	eventsFound, validEvents, qualityWarnings, err := fn(ctx)
 	result.EventsFound = eventsFound
+	result.QualityWarnings = append(result.QualityWarnings, qualityWarnings...)
+
+	// Log quality warnings at WARN level so they appear in structured logs
+	// even without --verbose CLI mode.
+	for _, w := range result.QualityWarnings {
+		s.logger.Warn().Str("source", result.SourceName).Str("quality_warning", w).
+			Msg("scraper: quality warning detected")
+	}
 
 	if err != nil {
 		result.Error = err
@@ -658,6 +706,12 @@ func (s *Scraper) runWithTracking(
 	}
 
 	result.EventsSubmitted = len(validEvents)
+
+	// Stash normalized events for CLI verbose output in dry-run mode.
+	// The slice is only a reference — no deep copy needed.
+	if result.DryRun {
+		result.DryRunEvents = validEvents
+	}
 
 	if len(validEvents) == 0 {
 		s.updateRunCompleted(ctx, runID, result)

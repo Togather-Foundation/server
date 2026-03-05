@@ -52,6 +52,7 @@ Examples:
 
 		opts := scraper.ScrapeOptions{
 			DryRun:           scrapeDryRun,
+			Verbose:          scrapeVerbose,
 			Limit:            scrapeLimit,
 			Transport:        buildScrapeTransport(cmd, logger),
 			HeadlessOverride: scrapeHeadless,
@@ -202,6 +203,7 @@ Examples:
 
 		opts := scraper.ScrapeOptions{
 			DryRun:           scrapeDryRun,
+			Verbose:          scrapeVerbose,
 			Limit:            scrapeLimit,
 			SourcesDir:       scrapeSourceDir,
 			SourceFile:       scrapeSourceFile,
@@ -281,27 +283,65 @@ Examples:
 
 // printSingleResult prints a summary for a single scrape run. In dry-run mode
 // the extracted events (available via EventsFound/EventsSubmitted counts) are
-// reported; the event payloads themselves are not returned by the scraper so
-// we print the counts only.
+// reported; when --verbose is set, individual event details are also printed.
+// Quality warnings are always shown when present (regardless of --verbose).
 func printSingleResult(r scraper.ScrapeResult) {
 	if r.Error != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", r.Error)
 		return
 	}
 
-	if scrapeDryRun {
+	if r.DryRun {
 		if r.EventsFound == 0 {
 			fmt.Println("No events found")
 			return
 		}
 		fmt.Printf("[dry-run] source=%-28s  found=%-4d  would-submit=%d\n",
 			r.SourceName, r.EventsFound, r.EventsSubmitted)
+
+		// Print individual events when --verbose is active.
+		if scrapeVerbose && len(r.DryRunEvents) > 0 {
+			fmt.Println()
+			for i, evt := range r.DryRunEvents {
+				fmt.Printf("  %2d. %s\n", i+1, evt.Name)
+				if evt.StartDate != "" {
+					fmt.Printf("      start: %s\n", evt.StartDate)
+				}
+				if evt.EndDate != "" {
+					fmt.Printf("      end:   %s\n", evt.EndDate)
+				}
+				if evt.URL != "" {
+					fmt.Printf("      url:   %s\n", evt.URL)
+				}
+				if evt.Location != nil && evt.Location.Name != "" {
+					fmt.Printf("      venue: %s\n", evt.Location.Name)
+				}
+			}
+			fmt.Println()
+		}
+
+		printQualityWarnings(r)
 		return
 	}
 
 	fmt.Printf("Source: %-30s  Found: %d  New: %d  Duplicate: %d  Failed: %d\n",
 		r.SourceName, r.EventsFound, r.EventsCreated, r.EventsDuplicate, r.EventsFailed,
 	)
+
+	printQualityWarnings(r)
+}
+
+// printQualityWarnings prints quality warnings from the scrape result.
+// Warnings are always shown when present — they indicate potential data
+// quality issues that operators should investigate.
+func printQualityWarnings(r scraper.ScrapeResult) {
+	if len(r.QualityWarnings) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "\nQuality warnings (%d):\n", len(r.QualityWarnings))
+	for _, w := range r.QualityWarnings {
+		fmt.Fprintf(os.Stderr, "  WARNING: %s\n", w)
+	}
 }
 
 // printAllResults prints a table of per-source results and a totals row.

@@ -1,16 +1,23 @@
 name: "reel-asian"
-# Reel Asian International Film Festival (Toronto). WordPress + Elevent ticketing widget.
-# Year-round events at /year-round/current-events/ use Elevent embedded widget (AJAX).
-# UNSCRAPEABLE: Elevent widget is a cross-origin iframe/component hosted on elevent-cdn.azureedge.net.
-# Even with headless rendering (Tier 2 Rod), the actual event items are not injected into the DOM
-# in a scrapeable way - they're rendered inside a sandboxed cross-origin iframe that cannot be
-# accessed by content scripts (same-origin policy). Direct API would be required.
+# Reel Asian International Film Festival (Toronto). WordPress with Elementor + Visual Composer
+# Year-round events page (/year-round/current-events/) uses static HTML event cards.
+# Events are arranged in Visual Composer rows with individual event boxes (image + title + description).
+# This is Tier 1 static HTML scraping — no JavaScript rendering needed.
+#
+# NOTE: Elevent library is loaded for cart/account management but does NOT render
+# a dynamic events list on this page. The events shown are created with Visual Composer.
 url: "https://www.reelasian.com/year-round/current-events/"
-tier: 2
-schedule: "weekly"
-trust_level: 7
+tier: 1
+schedule: "daily"
+trust_level: 6
 license: "CC0-1.0"
-enabled: false
-headless:
-  wait_selector: "body"
-  wait_timeout_ms: 15000
+enabled: true
+max_pages: 1
+selectors:
+  event_list: ".vc_row.wpb_row .wpb_column.vc_col-sm-4:has(.wpb_text_column)"
+  name: ".wpb_text_column p:first-child a strong"
+  url: ".wpb_text_column p:first-child a"
+  # Date is embedded in the description paragraph (no <time> elements).
+  # Extract "On <day>, <month> <date>, <year>..." pattern.
+  start_date: ".wpb_text_column p:last-child"
+  image: ".wpb_single_image-img"

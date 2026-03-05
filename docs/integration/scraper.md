@@ -71,6 +71,7 @@ All subcommands are under `server scrape`. Persistent flags apply to all subcomm
 | `--server` | `SEL_SERVER_URL` | `http://localhost:8080` | SEL server base URL |
 | `--key` | `SEL_API_KEY` or `SEL_INGEST_KEY` | — | API key for ingest |
 | `--dry-run` | — | `false` | Display extracted events without submitting |
+| `--verbose` | — | `false` | Show individual event details and quality warnings in dry-run output |
 | `--limit N` | — | `0` (no limit) | Max events per source |
 | `--sources` | — | `configs/sources` | Path to sources directory |
 
@@ -170,7 +171,7 @@ server scrape all --tier 1          # CSS-selector sources only
 | `0` | Tier 0 — JSON-LD sources only |
 | `1` | Tier 1 — CSS-selector sources only |
 | `2` | Tier 2 — headless browser sources only |
-| `3` | Tier 3 — GraphQL API sources only |
+| `3` | Tier 3 — API (GraphQL or REST JSON) sources only |
 
 Output: per-source table with totals row.
 
@@ -224,10 +225,14 @@ when the site requires browser-level interaction (e.g. lazy loading, shadow DOM)
 Headless config block (`headless:`) controls timeouts, wait selectors, and navigation
 options. See [Full Config with Tier 2 Headless](#full-config-with-tier-2-headless) below.
 
-### Tier 3 — GraphQL API (requires per-site config)
+### Tier 3 — API: GraphQL or REST JSON (requires per-site config)
 
-Used when a site exposes a GraphQL API (e.g. DatoCMS-powered venues). This is the
-most structured and reliable extraction method when available.
+Used when a site exposes a structured API. Two variants are supported — exactly one
+must be configured per source:
+
+#### GraphQL variant
+
+Used when a site exposes a GraphQL API (e.g. DatoCMS-powered venues).
 
 1. POST a configured GraphQL query to the endpoint (with optional Bearer token)
 2. Decode the response envelope: `{"data": {"<event_field>": [...]}}`
@@ -239,6 +244,21 @@ most structured and reliable extraction method when available.
 Response body is capped at 10 MiB. `User-Agent` header is set to the standard
 scraper agent string. Timeout behaviour: `graphql.timeout_ms` applies only when it
 exceeds the global request timeout; the larger of the two wins.
+
+#### REST JSON variant
+
+Used when a site exposes a paginated JSON REST API (e.g. Showpass).
+
+1. GET the configured endpoint
+2. Decode the `results_field` array (default: `"results"`) from the JSON response
+3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
+4. If `url_template` is set, render the Go `text/template` with the raw item map to
+   produce each event's canonical URL
+5. Follow `next_field` (default: `"next"`) for pagination until null or `max_pages` reached
+6. Normalize and submit
+
+Response body is capped at 10 MiB per page. Timeout behaviour: `rest.timeout_ms`
+applies only when it exceeds the global request timeout; the larger of the two wins.
 
 ---
 
@@ -297,6 +317,65 @@ selectors:
   pagination: "a.next-page"
 ```
 
+#### Composite Date Selectors (`date_selectors`)
+
+When a site doesn't use `<time>` elements (common with CSS Modules frameworks
+like Ticket Spot), use `date_selectors` to extract date and time text from
+multiple DOM elements. The smart date assembler combines the fragments into
+RFC 3339 start/end datetimes.
+
+```yaml
+selectors:
+  event_list: "[class^='list-'] > div"
+  name: "[class^='title-']"
+  url: "a[href*='eventbrite']"
+  # Extract date and time from separate elements:
+  date_selectors:
+    - ".first [class^='time-container-']"                    # e.g. "Thu 5th March"
+    - "[style*='display: flex'] [class^='time-container-']"  # e.g. "9:30 PM"
+```
+
+**How it works:**
+
+1. Each selector in `date_selectors` extracts text from within the event card
+2. Text fragments are classified as date-only, time-only, or combined
+3. The assembler strips ordinal suffixes (`1st`, `2nd`, `3rd`, `th`), removes
+   day-of-week prefixes, recognises month names, and handles 12h/24h time formats
+4. First date + first time = `startDate`; second time (if present) = `endDate`
+5. Missing year is inferred (current year, or next year if >30 days in the past)
+6. Timezone comes from `DEFAULT_TIMEZONE` env var (default: `America/Toronto`)
+
+When `date_selectors` is set, it takes priority over `start_date`/`end_date`.
+If `date_selectors` produces no result, the scraper falls back to `start_date`/`end_date`.
+
+Existing configs using `start_date` with ISO 8601 dates (e.g. `"2026-05-10T19:00:00"`)
+or `<time datetime="...">` attributes continue to work unchanged — the fuzzy parser
+detects partial ISO 8601 and passes through without modification.
+
+### Quality Warnings
+
+The scraper performs automatic quality checks during extraction and reports warnings
+in the dry-run output. Use `--verbose` to see individual event details alongside
+quality warnings.
+
+```bash
+# Verbose dry-run — the primary validation workflow
+SCRAPER_HEADLESS_ENABLED=true ./server scrape source lula-lounge \
+  --source-file configs/sources/lula-lounge.yaml --dry-run --verbose
+```
+
+#### Warning Types
+
+| Warning Code | Trigger | Meaning |
+|-------------|---------|---------|
+| `date_selector_never_matched` | A `date_selectors` entry matched 0 events | The CSS selector is wrong — inspect the DOM and fix it |
+| `date_selector_partial_match` | A `date_selectors` entry matched some but not all events | The selector may need to be more general, or some events genuinely lack that element |
+| `all_midnight` | All extracted events have `T00:00:00` start times | Time extraction failed — the time selector is broken or missing |
+
+Warnings are logged to stderr and also attached to the `ScrapeResult` as
+`QualityWarnings []string` for programmatic consumption. They do **not** prevent
+event ingestion — they are advisory signals for selector debugging.
+
 ### Full Config with Tier 2 Headless
 
 ```yaml
@@ -310,6 +389,10 @@ headless:
   wait_timeout_ms: 15000            # Max ms to wait for wait_selector (default: 10000)
   wait_network_idle: true           # Also wait for XHR/fetch requests to settle
   undetected: false                 # Enable stealth evasions for bot-detection bypass
+  # iframe:                         # optional — extract content from a cross-origin iframe
+  #   selector: "iframe[title='Ticket Spot']"  # CSS selector for the target iframe element
+  #   wait_selector: ".events-container"         # wait for content inside iframe
+  #   wait_timeout_ms: 10000                      # timeout for iframe content (default: 10000)
 
 selectors:
   event_list: "div.event-card"
@@ -317,6 +400,11 @@ selectors:
   start_date: "time[datetime]"
   url: "a.event-link"
 ```
+
+When `iframe:` is set, the scraper uses Chrome DevTools Protocol (CDP) frame navigation
+to enter the iframe's execution context and extracts HTML from the iframe. CSS selectors
+in `selectors:` then apply to the iframe DOM, not the parent page. This enables
+extraction from cross-origin iframes such as Ticket Spot (Wix embed) and Elevent.
 
 ### Full Config with Tier 3 GraphQL
 
@@ -350,13 +438,42 @@ graphql:
 data (field names are the query response keys). A missing key renders as `<no value>`;
 template execution errors are logged at debug level and the URL is left empty.
 
+### Full Config with Tier 3 REST
+
+```yaml
+name: "showpass-venue"
+url: "https://example.showpass.com"  # Canonical source URL (informational)
+tier: 3
+enabled: true
+
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=12345"
+  results_field: "results"           # JSON key containing the events array (default: "results")
+  next_field: "next"                 # JSON key for the next-page URL (default: "next")
+  url_template: "https://www.showpass.com/{{.slug}}"  # Go text/template; fields from raw item
+  timeout_ms: 30000                  # Optional; uses global timeout if not set or smaller
+  field_map:
+    name: "name"                     # RawEvent field: source JSON key
+    start_date: "starts_on"
+    end_date: "ends_on"
+    image: "image"
+    # url: omitted — populated by url_template above
+```
+
+`field_map` maps RawEvent field names (`name`, `start_date`, `end_date`, `url`, `image`,
+`location`, `description`) to source JSON keys. Omit `field_map` entirely for identity
+mapping (source keys must match RawEvent Go field names: `Name`, `StartDate`, etc.).
+
+`url_template` is a Go `text/template` rendered with the raw item map as data. A
+missing key renders as `<no value>`; template errors are logged at debug level.
+
 ### Required Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Unique identifier (used in `server scrape source <name>`) |
 | `url` or `urls` | string or []string | Entry-point URL(s) to scrape (mutually exclusive) |
-| `tier` | int | `0` = JSON-LD, `1` = CSS selectors, `2` = headless browser, `3` = GraphQL API |
+| `tier` | int | `0` = JSON-LD, `1` = CSS selectors, `2` = headless browser, `3` = API (GraphQL or REST) |
 
 ### Optional Fields
 
@@ -369,9 +486,11 @@ template execution errors are logged at debug level and the URL is left empty.
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
+| `timezone` | `""` | IANA timezone for date parsing (e.g. `"America/Toronto"`). Overrides `DEFAULT_TIMEZONE` env var. Falls back to `America/Toronto` if neither is set. |
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
-| `graphql` | — | Required for `tier: 3` (see GraphQL fields below) |
+| `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
+| `rest` | — | Required for `tier: 3` REST variant (mutually exclusive with `graphql`) |
 
 ### Headless Config Fields (`headless:`)
 
@@ -384,6 +503,9 @@ template execution errors are logged at debug level and the URL is left empty.
 | `pagination_button` | string | — | CSS selector for a JS "next page" / "load more" button. For URL-based pagination use `selectors.pagination` instead. |
 | `rate_limit_ms` | int | `1000` | Delay between page loads in ms. |
 | `headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
+| `iframe.selector` | string | — | CSS selector for the target cross-origin iframe element. When set, the scraper enters the iframe's execution context via CDP frame navigation and extracts HTML from inside the iframe. |
+| `iframe.wait_selector` | string | — | CSS selector to wait for inside the iframe DOM before extracting. |
+| `iframe.wait_timeout_ms` | int | `10000` | Timeout (ms) for `iframe.wait_selector`. |
 
 ### GraphQL Config Fields (`graphql:`)
 
@@ -395,6 +517,21 @@ template execution errors are logged at debug level and the URL is left empty.
 | `token` | no | Bearer token for Authorization header |
 | `url_template` | no | Go `text/template` string to construct each event's URL |
 | `timeout_ms` | no | Request timeout; the larger of this and the global timeout applies |
+
+### REST Config Fields (`rest:`)
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `endpoint` | yes | — | REST API URL (initial page URL) |
+| `results_field` | no | `"results"` | JSON key containing the events array on each page |
+| `next_field` | no | `"next"` | JSON key containing the next-page URL (string or null) |
+| `url_template` | no | — | Go `text/template` string to construct each event's URL |
+| `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
+| `headers` | no | — | Extra HTTP headers to inject (map[string]string) |
+| `field_map` | no | — | Map from RawEvent field names to source JSON keys (see below) |
+
+**`field_map` keys** (all optional; omit for identity mapping):
+`name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 
 ---
 
@@ -661,9 +798,10 @@ org database for a match, and writes `configs/sources/<name>.yaml`. It runs up t
 
 ### Currently Configured Sources (Tier 3)
 
-| Name | Endpoint | Notes |
-|------|----------|-------|
-| tranzac | graphql.datocms.com | DatoCMS public token; url_template constructs `/events/<slug>` |
+| Name | Variant | Endpoint | Notes |
+|------|---------|----------|-------|
+| tranzac | GraphQL | graphql.datocms.com | DatoCMS public token; url_template constructs `/events/<slug>` |
+| burdock-brewery | REST | showpass.com/api/public/events/?venue=17330 | Showpass venue API; paginated; 34 events across 2 pages |
 
 See `configs/sources/README.md` for full status including disabled sources and unverified candidates.  
 See `docs/integration/disabled-sources.md` for a detailed breakdown of every disabled source and its recommended fix path.

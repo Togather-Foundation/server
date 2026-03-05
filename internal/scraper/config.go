@@ -48,6 +48,16 @@ type SourceConfig struct {
 	Headless HeadlessConfig `yaml:"headless,omitempty" json:"headless,omitempty"`
 	// GraphQL holds Tier 3 GraphQL API options. Ignored for tier 0/1/2.
 	GraphQL *GraphQLConfig `yaml:"graphql,omitempty" json:"graphql,omitempty"`
+	// REST holds Tier 3 REST JSON feed options. Ignored for tier 0/1/2.
+	// Exactly one of GraphQL or REST must be set for tier 3.
+	REST *RestConfig `yaml:"rest,omitempty" json:"rest,omitempty"`
+	// Timezone is an IANA timezone name (e.g. "America/Toronto") used when
+	// parsing human-readable dates that lack timezone information (common in
+	// Tier 1/2 CSS selector scraping). When empty, falls back to the
+	// DEFAULT_TIMEZONE environment variable (server-wide setting — each SEL
+	// node serves one geographic location). If that is also unset, defaults
+	// to "America/Toronto".
+	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
@@ -63,6 +73,21 @@ type SelectorConfig struct {
 	URL         string `yaml:"url" json:"url"`
 	Image       string `yaml:"image" json:"image"`
 	Pagination  string `yaml:"pagination" json:"pagination"`
+	// DateSelectors is a list of CSS selectors that each extract a text
+	// fragment containing part of the event date/time information (e.g.
+	// one selector for the date, another for the time). The scraper
+	// extracts text from each selector and passes all fragments to the
+	// smart date assembler, which infers start and end datetimes.
+	//
+	// When set, DateSelectors takes priority over StartDate/EndDate for
+	// date extraction. StartDate/EndDate are still used as fallback if
+	// DateSelectors produces no result.
+	//
+	// Example:
+	//   date_selectors:
+	//     - ".first [class^='time-container-']"     # "Thu 5th March"
+	//     - "[style*='display: flex'] [class^='time-container-']"  # "9:30 PM"
+	DateSelectors []string `yaml:"date_selectors,omitempty" json:"date_selectors,omitempty"`
 }
 
 // HeadlessConfig holds Tier 2 headless-browser-specific options.
@@ -91,6 +116,27 @@ type HeadlessConfig struct {
 	// RateLimitMs overrides the per-domain delay between page loads (ms).
 	// 0 means use the RodExtractor default.
 	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
+	// Iframe configures extraction from a cross-origin iframe. When set,
+	// the scraper navigates into the matched iframe's execution context
+	// and extracts HTML from the frame instead of the parent page.
+	Iframe *IframeConfig `yaml:"iframe,omitempty" json:"iframe,omitempty"`
+}
+
+// IframeConfig holds options for extracting content from a cross-origin
+// iframe inside a headless-rendered page. When set, the scraper enters
+// the iframe's execution context via Rod's CDP frame navigation and
+// extracts HTML from the frame instead of the parent page. CSS selectors
+// in SourceConfig.Selectors then apply to the iframe DOM.
+type IframeConfig struct {
+	// Selector is a CSS selector that matches the target <iframe> element
+	// in the parent page (e.g. "iframe[title='Ticket Spot']").
+	Selector string `yaml:"selector" json:"selector"`
+	// WaitSelector is a CSS selector to wait for inside the iframe before
+	// extracting its HTML (e.g. ".events-container").
+	WaitSelector string `yaml:"wait_selector" json:"wait_selector"`
+	// WaitTimeoutMs is the maximum time (ms) to wait for WaitSelector
+	// inside the iframe. 0 means use the default (10 000 ms).
+	WaitTimeoutMs int `yaml:"wait_timeout_ms" json:"wait_timeout_ms"`
 }
 
 // GraphQLConfig holds Tier 3 GraphQL API options.
@@ -126,6 +172,40 @@ type GraphQLConfig struct {
 	URLTemplate string `yaml:"url_template" json:"url_template"`
 }
 
+// RestConfig holds Tier 3 REST JSON feed options.
+//
+// Note on URL fields: the url/urls fields on SourceConfig are NOT used for
+// fetching by Tier 3 REST — only Endpoint is used to make the HTTP request.
+// source.URL is persisted as human-readable metadata in scraper_run records
+// (SourceURL column) so operators can identify the source in dashboards and
+// logs, but it is never passed to the HTTP client.
+type RestConfig struct {
+	// Endpoint is the first page URL for the REST API (e.g.
+	// https://www.showpass.com/api/public/events/?venue=17330).
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	// ResultsField is the key in the JSON response that holds the array of
+	// event objects. Defaults to "results" when empty.
+	ResultsField string `yaml:"results_field" json:"results_field"`
+	// NextField is the key in the JSON response that holds the URL of the
+	// next page (null or absent = no more pages). Defaults to "next" when
+	// empty.
+	NextField string `yaml:"next_field" json:"next_field"`
+	// URLTemplate is an optional Go text/template string used to construct the
+	// canonical URL for each event. The template receives the raw item map as
+	// its data (e.g. "https://www.showpass.com/{{.slug}}").
+	// If empty, no URL is constructed from the field_map url key.
+	URLTemplate string `yaml:"url_template" json:"url_template"`
+	// TimeoutMs is the HTTP request timeout in milliseconds. 0 = use default.
+	TimeoutMs int `yaml:"timeout_ms" json:"timeout_ms"`
+	// Headers are extra HTTP headers sent with every request.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	// FieldMap maps RawEvent field names (keys) to source JSON field names
+	// (values). Supported keys: name, start_date, end_date, url, image,
+	// location, description. When empty, field names are used directly as-is
+	// (identity mapping using the RawEvent Go field names).
+	FieldMap map[string]string `yaml:"field_map,omitempty" json:"field_map,omitempty"`
+}
+
 // GetURLs returns the list of entry-point URLs for this source.
 // When URLs is non-empty it is returned directly and URL is ignored (URLs
 // takes precedence). When URLs is empty and URL is set, URL is wrapped in a
@@ -139,6 +219,20 @@ func (c SourceConfig) GetURLs() []string {
 		return []string{c.URL}
 	}
 	return nil
+}
+
+// GetTimezone returns the effective IANA timezone name for this source.
+// Priority: per-source Timezone field → DEFAULT_TIMEZONE env var →
+// "America/Toronto" fallback. Each SEL node runs for one geographic
+// location, so the env var covers all sources on that node.
+func (c SourceConfig) GetTimezone() string {
+	if c.Timezone != "" {
+		return c.Timezone
+	}
+	if tz := os.Getenv("DEFAULT_TIMEZONE"); tz != "" {
+		return tz
+	}
+	return "America/Toronto"
 }
 
 // DefaultSourceConfig returns a SourceConfig with sensible defaults applied.
@@ -207,10 +301,24 @@ func ValidateConfig(cfg SourceConfig) error {
 		errs = append(errs, "selectors.event_list: required for tier 2")
 	}
 
+	if cfg.Headless.Iframe != nil {
+		if cfg.Tier != 2 {
+			errs = append(errs, "headless.iframe: iframe extraction is only supported for tier 2 (headless)")
+		}
+		if strings.TrimSpace(cfg.Headless.Iframe.Selector) == "" {
+			errs = append(errs, "headless.iframe.selector is required when iframe block is set")
+		}
+		if strings.TrimSpace(cfg.Headless.Iframe.WaitSelector) == "" {
+			errs = append(errs, "headless.iframe.wait_selector is required when iframe block is set")
+		}
+	}
+
 	if cfg.Tier == 3 {
-		if cfg.GraphQL == nil {
-			errs = append(errs, "tier 3 requires a graphql config block")
-		} else {
+		if cfg.GraphQL != nil && cfg.REST != nil {
+			errs = append(errs, "tier 3: graphql and rest are mutually exclusive; set exactly one")
+		} else if cfg.GraphQL == nil && cfg.REST == nil {
+			errs = append(errs, "tier 3 requires a graphql or rest config block")
+		} else if cfg.GraphQL != nil {
 			if strings.TrimSpace(cfg.GraphQL.Endpoint) == "" {
 				errs = append(errs, "graphql.endpoint: required for tier 3")
 			} else {
@@ -228,6 +336,20 @@ func ValidateConfig(cfg SourceConfig) error {
 			if t := strings.TrimSpace(cfg.GraphQL.URLTemplate); t != "" {
 				if _, err := template.New("url_template").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("graphql.url_template: invalid Go template: %v", err))
+				}
+			}
+		} else { // cfg.REST != nil
+			if strings.TrimSpace(cfg.REST.Endpoint) == "" {
+				errs = append(errs, "rest.endpoint: required for tier 3")
+			} else {
+				u, err := url.Parse(cfg.REST.Endpoint)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					errs = append(errs, fmt.Sprintf("rest.endpoint: must be a valid http/https URL, got %q", cfg.REST.Endpoint))
+				}
+			}
+			if t := strings.TrimSpace(cfg.REST.URLTemplate); t != "" {
+				if _, err := template.New("url_template").Parse(t); err != nil {
+					errs = append(errs, fmt.Sprintf("rest.url_template: invalid Go template: %v", err))
 				}
 			}
 		}
@@ -342,6 +464,17 @@ func loadFile(path string) (SourceConfig, error) {
 	}
 	if cfg.MaxPages == 0 {
 		cfg.MaxPages = 10
+	}
+	if cfg.REST != nil {
+		if cfg.REST.ResultsField == "" {
+			cfg.REST.ResultsField = "results"
+		}
+		if cfg.REST.NextField == "" {
+			cfg.REST.NextField = "next"
+		}
+	}
+	if cfg.Headless.Iframe != nil && cfg.Headless.Iframe.WaitTimeoutMs == 0 {
+		cfg.Headless.Iframe.WaitTimeoutMs = 10000
 	}
 
 	return cfg, nil
