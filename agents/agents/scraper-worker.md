@@ -207,4 +207,15 @@ RESULT | <URL> | <name> | <event_count> | <status> | <notes>
 ```
 
 Where `status` = `written` (enabled=true), `failed` (kept disabled), or `downgraded` (tier changed).
-Include detected platform in notes (e.g. `platform: WordPress+Tribe, tier: 0`).
+
+**`notes` must always include:**
+- Detected platform (e.g. `platform: Drupal+Cloudflare`)
+- Final tier used (e.g. `tier: 2`)
+- Any headless flags set (e.g. `undetected: true`)
+
+**On `failed` or `downgraded`, also include:**
+- What tiers were attempted and why each was rejected (e.g. `T1: 403; T2: containers empty after 25s`)
+- Selectors tried and why they failed (e.g. `tried .event-card (0 matches), .tribe-event (403)`)
+- Exact error messages from the scraper commands
+- Any structural blockers (e.g. `cross-origin iframe`, `JS widget never populates DOM`, `robots.txt Disallow`)
+- Suggested next approach if known (e.g. `try wait_network_idle: true`, `check for public API`)

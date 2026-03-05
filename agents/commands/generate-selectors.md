@@ -371,11 +371,20 @@ go build -o ./server ./cmd/server && ./server scrape source <name> --dry-run
 
 ### Return result
 
-Return exactly one line in this format (no other content needed):
+Return exactly one line in this format:
 
 ```
-RESULT | <URL> | <name> | <event_count> | written | <any notable notes>
+RESULT | <URL> | <name> | <event_count> | <status> | <notes>
 ```
+
+**`notes` must always include** the detected platform and final tier (e.g. `platform: Drupal+Cloudflare, tier: 2, undetected: true`).
+
+**On `failed`, `js-rendered`, or `blocked`, also include:**
+- What tiers were attempted and why each was rejected (e.g. `T1: 403; T2: containers empty after 25s`)
+- Selectors tried and why they failed
+- Exact scraper error messages
+- Any structural blockers (e.g. `cross-origin iframe`, `JS widget never populates DOM`, `robots.txt Disallow`)
+- Suggested next approach if known (e.g. `try wait_network_idle: true`, `check for public API`)
 
 ---
 
