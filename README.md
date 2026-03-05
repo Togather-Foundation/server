@@ -116,6 +116,52 @@ curl -X POST https://toronto.togather.foundation/api/v1/events \
 
 ---
 
+## AI Agent Integration (MCP)
+
+The SEL server exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) endpoint, giving AI agents direct tool access to event data — no scraping or REST plumbing needed.
+
+### Endpoint
+
+```
+<your-node>/mcp   (streamable HTTP, API key required)
+```
+
+Get a free API key at `/dev/login` (GitHub OAuth, instant).
+
+### Available Tools
+
+| Tool | Description |
+|---|---|
+| `events` | List events with filters (date, location, keyword, category) or get a single event by ULID |
+| `add_event` | Submit a new event from JSON-LD (requires API key) |
+| `places` | List venues/locations with filters or get a single place by ULID |
+| `organizations` | List event organizers with filters or get a single organization by ULID |
+| `search` | Full-text search across events, places, and organizations |
+
+### Claude Desktop Configuration
+
+```json
+{
+  "mcpServers": {
+    "togather": {
+      "type": "http",
+      "url": "https://<your-node>/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+### Resources
+
+- [Full MCP Integration Guide](docs/integration/mcp-server.md)
+- API Key Signup: `/dev/login` (GitHub OAuth, instant)
+- [Machine-readable discovery](/llms.txt)
+
+---
+
 ## Quick Start: Deploying SEL
 
 **New server:** provision and install the base system (one-time).
