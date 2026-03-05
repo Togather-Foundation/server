@@ -555,6 +555,29 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: "",
 		},
+		{
+			name: "iframe config on non-tier-2 fails",
+			cfg: SourceConfig{
+				Name:       "Tier 1 With Iframe",
+				URL:        "https://example.com/events",
+				Tier:       1,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".event-card",
+				},
+				Headless: HeadlessConfig{
+					WaitSelector: "body",
+					Iframe: &IframeConfig{
+						Selector:     "iframe#widget",
+						WaitSelector: ".events",
+					},
+				},
+			},
+			wantErr: "headless.iframe: iframe extraction is only supported for tier 2",
+		},
 	}
 
 	for _, tt := range tests {

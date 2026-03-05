@@ -266,6 +266,9 @@ func ValidateConfig(cfg SourceConfig) error {
 	}
 
 	if cfg.Headless.Iframe != nil {
+		if cfg.Tier != 2 {
+			errs = append(errs, "headless.iframe: iframe extraction is only supported for tier 2 (headless)")
+		}
 		if strings.TrimSpace(cfg.Headless.Iframe.Selector) == "" {
 			errs = append(errs, "headless.iframe.selector is required when iframe block is set")
 		}

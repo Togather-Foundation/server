@@ -400,6 +400,8 @@ func (e *RodExtractor) extractIframeHTML(page *rod.Page, config SourceConfig) (s
 
 	// Enter the iframe's execution context. Rod's Element.Frame() returns a
 	// *Page representing the frame, which supports the same API as any page.
+	// The frame page shares the parent page's browser lifecycle — closing the
+	// parent page cleans up all child frames, so we do NOT defer frame.Close().
 	frame, err := el.Frame()
 	if err != nil {
 		return "", fmt.Errorf("entering iframe frame context: %w", err)
