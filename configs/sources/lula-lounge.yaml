@@ -3,8 +3,12 @@ name: "lula-lounge"
 # /events returns 404; events available via Eventbrite (cross-origin iframe on home page)
 # Home page: https://www.lula.ca/ has embedded Eventbrite + Fever + custom Ticket Spot widget
 # Cross-origin iframes BLOCK scraping; cannot extract from Wix directly
-# Fallback: Use Eventbrite REST API (Tier 3) with venue/org ID if available
-# Recommendation: Contact venue for dedicated events API or JSON feed
+#
+# Eventbrite API is OAuth-only (NOT public) — T3 REST is not viable.
+# Best approach: T2 headless scrape of the Eventbrite organizer page directly:
+#   https://www.eventbrite.ca/o/lula-lounge-4108527983
+# The organizer page is server-rendered and lists all upcoming events publicly.
+# Alternative: Contact venue for dedicated events API, iCal feed, or JSON feed.
 url: "https://www.lula.ca/"
 tier: 2
 schedule: "daily"

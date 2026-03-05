@@ -133,15 +133,21 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - Apply the recommended tier and headless flags from the platform profile
 - Note the detected platform in your RESULT notes (e.g. `platform: WordPress+Tribe`)
 
-**IMPORTANT — T3 REST always beats T2 headless:** If a page embeds or links to a
-platform with a known public API (Showpass, Eventbrite), **always prefer T3 REST**
-over attempting T2 headless scraping. Third-party ticketing widgets (iframes, JS embeds)
-are the #1 cause of T2 failures. The REST API bypasses the widget entirely. Even if
-you detect Showpass/Eventbrite alongside other signals (Wix, Shopify, WordPress), take
-the T3 REST path.
+**IMPORTANT — T3 REST always beats T2 headless (when a public API exists):** If a
+page embeds or links to a platform with a **confirmed public API** (e.g. Showpass),
+**always prefer T3 REST** over attempting T2 headless scraping. Third-party ticketing
+widgets (iframes, JS embeds) are the #1 cause of T2 failures. The REST API bypasses
+the widget entirely. Even if you detect Showpass alongside other signals (Wix, Shopify,
+WordPress), take the T3 REST path.
+
+**Eventbrite is NOT a T3 candidate.** Eventbrite's API requires OAuth and is not
+publicly readable. If you detect Eventbrite links/embeds, use **T2 headless** — either
+scrape the venue's own events page (if it renders event data in its own DOM) or scrape
+the Eventbrite organizer page directly (`eventbrite.ca/o/<org-slug>-<org-id>`). See
+`docs/integration/event-platforms.md` section 16 for details.
 
 Signals to look for (check full page source, not just first 8KB — use
-`curl -sL "<URL>" | grep -i 'showpass\|eventbrite\|datocms'` for API platforms):
+`curl -sL "<URL>" | grep -i 'showpass\|eventbrite\|datocms'` for platform detection):
 - `data-wf-site` → Webflow (T1 static)
 - `tribe-events*` classes → WordPress + Tribe (T0 preferred)
 - `wp-block-post` → WordPress Gutenberg (T1)
@@ -151,7 +157,7 @@ Signals to look for (check full page source, not just first 8KB — use
 - `data-events-calendar-app` → eventscalendar.co (T2, `wait_network_idle: true`)
 - `graphql.datocms.com` in source → DatoCMS (T3 GraphQL)
 - `showpass.com` link or `showpass-widget` → Showpass (T3 REST API)
-- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite (T3 REST API)
+- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite (**T2 headless** — no public API; scrape organizer page or venue's own page)
 - `__NEXT_DATA__` → Next.js (T0 preferred)
 - Cloudflare challenge body → `undetected: true`
 
@@ -159,7 +165,7 @@ Signals to look for (check full page source, not just first 8KB — use
 
 - **T0 detected** (JSON-LD present, `tribe-events`, `__NEXT_DATA__`, iCal feed): skip to Step 7 and write a `tier: 0` config — no CSS selectors needed. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 0 (feed/JSON-LD)`.
 - **T3 GraphQL detected** (DatoCMS / `graphql.datocms.com` in source): find the API token in the page JS (`curl -sL "<URL>" | grep -o 'datocms[^"]*token[^"]*"[A-Za-z0-9_-]*"'` or similar), then skip to Step 7 and write a `tier: 3` graphql config. Return `RESULT | <URL> | <name> | - | written | platform: DatoCMS, tier: 3`.
-- **T3 REST detected** (Showpass, Eventbrite, or other public REST API — detected via links, iframes, or widget embeds anywhere in page source): identify the venue/org ID from page source links. Refer to `docs/integration/event-platforms.md` for the platform profile (API endpoint pattern, response shape, field_map values, how to find the venue/org ID). Skip to Step 7 and write a `tier: 3` rest config. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 3 (REST)`.
+- **T3 REST detected** (Showpass or other platform with a **confirmed public API** — detected via links, iframes, or widget embeds anywhere in page source): identify the venue/org ID from page source links. Refer to `docs/integration/event-platforms.md` for the platform profile (API endpoint pattern, response shape, field_map values, how to find the venue/org ID). Skip to Step 7 and write a `tier: 3` rest config. Return `RESULT | <URL> | <name> | - | written | platform: <X>, tier: 3 (REST)`. **Note:** Eventbrite does NOT have a public API — use T2 headless instead (see signal list above).
 - **T1/T2**: continue with Step 1 below.
 
 ### Step 1 — Inspect the page

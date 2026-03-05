@@ -31,7 +31,7 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `.ashx?orgid=` URL pattern | **Agile Technologies box office** | T2 (`wait_network_idle: true`) |
 | `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
-| `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T3 (REST API) |
+| `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T2 (no public API) |
 | `class="nuxt-*"` or `window.__NUXT__` | **Nuxt.js** | T0 or T3 (check DatoCMS) |
 | `class="elementor-post__title"` | **WordPress + Elementor (news loop)** | T1 |
 | `__vue_app__` in global JS | **Vue SPA** | T2 |
@@ -565,27 +565,25 @@ rest:
 
 ### 16. Eventbrite
 
-**What it is:** Global ticketing platform. Organizer event lists are accessible via
-the Eventbrite public API.
+**What it is:** Global ticketing platform. Venues link to Eventbrite for ticket sales.
 
 **Detection signals:**
 - Links to `eventbrite.ca/o/<org-slug>-<org-id>` or `eventbrite.com/e/<id>`
 - Eventbrite search widget embed
 
-**Recommended approach:** T3 (REST API).
-`GET https://www.eventbriteapi.com/v3/organizers/<org_id>/events/`
+**API status:** Eventbrite's REST API (`eventbriteapi.com/v3/`) requires OAuth
+authentication and is designed for organizers to manage their own events — **not** a
+public read API. There is no unauthenticated endpoint for listing an organizer's events.
+T3 REST is **not viable** for Eventbrite.
 
-**API shape:** `{ pagination: { has_more_items, continuation }, events: [...] }` —
-pagination uses `continuation` token appended as query param.
-Key event fields: `name.text`, `start.utc`, `end.utc`, `url`, `logo.url`,
-`venue.name` (requires `expand=venue`).
+**Recommended approach:** T2 headless scraping of the organizer page
+(`eventbrite.ca/o/<org-slug>-<org-id>`) or the venue's own events page if it embeds
+Eventbrite widgets. The organizer page is server-rendered and may yield event cards
+via CSS selectors. If the organizer page is JS-rendered or behind Cloudflare, use
+`undetected: true`.
 
-**How to find an organizer ID:** The URL `eventbrite.ca/o/<org-slug>-<org-id>` contains
-the numeric org ID as the last segment after the final `-`. E.g.
-`eventbrite.ca/o/lula-lounge-toronto-4108527983` → org ID `4108527983`.
-
-**Note:** Eventbrite API may require an API token for some endpoints. Check whether the
-public organizer events endpoint works unauthenticated before configuring.
+**Fallback:** If scraping fails, the only reliable path is venue cooperation (ask the
+organizer to share an iCal feed or event data export).
 
 **Known organizer IDs:**
 - Lula Lounge Toronto: `4108527983`

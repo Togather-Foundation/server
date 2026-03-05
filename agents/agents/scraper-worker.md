@@ -33,7 +33,7 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `__NEXT_DATA__` → Next.js → **Tier 0** preferred
 - `graphql.datocms.com` in source → DatoCMS → **Tier 3** GraphQL
 - `showpass.com` link or `showpass-widget` → Showpass → **Tier 3** REST
-- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite → **Tier 3** REST
+- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite → **Tier 2** (no public API; scrape organizer page)
 - `data-wf-site` → Webflow → **Tier 1** static
 - `wp-block-post` → WordPress Gutenberg → **Tier 1**
 - `elementor-*` → WordPress + Elementor → **Tier 1/2**
@@ -43,23 +43,31 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 
 If a known platform is matched, skip or abbreviate DOM inspection — use the known selectors/tier as a starting point.
 
-**IMPORTANT — T3 REST always beats T2 headless:** If a page embeds or links to a
-platform with a known public API (Showpass, Eventbrite), **always prefer T3 REST**
-over attempting T2 headless scraping. Third-party ticketing widgets (iframes, JS embeds)
-are the #1 cause of T2 failures. The REST API bypasses the widget entirely. Even if
-you detect Showpass/Eventbrite alongside other signals (Wix, Shopify, WordPress), take
-the T3 REST path.
+**IMPORTANT — T3 REST always beats T2 headless (when a public API exists):** If a
+page embeds or links to a platform with a **confirmed public API** (e.g. Showpass),
+**always prefer T3 REST** over attempting T2 headless scraping. Third-party ticketing
+widgets (iframes, JS embeds) are the #1 cause of T2 failures. The REST API bypasses
+the widget entirely. Even if you detect Showpass alongside other signals (Wix, Shopify,
+WordPress), take the T3 REST path.
+
+**Eventbrite is NOT a T3 candidate.** Eventbrite's API requires OAuth and is not
+publicly readable. If you detect Eventbrite links/embeds, use **T2 headless** — either
+scrape the venue's own events page (if it renders event data in its own DOM) or scrape
+the Eventbrite organizer page directly (`eventbrite.ca/o/<org-slug>-<org-id>`). The
+organizer page is server-rendered and lists all upcoming events. Use `undetected: true`
+if Cloudflare blocks it. See `docs/integration/event-platforms.md` section 16.
 
 **Tier 0 path** (JSON-LD or iCal feed detected): skip to Step 4 and write a tier: 0 config — no CSS selectors needed.
 
 **Tier 3 GraphQL path** (DatoCMS/GraphQL detected): find the API token in the page JS source, write a tier: 3 graphql config. Refer to `docs/integration/event-platforms.md` for the DatoCMS profile.
 
-**Tier 3 REST path** (Showpass, Eventbrite, or other REST API detected): find the
-venue/org ID from page source links. Search the full page source (not just the first
-8KB) for platform URLs — e.g. `curl -sL "<URL>" | grep -i 'showpass\|eventbrite'`.
+**Tier 3 REST path** (Showpass or other platform with a **confirmed public API**
+detected): find the venue/org ID from page source links. Search the full page source
+(not just the first 8KB) for platform URLs — e.g. `curl -sL "<URL>" | grep -i 'showpass'`.
 Refer to `docs/integration/event-platforms.md` for the platform profile (API endpoint
 pattern, response shape, field_map values, how to find the venue/org ID). Skip to
-Step 4 and write a tier: 3 rest config.
+Step 4 and write a tier: 3 rest config. **Note:** Eventbrite does NOT qualify — use
+T2 headless to scrape the organizer page instead (see signals above).
 
 **Tier 1/2 path**: continue with Steps 1–5 below.
 
