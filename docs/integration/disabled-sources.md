@@ -2,7 +2,8 @@
 
 **Last reviewed:** 2026-03-05  
 **Audit bead:** `srv-2oipr` (closed)  
-**Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)
+**Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)  
+**T3 REST tier bead:** `srv-hi014` (open) — adds `rest:` config block; unblocks burdock-brewery, workman-arts, and others
 
 This document summarises every source currently set `enabled: false`, the reason it
 is disabled, and the recommended fix path. It is intended as a reference for future
@@ -15,14 +16,15 @@ For scraper architecture and how to add new sources see `docs/integration/scrape
 
 ## Summary by Fix Category
 
-Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-rendered headless (Rod), T3 = knowledge graph / GraphQL.
+Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-rendered headless (Rod), T3 = API (GraphQL or REST JSON — `srv-hi014`).
 
 | Category | Sources | Effort |
 |----------|---------|--------|
 | Seasonal — re-enable on a calendar trigger | heritage-toronto, imagine-native, inside-out | None |
-| T2 widget never renders (third-party embed) | burdock-brewery, rcmusic, hot-docs | Low–Medium (find underlying API endpoint) |
+| T3 REST API — unblocked by `srv-hi014` | burdock-brewery, workman-arts | Low (config only once `srv-hi014` lands) |
+| T2 widget never renders (third-party embed) | rcmusic, hot-docs | Low–Medium (find underlying API endpoint) |
 | Need depth-2 (detail-page) scraping | obsidian-theatre, east-end-arts, theatre-passe-muraille, orpheus-choir-toronto | Medium (new feature) |
-| Blocked by third-party widget / no listing page | luminato, reel-asian, church-wellesley-village-bia, lula-lounge, workman-arts | Low–Medium (contact/API) |
+| Blocked by third-party widget / no listing page | luminato, reel-asian, church-wellesley-village-bia, lula-lounge | Low–Medium (contact/API) |
 | Blocked by bot protection | ago, crows-theatre, st-lawrence-market, glad-day-bookshop | Medium–High |
 | No events listing page | mammalian-diving-reflex | Blocked |
 
@@ -57,7 +59,54 @@ because they had zero events at review time.
 
 ---
 
-## 2. Blocked by third-party widget (headless timeout)
+## 2. T3 REST API — unblocked by `srv-hi014`
+
+These sources use Showpass or another JSON REST API for ticketing. Once `srv-hi014`
+lands (adds the `rest:` config block to Tier 3), these become trivial config-only
+changes.
+
+### burdock-brewery
+- **URL:** `https://burdockbrewery.com/pages/music-hall`
+- **Platform:** Shopify page embeds a Showpass iframe widget (AngularJS); also has an
+  eventscalendar.co embed.
+- **Blocked by:** Cross-origin JS barrier — both the Showpass iframe and the
+  eventscalendar.co embed never produce DOM content accessible to Rod.
+- **Fix:** Showpass public REST API at
+  `https://www.showpass.com/api/public/events/?venue=17330` returns 34 events
+  across 2 pages (`{ count, next, results: [...] }`). Confirmed working with
+  `curl -sL`. Once `srv-hi014` lands:
+  ```yaml
+  tier: 3
+  rest:
+    endpoint: "https://www.showpass.com/api/public/events/?venue=17330"
+    results_field: "results"
+    next_field: "next"
+    url_template: "https://www.showpass.com/{{.slug}}"
+    field_map:
+      name: "name"
+      start_date: "starts_on"
+      end_date: "ends_on"
+      image: "image"
+  enabled: true
+  ```
+- **Related bead:** `srv-hi014`
+
+### workman-arts
+- **URL:** `https://workmanarts.com/events/`
+- **Platform:** WPBakery + Showpass widget
+- **Blocked by:** Two-layer barrier — AJAX filter interaction required before events
+  load, then events render via Showpass JS widget. Main programming is the Rendezvous
+  With Madness festival (October/November).
+- **Fix:** Find the Workman Arts Showpass venue ID (not yet confirmed). If they use
+  Showpass, the REST API pattern from burdock-brewery applies directly. Check the
+  Showpass iframe src on the page for a venue ID, or search
+  `showpass.com/api/public/events/?q=workman`. Once `srv-hi014` lands and the
+  venue ID is confirmed, enable with the same `rest:` block pattern as burdock.
+- **Related bead:** `srv-hi014`
+
+---
+
+## 3. T2 widget never renders (third-party embed)
 
 These sources load event data via a third-party JS widget that does not render
 within Rod's timeout, or at all. Tier 2 headless is working correctly — the widget
@@ -89,24 +138,6 @@ The recommended test sequence is:
 
 The fix path (API/contact) remains valid if both flags still fail to produce content.
 
-### burdock-brewery
-- **URL:** `https://burdockbrewery.com/pages/music-hall`
-- **Platform:** `eventscalendar.co` embed (`data-project-id="proj_T8vacNv8cWWeEQAQwLKHb"`)
-  — same widget vendor as luminato.
-- **Blocked by:** The Shopify page renders the embed container
-  (`div[data-events-calendar-app]`) immediately, but the widget JS fires cross-origin
-  XHR requests that never complete within Rod's default wait. The embed container is
-  confirmed present in the static DOM; content is loaded asynchronously.
-- **Next step:** Try `wait_network_idle: true` + `wait_timeout_ms: 20000` +
-  `undetected: true` in a draft config. If the widget populates after waiting for
-  XHR idle, the selector would be something like `.cl-event-card` or similar
-  eventscalendar.co class names. Use `server scrape source --source-file` to test
-  without a DB sync.
-- **Fallback:** Contact the venue or eventscalendar.co for an API key or iCal export.
-  An earlier investigation found a Showpass API (`showpass.com/api/public/events/?venue=17330`)
-  which may be a legacy/parallel ticketing integration — verify before using.
-- **Related bead:** `srv-71948`
-
 ### rcmusic
 - **URL:** `https://www.rcmusic.com/events-and-performances`
 - **Platform:** AWS CloudSearch JS widget (`data-template="TPSPT.AWSFacetedSearchResults_Events"`)
@@ -135,7 +166,7 @@ The fix path (API/contact) remains valid if both flags still fail to produce con
 
 ---
 
-## 3. Need depth-2 (detail-page) scraping
+## 4. Need depth-2 (detail-page) scraping
 
 These sources have usable listing pages but dates appear only on individual
 event/show detail pages. The current scraper fetches only the listing URL; a
@@ -182,7 +213,7 @@ depth-2 mode would follow each event URL and extract additional fields.
 
 ---
 
-## 4. Blocked by third-party widget
+## 5. Blocked by third-party widget
 
 These sites delegate event rendering to an embedded third-party widget. The widget
 either (a) never renders in Rod, (b) renders inside a cross-origin iframe, or (c) the
@@ -191,11 +222,11 @@ events page no longer exists.
 ### luminato
 - **URL:** `https://www.luminatofestival.com/events`
 - **Widget:** `eventscalendar.co` (embed.js, `data-project-id="proj_QrmXauVHd8e0ohna92KJg"`)
-  — same vendor as burdock-brewery.
+  — same vendor as the eventscalendar.co embed on burdock-brewery.
 - **Blocked by:** Widget JS does not execute within Rod's default timeout.
-- **Next step:** Same as burdock-brewery — try `wait_network_idle: true` +
-  `wait_timeout_ms: 20000` + `undetected: true`. If the widget populates, the selectors
-  should be identical to whatever works for burdock (same vendor). Festival is annual (June).
+- **Next step:** Try `wait_network_idle: true` + `wait_timeout_ms: 20000` + `undetected: true`.
+  If the widget populates, the selectors may be similar to whatever works for the
+  eventscalendar.co vendor. Festival is annual (June).
 - **Fallback:** Contact Luminato to request an iCal feed or JSON export. Eventscalendar.co
   may offer an export to the venue — worth asking.
 
@@ -221,22 +252,12 @@ events page no longer exists.
 - **Situation:** Wix removed the events page. The homepage now links to Eventbrite
   and Fever for ticketing; no dedicated events listing exists on the site.
 - **Action:** Use the Eventbrite public API with the organizer ID
-  (`4108527983` — `eventbrite.ca/o/lula-lounge-toronto-4108527983`) once a Tier 3
-  JSON adapter exists (see section 2). Alternatively contact the venue to restore
-  their events page.
-
-### workman-arts
-- **URL:** `https://workmanarts.com/events/`
-- **Platform:** WPBakery + Showpass widget
-- **Blocked by:** Two-layer barrier — AJAX filter interaction required before events
-  load, then events render via Showpass JS widget. Main programming is the Rendezvous
-  With Madness festival (October/November); off-season year-round.
-- **Action:** Check if Workman Arts uses Showpass (as Burdock does). If their Showpass
-  venue ID is findable, the Tier 3 JSON adapter (section 2) would work here too.
+  (`4108527983` — `eventbrite.ca/o/lula-lounge-toronto-4108527983`) once `srv-hi014`
+  (T3 REST tier) lands. Alternatively contact the venue to restore their events page.
 
 ---
 
-## 5. Blocked by bot protection
+## 6. Blocked by bot protection
 
 ### ago (Art Gallery of Ontario)
 - **URL:** `https://ago.ca/whats-on`
@@ -272,7 +293,7 @@ events page no longer exists.
 
 ---
 
-## 6. No events listing page
+## 7. No events listing page
 
 ### mammalian-diving-reflex
 - **URL:** `https://www.mammalian.ca/shows/` (404)
@@ -290,23 +311,26 @@ events page no longer exists.
 1. **Seasonal re-enables** — heritage-toronto in April, inside-out in April, imagine-native
    in September. Zero engineering effort; add calendar reminders.
 
-2. **Try new T2 flags** — for burdock-brewery, rcmusic, hot-docs, luminato, crows-theatre,
+2. **T3 REST tier (`srv-hi014`)** — implement the `rest:` config block. Once landed,
+   burdock-brewery is a config-only enable (Showpass API confirmed working). Workman-arts
+   follows once its Showpass venue ID is found. Lula-lounge follows via Eventbrite API.
+
+3. **Try new T2 flags** — for rcmusic, hot-docs, luminato, crows-theatre,
    st-lawrence-market: test `wait_network_idle: true` and/or `undetected: true` using
    `server scrape source --source-file /tmp/draft.yaml --dry-run`. If any widget
    now renders, add selectors and re-enable. Use `server scrape capture <URL> --format inspect`
    to confirm DOM content before writing selectors.
 
-3. **Contact campaign** — email glad-day, luminato, lula-lounge, crows-theatre, church-wellesley
+4. **Contact campaign** — email glad-day, luminato, lula-lounge, crows-theatre, church-wellesley
    requesting an iCal/JSON feed or scraping permission. Low effort, potentially high yield
    for venues that are community-oriented.
 
-4. **DevTools API hunting** — for burdock-brewery, rcmusic, hot-docs: if T2 flags still fail,
+5. **DevTools API hunting** — for rcmusic, hot-docs: if T2 flags still fail,
    use browser DevTools Network tab to capture the XHR endpoint each widget calls. If
-   unauthenticated, a Tier 3 REST config can replace the broken T2 approach. See `srv-71948`
-   for burdock.
+   unauthenticated, a Tier 3 REST config (`srv-hi014`) can replace the broken T2 approach.
 
-5. **Depth-2 scraping** — unlocks obsidian-theatre, east-end-arts, and potentially
+6. **Depth-2 scraping** — unlocks obsidian-theatre, east-end-arts, and potentially
    theatre-passe-muraille. Medium engineering effort.
 
-6. **Bot-protected sites** (ago, crows-theatre, st-lawrence-market) — defer if T2 stealth
+7. **Bot-protected sites** (ago, crows-theatre, st-lawrence-market) — defer if T2 stealth
    fails. High complexity, low reliability. Prefer contact/feed approach first.
