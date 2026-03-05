@@ -14,12 +14,14 @@ For scraper architecture and how to add new sources see `docs/integration/scrape
 
 ## Summary by Fix Category
 
+Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-rendered headless (Rod), T3 = knowledge graph / GraphQL.
+
 | Category | Sources | Effort |
 |----------|---------|--------|
 | Seasonal — re-enable on a calendar trigger | heritage-toronto, imagine-native, inside-out | None |
-| Need Tier 3 JSON/REST API adapter | burdock-brewery, rcmusic, hot-docs | High (new feature) |
+| T2 widget never renders (third-party embed) | burdock-brewery, rcmusic, hot-docs | Low–Medium (find underlying API endpoint) |
 | Need depth-2 (detail-page) scraping | obsidian-theatre, east-end-arts, theatre-passe-muraille, orpheus-choir-toronto | Medium (new feature) |
-| Blocked by third-party widget | luminato, reel-asian, church-wellesley-village-bia, lula-lounge, workman-arts | Low–Medium (contact/API) |
+| Blocked by third-party widget / no listing page | luminato, reel-asian, church-wellesley-village-bia, lula-lounge, workman-arts | Low–Medium (contact/API) |
 | Blocked by bot protection | ago, crows-theatre, st-lawrence-market, glad-day-bookshop | Medium–High |
 | No events listing page | mammalian-diving-reflex | Blocked |
 
@@ -54,55 +56,46 @@ because they had zero events at review time.
 
 ---
 
-## 2. Need Tier 3 JSON/REST API adapter
+## 2. Blocked by third-party widget (headless timeout)
 
-These sources have publicly accessible JSON APIs but the scraper currently only
-supports JSON-LD (Tier 0), CSS selectors (Tier 1/2), and the DatoCMS GraphQL adapter
-(Tier 3 prototype). A generalised Tier 3 field-mapping config (URL → JSON path mapping)
-would unlock these and many future venues on the same platforms.
+These sources load event data via a third-party JS widget that does not render
+within Rod's timeout, or at all. Tier 2 headless is working correctly — the widget
+simply never produces DOM content. The fix path is either finding the widget's
+underlying API endpoint, or requesting a feed directly from the venue.
 
 ### burdock-brewery
-- **Platform:** Showpass (InLight Labs embed)
-- **API:** `https://www.showpass.com/api/public/events/?venue=17330`
-  — returns 31 events with name, date, image, URL. No auth required.
-- **Blocked by:** Scraper has no raw-JSON field-mapping adapter.
-- **Action:** Implement a Tier 3 JSON adapter (see below). Map `name`, `starts_at`,
-  `ends_at`, `url`, `image` from the Showpass response envelope.
+- **URL:** `https://burdockbrewery.com/pages/music-hall`
+- **Platform:** `eventscalendar.co` embed (`data-project-id="proj_T8vacNv8cWWeEQAQwLKHb"`)
+  — same widget vendor as luminato.
+- **Blocked by:** The Shopify page renders the embed container but the widget JS never
+  populates it within Rod's timeout. No public eventscalendar.co API found.
+- **Note:** An earlier investigation identified a Showpass API (`showpass.com/api/public/events/?venue=17330`)
+  — this appears to be a different/older ticketing integration and does not reflect the
+  current site's event content.
+- **Action:** Contact the venue or eventscalendar.co for an API key or iCal export.
+  If the Showpass venue ID is still active, a Tier 3 GraphQL query against the Showpass
+  API could work — verify first that the venue IDs match.
 - **Related bead:** `srv-71948`
 
 ### rcmusic
 - **URL:** `https://www.rcmusic.com/events-and-performances`
-- **Platform:** AWS CloudSearch JS widget
-- **Blocked by:** The page renders ~7 KB of empty containers; events are fetched from
-  an AWS endpoint that is not directly visible in page source.
-- **Action:** Use browser DevTools Network tab (or Rod's network interception) to
-  capture the XHR/fetch request the widget makes. If the AWS endpoint is unauthenticated,
-  add it as a Tier 3 JSON source. Alternatively check if rcmusic exposes an iCal feed
-  (many WordPress calendars do via `/events/feed/` or `?ical=1`).
+- **Platform:** AWS CloudSearch JS widget (`data-template="TPSPT.AWSFacetedSearchResults_Events"`)
+- **Blocked by:** Page renders ~7 KB of empty containers; events are fetched via an AWS
+  XHR endpoint that is not visible in page source and did not respond to headless wait.
+- **Action:** Use browser DevTools Network tab to capture the XHR request the widget
+  makes. If the endpoint is unauthenticated, add as Tier 3 GraphQL or REST (depending
+  on format). Alternatively check for a WordPress iCal feed (`/events/feed/` or `?ical=1`).
 
 ### hot-docs
 - **URL:** `https://hotdocs.ca/whats-on/watch-cinema`
 - **Platform:** Agile Technologies box office widget
   (`boxoffice.hotdocs.ca/websales/agile_widget.ashx?orgid=2338&epgid=210`)
-- **Blocked by:** Widget loads from a third-party domain; events never appear in the
-  main page DOM even after 25 s headless wait.
-- **Action:** Inspect the Agile widget JS to find the underlying data endpoint. The
-  `agile_widget.ashx` URL may accept a JSON format parameter. If publicly accessible,
-  add as Tier 3 JSON. Alternatively, scrape individual film detail pages once slugs are
-  known (festival is annual — low volume).
-
-### Tier 3 JSON adapter — what needs building
-
-A new source config field `json_path` (or similar) and a corresponding extractor that:
-
-1. Fetches a JSON URL (with optional headers/auth).
-2. Walks a dot-path to the events array (e.g. `results`).
-3. Maps fields via YAML (e.g. `name: "name"`, `start_date: "starts_at"`).
-4. Handles pagination via `next` URL or `page` query param.
-
-This mirrors how `tranzac` uses the DatoCMS GraphQL adapter today but as a generic
-REST/JSON variant. See `internal/scraper/` for the existing tier implementations and
-`configs/sources/tranzac.yaml` for the DatoCMS Tier 3 reference config.
+- **Blocked by:** Widget loads from a third-party domain; events never appear in DOM
+  even after 25 s headless wait.
+- **Action:** Inspect the Agile widget JS to find the underlying data endpoint (the
+  `.ashx` URL may accept a JSON format parameter). If publicly accessible, that endpoint
+  could be scraped directly. Alternatively, the festival is annual (May) and low-volume
+  enough that individual film detail pages could be scraped once slugs are known.
 
 ---
 
@@ -259,9 +252,9 @@ events page no longer exists.
    requesting an iCal/JSON feed or scraping permission. Low effort, potentially high yield
    for venues that are community-oriented.
 
-3. **Tier 3 JSON adapter** — highest engineering leverage. Unlocks burdock-brewery immediately
-   and makes lula-lounge (via Eventbrite), workman-arts (via Showpass), and many future venues
-   trivial to add. See `srv-71948` for related bead.
+3. **Unblock T2 widget sources** — for burdock-brewery, rcmusic, hot-docs: use browser DevTools
+   to identify the underlying API endpoint each widget calls. If unauthenticated, a T3 GraphQL
+   or direct HTTP config can replace the broken T2 approach. See `srv-71948` for burdock.
 
 4. **Depth-2 scraping** — unlocks obsidian-theatre, east-end-arts, and potentially
    theatre-passe-muraille. Medium engineering effort.
