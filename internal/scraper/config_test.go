@@ -465,6 +465,96 @@ func TestValidateConfig(t *testing.T) {
 			},
 			wantErr: "",
 		},
+		// IframeConfig validation (srv-mwy3y)
+		{
+			name: "valid tier 2 with iframe config",
+			cfg: SourceConfig{
+				Name:       "Iframe Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".event-card",
+				},
+				Headless: HeadlessConfig{
+					WaitSelector: "body",
+					Iframe: &IframeConfig{
+						Selector:     "iframe[title='Ticket Spot']",
+						WaitSelector: ".events-container",
+					},
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "iframe config with empty selector fails",
+			cfg: SourceConfig{
+				Name:       "Bad Iframe Selector Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".event-card",
+				},
+				Headless: HeadlessConfig{
+					WaitSelector: "body",
+					Iframe: &IframeConfig{
+						Selector:     "",
+						WaitSelector: ".events-container",
+					},
+				},
+			},
+			wantErr: "headless.iframe.selector is required when iframe block is set",
+		},
+		{
+			name: "iframe config with empty wait_selector fails",
+			cfg: SourceConfig{
+				Name:       "Bad Iframe WaitSelector Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".event-card",
+				},
+				Headless: HeadlessConfig{
+					WaitSelector: "body",
+					Iframe: &IframeConfig{
+						Selector:     "iframe[title='Ticket Spot']",
+						WaitSelector: "",
+					},
+				},
+			},
+			wantErr: "headless.iframe.wait_selector is required when iframe block is set",
+		},
+		{
+			name: "nil iframe config passes (no iframe block)",
+			cfg: SourceConfig{
+				Name:       "No Iframe Source",
+				URL:        "https://example.com/events",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Enabled:    true,
+				Selectors: SelectorConfig{
+					EventList: ".event-card",
+				},
+				Headless: HeadlessConfig{
+					WaitSelector: "body",
+					Iframe:       nil,
+				},
+			},
+			wantErr: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -478,6 +568,80 @@ func TestValidateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --------------------------------------------------------------------------
+// IframeConfig defaults (srv-mwy3y)
+// --------------------------------------------------------------------------
+
+// TestLoadFile_IframeDefaults verifies that IframeConfig.WaitTimeoutMs defaults
+// to 10000 when unset in YAML.
+func TestLoadFile_IframeDefaults(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wait_timeout_ms defaults to 10000 when zero", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Iframe Default Source"
+url: "https://example.com/events"
+tier: 2
+selectors:
+  event_list: ".event-card"
+headless:
+  wait_selector: "body"
+  iframe:
+    selector: "iframe[title='Ticket Spot']"
+    wait_selector: ".events-container"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "iframe.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Headless.Iframe)
+		assert.Equal(t, 10000, cfg.Headless.Iframe.WaitTimeoutMs,
+			"wait_timeout_ms must default to 10000 when unset")
+	})
+
+	t.Run("explicit wait_timeout_ms is not overridden", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Iframe Custom Timeout Source"
+url: "https://example.com/events"
+tier: 2
+selectors:
+  event_list: ".event-card"
+headless:
+  wait_selector: "body"
+  iframe:
+    selector: "iframe[title='Ticket Spot']"
+    wait_selector: ".events-container"
+    wait_timeout_ms: 5000
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "iframe_timeout.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Headless.Iframe)
+		assert.Equal(t, 5000, cfg.Headless.Iframe.WaitTimeoutMs,
+			"explicit wait_timeout_ms must not be overridden")
+	})
+
+	t.Run("nil iframe config does not panic", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "No Iframe Source"
+url: "https://example.com/events"
+tier: 0
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "no_iframe.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Nil(t, cfg.Headless.Iframe)
+	})
 }
 
 // --------------------------------------------------------------------------

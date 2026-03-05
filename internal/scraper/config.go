@@ -94,6 +94,27 @@ type HeadlessConfig struct {
 	// RateLimitMs overrides the per-domain delay between page loads (ms).
 	// 0 means use the RodExtractor default.
 	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
+	// Iframe configures extraction from a cross-origin iframe. When set,
+	// the scraper navigates into the matched iframe's execution context
+	// and extracts HTML from the frame instead of the parent page.
+	Iframe *IframeConfig `yaml:"iframe,omitempty" json:"iframe,omitempty"`
+}
+
+// IframeConfig holds options for extracting content from a cross-origin
+// iframe inside a headless-rendered page. When set, the scraper enters
+// the iframe's execution context via Rod's CDP frame navigation and
+// extracts HTML from the frame instead of the parent page. CSS selectors
+// in SourceConfig.Selectors then apply to the iframe DOM.
+type IframeConfig struct {
+	// Selector is a CSS selector that matches the target <iframe> element
+	// in the parent page (e.g. "iframe[title='Ticket Spot']").
+	Selector string `yaml:"selector" json:"selector"`
+	// WaitSelector is a CSS selector to wait for inside the iframe before
+	// extracting its HTML (e.g. ".events-container").
+	WaitSelector string `yaml:"wait_selector" json:"wait_selector"`
+	// WaitTimeoutMs is the maximum time (ms) to wait for WaitSelector
+	// inside the iframe. 0 means use the default (10 000 ms).
+	WaitTimeoutMs int `yaml:"wait_timeout_ms" json:"wait_timeout_ms"`
 }
 
 // GraphQLConfig holds Tier 3 GraphQL API options.
@@ -242,6 +263,15 @@ func ValidateConfig(cfg SourceConfig) error {
 
 	if cfg.Tier == 2 && strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "selectors.event_list: required for tier 2")
+	}
+
+	if cfg.Headless.Iframe != nil {
+		if strings.TrimSpace(cfg.Headless.Iframe.Selector) == "" {
+			errs = append(errs, "headless.iframe.selector is required when iframe block is set")
+		}
+		if strings.TrimSpace(cfg.Headless.Iframe.WaitSelector) == "" {
+			errs = append(errs, "headless.iframe.wait_selector is required when iframe block is set")
+		}
 	}
 
 	if cfg.Tier == 3 {
@@ -403,6 +433,9 @@ func loadFile(path string) (SourceConfig, error) {
 		if cfg.REST.NextField == "" {
 			cfg.REST.NextField = "next"
 		}
+	}
+	if cfg.Headless.Iframe != nil && cfg.Headless.Iframe.WaitTimeoutMs == 0 {
+		cfg.Headless.Iframe.WaitTimeoutMs = 10000
 	}
 
 	return cfg, nil
