@@ -83,6 +83,13 @@ func run() error {
 
 	log.Info().Msg("Domain services initialized")
 
+	// Load configured timezone for default date filtering (srv-h7j38)
+	loc, err := time.LoadLocation(cfg.Base.DefaultTimezone)
+	if err != nil {
+		log.Warn().Err(err).Str("timezone", cfg.Base.DefaultTimezone).Msg("invalid DefaultTimezone, falling back to UTC")
+		loc = time.UTC
+	}
+
 	// Create MCP server
 	mcpServer := mcp.NewServer(
 		mcp.Config{
@@ -98,6 +105,7 @@ func run() error {
 		orgService,
 		developerService,
 		nil, // geocodingService (not needed for MCP server)
+		loc,
 		cfg.Base.Server.BaseURL,
 	)
 

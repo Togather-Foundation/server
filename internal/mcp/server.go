@@ -32,7 +32,7 @@ import (
 //
 // Example:
 //
-//	srv := mcp.NewServer(cfg, eventsService, ingestService, placesService, orgService, baseURL)
+//	srv := mcp.NewServer(cfg, eventsService, ingestService, placesService, orgService, developerService, geocodingService, loc, baseURL)
 //	defer srv.Shutdown(context.Background())
 //
 //	// Serve with configured transport

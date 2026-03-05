@@ -512,3 +512,42 @@ func TestParseFilters_MultipleAliasesMultipleWarnings(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, filters.Warnings, 2)
 }
+
+// ─── srv-1uvo0: nil-loc guard coverage ───────────────────────────────────────
+
+// TestParseFilters_NilLocEqualsUTC asserts that passing loc=nil produces the
+// same StartDate as passing loc=time.UTC explicitly, confirming the nil guard
+// at service.go:61-63 falls back to UTC correctly.
+func TestParseFilters_NilLocEqualsUTC(t *testing.T) {
+	values := url.Values{}
+	values.Set("startDate", "2026-06-01")
+
+	filtersNil, _, err := ParseFilters(values, nil)
+	require.NoError(t, err)
+
+	filtersUTC, _, err := ParseFilters(values, time.UTC)
+	require.NoError(t, err)
+
+	require.NotNil(t, filtersNil.StartDate)
+	require.NotNil(t, filtersUTC.StartDate)
+	require.Equal(t, *filtersUTC.StartDate, *filtersNil.StartDate,
+		"nil loc should behave identically to time.UTC")
+}
+
+// TestParseFilters_NilLocAliasWarning asserts that using a snake_case alias
+// (start_date) together with loc=nil still produces a warning AND returns the
+// correct parsed date — the nil guard must not suppress alias detection.
+func TestParseFilters_NilLocAliasWarning(t *testing.T) {
+	values := url.Values{}
+	values.Set("start_date", "2026-06-01")
+
+	filters, _, err := ParseFilters(values, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.StartDate)
+	require.Equal(t, time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), *filters.StartDate,
+		"date should be parsed correctly even when loc=nil")
+	require.Len(t, filters.Warnings, 1, "alias warning must still be emitted when loc=nil")
+	require.Contains(t, filters.Warnings[0], "start_date")
+	require.Contains(t, filters.Warnings[0], "startDate")
+}

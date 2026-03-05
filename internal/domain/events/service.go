@@ -112,30 +112,18 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, e
 		}
 	}
 
-	// Build a patched values map for lifecycle/domain parsing that uses resolved values.
-	patchedValues := url.Values{}
-	for k, v := range values {
-		patchedValues[k] = v
-	}
-	if stateRaw != "" {
-		patchedValues.Set("state", stateRaw)
-	}
-	if domainRaw != "" {
-		patchedValues.Set("domain", domainRaw)
-	}
-
-	filters.LifecycleState = parseLifecycleState(patchedValues)
+	filters.LifecycleState = parseLifecycleStateFromString(stateRaw)
 	if filters.LifecycleState == "" {
-		if err := parseLifecycleStateErr(patchedValues); err != nil {
+		if err := parseLifecycleStateErrFromString(stateRaw); err != nil {
 			return filters, pagination, err
 		}
 	}
 
 	filters.Query = strings.TrimSpace(values.Get("q"))
 
-	filters.Domain = parseDomain(patchedValues)
+	filters.Domain = parseDomainFromString(domainRaw)
 	if filters.Domain == "" {
-		if err := parseDomainErr(patchedValues); err != nil {
+		if err := parseDomainErrFromString(domainRaw); err != nil {
 			return filters, pagination, err
 		}
 	}
@@ -192,49 +180,39 @@ func parseKeywords(value string) []string {
 	return keywords
 }
 
-func parseLifecycleState(values url.Values) string {
-	value := strings.TrimSpace(values.Get("state"))
-	if value == "" {
-		return ""
-	}
-	value = strings.ToLower(value)
+func parseLifecycleStateFromString(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
 	if isAllowedLifecycleState(value) {
 		return value
 	}
 	return ""
 }
 
-func parseLifecycleStateErr(values url.Values) error {
-	value := strings.TrimSpace(values.Get("state"))
+func parseLifecycleStateErrFromString(raw string) error {
+	value := strings.TrimSpace(raw)
 	if value == "" {
 		return nil
 	}
-	value = strings.ToLower(value)
-	if !isAllowedLifecycleState(value) {
+	if !isAllowedLifecycleState(strings.ToLower(value)) {
 		return FilterError{Field: "state", Message: "unsupported lifecycle state"}
 	}
 	return nil
 }
 
-func parseDomain(values url.Values) string {
-	value := strings.TrimSpace(values.Get("domain"))
-	if value == "" {
-		return ""
-	}
-	value = strings.ToLower(value)
+func parseDomainFromString(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
 	if isAllowedDomain(value) {
 		return value
 	}
 	return ""
 }
 
-func parseDomainErr(values url.Values) error {
-	value := strings.TrimSpace(values.Get("domain"))
+func parseDomainErrFromString(raw string) error {
+	value := strings.TrimSpace(raw)
 	if value == "" {
 		return nil
 	}
-	value = strings.ToLower(value)
-	if !isAllowedDomain(value) {
+	if !isAllowedDomain(strings.ToLower(value)) {
 		return FilterError{Field: "domain", Message: "unsupported event domain"}
 	}
 	return nil
