@@ -1,8 +1,8 @@
 # Integrated Event Scraper
 
-**Version:** 0.4.0
-**Date:** 2026-02-25
-**Status:** Implemented (Tier 0–3, DB-backed source configs, periodic River scheduling)
+**Version:** 0.5.0
+**Date:** 2026-03-06
+**Status:** Implemented (Tier 0–3, DB-backed source configs, periodic River scheduling, network capture + intercept)
 
 The Togather SEL server includes a built-in four-tier event scraper for automatically
 extracting events from Toronto-area arts and culture websites. This document covers
@@ -100,6 +100,36 @@ server scrape test https://example.com/events \
 # Or load from a config file
 server scrape test https://example.com/events --config my-source.yaml
 ```
+
+### `server scrape capture <URL>`
+
+Render a page via headless browser and save the final HTML. Used for debugging
+wait selectors — the captured HTML is exactly what `extractEventsFromHTML` would
+receive, so you can inspect the DOM offline.
+
+```bash
+# Capture HTML from a bare URL
+server scrape capture https://example.com/events
+
+# Capture using full source config (respects headless settings, iframe, etc.)
+server scrape capture --source-file configs/sources/my-venue.yaml
+
+# Capture with network activity log (diagnostic mode)
+server scrape capture https://example.com/events --network
+
+# Network capture with JSON output (machine-readable for agents)
+server scrape capture https://example.com/events --network --format json
+```
+
+**`--network` flag:** Enables CDP network activity capture during rendering.
+Shows all HTTP requests/responses the page made (XHR, Fetch, Script, Document,
+etc.) with status codes, content types, body sizes, and timing. API-like
+requests (XHR/Fetch returning JSON) are flagged with `[API]`. Use this to
+diagnose why JS-rendered pages render empty — it reveals what API endpoints the
+page calls and whether the data lives in DOM or in API responses.
+
+When `--json` is combined with `--network`, output is a JSON object with `html`
+and `network_requests` fields.
 
 ### `server scrape url <URL>`
 
@@ -393,6 +423,13 @@ headless:
   #   selector: "iframe[title='Ticket Spot']"  # CSS selector for the target iframe element
   #   wait_selector: ".events-container"         # wait for content inside iframe
   #   wait_timeout_ms: 10000                      # timeout for iframe content (default: 10000)
+  # intercept:                        # optional — capture API responses instead of DOM scraping
+  #   url_pattern: "api\\.example\\.com/events"  # Go regex matching intercepted URLs
+  #   results_path: "data.events"                # dot-notation path to events array in JSON
+  #   field_map:                                 # map RawEvent fields to source JSON keys
+  #     name: "title"
+  #     start_date: "dates.start"
+  #     location: "venue.name"
 
 selectors:
   event_list: "div.event-card"
@@ -510,6 +547,24 @@ at debug level and the URL is left empty.
 | `iframe.selector` | string | — | CSS selector for the target cross-origin iframe element. When set, the scraper enters the iframe's execution context via CDP frame navigation and extracts HTML from inside the iframe. |
 | `iframe.wait_selector` | string | — | CSS selector to wait for inside the iframe DOM before extracting. |
 | `iframe.wait_timeout_ms` | int | `10000` | Timeout (ms) for `iframe.wait_selector`. |
+
+### Intercept Config Fields (`headless.intercept:`)
+
+Network request interception for Tier 2 headless sources. When configured, the
+scraper intercepts matching API requests during page rendering, parses the JSON
+response bodies, and maps them to events using `field_map`. Intercepted events
+are merged with DOM-extracted events. This is a fallback for sites where the DOM
+never populates with event data but the underlying API response contains it.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `url_pattern` | string | yes | — | Go regex pattern to match intercepted request URLs. Rod uses a `"*"` glob to intercept all requests; the regex filters inside the callback. |
+| `response_format` | string | no | `"json"` | Response body format. Only `"json"` is currently supported. |
+| `results_path` | string | yes | — | Dot-notation path to the events array in the JSON response (e.g. `"hits.hit"`, `"data.events"`). |
+| `cache_endpoint` | bool | no | `false` | Log captured endpoint URLs at info level (for diagnostic/caching purposes). |
+| `field_map` | map | no | — | Map from RawEvent field names to source JSON keys; identical to `rest.field_map` (supports dot-notation). |
+
+**`field_map` keys** (same as REST): `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 
 ### GraphQL Config Fields (`graphql:`)
 

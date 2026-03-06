@@ -133,3 +133,28 @@ max_pages: 5
 #     start_date: "dates.start"       # Dot-notation: nested start date
 #     end_date: "dates.end"
 #     location: "venue.name"          # Dot-notation: nested venue name
+
+# --- TIER 2 HEADLESS WITH INTERCEPT EXAMPLE ---
+# Use when the site renders events via JS and the DOM never populates
+# with structured data, but the underlying API response contains it.
+#
+# name: "js-api-venue"
+# url: "https://myvenue.ca/events"
+# tier: 2
+# schedule: "daily"
+# headless:
+#   wait_selector: "body"
+#   wait_timeout_ms: 15000
+#   wait_network_idle: true
+#   intercept:
+#     url_pattern: "api\\.myvenue\\.ca/events"  # Go regex matching API URLs
+#     results_path: "data.events"                # dot-notation to events array
+#     field_map:
+#       name: "title"
+#       start_date: "dates.start"
+#       end_date: "dates.end"
+#       location: "venue.name"
+#       image: "image_url"
+# selectors:                                     # DOM fallback selectors (optional)
+#   event_list: ".event-card"
+#   name: "h2"

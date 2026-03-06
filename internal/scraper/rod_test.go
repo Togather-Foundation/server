@@ -454,6 +454,223 @@ func TestExtractDateFromSelection(t *testing.T) {
 	}
 }
 
+// --- RenderHTMLWithNetwork tests (require headless browser) ---
+
+// xhrPageHTML is an HTML page that, once loaded, makes an XHR request to /api/data.
+// It injects the returned JSON into a <div id="result">.
+const xhrPageHTML = `<!DOCTYPE html>
+<html>
+<head><title>XHR Test Page</title></head>
+<body>
+<div id="result">loading...</div>
+<script>
+var xhr = new XMLHttpRequest();
+xhr.open("GET", "/api/data", true);
+xhr.onload = function() {
+  document.getElementById("result").textContent = xhr.responseText;
+};
+xhr.send();
+</script>
+</body>
+</html>`
+
+// apiDataJSON is the JSON response served at /api/data.
+const apiDataJSON = `{"events":[{"name":"Test Event"}]}`
+
+func TestNetworkCapture_BasicRequests(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, apiDataJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, xhrPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "#result", 5000)
+	if err != nil {
+		t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
+	}
+
+	if html == "" {
+		t.Error("expected non-empty HTML")
+	}
+
+	if len(requests) == 0 {
+		t.Fatal("expected at least one network request to be captured")
+	}
+
+	// Find the XHR/API request.
+	var apiReq *NetworkRequest
+	for i := range requests {
+		if strings.Contains(requests[i].URL, "/api/data") {
+			apiReq = &requests[i]
+			break
+		}
+	}
+
+	if apiReq == nil {
+		t.Fatalf("expected to find request to /api/data, got requests: %v", requests)
+	}
+
+	if apiReq.Method != "GET" {
+		t.Errorf("expected method GET, got %q", apiReq.Method)
+	}
+	if !strings.Contains(apiReq.ContentType, "application/json") {
+		t.Errorf("expected content type to contain 'application/json', got %q", apiReq.ContentType)
+	}
+	if apiReq.Status != 200 {
+		t.Errorf("expected status 200, got %d", apiReq.Status)
+	}
+	if !apiReq.IsAPI {
+		t.Error("expected IsAPI=true for XHR request with JSON content type")
+	}
+}
+
+func TestNetworkCapture_NoRequests(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	// Simple static page with no XHR/fetch.
+	const staticHTML = `<!DOCTYPE html><html><body><p>Static content</p></body></html>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, staticHTML)
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "body", 5000)
+	if err != nil {
+		t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
+	}
+
+	if html == "" {
+		t.Error("expected non-empty HTML")
+	}
+
+	// Should capture the Document request (no XHR).
+	// No request should be marked IsAPI.
+	for _, req := range requests {
+		if req.IsAPI {
+			t.Errorf("unexpected IsAPI=true for static page request: %+v", req)
+		}
+	}
+}
+
+func TestNetworkCapture_APIDetection(t *testing.T) {
+	// Unit test for IsAPI detection logic — uses NetworkRequest values directly.
+	// IsAPI must be true when resource type is XHR or Fetch AND content type contains "json".
+	tests := []struct {
+		resourceType string
+		contentType  string
+		wantIsAPI    bool
+	}{
+		{"XHR", "application/json", true},
+		{"Fetch", "application/json; charset=utf-8", true},
+		{"XHR", "text/html", false},
+		{"Fetch", "text/plain", false},
+		{"Script", "application/json", false},
+		{"Document", "application/json", false},
+		{"XHR", "", false},
+	}
+
+	for _, tt := range tests {
+		got := isAPIRequest(tt.resourceType, tt.contentType)
+		if got != tt.wantIsAPI {
+			t.Errorf("isAPIRequest(%q, %q) = %v; want %v", tt.resourceType, tt.contentType, got, tt.wantIsAPI)
+		}
+	}
+}
+
+func TestNetworkCapture_WithConfigAndNetwork(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, apiDataJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, xhrPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	cfg := SourceConfig{
+		Name:    "test-network-config",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector:  "#result",
+			WaitTimeoutMs: 5000,
+		},
+	}
+
+	html, requests, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("RenderHTMLWithConfigAndNetwork returned error: %v", err)
+	}
+
+	if html == "" {
+		t.Error("expected non-empty HTML")
+	}
+
+	// Should capture network activity including the API call.
+	var foundAPI bool
+	for _, req := range requests {
+		if strings.Contains(req.URL, "/api/data") && req.IsAPI {
+			foundAPI = true
+			break
+		}
+	}
+	if !foundAPI {
+		t.Errorf("expected to find IsAPI=true request to /api/data, got: %v", requests)
+	}
+}
+
+func TestRenderHTMLWithNetwork_HeadlessDisabled(t *testing.T) {
+	logger := zerolog.Nop()
+	ext := NewRodExtractor(logger, 2, "", false)
+
+	_, _, err := ext.RenderHTMLWithNetwork(context.Background(), "https://example.com", "body", 0)
+	if err != ErrHeadlessDisabled {
+		t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
+	}
+}
+
+func TestRenderHTMLWithConfigAndNetwork_HeadlessDisabled(t *testing.T) {
+	logger := zerolog.Nop()
+	ext := NewRodExtractor(logger, 2, "", false)
+
+	cfg := SourceConfig{Name: "test", URL: "https://example.com"}
+	_, _, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg)
+	if err != ErrHeadlessDisabled {
+		t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
+	}
+}
+
 // --- RodExtractor iframe extraction tests (require headless browser) ---
 
 // parentPageHTML is served at / and contains a same-origin iframe.
@@ -761,4 +978,470 @@ func TestRenderHTMLWithConfig(t *testing.T) {
 			t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
 		}
 	})
+}
+
+// --------------------------------------------------------------------------
+// Intercept tests (srv-enisd)
+// --------------------------------------------------------------------------
+
+// interceptPageHTML is a page that makes an XHR to /api/events on load.
+const interceptPageHTML = `<!DOCTYPE html>
+<html>
+<head><title>Intercept Test</title></head>
+<body>
+<div id="events-container"></div>
+<script>
+var xhr = new XMLHttpRequest();
+xhr.open("GET", "/api/events", false); // synchronous for simplicity in tests
+xhr.send();
+if (xhr.status === 200) {
+    document.getElementById("events-container").textContent = "loaded";
+}
+</script>
+</body>
+</html>`
+
+// interceptAPIJSON is the JSON response served at /api/events.
+const interceptAPIJSON = `{"results":[{"title":"Test Event","date":"2026-03-15"}]}`
+
+// TestIntercept_CapturesAPIResponse verifies that when a page makes an XHR to
+// a URL matching URLPattern, the intercepted JSON is parsed and returned as
+// RawEvents using ResultsPath and FieldMap.
+func TestIntercept_CapturesAPIResponse(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/events":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, interceptAPIJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, interceptPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+	browser, cleanup := newTestBrowser(t, ext)
+	defer cleanup()
+
+	cfg := SourceConfig{
+		Name:    "test-intercept-source",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector: "body",
+			Intercept: &InterceptConfig{
+				URLPattern:  `api/events`,
+				ResultsPath: "results",
+				FieldMap: map[string]string{
+					"name":       "title",
+					"start_date": "date",
+				},
+			},
+		},
+		Selectors: SelectorConfig{
+			EventList: ".event-card", // no such elements in test page
+			Name:      ".event-name",
+		},
+	}
+
+	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("scrapeSinglePage returned error: %v", err)
+	}
+
+	if len(events) == 0 {
+		t.Fatal("expected at least 1 intercepted event, got 0")
+	}
+
+	found := false
+	for _, ev := range events {
+		if ev.Name == "Test Event" && ev.StartDate == "2026-03-15" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected event with Name=%q StartDate=%q; got events: %+v", "Test Event", "2026-03-15", events)
+	}
+}
+
+// TestIntercept_NoMatchingRequests verifies that when no API calls match the
+// pattern, no error occurs and DOM-extracted events are still returned.
+func TestIntercept_NoMatchingRequests(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	const staticPageWithDOM = `<!DOCTYPE html>
+<html><body>
+<div class="event-card"><span class="event-name">DOM Event</span></div>
+</body></html>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, staticPageWithDOM)
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+	browser, cleanup := newTestBrowser(t, ext)
+	defer cleanup()
+
+	cfg := SourceConfig{
+		Name:    "test-no-match-source",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector: "body",
+			Intercept: &InterceptConfig{
+				URLPattern:  `nonexistent-api/events`,
+				ResultsPath: "results",
+				FieldMap:    map[string]string{"name": "title"},
+			},
+		},
+		Selectors: SelectorConfig{
+			EventList: ".event-card",
+			Name:      ".event-name",
+		},
+	}
+
+	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("scrapeSinglePage should not error when no intercept matches, got: %v", err)
+	}
+
+	// DOM events should still be extracted.
+	if len(events) == 0 {
+		t.Fatal("expected at least 1 DOM-extracted event, got 0")
+	}
+	if events[0].Name != "DOM Event" {
+		t.Errorf("expected DOM event Name=%q, got %q", "DOM Event", events[0].Name)
+	}
+}
+
+// TestIntercept_MergesWithDOMEvents verifies that intercept events and DOM
+// events are both returned when the page has both.
+func TestIntercept_MergesWithDOMEvents(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	const mergePageHTML = `<!DOCTYPE html>
+<html><body>
+<div class="event-card"><span class="event-name">DOM Event</span></div>
+<script>
+var xhr = new XMLHttpRequest();
+xhr.open("GET", "/api/events", false);
+xhr.send();
+</script>
+</body></html>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/events":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, interceptAPIJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, mergePageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+	browser, cleanup := newTestBrowser(t, ext)
+	defer cleanup()
+
+	cfg := SourceConfig{
+		Name:    "test-merge-source",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector: "body",
+			Intercept: &InterceptConfig{
+				URLPattern:  `api/events`,
+				ResultsPath: "results",
+				FieldMap:    map[string]string{"name": "title", "start_date": "date"},
+			},
+		},
+		Selectors: SelectorConfig{
+			EventList: ".event-card",
+			Name:      ".event-name",
+		},
+	}
+
+	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("scrapeSinglePage returned error: %v", err)
+	}
+
+	// Expect at least one DOM event and at least one intercepted event.
+	hasDOMEvent := false
+	hasInterceptEvent := false
+	for _, ev := range events {
+		if ev.Name == "DOM Event" {
+			hasDOMEvent = true
+		}
+		if ev.Name == "Test Event" {
+			hasInterceptEvent = true
+		}
+	}
+
+	if !hasDOMEvent {
+		t.Errorf("expected DOM event in merged results; got events: %+v", events)
+	}
+	if !hasInterceptEvent {
+		t.Errorf("expected intercepted event in merged results; got events: %+v", events)
+	}
+}
+
+// TestIntercept_CacheEndpointLogs verifies that when CacheEndpoint is true,
+// the intercepted URL is logged at Info level.
+func TestIntercept_CacheEndpointLogs(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/events":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, interceptAPIJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, interceptPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	// Use a logger that captures output so we can inspect it.
+	var logBuf strings.Builder
+	logger := zerolog.New(&logBuf)
+	ext := newTestExtractorWithLogger(logger)
+
+	browser, cleanup := newTestBrowser(t, ext)
+	defer cleanup()
+
+	cfg := SourceConfig{
+		Name:    "test-cache-endpoint-source",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector: "body",
+			Intercept: &InterceptConfig{
+				URLPattern:    `api/events`,
+				ResultsPath:   "results",
+				CacheEndpoint: true,
+				FieldMap:      map[string]string{"name": "title"},
+			},
+		},
+		Selectors: SelectorConfig{EventList: ".none", Name: ".none"},
+	}
+
+	_, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("scrapeSinglePage returned error: %v", err)
+	}
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "api/events") {
+		t.Errorf("expected log output to contain intercepted URL 'api/events'; got: %s", logOutput)
+	}
+}
+
+// TestIntercept_RegexPatternMatching verifies that URLPattern is used as a Go
+// regex, not a simple glob, so only matching URLs are captured.
+func TestIntercept_RegexPatternMatching(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/events":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, interceptAPIJSON)
+		case "/api/other":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"results":[{"title":"Other Event","date":"2026-05-01"}]}`)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			// Page makes TWO XHR calls.
+			_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<script>
+var xhr1 = new XMLHttpRequest();
+xhr1.open("GET", "/api/events", false);
+xhr1.send();
+var xhr2 = new XMLHttpRequest();
+xhr2.open("GET", "/api/other", false);
+xhr2.send();
+</script>
+</body></html>`)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+	browser, cleanup := newTestBrowser(t, ext)
+	defer cleanup()
+
+	// Pattern matches ONLY /api/events (not /api/other).
+	cfg := SourceConfig{
+		Name:    "test-regex-source",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector: "body",
+			Intercept: &InterceptConfig{
+				URLPattern:  `/api/events$`, // anchored to match only events, not other
+				ResultsPath: "results",
+				FieldMap:    map[string]string{"name": "title"},
+			},
+		},
+		Selectors: SelectorConfig{EventList: ".none", Name: ".none"},
+	}
+
+	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("scrapeSinglePage returned error: %v", err)
+	}
+
+	// Should only have events from /api/events, not /api/other.
+	for _, ev := range events {
+		if ev.Name == "Other Event" {
+			t.Errorf("unexpected event from non-matching URL: %+v", ev)
+		}
+	}
+	// Must have the matching event.
+	found := false
+	for _, ev := range events {
+		if ev.Name == "Test Event" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'Test Event' from /api/events; got: %+v", events)
+	}
+}
+
+// newTestExtractorWithLogger creates a RodExtractor with headless enabled,
+// empty SSRF blocklist, and a custom logger for log-capture tests.
+func newTestExtractorWithLogger(logger zerolog.Logger) *RodExtractor {
+	return NewRodExtractor(logger, 2, "", true, WithBlocklist([]*net.IPNet{}))
+}
+
+func TestParseInterceptedBody(t *testing.T) {
+	t.Parallel()
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	ic := &InterceptConfig{
+		ResultsPath: "data.events",
+		FieldMap:    map[string]string{"name": "title", "start_date": "date"},
+	}
+
+	tests := []struct {
+		name      string
+		body      string
+		ic        *InterceptConfig
+		wantLen   int
+		wantFirst string // expected Name of first event, "" to skip check
+	}{
+		{
+			name:    "empty body",
+			body:    "",
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "malformed JSON",
+			body:    `{not valid json`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "wrong results_path (missing segment)",
+			body:    `{"other": {"stuff": []}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "results_path segment is not an object",
+			body:    `{"data": "just a string"}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "results_path leaf not found",
+			body:    `{"data": {"other_key": []}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "results_path resolves to non-array",
+			body:    `{"data": {"events": "not an array"}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "empty array",
+			body:    `{"data": {"events": []}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:      "valid single item",
+			body:      `{"data": {"events": [{"title": "My Event", "date": "2026-03-06"}]}}`,
+			ic:        ic,
+			wantLen:   1,
+			wantFirst: "My Event",
+		},
+		{
+			name:    "array contains non-object items (skipped)",
+			body:    `{"data": {"events": ["string item", 42, {"title": "Good Event"}]}}`,
+			ic:      ic,
+			wantLen: 1,
+		},
+		{
+			name:      "top-level results_path (single segment)",
+			body:      `{"results": [{"title": "Top Level"}]}`,
+			ic:        &InterceptConfig{ResultsPath: "results", FieldMap: map[string]string{"name": "title"}},
+			wantLen:   1,
+			wantFirst: "Top Level",
+		},
+		{
+			name:      "deeply nested results_path",
+			body:      `{"a": {"b": {"c": {"items": [{"title": "Deep"}]}}}}`,
+			ic:        &InterceptConfig{ResultsPath: "a.b.c.items", FieldMap: map[string]string{"name": "title"}},
+			wantLen:   1,
+			wantFirst: "Deep",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			events := ext.parseInterceptedBody(tt.body, tt.ic, "test-source")
+			if len(events) != tt.wantLen {
+				t.Errorf("got %d events, want %d", len(events), tt.wantLen)
+			}
+			if tt.wantFirst != "" && len(events) > 0 && events[0].Name != tt.wantFirst {
+				t.Errorf("first event Name = %q, want %q", events[0].Name, tt.wantFirst)
+			}
+		})
+	}
 }

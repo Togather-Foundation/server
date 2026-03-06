@@ -3,30 +3,50 @@ name: "rcmusic"
 # Concert series: Royal Conservatory Concerts, Mazzoleni, Temerty Theatre
 # Signature events: /support-us/signature-events
 #
-# BLOCKED: Events loaded via AWS CloudSearch-backed JS widget
-# (data-template="TPSPT.AWSFacetedSearchResults_Concerts"). The /events-and-performances
-# URL now redirects to /concerts?tps_activeFacetTab=_showall_. Even with Tier 2
-# headless (Rod, 25s wait + network idle), the page renders only ~7.6KB with empty
-# event containers. The CloudSearch domain endpoint is resolved server-side and is
-# NOT exposed in page HTML or JS — cannot be called directly.
+# Events loaded via AWS CloudSearch-backed JS widget
+# (data-template="TPSPT.AWSFacetedSearchResults_Concerts"). The /concerts page
+# has tabs by presenter category; ?tps_activeFacetTab=_showall_ selects the
+# "All Presenters" tab showing events from all presenters (~62 events across
+# 5 pages of 12). Without this param, only "Royal Conservatory Concerts" shows.
 #
-# Attempted 2026-03-04 and 2026-03-05:
-#   - Tier 0 (static HTML): only empty template containers
-#   - Tier 2 (Rod headless, 25s wait): same ~7.6KB, no event data
-#   - JS inspection (main.js): references CloudSearch facet config but no endpoint URL
-#   - No iCal, RSS, or public API feed found
+# Headless (Tier 2) works with 30s wait for .tps-card-item — the CloudSearch
+# widget populates 12 event cards per page with titles, dates, and detail URLs.
+# Pagination: 5 pages via JS pager (a.pager-next). max_pages limits how many
+# pages we follow.
 #
-# To unblock, one of:
-#   1. Reverse-engineer CloudSearch API via full CDP network interception
-#   2. Contact venue for calendar feed or API access
-#   3. Check periodically for site redesign / new CMS
+# Previous attempts (2026-03-04, 2026-03-05) failed because wait time was too
+# short (25s) and wrong selectors were used. Confirmed working 2026-03-06 via
+# `scrape capture --network --wait-selector .tps-card-item --wait-timeout 30000`.
+#
+# CloudSearch API endpoint (found via network capture):
+#   https://1gcvo6mof9.execute-api.us-east-1.amazonaws.com/LIVE-rcm-site-search
+# Returns application/json — intercept config could be added as fallback if
+# DOM extraction becomes unreliable.
+#
+# CSS selectors identified from rendered DOM:
+#   Container: div.tps-card-item (12 per page)
+#   Title:     .tps-card-item-title a (event name + href)
+#   Date:      .tps-card-item-date (text like "Mar 7, 2026 8:00 PM")
+#   URLs:      a[href*='/Events-and-Performances/']
+#   Pager:     a.pager-next (JS-based pagination, 5 pages)
+#   data-utc-date attribute on date-inner divs
 #
 # Previously had a duplicate config: royal-conservatory-music.yaml (consolidated
 # into this file 2026-03-05).
-url: "https://www.rcmusic.com/concerts"
-tier: 0
+url: "https://www.rcmusic.com/concerts?tps_activeFacetTab=_showall_"
+tier: 2
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
-max_pages: 3
+enabled: true
+max_pages: 5
+headless:
+  wait_selector: ".tps-card-item"
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+  pagination_button: "a.pager-next"
+selectors:
+  event_list: "div.tps-card-item"
+  name: ".tps-card-item-title a"
+  start_date: ".tps-card-item-date"
+  url: "a[href*='/Events-and-Performances/']"

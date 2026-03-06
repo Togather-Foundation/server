@@ -1651,3 +1651,132 @@ tier: 0
 		assert.Nil(t, cfg.REST)
 	})
 }
+
+// --------------------------------------------------------------------------
+// InterceptConfig validation (srv-enisd)
+// --------------------------------------------------------------------------
+
+// TestValidate_InterceptConfig verifies that ValidateConfigWithWarnings enforces
+// all InterceptConfig constraints.
+func TestValidate_InterceptConfig(t *testing.T) {
+	t.Parallel()
+
+	// base is a valid tier-2 config we can add intercept to.
+	base := SourceConfig{
+		Name:       "Intercept Source",
+		URL:        "https://example.com/events",
+		Tier:       2,
+		TrustLevel: 5,
+		MaxPages:   10,
+		Schedule:   "daily",
+		Enabled:    true,
+		Selectors:  SelectorConfig{EventList: ".event-card"},
+	}
+
+	tests := []struct {
+		name        string
+		intercept   *InterceptConfig
+		wantErr     string // substring; empty = no error expected
+		wantWarning string // substring in warnings; empty = not checked
+	}{
+		{
+			name:      "valid intercept config",
+			intercept: &InterceptConfig{URLPattern: `api/events`, ResultsPath: "results", FieldMap: map[string]string{"name": "title"}},
+		},
+		{
+			name:      "valid with response_format json",
+			intercept: &InterceptConfig{URLPattern: `api/events`, ResponseFormat: "json", ResultsPath: "results"},
+		},
+		{
+			name:      "valid with empty response_format (defaults to json)",
+			intercept: &InterceptConfig{URLPattern: `api/events`, ResultsPath: "hits.hit"},
+		},
+		{
+			name:      "missing url_pattern",
+			intercept: &InterceptConfig{URLPattern: "", ResultsPath: "results"},
+			wantErr:   "headless.intercept.url_pattern: required",
+		},
+		{
+			name:      "invalid regex url_pattern",
+			intercept: &InterceptConfig{URLPattern: "[invalid(regex", ResultsPath: "results"},
+			wantErr:   "headless.intercept.url_pattern: invalid Go regex",
+		},
+		{
+			name:      "unsupported response_format",
+			intercept: &InterceptConfig{URLPattern: `api/events`, ResponseFormat: "xml", ResultsPath: "results"},
+			wantErr:   `headless.intercept.response_format: only "json" is supported`,
+		},
+		{
+			name:      "missing results_path",
+			intercept: &InterceptConfig{URLPattern: `api/events`, ResultsPath: ""},
+			wantErr:   "headless.intercept.results_path: required",
+		},
+		{
+			name:        "unrecognised field_map key produces warning",
+			intercept:   &InterceptConfig{URLPattern: `api/events`, ResultsPath: "results", FieldMap: map[string]string{"strat_date": "date"}},
+			wantWarning: `headless.intercept.field_map: unrecognised key "strat_date"`,
+		},
+		{
+			name:      "all known field_map keys are valid",
+			intercept: &InterceptConfig{URLPattern: `api/events`, ResultsPath: "results", FieldMap: map[string]string{"name": "n", "start_date": "sd", "end_date": "ed", "url": "u", "image": "img", "location": "loc", "description": "desc"}},
+		},
+		{
+			name:      "complex regex pattern is valid",
+			intercept: &InterceptConfig{URLPattern: `(cloudsearch|algolia)\.(net|com)/.*`, ResultsPath: "hits.hit"},
+		},
+		{
+			name: "nil intercept — no validation triggered",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := base
+			cfg.Headless.Intercept = tc.intercept
+
+			warnings, err := ValidateConfigWithWarnings(cfg)
+
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tc.wantWarning != "" {
+				found := false
+				for _, w := range warnings {
+					if strings.Contains(w, tc.wantWarning) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected warning containing %q, got warnings: %v", tc.wantWarning, warnings)
+				}
+			}
+		})
+	}
+
+	// Tier-mismatch warning: intercept only makes sense on tier 2.
+	t.Run("intercept on non-tier-2 produces warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := base
+		cfg.Tier = 0
+		cfg.Headless.Intercept = &InterceptConfig{URLPattern: `api/events`, ResultsPath: "results"}
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "intercept config is only used by tier 2") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected tier-mismatch warning for intercept on tier 0, got warnings: %v", warnings)
+		}
+	})
+}
