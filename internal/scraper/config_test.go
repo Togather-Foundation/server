@@ -594,6 +594,131 @@ func TestValidateConfig(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — FieldMap key validation (srv-u3v2k)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_FieldMap(t *testing.T) {
+	t.Parallel()
+
+	baseTier3REST := func(fieldMap map[string]string) SourceConfig {
+		return SourceConfig{
+			Name:       "REST Source",
+			URL:        "https://example.com",
+			Tier:       3,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			REST: &RestConfig{
+				Endpoint: "https://api.example.com/events",
+				FieldMap: fieldMap,
+			},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		cfg          SourceConfig
+		wantErr      string   // empty means no error expected; substring match
+		wantWarnings []string // substrings expected in warnings; nil means no warnings
+	}{
+		{
+			name:         "nil FieldMap — no warnings",
+			cfg:          baseTier3REST(nil),
+			wantWarnings: nil,
+		},
+		{
+			name:         "empty FieldMap — no warnings",
+			cfg:          baseTier3REST(map[string]string{}),
+			wantWarnings: nil,
+		},
+		{
+			name: "all valid keys — no warnings",
+			cfg: baseTier3REST(map[string]string{
+				"name":        "title",
+				"start_date":  "starts_at",
+				"end_date":    "ends_at",
+				"url":         "event_url",
+				"image":       "thumbnail",
+				"location":    "venue",
+				"description": "summary",
+			}),
+			wantWarnings: nil,
+		},
+		{
+			name: "typo key strat_date — warning present",
+			cfg: baseTier3REST(map[string]string{
+				"name":       "title",
+				"strat_date": "starts_at", // typo: should be start_date
+			}),
+			wantWarnings: []string{`"strat_date"`},
+		},
+		{
+			name: "mix of valid and invalid keys — warning only for invalid",
+			cfg: baseTier3REST(map[string]string{
+				"name":        "title",
+				"start_date":  "starts_at",
+				"bogus_field": "whatever",
+			}),
+			wantWarnings: []string{`"bogus_field"`},
+		},
+		{
+			name: "multiple invalid keys — warning for each",
+			cfg: baseTier3REST(map[string]string{
+				"strat_date": "starts_at",
+				"end_dat":    "ends_at",
+			}),
+			wantWarnings: []string{`"strat_date"`, `"end_dat"`},
+		},
+		{
+			name: "non-REST tier 0 with no REST block — no warnings",
+			cfg: SourceConfig{
+				Name:       "Tier 0 Source",
+				URL:        "https://example.com/events",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantWarnings: nil,
+		},
+		{
+			name: "invalid key does not cause hard error",
+			cfg: baseTier3REST(map[string]string{
+				"strat_date": "starts_at",
+			}),
+			wantErr:      "", // must NOT be an error
+			wantWarnings: []string{`"strat_date"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err, warnings := ValidateConfigWithWarnings(tt.cfg)
+
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+
+			if len(tt.wantWarnings) == 0 {
+				assert.Empty(t, warnings)
+			} else {
+				require.NotEmpty(t, warnings)
+				// Join all warnings for easy substring matching.
+				joined := strings.Join(warnings, "\n")
+				for _, wantSub := range tt.wantWarnings {
+					assert.Contains(t, joined, wantSub,
+						"expected warning substring %q in: %s", wantSub, joined)
+				}
+			}
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
 // IframeConfig defaults (srv-mwy3y)
 // --------------------------------------------------------------------------
 

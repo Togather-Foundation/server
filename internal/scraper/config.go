@@ -246,6 +246,19 @@ func DefaultSourceConfig() SourceConfig {
 	}
 }
 
+// knownFieldMapKeys is the set of valid keys for RestConfig.FieldMap.
+// Only these 7 keys are consumed by mapRESTItemToRawEvent; any other key
+// is silently ignored at runtime, so operators should be warned of typos.
+var knownFieldMapKeys = map[string]bool{
+	"name":        true,
+	"start_date":  true,
+	"end_date":    true,
+	"url":         true,
+	"image":       true,
+	"location":    true,
+	"description": true,
+}
+
 // ValidateConfig validates a SourceConfig and returns an error describing all
 // problems found, or nil if the config is valid.
 //
@@ -256,8 +269,21 @@ func DefaultSourceConfig() SourceConfig {
 // Callers relying on URL for display or logging should be aware that it may
 // not be a valid http/https URL when URLs is also present. See SourceConfig.URL
 // godoc for details.
+//
+// To also retrieve non-fatal warnings (e.g. unrecognised FieldMap keys), use
+// ValidateConfigWithWarnings instead.
 func ValidateConfig(cfg SourceConfig) error {
+	err, _ := ValidateConfigWithWarnings(cfg)
+	return err
+}
+
+// ValidateConfigWithWarnings validates a SourceConfig and returns an error for
+// hard failures and a slice of human-readable warning strings for non-fatal
+// issues (e.g. unrecognised keys in RestConfig.FieldMap). Either return value
+// may be nil/empty when there are no issues of that severity.
+func ValidateConfigWithWarnings(cfg SourceConfig) (error, []string) {
 	var errs []string
+	var warnings []string
 
 	if strings.TrimSpace(cfg.Name) == "" {
 		errs = append(errs, "name: required")
@@ -368,10 +394,21 @@ func ValidateConfig(cfg SourceConfig) error {
 		errs = append(errs, fmt.Sprintf("max_pages: must be > 0, got %d", cfg.MaxPages))
 	}
 
-	if len(errs) > 0 {
-		return errors.New(strings.Join(errs, "; "))
+	// Warn about unrecognised FieldMap keys. These are non-fatal: the scraper
+	// silently ignores unknown keys, but a typo (e.g. "strat_date") would
+	// produce an empty field with no other indication to the operator.
+	if cfg.REST != nil {
+		for k := range cfg.REST.FieldMap {
+			if !knownFieldMapKeys[k] {
+				warnings = append(warnings, fmt.Sprintf("rest.field_map: unrecognised key %q (known keys: name, start_date, end_date, url, image, location, description)", k))
+			}
+		}
 	}
-	return nil
+
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; ")), warnings
+	}
+	return nil, warnings
 }
 
 // LoadSourceConfigs reads all *.yaml files from dir (skipping files starting
