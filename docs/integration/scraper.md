@@ -307,7 +307,10 @@ exceeds the global request timeout; the larger of the two wins.
 Used when a site exposes a paginated JSON REST API (e.g. Showpass).
 
 1. GET the configured endpoint
-2. Decode the `results_field` array (default: `"results"`) from the JSON response
+2. Decode the `results_field` array (default: `"results"`) from the JSON response.
+   When `results_field` is `"."`, the entire response body is treated as a bare JSON
+   array (`[{...}, {...}]`) — used for APIs that return arrays without an envelope object
+   (e.g. Showclix S3 buckets). Bare array mode has no pagination support.
 3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
 4. If `url_template` is set, render the Go `text/template` with the raw item map to
    produce each event's canonical URL
@@ -525,6 +528,23 @@ rest:
     # url: omitted — populated by url_template above
 ```
 
+**Bare array variant** (for APIs that return `[{...}, {...}]` without an envelope):
+
+```yaml
+- name: "Venue Name (Showclix)"
+  url: "https://venuename.com/events"
+  tier: 3
+  rest:
+    endpoint: "https://venuenameeventsbucket.s3.amazonaws.com/events.json"
+    results_field: "."                 # Bare array: entire response is the results array
+    field_map:
+      name: "name"
+      start_date: "starts_on"
+      end_date: "ends_on"
+      image: "image"
+    url_template: "https://www.showclix.com/event/{{.slug}}"
+```
+
 `field_map` maps RawEvent field names (`name`, `start_date`, `end_date`, `url`, `image`,
 `location`, `description`) to source JSON keys. Values support dot-separated paths for
 nested JSON traversal (e.g. `"logo.url"` extracts `response.logo.url`). Dots are always
@@ -609,7 +629,7 @@ never populates with event data but the underlying API response contains it.
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `endpoint` | yes | — | REST API URL (initial page URL) |
-| `results_field` | no | `"results"` | JSON key containing the events array on each page |
+| `results_field` | no | `"results"` | JSON key containing the events array on each page. Use `"."` for bare JSON array responses (no envelope object; no pagination) |
 | `next_field` | no | `"next"` | JSON key containing the next-page URL (string or null) |
 | `url_template` | no | — | Go `text/template` string to construct each event's URL |
 | `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
