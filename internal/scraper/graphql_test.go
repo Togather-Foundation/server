@@ -56,7 +56,7 @@ func newGraphQLSource(t *testing.T, endpoint, token, urlTemplate string) SourceC
 	}
 }
 
-func TestFetchAndExtractGraphQL_HappyPath(t *testing.T) {
+func TestGraphQLExtract_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -75,7 +75,7 @@ func TestFetchAndExtractGraphQL_HappyPath(t *testing.T) {
 	source := newGraphQLSource(t, srv.URL, "", "https://tranzac.org/events/{{.slug}}")
 
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	got, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 
@@ -88,7 +88,7 @@ func TestFetchAndExtractGraphQL_HappyPath(t *testing.T) {
 	assert.Equal(t, "https://tranzac.org/events/book-launch-2026-03-15", got[0].URL)
 }
 
-func TestFetchAndExtractGraphQL_BearerTokenSent(t *testing.T) {
+func TestGraphQLExtract_BearerTokenSent(t *testing.T) {
 	t.Parallel()
 
 	var gotAuth string
@@ -101,12 +101,12 @@ func TestFetchAndExtractGraphQL_BearerTokenSent(t *testing.T) {
 
 	source := newGraphQLSource(t, srv.URL, "my-secret-token", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Equal(t, "Bearer my-secret-token", gotAuth)
 }
 
-func TestFetchAndExtractGraphQL_RequestHeaders(t *testing.T) {
+func TestGraphQLExtract_RequestHeaders(t *testing.T) {
 	t.Parallel()
 
 	var gotContentType, gotAccept, gotUserAgent string
@@ -121,14 +121,14 @@ func TestFetchAndExtractGraphQL_RequestHeaders(t *testing.T) {
 
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", gotContentType, "Content-Type must be application/json")
 	assert.Equal(t, "application/json", gotAccept, "Accept must be application/json")
 	assert.Equal(t, scraperUserAgent, gotUserAgent, "User-Agent must be the Togather scraper identity string")
 }
 
-func TestFetchAndExtractGraphQL_NoToken(t *testing.T) {
+func TestGraphQLExtract_NoToken(t *testing.T) {
 	t.Parallel()
 
 	var gotAuth string
@@ -141,23 +141,23 @@ func TestFetchAndExtractGraphQL_NoToken(t *testing.T) {
 
 	source := newGraphQLSource(t, srv.URL, "", "") // no token
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Empty(t, gotAuth, "no Authorization header should be sent when token is empty")
 }
 
-func TestFetchAndExtractGraphQL_EmptyEvents(t *testing.T) {
+func TestGraphQLExtract_EmptyEvents(t *testing.T) {
 	t.Parallel()
 
 	srv := newGraphQLServer(t, tranzacResponse(nil))
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	got, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
 
-func TestFetchAndExtractGraphQL_APIErrors(t *testing.T) {
+func TestGraphQLExtract_APIErrors(t *testing.T) {
 	t.Parallel()
 
 	errResp := map[string]any{
@@ -168,12 +168,12 @@ func TestFetchAndExtractGraphQL_APIErrors(t *testing.T) {
 	srv := newGraphQLServer(t, errResp)
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unauthorized")
 }
 
-func TestFetchAndExtractGraphQL_NonOKStatus(t *testing.T) {
+func TestGraphQLExtract_NonOKStatus(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,24 +183,24 @@ func TestFetchAndExtractGraphQL_NonOKStatus(t *testing.T) {
 
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "503")
 }
 
-func TestFetchAndExtractGraphQL_MissingEventField(t *testing.T) {
+func TestGraphQLExtract_MissingEventField(t *testing.T) {
 	t.Parallel()
 
 	resp := map[string]any{"data": map[string]any{"otherField": []any{}}}
 	srv := newGraphQLServer(t, resp)
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "allEvents")
 }
 
-func TestFetchAndExtractGraphQL_PartialFields(t *testing.T) {
+func TestGraphQLExtract_PartialFields(t *testing.T) {
 	t.Parallel()
 
 	// Only title and startDate provided — other fields empty/missing
@@ -213,7 +213,7 @@ func TestFetchAndExtractGraphQL_PartialFields(t *testing.T) {
 	srv := newGraphQLServer(t, tranzacResponse(events))
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	got, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "Minimal Event", got[0].Name)
@@ -224,7 +224,7 @@ func TestFetchAndExtractGraphQL_PartialFields(t *testing.T) {
 	assert.Empty(t, got[0].URL)
 }
 
-func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
+func TestGraphQLExtract_URLTemplateNoSlug(t *testing.T) {
 	t.Parallel()
 
 	// Event has no slug key. template.Option("missingkey=error") causes Execute()
@@ -240,7 +240,7 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	srv := newGraphQLServer(t, tranzacResponse(events))
 	source := newGraphQLSource(t, srv.URL, "", "https://tranzac.org/events/{{.slug}}")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	got, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	// URL must be cleared (Execute returns an error for missing key) so each event
@@ -248,27 +248,27 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	assert.Equal(t, "", got[0].URL)
 }
 
-// TestFetchAndExtractGraphQL_NullDataField verifies that a response with a
+// TestGraphQLExtract_NullDataField verifies that a response with a
 // null "data" field ({"data": null}) does not panic and returns an error
 // about the missing event field. This is the srv-rstvo scenario: Go's nil
 // map lookup returns (zero, false), so the "event field not found" path is
 // reached without a nil-pointer dereference.
-func TestFetchAndExtractGraphQL_NullDataField(t *testing.T) {
+func TestGraphQLExtract_NullDataField(t *testing.T) {
 	t.Parallel()
 
 	// JSON: {"data": null} — data decodes to a nil map[string]json.RawMessage
 	srv := newGraphQLServer(t, map[string]any{"data": nil})
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "allEvents", "should report missing event field, not panic")
 }
 
-// TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents verifies that
+// TestGraphQLExtract_URLTemplateNoSlug_MultipleEvents verifies that
 // multiple events all missing the slug field are returned individually (not
 // collapsed to one) after Execute() errors on the missing key and clears URLs.
-func TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents(t *testing.T) {
+func TestGraphQLExtract_URLTemplateNoSlug_MultipleEvents(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -278,7 +278,7 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents(t *testing.T) {
 	srv := newGraphQLServer(t, tranzacResponse(events))
 	source := newGraphQLSource(t, srv.URL, "", "https://tranzac.org/events/{{.slug}}")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	got, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	// Both events must be returned — without the fix they would be collapsed
 	// to one because both would share the same "<no value>" dedup URL.
@@ -289,12 +289,12 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents(t *testing.T) {
 	assert.Equal(t, "No Slug Event B", got[1].Name)
 }
 
-// TestFetchAndExtractGraphQL_PartialSuccess verifies the conservative error
+// TestGraphQLExtract_PartialSuccess verifies the conservative error
 // handling: when the GraphQL response contains both errors and partial data,
 // the extractor returns an error and does NOT return the partial events.
 // This is intentional — partial data from a misbehaving endpoint is less
 // trustworthy than a clean failure (GraphQL spec allows both errors and data).
-func TestFetchAndExtractGraphQL_PartialSuccess(t *testing.T) {
+func TestGraphQLExtract_PartialSuccess(t *testing.T) {
 	t.Parallel()
 
 	resp := map[string]any{
@@ -313,15 +313,15 @@ func TestFetchAndExtractGraphQL_PartialSuccess(t *testing.T) {
 	srv := newGraphQLServer(t, resp)
 	source := newGraphQLSource(t, srv.URL, "", "")
 	extractor := NewGraphQLExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
+	got, err := extractor.Extract(context.Background(), source, &http.Client{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "partial")
 	assert.Nil(t, got, "no events should be returned when errors are present")
 }
 
-// TestFetchAndExtractGraphQL_TimeoutOverride verifies that cfg.TimeoutMs
+// TestGraphQLExtract_TimeoutOverride verifies that cfg.TimeoutMs
 // overrides a too-short client.Timeout when the cfg value is larger.
-func TestFetchAndExtractGraphQL_TimeoutOverride(t *testing.T) {
+func TestGraphQLExtract_TimeoutOverride(t *testing.T) {
 	t.Parallel()
 
 	t.Run("cfg timeout longer than client timeout — request succeeds", func(t *testing.T) {
@@ -341,7 +341,7 @@ func TestFetchAndExtractGraphQL_TimeoutOverride(t *testing.T) {
 
 		clientWithShortTimeout := &http.Client{Timeout: 10 * time.Millisecond}
 		extractor := NewGraphQLExtractor(zerolog.Nop())
-		got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, clientWithShortTimeout)
+		got, err := extractor.Extract(context.Background(), source, clientWithShortTimeout)
 		require.NoError(t, err, "cfg timeout should override the 10ms client timeout")
 		assert.Empty(t, got)
 	})
@@ -358,7 +358,7 @@ func TestFetchAndExtractGraphQL_TimeoutOverride(t *testing.T) {
 
 		clientWithLongTimeout := &http.Client{Timeout: 5000 * time.Millisecond}
 		extractor := NewGraphQLExtractor(zerolog.Nop())
-		got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, clientWithLongTimeout)
+		got, err := extractor.Extract(context.Background(), source, clientWithLongTimeout)
 		require.NoError(t, err, "client timeout should be preserved when cfg is shorter")
 		assert.Empty(t, got)
 	})

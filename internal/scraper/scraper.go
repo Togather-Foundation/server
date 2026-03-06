@@ -619,18 +619,11 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 		var rawEvents []RawEvent
 		var err error
 
-		if source.REST != nil {
-			// REST JSON feed path.
-			extractor := NewRestExtractor(s.logger)
-			rawEvents, err = extractor.FetchAndExtractREST(ctx, source, opts.HTTPClient(fetchTimeout))
-		} else {
-			// GraphQL API path.
-			// Tier 3 uses the single cfg.GraphQL.Endpoint rather than iterating GetURLs().
-			// source.URL is stored as metadata (SourceURL in scraper_run records) but
-			// is not used for fetching — only Endpoint drives the HTTP request.
-			extractor := NewGraphQLExtractor(s.logger)
-			rawEvents, err = extractor.FetchAndExtractGraphQL(ctx, source, opts.HTTPClient(fetchTimeout))
+		extractor, extErr := NewExtractor(source, s.logger)
+		if extErr != nil {
+			return 0, nil, nil, extErr
 		}
+		rawEvents, err = extractor.Extract(ctx, source, opts.HTTPClient(fetchTimeout))
 		if err != nil {
 			return 0, nil, nil, err
 		}

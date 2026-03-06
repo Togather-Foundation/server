@@ -24,7 +24,7 @@ func NewGraphQLExtractor(logger zerolog.Logger) *GraphQLExtractor {
 	return &GraphQLExtractor{logger: logger}
 }
 
-// FetchAndExtractGraphQL executes the GraphQL query defined in source.GraphQL,
+// Extract executes the GraphQL query defined in source.GraphQL,
 // maps each returned event object to a RawEvent using the field names, and
 // returns the slice. URLTemplate (if non-empty) is rendered per-event using
 // the raw event map as template data.
@@ -34,7 +34,7 @@ func NewGraphQLExtractor(logger zerolog.Logger) *GraphQLExtractor {
 // config to extend the global timeout for unusually slow GraphQL endpoints
 // without ever tightening it below what the caller already provides.
 // If cfg.TimeoutMs is zero the caller's timeout is used unchanged.
-func (e *GraphQLExtractor) FetchAndExtractGraphQL(
+func (e *GraphQLExtractor) Extract(
 	ctx context.Context,
 	source SourceConfig,
 	client *http.Client,
