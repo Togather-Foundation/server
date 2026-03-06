@@ -1,0 +1,15 @@
+name: "horseshoe-tavern"
+# Webflow static site with event listings. Events are rendered server-side with clean CSS structure.
+# Dates extracted in "Day, Month Date, Year" format; displayed times on page are not structured.
+url: "https://horseshoetavern.com/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.schedule-event"
+  name: "div.schedule-speaker-name"
+  start_date: "div.div-block-8 > div.schedule-event-time.tp:first-child"
+  url: "a.div-block-14"

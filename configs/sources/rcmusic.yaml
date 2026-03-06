@@ -8,9 +8,9 @@ name: "rcmusic"
 # Headless (Tier 2) with 35s wait for .tps-card-item — CloudSearch widget populates ~12 event cards per page
 # with titles, dates, and detail URLs. Pagination: 5 pages via JS pager (a.pager-next).
 #
-# Selectors verified 2026-03-06:
+# Selectors verified 2026-03-06 (fixed 2026-03-06 14:51):
 #   - Container: div.cell.tps-card-item (matches all 13 cards on page 1)
-#   - Title:     .tps-card-item-title a (matches 13 titles)
+#   - Title:     .tps-card-item-title (the <a> element IS the title; matches 13 titles)
 #   - Date:      .tps-card-item-date-inner (matches 13 dates; text like "Mar 7, 2026 8:00 PM")
 #   - URLs:      a[href*='/Events-and-Performances/'] (matches event detail links)
 url: "https://www.rcmusic.com/concerts?tps_activeFacetTab=_showall_"
@@ -27,6 +27,6 @@ headless:
   pagination_button: "a.pager-next"
 selectors:
   event_list: "div.cell.tps-card-item"
-  name: ".tps-card-item-title a"
+  name: ".tps-card-item-title"
   start_date: ".tps-card-item-date-inner"
   url: "a[href*='/Events-and-Performances/']"

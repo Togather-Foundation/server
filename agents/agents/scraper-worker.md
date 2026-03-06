@@ -447,7 +447,9 @@ DOM too fragile for reliable extraction?
 
 ## Return format
 
-Return exactly one line — do **not** run `git add`, `git commit`, or `git push` (the orchestrator handles all git operations):
+Return a structured report — do **not** run `git add`, `git commit`, or `git push` (the orchestrator handles all git operations).
+
+### Result line (required)
 
 ```
 RESULT | <URL> | <name> | <event_count> | <status> | <notes>
@@ -467,3 +469,80 @@ Where `status` = `written` (enabled=true), `failed` (kept disabled), or `downgra
 - Exact error messages from the scraper commands
 - Any structural blockers (e.g. `cross-origin iframe`, `JS widget never populates DOM`, `robots.txt Disallow`)
 - Suggested next approach if known (e.g. `try wait_network_idle: true`, `check for public API`)
+
+### Issues section (required)
+
+After the RESULT line, include an **Issues** section that reports any difficulties,
+bugs, confusing behavior, or suggestions encountered during the scraping process.
+This section is critical — it feeds back into scraper development and helps us fix
+infrastructure problems.
+
+**Always include this section**, even if empty (`Issues: none`).
+
+Format:
+
+```
+Issues:
+- [severity] category: description
+
+  context: what you were doing when this happened
+  evidence: exact error message, command output, or observed behavior
+  workaround: what you did to get past it (if anything)
+  suggestion: how the scraper could be improved to handle this better
+```
+
+Severities: `bug` (scraper did something wrong), `ux` (confusing/unhelpful behavior),
+`feature` (missing capability that would help), `docs` (missing/misleading documentation).
+
+**Examples of things to report:**
+
+- **Silent failures**: scraper returned 0 events with no error or explanation — what
+  did the logs say? Was there a diagnostic error? If not, that's a `bug`.
+- **Misleading errors**: error message pointed you in the wrong direction — what did
+  it say vs what the actual problem was?
+- **Timeout issues**: scraper timed out but the page needed more time — what timeout
+  was hit, what was the configured vs needed wait time?
+- **Selector mismatches**: a selector that visually looked correct didn't work — why?
+  Was it a descendant vs element-is-target issue? A CSS Modules hash rotation?
+- **Missing diagnostics**: you had to manually debug something that the scraper should
+  have told you about (e.g. "0 containers matched but no error reported").
+- **Command gaps**: you needed to do something the CLI doesn't support (e.g. "no way
+  to test a single selector against captured HTML").
+- **Documentation gaps**: something wasn't documented that you needed to know, or
+  documentation was wrong/outdated.
+- **Workarounds**: any workaround you had to use that shouldn't be necessary — the
+  scraper should handle it natively.
+
+**Example report:**
+
+```
+Issues:
+- [bug] silent-drop: name selector ".title a" matched 0 text in all 12 containers,
+  but scraper returned 0 events with no error — events were silently dropped.
+
+  context: validating rcmusic config with --dry-run --verbose
+  evidence: verbose output showed 0 events, no warnings, no errors
+  workaround: manually inspected DOM and found <a class="title"> (element IS the target)
+  suggestion: scraper should report when all containers have empty names — likely a selector bug
+
+- [ux] timeout-confusion: rod timeout of 30s was consumed by browser overhead before
+  wait_selector could find elements on a slow-loading AWS CloudSearch widget.
+
+  context: rcmusic page needs ~35s for CloudSearch widget to populate
+  evidence: "context deadline exceeded" after 30s, but wait_timeout_ms was also 30s
+  workaround: none — needed code fix to calculate dynamic hard timeout
+  suggestion: hard timeout should accommodate wait_timeout_ms + overhead, not be a fixed 30s
+
+- [docs] missing-selector-hint: no documentation about descendant selector vs
+  element-is-target pattern (e.g. ".title a" vs ".title" when <a> has the class).
+
+  context: writing name selector for rcmusic
+  evidence: n/a
+  workaround: trial and error with DOM inspection
+  suggestion: add common selector pitfalls section to scraper-worker docs
+
+Issues: none
+```
+
+The last line (`Issues: none`) is shown as an example of what to write when there
+are genuinely no issues to report.
