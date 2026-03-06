@@ -26,32 +26,30 @@ const (
 // checkDateSelectorQuality analyses the raw events extracted via
 // date_selectors and returns quality warnings when selectors fail to match.
 //
-// It compares each event's DateParts length against the number of configured
-// DateSelectors. When a selector index fails to produce text for ANY event
-// in the batch, a WarnDateSelectorNeverMatched warning is emitted. When a
-// selector fails for some (but not all) events, a
-// WarnDateSelectorPartialMatch warning is emitted.
+// With always-indexed DateParts (one entry per selector, empty string for misses),
+// matchCount[i] correctly reflects how many events produced non-empty text for
+// selector i. When a selector index is empty for ALL events, a
+// WarnDateSelectorNeverMatched warning is emitted. When empty for some events,
+// a WarnDateSelectorPartialMatch warning is emitted.
+//
+// firstProbes, when non-nil, provides per-selector DOM diagnostics from the
+// first event container; these are appended to warning messages for enhanced
+// visibility. Pass nil from Colly (Tier 1) call sites for backward compatibility.
 //
 // This function is a no-op (returns nil) when date_selectors is empty or
 // when rawEvents is empty.
-func checkDateSelectorQuality(rawEvents []RawEvent, config SourceConfig) []string {
+func checkDateSelectorQuality(rawEvents []RawEvent, config SourceConfig, firstProbes []DateSelectorProbe) []string {
 	numSelectors := len(config.Selectors.DateSelectors)
 	if numSelectors == 0 || len(rawEvents) == 0 {
 		return nil
 	}
 
 	// matchCount[i] = number of events where selector i produced a non-empty
-	// DateParts entry.
+	// DateParts entry. With always-indexed DateParts, entry i reliably maps
+	// to DateSelectors[i].
 	matchCount := make([]int, numSelectors)
 
 	for _, raw := range rawEvents {
-		// DateParts are appended in order by extractEventsFromHTML: the Nth
-		// entry corresponds to the Nth selector ONLY if all preceding selectors
-		// also matched. When a selector fails (no element found or empty text),
-		// no entry is appended, so len(DateParts) < numSelectors.
-		//
-		// To correctly attribute which selectors matched, we count entries up
-		// to min(len(DateParts), numSelectors).
 		for i := 0; i < len(raw.DateParts) && i < numSelectors; i++ {
 			if raw.DateParts[i] != "" {
 				matchCount[i]++
@@ -64,17 +62,43 @@ func checkDateSelectorQuality(rawEvents []RawEvent, config SourceConfig) []strin
 
 	for i := 0; i < numSelectors; i++ {
 		selector := config.Selectors.DateSelectors[i]
+		var probe *DateSelectorProbe
+		if i < len(firstProbes) {
+			p := firstProbes[i]
+			probe = &p
+		}
+
 		switch {
 		case matchCount[i] == 0:
-			warnings = append(warnings, fmt.Sprintf(
+			msg := fmt.Sprintf(
 				"%s: selector #%d (%q) matched 0/%d events",
 				WarnDateSelectorNeverMatched, i+1, selector, totalEvents,
-			))
+			)
+			if probe != nil {
+				switch {
+				case !probe.Matched:
+					msg += " — first container: no element found for this selector"
+				case probe.Text == "":
+					msg += " — first container: element found but text was empty"
+				default:
+					msg += fmt.Sprintf(" — first container: %q", probe.Text)
+				}
+			}
+			warnings = append(warnings, msg)
 		case matchCount[i] < totalEvents:
-			warnings = append(warnings, fmt.Sprintf(
+			msg := fmt.Sprintf(
 				"%s: selector #%d (%q) matched %d/%d events",
 				WarnDateSelectorPartialMatch, i+1, selector, matchCount[i], totalEvents,
-			))
+			)
+			if probe != nil {
+				switch {
+				case probe.Matched && probe.Text != "":
+					msg += fmt.Sprintf(" — first container: %q", probe.Text)
+				case !probe.Matched:
+					msg += " — first container: no element found for this selector"
+				}
+			}
+			warnings = append(warnings, msg)
 		}
 	}
 
