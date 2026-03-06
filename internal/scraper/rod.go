@@ -27,8 +27,40 @@ const (
 	rodDefaultTimeout     = 30 * time.Second
 	rodDefaultWaitTimeout = 10 * time.Second
 	rodDefaultRateLimit   = time.Second
+	rodTimeoutOverhead    = 30 * time.Second // overhead for browser launch, navigation, extraction per page
 	rodUserAgent          = scraperUserAgent // reuse from jsonld.go
 )
+
+// rodHardTimeout calculates the hard context timeout for a Rod scrape operation.
+// It accommodates the configured wait timeout plus overhead for browser launch,
+// navigation, and extraction. For multi-page scrapes, the per-page wait time
+// is multiplied by the number of pages.
+func rodHardTimeout(config SourceConfig) time.Duration {
+	waitTimeout := rodDefaultWaitTimeout
+	if config.Headless.WaitTimeoutMs > 0 {
+		waitTimeout = time.Duration(config.Headless.WaitTimeoutMs) * time.Millisecond
+	}
+
+	pages := 1
+	if config.MaxPages > 1 {
+		pages = config.MaxPages
+	}
+
+	rateLimit := rodDefaultRateLimit
+	if config.Headless.RateLimitMs > 0 {
+		rateLimit = time.Duration(config.Headless.RateLimitMs) * time.Millisecond
+	}
+
+	// Per-page budget: wait timeout + rate limit between pages.
+	perPage := waitTimeout + rateLimit
+	total := perPage*time.Duration(pages) + rodTimeoutOverhead
+
+	// Never go below the default timeout.
+	if total < rodDefaultTimeout {
+		return rodDefaultTimeout
+	}
+	return total
+}
 
 // ErrHeadlessDisabled is returned when SCRAPER_HEADLESS_ENABLED is false.
 var ErrHeadlessDisabled = fmt.Errorf("headless scraping is disabled (set SCRAPER_HEADLESS_ENABLED=true)")
@@ -180,8 +212,9 @@ func (e *RodExtractor) launchBrowser(ctx context.Context) (*rod.Browser, func(),
 // scrapePages performs the actual browser-based scraping across potentially
 // multiple pages. Called after the semaphore is acquired.
 func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]RawEvent, error) {
-	// Apply a hard timeout for the entire scrape operation.
-	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	// Apply a hard timeout for the entire scrape operation, accommodating the
+	// configured wait timeout and page count.
+	ctx, cancel := context.WithTimeout(ctx, rodHardTimeout(config))
 	defer cancel()
 
 	browser, cleanup, err := e.launchBrowser(ctx)
@@ -1081,7 +1114,7 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 		return "", nil, ctx.Err()
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, rodHardTimeout(config))
 	defer cancel()
 
 	browser, cleanup, err := e.launchBrowser(ctx)

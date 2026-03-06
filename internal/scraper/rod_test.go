@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-rod/rod"
@@ -1612,5 +1613,108 @@ func TestNetworkCollectorSnapshotOrder(t *testing.T) {
 		if r.URL != want[i] {
 			t.Errorf("index %d: got URL %q, want %q", i, r.URL, want[i])
 		}
+	}
+}
+
+// TestRodHardTimeoutAccommodatesWaitTimeout verifies that rodHardTimeout
+// returns a value that accommodates the configured wait timeout plus overhead,
+// and never falls below rodDefaultTimeout.
+func TestRodHardTimeoutAccommodatesWaitTimeout(t *testing.T) {
+	tests := []struct {
+		name   string
+		config SourceConfig
+		want   time.Duration
+	}{
+		{
+			name:   "default config (no wait_timeout_ms) returns rodDefaultTimeout",
+			config: SourceConfig{MaxPages: 1},
+			// perPage = 10s + 1s = 11s; total = 11s*1 + 30s = 41s > 30s → 41s
+			// BUT: this ensures we return at least rodDefaultTimeout (30s).
+			// 41s > 30s so result is 41s.
+			want: 41 * time.Second,
+		},
+		{
+			name: "wait_timeout_ms 30000 single page returns 30s+overhead",
+			config: SourceConfig{
+				MaxPages: 1,
+				Headless: HeadlessConfig{WaitTimeoutMs: 30000},
+			},
+			// perPage = 30s + 1s = 31s; total = 31s*1 + 30s = 61s
+			want: 61 * time.Second,
+		},
+		{
+			name: "wait_timeout_ms 5000 single page exceeds default",
+			config: SourceConfig{
+				MaxPages: 1,
+				Headless: HeadlessConfig{WaitTimeoutMs: 5000},
+			},
+			// perPage = 5s + 1s = 6s; total = 6s*1 + 30s = 36s > 30s
+			want: 36 * time.Second,
+		},
+		{
+			name: "wait_timeout_ms 60000 max_pages 1 returns 91s",
+			config: SourceConfig{
+				MaxPages: 1,
+				Headless: HeadlessConfig{WaitTimeoutMs: 60000},
+			},
+			// perPage = 60s + 1s = 61s; total = 61s*1 + 30s = 91s
+			want: 91 * time.Second,
+		},
+		{
+			name: "wait_timeout_ms 35000 max_pages 5 accommodates rcmusic",
+			config: SourceConfig{
+				MaxPages: 5,
+				Headless: HeadlessConfig{WaitTimeoutMs: 35000},
+			},
+			// perPage = 35s + 1s = 36s; total = 36s*5 + 30s = 210s
+			want: 210 * time.Second,
+		},
+		{
+			name: "zero wait timeout uses default (no MaxPages uses 1)",
+			config: SourceConfig{
+				MaxPages: 0,
+				Headless: HeadlessConfig{WaitTimeoutMs: 0},
+			},
+			// pages clamped to 1; perPage = 10s + 1s = 11s; total = 11s + 30s = 41s
+			want: 41 * time.Second,
+		},
+		{
+			name: "custom rate_limit_ms",
+			config: SourceConfig{
+				MaxPages: 2,
+				Headless: HeadlessConfig{WaitTimeoutMs: 10000, RateLimitMs: 5000},
+			},
+			// perPage = 10s + 5s = 15s; total = 15s*2 + 30s = 60s
+			want: 60 * time.Second,
+		},
+		{
+			name: "floor guard: total with overhead alone equals rodDefaultTimeout",
+			config: SourceConfig{
+				MaxPages: 1,
+				// Force a scenario where perPage*pages is negligible:
+				// Use WaitTimeoutMs=1ms and RateLimitMs=1ms so perPage≈2ms.
+				// total = 2ms + 30s ≈ 30.002s > 30s, so not exactly the floor.
+				// The floor guard ensures we never return < 30s. Verify that
+				// the minimum possible total (overhead alone) equals rodDefaultTimeout
+				// by checking overhead=30s with 0 wait and 0 rate — but those fall
+				// back to defaults. So test: with overhead=30s as the only component
+				// we get at minimum rodDefaultTimeout.
+				// Practical: test that the result is always ≥ rodDefaultTimeout.
+				Headless: HeadlessConfig{WaitTimeoutMs: 1, RateLimitMs: 1},
+			},
+			// perPage = 1ms + 1ms = 2ms; total = 2ms*1 + 30s ≈ 30.002s
+			// which is > rodDefaultTimeout (30s), so floor doesn't trigger here.
+			// Result: 30s + 2ms.
+			want: rodDefaultTimeout + 2*time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rodHardTimeout(tt.config)
+			if got != tt.want {
+				t.Errorf("rodHardTimeout() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

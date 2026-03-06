@@ -1,38 +1,18 @@
 name: "rcmusic"
 # The Royal Conservatory of Music — Kentico CMS (ASP.NET)
 # Concert series: Royal Conservatory Concerts, Mazzoleni, Temerty Theatre
-# Signature events: /support-us/signature-events
 #
-# Events loaded via AWS CloudSearch-backed JS widget
-# (data-template="TPSPT.AWSFacetedSearchResults_Concerts"). The /concerts page
-# has tabs by presenter category; ?tps_activeFacetTab=_showall_ selects the
-# "All Presenters" tab showing events from all presenters (~62 events across
-# 5 pages of 12). Without this param, only "Royal Conservatory Concerts" shows.
+# Events loaded via AWS CloudSearch-backed JS widget (data-template="TPSPT.AWSFacetedSearchResults_Concerts").
+# The /concerts page has tabs by presenter category; ?tps_activeFacetTab=_showall_ selects the "All Presenters" tab.
 #
-# Headless (Tier 2) works with 30s wait for .tps-card-item — the CloudSearch
-# widget populates 12 event cards per page with titles, dates, and detail URLs.
-# Pagination: 5 pages via JS pager (a.pager-next). max_pages limits how many
-# pages we follow.
+# Headless (Tier 2) with 35s wait for .tps-card-item — CloudSearch widget populates ~12 event cards per page
+# with titles, dates, and detail URLs. Pagination: 5 pages via JS pager (a.pager-next).
 #
-# Previous attempts (2026-03-04, 2026-03-05) failed because wait time was too
-# short (25s) and wrong selectors were used. Confirmed working 2026-03-06 via
-# `scrape capture --network --wait-selector .tps-card-item --wait-timeout 30000`.
-#
-# CloudSearch API endpoint (found via network capture):
-#   https://1gcvo6mof9.execute-api.us-east-1.amazonaws.com/LIVE-rcm-site-search
-# Returns application/json — intercept config could be added as fallback if
-# DOM extraction becomes unreliable.
-#
-# CSS selectors identified from rendered DOM:
-#   Container: div.tps-card-item (12 per page)
-#   Title:     .tps-card-item-title a (event name + href)
-#   Date:      .tps-card-item-date (text like "Mar 7, 2026 8:00 PM")
-#   URLs:      a[href*='/Events-and-Performances/']
-#   Pager:     a.pager-next (JS-based pagination, 5 pages)
-#   data-utc-date attribute on date-inner divs
-#
-# Previously had a duplicate config: royal-conservatory-music.yaml (consolidated
-# into this file 2026-03-05).
+# Selectors verified 2026-03-06:
+#   - Container: div.cell.tps-card-item (matches all 13 cards on page 1)
+#   - Title:     .tps-card-item-title a (matches 13 titles)
+#   - Date:      .tps-card-item-date-inner (matches 13 dates; text like "Mar 7, 2026 8:00 PM")
+#   - URLs:      a[href*='/Events-and-Performances/'] (matches event detail links)
 url: "https://www.rcmusic.com/concerts?tps_activeFacetTab=_showall_"
 tier: 2
 schedule: "daily"
@@ -42,11 +22,11 @@ enabled: true
 max_pages: 5
 headless:
   wait_selector: ".tps-card-item"
-  wait_timeout_ms: 30000
+  wait_timeout_ms: 35000
   wait_network_idle: true
   pagination_button: "a.pager-next"
 selectors:
-  event_list: "div.tps-card-item"
+  event_list: "div.cell.tps-card-item"
   name: ".tps-card-item-title a"
-  start_date: ".tps-card-item-date"
+  start_date: ".tps-card-item-date-inner"
   url: "a[href*='/Events-and-Performances/']"
