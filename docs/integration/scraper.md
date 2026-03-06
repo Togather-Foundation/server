@@ -119,6 +119,9 @@ server scrape capture https://example.com/events --network
 
 # Network capture with JSON output (machine-readable for agents)
 server scrape capture https://example.com/events --network --format json
+
+# Save a screenshot for visual debugging (useful for agents)
+server scrape capture https://example.com/events --screenshot /tmp/page.png
 ```
 
 **`--network` flag:** Enables CDP network activity capture during rendering.
@@ -130,6 +133,30 @@ page calls and whether the data lives in DOM or in API responses.
 
 When `--json` is combined with `--network`, output is a JSON object with `html`
 and `network_requests` fields.
+
+**`--screenshot` flag:** Saves a PNG screenshot of the page after rendering and
+wait-selector resolution (or timeout). The screenshot captures exactly what the
+headless browser sees — use it to diagnose empty containers, loading spinners,
+or content that renders in a different tab/section than expected.
+
+```bash
+# Save a screenshot after rendering
+server scrape capture https://example.com/events --screenshot /tmp/page.png
+
+# Combine with wait selector and network capture
+server scrape capture https://example.com/events \
+  --wait-selector ".event-list" --wait-timeout 15000 \
+  --screenshot /tmp/events.png --network
+
+# Screenshot with source config
+server scrape capture --source-file configs/sources/my-venue.yaml \
+  --screenshot /tmp/venue.png
+```
+
+The screenshot is taken after `--wait-selector` resolves (or times out) and after
+network-idle (if configured), but before HTML extraction. If the wait times out,
+the screenshot still captures whatever the page looks like at that point — this is
+the key diagnostic value for understanding what the headless browser actually sees.
 
 ### `server scrape url <URL>`
 
