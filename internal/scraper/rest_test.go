@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -542,6 +543,193 @@ func TestFetchAndExtractREST_MissingResultsField(t *testing.T) {
 	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Empty(t, got, "missing results_field should return empty slice, not error")
+}
+
+// --------------------------------------------------------------------------
+// resolveNestedString tests
+// --------------------------------------------------------------------------
+
+func TestResolveNestedString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		item map[string]any
+		path string
+		want string
+	}{
+		{
+			name: "flat key returns string value",
+			item: map[string]any{"name": "Event Name"},
+			path: "name",
+			want: "Event Name",
+		},
+		{
+			name: "single dot traverses one level",
+			item: map[string]any{
+				"logo": map[string]any{"url": "https://img.example.com/pic.jpg"},
+			},
+			path: "logo.url",
+			want: "https://img.example.com/pic.jpg",
+		},
+		{
+			name: "double dot traverses two levels",
+			item: map[string]any{
+				"venue": map[string]any{
+					"address": map[string]any{"city": "Calgary"},
+				},
+			},
+			path: "venue.address.city",
+			want: "Calgary",
+		},
+		{
+			name: "missing intermediate key returns empty string",
+			item: map[string]any{
+				"logo": map[string]any{"url": "https://img.example.com/pic.jpg"},
+			},
+			path: "missing.url",
+			want: "",
+		},
+		{
+			name: "non-map intermediate returns empty string",
+			item: map[string]any{"name": "plain string"},
+			path: "name.url",
+			want: "",
+		},
+		{
+			name: "final value is non-string returns empty string",
+			item: map[string]any{
+				"count": map[string]any{"value": 42},
+			},
+			path: "count.value",
+			want: "",
+		},
+		{
+			name: "empty path returns empty string",
+			item: map[string]any{"name": "Event Name"},
+			path: "",
+			want: "",
+		},
+		{
+			name: "missing flat key returns empty string",
+			item: map[string]any{"name": "Event Name"},
+			path: "other",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := resolveNestedString(tt.item, tt.path)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestFetchAndExtractREST_NestedFieldMap tests dot-notation field_map values
+// through the full FetchAndExtractREST path (Eventbrite-style nested JSON).
+func TestFetchAndExtractREST_NestedFieldMap(t *testing.T) {
+	t.Parallel()
+
+	events := []map[string]any{
+		{
+			"title":      map[string]any{"text": "My Event"},
+			"logo":       map[string]any{"url": "https://img.com/pic.jpg"},
+			"date_start": "2026-05-01T20:00:00Z",
+			"venue_name": "The Hall",
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, events, ""))
+	}))
+	defer srv.Close()
+
+	fieldMap := map[string]string{
+		"name":       "title.text",
+		"image":      "logo.url",
+		"start_date": "date_start",
+		"location":   "venue_name",
+	}
+	source := restSource(srv.URL, fieldMap, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+
+	e := got[0]
+	assert.Equal(t, "My Event", e.Name, "nested title.text must be resolved")
+	assert.Equal(t, "https://img.com/pic.jpg", e.Image, "nested logo.url must be resolved")
+	assert.Equal(t, "2026-05-01T20:00:00Z", e.StartDate, "flat date_start must still work")
+	assert.Equal(t, "The Hall", e.Location, "flat venue_name must still work")
+}
+
+// --------------------------------------------------------------------------
+// Redirect-limiting tests
+// --------------------------------------------------------------------------
+
+func TestFetchAndExtractREST_RedirectLimited(t *testing.T) {
+	t.Parallel()
+
+	var requestCount atomic.Int32
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := requestCount.Add(1)
+		// Always redirect back to ourselves (with an incrementing counter) to
+		// create an infinite redirect chain.
+		next := fmt.Sprintf("%s?n=%d", srv.URL, n)
+		http.Redirect(w, r, next, http.StatusFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	source := restSource(srv.URL, nil, "", 10)
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	// The request must fail (we never get a 200), but the critical assertion is
+	// that the server received at most maxRESTRedirects+1 requests (not infinite).
+	require.Error(t, err)
+	got := int(requestCount.Load())
+	assert.LessOrEqual(t, got, maxRESTRedirects+1,
+		"redirect chain must be stopped at maxRESTRedirects; got %d requests", got)
+}
+
+func TestFetchAndExtractREST_RedirectFollowed(t *testing.T) {
+	t.Parallel()
+
+	events := []map[string]any{
+		sampleEvent("redir-event", "Redirect Event", "2026-06-01T19:00:00Z", "2026-06-01T22:00:00Z"),
+	}
+
+	var requestCount atomic.Int32
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := requestCount.Add(1)
+		if n == 1 {
+			// First request: permanent redirect to canonical URL.
+			http.Redirect(w, r, srv.URL+"/canonical", http.StatusMovedPermanently)
+			return
+		}
+		// Second request: serve valid JSON.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, events, ""))
+	}))
+	t.Cleanup(srv.Close)
+
+	fieldMap := map[string]string{
+		"name":       "name",
+		"start_date": "starts_on",
+		"end_date":   "ends_on",
+		"image":      "image",
+	}
+	source := restSource(srv.URL, fieldMap, "", 10)
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "redirect must be followed and events returned")
+	assert.Equal(t, "Redirect Event", got[0].Name)
 }
 
 func TestFetchAndExtractREST_TimeoutMs(t *testing.T) {
