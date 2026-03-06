@@ -33,7 +33,7 @@ tier: 2
 schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
-enabled: false
+enabled: true
 max_pages: 1
 headless:
   wait_selector: "body"

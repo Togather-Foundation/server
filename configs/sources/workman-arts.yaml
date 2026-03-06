@@ -1,23 +1,31 @@
 name: "workman-arts"
-# WordPress + Showpass/Eventbrite — RWM (Rendezvous with Madness) festival
-# Main event listing: /events/ (filters dynamically via JS)
+# WordPress site — ticketing via Showpass (venue ID 10892, slug: workman-arts)
+# Address: 1025 Queen St W, Toronto
+# Main event listing: /events/ (renders via JS/Showpass widget)
 # Archive: /rwm-archive-events/ (RSS feed at /rwm-archive-events/feed/)
-# Headless inspection (2026-03-05): events page renders but no specific event containers found
-# Currently off-season; main programming in Oct-Nov
-# Tier 2: headless rendering needed for dynamic JS-filtered event list
-# Issue: /events/?filter=* URLs are filter parameters, not direct event pages
+#
+# Tier 3 REST: Showpass public API provides structured event data.
+# Same pattern as burdock-brewery.yaml (Showpass venue 17330).
+#
+# NOTE: Workman Arts programming is seasonal (main season Oct-Nov, RWM festival).
+# The Showpass API will return 0 results during off-season — this is expected.
+# The source stays enabled; the scraper simply finds no events when none are listed.
+#
+# Previous approach (Tier 2 headless) abandoned: JS-filtered event page had no
+# usable event containers even with Rod rendering.
 url: "https://workmanarts.com/events/"
-tier: 2
+tier: 3
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
-max_pages: 2
-headless:
-  wait_selector: "body, div[class*='event'], article"
-  wait_timeout_ms: 10000
-selectors:
-  event_list: "article.tribe-events-calendar-list__event-article, div.event-card, li.event-item"
-  name: "h3.tribe-events-calendar-list__event-title a, h3 a, a.event-title-link"
-  start_date: "time.tribe-events-calendar-list__event-datetime, time[datetime], span.event-date"
-  url: "h3 a, a.event-link"
+enabled: true
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=10892"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://www.showpass.com/{{.slug}}"
+  field_map:
+    name: "name"
+    start_date: "starts_on"
+    end_date: "ends_on"
+    image: "image"

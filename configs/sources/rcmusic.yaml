@@ -1,11 +1,29 @@
 name: "rcmusic"
-# Disabled: Events loaded via AWS CloudSearch-backed JS widget (data-template=
-# "TPSPT.AWSFacetedSearchResults_Events"). Even with Tier 2 headless (Rod, 25s wait)
-# the page renders only ~7KB with empty event containers — JS fetches results from
-# an AWS endpoint that does not appear publicly accessible. Tried 2026-03-04.
-# Fix: reverse-engineer the AWS CloudSearch API endpoint used by the JS widget,
-# or check if rcmusic.com exposes a calendar feed or API.
-url: "https://www.rcmusic.com/events-and-performances"
+# The Royal Conservatory of Music — Kentico CMS (ASP.NET)
+# Concert series: Royal Conservatory Concerts, Mazzoleni, Temerty Theatre
+# Signature events: /support-us/signature-events
+#
+# BLOCKED: Events loaded via AWS CloudSearch-backed JS widget
+# (data-template="TPSPT.AWSFacetedSearchResults_Concerts"). The /events-and-performances
+# URL now redirects to /concerts?tps_activeFacetTab=_showall_. Even with Tier 2
+# headless (Rod, 25s wait + network idle), the page renders only ~7.6KB with empty
+# event containers. The CloudSearch domain endpoint is resolved server-side and is
+# NOT exposed in page HTML or JS — cannot be called directly.
+#
+# Attempted 2026-03-04 and 2026-03-05:
+#   - Tier 0 (static HTML): only empty template containers
+#   - Tier 2 (Rod headless, 25s wait): same ~7.6KB, no event data
+#   - JS inspection (main.js): references CloudSearch facet config but no endpoint URL
+#   - No iCal, RSS, or public API feed found
+#
+# To unblock, one of:
+#   1. Reverse-engineer CloudSearch API via full CDP network interception
+#   2. Contact venue for calendar feed or API access
+#   3. Check periodically for site redesign / new CMS
+#
+# Previously had a duplicate config: royal-conservatory-music.yaml (consolidated
+# into this file 2026-03-05).
+url: "https://www.rcmusic.com/concerts"
 tier: 0
 schedule: "daily"
 trust_level: 8
