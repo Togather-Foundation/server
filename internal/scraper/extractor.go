@@ -12,6 +12,10 @@ import (
 // GraphQLExtractor both satisfy this interface; scrapeTier3 dispatches
 // through it so that adding a new API variant requires only a new
 // implementation—no changes to the scraper core.
+//
+// Tier 3 extractors use their own endpoint config (RestConfig.Endpoint or
+// GraphQLConfig.Endpoint), not SourceConfig.URL which is retained only as
+// metadata in scraper_run records.
 type Extractor interface {
 	Extract(ctx context.Context, source SourceConfig, client *http.Client) ([]RawEvent, error)
 }
