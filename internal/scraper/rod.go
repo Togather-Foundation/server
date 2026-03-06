@@ -801,7 +801,7 @@ func validateNavigationURL(rawURL string, blocklist []*net.IPNet) error {
 // This is intended for CLI tooling (scrape capture) that needs the rendered
 // HTML for further analysis or selector discovery, without extracting events.
 func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector string, waitTimeoutMs int) (string, error) {
-	html, _, err := e.RenderHTMLWithNetwork(ctx, rawURL, waitSelector, waitTimeoutMs)
+	html, _, err := e.RenderHTMLWithNetwork(ctx, rawURL, waitSelector, waitTimeoutMs, "")
 	return html, err
 }
 
@@ -930,7 +930,7 @@ func enableNetworkCapture(page *rod.Page) (*networkCollector, func()) {
 //
 // This is the diagnostic variant of RenderHTML — used by `scrape capture --network`
 // to help diagnose why pages render empty by showing what API calls the page makes.
-func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSelector string, waitTimeoutMs int) (string, []NetworkRequest, error) {
+func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSelector string, waitTimeoutMs int, screenshotPath string) (string, []NetworkRequest, error) {
 	if !e.headlessEnv {
 		return "", nil, ErrHeadlessDisabled
 	}
@@ -1005,6 +1005,16 @@ func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSe
 			Msg("rod: RenderHTMLWithNetwork wait selector timed out, continuing anyway")
 	}
 
+	if screenshotPath != "" {
+		if data, ssErr := page.Screenshot(false, nil); ssErr != nil {
+			e.logger.Warn().Err(ssErr).Str("path", screenshotPath).Msg("rod: screenshot capture failed")
+		} else if writeErr := os.WriteFile(screenshotPath, data, 0o644); writeErr != nil {
+			e.logger.Warn().Err(writeErr).Str("path", screenshotPath).Msg("rod: failed to write screenshot")
+		} else {
+			e.logger.Info().Str("path", screenshotPath).Msg("rod: screenshot saved")
+		}
+	}
+
 	html, err := page.HTML()
 	if err != nil {
 		e.captureScreenshot(page, "render-html-network")
@@ -1020,7 +1030,7 @@ func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSe
 // This is the diagnostic variant of RenderHTMLWithConfig — used by
 // `scrape capture --network --source-file config.yaml` to show what API calls
 // a JS-widget page makes during rendering.
-func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, config SourceConfig) (string, []NetworkRequest, error) {
+func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, config SourceConfig, screenshotPath string) (string, []NetworkRequest, error) {
 	if !e.headlessEnv {
 		return "", nil, ErrHeadlessDisabled
 	}
@@ -1117,6 +1127,16 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 		waitIdle()
 	}
 
+	if screenshotPath != "" {
+		if data, ssErr := page.Screenshot(false, nil); ssErr != nil {
+			e.logger.Warn().Err(ssErr).Str("path", screenshotPath).Msg("rod: screenshot capture failed")
+		} else if writeErr := os.WriteFile(screenshotPath, data, 0o644); writeErr != nil {
+			e.logger.Warn().Err(writeErr).Str("path", screenshotPath).Msg("rod: failed to write screenshot")
+		} else {
+			e.logger.Info().Str("path", screenshotPath).Msg("rod: screenshot saved")
+		}
+	}
+
 	html, htmlErr := page.HTML()
 	if htmlErr != nil {
 		e.captureScreenshot(page, config.Name)
@@ -1147,6 +1167,6 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 // extractEventsFromHTML would receive, so you can inspect the DOM, check which
 // selectors match, and verify date/URL element structure.
 func (e *RodExtractor) RenderHTMLWithConfig(ctx context.Context, config SourceConfig) (string, error) {
-	html, _, err := e.RenderHTMLWithConfigAndNetwork(ctx, config)
+	html, _, err := e.RenderHTMLWithConfigAndNetwork(ctx, config, "")
 	return html, err
 }

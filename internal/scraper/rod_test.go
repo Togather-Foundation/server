@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -497,7 +498,7 @@ func TestNetworkCapture_BasicRequests(t *testing.T) {
 	logger := zerolog.Nop()
 	ext := newTestExtractorAllowLocalhost(logger)
 
-	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "#result", 5000)
+	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "#result", 5000, "")
 	if err != nil {
 		t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
 	}
@@ -554,7 +555,7 @@ func TestNetworkCapture_NoRequests(t *testing.T) {
 	logger := zerolog.Nop()
 	ext := newTestExtractorAllowLocalhost(logger)
 
-	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "body", 5000)
+	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "body", 5000, "")
 	if err != nil {
 		t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
 	}
@@ -628,7 +629,7 @@ func TestNetworkCapture_WithConfigAndNetwork(t *testing.T) {
 		},
 	}
 
-	html, requests, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg)
+	html, requests, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg, "")
 	if err != nil {
 		t.Fatalf("RenderHTMLWithConfigAndNetwork returned error: %v", err)
 	}
@@ -654,7 +655,7 @@ func TestRenderHTMLWithNetwork_HeadlessDisabled(t *testing.T) {
 	logger := zerolog.Nop()
 	ext := NewRodExtractor(logger, 2, "", false)
 
-	_, _, err := ext.RenderHTMLWithNetwork(context.Background(), "https://example.com", "body", 0)
+	_, _, err := ext.RenderHTMLWithNetwork(context.Background(), "https://example.com", "body", 0, "")
 	if err != ErrHeadlessDisabled {
 		t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
 	}
@@ -665,10 +666,68 @@ func TestRenderHTMLWithConfigAndNetwork_HeadlessDisabled(t *testing.T) {
 	ext := NewRodExtractor(logger, 2, "", false)
 
 	cfg := SourceConfig{Name: "test", URL: "https://example.com"}
-	_, _, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg)
+	_, _, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg, "")
 	if err != ErrHeadlessDisabled {
 		t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
 	}
+}
+
+func TestRenderHTMLWithNetwork_Screenshot(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	// Simple HTML page.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, `<html><body><h1>Screenshot Test</h1></body></html>`)
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	t.Run("saves PNG when path provided", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "screenshot.png")
+		html, _, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "body", 5000, path)
+		if err != nil {
+			t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
+		}
+		if html == "" {
+			t.Error("expected non-empty HTML")
+		}
+
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("screenshot file not found: %v", readErr)
+		}
+		if len(data) == 0 {
+			t.Error("screenshot file is empty")
+		}
+		// PNG magic bytes: 137 80 78 71 13 10 26 10
+		if len(data) < 8 || data[0] != 0x89 || data[1] != 0x50 || data[2] != 0x4E || data[3] != 0x47 {
+			t.Errorf("screenshot file does not have PNG magic bytes, got first 4 bytes: %x", data[:4])
+		}
+	})
+
+	t.Run("no file when path empty", func(t *testing.T) {
+		dir := t.TempDir()
+		html, _, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "body", 5000, "")
+		if err != nil {
+			t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
+		}
+		if html == "" {
+			t.Error("expected non-empty HTML")
+		}
+
+		// Verify no PNG files were created in the temp dir.
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".png") {
+				t.Errorf("unexpected PNG file created: %s", e.Name())
+			}
+		}
+	})
 }
 
 // --- RodExtractor iframe extraction tests (require headless browser) ---
