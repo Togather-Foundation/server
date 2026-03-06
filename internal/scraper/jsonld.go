@@ -76,16 +76,7 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string, client *http.Clie
 			Timeout: fetchTimeout,
 		}
 	}
-	// Create a local client copy to avoid mutating the caller's client.
-	localClient := &http.Client{
-		Transport: client.Transport,
-		Timeout:   client.Timeout,
-	}
-	// Redirects are disabled to prevent SSRF via redirect chains to internal/private addresses.
-	localClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	client = localClient
+	client = safeClient(client, blockRedirects)
 
 	resp, err := fetchWithRetry(ctx, client, rawURL)
 	if err != nil {
@@ -341,16 +332,7 @@ func FetchFullDescription(ctx context.Context, eventURL string, client *http.Cli
 			Timeout: fetchTimeout,
 		}
 	}
-	// Create a local client copy to avoid mutating the caller's client.
-	localClient := &http.Client{
-		Transport: client.Transport,
-		Timeout:   client.Timeout,
-	}
-	// Redirects are disabled to prevent SSRF via redirect chains to internal/private addresses.
-	localClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	client = localClient
+	client = safeClient(client, blockRedirects)
 
 	resp, err := fetchWithRetry(ctx, client, eventURL)
 	if err != nil {
@@ -406,15 +388,7 @@ func RobotsAllowed(ctx context.Context, rawURL string, userAgent string, client 
 			Timeout: robotsTimeout,
 		}
 	}
-	// Create a local client copy to avoid mutating the caller's client.
-	localClient := &http.Client{
-		Transport: client.Transport,
-		Timeout:   client.Timeout,
-	}
-	localClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	client = localClient
+	client = safeClient(client, blockRedirects)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL.String(), nil)
 	if err != nil {
 		return false, fmt.Errorf("building robots.txt request: %w", err)
