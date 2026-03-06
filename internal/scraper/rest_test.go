@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"text/template"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -228,7 +229,9 @@ func TestFetchAndExtractREST_URLTemplate(t *testing.T) {
 func TestFetchAndExtractREST_URLTemplate_MissingField(t *testing.T) {
 	t.Parallel()
 
-	// Event with no "slug" field — template renders <no value>, URL must be cleared.
+	// Event with no "slug" field — template.Option("missingkey=error") causes
+	// Execute() to return an error; URL must be cleared rather than set to a
+	// malformed value that would cause all such events to share the same dedup key.
 	events := []map[string]any{
 		{"name": "No Slug Event", "starts_on": "2026-04-10T20:00:00Z"},
 	}
@@ -249,7 +252,7 @@ func TestFetchAndExtractREST_URLTemplate_MissingField(t *testing.T) {
 	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	assert.Equal(t, "", got[0].URL, "URL must be empty when template renders <no value>")
+	assert.Equal(t, "", got[0].URL, "URL must be empty when template key is missing")
 }
 
 func TestFetchAndExtractREST_NullNextFieldStopsPagination(t *testing.T) {
@@ -394,4 +397,48 @@ func TestFetchAndExtractREST_MaxPagesZeroNoLimit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, got, 3, "must return all events when max_pages=0")
 	assert.Equal(t, int32(3), atomic.LoadInt32(&requestCount))
+}
+
+// TestMapRESTItemToRawEvent_URLTemplate tests the url_template rendering path
+// inside mapRESTItemToRawEvent, including the missingkey=error behaviour.
+func TestMapRESTItemToRawEvent_URLTemplate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		item        map[string]any
+		fieldMap    map[string]string
+		urlTemplate string
+		wantURL     string
+	}{
+		{
+			name:        "template renders correctly when key present",
+			item:        map[string]any{"slug": "jazz-night"},
+			fieldMap:    map[string]string{},
+			urlTemplate: "https://example.com/{{.slug}}",
+			wantURL:     "https://example.com/jazz-night",
+		},
+		{
+			// missingkey=error: Execute() returns an error for a missing key;
+			// URL must be cleared rather than containing "<no value>" or any
+			// other sentinel string.
+			name:        "template missing key — URL cleared, no error propagated",
+			item:        map[string]any{"name": "No Slug Event"},
+			fieldMap:    map[string]string{},
+			urlTemplate: "https://example.com/{{.slug}}",
+			wantURL:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpl, err := template.New("url").Option("missingkey=error").Parse(tt.urlTemplate)
+			require.NoError(t, err)
+
+			got := mapRESTItemToRawEvent(tt.item, tt.fieldMap, tmpl, zerolog.Nop())
+			assert.Equal(t, tt.wantURL, got.URL)
+		})
+	}
 }

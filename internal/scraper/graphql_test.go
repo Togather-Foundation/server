@@ -227,9 +227,10 @@ func TestFetchAndExtractGraphQL_PartialFields(t *testing.T) {
 func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	t.Parallel()
 
-	// Event has no slug key. text/template renders missing map keys as "<no value>".
-	// The fix in mapToRawEvent detects this and clears the URL to prevent all
-	// slug-less events from colliding on the same dedup key in eventIDFromRaw.
+	// Event has no slug key. template.Option("missingkey=error") causes Execute()
+	// to return an error rather than rendering "<no value>". The URL is cleared
+	// to prevent all slug-less events from colliding on the same dedup key in
+	// eventIDFromRaw.
 	events := []map[string]any{
 		{
 			"title":     "No Slug Event",
@@ -242,7 +243,7 @@ func TestFetchAndExtractGraphQL_URLTemplateNoSlug(t *testing.T) {
 	got, err := extractor.FetchAndExtractGraphQL(context.Background(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	// URL must be cleared (not set to a "<no value>" string) so each event
+	// URL must be cleared (Execute returns an error for missing key) so each event
 	// gets a unique content-based EventID rather than colliding as duplicates.
 	assert.Equal(t, "", got[0].URL)
 }
@@ -266,7 +267,7 @@ func TestFetchAndExtractGraphQL_NullDataField(t *testing.T) {
 
 // TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents verifies that
 // multiple events all missing the slug field are returned individually (not
-// collapsed to one) after the <no value> URL fix.
+// collapsed to one) after Execute() errors on the missing key and clears URLs.
 func TestFetchAndExtractGraphQL_URLTemplateNoSlug_MultipleEvents(t *testing.T) {
 	t.Parallel()
 
@@ -474,6 +475,17 @@ func TestMapToRawEvent(t *testing.T) {
 			},
 			want: RawEvent{Name: "String Room Event"},
 		},
+		{
+			// missingkey=error: when the template references a key absent from the
+			// item map, Execute() returns an error and URL is cleared rather than
+			// containing a literal "<no value>" string.
+			name: "url_template missing key — URL cleared, no error propagated",
+			item: map[string]any{
+				"title": "Missing Key Event",
+			},
+			urlTemplate: "https://example.com/events/{{.slug}}",
+			want:        RawEvent{Name: "Missing Key Event"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -483,7 +495,7 @@ func TestMapToRawEvent(t *testing.T) {
 			var tmpl *template.Template
 			if tt.urlTemplate != "" {
 				var err error
-				tmpl, err = template.New("url").Parse(tt.urlTemplate)
+				tmpl, err = template.New("url").Option("missingkey=error").Parse(tt.urlTemplate)
 				require.NoError(t, err)
 			}
 
