@@ -1,12 +1,15 @@
 package scraper
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -441,4 +444,131 @@ func TestMapRESTItemToRawEvent_URLTemplate(t *testing.T) {
 			assert.Equal(t, tt.wantURL, got.URL)
 		})
 	}
+}
+
+// --------------------------------------------------------------------------
+// Error-path tests
+// --------------------------------------------------------------------------
+
+func TestFetchAndExtractREST_NonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"internal server error", http.StatusInternalServerError},
+		{"not found", http.StatusNotFound},
+		{"service unavailable", http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "server error", tt.statusCode)
+			}))
+			t.Cleanup(srv.Close)
+
+			source := restSource(srv.URL, nil, "", 10)
+			extractor := NewRestExtractor(zerolog.Nop())
+			_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), strconv.Itoa(tt.statusCode))
+		})
+	}
+}
+
+func TestFetchAndExtractREST_MalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{not valid json`))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := restSource(srv.URL, nil, "", 10)
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.Error(t, err)
+}
+
+func TestFetchAndExtractREST_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	// Server blocks until the request context is cancelled.
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	source := restSource(srv.URL, nil, "", 10)
+	extractor := NewRestExtractor(zerolog.Nop())
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := extractor.FetchAndExtractREST(ctx, source, &http.Client{})
+		done <- err
+	}()
+
+	// Wait until the handler is reached before cancelling.
+	<-started
+	cancel()
+
+	err := <-done
+	require.Error(t, err)
+}
+
+func TestFetchAndExtractREST_MissingResultsField(t *testing.T) {
+	t.Parallel()
+
+	// Server returns valid JSON but the key configured as results_field ("results")
+	// is absent — fetchPage treats this as an empty page (not an error).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Respond with a different key, not "results".
+		_, _ = w.Write([]byte(`{"items":[],"next":null}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := restSource(srv.URL, nil, "", 10)
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Empty(t, got, "missing results_field should return empty slice, not error")
+}
+
+func TestFetchAndExtractREST_TimeoutMs(t *testing.T) {
+	t.Parallel()
+
+	// Server sleeps longer than the configured timeout.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, nil, ""))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := SourceConfig{
+		Name:     "timeout-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "results",
+			NextField:    "next",
+			TimeoutMs:    50, // 50 ms — much shorter than 500 ms server delay
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.Error(t, err, "request should time out before the slow server responds")
 }
