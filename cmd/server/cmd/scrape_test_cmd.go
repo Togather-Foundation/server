@@ -139,7 +139,7 @@ Examples:
 		defer stop()
 
 		extractor := scraper.NewCollyExtractor(logger)
-		events, err := extractor.ScrapeWithSelectors(ctx, cfg)
+		events, _, err := extractor.ScrapeWithSelectors(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("scrape test: %w", err)
 		}

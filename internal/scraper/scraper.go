@@ -397,17 +397,21 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		}
 
 		var allRaw []RawEvent
+		var firstProbes []DateSelectorProbe
 		urlList := source.GetURLs()
 		failCount := 0
 		for _, u := range urlList {
 			clone := source
 			clone.URL = u
-			rawEvts, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
+			rawEvts, probes, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
 			if fetchErr != nil {
 				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
 					Msg("scraper: tier 1 URL failed, continuing")
 				failCount++
 				continue
+			}
+			if firstProbes == nil {
+				firstProbes = probes
 			}
 			allRaw = append(allRaw, rawEvts...)
 		}
@@ -419,9 +423,8 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		rawEvents := allRaw
 
 		// Quality check: date_selectors partial match detection.
-		// Tier 1 (Colly) does not produce DateSelectorProbes.
 		var warnings []string
-		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, nil)...)
+		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
 		limit := opts.Limit
 		var validEvents []events.EventInput

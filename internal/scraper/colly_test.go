@@ -72,7 +72,7 @@ func TestScrapeWithSelectors_Basic(t *testing.T) {
 	}
 
 	extractor := newTestExtractor()
-	events, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
 	require.NoError(t, err)
 	require.Len(t, events, 3)
 
@@ -134,7 +134,7 @@ func TestScrapeWithSelectors_EmptyName(t *testing.T) {
 	}
 
 	extractor := newTestExtractor()
-	events, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
 	require.NoError(t, err)
 	require.Len(t, events, 2, "expected only 2 events with non-empty names")
 
@@ -229,7 +229,7 @@ func TestScrapeWithSelectors_Pagination(t *testing.T) {
 	}
 
 	extractor := newTestExtractor()
-	events, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
 	require.NoError(t, err)
 
 	// Should have events from both pages.
@@ -270,7 +270,7 @@ func TestScrapeWithSelectors_DatetimeAttr(t *testing.T) {
 	}
 
 	extractor := newTestExtractor()
-	events, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 
@@ -303,7 +303,7 @@ func TestScrapeWithSelectors_ContextCancellation(t *testing.T) {
 	}
 
 	extractor := newTestExtractor()
-	_, err := extractor.ScrapeWithSelectors(ctx, cfg)
+	_, _, err := extractor.ScrapeWithSelectors(ctx, cfg)
 	// Should return context error or nil (partial results) — never panic.
 	// We just verify it doesn't block or crash.
 	_ = err
@@ -358,8 +358,187 @@ func TestScrapeWithSelectors_WwwRedirect(t *testing.T) {
 		},
 	}
 
-	events, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
 	require.NoError(t, err)
 	require.Len(t, events, 1, "redirect should be followed and events extracted")
 	assert.Equal(t, "Redirected Event", events[0].Name)
+}
+
+// TestScrapeWithSelectors_DateSelectors verifies that the date_selectors
+// grab-bag model works in the Colly (Tier 1) extractor: always-indexed
+// DateParts and probe capture on the first event container.
+func TestScrapeWithSelectors_DateSelectors(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event-card">
+  <h2 class="title">Jazz Night</h2>
+  <span class="date-part">Thu 5th March</span>
+  <span class="time-part">9:30 PM</span>
+  <span class="venue">The Rex</span>
+</div>
+<div class="event-card">
+  <h2 class="title">Art Opening</h2>
+  <span class="date-part">Fri 6th March</span>
+  <span class="time-part">7:00 PM</span>
+  <span class="venue">Gallery 44</span>
+</div>
+<div class="event-card">
+  <h2 class="title">Incomplete Event</h2>
+  <span class="date-part">Sat 7th March</span>
+  <!-- no time-part element -->
+  <span class="venue">Harbourfront</span>
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-date-selectors",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 5,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+			Location:  "span.venue",
+			DateSelectors: []string{
+				"span.date-part",
+				"span.time-part",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, probes, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, events, 3)
+
+	// First event: both selectors match.
+	assert.Equal(t, "Jazz Night", events[0].Name)
+	require.Len(t, events[0].DateParts, 2, "DateParts should always have 2 entries (one per selector)")
+	assert.Equal(t, "Thu 5th March", events[0].DateParts[0])
+	assert.Equal(t, "9:30 PM", events[0].DateParts[1])
+	assert.Empty(t, events[0].StartDate, "StartDate should be empty when date_selectors is used")
+
+	// Second event: both selectors match.
+	assert.Equal(t, "Art Opening", events[1].Name)
+	require.Len(t, events[1].DateParts, 2)
+	assert.Equal(t, "Fri 6th March", events[1].DateParts[0])
+	assert.Equal(t, "7:00 PM", events[1].DateParts[1])
+
+	// Third event: only first selector matches.
+	assert.Equal(t, "Incomplete Event", events[2].Name)
+	require.Len(t, events[2].DateParts, 2, "DateParts should still have 2 entries for always-indexed")
+	assert.Equal(t, "Sat 7th March", events[2].DateParts[0])
+	assert.Empty(t, events[2].DateParts[1], "missing selector should produce empty string")
+
+	// Probes: captured from first container only.
+	require.Len(t, probes, 2, "probes should have 2 entries (one per date_selector)")
+	assert.Equal(t, "span.date-part", probes[0].Selector)
+	assert.True(t, probes[0].Matched)
+	assert.Equal(t, "Thu 5th March", probes[0].Text)
+
+	assert.Equal(t, "span.time-part", probes[1].Selector)
+	assert.True(t, probes[1].Matched)
+	assert.Equal(t, "9:30 PM", probes[1].Text)
+}
+
+// TestScrapeWithSelectors_DateSelectorsProbesMissing verifies that probes
+// correctly report unmatched selectors in the first container.
+func TestScrapeWithSelectors_DateSelectorsProbesMissing(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event-card">
+  <h2 class="title">Event One</h2>
+  <span class="date-part">March 15</span>
+  <!-- no time-part or end-date -->
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-probes-missing",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 5,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+			DateSelectors: []string{
+				"span.date-part",
+				"span.time-part",
+				"span.end-date",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, probes, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Len(t, events[0].DateParts, 3, "always-indexed: 3 selectors = 3 DateParts")
+	assert.Equal(t, "March 15", events[0].DateParts[0])
+	assert.Empty(t, events[0].DateParts[1])
+	assert.Empty(t, events[0].DateParts[2])
+
+	// Probes should reflect the match status.
+	require.Len(t, probes, 3)
+	assert.True(t, probes[0].Matched)
+	assert.Equal(t, "March 15", probes[0].Text)
+
+	assert.False(t, probes[1].Matched)
+	assert.Empty(t, probes[1].Text)
+
+	assert.False(t, probes[2].Matched)
+	assert.Empty(t, probes[2].Text)
+}
+
+// TestScrapeWithSelectors_DateSelectorsFallback verifies that when
+// date_selectors is set, StartDate/EndDate are NOT populated (the
+// date_selectors path takes priority).
+func TestScrapeWithSelectors_DateSelectorsFallback(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event-card">
+  <h2 class="title">Dual Config Event</h2>
+  <time class="date" datetime="2026-06-21">June 21, 2026</time>
+  <span class="date-fragment">June 21</span>
+  <span class="time-fragment">8:00 PM</span>
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-fallback",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 5,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+			StartDate: "time.date",
+			DateSelectors: []string{
+				"span.date-fragment",
+				"span.time-fragment",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, probes, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	// date_selectors takes priority — StartDate should be empty.
+	assert.Empty(t, events[0].StartDate, "date_selectors should take priority over StartDate")
+	require.Len(t, events[0].DateParts, 2)
+	assert.Equal(t, "June 21", events[0].DateParts[0])
+	assert.Equal(t, "8:00 PM", events[0].DateParts[1])
+
+	// Probes captured.
+	require.Len(t, probes, 2)
+	assert.True(t, probes[0].Matched)
+	assert.True(t, probes[1].Matched)
 }
