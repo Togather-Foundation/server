@@ -403,6 +403,8 @@ func (e *RodExtractor) extractIframeHTML(page *rod.Page, config SourceConfig) (s
 	// *Page representing the frame, which supports the same API as any page.
 	// The frame page shares the parent page's browser lifecycle — closing the
 	// parent page cleans up all child frames, so we do NOT defer frame.Close().
+	// Adding an explicit frame.Close() would cause double-free issues.
+	// See: https://pkg.go.dev/github.com/go-rod/rod#Element.Frame
 	frame, err := el.Frame()
 	if err != nil {
 		return "", fmt.Errorf("entering iframe frame context: %w", err)
