@@ -226,8 +226,9 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> \
 #### Using `date_selectors` for sites without `<time>` elements
 
 When a site has no `<time>` elements (common with CSS Modules frameworks, Wix embeds,
-Ticket Spot), use `date_selectors` instead of `start_date`/`end_date`. This extracts
-date and time text from multiple DOM elements and assembles them into RFC 3339 datetimes.
+Ticket Spot), use `date_selectors` instead of `start_date`/`end_date`. This works on
+**both Tier 1 and Tier 2** sources. It extracts date and time text from multiple DOM
+elements and assembles them into RFC 3339 datetimes.
 
 **When to use `date_selectors`:**
 - Site has no `<time>` elements in the event cards
@@ -262,6 +263,19 @@ Use these to iteratively fix selectors:
 | `date_selector_never_matched: selector #N ("...") matched 0/M events` | That CSS selector finds no elements in any event card | The selector is wrong — inspect the DOM and fix it |
 | `date_selector_partial_match: selector #N ("...") matched X/M events` | Selector works for some events but not all | May need a more general selector, or some events genuinely lack that element |
 | `all_midnight: N/N events have T00:00:00 start times` | Time extraction failed — all events have midnight start times | The time selector is broken or missing; add/fix a `date_selectors` entry for the time element |
+
+**Probe diagnostics:** When `date_selectors` match 0 events, the quality warning includes
+a **first-container probe** showing what each selector found (or didn't) in the first
+event container. Example output:
+
+```
+date_selectors matched 0/12 events; first-container probes:
+  selector[0] "span.date" → matched: "Thu 5th March"
+  selector[1] "span.time" → no match
+```
+
+This tells you *exactly* which selector is broken and what the working ones extracted.
+Use this to fix the failing selector without manual DOM inspection.
 
 **Workflow: read warnings → fix selectors → re-run `--dry-run --verbose` → repeat until clean.**
 
@@ -303,6 +317,9 @@ selectors:
   name: "<selector>"
   start_date: "<selector>"
   url: "<selector>"
+  # date_selectors:                   # uncomment when no <time> elements exist
+  #   - "<date-text-selector>"        # e.g. "span.date"
+  #   - "<time-text-selector>"        # e.g. "span.time"
 ```
 
 ### Tier 2 (JS-rendered / headless)

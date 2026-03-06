@@ -312,8 +312,9 @@ but the hash suffix rotates on deploys. **Always use attribute prefix selectors*
 
 **Composite date selectors (`date_selectors`):** When the site has no `<time>` elements
 (common with CSS Modules frameworks, Wix embeds, Ticket Spot), use `date_selectors`
-instead of `start_date`. List CSS selectors that extract date and time text from separate
-DOM elements — the smart date assembler combines the fragments into RFC 3339 datetimes.
+instead of `start_date`. This works on **both Tier 1 and Tier 2** sources. List CSS
+selectors that extract date and time text from separate DOM elements — the smart date
+assembler combines the fragments into RFC 3339 datetimes.
 
 ```yaml
 selectors:
@@ -387,6 +388,9 @@ selectors:
   name: "<selector>"
   start_date: "<selector>"
   url: "<selector>"
+  # date_selectors:                   # uncomment when no <time> elements exist
+  #   - "<date-text-selector>"        # e.g. "span.date"
+  #   - "<time-text-selector>"        # e.g. "span.time"
 ```
 
 **Tier 2 (JS-rendered — headless browser):**
@@ -488,6 +492,15 @@ go build -o ./server ./cmd/server && ./server scrape source <name> --dry-run --v
 - `date_selector_never_matched: selector #N ("...") matched 0/M events` → that CSS selector finds no elements; fix it
 - `date_selector_partial_match: selector #N ("...") matched X/M events` → selector works for some events but not all; may need a more general selector
 - `all_midnight: N/N events have T00:00:00 start times` → time extraction failed; the time selector is broken or missing
+
+**Probe diagnostics:** When `date_selectors` match 0 events, the warning includes a
+first-container probe showing what each selector found (or didn't):
+```
+date_selectors matched 0/12 events; first-container probes:
+  selector[0] "span.date" → matched: "Thu 5th March"
+  selector[1] "span.time" → no match
+```
+Use the probe output to identify which selector is broken without manual DOM inspection.
 
 If quality warnings appear, fix the selectors and re-run. Repeat until clean or up to 3 rounds total.
 
