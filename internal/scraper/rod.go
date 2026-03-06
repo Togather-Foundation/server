@@ -99,6 +99,15 @@ func NewRodExtractor(logger zerolog.Logger, maxConc int, chromePath string, head
 // RodOption configures a RodExtractor. Pass to NewRodExtractor.
 type RodOption func(*RodExtractor)
 
+// DateSelectorProbe records what a single date_selector found in one event
+// container. Used by quality diagnostics to give the scraper-worker agent
+// visibility into why a selector failed.
+type DateSelectorProbe struct {
+	Selector string // the CSS selector
+	Matched  bool   // did goquery find any element?
+	Text     string // trimmed text content (empty if not matched or empty element)
+}
+
 // WithBlocklist overrides the default SSRF blocklist. Pass a non-nil empty
 // slice to disable blocking (useful in tests against httptest on 127.0.0.1).
 func WithBlocklist(bl []*net.IPNet) RodOption {
@@ -118,10 +127,11 @@ func RodExtractorFromEnv(logger zerolog.Logger) *RodExtractor {
 // events using config.Selectors (Colly-compatible CSS selectors applied
 // against the rendered DOM), and handles JS-pagination via PaginationBtn.
 //
-// Returns RawEvents suitable for the existing NormalizeRawEvent pipeline.
-func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfig) ([]RawEvent, error) {
+// Returns RawEvents suitable for the existing NormalizeRawEvent pipeline,
+// and DateSelectorProbes from the first page for quality diagnostics.
+func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfig) ([]RawEvent, []DateSelectorProbe, error) {
 	if !e.headlessEnv {
-		return nil, ErrHeadlessDisabled
+		return nil, nil, ErrHeadlessDisabled
 	}
 
 	// Robots.txt check — reuse existing helper.
@@ -131,7 +141,7 @@ func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfi
 	if robotsErr != nil {
 		e.logger.Warn().Err(robotsErr).Str("url", config.URL).Msg("rod: robots.txt check failed, proceeding as allowed")
 	} else if !allowed {
-		return nil, fmt.Errorf("rod: scraping disallowed by robots.txt for %q", config.URL)
+		return nil, nil, fmt.Errorf("rod: scraping disallowed by robots.txt for %q", config.URL)
 	}
 
 	// Acquire semaphore.
@@ -139,7 +149,7 @@ func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfi
 	case e.sem <- struct{}{}:
 		defer func() { <-e.sem }()
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 
 	return e.scrapePages(ctx, config)
@@ -211,7 +221,7 @@ func (e *RodExtractor) launchBrowser(ctx context.Context) (*rod.Browser, func(),
 
 // scrapePages performs the actual browser-based scraping across potentially
 // multiple pages. Called after the semaphore is acquired.
-func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]RawEvent, error) {
+func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]RawEvent, []DateSelectorProbe, error) {
 	// Apply a hard timeout for the entire scrape operation, accommodating the
 	// configured wait timeout and page count.
 	ctx, cancel := context.WithTimeout(ctx, rodHardTimeout(config))
@@ -219,7 +229,7 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]
 
 	browser, cleanup, err := e.launchBrowser(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer cleanup()
 
@@ -246,18 +256,19 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]
 
 	pageURL := config.URL
 	var events []RawEvent
+	var firstProbes []DateSelectorProbe
 
 	for pageNum := 0; pageNum < maxPages; pageNum++ {
 		// Rate limiting: delay between page loads (skip on first page).
 		if pageNum > 0 {
 			select {
 			case <-ctx.Done():
-				return events, nil
+				return events, firstProbes, nil
 			case <-time.After(rateLimit):
 			}
 		}
 
-		pageEvents, nextURL, pageErr := e.scrapeSinglePage(ctx, browser, config, pageURL, waitSelector, waitTimeout)
+		pageEvents, pageProbes, nextURL, pageErr := e.scrapeSinglePage(ctx, browser, config, pageURL, waitSelector, waitTimeout)
 		if pageErr != nil {
 			e.logger.Warn().
 				Err(pageErr).
@@ -266,7 +277,12 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]
 				Int("page", pageNum+1).
 				Msg("rod: error scraping page, stopping pagination")
 			// Propagate the error so callers can distinguish failures from zero-result scrapes.
-			return events, pageErr
+			return events, firstProbes, pageErr
+		}
+
+		// Capture probes from the first page only.
+		if pageNum == 0 {
+			firstProbes = pageProbes
 		}
 
 		events = append(events, pageEvents...)
@@ -284,12 +300,13 @@ func (e *RodExtractor) scrapePages(ctx context.Context, config SourceConfig) ([]
 		pageURL = nextURL
 	}
 
-	return events, nil
+	return events, firstProbes, nil
 }
 
 // scrapeSinglePage opens a page, navigates to pageURL, waits for waitSelector,
 // extracts events using CSS selectors, and optionally clicks a pagination button.
-// Returns the events found, the next page URL (if pagination clicked), and any error.
+// Returns the events found, DateSelectorProbes from the first container, the
+// next page URL (if pagination clicked), and any error.
 func (e *RodExtractor) scrapeSinglePage(
 	ctx context.Context,
 	browser *rod.Browser,
@@ -297,10 +314,10 @@ func (e *RodExtractor) scrapeSinglePage(
 	pageURL string,
 	waitSelector string,
 	waitTimeout time.Duration,
-) (events []RawEvent, nextURL string, retErr error) {
+) (events []RawEvent, probes []DateSelectorProbe, nextURL string, retErr error) {
 	// Validate the navigation URL to prevent SSRF via non-http(s) schemes.
 	if err := validateNavigationURL(pageURL, e.effectiveBlocklist()); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 
 	var page *rod.Page
@@ -311,7 +328,7 @@ func (e *RodExtractor) scrapeSinglePage(
 		page, err = browser.Page(proto.TargetCreateTarget{})
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("rod: failed to open new page: %w", err)
+		return nil, nil, "", fmt.Errorf("rod: failed to open new page: %w", err)
 	}
 	defer func() {
 		if closeErr := page.Close(); closeErr != nil {
@@ -402,7 +419,7 @@ func (e *RodExtractor) scrapeSinglePage(
 
 	// Navigate to the page.
 	if err := page.Navigate(pageURL); err != nil {
-		return nil, "", fmt.Errorf("rod: navigate to %q: %w", pageURL, err)
+		return nil, nil, "", fmt.Errorf("rod: navigate to %q: %w", pageURL, err)
 	}
 
 	// Wait for the target selector to appear.
@@ -429,7 +446,7 @@ func (e *RodExtractor) scrapeSinglePage(
 	// Extract rendered HTML.
 	html, err := page.HTML()
 	if err != nil {
-		return nil, "", fmt.Errorf("rod: getting HTML from %q: %w", pageURL, err)
+		return nil, nil, "", fmt.Errorf("rod: getting HTML from %q: %w", pageURL, err)
 	}
 
 	// If iframe extraction is configured, navigate into the iframe's execution
@@ -447,7 +464,7 @@ func (e *RodExtractor) scrapeSinglePage(
 	}
 
 	// Extract events from rendered HTML using goquery + selectors.
-	pageEvents, extractErr := extractEventsFromHTML(html, config, pageURL)
+	pageEvents, pageProbes, extractErr := extractEventsFromHTML(html, config, pageURL)
 	if extractErr != nil {
 		logLevel := e.logger.Warn()
 		if strings.Contains(extractErr.Error(), "FATAL") {
@@ -495,7 +512,7 @@ func (e *RodExtractor) scrapeSinglePage(
 		}
 	}
 
-	return pageEvents, nextURL, nil
+	return pageEvents, pageProbes, nextURL, nil
 }
 
 // captureScreenshot saves a PNG screenshot to the OS temp dir for debugging.
@@ -639,17 +656,21 @@ func (e *RodExtractor) extractIframeHTML(page *rod.Page, config SourceConfig) (s
 // CSS selectors from config to collect RawEvents. pageURL is used to resolve
 // relative URLs (href/src attributes). Returns an error if config.Selectors.EventList
 // is empty — callers should ensure the config is validated before calling.
-func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]RawEvent, error) {
+//
+// DateSelectorProbes are captured from the FIRST event container only and
+// record what each date_selector found (or failed to find) for quality diagnostics.
+func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]RawEvent, []DateSelectorProbe, error) {
 	if config.Selectors.EventList == "" {
-		return nil, fmt.Errorf("rod: extractEventsFromHTML: selectors.event_list is required but empty (source %q)", config.Name)
+		return nil, nil, fmt.Errorf("rod: extractEventsFromHTML: selectors.event_list is required but empty (source %q)", config.Name)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
-		return nil, fmt.Errorf("rod: parsing HTML: %w", err)
+		return nil, nil, fmt.Errorf("rod: parsing HTML: %w", err)
 	}
 
 	var events []RawEvent
+	var firstProbes []DateSelectorProbe
 
 	// Per-field miss counters for diagnostic reporting.
 	var totalContainers int
@@ -666,13 +687,24 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 		// Date extraction: prefer date_selectors (smart assembler) over
 		// start_date/end_date (single-selector legacy path).
 		if len(config.Selectors.DateSelectors) > 0 {
+			captureProbes := totalContainers == 1 // only for the first container
 			for _, sel := range config.Selectors.DateSelectors {
 				el := s.Find(sel).First()
-				if el.Length() > 0 {
-					text := strings.TrimSpace(el.Text())
-					if text != "" {
-						raw.DateParts = append(raw.DateParts, text)
-					}
+				text := ""
+				matched := el.Length() > 0
+				if matched {
+					text = strings.TrimSpace(el.Text())
+				}
+				// Always append to DateParts (empty string for misses) so that
+				// index i reliably corresponds to DateSelectors[i].
+				// assembleDateTimeParts already skips empty strings.
+				raw.DateParts = append(raw.DateParts, text)
+				if captureProbes {
+					firstProbes = append(firstProbes, DateSelectorProbe{
+						Selector: sel,
+						Matched:  matched,
+						Text:     text,
+					})
 				}
 			}
 		} else {
@@ -711,7 +743,17 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 		if raw.Name == "" {
 			missName++
 		}
-		hasDate := raw.StartDate != "" || raw.EndDate != "" || len(raw.DateParts) > 0
+		// DateParts with always-indexed entries: a non-empty DateParts slice
+		// only counts as "has date" if at least one entry is non-empty.
+		hasDate := raw.StartDate != "" || raw.EndDate != ""
+		if !hasDate {
+			for _, dp := range raw.DateParts {
+				if dp != "" {
+					hasDate = true
+					break
+				}
+			}
+		}
 		if !hasDate {
 			missDate++
 		}
@@ -729,15 +771,18 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 
 	// Build a diagnostic error when selectors miss fields.
 	// This gives the scraper-worker agent actionable feedback to fix configs.
-	if diagErr := extractionDiagnostic(config, totalContainers, missName, missDate, missURL); diagErr != nil {
-		return events, diagErr
+	if diagErr := extractionDiagnostic(config, totalContainers, missName, missDate, missURL, firstProbes); diagErr != nil {
+		return events, firstProbes, diagErr
 	}
 
-	return events, nil
+	return events, firstProbes, nil
 }
 
 // extractionDiagnostic builds an actionable error when CSS selectors miss fields
 // during event extraction. Returns nil when there are no problems.
+//
+// firstProbes contains DateSelectorProbe data from the first event container
+// and is used to enrich date-miss diagnostic messages. Pass nil when unavailable.
 //
 // Error severity:
 //   - All containers have empty names → fatal (events returned as nil).
@@ -748,7 +793,7 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 //
 // The error messages are intentionally verbose and prescriptive so that the
 // scraper-worker agent can self-correct without human intervention.
-func extractionDiagnostic(config SourceConfig, total, missName, missDate, missURL int) error {
+func extractionDiagnostic(config SourceConfig, total, missName, missDate, missURL int, firstProbes []DateSelectorProbe) error {
 	if total == 0 {
 		// No containers matched — the event_list selector is likely wrong, or
 		// the page hasn't finished rendering (common with JS-heavy sites).
@@ -783,14 +828,22 @@ func extractionDiagnostic(config SourceConfig, total, missName, missDate, missUR
 		if dateSel == "" && len(config.Selectors.DateSelectors) > 0 {
 			dateSel = fmt.Sprintf("date_selectors=%v", config.Selectors.DateSelectors)
 		}
-		parts = append(parts, fmt.Sprintf(
+		msg := fmt.Sprintf(
 			"WARNING: all %d containers had empty dates using %s — "+
 				"events will lack start times; check for datetime attributes, "+
 				"data-utc-date attributes, or different text containers",
-			total, dateSel))
+			total, dateSel)
+		// Enrich with first-container probe detail when available.
+		if len(firstProbes) > 0 {
+			msg += probesSummary(firstProbes)
+		}
+		parts = append(parts, msg)
 	} else if hasDateSelector && missDate > 0 {
-		parts = append(parts, fmt.Sprintf(
-			"WARNING: %d of %d containers had empty dates", missDate, total))
+		msg := fmt.Sprintf("WARNING: %d of %d containers had empty dates", missDate, total)
+		if len(firstProbes) > 0 {
+			msg += probesSummary(firstProbes)
+		}
+		parts = append(parts, msg)
 	}
 
 	// URL misses (only report if a URL selector was configured).
@@ -811,6 +864,24 @@ func extractionDiagnostic(config SourceConfig, total, missName, missDate, missUR
 
 	prefix := fmt.Sprintf("rod: extractEventsFromHTML (source %q): ", config.Name)
 	return fmt.Errorf("%s%s", prefix, strings.Join(parts, "; "))
+}
+
+// probesSummary returns a human-readable summary of DateSelectorProbe results
+// for appending to diagnostic messages.
+func probesSummary(probes []DateSelectorProbe) string {
+	var sb strings.Builder
+	sb.WriteString(" (first container:")
+	for _, p := range probes {
+		if !p.Matched {
+			sb.WriteString(fmt.Sprintf(" %q→no element;", p.Selector))
+		} else if p.Text == "" {
+			sb.WriteString(fmt.Sprintf(" %q→empty text;", p.Selector))
+		} else {
+			sb.WriteString(fmt.Sprintf(" %q→%q;", p.Selector, p.Text))
+		}
+	}
+	sb.WriteString(")")
+	return sb.String()
 }
 
 // extractDateFromSelection finds a child element matching selector in the goquery

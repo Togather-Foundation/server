@@ -66,7 +66,7 @@ func TestExtractEventsFromHTML_Basic(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err != nil {
 		t.Fatalf("extractEventsFromHTML returned error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestExtractEventsFromHTML_Empty(t *testing.T) {
 	}
 
 	// Empty HTML should return no events with a diagnostic about 0 containers.
-	events, err := extractEventsFromHTML("", cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML("", cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected diagnostic error for 0 containers on empty HTML")
 	}
@@ -127,7 +127,7 @@ func TestExtractEventsFromHTML_Empty(t *testing.T) {
 
 	// HTML with no matching elements — same diagnostic.
 	plain := `<html><body><p>Nothing here</p></body></html>`
-	events, err = extractEventsFromHTML(plain, cfg, "https://example.com")
+	events, _, err = extractEventsFromHTML(plain, cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected diagnostic error for 0 containers on unmatching HTML")
 	}
@@ -166,7 +166,7 @@ func TestExtractEventsFromHTML_MissingFields(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	// Partial name miss → diagnostic warning error returned with valid events.
 	if err == nil {
 		t.Fatal("expected diagnostic warning error for partial name miss, got nil")
@@ -187,6 +187,105 @@ func TestExtractEventsFromHTML_MissingFields(t *testing.T) {
 	}
 }
 
+// TestExtractEventsFromHTML_DateSelectorProbes verifies that probes are captured
+// only from the first event container, correctly record matched/unmatched/empty
+// states, and are nil when date_selectors is not configured (legacy path).
+func TestExtractEventsFromHTML_DateSelectorProbes(t *testing.T) {
+	t.Parallel()
+
+	html := `
+<html><body>
+  <div class="event">
+    <h2 class="name">Event One</h2>
+    <span class="date">Thu 5th March</span>
+    <span class="time"></span>
+  </div>
+  <div class="event">
+    <h2 class="name">Event Two</h2>
+    <span class="date">Fri 6th March</span>
+    <span class="time">9:00 PM</span>
+  </div>
+  <div class="event">
+    <h2 class="name">Event Three</h2>
+    <!-- no .date element -->
+    <span class="time">8:00 PM</span>
+  </div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "probe-test",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList:     ".event",
+			Name:          ".name",
+			DateSelectors: []string{".date", ".time", ".venue"},
+		},
+	}
+
+	// .date  → matched, non-empty text ("Thu 5th March")
+	// .time  → matched, empty text (element exists but no content)
+	// .venue → not matched (no such element in first container)
+	_, probes, _ := extractEventsFromHTML(html, cfg, "https://example.com")
+
+	if len(probes) != 3 {
+		t.Fatalf("expected 3 probes (one per date_selector), got %d: %v", len(probes), probes)
+	}
+
+	// Probe 0: .date → matched with text
+	if probes[0].Selector != ".date" {
+		t.Errorf("probes[0].Selector = %q; want %q", probes[0].Selector, ".date")
+	}
+	if !probes[0].Matched {
+		t.Errorf("probes[0].Matched = false; want true (.date element exists)")
+	}
+	if probes[0].Text != "Thu 5th March" {
+		t.Errorf("probes[0].Text = %q; want %q", probes[0].Text, "Thu 5th March")
+	}
+
+	// Probe 1: .time → matched but empty text
+	if probes[1].Selector != ".time" {
+		t.Errorf("probes[1].Selector = %q; want %q", probes[1].Selector, ".time")
+	}
+	if !probes[1].Matched {
+		t.Errorf("probes[1].Matched = false; want true (.time element exists in first container)")
+	}
+	if probes[1].Text != "" {
+		t.Errorf("probes[1].Text = %q; want empty (element has no text content)", probes[1].Text)
+	}
+
+	// Probe 2: .venue → no element in first container
+	if probes[2].Selector != ".venue" {
+		t.Errorf("probes[2].Selector = %q; want %q", probes[2].Selector, ".venue")
+	}
+	if probes[2].Matched {
+		t.Errorf("probes[2].Matched = true; want false (.venue not present)")
+	}
+	if probes[2].Text != "" {
+		t.Errorf("probes[2].Text = %q; want empty (no element found)", probes[2].Text)
+	}
+
+	// Probes are only from the FIRST container — second and third containers
+	// have different content but must not affect the probe slice length.
+	if len(probes) != 3 {
+		t.Errorf("probe count changed after first container: got %d, want 3", len(probes))
+	}
+
+	// Legacy path: no date_selectors → probes must be nil.
+	legacyCfg := SourceConfig{
+		Name: "legacy-test",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      ".name",
+			StartDate: ".date",
+		},
+	}
+	_, legacyProbes, _ := extractEventsFromHTML(html, legacyCfg, "https://example.com")
+	if legacyProbes != nil {
+		t.Errorf("expected nil probes for legacy (non-date_selectors) config, got %v", legacyProbes)
+	}
+}
+
 func TestExtractEventsFromHTML_NoEventListSelector(t *testing.T) {
 	// When EventList selector is empty, return an error (srv-wgb5p: validation
 	// now requires event_list for tier 2, but extractEventsFromHTML should also
@@ -197,7 +296,7 @@ func TestExtractEventsFromHTML_NoEventListSelector(t *testing.T) {
 		Selectors: SelectorConfig{}, // no EventList
 	}
 
-	events, err := extractEventsFromHTML("<html><body></body></html>", cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML("<html><body></body></html>", cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected error when EventList selector is empty, got nil")
 	}
@@ -213,7 +312,7 @@ func TestRodExtractor_HeadlessDisabled(t *testing.T) {
 	// headlessEnabled=false — all ScrapeWithBrowser calls must return ErrHeadlessDisabled.
 	ext := NewRodExtractor(logger, 2, "", false)
 
-	_, err := ext.ScrapeWithBrowser(context.Background(), SourceConfig{
+	_, _, err := ext.ScrapeWithBrowser(context.Background(), SourceConfig{
 		Name: "test",
 		URL:  "https://example.com",
 	})
@@ -252,7 +351,7 @@ func TestRodExtractor_RobotsBlocked(t *testing.T) {
 		},
 	}
 
-	_, err := ext.ScrapeWithBrowser(context.Background(), cfg)
+	_, _, err := ext.ScrapeWithBrowser(context.Background(), cfg)
 	if err == nil {
 		t.Fatal("expected robots.txt disallowed error, got nil")
 	}
@@ -273,7 +372,7 @@ func TestRodExtractor_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err := ext.ScrapeWithBrowser(ctx, SourceConfig{
+	_, _, err := ext.ScrapeWithBrowser(ctx, SourceConfig{
 		Name: "test",
 		URL:  "https://example.com",
 	})
@@ -296,7 +395,7 @@ func TestRodExtractor_ScrapeWithBrowser_HeadlessDisabled(t *testing.T) {
 	logger := zerolog.Nop()
 	ext := NewRodExtractor(logger, 2, "", false)
 
-	_, err := ext.ScrapeWithBrowser(context.Background(), SourceConfig{
+	_, _, err := ext.ScrapeWithBrowser(context.Background(), SourceConfig{
 		Name: "test-disabled",
 		URL:  "https://example.com",
 	})
@@ -896,7 +995,7 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 			},
 		}
 
-		events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
+		events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
 		if err != nil {
 			t.Fatalf("scrapeSinglePage returned error: %v", err)
 		}
@@ -941,7 +1040,7 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 			},
 		}
 
-		events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
+		events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
 		if err != nil {
 			t.Fatalf("scrapeSinglePage returned error: %v", err)
 		}
@@ -980,7 +1079,7 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 		}
 
 		// Should not return an error — graceful fallback to parent HTML.
-		events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
+		events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", waitTimeout)
 		if err != nil {
 			t.Fatalf("scrapeSinglePage should not error on iframe fallback, got: %v", err)
 		}
@@ -1174,7 +1273,7 @@ func TestIntercept_CapturesAPIResponse(t *testing.T) {
 		},
 	}
 
-	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("scrapeSinglePage returned error: %v", err)
 	}
@@ -1237,7 +1336,7 @@ func TestIntercept_NoMatchingRequests(t *testing.T) {
 		},
 	}
 
-	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("scrapeSinglePage should not error when no intercept matches, got: %v", err)
 	}
@@ -1304,7 +1403,7 @@ xhr.send();
 		},
 	}
 
-	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("scrapeSinglePage returned error: %v", err)
 	}
@@ -1373,7 +1472,7 @@ func TestIntercept_CacheEndpointLogs(t *testing.T) {
 		Selectors: SelectorConfig{EventList: ".none", Name: ".none"},
 	}
 
-	_, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	_, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("scrapeSinglePage returned error: %v", err)
 	}
@@ -1438,7 +1537,7 @@ xhr2.send();
 		Selectors: SelectorConfig{EventList: ".none", Name: ".none"},
 	}
 
-	events, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
+	events, _, _, err := ext.scrapeSinglePage(context.Background(), browser, cfg, srv.URL+"/", "body", rodDefaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("scrapeSinglePage returned error: %v", err)
 	}
@@ -1758,7 +1857,7 @@ func TestExtractionDiagnostic_AllNamesEmpty(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected FATAL diagnostic error when all names are empty")
 	}
@@ -1809,7 +1908,7 @@ func TestExtractionDiagnostic_AllDatesEmpty(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected diagnostic warning for all-dates-empty")
 	}
@@ -1846,7 +1945,7 @@ func TestExtractionDiagnostic_AllURLsEmpty(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected diagnostic warning for all-URLs-empty")
 	}
@@ -1883,7 +1982,7 @@ func TestExtractionDiagnostic_MultipleFieldsMissing(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected diagnostic error for multiple missing fields")
 	}
@@ -1927,7 +2026,7 @@ func TestExtractionDiagnostic_NoIssues(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err != nil {
 		t.Fatalf("expected no error for clean extraction, got: %v", err)
 	}
@@ -1954,7 +2053,7 @@ func TestExtractionDiagnostic_NoDateSelectorConfigured(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err != nil {
 		t.Fatalf("expected no error when date selector is intentionally omitted, got: %v", err)
 	}
@@ -1982,7 +2081,7 @@ func TestExtractionDiagnostic_DateSelectorsAllEmpty(t *testing.T) {
 		},
 	}
 
-	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
 	if err == nil {
 		t.Fatal("expected diagnostic warning for all-dates-empty via date_selectors")
 	}

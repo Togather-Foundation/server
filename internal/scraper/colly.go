@@ -47,26 +47,31 @@ func (e *CollyExtractor) SetRateLimit(d time.Duration) {
 
 // ScrapeWithSelectors fetches config.URL and all linked pages (up to
 // config.MaxPages), applying the CSS selectors in config.Selectors to collect
-// RawEvents. It respects robots.txt (Colly default) and applies per-domain
-// rate limiting. If ctx is cancelled before scraping completes, the function
-// returns whatever events were collected up to that point.
-func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceConfig) ([]RawEvent, error) {
+// RawEvents. When DateSelectors are configured, it populates always-indexed
+// DateParts on each RawEvent and captures DateSelectorProbes from the first
+// event container for diagnostic visibility. It respects robots.txt (Colly
+// default) and applies per-domain rate limiting. If ctx is cancelled before
+// scraping completes, the function returns whatever events were collected up
+// to that point.
+func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceConfig) ([]RawEvent, []DateSelectorProbe, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Extract the allowed domain from the source URL and also allow
 	// the www/non-www variant so that redirects between them are not blocked.
 	allowedDomain, err := extractDomain(config.URL)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	allowedDomains := wwwVariants(allowedDomain)
 
 	var (
-		mu        sync.Mutex
-		results   []RawEvent
-		pagesSeen int
+		mu          sync.Mutex
+		results     []RawEvent
+		firstProbes []DateSelectorProbe
+		pagesSeen   int
+		eventIndex  int // tracks how many event containers we've processed
 	)
 
 	maxPages := config.MaxPages
@@ -100,18 +105,49 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 			return
 		}
 
+		mu.Lock()
+		eventIndex++
+		isFirst := eventIndex == 1
+		mu.Unlock()
+
 		raw := RawEvent{}
 
 		if config.Selectors.Name != "" {
 			raw.Name = strings.TrimSpace(h.ChildText(config.Selectors.Name))
 		}
 
-		if config.Selectors.StartDate != "" {
-			raw.StartDate = extractDateFromElement(h, config.Selectors.StartDate)
-		}
+		// Date extraction: prefer date_selectors (smart assembler) over
+		// start_date/end_date (single-selector legacy path).
+		if len(config.Selectors.DateSelectors) > 0 {
+			var probes []DateSelectorProbe
+			for _, sel := range config.Selectors.DateSelectors {
+				text := strings.TrimSpace(h.ChildText(sel))
+				matched := text != ""
+				// Always append to DateParts (empty string for misses) so that
+				// index i reliably corresponds to DateSelectors[i].
+				// assembleDateTimeParts already skips empty strings.
+				raw.DateParts = append(raw.DateParts, text)
+				if isFirst {
+					probes = append(probes, DateSelectorProbe{
+						Selector: sel,
+						Matched:  matched,
+						Text:     text,
+					})
+				}
+			}
+			if isFirst && len(probes) > 0 {
+				mu.Lock()
+				firstProbes = probes
+				mu.Unlock()
+			}
+		} else {
+			if config.Selectors.StartDate != "" {
+				raw.StartDate = extractDateFromElement(h, config.Selectors.StartDate)
+			}
 
-		if config.Selectors.EndDate != "" {
-			raw.EndDate = extractDateFromElement(h, config.Selectors.EndDate)
+			if config.Selectors.EndDate != "" {
+				raw.EndDate = extractDateFromElement(h, config.Selectors.EndDate)
+			}
 		}
 
 		if config.Selectors.Location != "" {
@@ -214,15 +250,15 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 	if err := c.Visit(config.URL); err != nil {
 		// If context was cancelled, don't surface the visit error.
 		if ctx.Err() != nil {
-			return results, nil
+			return results, firstProbes, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Wait for all async callbacks to complete.
 	c.Wait()
 
-	return results, nil
+	return results, firstProbes, nil
 }
 
 // extractDomain parses rawURL and returns just the hostname (no port).

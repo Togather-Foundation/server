@@ -13,6 +13,7 @@ func TestCheckDateSelectorQuality(t *testing.T) {
 		name           string
 		rawEvents      []RawEvent
 		config         SourceConfig
+		firstProbes    []DateSelectorProbe
 		wantWarnings   int
 		wantSubstrings []string // each warning must contain at least one of these
 	}{
@@ -41,9 +42,9 @@ func TestCheckDateSelectorQuality(t *testing.T) {
 		{
 			name: "selector #2 never matches — one warning",
 			rawEvents: []RawEvent{
-				{Name: "A", DateParts: []string{"Thu 5th March"}},
-				{Name: "B", DateParts: []string{"Fri 6th March"}},
-				{Name: "C", DateParts: []string{"Sat 7th March"}},
+				{Name: "A", DateParts: []string{"Thu 5th March", ""}},
+				{Name: "B", DateParts: []string{"Fri 6th March", ""}},
+				{Name: "C", DateParts: []string{"Sat 7th March", ""}},
 			},
 			config: SourceConfig{Selectors: SelectorConfig{
 				DateSelectors: []string{".date", ".time"},
@@ -55,7 +56,7 @@ func TestCheckDateSelectorQuality(t *testing.T) {
 			name: "selector #2 partially matches — one warning",
 			rawEvents: []RawEvent{
 				{Name: "A", DateParts: []string{"Thu 5th March", "9:30 PM"}},
-				{Name: "B", DateParts: []string{"Fri 6th March"}},
+				{Name: "B", DateParts: []string{"Fri 6th March", ""}},
 				{Name: "C", DateParts: []string{"Sat 7th March", "11:00 PM"}},
 			},
 			config: SourceConfig{Selectors: SelectorConfig{
@@ -96,12 +97,72 @@ func TestCheckDateSelectorQuality(t *testing.T) {
 			wantWarnings:   1,
 			wantSubstrings: []string{"date_selector_never_matched", "0/1"},
 		},
+		// --- probe-enhanced tests ---
+		{
+			name: "never matched with probe: no DOM match",
+			rawEvents: []RawEvent{
+				{Name: "A", DateParts: []string{"", ""}},
+				{Name: "B", DateParts: []string{"", ""}},
+			},
+			config: SourceConfig{Selectors: SelectorConfig{
+				DateSelectors: []string{".date", ".time"},
+			}},
+			firstProbes: []DateSelectorProbe{
+				{Selector: ".date", Matched: false, Text: ""},
+				{Selector: ".time", Matched: false, Text: ""},
+			},
+			wantWarnings:   2,
+			wantSubstrings: []string{"no element found"},
+		},
+		{
+			name: "never matched with probe: element found but empty text",
+			rawEvents: []RawEvent{
+				{Name: "A", DateParts: []string{"", ""}},
+			},
+			config: SourceConfig{Selectors: SelectorConfig{
+				DateSelectors: []string{".date", ".time"},
+			}},
+			firstProbes: []DateSelectorProbe{
+				{Selector: ".date", Matched: true, Text: ""},
+				{Selector: ".time", Matched: true, Text: ""},
+			},
+			wantWarnings:   2,
+			wantSubstrings: []string{"element found but text was empty"},
+		},
+		{
+			name: "partial match with probe showing text",
+			rawEvents: []RawEvent{
+				{Name: "A", DateParts: []string{"Thu 5th March", "9:30 PM"}},
+				{Name: "B", DateParts: []string{"Fri 6th March", ""}},
+			},
+			config: SourceConfig{Selectors: SelectorConfig{
+				DateSelectors: []string{".date", ".time"},
+			}},
+			firstProbes: []DateSelectorProbe{
+				{Selector: ".date", Matched: true, Text: "Thu 5th March"},
+				{Selector: ".time", Matched: true, Text: "9:30 PM"},
+			},
+			wantWarnings:   1,
+			wantSubstrings: []string{"partial_match", "first container:", "9:30 PM"},
+		},
+		{
+			name: "nil probes — backward compat",
+			rawEvents: []RawEvent{
+				{Name: "A", DateParts: []string{"Thu 5th March"}},
+			},
+			config: SourceConfig{Selectors: SelectorConfig{
+				DateSelectors: []string{".date", ".time"},
+			}},
+			firstProbes:    nil,
+			wantWarnings:   1,
+			wantSubstrings: []string{"never_matched", "0/1"},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			warnings := checkDateSelectorQuality(tc.rawEvents, tc.config)
+			warnings := checkDateSelectorQuality(tc.rawEvents, tc.config, tc.firstProbes)
 			if len(warnings) != tc.wantWarnings {
 				t.Errorf("got %d warnings, want %d: %v", len(warnings), tc.wantWarnings, warnings)
 			}

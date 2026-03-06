@@ -397,17 +397,21 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		}
 
 		var allRaw []RawEvent
+		var firstProbes []DateSelectorProbe
 		urlList := source.GetURLs()
 		failCount := 0
 		for _, u := range urlList {
 			clone := source
 			clone.URL = u
-			rawEvts, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
+			rawEvts, probes, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
 			if fetchErr != nil {
 				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
 					Msg("scraper: tier 1 URL failed, continuing")
 				failCount++
 				continue
+			}
+			if firstProbes == nil {
+				firstProbes = probes
 			}
 			allRaw = append(allRaw, rawEvts...)
 		}
@@ -420,7 +424,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 
 		// Quality check: date_selectors partial match detection.
 		var warnings []string
-		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source)...)
+		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
 		limit := opts.Limit
 		var validEvents []events.EventInput
@@ -468,17 +472,21 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		var allRaw []RawEvent
+		var firstProbes []DateSelectorProbe
 		urlList := source.GetURLs()
 		failCount := 0
 		for _, u := range urlList {
 			clone := source
 			clone.URL = u
-			rawEvts, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
+			rawEvts, probes, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
 			if fetchErr != nil {
 				s.logger.Warn().Str("source", source.Name).Str("url", u).Err(fetchErr).
 					Msg("scraper: tier 2 URL failed, continuing")
 				failCount++
 				continue
+			}
+			if firstProbes == nil {
+				firstProbes = probes
 			}
 			allRaw = append(allRaw, rawEvts...)
 		}
@@ -491,7 +499,7 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 
 		// Quality check: date_selectors partial match detection.
 		var warnings []string
-		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source)...)
+		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
 		var validEvents []events.EventInput
 		skipped := 0

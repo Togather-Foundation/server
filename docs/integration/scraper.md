@@ -397,13 +397,22 @@ selectors:
 
 **How it works:**
 
+`date_selectors` uses a **grab-bag** model: you can list any number of date and
+time selectors, and the smart date assembler figures out the correct data from
+whatever matches. This is especially useful when a site has multiple possible
+locations for date/time information.
+
 1. Each selector in `date_selectors` extracts text from within the event card
+   (selectors that don't match are recorded as empty — index `i` always
+   corresponds to `date_selectors[i]`)
 2. Text fragments are classified as date-only, time-only, or combined
 3. The assembler strips ordinal suffixes (`1st`, `2nd`, `3rd`, `th`), removes
    day-of-week prefixes, recognises month names, and handles 12h/24h time formats
 4. First date + first time = `startDate`; second time (if present) = `endDate`
 5. Missing year is inferred (current year, or next year if >30 days in the past)
 6. Timezone comes from `DEFAULT_TIMEZONE` env var (default: `America/Toronto`)
+7. When selectors fail, quality warnings include first-container diagnostics
+   showing exactly what each selector found (see [Quality Warnings](#quality-warnings))
 
 When `date_selectors` is set, it takes priority over `start_date`/`end_date`.
 If `date_selectors` produces no result, the scraper falls back to `start_date`/`end_date`.
@@ -431,6 +440,20 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape source lula-lounge \
 | `date_selector_never_matched` | A `date_selectors` entry matched 0 events | The CSS selector is wrong — inspect the DOM and fix it |
 | `date_selector_partial_match` | A `date_selectors` entry matched some but not all events | The selector may need to be more general, or some events genuinely lack that element |
 | `all_midnight` | All extracted events have `T00:00:00` start times | Time extraction failed — the time selector is broken or missing |
+
+When a `date_selector` fails, the warning includes **first-container diagnostic
+detail** showing what the selector found (or didn't) in the first event container:
+
+```
+date_selector_never_matched: selector #2 (".time") matched 0/57 events — first container: no element found for this selector
+date_selector_never_matched: selector #3 ("[data-time]") matched 0/57 events — first container: element found but text was empty
+date_selector_partial_match: selector #1 (".date") matched 42/57 events — first container: "Thu 5th March"
+```
+
+This tells you whether the selector failed to match any DOM element, matched an
+element with empty text content, or what text it extracted. This is especially
+useful for debugging grab-bag `date_selectors` configs where multiple selectors
+target different possible date/time elements.
 
 Warnings are logged to stderr and also attached to the `ScrapeResult` as
 `QualityWarnings []string` for programmatic consumption. They do **not** prevent
