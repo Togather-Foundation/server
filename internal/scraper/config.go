@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -121,6 +122,12 @@ type HeadlessConfig struct {
 	// the scraper navigates into the matched iframe's execution context
 	// and extracts HTML from the frame instead of the parent page.
 	Iframe *IframeConfig `yaml:"iframe,omitempty" json:"iframe,omitempty"`
+	// Intercept configures network request interception to capture JSON API
+	// responses made by JS widgets on the page. When set, the scraper installs
+	// a request router before navigation that captures responses matching
+	// URLPattern, then extracts events from the captured JSON using ResultsPath
+	// and FieldMap. Intercepted events are merged with any DOM-extracted events.
+	Intercept *InterceptConfig `yaml:"intercept,omitempty" json:"intercept,omitempty"`
 }
 
 // IframeConfig holds options for extracting content from a cross-origin
@@ -138,6 +145,35 @@ type IframeConfig struct {
 	// WaitTimeoutMs is the maximum time (ms) to wait for WaitSelector
 	// inside the iframe. 0 means use the default (10 000 ms).
 	WaitTimeoutMs int `yaml:"wait_timeout_ms" json:"wait_timeout_ms"`
+}
+
+// InterceptConfig configures network request interception for headless scraping.
+// When set on HeadlessConfig.Intercept, the scraper installs a request router
+// before page navigation that captures JSON API responses matching URLPattern.
+// Captured responses are parsed using ResultsPath and mapped to RawEvents via
+// FieldMap (same dot-notation as RestConfig.FieldMap). Useful for JS widgets
+// that fetch events from a backend API (AWS CloudSearch, Algolia, custom REST)
+// rather than rendering them directly in the DOM.
+type InterceptConfig struct {
+	// URLPattern is a Go regular expression matched against the full request URL.
+	// Required. Only responses whose URL matches this pattern are captured.
+	// Example: "cloudsearch|algolia" or "api/events".
+	URLPattern string `yaml:"url_pattern" json:"url_pattern"`
+	// ResponseFormat is the format of the captured response. Only "json" is
+	// currently supported. Defaults to "json" when empty.
+	ResponseFormat string `yaml:"response_format" json:"response_format"`
+	// ResultsPath is a dot-notation path into the JSON response object that
+	// resolves to the array of event items. Required.
+	// Example: "hits.hit" resolves response["hits"]["hit"].
+	ResultsPath string `yaml:"results_path" json:"results_path"`
+	// CacheEndpoint, when true, logs the intercepted request URL at Info level.
+	// Useful for discovering the exact API endpoint so it can be moved to a
+	// Tier 3 REST config.
+	CacheEndpoint bool `yaml:"cache_endpoint" json:"cache_endpoint"`
+	// FieldMap maps RawEvent field names to JSON response field names using
+	// dot-notation (same as RestConfig.FieldMap). Supported keys: name,
+	// start_date, end_date, url, image, location, description.
+	FieldMap map[string]string `yaml:"field_map,omitempty" json:"field_map,omitempty"`
 }
 
 // GraphQLConfig holds Tier 3 GraphQL API options.
@@ -337,6 +373,26 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		}
 		if strings.TrimSpace(cfg.Headless.Iframe.WaitSelector) == "" {
 			errs = append(errs, "headless.iframe.wait_selector is required when iframe block is set")
+		}
+	}
+
+	if cfg.Headless.Intercept != nil {
+		ic := cfg.Headless.Intercept
+		if strings.TrimSpace(ic.URLPattern) == "" {
+			errs = append(errs, "headless.intercept.url_pattern: required when intercept block is set")
+		} else if _, err := regexp.Compile(ic.URLPattern); err != nil {
+			errs = append(errs, fmt.Sprintf("headless.intercept.url_pattern: invalid Go regex: %v", err))
+		}
+		if ic.ResponseFormat != "" && ic.ResponseFormat != "json" {
+			errs = append(errs, fmt.Sprintf("headless.intercept.response_format: only \"json\" is supported, got %q", ic.ResponseFormat))
+		}
+		if strings.TrimSpace(ic.ResultsPath) == "" {
+			errs = append(errs, "headless.intercept.results_path: required when intercept block is set")
+		}
+		for k := range ic.FieldMap {
+			if _, ok := knownFieldMapKeys[k]; !ok {
+				warnings = append(warnings, fmt.Sprintf("headless.intercept.field_map: unrecognised key %q (known keys: name, start_date, end_date, url, image, location, description)", k))
+			}
 		}
 	}
 

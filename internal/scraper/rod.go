@@ -2,11 +2,13 @@ package scraper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -310,6 +312,45 @@ func (e *RodExtractor) scrapeSinglePage(
 		}
 	}
 
+	// Set up network intercept BEFORE navigation so we capture all matching requests.
+	var interceptedBodies []string
+	var interceptMu sync.Mutex
+	var interceptRouter *rod.HijackRouter
+	if ic := config.Headless.Intercept; ic != nil {
+		re, reErr := regexp.Compile(ic.URLPattern)
+		if reErr != nil {
+			// Should not happen after config validation, but be defensive.
+			e.logger.Warn().Err(reErr).Str("source", config.Name).Str("url_pattern", ic.URLPattern).Msg("rod: intercept url_pattern is invalid regex, skipping intercept")
+		} else {
+			interceptRouter = page.HijackRequests()
+			interceptRouter.MustAdd("*", func(ctx *rod.Hijack) {
+				reqURL := ctx.Request.URL().String()
+				if !re.MatchString(reqURL) {
+					ctx.ContinueRequest(&proto.FetchContinueRequest{})
+					return
+				}
+				// Load the full response so we can read the body.
+				ctx.MustLoadResponse()
+				body := ctx.Response.Body()
+				if ic.CacheEndpoint {
+					e.logger.Info().
+						Str("source", config.Name).
+						Str("intercepted_url", reqURL).
+						Msg("rod: intercept captured API endpoint (cache_endpoint=true)")
+				}
+				interceptMu.Lock()
+				interceptedBodies = append(interceptedBodies, body)
+				interceptMu.Unlock()
+			})
+			go interceptRouter.Run()
+			defer func() {
+				if stopErr := interceptRouter.Stop(); stopErr != nil {
+					e.logger.Debug().Err(stopErr).Str("source", config.Name).Msg("rod: intercept router stop error")
+				}
+			}()
+		}
+	}
+
 	// Navigate to the page.
 	if err := page.Navigate(pageURL); err != nil {
 		return nil, "", fmt.Errorf("rod: navigate to %q: %w", pageURL, err)
@@ -362,6 +403,19 @@ func (e *RodExtractor) scrapeSinglePage(
 		e.logger.Warn().Err(extractErr).Str("source", config.Name).Msg("rod: event extraction error")
 	}
 
+	// If intercept is configured, parse captured JSON responses and merge events.
+	if ic := config.Headless.Intercept; ic != nil {
+		interceptMu.Lock()
+		bodies := make([]string, len(interceptedBodies))
+		copy(bodies, interceptedBodies)
+		interceptMu.Unlock()
+
+		for _, body := range bodies {
+			interceptEvents := e.parseInterceptedBody(body, ic, config.Name)
+			pageEvents = append(pageEvents, interceptEvents...)
+		}
+	}
+
 	// Handle JS pagination: click a "next page" button if configured.
 	if config.Headless.PaginationBtn != "" {
 		btnEl, findErr := page.Timeout(3 * time.Second).Element(config.Headless.PaginationBtn)
@@ -400,6 +454,67 @@ func (e *RodExtractor) captureScreenshot(page *rod.Page, sourceName string) {
 			e.logger.Info().Str("path", path).Msg("rod: failure screenshot saved")
 		}
 	}
+}
+
+// parseInterceptedBody parses a captured JSON response body using the
+// InterceptConfig and returns the mapped RawEvents. Returns nil on parse error
+// (non-fatal; the caller already has the DOM events as a fallback).
+func (e *RodExtractor) parseInterceptedBody(body string, ic *InterceptConfig, sourceName string) []RawEvent {
+	if body == "" {
+		return nil
+	}
+
+	// Decode the top-level JSON object.
+	var root map[string]any
+	if err := json.Unmarshal([]byte(body), &root); err != nil {
+		e.logger.Warn().Err(err).Str("source", sourceName).Msg("rod: intercept: failed to decode JSON response body")
+		return nil
+	}
+
+	// Navigate to the results array using dot-notation ResultsPath.
+	segments := strings.Split(ic.ResultsPath, ".")
+	current := root
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := current[seg]
+		if !ok {
+			e.logger.Warn().Str("source", sourceName).Str("results_path", ic.ResultsPath).Str("missing_segment", seg).Msg("rod: intercept: results_path segment not found in JSON")
+			return nil
+		}
+		nested, ok := next.(map[string]any)
+		if !ok {
+			e.logger.Warn().Str("source", sourceName).Str("results_path", ic.ResultsPath).Str("segment", seg).Msg("rod: intercept: results_path segment is not an object")
+			return nil
+		}
+		current = nested
+	}
+
+	leaf := segments[len(segments)-1]
+	raw, ok := current[leaf]
+	if !ok {
+		e.logger.Debug().Str("source", sourceName).Str("results_path", ic.ResultsPath).Msg("rod: intercept: results_path leaf not found — empty response")
+		return nil
+	}
+
+	// The leaf should be an array of objects.
+	items, ok := raw.([]any)
+	if !ok {
+		e.logger.Warn().Str("source", sourceName).Str("results_path", ic.ResultsPath).Msg("rod: intercept: results_path does not resolve to an array")
+		return nil
+	}
+
+	events := make([]RawEvent, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		// Reuse the REST field-mapping helper (same package); pass nil urlTmpl
+		// since intercept does not support URL templates.
+		ev := mapRESTItemToRawEvent(m, ic.FieldMap, nil, e.logger)
+		events = append(events, ev)
+	}
+
+	return events
 }
 
 // extractIframeHTML navigates into a cross-origin iframe and extracts its rendered HTML.
