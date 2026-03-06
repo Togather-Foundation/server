@@ -3,6 +3,7 @@ package scraper
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -273,7 +274,7 @@ var knownFieldMapKeys = map[string]bool{
 // To also retrieve non-fatal warnings (e.g. unrecognised FieldMap keys), use
 // ValidateConfigWithWarnings instead.
 func ValidateConfig(cfg SourceConfig) error {
-	err, _ := ValidateConfigWithWarnings(cfg)
+	_, err := ValidateConfigWithWarnings(cfg)
 	return err
 }
 
@@ -281,7 +282,7 @@ func ValidateConfig(cfg SourceConfig) error {
 // hard failures and a slice of human-readable warning strings for non-fatal
 // issues (e.g. unrecognised keys in RestConfig.FieldMap). Either return value
 // may be nil/empty when there are no issues of that severity.
-func ValidateConfigWithWarnings(cfg SourceConfig) (error, []string) {
+func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	var errs []string
 	var warnings []string
 
@@ -406,9 +407,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) (error, []string) {
 	}
 
 	if len(errs) > 0 {
-		return errors.New(strings.Join(errs, "; ")), warnings
+		return warnings, errors.New(strings.Join(errs, "; "))
 	}
-	return nil, warnings
+	return warnings, nil
 }
 
 // LoadSourceConfigs reads all *.yaml files from dir (skipping files starting
@@ -448,7 +449,11 @@ func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
 			return nil, fmt.Errorf("loading %s: %w", filePath, err)
 		}
 
-		if err := ValidateConfig(cfg); err != nil {
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		for _, w := range warnings {
+			slog.Warn("source config warning", "file", filePath, "warning", w)
+		}
+		if err != nil {
 			validationErrors = append(validationErrors, fmt.Sprintf("%s: %s", filePath, err.Error()))
 			continue
 		}

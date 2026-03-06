@@ -694,7 +694,7 @@ func TestValidateConfigWithWarnings_FieldMap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err, warnings := ValidateConfigWithWarnings(tt.cfg)
+			warnings, err := ValidateConfigWithWarnings(tt.cfg)
 
 			if tt.wantErr == "" {
 				assert.NoError(t, err)
@@ -801,7 +801,7 @@ func TestValidateConfigWithWarnings_IframeTier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err, warnings := ValidateConfigWithWarnings(tt.cfg)
+			warnings, err := ValidateConfigWithWarnings(tt.cfg)
 
 			if tt.wantErr == "" {
 				assert.NoError(t, err)
