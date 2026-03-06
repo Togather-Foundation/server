@@ -502,18 +502,11 @@ func newTestBrowser(t *testing.T, ext *RodExtractor) (*rod.Browser, func()) {
 	return browser, cleanup
 }
 
-// emptyBlocklist returns a nil SSRF blocklist, allowing navigation to any host
-// including loopback/private addresses. Used by tests that run against httptest
-// servers bound to 127.0.0.1 — avoids mutating the package-level blockedCIDRs.
-func emptyBlocklist() []*net.IPNet { return nil }
-
 // newTestExtractorAllowLocalhost creates a RodExtractor with headless enabled
 // and an empty SSRF blocklist so that httptest servers on 127.0.0.1 can be
 // reached without mutating the package-level blockedCIDRs variable.
 func newTestExtractorAllowLocalhost(logger zerolog.Logger) *RodExtractor {
-	ext := NewRodExtractor(logger, 2, "", true)
-	ext.blocklist = emptyBlocklist()
-	return ext
+	return NewRodExtractor(logger, 2, "", true, WithBlocklist([]*net.IPNet{}))
 }
 
 func TestScrapeSinglePage_Iframe(t *testing.T) {

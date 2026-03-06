@@ -250,14 +250,14 @@ func DefaultSourceConfig() SourceConfig {
 // knownFieldMapKeys is the set of valid keys for RestConfig.FieldMap.
 // Only these 7 keys are consumed by mapRESTItemToRawEvent; any other key
 // is silently ignored at runtime, so operators should be warned of typos.
-var knownFieldMapKeys = map[string]bool{
-	"name":        true,
-	"start_date":  true,
-	"end_date":    true,
-	"url":         true,
-	"image":       true,
-	"location":    true,
-	"description": true,
+var knownFieldMapKeys = map[string]struct{}{
+	"name":        {},
+	"start_date":  {},
+	"end_date":    {},
+	"url":         {},
+	"image":       {},
+	"location":    {},
+	"description": {},
 }
 
 // ValidateConfig validates a SourceConfig and returns an error describing all
@@ -361,7 +361,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 				errs = append(errs, "graphql.event_field: required for tier 3")
 			}
 			if t := strings.TrimSpace(cfg.GraphQL.URLTemplate); t != "" {
-				if _, err := template.New("url_template").Parse(t); err != nil {
+				if _, err := template.New("url").Option("missingkey=error").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("graphql.url_template: invalid Go template: %v", err))
 				}
 			}
@@ -375,7 +375,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 				}
 			}
 			if t := strings.TrimSpace(cfg.REST.URLTemplate); t != "" {
-				if _, err := template.New("url_template").Parse(t); err != nil {
+				if _, err := template.New("url").Option("missingkey=error").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("rest.url_template: invalid Go template: %v", err))
 				}
 			}
@@ -400,7 +400,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	// produce an empty field with no other indication to the operator.
 	if cfg.REST != nil {
 		for k := range cfg.REST.FieldMap {
-			if !knownFieldMapKeys[k] {
+			if _, ok := knownFieldMapKeys[k]; !ok {
 				warnings = append(warnings, fmt.Sprintf("rest.field_map: unrecognised key %q (known keys: name, start_date, end_date, url, image, location, description)", k))
 			}
 		}

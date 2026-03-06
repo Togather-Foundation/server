@@ -35,24 +35,37 @@ type RodExtractor struct {
 	sem         chan struct{} // semaphore
 	chromePath  string        // override SCRAPER_CHROME_PATH; "" = download-on-demand
 	headlessEnv bool          // mirrors SCRAPER_HEADLESS_ENABLED env var
-	blocklist   []*net.IPNet  // SSRF blocklist; nil means use the package-level blockedCIDRs default
+	blocklist   []*net.IPNet  // SSRF blocklist; nil = use package-level blockedCIDRs default; empty (non-nil) = allow all
 }
 
 // NewRodExtractor returns a RodExtractor with the given max concurrency.
 // chromePath overrides the Chromium binary path; "" = Rod download-on-demand.
 // headlessEnabled must be true for ScrapeWithBrowser to proceed; when false,
 // all calls return ErrHeadlessDisabled.
-func NewRodExtractor(logger zerolog.Logger, maxConc int, chromePath string, headlessEnabled bool) *RodExtractor {
+func NewRodExtractor(logger zerolog.Logger, maxConc int, chromePath string, headlessEnabled bool, opts ...RodOption) *RodExtractor {
 	if maxConc <= 0 {
 		maxConc = 2
 	}
-	return &RodExtractor{
+	e := &RodExtractor{
 		logger:      logger,
 		maxConc:     maxConc,
 		sem:         make(chan struct{}, maxConc),
 		chromePath:  chromePath,
 		headlessEnv: headlessEnabled,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
+}
+
+// RodOption configures a RodExtractor. Pass to NewRodExtractor.
+type RodOption func(*RodExtractor)
+
+// WithBlocklist overrides the default SSRF blocklist. Pass a non-nil empty
+// slice to disable blocking (useful in tests against httptest on 127.0.0.1).
+func WithBlocklist(bl []*net.IPNet) RodOption {
+	return func(e *RodExtractor) { e.blocklist = bl }
 }
 
 // RodExtractorFromEnv reads SCRAPER_HEADLESS_ENABLED and SCRAPER_CHROME_PATH
