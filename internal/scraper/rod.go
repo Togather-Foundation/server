@@ -35,6 +35,7 @@ type RodExtractor struct {
 	sem         chan struct{} // semaphore
 	chromePath  string        // override SCRAPER_CHROME_PATH; "" = download-on-demand
 	headlessEnv bool          // mirrors SCRAPER_HEADLESS_ENABLED env var
+	blocklist   []*net.IPNet  // SSRF blocklist; nil means use the package-level blockedCIDRs default
 }
 
 // NewRodExtractor returns a RodExtractor with the given max concurrency.
@@ -247,7 +248,7 @@ func (e *RodExtractor) scrapeSinglePage(
 	waitTimeout time.Duration,
 ) (events []RawEvent, nextURL string, retErr error) {
 	// Validate the navigation URL to prevent SSRF via non-http(s) schemes.
-	if err := validateNavigationURL(pageURL); err != nil {
+	if err := validateNavigationURL(pageURL, e.effectiveBlocklist()); err != nil {
 		return nil, "", err
 	}
 
@@ -402,6 +403,8 @@ func (e *RodExtractor) extractIframeHTML(page *rod.Page, config SourceConfig) (s
 	// *Page representing the frame, which supports the same API as any page.
 	// The frame page shares the parent page's browser lifecycle — closing the
 	// parent page cleans up all child frames, so we do NOT defer frame.Close().
+	// Adding an explicit frame.Close() would cause double-free issues.
+	// See: https://pkg.go.dev/github.com/go-rod/rod#Element.Frame
 	frame, err := el.Frame()
 	if err != nil {
 		return "", fmt.Errorf("entering iframe frame context: %w", err)
@@ -563,6 +566,16 @@ func sanitizeName(name string) string {
 	return b.String()
 }
 
+// effectiveBlocklist returns the SSRF blocklist to use for this extractor.
+// If the extractor was constructed with a custom blocklist (e.g. in tests), it
+// is returned; otherwise the package-level blockedCIDRs default is used.
+func (e *RodExtractor) effectiveBlocklist() []*net.IPNet {
+	if e.blocklist != nil {
+		return e.blocklist
+	}
+	return blockedCIDRs
+}
+
 // blockedCIDRs is the set of private/loopback/link-local ranges blocked for
 // headless navigation URLs to prevent SSRF (srv-tbg24). Mirrors the list in
 // internal/jobs/validate_submissions.go (newSSRFBlockingTransport).
@@ -591,7 +604,11 @@ var blockedCIDRs = func() []*net.IPNet {
 // validateNavigationURL returns an error if rawURL is not a safe http/https URL.
 // This prevents SSRF via file://, chrome://, javascript:, or other schemes, as
 // well as navigation to private/loopback/link-local IP addresses (srv-tbg24).
-func validateNavigationURL(rawURL string) error {
+//
+// blocklist is the set of CIDRs to check against. Pass the package-level
+// blockedCIDRs for production use; tests may pass a custom (e.g. empty) list to
+// allow local test-server addresses without mutating the global variable.
+func validateNavigationURL(rawURL string, blocklist []*net.IPNet) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("rod: invalid URL %q: %w", rawURL, err)
@@ -607,7 +624,7 @@ func validateNavigationURL(rawURL string) error {
 	host := u.Hostname()
 	// If the host is already an IP literal (e.g. [::1] or 1.2.3.4), check directly.
 	if ip := net.ParseIP(host); ip != nil {
-		for _, blocked := range blockedCIDRs {
+		for _, blocked := range blocklist {
 			if blocked.Contains(ip) {
 				return fmt.Errorf("rod: SSRF check: navigation URL %q resolves to blocked address %s", rawURL, ip)
 			}
@@ -625,7 +642,7 @@ func validateNavigationURL(rawURL string) error {
 		if ip == nil {
 			continue
 		}
-		for _, blocked := range blockedCIDRs {
+		for _, blocked := range blocklist {
 			if blocked.Contains(ip) {
 				return fmt.Errorf("rod: SSRF check: %s resolves to blocked address %s", host, ip)
 			}
@@ -646,7 +663,7 @@ func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector stri
 	}
 
 	// Validate URL to prevent SSRF before launching any browser.
-	if err := validateNavigationURL(rawURL); err != nil {
+	if err := validateNavigationURL(rawURL, e.effectiveBlocklist()); err != nil {
 		return "", err
 	}
 
@@ -746,7 +763,7 @@ func (e *RodExtractor) RenderHTMLWithConfig(ctx context.Context, config SourceCo
 	}
 
 	// Validate URL to prevent SSRF.
-	if err := validateNavigationURL(pageURL); err != nil {
+	if err := validateNavigationURL(pageURL, e.effectiveBlocklist()); err != nil {
 		return "", err
 	}
 

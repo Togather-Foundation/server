@@ -556,7 +556,7 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: "",
 		},
 		{
-			name: "iframe config on non-tier-2 fails",
+			name: "iframe config on non-tier-2 is now a warning not an error",
 			cfg: SourceConfig{
 				Name:       "Tier 1 With Iframe",
 				URL:        "https://example.com/events",
@@ -576,7 +576,7 @@ func TestValidateConfig(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "headless.iframe: iframe extraction is only supported for tier 2",
+			wantErr: "", // demoted to warning in srv-muy4i
 		},
 	}
 
@@ -588,6 +588,242 @@ func TestValidateConfig(t *testing.T) {
 			} else {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — FieldMap key validation (srv-u3v2k)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_FieldMap(t *testing.T) {
+	t.Parallel()
+
+	baseTier3REST := func(fieldMap map[string]string) SourceConfig {
+		return SourceConfig{
+			Name:       "REST Source",
+			URL:        "https://example.com",
+			Tier:       3,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			REST: &RestConfig{
+				Endpoint: "https://api.example.com/events",
+				FieldMap: fieldMap,
+			},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		cfg          SourceConfig
+		wantErr      string   // empty means no error expected; substring match
+		wantWarnings []string // substrings expected in warnings; nil means no warnings
+	}{
+		{
+			name:         "nil FieldMap — no warnings",
+			cfg:          baseTier3REST(nil),
+			wantWarnings: nil,
+		},
+		{
+			name:         "empty FieldMap — no warnings",
+			cfg:          baseTier3REST(map[string]string{}),
+			wantWarnings: nil,
+		},
+		{
+			name: "all valid keys — no warnings",
+			cfg: baseTier3REST(map[string]string{
+				"name":        "title",
+				"start_date":  "starts_at",
+				"end_date":    "ends_at",
+				"url":         "event_url",
+				"image":       "thumbnail",
+				"location":    "venue",
+				"description": "summary",
+			}),
+			wantWarnings: nil,
+		},
+		{
+			name: "typo key strat_date — warning present",
+			cfg: baseTier3REST(map[string]string{
+				"name":       "title",
+				"strat_date": "starts_at", // typo: should be start_date
+			}),
+			wantWarnings: []string{`"strat_date"`},
+		},
+		{
+			name: "mix of valid and invalid keys — warning only for invalid",
+			cfg: baseTier3REST(map[string]string{
+				"name":        "title",
+				"start_date":  "starts_at",
+				"bogus_field": "whatever",
+			}),
+			wantWarnings: []string{`"bogus_field"`},
+		},
+		{
+			name: "multiple invalid keys — warning for each",
+			cfg: baseTier3REST(map[string]string{
+				"strat_date": "starts_at",
+				"end_dat":    "ends_at",
+			}),
+			wantWarnings: []string{`"strat_date"`, `"end_dat"`},
+		},
+		{
+			name: "non-REST tier 0 with no REST block — no warnings",
+			cfg: SourceConfig{
+				Name:       "Tier 0 Source",
+				URL:        "https://example.com/events",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+			},
+			wantWarnings: nil,
+		},
+		{
+			name: "invalid key does not cause hard error",
+			cfg: baseTier3REST(map[string]string{
+				"strat_date": "starts_at",
+			}),
+			wantErr:      "", // must NOT be an error
+			wantWarnings: []string{`"strat_date"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			warnings, err := ValidateConfigWithWarnings(tt.cfg)
+
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+
+			if len(tt.wantWarnings) == 0 {
+				assert.Empty(t, warnings)
+			} else {
+				require.NotEmpty(t, warnings)
+				// Join all warnings for easy substring matching.
+				joined := strings.Join(warnings, "\n")
+				for _, wantSub := range tt.wantWarnings {
+					assert.Contains(t, joined, wantSub,
+						"expected warning substring %q in: %s", wantSub, joined)
+				}
+			}
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — IframeConfig tier mismatch (srv-muy4i)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_IframeTier(t *testing.T) {
+	t.Parallel()
+
+	iframeBlock := &IframeConfig{
+		Selector:     "iframe[title='Widget']",
+		WaitSelector: ".events-container",
+	}
+
+	// baseCfg returns a valid tier-N config with the provided iframe block (may be nil).
+	baseCfg := func(tier int, iframe *IframeConfig) SourceConfig {
+		cfg := SourceConfig{
+			Name:       "Test Source",
+			URL:        "https://example.com/events",
+			Tier:       tier,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+		}
+		// Tier 1 and 2 require selectors.event_list; tier 3 needs a REST/GraphQL block.
+		// Use tier 0 or tier 1 (with selectors) as the non-tier-2 cases.
+		if tier == 1 || tier == 2 {
+			cfg.Selectors.EventList = ".event-card"
+		}
+		if tier == 3 {
+			cfg.REST = &RestConfig{Endpoint: "https://api.example.com/events"}
+		}
+		cfg.Headless.Iframe = iframe
+		return cfg
+	}
+
+	tests := []struct {
+		name         string
+		cfg          SourceConfig
+		wantErr      string   // empty = no error
+		wantWarnings []string // substrings expected; nil = no warnings
+	}{
+		{
+			name:         "tier 2 with iframe — no tier warning",
+			cfg:          baseCfg(2, iframeBlock),
+			wantWarnings: nil,
+		},
+		{
+			name:         "tier 0 with iframe — warning present",
+			cfg:          baseCfg(0, iframeBlock),
+			wantWarnings: []string{"iframe config is only used by tier 2", "ignored for tier 0"},
+		},
+		{
+			name:         "tier 1 with iframe — warning present",
+			cfg:          baseCfg(1, iframeBlock),
+			wantWarnings: []string{"iframe config is only used by tier 2", "ignored for tier 1"},
+		},
+		{
+			name:         "tier 3 with iframe — warning present",
+			cfg:          baseCfg(3, iframeBlock),
+			wantWarnings: []string{"iframe config is only used by tier 2", "ignored for tier 3"},
+		},
+		{
+			name:         "tier 0 no iframe — no warning",
+			cfg:          baseCfg(0, nil),
+			wantWarnings: nil,
+		},
+		{
+			name: "tier 1 no iframe — no warning",
+			cfg: SourceConfig{
+				Name:       "Tier 1 No Iframe",
+				URL:        "https://example.com/events",
+				Tier:       1,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Selectors:  SelectorConfig{EventList: ".event-card"},
+			},
+			wantWarnings: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			warnings, err := ValidateConfigWithWarnings(tt.cfg)
+
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+
+			if len(tt.wantWarnings) == 0 {
+				// Filter out any field_map warnings that may come from unrelated config.
+				// Only check that no iframe/tier warning is present.
+				for _, w := range warnings {
+					assert.NotContains(t, w, "iframe config is only used by tier 2",
+						"unexpected iframe tier warning: %s", w)
+				}
+			} else {
+				require.NotEmpty(t, warnings)
+				joined := strings.Join(warnings, "\n")
+				for _, wantSub := range tt.wantWarnings {
+					assert.Contains(t, joined, wantSub,
+						"expected warning substring %q in: %s", wantSub, joined)
+				}
 			}
 		})
 	}

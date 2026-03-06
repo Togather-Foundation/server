@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"text/template"
 	"time"
 
@@ -58,7 +57,7 @@ func (e *RestExtractor) FetchAndExtractREST(
 	var urlTmpl *template.Template
 	if cfg.URLTemplate != "" {
 		var err error
-		urlTmpl, err = template.New("url").Parse(cfg.URLTemplate)
+		urlTmpl, err = template.New("url").Option("missingkey=error").Parse(cfg.URLTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("rest: parsing url_template: %w", err)
 		}
@@ -224,18 +223,12 @@ func mapRESTItemToRawEvent(item map[string]any, fieldMap map[string]string, urlT
 	if urlTmpl != nil {
 		var buf bytes.Buffer
 		if err := urlTmpl.Execute(&buf, item); err != nil {
-			logger.Debug().Err(err).Msg("rest: url_template execution failed")
+			// missingkey=error: a missing template variable returns an error here.
+			// Clear the URL so each event gets a unique content-based ID instead
+			// of a malformed URL shared by all events with the missing field.
+			logger.Debug().Err(err).Msg("rest: url_template execution failed — clearing URL")
 		} else if buf.Len() > 0 {
-			rendered := buf.String()
-			// text/template renders missing map keys as "<no value>". A URL
-			// containing that literal is malformed and would cause all events
-			// with a missing field to share the same dedup key. Clear the URL
-			// so each event gets a unique content-based ID instead.
-			if strings.Contains(rendered, "<no value>") {
-				logger.Debug().Str("rendered", rendered).Msg("rest: url_template rendered <no value> — clearing URL")
-			} else {
-				raw.URL = rendered
-			}
+			raw.URL = buf.String()
 		}
 	} else {
 		raw.URL = resolve("url", "URL")

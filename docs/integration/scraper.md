@@ -435,8 +435,9 @@ graphql:
 ```
 
 `url_template` is a Go `text/template` string rendered with the raw GraphQL record as
-data (field names are the query response keys). A missing key renders as `<no value>`;
-template execution errors are logged at debug level and the URL is left empty.
+data (field names are the query response keys). The template runs with
+`missingkey=error`, so a missing key causes a template execution error; the error is
+logged at debug level and the URL is left empty.
 
 ### Full Config with Tier 3 REST
 
@@ -465,7 +466,8 @@ rest:
 mapping (source keys must match RawEvent Go field names: `Name`, `StartDate`, etc.).
 
 `url_template` is a Go `text/template` rendered with the raw item map as data. A
-missing key renders as `<no value>`; template errors are logged at debug level.
+missing key causes a template execution error (`missingkey=error`); the error is logged
+at debug level and the URL is left empty.
 
 ### Required Fields
 
