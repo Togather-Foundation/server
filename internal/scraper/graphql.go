@@ -124,7 +124,7 @@ func (e *GraphQLExtractor) Extract(
 
 	events := make([]RawEvent, 0, len(items))
 	for _, item := range items {
-		raw := mapToRawEvent(item, urlTmpl, e.logger)
+		raw := mapToRawEvent(item, cfg.FieldMap, urlTmpl, e.logger)
 		events = append(events, raw)
 	}
 
@@ -138,40 +138,67 @@ func (e *GraphQLExtractor) Extract(
 }
 
 // mapToRawEvent maps a GraphQL event object (map[string]any) to a RawEvent.
-// Field names follow the DatoCMS schema used by Tranzac but are generic enough
-// for any source using the same conventions.
+//
+// When fieldMap is non-empty, it maps logical keys (name, start_date, …) to
+// JSON paths using resolveNestedString (consistent with the REST extractor's
+// field_map). When fieldMap is nil or empty, the legacy DatoCMS-convention
+// mapping is used: title→Name, startDate→StartDate, endDate→EndDate,
+// description→Description, photo.url→Image, rooms[0].name→Location.
 //
 // urlTmpl, if non-nil, is rendered with the raw item map as data to produce the
 // event's canonical URL. The template string comes from operator-supplied YAML
 // config (not user input), so text/template (not html/template) is appropriate.
-func mapToRawEvent(item map[string]any, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
-	raw := RawEvent{}
+func mapToRawEvent(item map[string]any, fieldMap map[string]string, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
+	var raw RawEvent
 
-	if v, ok := item["title"].(string); ok {
-		raw.Name = v
-	}
-	if v, ok := item["startDate"].(string); ok {
-		raw.StartDate = v
-	}
-	if v, ok := item["endDate"].(string); ok {
-		raw.EndDate = v
-	}
-	if v, ok := item["description"].(string); ok {
-		raw.Description = v
-	}
-
-	// photo: { url: "..." }
-	if photo, ok := item["photo"].(map[string]any); ok {
-		if u, ok := photo["url"].(string); ok {
-			raw.Image = u
+	if len(fieldMap) > 0 {
+		// Explicit field mapping — same approach as mapRESTItemToRawEvent.
+		resolve := func(key string) string {
+			mapped, ok := fieldMap[key]
+			if !ok {
+				return ""
+			}
+			return resolveNestedString(item, mapped)
 		}
-	}
+		raw.Name = resolve("name")
+		raw.StartDate = resolve("start_date")
+		raw.EndDate = resolve("end_date")
+		raw.Description = resolve("description")
+		raw.Image = resolve("image")
+		raw.Location = resolve("location")
 
-	// rooms: [{ name: "..." }] — use first room as location
-	if rooms, ok := item["rooms"].([]any); ok && len(rooms) > 0 {
-		if room, ok := rooms[0].(map[string]any); ok {
-			if name, ok := room["name"].(string); ok {
-				raw.Location = name
+		// URL from field_map (overridden by url_template below when set).
+		if urlTmpl == nil {
+			raw.URL = resolve("url")
+		}
+	} else {
+		// Legacy DatoCMS-convention mapping (backward compatible).
+		if v, ok := item["title"].(string); ok {
+			raw.Name = v
+		}
+		if v, ok := item["startDate"].(string); ok {
+			raw.StartDate = v
+		}
+		if v, ok := item["endDate"].(string); ok {
+			raw.EndDate = v
+		}
+		if v, ok := item["description"].(string); ok {
+			raw.Description = v
+		}
+
+		// photo: { url: "..." }
+		if photo, ok := item["photo"].(map[string]any); ok {
+			if u, ok := photo["url"].(string); ok {
+				raw.Image = u
+			}
+		}
+
+		// rooms: [{ name: "..." }] — use first room as location
+		if rooms, ok := item["rooms"].([]any); ok && len(rooms) > 0 {
+			if room, ok := rooms[0].(map[string]any); ok {
+				if name, ok := room["name"].(string); ok {
+					raw.Location = name
+				}
 			}
 		}
 	}
