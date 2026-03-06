@@ -8,6 +8,7 @@ import (
 )
 
 func TestFormatNetworkSummary(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		requests     []scraper.NetworkRequest
@@ -225,6 +226,7 @@ func TestFormatNetworkSummary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := formatNetworkSummary(tt.requests)
 
 			for _, want := range tt.wantContains {
@@ -245,6 +247,7 @@ func TestFormatNetworkSummary(t *testing.T) {
 // TestFormatNetworkSummary_SortOrder verifies that API calls are always emitted
 // in URL-sorted order regardless of input order.
 func TestFormatNetworkSummary_SortOrder(t *testing.T) {
+	t.Parallel()
 	requests := []scraper.NetworkRequest{
 		{URL: "https://z.example.com/", Method: "GET", ResourceType: "XHR", ContentType: "application/json", IsAPI: true},
 		{URL: "https://a.example.com/", Method: "GET", ResourceType: "XHR", ContentType: "application/json", IsAPI: true},

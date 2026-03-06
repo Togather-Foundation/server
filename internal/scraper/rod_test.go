@@ -2062,9 +2062,10 @@ func TestExtractionDiagnostic_NoDateSelectorConfigured(t *testing.T) {
 	}
 }
 
-// TestExtractionDiagnostic_DateSelectorsAllEmpty tests the date_selectors
-// (multi-part) path reports correctly when all miss.
+// TestProbesSummary exercises the probesSummary helper with various probe
+// combinations: nil/empty, matched/unmatched, and long text.
 func TestProbesSummary(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		probes []DateSelectorProbe
@@ -2129,6 +2130,7 @@ func TestProbesSummary(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := probesSummary(tc.probes)
 			if got != tc.want {
 				t.Errorf("probesSummary() =\n  %q\nwant\n  %q", got, tc.want)

@@ -9,6 +9,7 @@ import (
 )
 
 func TestSafeClient_CopiesTransportAndTimeout(t *testing.T) {
+	t.Parallel()
 	transport := &http.Transport{}
 	orig := &http.Client{
 		Transport: transport,
@@ -29,6 +30,7 @@ func TestSafeClient_CopiesTransportAndTimeout(t *testing.T) {
 }
 
 func TestSafeClient_CopiesJar(t *testing.T) {
+	t.Parallel()
 	jar := &fakeJar{}
 	orig := &http.Client{Jar: jar}
 
@@ -40,6 +42,7 @@ func TestSafeClient_CopiesJar(t *testing.T) {
 }
 
 func TestSafeClient_NilClientReturnsValidClient(t *testing.T) {
+	t.Parallel()
 	got := safeClient(nil, blockRedirects)
 
 	if got == nil {
@@ -53,6 +56,7 @@ func TestSafeClient_NilClientReturnsValidClient(t *testing.T) {
 }
 
 func TestSafeClient_AppliesCheckRedirect(t *testing.T) {
+	t.Parallel()
 	orig := &http.Client{Timeout: 5 * time.Second}
 
 	got := safeClient(orig, blockRedirects)
@@ -67,6 +71,7 @@ func TestSafeClient_AppliesCheckRedirect(t *testing.T) {
 }
 
 func TestSafeClient_DoesNotMutateOriginalCheckRedirect(t *testing.T) {
+	t.Parallel()
 	orig := &http.Client{}
 	if orig.CheckRedirect != nil {
 		t.Fatal("precondition: orig.CheckRedirect should be nil")
@@ -80,6 +85,7 @@ func TestSafeClient_DoesNotMutateOriginalCheckRedirect(t *testing.T) {
 }
 
 func TestLimitRedirects_AllowsUpToMax(t *testing.T) {
+	t.Parallel()
 	policy := limitRedirects(3)
 
 	// 2 prior requests → below limit → allow.
@@ -90,6 +96,7 @@ func TestLimitRedirects_AllowsUpToMax(t *testing.T) {
 }
 
 func TestLimitRedirects_BlocksAtMax(t *testing.T) {
+	t.Parallel()
 	policy := limitRedirects(3)
 
 	// 3 prior requests → at limit → block.
@@ -101,6 +108,7 @@ func TestLimitRedirects_BlocksAtMax(t *testing.T) {
 }
 
 func TestSafeClient_WithLimitRedirects(t *testing.T) {
+	t.Parallel()
 	orig := &http.Client{Timeout: 5 * time.Second}
 	got := safeClient(orig, limitRedirects(10))
 
