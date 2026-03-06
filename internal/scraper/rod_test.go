@@ -13,6 +13,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/rs/zerolog"
 )
 
@@ -1548,5 +1549,68 @@ func TestParseInterceptedBody(t *testing.T) {
 				t.Errorf("first event Name = %q, want %q", events[0].Name, tt.wantFirst)
 			}
 		})
+	}
+}
+
+// TestScreenshotPathCleaning verifies that filepath.Clean normalises paths the
+// way captureScreenshot and saveScreenshot rely on. This is a browser-free unit
+// test of the path-sanitisation invariant, not a full integration test.
+func TestScreenshotPathCleaning(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"/tmp/rod-screenshot-example-1234.png", "/tmp/rod-screenshot-example-1234.png"},
+		{"/tmp//rod-screenshot-example-1234.png", "/tmp/rod-screenshot-example-1234.png"},
+		{"/tmp/foo/../rod-screenshot-example-1234.png", "/tmp/rod-screenshot-example-1234.png"},
+		{"/tmp/a/b/../../rod-screenshot-example-1234.png", "/tmp/rod-screenshot-example-1234.png"},
+	}
+	for _, c := range cases {
+		got := filepath.Clean(c.raw)
+		if got != c.want {
+			t.Errorf("filepath.Clean(%q) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+}
+
+func TestNetworkCollectorSnapshotOrder(t *testing.T) {
+	t.Parallel()
+
+	nc := newNetworkCollector()
+
+	// Insert entries in an arbitrary non-sorted order; use URL to track which entry is which.
+	for _, id := range []proto.NetworkRequestID{"3", "1", "5", "2", "4"} {
+		id := id
+		nc.requests[id] = &NetworkRequest{URL: "https://example.com/" + string(id)}
+	}
+
+	// Call snapshot() multiple times and assert the order is stable.
+	first := nc.snapshot()
+	for i := 0; i < 10; i++ {
+		got := nc.snapshot()
+		if len(got) != len(first) {
+			t.Fatalf("iteration %d: got len %d, want %d", i, len(got), len(first))
+		}
+		for j, r := range got {
+			if r.URL != first[j].URL {
+				t.Fatalf("iteration %d: index %d: got URL %q, want %q", i, j, r.URL, first[j].URL)
+			}
+		}
+	}
+
+	// Assert the order is sorted by RequestID (lexicographic).
+	// IDs "1"–"5" → URLs sorted as https://example.com/1 … https://example.com/5.
+	want := []string{
+		"https://example.com/1",
+		"https://example.com/2",
+		"https://example.com/3",
+		"https://example.com/4",
+		"https://example.com/5",
+	}
+	for i, r := range first {
+		if r.URL != want[i] {
+			t.Errorf("index %d: got URL %q, want %q", i, r.URL, want[i])
+		}
 	}
 }

@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -462,7 +464,7 @@ func (e *RodExtractor) scrapeSinglePage(
 // captureScreenshot saves a PNG screenshot to the OS temp dir for debugging.
 func (e *RodExtractor) captureScreenshot(page *rod.Page, sourceName string) {
 	ts := time.Now().Unix()
-	path := fmt.Sprintf("%s/rod-screenshot-%s-%d.png", os.TempDir(), sanitizeName(sourceName), ts)
+	path := filepath.Clean(fmt.Sprintf("%s/rod-screenshot-%s-%d.png", os.TempDir(), sanitizeName(sourceName), ts))
 	if data, err := page.Screenshot(false, nil); err == nil {
 		if writeErr := os.WriteFile(path, data, 0o644); writeErr == nil {
 			e.logger.Info().Str("path", path).Msg("rod: failure screenshot saved")
@@ -477,6 +479,7 @@ func (e *RodExtractor) saveScreenshot(page *rod.Page, path string) {
 	if path == "" {
 		return
 	}
+	path = filepath.Clean(path)
 	data, err := page.Screenshot(false, nil)
 	if err != nil {
 		e.logger.Warn().Err(err).Str("path", path).Msg("rod: screenshot capture failed")
@@ -907,14 +910,22 @@ func (nc *networkCollector) onResponse(e *proto.NetworkResponseReceived) {
 	req.IsAPI = isAPIRequest(req.ResourceType, req.ContentType)
 }
 
-// snapshot returns a copy of the collected requests as a slice.
+// snapshot returns a copy of the collected requests as a slice, sorted by RequestID.
 func (nc *networkCollector) snapshot() []NetworkRequest {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
 
+	ids := make([]proto.NetworkRequestID, 0, len(nc.requests))
+	for id := range nc.requests {
+		ids = append(ids, id)
+	}
+	slices.SortFunc(ids, func(a, b proto.NetworkRequestID) int {
+		return strings.Compare(string(a), string(b))
+	})
+
 	out := make([]NetworkRequest, 0, len(nc.requests))
-	for _, r := range nc.requests {
-		out = append(out, *r)
+	for _, id := range ids {
+		out = append(out, *nc.requests[id])
 	}
 	return out
 }
