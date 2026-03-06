@@ -1007,28 +1007,49 @@ check_disk_space() {
     return 0
 }
 
-# prune_docker_cache - Conservatively prunes Docker build cache and dangling images
-# Removes stopped containers, dangling images, and build cache objects older than 24 hours.
-# Conservative: no -a flag (running containers/images are preserved), no --volumes.
-# Safe to run during a deploy — only cleans objects older than 24h.
+# prune_docker_cache - Prunes Docker build cache, unused images, and stopped containers
+# Two-tier strategy:
+#   1. Always: prune build cache >24h, dangling images, stopped containers
+#   2. If disk <10GB free: aggressive prune (all build cache, all unused images)
+# Running containers and their images are never removed.
 # Args:
 #   $1 - env: environment label (used for logging only)
 # Returns:
 #   0 always (non-fatal; continues on prune failure)
 # Side effects:
-#   - Runs docker system prune -f --filter "until=24h"
+#   - Runs docker builder prune + docker system prune
+#   - May run aggressive prune if disk is critically low
 #   - Logs before/after available disk space
 # Example:
 #   prune_docker_cache "staging" || true
 prune_docker_cache() {
     local env="$1"
-    local before_space
+    local before_space before_kb
     before_space=$(df -h / | awk 'NR==2{print $4}')
+    before_kb=$(df / | awk 'NR==2{print $4}')
     log "INFO" "Docker cache prune (${env}): disk available before: ${before_space}"
 
-    docker system prune -f --filter "until=24h" || {
-        log "WARN" "docker system prune failed — continuing anyway"
+    # Always prune build cache older than 24h (this is the main disk hog)
+    docker builder prune -f --filter "until=24h" 2>/dev/null || {
+        log "WARN" "docker builder prune failed — continuing"
     }
+
+    # Standard prune: stopped containers, dangling images, unused networks
+    docker system prune -f --filter "until=24h" || {
+        log "WARN" "docker system prune failed — continuing"
+    }
+
+    # Check if disk is critically low (<10GB) — trigger aggressive cleanup
+    local after_kb
+    after_kb=$(df / | awk 'NR==2{print $4}')
+    local threshold_kb=$((10 * 1024 * 1024))  # 10GB in KB
+    if [[ $after_kb -lt $threshold_kb ]]; then
+        log "WARN" "Disk still critically low after standard prune — running aggressive cleanup"
+        # Remove ALL build cache (biggest win on small disks)
+        docker builder prune -a -f 2>/dev/null || true
+        # Remove all unused images (not just dangling), keeping those used by running containers
+        docker image prune -a -f --filter "until=24h" 2>/dev/null || true
+    fi
 
     local after_space
     after_space=$(df -h / | awk 'NR==2{print $4}')
