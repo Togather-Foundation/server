@@ -329,7 +329,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) (error, []string) {
 
 	if cfg.Headless.Iframe != nil {
 		if cfg.Tier != 2 {
-			errs = append(errs, "headless.iframe: iframe extraction is only supported for tier 2 (headless)")
+			warnings = append(warnings, fmt.Sprintf("iframe config is only used by tier 2 (headless) sources; it will be ignored for tier %d", cfg.Tier))
 		}
 		if strings.TrimSpace(cfg.Headless.Iframe.Selector) == "" {
 			errs = append(errs, "headless.iframe.selector is required when iframe block is set")
