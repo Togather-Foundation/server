@@ -323,14 +323,23 @@ func (e *RodExtractor) scrapeSinglePage(
 			e.logger.Warn().Err(reErr).Str("source", config.Name).Str("url_pattern", ic.URLPattern).Msg("rod: intercept url_pattern is invalid regex, skipping intercept")
 		} else {
 			interceptRouter = page.HijackRequests()
-			interceptRouter.MustAdd("*", func(ctx *rod.Hijack) {
+			if addErr := interceptRouter.Add("*", "", func(ctx *rod.Hijack) {
 				reqURL := ctx.Request.URL().String()
 				if !re.MatchString(reqURL) {
 					ctx.ContinueRequest(&proto.FetchContinueRequest{})
 					return
 				}
 				// Load the full response so we can read the body.
-				ctx.MustLoadResponse()
+				// Use LoadResponse (not MustLoadResponse) to avoid panicking on
+				// transient network errors (DNS failure, timeout, connection refused).
+				if loadErr := ctx.LoadResponse(http.DefaultClient, true); loadErr != nil {
+					e.logger.Debug().Err(loadErr).
+						Str("source", config.Name).
+						Str("url", reqURL).
+						Msg("rod: intercept failed to load response, skipping")
+					ctx.ContinueRequest(&proto.FetchContinueRequest{})
+					return
+				}
 				body := ctx.Response.Body()
 				if ic.CacheEndpoint {
 					e.logger.Info().
@@ -341,13 +350,18 @@ func (e *RodExtractor) scrapeSinglePage(
 				interceptMu.Lock()
 				interceptedBodies = append(interceptedBodies, body)
 				interceptMu.Unlock()
-			})
-			go interceptRouter.Run()
-			defer func() {
-				if stopErr := interceptRouter.Stop(); stopErr != nil {
-					e.logger.Debug().Err(stopErr).Str("source", config.Name).Msg("rod: intercept router stop error")
-				}
-			}()
+			}); addErr != nil {
+				e.logger.Warn().Err(addErr).Str("source", config.Name).Msg("rod: intercept router.Add failed, skipping intercept")
+				interceptRouter = nil
+			}
+			if interceptRouter != nil {
+				go interceptRouter.Run()
+				defer func() {
+					if stopErr := interceptRouter.Stop(); stopErr != nil {
+						e.logger.Debug().Err(stopErr).Str("source", config.Name).Msg("rod: intercept router stop error")
+					}
+				}()
+			}
 		}
 	}
 
@@ -787,90 +801,8 @@ func validateNavigationURL(rawURL string, blocklist []*net.IPNet) error {
 // This is intended for CLI tooling (scrape capture) that needs the rendered
 // HTML for further analysis or selector discovery, without extracting events.
 func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector string, waitTimeoutMs int) (string, error) {
-	if !e.headlessEnv {
-		return "", ErrHeadlessDisabled
-	}
-
-	// Validate URL to prevent SSRF before launching any browser.
-	if err := validateNavigationURL(rawURL, e.effectiveBlocklist()); err != nil {
-		return "", err
-	}
-
-	// Robots.txt check.
-	// Also checked internally by RodExtractor; early check here provides clearer UX.
-	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
-	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, robotsClient)
-	if robotsErr != nil {
-		e.logger.Warn().Err(robotsErr).Str("url", rawURL).Msg("rod: robots.txt check failed, proceeding as allowed")
-	} else if !allowed {
-		return "", fmt.Errorf("rod: scraping disallowed by robots.txt for %q", rawURL)
-	}
-
-	// Acquire semaphore.
-	select {
-	case e.sem <- struct{}{}:
-		defer func() { <-e.sem }()
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
-
-	// Apply a hard timeout for the entire render operation.
-	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
-	defer cancel()
-
-	browser, cleanup, err := e.launchBrowser(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-
-	page, err := browser.Page(proto.TargetCreateTarget{})
-	if err != nil {
-		return "", fmt.Errorf("rod: failed to open new page: %w", err)
-	}
-	defer func() {
-		if closeErr := page.Close(); closeErr != nil {
-			e.logger.Debug().Err(closeErr).Msg("rod: page close error (RenderHTML)")
-		}
-	}()
-
-	page = page.Timeout(rodDefaultTimeout)
-
-	// Override the browser's default user-agent with the scraper UA.
-	if err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
-		UserAgent: rodUserAgent,
-	}); err != nil {
-		e.logger.Warn().Err(err).Msg("rod: RenderHTML: failed to set user agent")
-	}
-
-	if navErr := page.Navigate(rawURL); navErr != nil {
-		return "", fmt.Errorf("rod: navigate to %q: %w", rawURL, navErr)
-	}
-
-	if waitSelector == "" {
-		waitSelector = "body"
-	}
-	waitTimeout := rodDefaultWaitTimeout
-	if waitTimeoutMs > 0 {
-		waitTimeout = time.Duration(waitTimeoutMs) * time.Millisecond
-	}
-
-	if waitErr := page.Timeout(waitTimeout).WaitElementsMoreThan(waitSelector, 0); waitErr != nil {
-		e.logger.Warn().
-			Err(waitErr).
-			Str("url", rawURL).
-			Str("selector", waitSelector).
-			Msg("rod: RenderHTML wait selector timed out, continuing anyway")
-	}
-
-	html, err := page.HTML()
-	if err != nil {
-		// Attempt screenshot for debugging.
-		e.captureScreenshot(page, "render-html")
-		return "", fmt.Errorf("rod: getting HTML from %q: %w", rawURL, err)
-	}
-
-	return html, nil
+	html, _, err := e.RenderHTMLWithNetwork(ctx, rawURL, waitSelector, waitTimeoutMs)
+	return html, err
 }
 
 // NetworkRequest records a single HTTP request/response observed during
@@ -881,7 +813,7 @@ type NetworkRequest struct {
 	ResourceType string `json:"resource_type"` // "XHR", "Fetch", "Script", "Document", etc.
 	Status       int    `json:"status"`        // HTTP status code (0 if no response yet)
 	ContentType  string `json:"content_type"`  // Response Content-Type header
-	BodySize     int    `json:"body_size"`     // Response body size in bytes (from EncodedDataLength)
+	BodySize     int    `json:"body_size"`     // Response body size in bytes (encoded/wire size from CDP EncodedDataLength)
 	TimingMs     int    `json:"timing_ms"`     // Time from request start to response received (ms), 0 if unknown
 	IsAPI        bool   `json:"is_api"`        // True if this looks like an API call (XHR/Fetch + JSON content type)
 }
@@ -969,7 +901,7 @@ func (nc *networkCollector) snapshot() []NetworkRequest {
 }
 
 // enableNetworkCapture enables the Network domain on the page and subscribes to
-// request/response events. Returns a cleanup function and the collector.
+// request/response events. Returns the collector and a cleanup function.
 // Call the cleanup function after navigation completes to stop listening.
 func enableNetworkCapture(page *rod.Page) (*networkCollector, func()) {
 	restore := page.EnableDomain(&proto.NetworkEnable{})
@@ -1095,7 +1027,7 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 
 	pageURL := config.URL
 	if pageURL == "" {
-		return "", nil, fmt.Errorf("RenderHTMLWithConfigAndNetwork: source %q has no URL", config.Name)
+		return "", nil, fmt.Errorf("rod: RenderHTMLWithConfigAndNetwork: source %q has no URL", config.Name)
 	}
 
 	if err := validateNavigationURL(pageURL, e.effectiveBlocklist()); err != nil {
@@ -1215,127 +1147,6 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 // extractEventsFromHTML would receive, so you can inspect the DOM, check which
 // selectors match, and verify date/URL element structure.
 func (e *RodExtractor) RenderHTMLWithConfig(ctx context.Context, config SourceConfig) (string, error) {
-	if !e.headlessEnv {
-		return "", ErrHeadlessDisabled
-	}
-
-	pageURL := config.URL
-	if pageURL == "" {
-		return "", fmt.Errorf("RenderHTMLWithConfig: source %q has no URL", config.Name)
-	}
-
-	// Validate URL to prevent SSRF.
-	if err := validateNavigationURL(pageURL, e.effectiveBlocklist()); err != nil {
-		return "", err
-	}
-
-	// Robots.txt check.
-	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
-	allowed, robotsErr := RobotsAllowed(ctx, pageURL, scraperUserAgent, robotsClient)
-	if robotsErr != nil {
-		e.logger.Warn().Err(robotsErr).Str("url", pageURL).Msg("rod: RenderHTMLWithConfig: robots.txt check failed, proceeding as allowed")
-	} else if !allowed {
-		return "", fmt.Errorf("rod: scraping disallowed by robots.txt for %q", pageURL)
-	}
-
-	// Acquire semaphore.
-	select {
-	case e.sem <- struct{}{}:
-		defer func() { <-e.sem }()
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
-	defer cancel()
-
-	browser, cleanup, err := e.launchBrowser(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-
-	// Open a new page (stealth or standard, matching scrapeSinglePage).
-	var page *rod.Page
-	if config.Headless.Undetected {
-		page, err = stealth.Page(browser)
-	} else {
-		page, err = browser.Page(proto.TargetCreateTarget{})
-	}
-	if err != nil {
-		return "", fmt.Errorf("rod: failed to open new page: %w", err)
-	}
-	defer func() {
-		if closeErr := page.Close(); closeErr != nil {
-			e.logger.Debug().Err(closeErr).Msg("rod: page close error (RenderHTMLWithConfig)")
-		}
-	}()
-
-	page = page.Timeout(rodDefaultTimeout)
-
-	// Set user-agent.
-	if uaErr := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
-		UserAgent: rodUserAgent,
-	}); uaErr != nil {
-		e.logger.Warn().Err(uaErr).Str("source", config.Name).Msg("rod: RenderHTMLWithConfig: failed to set user agent")
-	}
-
-	// Apply extra headers if configured.
-	if len(config.Headless.Headers) > 0 {
-		headers := make([]string, 0, len(config.Headless.Headers)*2)
-		for k, v := range config.Headless.Headers {
-			headers = append(headers, k, v)
-		}
-		if _, setErr := page.SetExtraHeaders(headers); setErr != nil {
-			e.logger.Warn().Err(setErr).Str("source", config.Name).Msg("rod: RenderHTMLWithConfig: failed to set extra headers")
-		}
-	}
-
-	// Navigate.
-	if navErr := page.Navigate(pageURL); navErr != nil {
-		return "", fmt.Errorf("rod: navigate to %q: %w", pageURL, navErr)
-	}
-
-	// Wait for target selector.
-	waitSelector := config.Headless.WaitSelector
-	if waitSelector == "" {
-		waitSelector = "body"
-	}
-	waitTimeout := rodDefaultWaitTimeout
-	if config.Headless.WaitTimeoutMs > 0 {
-		waitTimeout = time.Duration(config.Headless.WaitTimeoutMs) * time.Millisecond
-	}
-	if waitErr := page.Timeout(waitTimeout).WaitElementsMoreThan(waitSelector, 0); waitErr != nil {
-		e.logger.Warn().Err(waitErr).Str("source", config.Name).Str("selector", waitSelector).
-			Msg("rod: RenderHTMLWithConfig: wait selector timed out, continuing anyway")
-	}
-
-	// Optional network-idle wait (same as scrapeSinglePage).
-	if config.Headless.WaitNetworkIdle {
-		waitIdle := page.Timeout(waitTimeout).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)
-		waitIdle()
-	}
-
-	// Extract HTML from page.
-	html, htmlErr := page.HTML()
-	if htmlErr != nil {
-		e.captureScreenshot(page, config.Name)
-		return "", fmt.Errorf("rod: getting HTML from %q: %w", pageURL, htmlErr)
-	}
-
-	// If iframe extraction is configured, navigate into the iframe and return
-	// its HTML instead of the parent page HTML.
-	if config.Headless.Iframe != nil {
-		iframeHTML, iframeErr := e.extractIframeHTML(page, config)
-		if iframeErr != nil {
-			e.logger.Warn().Err(iframeErr).
-				Str("source", config.Name).
-				Str("iframe_selector", config.Headless.Iframe.Selector).
-				Msg("rod: RenderHTMLWithConfig: iframe extraction failed, returning parent HTML")
-		} else {
-			html = iframeHTML
-		}
-	}
-
-	return html, nil
+	html, _, err := e.RenderHTMLWithConfigAndNetwork(ctx, config)
+	return html, err
 }

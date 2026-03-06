@@ -1343,3 +1343,105 @@ xhr2.send();
 func newTestExtractorWithLogger(logger zerolog.Logger) *RodExtractor {
 	return NewRodExtractor(logger, 2, "", true, WithBlocklist([]*net.IPNet{}))
 }
+
+func TestParseInterceptedBody(t *testing.T) {
+	t.Parallel()
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	ic := &InterceptConfig{
+		ResultsPath: "data.events",
+		FieldMap:    map[string]string{"name": "title", "start_date": "date"},
+	}
+
+	tests := []struct {
+		name      string
+		body      string
+		ic        *InterceptConfig
+		wantLen   int
+		wantFirst string // expected Name of first event, "" to skip check
+	}{
+		{
+			name:    "empty body",
+			body:    "",
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "malformed JSON",
+			body:    `{not valid json`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "wrong results_path (missing segment)",
+			body:    `{"other": {"stuff": []}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "results_path segment is not an object",
+			body:    `{"data": "just a string"}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "results_path leaf not found",
+			body:    `{"data": {"other_key": []}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "results_path resolves to non-array",
+			body:    `{"data": {"events": "not an array"}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:    "empty array",
+			body:    `{"data": {"events": []}}`,
+			ic:      ic,
+			wantLen: 0,
+		},
+		{
+			name:      "valid single item",
+			body:      `{"data": {"events": [{"title": "My Event", "date": "2026-03-06"}]}}`,
+			ic:        ic,
+			wantLen:   1,
+			wantFirst: "My Event",
+		},
+		{
+			name:    "array contains non-object items (skipped)",
+			body:    `{"data": {"events": ["string item", 42, {"title": "Good Event"}]}}`,
+			ic:      ic,
+			wantLen: 1,
+		},
+		{
+			name:      "top-level results_path (single segment)",
+			body:      `{"results": [{"title": "Top Level"}]}`,
+			ic:        &InterceptConfig{ResultsPath: "results", FieldMap: map[string]string{"name": "title"}},
+			wantLen:   1,
+			wantFirst: "Top Level",
+		},
+		{
+			name:      "deeply nested results_path",
+			body:      `{"a": {"b": {"c": {"items": [{"title": "Deep"}]}}}}`,
+			ic:        &InterceptConfig{ResultsPath: "a.b.c.items", FieldMap: map[string]string{"name": "title"}},
+			wantLen:   1,
+			wantFirst: "Deep",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			events := ext.parseInterceptedBody(tt.body, tt.ic, "test-source")
+			if len(events) != tt.wantLen {
+				t.Errorf("got %d events, want %d", len(events), tt.wantLen)
+			}
+			if tt.wantFirst != "" && len(events) > 0 && events[0].Name != tt.wantFirst {
+				t.Errorf("first event Name = %q, want %q", events[0].Name, tt.wantFirst)
+			}
+		})
+	}
+}

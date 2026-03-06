@@ -1759,4 +1759,24 @@ func TestValidate_InterceptConfig(t *testing.T) {
 			}
 		})
 	}
+
+	// Tier-mismatch warning: intercept only makes sense on tier 2.
+	t.Run("intercept on non-tier-2 produces warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := base
+		cfg.Tier = 0
+		cfg.Headless.Intercept = &InterceptConfig{URLPattern: `api/events`, ResultsPath: "results"}
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "intercept config is only used by tier 2") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected tier-mismatch warning for intercept on tier 0, got warnings: %v", warnings)
+		}
+	})
 }

@@ -377,6 +377,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	}
 
 	if cfg.Headless.Intercept != nil {
+		if cfg.Tier != 2 {
+			warnings = append(warnings, fmt.Sprintf("intercept config is only used by tier 2 (headless) sources; it will be ignored for tier %d", cfg.Tier))
+		}
 		ic := cfg.Headless.Intercept
 		if strings.TrimSpace(ic.URLPattern) == "" {
 			errs = append(errs, "headless.intercept.url_pattern: required when intercept block is set")
