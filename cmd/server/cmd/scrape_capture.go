@@ -135,13 +135,6 @@ Examples:
 			return err
 		}
 
-		// Save screenshot if requested.
-		if scrapeCaptureScreenshot != "" {
-			fmt.Fprintf(os.Stderr, "Note: --screenshot is not yet supported for successful renders "+
-				"(screenshots are captured automatically on failure). "+
-				"Use a browser DevTools Protocol client for on-success screenshots.\n")
-		}
-
 		return outputCapture(logger, captureURL, html, networkRequests)
 	},
 }
@@ -156,8 +149,8 @@ func captureWithURL(ctx context.Context, ext *scraper.RodExtractor, logger zerol
 		Bool("network", scrapeCaptureNetwork).
 		Msg("capture: rendering page via headless browser")
 
-	if scrapeCaptureNetwork {
-		html, requests, err := ext.RenderHTMLWithNetwork(ctx, rawURL, scrapeCaptureWaitSelector, scrapeCaptureWaitTimeout)
+	if scrapeCaptureNetwork || scrapeCaptureScreenshot != "" {
+		html, requests, err := ext.RenderHTMLWithNetwork(ctx, rawURL, scrapeCaptureWaitSelector, scrapeCaptureWaitTimeout, scrapeCaptureScreenshot)
 		if err != nil {
 			return "", nil, fmt.Errorf("capture: render: %w", err)
 		}
@@ -193,8 +186,8 @@ func captureWithSourceConfig(ctx context.Context, ext *scraper.RodExtractor, log
 		Bool("network", scrapeCaptureNetwork).
 		Msg("capture: rendering with source config (full headless pipeline)")
 
-	if scrapeCaptureNetwork {
-		html, requests, renderErr := ext.RenderHTMLWithConfigAndNetwork(ctx, config)
+	if scrapeCaptureNetwork || scrapeCaptureScreenshot != "" {
+		html, requests, renderErr := ext.RenderHTMLWithConfigAndNetwork(ctx, config, scrapeCaptureScreenshot)
 		if renderErr != nil {
 			return "", config.URL, nil, fmt.Errorf("capture: render with config: %w", renderErr)
 		}
@@ -349,7 +342,7 @@ func init() {
 	scrapeCmd.AddCommand(scrapeCaptureCmd)
 
 	scrapeCaptureCmd.Flags().StringVar(&scrapeCaptureOutput, "output", "", "write output to file instead of stdout")
-	scrapeCaptureCmd.Flags().StringVar(&scrapeCaptureScreenshot, "screenshot", "", "save a PNG screenshot to file (see note: on-success screenshots not yet supported)")
+	scrapeCaptureCmd.Flags().StringVar(&scrapeCaptureScreenshot, "screenshot", "", "save a PNG screenshot after page render (useful for agent debugging)")
 	scrapeCaptureCmd.Flags().StringVar(&scrapeCaptureWaitSelector, "wait-selector", "body", "CSS selector to wait for before capturing (default: body)")
 	scrapeCaptureCmd.Flags().IntVar(&scrapeCaptureWaitTimeout, "wait-timeout", 10000, "max wait time in milliseconds for --wait-selector")
 	scrapeCaptureCmd.Flags().StringVar(&scrapeCaptureFormat, "format", "html", "output format: html (default), inspect (DOM analysis), or json (network requests as JSON, requires --network)")

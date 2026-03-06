@@ -101,6 +101,24 @@ common cause is a premature wait strategy — the default `--wait-selector body`
 instantly, so the capture completes before async JS widgets (AWS CloudSearch, Algolia,
 eventscalendar.co, etc.) have time to fire their API calls and populate the DOM.
 
+**Visual debugging with `--screenshot`:** When headless inspect returns empty or
+unexpected results, capture a screenshot to see what the browser actually rendered:
+
+```bash
+SCRAPER_HEADLESS_ENABLED=true ./server scrape capture <URL> \
+  --wait-selector "body" --wait-timeout 15000 \
+  --screenshot /tmp/capture.png
+```
+
+The screenshot shows the page as the headless browser sees it after the wait
+resolves. This reveals whether event cards ARE rendering (just with different
+selectors than expected), whether content is behind a tab/accordion that needs
+clicking, or whether the page is showing a loading spinner, cookie consent modal,
+or bot detection challenge. Read the PNG to inform your next step — if you can
+see events in the screenshot, adjust `--wait-selector` to target their container.
+If the screenshot shows a blank page or spinner, increase `--wait-timeout` or try
+`wait_network_idle: true`.
+
 **Retry with an extended wait strategy:**
 
 ```bash
@@ -108,6 +126,11 @@ export SCRAPER_HEADLESS_ENABLED=true
 # Step A: Capture raw HTML with a long network-idle wait to let all XHR/fetch complete
 ./server scrape capture <URL> --wait-selector "body" --wait-timeout 30000 --format html > /tmp/capture.html
 wc -c /tmp/capture.html   # compare size to the previous attempt
+
+# Also capture a screenshot to visually confirm what rendered
+SCRAPER_HEADLESS_ENABLED=true ./server scrape capture <URL> \
+  --wait-selector "body" --wait-timeout 30000 \
+  --screenshot /tmp/retry-capture.png
 ```
 
 If the HTML is significantly larger (e.g. 50KB+ vs 7KB), the widget populated — grep
