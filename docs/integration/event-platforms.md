@@ -32,6 +32,7 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `.ashx?orgid=` URL pattern | **Agile Technologies box office** | T2 (`wait_network_idle: true`) |
 | `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
+| `showclix.com` link or `eventsbucket.s3.amazonaws.com` in network | **Showclix** | T3 (REST via S3 JSON) |
 | `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T2 (no public API) |
 | `class="nuxt-*"` or `window.__NUXT__` | **Nuxt.js** | T0 or T3 (check DatoCMS) |
 | `class="elementor-post__title"` | **WordPress + Elementor (news loop)** | T1 |
@@ -564,7 +565,56 @@ rest:
 
 ---
 
-### 16. Eventbrite
+### 16. Showclix (ticketing platform)
+
+**What it is:** Ticketing and event management platform used by venues. Uses a custom
+calendar widget that loads event data from S3-hosted JSON files.
+
+**Detection signals:**
+- `showclix.com` links in page source
+- S3 bucket URLs containing `eventsbucket` in network requests (e.g. `*eventsbucket.s3.amazonaws.com/events.json`)
+- Custom calendar widget with non-standard DOM structure (day numbers appear as siblings
+  to event links rather than children, making date extraction unreliable via CSS)
+
+**Recommended approach:** T3 REST via S3 JSON API. Events are stored as bare JSON arrays
+in S3 buckets. No authentication required (public buckets). No pagination needed —
+S3 buckets serve complete event lists.
+
+**URL pattern:** `https://<venue>eventsbucket.s3.amazonaws.com/events.json`
+
+**Example:** `https://horseshoeeventsbucket.s3.amazonaws.com/events.json`
+
+**API shape:** Returns `[{...}, {...}]` — a bare JSON array. Use `results_field: "."`.
+
+**Typical API fields:** `name`, `starts_on`, `ends_on`, `slug`, `image` (URL string), `description`
+
+**Why NOT to CSS-scrape:** The calendar widget DOM is fragile — day numbers appear as
+siblings to event links rather than children, making date extraction unreliable. The
+S3 JSON API is more stable and complete.
+
+```yaml
+- name: "Venue Name (Showclix)"
+  url: "https://venuename.com/events"       # human-readable URL for logs
+  tier: 3
+  rest:
+    endpoint: "https://<venue>eventsbucket.s3.amazonaws.com/events.json"
+    results_field: "."                        # bare JSON array
+    field_map:
+      name: "name"
+      start_date: "starts_on"
+      end_date: "ends_on"
+      image: "image"
+    url_template: "https://www.showclix.com/event/{{.slug}}"
+```
+
+**Notes:**
+- No pagination needed — S3 buckets serve complete event lists
+- No authentication required (public S3 bucket)
+- Rate limiting: S3 standard rate limits apply; no special throttling needed
+
+---
+
+### 17. Eventbrite
 
 **What it is:** Global ticketing platform. Venues link to Eventbrite for ticket sales.
 
@@ -591,7 +641,7 @@ organizer to share an iCal feed or event data export).
 
 ---
 
-### 17. Elevent (ticketing widget)
+### 18. Elevent (ticketing widget)
 
 **What it is:** A cross-origin iframe-based ticketing widget.
 
@@ -617,7 +667,7 @@ headless:
 
 ---
 
-### 18. Ticket Spot (Wix embed)
+### 19. Ticket Spot (Wix embed)
 
 **What it is:** A Wix-native event widget embedded as a cross-origin iframe from
 `geteventviewer.com` or `ticketspotapp.com`. Venues that use Wix's Ticket Spot app
@@ -669,7 +719,7 @@ See `configs/sources/lula-lounge.yaml` for a working example.
 
 ---
 
-### 19. AWS CloudSearch widget
+### 20. AWS CloudSearch widget
 
 **What it is:** A custom JS widget backed by AWS CloudSearch. The page renders empty
 containers; event data arrives via XHR.
@@ -696,7 +746,7 @@ URL. If unauthenticated, configure as T3 REST.
 
 ---
 
-### 20. Agile Technologies box office
+### 21. Agile Technologies box office
 
 **What it is:** A venue ticketing system. Embeds via a `.ashx` URL widget.
 

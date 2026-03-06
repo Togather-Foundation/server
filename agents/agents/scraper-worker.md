@@ -48,15 +48,21 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `wixBiSession` or `data-hook=` → Wix → **Tier 2**
 - `data-events-calendar-app` → eventscalendar.co → **Tier 2** (`wait_network_idle: true`)
 - `<title>Just a moment...</title>`, `window._cf_chl_opt`, or `id="challenge-error-text"` in curl output → Cloudflare → add `undetected: true`
+- `showclix.com` links or S3 bucket URLs containing `eventsbucket` → Showclix → **Tier 3** REST (S3 bucket JSON feed; T3 REST always beats T2 CSS for Showclix — the calendar DOM is fragile)
 
 If a known platform is matched, skip or abbreviate DOM inspection — use the known selectors/tier as a starting point.
 
 **IMPORTANT — T3 REST always beats T2 headless (when a public API exists):** If a
-page embeds or links to a platform with a **confirmed public API** (e.g. Showpass),
-**always prefer T3 REST** over attempting T2 headless scraping. Third-party ticketing
-widgets (iframes, JS embeds) are the #1 cause of T2 failures. The REST API bypasses
-the widget entirely. Even if you detect Showpass alongside other signals (Wix, Shopify,
-WordPress), take the T3 REST path.
+page embeds or links to a platform with a **confirmed public API** (e.g. Showpass,
+Showclix), **always prefer T3 REST** over attempting T2 headless scraping. Third-party
+ticketing widgets (iframes, JS embeds) are the #1 cause of T2 failures. The REST API
+bypasses the widget entirely. Even if you detect Showpass or Showclix alongside other
+signals (Wix, Shopify, WordPress), take the T3 REST path.
+
+**Showclix S3 bucket pattern:** Many Showclix venues expose a static JSON feed at
+`https://<venue>eventsbucket.s3.amazonaws.com/events.json` — try this URL directly
+if you see `showclix.com` links or `eventsbucket` in network requests. The response
+is a bare JSON array (use `results_field: "."`).
 
 **Eventbrite is NOT a T3 candidate.** Eventbrite's API requires OAuth and is not
 publicly readable. If you detect Eventbrite links/embeds, use **T2 headless** — either
@@ -373,7 +379,69 @@ rest:
     image: "<source_key>"
 ```
 
+### Tier 3 (REST JSON / bare array, e.g. Showclix S3 bucket)
+
+```yaml
+name: "{{source_name}}"
+url: "{{human_readable_url}}"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+rest:
+  endpoint: "{{api_endpoint}}"
+  results_field: "."                # entire response is the array
+  field_map:
+    name: "{{api_field_for_name}}"
+    start_date: "{{api_field_for_start}}"
+    end_date: "{{api_field_for_end}}"
+    image: "{{api_field_for_image}}"
+  url_template: "{{url_pattern_with_slug}}"  # optional
+```
+
 Omit selector/graphql lines whose value is empty. `trust_level: 8` for museums/libraries/government, `3` for aggregators, `5` otherwise.
+
+---
+
+## Mid-Inspection API Pivot
+
+If you started down the T1/T2 CSS path and hit obstacles, pivot to T3 REST before exhausting retry rounds.
+
+### When to pivot from T2 CSS to T3 REST
+
+- CSS selectors are fragile or unreliable (frequent layout changes, dynamic rendering)
+- Network tab shows XHR/Fetch requests returning JSON (API calls, S3 bucket fetches)
+- Calendar widget uses non-standard DOM (day numbers as siblings, not children of event cards)
+- The venue uses a known API platform (Showclix, Showpass, Eventbrite*, etc.)
+
+*Eventbrite does NOT qualify for T3 — its API requires OAuth. Use T2 to scrape the organizer page.
+
+### How to find the API
+
+- Check Network tab for XHR/Fetch requests that return JSON
+- Look for S3 bucket URLs (`s3.amazonaws.com` patterns) — especially `eventsbucket`
+- Check page source for embedded API endpoints or data URLs:
+  ```bash
+  curl -sL "<URL>" | grep -iE 's3\.amazonaws\.com|eventsbucket|api\.|/events\.json'
+  ```
+- Try common Showclix pattern: `https://<venue>eventsbucket.s3.amazonaws.com/events.json`
+
+### Decision tree
+
+```
+CSS extraction working reliably?
+  → Yes: Use T2 CSS
+  → No ↓
+API/JSON endpoint visible in Network tab?
+  → Yes: Use T3 REST
+  → No ↓
+S3 bucket URL pattern found?
+  → Yes: Use T3 REST (bare array, results_field: ".")
+  → No ↓
+DOM too fragile for reliable extraction?
+  → Yes: Mark enabled: false, document blocker in YAML comment
+```
 
 ---
 
