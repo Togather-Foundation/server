@@ -115,3 +115,21 @@ max_pages: 5
 #   url: "a.event-link"                  # Link to event detail page
 #   image: "img.event-image"             # Event image
 #   pagination: "a.next-page"            # Pagination "next" link (optional)
+
+# --- TIER 3 REST API EXAMPLE ---
+#
+# name: "my-api-venue"
+# url: "https://myvenue.ca"
+# tier: 3
+# schedule: "daily"
+# rest:
+#   endpoint: "https://api.myvenue.ca/events"
+#   results_field: "results"
+#   next_field: "next"
+#   url_template: "https://myvenue.ca/events/{{.slug}}"
+#   field_map:
+#     name: "title"                   # Flat key: top-level "title" field
+#     image: "logo.url"               # Dot-notation: {"logo": {"url": "..."}}
+#     start_date: "dates.start"       # Dot-notation: nested start date
+#     end_date: "dates.end"
+#     location: "venue.name"          # Dot-notation: nested venue name

@@ -454,16 +454,18 @@ rest:
   url_template: "https://www.showpass.com/{{.slug}}"  # Go text/template; fields from raw item
   timeout_ms: 30000                  # Optional; uses global timeout if not set or smaller
   field_map:
-    name: "name"                     # RawEvent field: source JSON key
+    name: "name"                     # RawEvent field: source JSON key (dot-notation for nested: "title.text")
     start_date: "starts_on"
     end_date: "ends_on"
-    image: "image"
+    image: "logo.url"                # Dot-notation traverses nested JSON: {"logo": {"url": "..."}}
     # url: omitted — populated by url_template above
 ```
 
 `field_map` maps RawEvent field names (`name`, `start_date`, `end_date`, `url`, `image`,
-`location`, `description`) to source JSON keys. Omit `field_map` entirely for identity
-mapping (source keys must match RawEvent Go field names: `Name`, `StartDate`, etc.).
+`location`, `description`) to source JSON keys. Values support dot-separated paths for
+nested JSON traversal (e.g. `"logo.url"` extracts `response.logo.url`). Dots are always
+treated as path separators — there is no escape mechanism. Omit `field_map` entirely for
+identity mapping (source keys must match RawEvent Go field names: `Name`, `StartDate`, etc.).
 
 `url_template` is a Go `text/template` rendered with the raw item map as data. A
 missing key causes a template execution error (`missingkey=error`); the error is logged
@@ -530,10 +532,13 @@ at debug level and the URL is left empty.
 | `url_template` | no | — | Go `text/template` string to construct each event's URL |
 | `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
 | `headers` | no | — | Extra HTTP headers to inject (map[string]string) |
-| `field_map` | no | — | Map from RawEvent field names to source JSON keys (see below) |
+| `field_map` | no | — | Map from RawEvent field names to source JSON keys; values support dot-notation for nested fields (see below) |
 
 **`field_map` keys** (all optional; omit for identity mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
+Values are source JSON keys; use dot-separated paths to traverse nested objects (e.g. `"logo.url"`, `"title.text"`).
+
+> **Redirect behaviour:** The REST HTTP client allows up to 10 redirects. This is intentionally explicit — it matches the Go default but is configurable for auditability. JSON-LD (Tier 0) blocks all redirects for SSRF hardening.
 
 ---
 

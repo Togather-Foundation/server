@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"text/template"
 	"time"
 
@@ -18,6 +19,13 @@ import (
 type RestExtractor struct {
 	logger zerolog.Logger
 }
+
+// maxRESTRedirects is the maximum number of HTTP redirects the REST scraper
+// will follow per request. This matches Go's default limit but makes it
+// explicit for auditability. Unlike jsonld.go which blocks all redirects
+// (SSRF hardening), REST endpoints may legitimately redirect (e.g. Showpass
+// returns 301 for canonical URLs).
+const maxRESTRedirects = 10
 
 // NewRestExtractor constructs a RestExtractor.
 func NewRestExtractor(logger zerolog.Logger) *RestExtractor {
@@ -43,15 +51,27 @@ func (e *RestExtractor) FetchAndExtractREST(
 		return nil, fmt.Errorf("rest: config is nil for source %q", source.Name)
 	}
 
+	// Create a local client copy to avoid mutating the caller's client.
 	// Apply config timeout when it exceeds the caller-supplied timeout.
+	localClient := &http.Client{
+		Transport: client.Transport,
+		Timeout:   client.Timeout,
+	}
 	if cfg.TimeoutMs > 0 {
-		if cfgTimeout := time.Duration(cfg.TimeoutMs) * time.Millisecond; cfgTimeout > client.Timeout {
-			client = &http.Client{
-				Timeout:   cfgTimeout,
-				Transport: client.Transport,
-			}
+		if cfgTimeout := time.Duration(cfg.TimeoutMs) * time.Millisecond; cfgTimeout > localClient.Timeout {
+			localClient.Timeout = cfgTimeout
 		}
 	}
+	// Limit redirects to prevent abuse via redirect chains. Unlike jsonld.go
+	// which blocks all redirects (SSRF hardening for arbitrary web pages),
+	// REST API endpoints may legitimately redirect (e.g. Showpass 301).
+	localClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRESTRedirects {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}
+	client = localClient
 
 	// Parse URL template once (if provided).
 	var urlTmpl *template.Template
@@ -180,6 +200,33 @@ func (e *RestExtractor) fetchPage(
 	return events, nextURL, nil
 }
 
+// resolveNestedString traverses item using a dot-separated path and returns
+// the leaf value as a string. Returns "" if any segment is missing, a non-map
+// intermediate is encountered, or the leaf is not a string.
+func resolveNestedString(item map[string]any, path string) string {
+	if path == "" {
+		return ""
+	}
+	segments := strings.Split(path, ".")
+	current := item
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := current[seg]
+		if !ok {
+			return ""
+		}
+		current, ok = next.(map[string]any)
+		if !ok {
+			return ""
+		}
+	}
+	leaf := segments[len(segments)-1]
+	v, ok := current[leaf].(string)
+	if !ok {
+		return ""
+	}
+	return v
+}
+
 // mapRESTItemToRawEvent maps a REST JSON item (map[string]any) to a RawEvent
 // using the operator-supplied field_map. When fieldMap is nil the RawEvent Go
 // field names are used directly as JSON keys (identity mapping using the exact
@@ -203,10 +250,7 @@ func mapRESTItemToRawEvent(item map[string]any, fieldMap map[string]string, urlT
 			// Identity mapping: use the Go struct field name.
 			srcKey = identityKey
 		}
-		if v, ok := item[srcKey].(string); ok {
-			return v
-		}
-		return ""
+		return resolveNestedString(item, srcKey)
 	}
 
 	raw := RawEvent{
