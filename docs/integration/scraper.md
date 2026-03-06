@@ -510,6 +510,12 @@ graphql:
   event_field: "allEvents"            # Top-level key in the GraphQL data response
   timeout_ms: 30000                   # Optional; uses global timeout if not set or smaller
   url_template: "https://example.com/events/{{.slug}}"  # Go text/template; fields from event record
+  # field_map:                        # Optional — override legacy DatoCMS-convention field mapping
+  #   name: "title"                   # Logical key: source JSON path (dot-notation for nested)
+  #   start_date: "startDate"
+  #   end_date: "endDate"
+  #   image: "image.url"
+  #   location: "venue.name"
   query: |
     query AllEvents {
       allEvents(orderBy: startDate_ASC, first: 100) {
@@ -646,6 +652,11 @@ never populates with event data but the underlying API response contains it.
 | `token` | no | Bearer token for Authorization header |
 | `url_template` | no | Go `text/template` string to construct each event's URL |
 | `timeout_ms` | no | Request timeout; the larger of this and the global timeout applies |
+| `field_map` | no | Map from logical keys to source JSON paths (see below). When omitted, legacy DatoCMS-convention mapping applies (`title`→`name`, `startDate`→`start_date`, etc.) |
+
+**`field_map` keys** (all optional; omit for legacy DatoCMS-convention mapping):
+`name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
+Values are source JSON keys from the GraphQL response record; use dot-separated paths for nested fields (e.g. `"photo.url"`, `"venue.name"`).
 
 ### REST Config Fields (`rest:`)
 

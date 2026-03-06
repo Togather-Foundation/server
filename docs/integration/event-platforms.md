@@ -402,6 +402,10 @@ graphql:
   event_field: "allEvents"
   timeout_ms: 30000
   url_template: "https://<site-domain>/events/{{.slug}}"
+  # field_map:              # Optional — when the query uses non-standard field names
+  #   name: "title"         # Logical key: source JSON path (dot-notation for nested)
+  #   image: "photo.url"
+  #   location: "rooms.0.name"
 ```
 
 **How to find the token:**
