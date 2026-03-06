@@ -149,43 +149,58 @@ func (e *RestExtractor) fetchPage(
 		return nil, "", fmt.Errorf("rest: unexpected status %d from %s", resp.StatusCode, pageURL)
 	}
 
-	// Decode page JSON. Limit body to 10 MiB to prevent memory exhaustion
+	// Read body with 10 MiB limit to prevent memory exhaustion
 	// (consistent with graphql.go and jsonld.go).
-	var page map[string]json.RawMessage
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 10*1024*1024)).Decode(&page); err != nil {
-		return nil, "", fmt.Errorf("rest: decoding response from %s: %w", pageURL, err)
-	}
-
-	// Extract results array.
-	rawResults, ok := page[cfg.ResultsField]
-	if !ok {
-		// Missing results field is treated as empty (not an error — some APIs
-		// omit the key entirely on an empty final page).
-		return nil, "", nil
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+	if err != nil {
+		return nil, "", fmt.Errorf("rest: reading response from %s: %w", pageURL, err)
 	}
 
 	var items []map[string]any
-	if err := json.Unmarshal(rawResults, &items); err != nil {
-		return nil, "", fmt.Errorf("rest: decoding %q array from %s: %w", cfg.ResultsField, pageURL, err)
-	}
-
-	// Determine next page URL.
 	var nextURL string
-	if rawNext, ok := page[cfg.NextField]; ok {
-		// next can be a JSON string or null.
-		var nextStr string
-		if err := json.Unmarshal(rawNext, &nextStr); err == nil && nextStr != "" {
-			// SSRF guard: next URL host must match the configured endpoint host.
-			nu, parseErr := url.Parse(nextStr)
-			epURL, _ := url.Parse(cfg.Endpoint)
-			if parseErr != nil || nu.Host != epURL.Host {
-				e.logger.Warn().
-					Str("next_url", nextStr).
-					Str("endpoint_host", epURL.Host).
-					Msg("rest: next URL host mismatch — stopping pagination")
-				// Return accumulated results up to this point; treat as end of pagination.
-			} else {
-				nextURL = nextStr
+
+	if cfg.ResultsField == "." {
+		// Bare array mode: the entire response body is the results array.
+		// No pagination support — bare arrays have no envelope to carry next URLs.
+		if err := json.Unmarshal(body, &items); err != nil {
+			return nil, "", fmt.Errorf("rest: decoding bare array from %s: %w", pageURL, err)
+		}
+	} else {
+		// Object mode: response is a JSON object with named fields.
+		var page map[string]json.RawMessage
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, "", fmt.Errorf("rest: decoding response from %s: %w", pageURL, err)
+		}
+
+		// Extract results array.
+		rawResults, ok := page[cfg.ResultsField]
+		if !ok {
+			// Missing results field is treated as empty (not an error — some APIs
+			// omit the key entirely on an empty final page).
+			return nil, "", nil
+		}
+
+		if err := json.Unmarshal(rawResults, &items); err != nil {
+			return nil, "", fmt.Errorf("rest: decoding %q array from %s: %w", cfg.ResultsField, pageURL, err)
+		}
+
+		// Determine next page URL (only meaningful for object responses).
+		if rawNext, ok := page[cfg.NextField]; ok {
+			// next can be a JSON string or null.
+			var nextStr string
+			if err := json.Unmarshal(rawNext, &nextStr); err == nil && nextStr != "" {
+				// SSRF guard: next URL host must match the configured endpoint host.
+				nu, parseErr := url.Parse(nextStr)
+				epURL, _ := url.Parse(cfg.Endpoint)
+				if parseErr != nil || nu.Host != epURL.Host {
+					e.logger.Warn().
+						Str("next_url", nextStr).
+						Str("endpoint_host", epURL.Host).
+						Msg("rest: next URL host mismatch — stopping pagination")
+					// Return accumulated results up to this point; treat as end of pagination.
+				} else {
+					nextURL = nextStr
+				}
 			}
 		}
 	}

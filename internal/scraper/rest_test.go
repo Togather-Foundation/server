@@ -732,6 +732,131 @@ func TestFetchAndExtractREST_RedirectFollowed(t *testing.T) {
 	assert.Equal(t, "Redirect Event", got[0].Name)
 }
 
+// --------------------------------------------------------------------------
+// Bare JSON array tests (results_field: ".")
+// --------------------------------------------------------------------------
+
+func bareArrayRestSource(endpoint string, fieldMap map[string]string, urlTemplate string, maxPages int) SourceConfig {
+	return SourceConfig{
+		Name:     "test-bare-array-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: maxPages,
+		REST: &RestConfig{
+			Endpoint:     endpoint,
+			ResultsField: ".",
+			URLTemplate:  urlTemplate,
+			FieldMap:     fieldMap,
+		},
+	}
+}
+
+func TestFetchAndExtractREST_BareArray(t *testing.T) {
+	t.Parallel()
+
+	requestCount := int32(0)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"name":"Event 1","starts_on":"2026-04-01T19:00:00Z"},{"name":"Event 2","starts_on":"2026-04-02T19:00:00Z"}]`))
+	}))
+	defer srv.Close()
+
+	fieldMap := map[string]string{
+		"name":       "name",
+		"start_date": "starts_on",
+	}
+	source := bareArrayRestSource(srv.URL, fieldMap, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	assert.Equal(t, "Event 1", got[0].Name)
+	assert.Equal(t, "2026-04-01T19:00:00Z", got[0].StartDate)
+	assert.Equal(t, "Event 2", got[1].Name)
+	assert.Equal(t, "2026-04-02T19:00:00Z", got[1].StartDate)
+
+	assert.Equal(t, int32(1), atomic.LoadInt32(&requestCount), "bare array must make exactly 1 request (no pagination)")
+}
+
+func TestFetchAndExtractREST_BareArrayEmpty(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	source := bareArrayRestSource(srv.URL, nil, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Empty(t, got, "empty bare array must return empty slice, not error")
+}
+
+func TestFetchAndExtractREST_BareArrayWithURLTemplate(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"slug":"jazz-night","name":"Jazz Night","starts_on":"2026-04-10T20:00:00Z"}]`))
+	}))
+	defer srv.Close()
+
+	source := bareArrayRestSource(
+		srv.URL,
+		map[string]string{"name": "name", "start_date": "starts_on"},
+		"https://www.showpass.com/{{.slug}}",
+		10,
+	)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "Jazz Night", got[0].Name)
+	assert.Equal(t, "https://www.showpass.com/jazz-night", got[0].URL, "url_template must be applied to bare array items")
+}
+
+func TestFetchAndExtractREST_BareArrayWithFieldMap(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"title":"Mapped Event","date_start":"2026-05-01T20:00:00Z","date_end":"2026-05-01T23:00:00Z","link":"https://example.com/mapped","thumbnail":"https://cdn.example.com/img.jpg","venue":"The Venue","about":"A description"}]`))
+	}))
+	defer srv.Close()
+
+	fieldMap := map[string]string{
+		"name":        "title",
+		"start_date":  "date_start",
+		"end_date":    "date_end",
+		"url":         "link",
+		"image":       "thumbnail",
+		"location":    "venue",
+		"description": "about",
+	}
+	source := bareArrayRestSource(srv.URL, fieldMap, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+
+	e := got[0]
+	assert.Equal(t, "Mapped Event", e.Name)
+	assert.Equal(t, "2026-05-01T20:00:00Z", e.StartDate)
+	assert.Equal(t, "2026-05-01T23:00:00Z", e.EndDate)
+	assert.Equal(t, "https://example.com/mapped", e.URL)
+	assert.Equal(t, "https://cdn.example.com/img.jpg", e.Image)
+	assert.Equal(t, "The Venue", e.Location)
+	assert.Equal(t, "A description", e.Description)
+}
+
 func TestFetchAndExtractREST_TimeoutMs(t *testing.T) {
 	t.Parallel()
 

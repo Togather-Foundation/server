@@ -221,7 +221,10 @@ type RestConfig struct {
 	// https://www.showpass.com/api/public/events/?venue=17330).
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
 	// ResultsField is the key in the JSON response that holds the array of
-	// event objects. Defaults to "results" when empty.
+	// event objects. Use "." when the response is a bare JSON array (e.g.
+	// [{...}, {...}]) with no envelope object. When ".", pagination is not
+	// supported (bare arrays have no envelope to carry a next-page URL).
+	// An empty string will fail to find any key (treated as empty page).
 	ResultsField string `yaml:"results_field" json:"results_field"`
 	// NextField is the key in the JSON response that holds the URL of the
 	// next page (null or absent = no more pages). Defaults to "next" when
