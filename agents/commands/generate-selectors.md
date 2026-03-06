@@ -204,8 +204,53 @@ page requires an `iframe:` config block rather than being classified as unscrape
 configure the `headless.iframe:` block with the iframe's CSS selector and proceed to
 Step 7. Do NOT return `js-rendered` for these platforms.
 
-If no known iframe platform is detected and containers remain empty, return:
-`RESULT | <URL> | - | - | js-rendered | <body_size>KB body, candidate containers empty even after headless render`
+If no known iframe platform is detected and containers remain empty, **do not give up
+yet** — the most common cause is a premature wait strategy. The default
+`--wait-selector body` resolves instantly, so the capture completes before async JS
+widgets (AWS CloudSearch, Algolia, eventscalendar.co, etc.) fire their API calls.
+
+**Retry with an extended wait strategy:**
+
+```bash
+# Capture with a long timeout to let async widgets populate
+SCRAPER_HEADLESS_ENABLED=true ./server scrape capture <URL> \
+  --wait-selector "body" --wait-timeout 30000 --format html > /tmp/capture.html
+wc -c /tmp/capture.html   # compare to previous attempt — significantly larger = widget loaded
+```
+
+If the HTML is larger, grep for event content and re-run inspect. If still empty, look
+for the widget's container element in the initial (empty) HTML — attributes like
+`data-template`, `data-widget`, `data-events`, or specific class names on empty `<div>`
+elements. Write a draft config targeting that container with `wait_network_idle: true`:
+
+```bash
+# Draft config with aggressive wait targeting the actual widget container
+cat > /tmp/draft.yaml <<EOF
+name: "draft"
+url: "<URL>"
+tier: 2
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: false
+headless:
+  wait_selector: "<widget-container-selector>"
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+selectors:
+  event_list: "PLACEHOLDER"
+  name: "PLACEHOLDER"
+EOF
+SCRAPER_HEADLESS_ENABLED=true ./server scrape capture --source-file /tmp/draft.yaml --format inspect
+```
+
+**Key principle:** `wait_selector` must target an element that only exists AFTER the
+widget has populated. Using `body` defeats the purpose — it matches before any async
+content loads. Find the widget's container in the initial HTML and wait for THAT.
+
+If extended waits (30s + network idle + specific selector) still produce empty containers,
+the widget is genuinely blocked in headless. Return:
+`RESULT | <URL> | - | - | js-rendered | <body_size>KB body, containers empty after 30s wait + network idle; tried wait_selector: <what> with wait_network_idle: true`
 
 Otherwise, continue using the headless inspect output for subsequent steps and set
 `tier: 2` in the final config.
@@ -257,6 +302,7 @@ Based on the inspect output, reason about the DOM structure and propose values f
 | `url` | Selector for the `<a>` linking to the event detail page. |
 | `image` | Selector for the event thumbnail `<img>`. Leave empty if not present. |
 | `pagination` | Selector for the "next page" link. Leave empty if single-page. |
+| `wait_selector` | **(Tier 2 only)** Must target the populated event container, NOT `body`. Using `body` causes the capture to complete before async widgets load. Find the widget's container class/ID. |
 
 **CSS Modules / hashed class names:** If class names follow the pattern `word-XXXXX`
 (e.g. `title-2yNb5`, `list-3PgZT`), the site uses CSS Modules. The prefix is stable
@@ -355,9 +401,9 @@ enabled: true
 max_pages: 3
 # Organization match: <org name> (<ulid>) — or "no match found in database"
 headless:
-  wait_selector: "<CSS selector to wait for before extracting, e.g. .event-list>"
+  wait_selector: "<CSS selector to wait for before extracting — MUST target the populated event container, NOT 'body'>"
   wait_timeout_ms: 10000
-  # wait_network_idle: true   # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch)
+  # wait_network_idle: true   # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch, Algolia)
   # undetected: true          # uncomment for Cloudflare JS challenge / bot-detection
   # iframe:                           # uncomment for cross-origin iframe extraction (Ticket Spot, Elevent)
   #   selector: "iframe[title='...']" # CSS selector for the target iframe element

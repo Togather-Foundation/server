@@ -96,7 +96,57 @@ export SCRAPER_HEADLESS_ENABLED=true
 ./server scrape capture <URL> --format inspect
 ```
 
-If headless inspect also returns empty containers, keep `enabled: false` and note the reason.
+If headless inspect also returns empty containers, **do not give up yet**. The most
+common cause is a premature wait strategy — the default `--wait-selector body` resolves
+instantly, so the capture completes before async JS widgets (AWS CloudSearch, Algolia,
+eventscalendar.co, etc.) have time to fire their API calls and populate the DOM.
+
+**Retry with an extended wait strategy:**
+
+```bash
+export SCRAPER_HEADLESS_ENABLED=true
+# Step A: Capture raw HTML with a long network-idle wait to let all XHR/fetch complete
+./server scrape capture <URL> --wait-selector "body" --wait-timeout 30000 --format html > /tmp/capture.html
+wc -c /tmp/capture.html   # compare size to the previous attempt
+```
+
+If the HTML is significantly larger (e.g. 50KB+ vs 7KB), the widget populated — grep
+for event-like content (`grep -i 'event\|concert\|show\|performance' /tmp/capture.html | head -20`)
+and re-run inspect on the captured HTML.
+
+If still empty, try writing a config with `wait_network_idle: true` and a long timeout,
+using a more specific wait selector that targets the widget's container element (look for
+`data-template`, `data-widget`, `data-events`, or similar attributes in the initial HTML):
+
+```bash
+# Step B: Write a draft config with aggressive wait settings and validate
+cat > /tmp/draft.yaml <<EOF
+name: "<name>"
+url: "<URL>"
+tier: 2
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: false
+headless:
+  wait_selector: "<widget-container-selector>"  # NOT "body" — find the actual event container
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+selectors:
+  event_list: "PLACEHOLDER"
+  name: "PLACEHOLDER"
+EOF
+SCRAPER_HEADLESS_ENABLED=true ./server scrape capture --source-file /tmp/draft.yaml --format inspect
+```
+
+**Key principle:** `wait_selector` must target an element that only exists AFTER the
+widget has populated. Using `body` or a generic selector defeats the purpose because it
+matches before any async content loads. Look for the widget's container class/ID in the
+initial (empty) HTML and use that — the Rod wait will then block until the widget renders.
+
+If extended waits still produce empty containers after 30s with network idle, the widget
+may be genuinely blocked in headless (bot detection, server-side rendering gate, etc.).
+At that point, keep `enabled: false` and document what was tried.
 
 ### Step 2 — Identify selectors (Tier 1/2 path only)
 
@@ -105,7 +155,7 @@ If headless inspect also returns empty containers, keep `enabled: false` and not
 - `start_date`: prefer `time[datetime]` if present; otherwise parent of date spans
 - `url`: the `<a>` to the event detail page
 - `image`: thumbnail `<img>` (omit if absent)
-- `wait_selector`: (Tier 2 only) most specific stable element to wait for before extracting
+- `wait_selector`: (Tier 2 only) **MUST target the populated event container, NOT `body`**. Using `body` or a comma-separated list starting with `body` causes the wait to resolve instantly, before async widgets load. Find the widget's actual container element.
 
 **CSS Modules / hashed class names:** If class names follow the pattern `word-XXXXX`
 (e.g. `title-2yNb5`, `list-3PgZT`), the site uses CSS Modules. The prefix is stable
@@ -239,9 +289,9 @@ license: "CC0-1.0"
 enabled: true
 max_pages: 3
 headless:
-  wait_selector: "<selector>"
-  wait_timeout_ms: 15000        # increase to 20000–30000 for Wix/Nuxt
-  # wait_network_idle: true     # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch)
+  wait_selector: "<selector>"   # MUST target the populated event container, NOT "body"
+  wait_timeout_ms: 15000        # increase to 20000–30000 for Wix/Nuxt/async widgets
+  # wait_network_idle: true     # uncomment for async XHR widgets (eventscalendar.co, AWS CloudSearch, Algolia)
   # undetected: true            # uncomment for Cloudflare JS challenge / bot-detection
   # iframe:                           # uncomment for cross-origin iframe extraction
   #   selector: "iframe[title='...']" # CSS selector for the target iframe element
