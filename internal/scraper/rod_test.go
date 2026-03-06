@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -365,7 +366,32 @@ func TestValidateNavigationURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateNavigationURL(tt.rawURL)
+			err := validateNavigationURL(tt.rawURL, blockedCIDRs)
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for URL %q, got nil", tt.rawURL)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for URL %q: %v", tt.rawURL, err)
+			}
+		})
+	}
+}
+
+func TestValidateNavigationURL_CustomBlocklist(t *testing.T) {
+	// With an empty blocklist, loopback/private addresses must be permitted.
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr bool
+	}{
+		{"loopback allowed with empty blocklist", "http://127.0.0.1/events", false},
+		{"private IP allowed with empty blocklist", "http://10.0.0.1/events", false},
+		{"file scheme still blocked (scheme check)", "file:///etc/passwd", true},
+		{"no scheme still blocked", "example.com/path", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNavigationURL(tt.rawURL, nil) // nil = no CIDR blocks
 			if tt.wantErr && err == nil {
 				t.Errorf("expected error for URL %q, got nil", tt.rawURL)
 			}
@@ -476,23 +502,24 @@ func newTestBrowser(t *testing.T, ext *RodExtractor) (*rod.Browser, func()) {
 	return browser, cleanup
 }
 
-// allowLocalhostSSRF temporarily clears the blockedCIDRs list for the duration
-// of a test so that httptest servers (which bind to 127.0.0.1) can be reached.
-// The original list is restored via t.Cleanup.
-func allowLocalhostSSRF(t *testing.T) {
-	t.Helper()
-	orig := blockedCIDRs
-	blockedCIDRs = nil
-	t.Cleanup(func() { blockedCIDRs = orig })
+// emptyBlocklist returns a nil SSRF blocklist, allowing navigation to any host
+// including loopback/private addresses. Used by tests that run against httptest
+// servers bound to 127.0.0.1 — avoids mutating the package-level blockedCIDRs.
+func emptyBlocklist() []*net.IPNet { return nil }
+
+// newTestExtractorAllowLocalhost creates a RodExtractor with headless enabled
+// and an empty SSRF blocklist so that httptest servers on 127.0.0.1 can be
+// reached without mutating the package-level blockedCIDRs variable.
+func newTestExtractorAllowLocalhost(logger zerolog.Logger) *RodExtractor {
+	ext := NewRodExtractor(logger, 2, "", true)
+	ext.blocklist = emptyBlocklist()
+	return ext
 }
 
 func TestScrapeSinglePage_Iframe(t *testing.T) {
 	if !headlessEnabled() {
 		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
 	}
-
-	// Allow httptest servers (127.0.0.1) to be navigated by the headless browser.
-	allowLocalhostSSRF(t)
 
 	// Single httptest server serves both the parent page and iframe content.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -511,7 +538,7 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 	waitTimeout := rodDefaultWaitTimeout
 
 	t.Run("iframe extraction succeeds", func(t *testing.T) {
-		ext := NewRodExtractor(logger, 2, "", true)
+		ext := newTestExtractorAllowLocalhost(logger)
 		browser, cleanup := newTestBrowser(t, ext)
 		defer cleanup()
 
@@ -559,7 +586,7 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 	})
 
 	t.Run("no iframe config extracts parent HTML", func(t *testing.T) {
-		ext := NewRodExtractor(logger, 2, "", true)
+		ext := newTestExtractorAllowLocalhost(logger)
 		browser, cleanup := newTestBrowser(t, ext)
 		defer cleanup()
 
@@ -593,7 +620,7 @@ func TestScrapeSinglePage_Iframe(t *testing.T) {
 	})
 
 	t.Run("iframe selector not found falls back to parent", func(t *testing.T) {
-		ext := NewRodExtractor(logger, 2, "", true)
+		ext := newTestExtractorAllowLocalhost(logger)
 		browser, cleanup := newTestBrowser(t, ext)
 		defer cleanup()
 
@@ -637,8 +664,6 @@ func TestRenderHTMLWithConfig(t *testing.T) {
 		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
 	}
 
-	allowLocalhostSSRF(t)
-
 	// Same httptest server as the iframe tests.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -655,7 +680,7 @@ func TestRenderHTMLWithConfig(t *testing.T) {
 	logger := zerolog.Nop()
 
 	t.Run("returns iframe HTML when iframe config set", func(t *testing.T) {
-		ext := NewRodExtractor(logger, 2, "", true)
+		ext := newTestExtractorAllowLocalhost(logger)
 
 		cfg := SourceConfig{
 			Name:    "test-render-iframe",
@@ -691,7 +716,7 @@ func TestRenderHTMLWithConfig(t *testing.T) {
 	})
 
 	t.Run("returns parent HTML when no iframe config", func(t *testing.T) {
-		ext := NewRodExtractor(logger, 2, "", true)
+		ext := newTestExtractorAllowLocalhost(logger)
 
 		cfg := SourceConfig{
 			Name:    "test-render-no-iframe",
