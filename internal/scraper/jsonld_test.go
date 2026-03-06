@@ -355,6 +355,66 @@ func TestFixtureFilesExist(t *testing.T) {
 	}
 }
 
+// ---- CheckRedirect non-mutation tests --------------------------------------------------
+
+// TestCheckRedirect_FetchAndExtractJSONLD verifies that FetchAndExtractJSONLD
+// does not mutate the caller's *http.Client by setting CheckRedirect on it.
+func TestCheckRedirect_FetchAndExtractJSONLD(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Event","name":"Test Event","startDate":"2026-01-01"}
+</script>
+</head><body></body></html>`))
+	}))
+	t.Cleanup(srv.Close)
+
+	// Sentinel: a CheckRedirect that is NOT the one jsonld.go installs.
+	sentinel := func(req *http.Request, via []*http.Request) error { return nil }
+	client := &http.Client{CheckRedirect: sentinel}
+
+	_, err := FetchAndExtractJSONLD(context.Background(), srv.URL+"/", client)
+	require.NoError(t, err)
+
+	// The caller's CheckRedirect must still be the sentinel, not replaced.
+	// reflect.ValueOf(fn) is not comparable for funcs, so we use a nil check +
+	// a side-channel: set sentinel to nil on mutation (impossible since we just
+	// called it). Instead we verify the field pointer identity is preserved by
+	// checking it is not nil (which the fixed code guarantees by never touching
+	// the original client).
+	require.NotNil(t, client.CheckRedirect,
+		"FetchAndExtractJSONLD must not nil-out caller's CheckRedirect")
+
+	// Call the sentinel to confirm it is still the original function (it returns
+	// nil, which is how we distinguish it from http.ErrUseLastResponse).
+	gotErr := client.CheckRedirect(nil, nil)
+	require.NoError(t, gotErr,
+		"caller's CheckRedirect was replaced by the SSRF-guard (returns ErrUseLastResponse)")
+}
+
+// TestCheckRedirect_FetchFullDescription verifies that FetchFullDescription
+// does not mutate the caller's *http.Client by setting CheckRedirect on it.
+func TestCheckRedirect_FetchFullDescription(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Some page content.</p></body></html>`))
+	}))
+	t.Cleanup(srv.Close)
+
+	sentinel := func(req *http.Request, via []*http.Request) error { return nil }
+	client := &http.Client{CheckRedirect: sentinel}
+
+	_ = FetchFullDescription(context.Background(), srv.URL+"/", client)
+
+	require.NotNil(t, client.CheckRedirect,
+		"FetchFullDescription must not nil-out caller's CheckRedirect")
+
+	gotErr := client.CheckRedirect(nil, nil)
+	require.NoError(t, gotErr,
+		"caller's CheckRedirect was replaced by the SSRF-guard (returns ErrUseLastResponse)")
+}
+
 // ---- helpers ---------------------------------------------------------------------------
 
 // assertEventName unmarshals a raw JSON event and checks its "name" field.
