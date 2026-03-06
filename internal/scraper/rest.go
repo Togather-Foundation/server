@@ -32,7 +32,7 @@ func NewRestExtractor(logger zerolog.Logger) *RestExtractor {
 	return &RestExtractor{logger: logger}
 }
 
-// FetchAndExtractREST fetches the REST JSON feed defined in source.REST,
+// Extract fetches the REST JSON feed defined in source.REST,
 // follows pagination via the next_field URL up to source.MaxPages pages
 // (0 = no limit), maps each item to a RawEvent using field_map, and returns
 // the combined slice.
@@ -41,7 +41,7 @@ func NewRestExtractor(logger zerolog.Logger) *RestExtractor {
 // larger of the caller-supplied client.Timeout and cfg.TimeoutMs. This allows
 // a source config to extend the global timeout for slow endpoints without ever
 // tightening it below what the caller already provides.
-func (e *RestExtractor) FetchAndExtractREST(
+func (e *RestExtractor) Extract(
 	ctx context.Context,
 	source SourceConfig,
 	client *http.Client,

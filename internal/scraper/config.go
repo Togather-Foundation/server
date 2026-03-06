@@ -207,6 +207,16 @@ type GraphQLConfig struct {
 	// its data (e.g. "https://tranzac.org/events/{{.slug}}").
 	// If empty, no URL is constructed from the API response.
 	URLTemplate string `yaml:"url_template" json:"url_template"`
+	// FieldMap maps RawEvent field names (keys) to source GraphQL response
+	// field names (values). Supported keys: name, start_date, end_date, url,
+	// image, location, description. Values support dot-notation for nested
+	// fields (e.g. "photo.url" to extract a nested image URL).
+	//
+	// When FieldMap is nil or empty, the legacy DatoCMS-convention mapping is
+	// used: title→Name, startDate→StartDate, endDate→EndDate,
+	// description→Description, photo.url→Image, rooms[0].name→Location.
+	// Set FieldMap to opt into explicit mapping for non-DatoCMS GraphQL APIs.
+	FieldMap map[string]string `yaml:"field_map,omitempty" json:"field_map,omitempty"`
 }
 
 // RestConfig holds Tier 3 REST JSON feed options.
@@ -286,8 +296,9 @@ func DefaultSourceConfig() SourceConfig {
 	}
 }
 
-// knownFieldMapKeys is the set of valid keys for RestConfig.FieldMap.
-// Only these 7 keys are consumed by mapRESTItemToRawEvent; any other key
+// knownFieldMapKeys is the set of valid keys for FieldMap (used by both
+// RestConfig.FieldMap and GraphQLConfig.FieldMap). Only these 7 keys are
+// consumed by the event-mapping functions; any other key
 // is silently ignored at runtime, so operators should be warned of typos.
 var knownFieldMapKeys = map[string]struct{}{
 	"name":        {},
@@ -425,6 +436,11 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 			if t := strings.TrimSpace(cfg.GraphQL.URLTemplate); t != "" {
 				if _, err := template.New("url").Option("missingkey=error").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("graphql.url_template: invalid Go template: %v", err))
+				}
+			}
+			for k := range cfg.GraphQL.FieldMap {
+				if _, ok := knownFieldMapKeys[k]; !ok {
+					warnings = append(warnings, fmt.Sprintf("graphql.field_map: unrecognised key %q (known keys: name, start_date, end_date, url, image, location, description)", k))
 				}
 			}
 		} else { // cfg.REST != nil

@@ -63,10 +63,10 @@ func restSource(endpoint string, fieldMap map[string]string, urlTemplate string,
 }
 
 // --------------------------------------------------------------------------
-// FetchAndExtractREST tests
+// Extract tests
 // --------------------------------------------------------------------------
 
-func TestFetchAndExtractREST_SinglePage(t *testing.T) {
+func TestRestExtract_SinglePage(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -89,7 +89,7 @@ func TestFetchAndExtractREST_SinglePage(t *testing.T) {
 	source := restSource(srv.URL, fieldMap, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 
@@ -101,7 +101,7 @@ func TestFetchAndExtractREST_SinglePage(t *testing.T) {
 	assert.Equal(t, "Event Two", got[1].Name)
 }
 
-func TestFetchAndExtractREST_Pagination(t *testing.T) {
+func TestRestExtract_Pagination(t *testing.T) {
 	t.Parallel()
 
 	page1Events := []map[string]any{sampleEvent("slug-1", "Event 1", "2026-04-01T19:00:00Z", "")}
@@ -124,7 +124,7 @@ func TestFetchAndExtractREST_Pagination(t *testing.T) {
 	source := restSource(srv.URL, map[string]string{"name": "name", "start_date": "starts_on"}, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 2, "both pages must be fetched")
 
@@ -133,7 +133,7 @@ func TestFetchAndExtractREST_Pagination(t *testing.T) {
 	assert.Equal(t, int32(2), atomic.LoadInt32(&requestCount), "must have fetched exactly 2 pages")
 }
 
-func TestFetchAndExtractREST_MaxPagesRespected(t *testing.T) {
+func TestRestExtract_MaxPagesRespected(t *testing.T) {
 	t.Parallel()
 
 	requestCount := int32(0)
@@ -151,13 +151,13 @@ func TestFetchAndExtractREST_MaxPagesRespected(t *testing.T) {
 	source := restSource(srv.URL, map[string]string{"name": "name"}, "", 2)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Len(t, got, 2, "must return 2 events (1 per page, 2 pages)")
 	assert.Equal(t, int32(2), atomic.LoadInt32(&requestCount), "must stop at max_pages=2")
 }
 
-func TestFetchAndExtractREST_FieldMapMapping(t *testing.T) {
+func TestRestExtract_FieldMapMapping(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -190,7 +190,7 @@ func TestFetchAndExtractREST_FieldMapMapping(t *testing.T) {
 	source := restSource(srv.URL, fieldMap, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 
@@ -204,7 +204,7 @@ func TestFetchAndExtractREST_FieldMapMapping(t *testing.T) {
 	assert.Equal(t, "A description", e.Description)
 }
 
-func TestFetchAndExtractREST_URLTemplate(t *testing.T) {
+func TestRestExtract_URLTemplate(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -224,13 +224,13 @@ func TestFetchAndExtractREST_URLTemplate(t *testing.T) {
 	)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "https://www.showpass.com/jazz-night", got[0].URL)
 }
 
-func TestFetchAndExtractREST_URLTemplate_MissingField(t *testing.T) {
+func TestRestExtract_URLTemplate_MissingField(t *testing.T) {
 	t.Parallel()
 
 	// Event with no "slug" field — template.Option("missingkey=error") causes
@@ -253,13 +253,13 @@ func TestFetchAndExtractREST_URLTemplate_MissingField(t *testing.T) {
 	)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "", got[0].URL, "URL must be empty when template key is missing")
 }
 
-func TestFetchAndExtractREST_NullNextFieldStopsPagination(t *testing.T) {
+func TestRestExtract_NullNextFieldStopsPagination(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{sampleEvent("only-event", "Only Event", "2026-04-01T19:00:00Z", "")}
@@ -276,13 +276,13 @@ func TestFetchAndExtractREST_NullNextFieldStopsPagination(t *testing.T) {
 	source := restSource(srv.URL, map[string]string{"name": "name", "start_date": "starts_on"}, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&requestCount), "must stop after one page when next is null")
 }
 
-func TestFetchAndExtractREST_EmptyResultsField(t *testing.T) {
+func TestRestExtract_EmptyResultsField(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,12 +294,12 @@ func TestFetchAndExtractREST_EmptyResultsField(t *testing.T) {
 	source := restSource(srv.URL, nil, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Empty(t, got, "empty results must return empty slice, not error")
 }
 
-func TestFetchAndExtractREST_CustomHeaders(t *testing.T) {
+func TestRestExtract_CustomHeaders(t *testing.T) {
 	t.Parallel()
 
 	var receivedAuthHeader atomic.Pointer[string]
@@ -327,7 +327,7 @@ func TestFetchAndExtractREST_CustomHeaders(t *testing.T) {
 	}
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	gotHeader := ""
 	if p := receivedAuthHeader.Load(); p != nil {
@@ -336,7 +336,7 @@ func TestFetchAndExtractREST_CustomHeaders(t *testing.T) {
 	assert.Equal(t, "Bearer test-token", gotHeader, "custom Authorization header must be sent")
 }
 
-func TestFetchAndExtractREST_IdentityMapping(t *testing.T) {
+func TestRestExtract_IdentityMapping(t *testing.T) {
 	t.Parallel()
 
 	// No field_map: identity mapping uses RawEvent field names as JSON keys.
@@ -361,7 +361,7 @@ func TestFetchAndExtractREST_IdentityMapping(t *testing.T) {
 	source := restSource(srv.URL, nil, "", 10) // nil field_map = identity
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 
@@ -375,7 +375,7 @@ func TestFetchAndExtractREST_IdentityMapping(t *testing.T) {
 	assert.Equal(t, "Details", e.Description)
 }
 
-func TestFetchAndExtractREST_MaxPagesZeroNoLimit(t *testing.T) {
+func TestRestExtract_MaxPagesZeroNoLimit(t *testing.T) {
 	t.Parallel()
 
 	requestCount := int32(0)
@@ -397,7 +397,7 @@ func TestFetchAndExtractREST_MaxPagesZeroNoLimit(t *testing.T) {
 	source := restSource(srv.URL, map[string]string{"name": "name"}, "", 0)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Len(t, got, 3, "must return all events when max_pages=0")
 	assert.Equal(t, int32(3), atomic.LoadInt32(&requestCount))
@@ -451,7 +451,7 @@ func TestMapRESTItemToRawEvent_URLTemplate(t *testing.T) {
 // Error-path tests
 // --------------------------------------------------------------------------
 
-func TestFetchAndExtractREST_NonOKStatus(t *testing.T) {
+func TestRestExtract_NonOKStatus(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -474,14 +474,14 @@ func TestFetchAndExtractREST_NonOKStatus(t *testing.T) {
 
 			source := restSource(srv.URL, nil, "", 10)
 			extractor := NewRestExtractor(zerolog.Nop())
-			_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+			_, err := extractor.Extract(t.Context(), source, &http.Client{})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), strconv.Itoa(tt.statusCode))
 		})
 	}
 }
 
-func TestFetchAndExtractREST_MalformedJSON(t *testing.T) {
+func TestRestExtract_MalformedJSON(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -492,11 +492,11 @@ func TestFetchAndExtractREST_MalformedJSON(t *testing.T) {
 
 	source := restSource(srv.URL, nil, "", 10)
 	extractor := NewRestExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.Error(t, err)
 }
 
-func TestFetchAndExtractREST_ContextCancellation(t *testing.T) {
+func TestRestExtract_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	// Server blocks until the request context is cancelled.
@@ -514,7 +514,7 @@ func TestFetchAndExtractREST_ContextCancellation(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := extractor.FetchAndExtractREST(ctx, source, &http.Client{})
+		_, err := extractor.Extract(ctx, source, &http.Client{})
 		done <- err
 	}()
 
@@ -526,7 +526,7 @@ func TestFetchAndExtractREST_ContextCancellation(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestFetchAndExtractREST_MissingResultsField(t *testing.T) {
+func TestRestExtract_MissingResultsField(t *testing.T) {
 	t.Parallel()
 
 	// Server returns valid JSON but the key configured as results_field ("results")
@@ -540,7 +540,7 @@ func TestFetchAndExtractREST_MissingResultsField(t *testing.T) {
 
 	source := restSource(srv.URL, nil, "", 10)
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Empty(t, got, "missing results_field should return empty slice, not error")
 }
@@ -627,9 +627,9 @@ func TestResolveNestedString(t *testing.T) {
 	}
 }
 
-// TestFetchAndExtractREST_NestedFieldMap tests dot-notation field_map values
-// through the full FetchAndExtractREST path (Eventbrite-style nested JSON).
-func TestFetchAndExtractREST_NestedFieldMap(t *testing.T) {
+// TestRestExtract_NestedFieldMap tests dot-notation field_map values
+// through the full Extract path (Eventbrite-style nested JSON).
+func TestRestExtract_NestedFieldMap(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -656,7 +656,7 @@ func TestFetchAndExtractREST_NestedFieldMap(t *testing.T) {
 	source := restSource(srv.URL, fieldMap, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 
@@ -671,7 +671,7 @@ func TestFetchAndExtractREST_NestedFieldMap(t *testing.T) {
 // Redirect-limiting tests
 // --------------------------------------------------------------------------
 
-func TestFetchAndExtractREST_RedirectLimited(t *testing.T) {
+func TestRestExtract_RedirectLimited(t *testing.T) {
 	t.Parallel()
 
 	var requestCount atomic.Int32
@@ -687,7 +687,7 @@ func TestFetchAndExtractREST_RedirectLimited(t *testing.T) {
 
 	source := restSource(srv.URL, nil, "", 10)
 	extractor := NewRestExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
 	// The request must fail (we never get a 200), but the critical assertion is
 	// that the server received at most maxRESTRedirects+1 requests (not infinite).
 	require.Error(t, err)
@@ -696,7 +696,7 @@ func TestFetchAndExtractREST_RedirectLimited(t *testing.T) {
 		"redirect chain must be stopped at maxRESTRedirects; got %d requests", got)
 }
 
-func TestFetchAndExtractREST_RedirectFollowed(t *testing.T) {
+func TestRestExtract_RedirectFollowed(t *testing.T) {
 	t.Parallel()
 
 	events := []map[string]any{
@@ -726,7 +726,7 @@ func TestFetchAndExtractREST_RedirectFollowed(t *testing.T) {
 	}
 	source := restSource(srv.URL, fieldMap, "", 10)
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1, "redirect must be followed and events returned")
 	assert.Equal(t, "Redirect Event", got[0].Name)
@@ -751,7 +751,7 @@ func bareArrayRestSource(endpoint string, fieldMap map[string]string, urlTemplat
 	}
 }
 
-func TestFetchAndExtractREST_BareArray(t *testing.T) {
+func TestRestExtract_BareArray(t *testing.T) {
 	t.Parallel()
 
 	requestCount := int32(0)
@@ -769,7 +769,7 @@ func TestFetchAndExtractREST_BareArray(t *testing.T) {
 	source := bareArrayRestSource(srv.URL, fieldMap, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 
@@ -781,7 +781,7 @@ func TestFetchAndExtractREST_BareArray(t *testing.T) {
 	assert.Equal(t, int32(1), atomic.LoadInt32(&requestCount), "bare array must make exactly 1 request (no pagination)")
 }
 
-func TestFetchAndExtractREST_BareArrayEmpty(t *testing.T) {
+func TestRestExtract_BareArrayEmpty(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -793,12 +793,12 @@ func TestFetchAndExtractREST_BareArrayEmpty(t *testing.T) {
 	source := bareArrayRestSource(srv.URL, nil, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	assert.Empty(t, got, "empty bare array must return empty slice, not error")
 }
 
-func TestFetchAndExtractREST_BareArrayWithURLTemplate(t *testing.T) {
+func TestRestExtract_BareArrayWithURLTemplate(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -815,14 +815,14 @@ func TestFetchAndExtractREST_BareArrayWithURLTemplate(t *testing.T) {
 	)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "Jazz Night", got[0].Name)
 	assert.Equal(t, "https://www.showpass.com/jazz-night", got[0].URL, "url_template must be applied to bare array items")
 }
 
-func TestFetchAndExtractREST_BareArrayWithFieldMap(t *testing.T) {
+func TestRestExtract_BareArrayWithFieldMap(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -843,7 +843,7 @@ func TestFetchAndExtractREST_BareArrayWithFieldMap(t *testing.T) {
 	source := bareArrayRestSource(srv.URL, fieldMap, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	got, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 
@@ -857,7 +857,7 @@ func TestFetchAndExtractREST_BareArrayWithFieldMap(t *testing.T) {
 	assert.Equal(t, "A description", e.Description)
 }
 
-func TestFetchAndExtractREST_BareArrayInvalidJSON(t *testing.T) {
+func TestRestExtract_BareArrayInvalidJSON(t *testing.T) {
 	t.Parallel()
 
 	// Server returns a JSON object, not a bare array.
@@ -870,12 +870,12 @@ func TestFetchAndExtractREST_BareArrayInvalidJSON(t *testing.T) {
 	source := bareArrayRestSource(srv.URL, nil, "", 10)
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.Error(t, err, "a JSON object body in bare array mode must return an error")
 	assert.Contains(t, err.Error(), "rest: decoding bare array from", "error must identify the bare array decode failure")
 }
 
-func TestFetchAndExtractREST_TimeoutMs(t *testing.T) {
+func TestRestExtract_TimeoutMs(t *testing.T) {
 	t.Parallel()
 
 	// Server sleeps longer than the configured timeout.
@@ -900,6 +900,6 @@ func TestFetchAndExtractREST_TimeoutMs(t *testing.T) {
 	}
 
 	extractor := NewRestExtractor(zerolog.Nop())
-	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.Error(t, err, "request should time out before the slow server responds")
 }

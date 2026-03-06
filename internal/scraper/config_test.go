@@ -689,6 +689,44 @@ func TestValidateConfigWithWarnings_FieldMap(t *testing.T) {
 			wantErr:      "", // must NOT be an error
 			wantWarnings: []string{`"strat_date"`},
 		},
+		{
+			name: "graphql field_map valid keys — no warning",
+			cfg: SourceConfig{
+				Name: "gql-valid-fieldmap",
+				URL:  "https://example.com",
+				Tier: 3,
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://api.example.com/graphql",
+					Query:      "{ events { title } }",
+					EventField: "events",
+					FieldMap: map[string]string{
+						"name":       "title",
+						"start_date": "dateStart",
+					},
+				},
+			},
+			wantErr:      "",
+			wantWarnings: nil,
+		},
+		{
+			name: "graphql field_map unrecognised key — warning",
+			cfg: SourceConfig{
+				Name: "gql-bad-fieldmap",
+				URL:  "https://example.com",
+				Tier: 3,
+				GraphQL: &GraphQLConfig{
+					Endpoint:   "https://api.example.com/graphql",
+					Query:      "{ events { title } }",
+					EventField: "events",
+					FieldMap: map[string]string{
+						"name":       "title",
+						"strat_date": "dateStart",
+					},
+				},
+			},
+			wantErr:      "",
+			wantWarnings: []string{`graphql.field_map: unrecognised key "strat_date"`},
+		},
 	}
 
 	for _, tt := range tests {
