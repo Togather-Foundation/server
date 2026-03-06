@@ -730,6 +730,52 @@ func TestRenderHTMLWithNetwork_Screenshot(t *testing.T) {
 	})
 }
 
+func TestRenderHTMLWithConfigAndNetwork_Screenshot(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, `<html><body><h1>Config Screenshot Test</h1></body></html>`)
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	t.Run("saves PNG with source config", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config-screenshot.png")
+		cfg := SourceConfig{
+			Name: "test-screenshot",
+			URL:  srv.URL + "/",
+			Headless: HeadlessConfig{
+				WaitSelector:  "body",
+				WaitTimeoutMs: 5000,
+			},
+		}
+		html, _, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg, path)
+		if err != nil {
+			t.Fatalf("RenderHTMLWithConfigAndNetwork returned error: %v", err)
+		}
+		if html == "" {
+			t.Error("expected non-empty HTML")
+		}
+
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("screenshot file not found: %v", readErr)
+		}
+		if len(data) == 0 {
+			t.Error("screenshot file is empty")
+		}
+		// PNG magic bytes
+		if len(data) < 8 || data[0] != 0x89 || data[1] != 0x50 || data[2] != 0x4E || data[3] != 0x47 {
+			t.Errorf("screenshot file does not have PNG magic bytes, got first 4 bytes: %x", data[:4])
+		}
+	})
+}
+
 // --- RodExtractor iframe extraction tests (require headless browser) ---
 
 // parentPageHTML is served at / and contains a same-origin iframe.

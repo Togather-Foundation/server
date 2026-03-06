@@ -135,11 +135,6 @@ Examples:
 			return err
 		}
 
-		// Report screenshot path if one was saved.
-		if scrapeCaptureScreenshot != "" {
-			logger.Info().Str("path", scrapeCaptureScreenshot).Msg("screenshot saved")
-		}
-
 		return outputCapture(logger, captureURL, html, networkRequests)
 	},
 }

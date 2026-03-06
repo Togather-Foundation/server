@@ -470,6 +470,25 @@ func (e *RodExtractor) captureScreenshot(page *rod.Page, sourceName string) {
 	}
 }
 
+// saveScreenshot saves a PNG screenshot to a user-specified path. Used by
+// diagnostic CLI flags (e.g. scrape capture --screenshot). Errors are non-fatal:
+// a warning is logged but the caller's render continues.
+func (e *RodExtractor) saveScreenshot(page *rod.Page, path string) {
+	if path == "" {
+		return
+	}
+	data, err := page.Screenshot(false, nil)
+	if err != nil {
+		e.logger.Warn().Err(err).Str("path", path).Msg("rod: screenshot capture failed")
+		return
+	}
+	if writeErr := os.WriteFile(path, data, 0o644); writeErr != nil {
+		e.logger.Warn().Err(writeErr).Str("path", path).Msg("rod: failed to write screenshot")
+		return
+	}
+	e.logger.Info().Str("path", path).Msg("rod: screenshot saved")
+}
+
 // parseInterceptedBody parses a captured JSON response body using the
 // InterceptConfig and returns the mapped RawEvents. Returns nil on parse error
 // (non-fatal; the caller already has the DOM events as a fallback).
@@ -1005,15 +1024,7 @@ func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSe
 			Msg("rod: RenderHTMLWithNetwork wait selector timed out, continuing anyway")
 	}
 
-	if screenshotPath != "" {
-		if data, ssErr := page.Screenshot(false, nil); ssErr != nil {
-			e.logger.Warn().Err(ssErr).Str("path", screenshotPath).Msg("rod: screenshot capture failed")
-		} else if writeErr := os.WriteFile(screenshotPath, data, 0o644); writeErr != nil {
-			e.logger.Warn().Err(writeErr).Str("path", screenshotPath).Msg("rod: failed to write screenshot")
-		} else {
-			e.logger.Info().Str("path", screenshotPath).Msg("rod: screenshot saved")
-		}
-	}
+	e.saveScreenshot(page, screenshotPath)
 
 	html, err := page.HTML()
 	if err != nil {
@@ -1127,15 +1138,7 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 		waitIdle()
 	}
 
-	if screenshotPath != "" {
-		if data, ssErr := page.Screenshot(false, nil); ssErr != nil {
-			e.logger.Warn().Err(ssErr).Str("path", screenshotPath).Msg("rod: screenshot capture failed")
-		} else if writeErr := os.WriteFile(screenshotPath, data, 0o644); writeErr != nil {
-			e.logger.Warn().Err(writeErr).Str("path", screenshotPath).Msg("rod: failed to write screenshot")
-		} else {
-			e.logger.Info().Str("path", screenshotPath).Msg("rod: screenshot saved")
-		}
-	}
+	e.saveScreenshot(page, screenshotPath)
 
 	html, htmlErr := page.HTML()
 	if htmlErr != nil {
