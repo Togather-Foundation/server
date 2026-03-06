@@ -3,10 +3,11 @@ package scraper
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	dps "github.com/markusmobius/go-dateparser"
 )
 
 // assembleDateTimeParts takes a list of text strings extracted from CSS
@@ -14,14 +15,15 @@ import (
 // and end datetimes. Each string may contain a date, a time, both, or a
 // date range. The function classifies each part and combines them.
 //
-// Supported input patterns:
+// Supported input patterns (non-exhaustive — go-dateparser handles 200+ locales):
 //   - "Thu 5th March"           → date-only
 //   - "9:30 PM"                 → time-only
 //   - "Thu 5th March 9:30 PM"   → date+time
 //   - "March 5, 2026"           → date-only with year
 //   - "2026-03-05"              → ISO date
 //   - "2026-03-05T21:30:00"     → ISO datetime
-//   - "March 5-7"               → date range (future)
+//   - "Feb 3 - Mar 8, 2026"    → date range (split on dash/en-dash)
+//   - "March 5-7"              → short date range
 //
 // When year is missing, the current year is assumed. If the resulting date
 // is more than 30 days in the past, the next year is used instead.
@@ -58,24 +60,42 @@ func assembleDateTimeParts(parts []string, timezone string) (startDate, endDate 
 			return strings.TrimSpace(part), ""
 		}
 
-		// Try to extract time first (more specific pattern).
-		if t, ok := parseTimeText(part); ok {
-			// Check if there's also a date in this text.
-			dateText := removeTimePattern(part)
-			dateText = normalizeWhitespace(dateText)
-			if dateText != "" {
-				if d, ok := parseDateText(dateText); ok {
-					dates = append(dates, d)
+		// Try splitting date ranges ("Feb 3 - Mar 8, 2026", "March 5-7").
+		if rangeParts := splitDateRange(part); len(rangeParts) == 2 {
+			for _, rp := range rangeParts {
+				d, t, ok := parseFuzzy(rp, loc)
+				if ok {
+					if d != nil {
+						dates = append(dates, *d)
+					}
+					if t != nil {
+						times = append(times, *t)
+					}
 				}
 			}
-			times = append(times, t)
 			continue
 		}
 
-		// Try date-only parse.
-		if d, ok := parseDateText(part); ok {
-			dates = append(dates, d)
-			continue
+		// Single value — parse via go-dateparser.
+		d, t, ok := parseFuzzy(part, loc)
+		if ok {
+			if d != nil {
+				dates = append(dates, *d)
+			}
+			if t != nil {
+				times = append(times, *t)
+			}
+		}
+	}
+
+	// Propagate explicit years across date ranges: if one date in a pair
+	// has an explicit year and the other doesn't, copy the year forward.
+	// This handles "Feb 3 - Mar 8, 2026" where "Feb 3" has no year.
+	if len(dates) == 2 {
+		if dates[0].year == 0 && dates[1].year != 0 {
+			dates[0].year = dates[1].year
+		} else if dates[1].year == 0 && dates[0].year != 0 {
+			dates[1].year = dates[0].year
 		}
 	}
 
@@ -122,6 +142,191 @@ type parsedTime struct {
 	hour   int
 	minute int
 }
+
+// ── go-dateparser integration ─────────────────────────────────────────
+
+// yearPattern detects whether the input string contains an explicit 4-digit
+// year. When absent, parseFuzzy sets parsedDate.year = 0 so the caller's
+// inferYear logic can apply its own heuristic (current year, bump if >30
+// days in the past).
+var yearPattern = regexp.MustCompile(`\b(19|20)\d{2}\b`)
+
+// parseFuzzy uses go-dateparser to extract a date and/or time from a
+// human-readable string. Returns pointers to parsedDate and parsedTime
+// (nil if not found). The ok return is true if anything was extracted.
+//
+// Only calendar components (year, month, day, hour, minute) are extracted
+// from go-dateparser's result — timezone handling is left to the caller's
+// buildDateTime / loadTimezone logic.
+func parseFuzzy(s string, loc *time.Location) (d *parsedDate, t *parsedTime, ok bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil, false
+	}
+
+	cfg := &dps.Configuration{
+		// Use the venue timezone so go-dateparser resolves "today/tomorrow"
+		// relative to the venue, but we only extract the calendar fields.
+		DefaultTimezone: loc,
+		CurrentTime:     time.Now().In(loc),
+	}
+
+	dt, err := dps.Parse(cfg, s)
+	if err != nil {
+		return nil, nil, false
+	}
+
+	// Extract calendar components in the venue timezone so DST boundaries
+	// don't shift the date/time values we pull out.
+	local := dt.Time.In(loc)
+
+	// Detect if the input is a time-only string (e.g. "9:30 PM", "21:30").
+	// In this case go-dateparser fills in today's date, but we should only
+	// return the time component so the assembly logic doesn't get a spurious
+	// date.
+	timeOnly := isTimeOnly(s)
+
+	hasTime := hasTimePattern(s) ||
+		(local.Hour() != 0 || local.Minute() != 0)
+
+	if timeOnly {
+		if !hasTime {
+			return nil, nil, false
+		}
+		pt := parsedTime{
+			hour:   local.Hour(),
+			minute: local.Minute(),
+		}
+		return nil, &pt, true
+	}
+
+	pd := parsedDate{
+		month: local.Month(),
+		day:   local.Day(),
+	}
+
+	// If the input contained an explicit year, use it. Otherwise leave
+	// year = 0 so inferYear applies the "current year, bump if stale" rule.
+	if yearPattern.MatchString(s) {
+		pd.year = local.Year()
+	}
+
+	if hasTime {
+		pt := parsedTime{
+			hour:   local.Hour(),
+			minute: local.Minute(),
+		}
+		return &pd, &pt, true
+	}
+
+	return &pd, nil, true
+}
+
+// timeIndicator detects explicit time patterns in text. Used to distinguish
+// "date with midnight time" from "date without time" since go-dateparser
+// returns 00:00 for both.
+var timeIndicator = regexp.MustCompile(
+	`(?i)(\d{1,2}:\d{2}|\d{1,2}\s*(?:AM|PM|a\.m\.|p\.m\.))`,
+)
+
+// hasTimePattern reports whether s contains an explicit time reference.
+func hasTimePattern(s string) bool {
+	return timeIndicator.MatchString(s)
+}
+
+// isTimeOnly reports whether s contains only a time (no date content).
+// Examples: "9:30 PM", "21:30", "7:00 PM" → true.
+// Examples: "March 5 9:30 PM", "Thu 5th March" → false.
+func isTimeOnly(s string) bool {
+	if !hasTimePattern(s) {
+		return false
+	}
+	// Strip the time pattern and see if anything date-like remains.
+	stripped := timeIndicator.ReplaceAllString(s, "")
+	stripped = strings.TrimSpace(stripped)
+	// If nothing substantial remains, or only non-date words remain
+	// (e.g. "Doors open at ... sharp"), treat as time-only.
+	// Check for month names or digit sequences that look like dates.
+	if stripped == "" {
+		return true
+	}
+	// If what remains contains a month name or date-like number, it's not time-only.
+	return !monthNamePattern.MatchString(stripped) && !yearPattern.MatchString(stripped) &&
+		!dateDigitPattern.MatchString(stripped)
+}
+
+// dateDigitPattern matches standalone day-of-month numbers (1-31) that
+// aren't part of a time pattern.
+var dateDigitPattern = regexp.MustCompile(`\b([1-9]|[12]\d|3[01])\b`)
+
+// ── Date range splitting ──────────────────────────────────────────────
+
+// rangeSeparator matches " - ", " – ", " to ", or a bare dash between
+// date-like fragments. The negative lookbehind/lookahead prevents splitting
+// on dashes inside ISO dates (e.g. "2026-03-05").
+var rangeSeparator = regexp.MustCompile(
+	`\s+[-–]\s+|\s+to\s+`,
+)
+
+// shortRangePattern matches compact ranges like "March 5-7" or "March 5–7"
+// where a month name is followed by day-dash-day.
+var shortRangePattern = regexp.MustCompile(
+	`(?i)((?:January|February|March|April|May|June|July|August|September|October|November|December|` +
+		`Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2})(?:st|nd|rd|th)?\s*[-–]\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?`,
+)
+
+// splitDateRange splits a text containing a date range into two parts.
+// Returns nil if the text is not a date range.
+//
+// Handles:
+//   - "Feb 3, 2026 - Mar 8, 2026"  → ["Feb 3, 2026", "Mar 8, 2026"]
+//   - "Feb 3 – Mar 8, 2026"        → ["Feb 3", "Mar 8, 2026"]
+//   - "March 5-7"                   → ["March 5", "March 7"]
+//   - "March 5-7, 2026"            → ["March 5, 2026", "March 7, 2026"]
+func splitDateRange(s string) []string {
+	// Try short range first: "March 5-7" or "March 5-7, 2026"
+	if m := shortRangePattern.FindStringSubmatch(s); m != nil {
+		startPart := m[1] // e.g. "March 5"
+		endDay := m[2]    // e.g. "7"
+		year := m[3]      // e.g. "2026" or ""
+
+		// Extract month name from the start for the end date.
+		monthName := extractMonthName(startPart)
+		endPart := monthName + " " + endDay
+
+		if year != "" {
+			startPart += ", " + year
+			endPart += ", " + year
+		}
+		return []string{startPart, endPart}
+	}
+
+	// Try long-form range: "Feb 3 - Mar 8, 2026"
+	parts := rangeSeparator.Split(s, 2)
+	if len(parts) == 2 {
+		left := strings.TrimSpace(parts[0])
+		right := strings.TrimSpace(parts[1])
+		if left != "" && right != "" {
+			return []string{left, right}
+		}
+	}
+
+	return nil
+}
+
+// monthNamePattern extracts the first month name from a string.
+var monthNamePattern = regexp.MustCompile(
+	`(?i)(January|February|March|April|May|June|July|August|September|October|November|December|` +
+		`Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)`,
+)
+
+// extractMonthName returns the first month name found in s, or "".
+func extractMonthName(s string) string {
+	m := monthNamePattern.FindString(s)
+	return m
+}
+
+// ── Assembly helpers ──────────────────────────────────────────────────
 
 // buildDateTime constructs a time.Time from the idx-th date/time pair.
 // For idx=0, uses first date + first time. For idx=1, uses second date (or
@@ -183,176 +388,7 @@ func loadTimezone(tz string) *time.Location {
 	return loc
 }
 
-// ── Time parsing ──────────────────────────────────────────────────────
-
-// timePattern matches "9:30 PM", "21:30", "8:30PM", "12:00 am", "9:30 p.m.", etc.
-var timePattern = regexp.MustCompile(
-	`(?i)\b(\d{1,2}):(\d{2})\s*(AM|PM|am|pm|a\.m\.|p\.m\.)?(?:\b|$)`,
-)
-
-// parseTimeText extracts a time from a text string.
-func parseTimeText(s string) (parsedTime, bool) {
-	m := timePattern.FindStringSubmatch(s)
-	if m == nil {
-		return parsedTime{}, false
-	}
-
-	hour, _ := strconv.Atoi(m[1])
-	minute, _ := strconv.Atoi(m[2])
-	ampm := strings.ToUpper(strings.ReplaceAll(m[3], ".", ""))
-
-	if ampm == "PM" && hour < 12 {
-		hour += 12
-	} else if ampm == "AM" && hour == 12 {
-		hour = 0
-	}
-
-	if hour > 23 || minute > 59 {
-		return parsedTime{}, false
-	}
-
-	return parsedTime{hour: hour, minute: minute}, true
-}
-
-// removeTimePattern strips the time portion from a string, leaving date text.
-func removeTimePattern(s string) string {
-	return timePattern.ReplaceAllString(s, "")
-}
-
-// ── Date parsing ──────────────────────────────────────────────────────
-
-// monthNames maps lowercase month names and abbreviations to time.Month.
-var monthNames = map[string]time.Month{
-	"january": time.January, "jan": time.January,
-	"february": time.February, "feb": time.February,
-	"march": time.March, "mar": time.March,
-	"april": time.April, "apr": time.April,
-	"may":  time.May,
-	"june": time.June, "jun": time.June,
-	"july": time.July, "jul": time.July,
-	"august": time.August, "aug": time.August,
-	"september": time.September, "sep": time.September, "sept": time.September,
-	"october": time.October, "oct": time.October,
-	"november": time.November, "nov": time.November,
-	"december": time.December, "dec": time.December,
-}
-
-// ordinalSuffix strips "st", "nd", "rd", "th" from a day number string.
-var ordinalSuffix = regexp.MustCompile(`(\d+)(?:st|nd|rd|th)\b`)
-
-// parseDateText attempts to parse a human-readable date string.
-// Handles: "Thu 5th March", "March 5, 2026", "5 March 2026", "2026-03-05", etc.
-func parseDateText(s string) (parsedDate, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return parsedDate{}, false
-	}
-
-	// Try ISO date first: 2026-03-05
-	if d, ok := parseISODate(s); ok {
-		return d, true
-	}
-
-	// Strip ordinal suffixes: "5th" → "5"
-	cleaned := ordinalSuffix.ReplaceAllString(s, "$1")
-
-	// Remove day-of-week prefixes: "Thu", "Friday", etc.
-	cleaned = removeDayOfWeek(cleaned)
-	cleaned = normalizeWhitespace(cleaned)
-
-	// Remove stray punctuation (commas, periods) but keep hyphens and spaces.
-	cleaned = removePunctuation(cleaned)
-
-	// Tokenize.
-	tokens := strings.Fields(cleaned)
-	if len(tokens) == 0 {
-		return parsedDate{}, false
-	}
-
-	var month time.Month
-	var day, year int
-	var foundMonth, foundDay, foundYear bool
-
-	for _, tok := range tokens {
-		tok = strings.ToLower(tok)
-
-		// Check if token is a month name.
-		if m, ok := monthNames[tok]; ok && !foundMonth {
-			month = m
-			foundMonth = true
-			continue
-		}
-
-		// Check if token is a number.
-		n, err := strconv.Atoi(tok)
-		if err != nil {
-			continue
-		}
-
-		// Heuristic: numbers > 31 are years, 1-31 are days.
-		if n > 31 && !foundYear {
-			year = n
-			foundYear = true
-		} else if n >= 1 && n <= 31 && !foundDay {
-			day = n
-			foundDay = true
-		}
-	}
-
-	if !foundMonth || !foundDay {
-		return parsedDate{}, false
-	}
-
-	result := parsedDate{month: month, day: day}
-	if foundYear {
-		result.year = year
-	}
-	return result, true
-}
-
-// parseISODate parses "2026-03-05" or "2026-03-05T..." format.
-func parseISODate(s string) (parsedDate, bool) {
-	// Match YYYY-MM-DD at the start.
-	if len(s) < 10 {
-		return parsedDate{}, false
-	}
-	if s[4] != '-' || s[7] != '-' {
-		return parsedDate{}, false
-	}
-
-	year, err1 := strconv.Atoi(s[0:4])
-	monthNum, err2 := strconv.Atoi(s[5:7])
-	day, err3 := strconv.Atoi(s[8:10])
-	if err1 != nil || err2 != nil || err3 != nil {
-		return parsedDate{}, false
-	}
-	if monthNum < 1 || monthNum > 12 || day < 1 || day > 31 {
-		return parsedDate{}, false
-	}
-
-	return parsedDate{year: year, month: time.Month(monthNum), day: day}, true
-}
-
-// dayOfWeekPattern matches day-of-week names at the start of strings.
-var dayOfWeekPattern = regexp.MustCompile(
-	`(?i)^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|` +
-		`Mon|Tue|Tues|Wed|Weds|Thu|Thur|Thurs|Fri|Sat|Sun)\s*`,
-)
-
-// removeDayOfWeek strips a leading day-of-week name from a string.
-func removeDayOfWeek(s string) string {
-	return dayOfWeekPattern.ReplaceAllString(s, "")
-}
-
-// removePunctuation removes commas and periods from a string.
-func removePunctuation(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == ',' || r == '.' {
-			return -1
-		}
-		return r
-	}, s)
-}
+// ── Utility functions ─────────────────────────────────────────────────
 
 // normalizeWhitespace collapses multiple whitespace chars to a single space
 // and trims leading/trailing whitespace.

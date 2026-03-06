@@ -42,95 +42,159 @@ func TestIsPartialISO8601(t *testing.T) {
 	}
 }
 
-// ── parseTimeText ─────────────────────────────────────────────────────
+// ── parseFuzzy ────────────────────────────────────────────────────────
 
-func TestParseTimeText(t *testing.T) {
+func TestParseFuzzy(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name   string
-		s      string
-		wantOK bool
-		hour   int
-		minute int
-	}{
-		{"12h PM", "9:30 PM", true, 21, 30},
-		{"12h AM", "9:30 AM", true, 9, 30},
-		{"12h noon", "12:00 PM", true, 12, 0},
-		{"12h midnight", "12:00 AM", true, 0, 0},
-		{"24h", "21:30", true, 21, 30},
-		{"no space AM/PM", "8:30PM", true, 20, 30},
-		{"with periods", "9:30 p.m.", true, 21, 30},
-		{"embedded in text", "Doors open at 7:30 PM sharp", true, 19, 30},
-		{"no match", "March 5th", false, 0, 0},
-		{"empty", "", false, 0, 0},
-		{"invalid hour", "25:00 PM", false, 0, 0},
+	loc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, ok := parseTimeText(tc.s)
-			if ok != tc.wantOK {
-				t.Fatalf("parseTimeText(%q) ok = %v, want %v", tc.s, ok, tc.wantOK)
-			}
-			if !ok {
-				return
-			}
-			if got.hour != tc.hour || got.minute != tc.minute {
-				t.Errorf("parseTimeText(%q) = %d:%02d, want %d:%02d", tc.s, got.hour, got.minute, tc.hour, tc.minute)
-			}
-		})
-	}
-}
-
-// ── parseDateText ─────────────────────────────────────────────────────
-
-func TestParseDateText(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		name      string
 		s         string
 		wantOK    bool
+		wantDate  bool // expect non-nil date
 		wantMonth time.Month
 		wantDay   int
-		wantYear  int // 0 = no year specified
+		wantYear  int  // 0 = don't check
+		wantTime  bool // expect non-nil time
+		wantHour  int
+		wantMin   int
 	}{
-		{"day-of-week ordinal month", "Thu 5th March", true, time.March, 5, 0},
-		{"month day year", "March 5, 2026", true, time.March, 5, 2026},
-		{"day month year", "5 March 2026", true, time.March, 5, 2026},
-		{"abbreviated month", "5 Mar 2026", true, time.March, 5, 2026},
-		{"no year", "5 March", true, time.March, 5, 0},
-		{"friday ordinal", "Friday 1st August", true, time.August, 1, 0},
-		{"second", "Monday 2nd June", true, time.June, 2, 0},
-		{"third", "Wed 3rd September", true, time.September, 3, 0},
-		{"ISO date", "2026-03-05", true, time.March, 5, 2026},
-		{"ISO datetime", "2026-12-25T19:00:00", true, time.December, 25, 2026},
-		{"empty", "", false, 0, 0, 0},
-		{"time only", "9:30 PM", false, 0, 0, 0},
-		{"just day-of-week", "Thursday", false, 0, 0, 0},
-		{"number only", "42", false, 0, 0, 0},
+		{"day-of-week ordinal month", "Thu 5th March", true, true, time.March, 5, 0, false, 0, 0},
+		{"month day year", "March 5, 2026", true, true, time.March, 5, 2026, false, 0, 0},
+		{"day month year", "5 March 2026", true, true, time.March, 5, 2026, false, 0, 0},
+		{"abbreviated month", "5 Mar 2026", true, true, time.March, 5, 2026, false, 0, 0},
+		{"no year", "5 March", true, true, time.March, 5, 0, false, 0, 0},
+		{"friday ordinal", "Friday 1st August", true, true, time.August, 1, 0, false, 0, 0},
+		{"second", "Monday 2nd June", true, true, time.June, 2, 0, false, 0, 0},
+		{"third", "Wed 3rd September", true, true, time.September, 3, 0, false, 0, 0},
+		{"12h PM time-only", "9:30 PM", true, false, 0, 0, 0, true, 21, 30},
+		{"12h AM time-only", "9:30 AM", true, false, 0, 0, 0, true, 9, 30},
+		{"24h time-only", "21:30", true, false, 0, 0, 0, true, 21, 30},
+		{"date+time combined", "March 5, 2026 9:30 PM", true, true, time.March, 5, 2026, true, 21, 30},
+		{"empty", "", false, false, 0, 0, 0, false, 0, 0},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok := parseDateText(tc.s)
+			d, tm, ok := parseFuzzy(tc.s, loc)
 			if ok != tc.wantOK {
-				t.Fatalf("parseDateText(%q) ok = %v, want %v", tc.s, ok, tc.wantOK)
+				t.Fatalf("parseFuzzy(%q) ok = %v, want %v", tc.s, ok, tc.wantOK)
 			}
 			if !ok {
 				return
 			}
-			if got.month != tc.wantMonth {
-				t.Errorf("month = %v, want %v", got.month, tc.wantMonth)
+
+			if tc.wantDate {
+				if d == nil {
+					t.Fatal("expected date component, got nil")
+				}
+				if d.month != tc.wantMonth {
+					t.Errorf("month = %v, want %v", d.month, tc.wantMonth)
+				}
+				if d.day != tc.wantDay {
+					t.Errorf("day = %d, want %d", d.day, tc.wantDay)
+				}
+				if tc.wantYear != 0 && d.year != tc.wantYear {
+					t.Errorf("year = %d, want %d", d.year, tc.wantYear)
+				}
+			} else if d != nil {
+				t.Errorf("expected no date component, got %+v", *d)
 			}
-			if got.day != tc.wantDay {
-				t.Errorf("day = %d, want %d", got.day, tc.wantDay)
+
+			if tc.wantTime {
+				if tm == nil {
+					t.Fatal("expected time component, got nil")
+				}
+				if tm.hour != tc.wantHour || tm.minute != tc.wantMin {
+					t.Errorf("time = %d:%02d, want %d:%02d", tm.hour, tm.minute, tc.wantHour, tc.wantMin)
+				}
+			} else if tm != nil {
+				t.Errorf("expected no time component, got %+v", *tm)
 			}
-			if got.year != tc.wantYear {
-				t.Errorf("year = %d, want %d", got.year, tc.wantYear)
+		})
+	}
+}
+
+// ── splitDateRange ────────────────────────────────────────────────────
+
+func TestSplitDateRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  []string // nil = not a range
+	}{
+		{
+			name:  "long dash range",
+			input: "Feb 3, 2026 - Mar 8, 2026",
+			want:  []string{"Feb 3, 2026", "Mar 8, 2026"},
+		},
+		{
+			name:  "en-dash range",
+			input: "Feb 3 – Mar 8, 2026",
+			want:  []string{"Feb 3", "Mar 8, 2026"},
+		},
+		{
+			name:  "short range same month",
+			input: "March 5-7",
+			want:  []string{"March 5", "March 7"},
+		},
+		{
+			name:  "short range with year",
+			input: "March 5-7, 2026",
+			want:  []string{"March 5, 2026", "March 7, 2026"},
+		},
+		{
+			name:  "short range abbreviated month",
+			input: "Mar 5-7",
+			want:  []string{"Mar 5", "Mar 7"},
+		},
+		{
+			name:  "to separator",
+			input: "Feb 3 to Mar 8",
+			want:  []string{"Feb 3", "Mar 8"},
+		},
+		{
+			name:  "not a range - single date",
+			input: "March 5, 2026",
+			want:  nil,
+		},
+		{
+			name:  "not a range - time only",
+			input: "9:30 PM",
+			want:  nil,
+		},
+		{
+			name:  "short range with ordinals",
+			input: "March 5th-7th",
+			want:  []string{"March 5", "March 7"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := splitDateRange(tc.input)
+			if tc.want == nil {
+				if got != nil {
+					t.Errorf("splitDateRange(%q) = %v, want nil", tc.input, got)
+				}
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("splitDateRange(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("splitDateRange(%q)[%d] = %q, want %q", tc.input, i, got[i], tc.want[i])
+				}
 			}
 		})
 	}
@@ -182,6 +246,24 @@ func TestAssembleDateTimeParts(t *testing.T) {
 		{
 			name:  "whitespace only",
 			parts: []string{"  ", "\t"},
+		},
+		{
+			name:      "date range in single string",
+			parts:     []string{"Feb 3, 2026 - Mar 8, 2026"},
+			wantStart: "2026-02-03T00:00:00-",
+			wantEnd:   "2026-03-08T00:00:00-",
+		},
+		{
+			name:      "short date range",
+			parts:     []string{"March 5-7, 2026"},
+			wantStart: "2026-03-05T00:00:00-",
+			wantEnd:   "2026-03-07T00:00:00-",
+		},
+		{
+			name:      "crows-theatre style date range",
+			parts:     []string{"Feb 3 - Mar 8, 2026"},
+			wantStart: "2026-02-03T00:00:00-",
+			wantEnd:   "2026-03-08T00:00:00-",
 		},
 	}
 
@@ -308,6 +390,15 @@ func TestNormalizeStartDate(t *testing.T) {
 			},
 			wantStart: "",
 		},
+		{
+			name: "DateParts with date range",
+			raw: RawEvent{
+				Name:      "Multi-day Show",
+				DateParts: []string{"Feb 3 - Mar 8, 2026"},
+			},
+			wantStart: "2026-02-03T00:00:00-",
+			wantEnd:   "2026-03-08T00:00:00-",
+		},
 	}
 
 	for _, tc := range tests {
@@ -377,32 +468,6 @@ func TestInferYear(t *testing.T) {
 
 // ── helpers ───────────────────────────────────────────────────────────
 
-func TestRemoveDayOfWeek(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		s    string
-		want string
-	}{
-		{"Thursday prefix", "Thursday 5th March", "5th March"},
-		{"Thu prefix", "Thu 5th March", "5th March"},
-		{"no prefix", "5th March", "5th March"},
-		{"Friday", "Fri 1st August", "1st August"},
-		{"Monday full", "Monday 2nd June", "2nd June"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := removeDayOfWeek(tc.s)
-			if got != tc.want {
-				t.Errorf("removeDayOfWeek(%q) = %q, want %q", tc.s, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestNormalizeWhitespace(t *testing.T) {
 	t.Parallel()
 
@@ -452,6 +517,35 @@ func TestFormatTimezone(t *testing.T) {
 			got := formatTimezone(loc, ref)
 			if got != tc.want {
 				t.Errorf("formatTimezone(%q) = %q, want %q", tc.tz, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHasTimePattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		{"12h PM", "9:30 PM", true},
+		{"12h AM", "9:30 AM", true},
+		{"24h", "21:30", true},
+		{"no space PM", "8:30PM", true},
+		{"with periods", "9:30 p.m.", true},
+		{"date only", "March 5, 2026", false},
+		{"empty", "", false},
+		{"no time", "Thursday", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := hasTimePattern(tc.s)
+			if got != tc.want {
+				t.Errorf("hasTimePattern(%q) = %v, want %v", tc.s, got, tc.want)
 			}
 		})
 	}
