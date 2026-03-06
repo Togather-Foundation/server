@@ -406,9 +406,15 @@ func RobotsAllowed(ctx context.Context, rawURL string, userAgent string, client 
 			Timeout: robotsTimeout,
 		}
 	}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	// Create a local client copy to avoid mutating the caller's client.
+	localClient := &http.Client{
+		Transport: client.Transport,
+		Timeout:   client.Timeout,
+	}
+	localClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
+	client = localClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL.String(), nil)
 	if err != nil {
 		return false, fmt.Errorf("building robots.txt request: %w", err)
