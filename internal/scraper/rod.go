@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -755,6 +756,339 @@ func (e *RodExtractor) RenderHTML(ctx context.Context, rawURL, waitSelector stri
 	}
 
 	return html, nil
+}
+
+// NetworkRequest records a single HTTP request/response observed during
+// headless page rendering. Used for diagnostic output (scrape capture --network).
+type NetworkRequest struct {
+	URL          string `json:"url"`
+	Method       string `json:"method"`
+	ResourceType string `json:"resource_type"` // "XHR", "Fetch", "Script", "Document", etc.
+	Status       int    `json:"status"`        // HTTP status code (0 if no response yet)
+	ContentType  string `json:"content_type"`  // Response Content-Type header
+	BodySize     int    `json:"body_size"`     // Response body size in bytes (from EncodedDataLength)
+	TimingMs     int    `json:"timing_ms"`     // Time from request start to response received (ms), 0 if unknown
+	IsAPI        bool   `json:"is_api"`        // True if this looks like an API call (XHR/Fetch + JSON content type)
+}
+
+// isAPIRequest returns true when the resource type is XHR or Fetch AND the
+// content type contains "json". Extracted as a package-level helper for easy
+// unit testing.
+func isAPIRequest(resourceType, contentType string) bool {
+	rt := strings.ToUpper(resourceType)
+	isXHROrFetch := rt == "XHR" || rt == "FETCH"
+	return isXHROrFetch && strings.Contains(strings.ToLower(contentType), "json")
+}
+
+// networkCollector accumulates CDP network events in a thread-safe way and
+// builds a []NetworkRequest slice once page load is complete.
+type networkCollector struct {
+	mu       sync.Mutex
+	requests map[proto.NetworkRequestID]*NetworkRequest // keyed by CDP request ID
+}
+
+func newNetworkCollector() *networkCollector {
+	return &networkCollector{
+		requests: make(map[proto.NetworkRequestID]*NetworkRequest),
+	}
+}
+
+// onRequest handles a NetworkRequestWillBeSent event.
+func (nc *networkCollector) onRequest(e *proto.NetworkRequestWillBeSent) {
+	if e.Request == nil {
+		return
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+
+	nc.requests[e.RequestID] = &NetworkRequest{
+		URL:          e.Request.URL,
+		Method:       e.Request.Method,
+		ResourceType: string(e.Type),
+	}
+}
+
+// onResponse handles a NetworkResponseReceived event.
+func (nc *networkCollector) onResponse(e *proto.NetworkResponseReceived) {
+	if e.Response == nil {
+		return
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+
+	req, ok := nc.requests[e.RequestID]
+	if !ok {
+		// Response without a prior request — create a new entry.
+		req = &NetworkRequest{
+			URL:          e.Response.URL,
+			ResourceType: string(e.Type),
+		}
+		nc.requests[e.RequestID] = req
+	}
+
+	req.Status = e.Response.Status
+	req.ContentType = e.Response.MIMEType
+	req.BodySize = int(e.Response.EncodedDataLength)
+
+	// Compute timing from ResourceTiming if available.
+	if t := e.Response.Timing; t != nil {
+		// ReceiveHeadersEnd is milliseconds from requestTime baseline.
+		if t.ReceiveHeadersEnd > 0 {
+			req.TimingMs = int(t.ReceiveHeadersEnd)
+		}
+	}
+
+	req.IsAPI = isAPIRequest(req.ResourceType, req.ContentType)
+}
+
+// snapshot returns a copy of the collected requests as a slice.
+func (nc *networkCollector) snapshot() []NetworkRequest {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+
+	out := make([]NetworkRequest, 0, len(nc.requests))
+	for _, r := range nc.requests {
+		out = append(out, *r)
+	}
+	return out
+}
+
+// enableNetworkCapture enables the Network domain on the page and subscribes to
+// request/response events. Returns a cleanup function and the collector.
+// Call the cleanup function after navigation completes to stop listening.
+func enableNetworkCapture(page *rod.Page) (*networkCollector, func()) {
+	restore := page.EnableDomain(&proto.NetworkEnable{})
+	nc := newNetworkCollector()
+
+	// Use a cancellable page copy so the EachEvent goroutine can be stopped
+	// cleanly without waiting for the browser to close.
+	listenerPage, cancelListener := page.WithCancel()
+	wait := listenerPage.EachEvent(
+		func(e *proto.NetworkRequestWillBeSent) { nc.onRequest(e) },
+		func(e *proto.NetworkResponseReceived) { nc.onResponse(e) },
+	)
+	// Run the event loop in background. It will exit when cancelListener is called.
+	go wait()
+
+	cleanup := func() {
+		cancelListener()
+		restore()
+	}
+	return nc, cleanup
+}
+
+// RenderHTMLWithNetwork renders a page via headless browser and also captures
+// all network activity observed during rendering. Returns the HTML, the captured
+// network requests, and any error.
+//
+// This is the diagnostic variant of RenderHTML — used by `scrape capture --network`
+// to help diagnose why pages render empty by showing what API calls the page makes.
+func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSelector string, waitTimeoutMs int) (string, []NetworkRequest, error) {
+	if !e.headlessEnv {
+		return "", nil, ErrHeadlessDisabled
+	}
+
+	if err := validateNavigationURL(rawURL, e.effectiveBlocklist()); err != nil {
+		return "", nil, err
+	}
+
+	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, robotsClient)
+	if robotsErr != nil {
+		e.logger.Warn().Err(robotsErr).Str("url", rawURL).Msg("rod: RenderHTMLWithNetwork: robots.txt check failed, proceeding as allowed")
+	} else if !allowed {
+		return "", nil, fmt.Errorf("rod: scraping disallowed by robots.txt for %q", rawURL)
+	}
+
+	select {
+	case e.sem <- struct{}{}:
+		defer func() { <-e.sem }()
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	defer cancel()
+
+	browser, cleanup, err := e.launchBrowser(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer cleanup()
+
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return "", nil, fmt.Errorf("rod: failed to open new page: %w", err)
+	}
+	defer func() {
+		if closeErr := page.Close(); closeErr != nil {
+			e.logger.Debug().Err(closeErr).Msg("rod: page close error (RenderHTMLWithNetwork)")
+		}
+	}()
+
+	page = page.Timeout(rodDefaultTimeout)
+
+	if err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: rodUserAgent,
+	}); err != nil {
+		e.logger.Warn().Err(err).Msg("rod: RenderHTMLWithNetwork: failed to set user agent")
+	}
+
+	// Enable network capture before navigation so all requests are seen.
+	nc, netCleanup := enableNetworkCapture(page)
+	defer netCleanup()
+
+	if navErr := page.Navigate(rawURL); navErr != nil {
+		return "", nil, fmt.Errorf("rod: navigate to %q: %w", rawURL, navErr)
+	}
+
+	if waitSelector == "" {
+		waitSelector = "body"
+	}
+	waitTimeout := rodDefaultWaitTimeout
+	if waitTimeoutMs > 0 {
+		waitTimeout = time.Duration(waitTimeoutMs) * time.Millisecond
+	}
+
+	if waitErr := page.Timeout(waitTimeout).WaitElementsMoreThan(waitSelector, 0); waitErr != nil {
+		e.logger.Warn().
+			Err(waitErr).
+			Str("url", rawURL).
+			Str("selector", waitSelector).
+			Msg("rod: RenderHTMLWithNetwork wait selector timed out, continuing anyway")
+	}
+
+	html, err := page.HTML()
+	if err != nil {
+		e.captureScreenshot(page, "render-html-network")
+		return "", nil, fmt.Errorf("rod: getting HTML from %q: %w", rawURL, err)
+	}
+
+	return html, nc.snapshot(), nil
+}
+
+// RenderHTMLWithConfigAndNetwork renders a page using the full SourceConfig and
+// also captures all network activity. Returns the HTML, captured requests, and any error.
+//
+// This is the diagnostic variant of RenderHTMLWithConfig — used by
+// `scrape capture --network --source-file config.yaml` to show what API calls
+// a JS-widget page makes during rendering.
+func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, config SourceConfig) (string, []NetworkRequest, error) {
+	if !e.headlessEnv {
+		return "", nil, ErrHeadlessDisabled
+	}
+
+	pageURL := config.URL
+	if pageURL == "" {
+		return "", nil, fmt.Errorf("RenderHTMLWithConfigAndNetwork: source %q has no URL", config.Name)
+	}
+
+	if err := validateNavigationURL(pageURL, e.effectiveBlocklist()); err != nil {
+		return "", nil, err
+	}
+
+	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
+	allowed, robotsErr := RobotsAllowed(ctx, pageURL, scraperUserAgent, robotsClient)
+	if robotsErr != nil {
+		e.logger.Warn().Err(robotsErr).Str("url", pageURL).Msg("rod: RenderHTMLWithConfigAndNetwork: robots.txt check failed, proceeding as allowed")
+	} else if !allowed {
+		return "", nil, fmt.Errorf("rod: scraping disallowed by robots.txt for %q", pageURL)
+	}
+
+	select {
+	case e.sem <- struct{}{}:
+		defer func() { <-e.sem }()
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, rodDefaultTimeout)
+	defer cancel()
+
+	browser, cleanup, err := e.launchBrowser(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer cleanup()
+
+	var page *rod.Page
+	if config.Headless.Undetected {
+		page, err = stealth.Page(browser)
+	} else {
+		page, err = browser.Page(proto.TargetCreateTarget{})
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("rod: failed to open new page: %w", err)
+	}
+	defer func() {
+		if closeErr := page.Close(); closeErr != nil {
+			e.logger.Debug().Err(closeErr).Msg("rod: page close error (RenderHTMLWithConfigAndNetwork)")
+		}
+	}()
+
+	page = page.Timeout(rodDefaultTimeout)
+
+	if uaErr := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: rodUserAgent,
+	}); uaErr != nil {
+		e.logger.Warn().Err(uaErr).Str("source", config.Name).Msg("rod: RenderHTMLWithConfigAndNetwork: failed to set user agent")
+	}
+
+	if len(config.Headless.Headers) > 0 {
+		headers := make([]string, 0, len(config.Headless.Headers)*2)
+		for k, v := range config.Headless.Headers {
+			headers = append(headers, k, v)
+		}
+		if _, setErr := page.SetExtraHeaders(headers); setErr != nil {
+			e.logger.Warn().Err(setErr).Str("source", config.Name).Msg("rod: RenderHTMLWithConfigAndNetwork: failed to set extra headers")
+		}
+	}
+
+	// Enable network capture before navigation.
+	nc, netCleanup := enableNetworkCapture(page)
+	defer netCleanup()
+
+	if navErr := page.Navigate(pageURL); navErr != nil {
+		return "", nil, fmt.Errorf("rod: navigate to %q: %w", pageURL, navErr)
+	}
+
+	waitSelector := config.Headless.WaitSelector
+	if waitSelector == "" {
+		waitSelector = "body"
+	}
+	waitTimeout := rodDefaultWaitTimeout
+	if config.Headless.WaitTimeoutMs > 0 {
+		waitTimeout = time.Duration(config.Headless.WaitTimeoutMs) * time.Millisecond
+	}
+	if waitErr := page.Timeout(waitTimeout).WaitElementsMoreThan(waitSelector, 0); waitErr != nil {
+		e.logger.Warn().Err(waitErr).Str("source", config.Name).Str("selector", waitSelector).
+			Msg("rod: RenderHTMLWithConfigAndNetwork: wait selector timed out, continuing anyway")
+	}
+
+	if config.Headless.WaitNetworkIdle {
+		waitIdle := page.Timeout(waitTimeout).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)
+		waitIdle()
+	}
+
+	html, htmlErr := page.HTML()
+	if htmlErr != nil {
+		e.captureScreenshot(page, config.Name)
+		return "", nil, fmt.Errorf("rod: getting HTML from %q: %w", pageURL, htmlErr)
+	}
+
+	if config.Headless.Iframe != nil {
+		iframeHTML, iframeErr := e.extractIframeHTML(page, config)
+		if iframeErr != nil {
+			e.logger.Warn().Err(iframeErr).
+				Str("source", config.Name).
+				Str("iframe_selector", config.Headless.Iframe.Selector).
+				Msg("rod: RenderHTMLWithConfigAndNetwork: iframe extraction failed, returning parent HTML")
+		} else {
+			html = iframeHTML
+		}
+	}
+
+	return html, nc.snapshot(), nil
 }
 
 // RenderHTMLWithConfig renders a page using the full SourceConfig — including

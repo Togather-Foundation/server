@@ -454,6 +454,223 @@ func TestExtractDateFromSelection(t *testing.T) {
 	}
 }
 
+// --- RenderHTMLWithNetwork tests (require headless browser) ---
+
+// xhrPageHTML is an HTML page that, once loaded, makes an XHR request to /api/data.
+// It injects the returned JSON into a <div id="result">.
+const xhrPageHTML = `<!DOCTYPE html>
+<html>
+<head><title>XHR Test Page</title></head>
+<body>
+<div id="result">loading...</div>
+<script>
+var xhr = new XMLHttpRequest();
+xhr.open("GET", "/api/data", true);
+xhr.onload = function() {
+  document.getElementById("result").textContent = xhr.responseText;
+};
+xhr.send();
+</script>
+</body>
+</html>`
+
+// apiDataJSON is the JSON response served at /api/data.
+const apiDataJSON = `{"events":[{"name":"Test Event"}]}`
+
+func TestNetworkCapture_BasicRequests(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, apiDataJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, xhrPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "#result", 5000)
+	if err != nil {
+		t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
+	}
+
+	if html == "" {
+		t.Error("expected non-empty HTML")
+	}
+
+	if len(requests) == 0 {
+		t.Fatal("expected at least one network request to be captured")
+	}
+
+	// Find the XHR/API request.
+	var apiReq *NetworkRequest
+	for i := range requests {
+		if strings.Contains(requests[i].URL, "/api/data") {
+			apiReq = &requests[i]
+			break
+		}
+	}
+
+	if apiReq == nil {
+		t.Fatalf("expected to find request to /api/data, got requests: %v", requests)
+	}
+
+	if apiReq.Method != "GET" {
+		t.Errorf("expected method GET, got %q", apiReq.Method)
+	}
+	if !strings.Contains(apiReq.ContentType, "application/json") {
+		t.Errorf("expected content type to contain 'application/json', got %q", apiReq.ContentType)
+	}
+	if apiReq.Status != 200 {
+		t.Errorf("expected status 200, got %d", apiReq.Status)
+	}
+	if !apiReq.IsAPI {
+		t.Error("expected IsAPI=true for XHR request with JSON content type")
+	}
+}
+
+func TestNetworkCapture_NoRequests(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	// Simple static page with no XHR/fetch.
+	const staticHTML = `<!DOCTYPE html><html><body><p>Static content</p></body></html>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, staticHTML)
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	html, requests, err := ext.RenderHTMLWithNetwork(context.Background(), srv.URL+"/", "body", 5000)
+	if err != nil {
+		t.Fatalf("RenderHTMLWithNetwork returned error: %v", err)
+	}
+
+	if html == "" {
+		t.Error("expected non-empty HTML")
+	}
+
+	// Should capture the Document request (no XHR).
+	// No request should be marked IsAPI.
+	for _, req := range requests {
+		if req.IsAPI {
+			t.Errorf("unexpected IsAPI=true for static page request: %+v", req)
+		}
+	}
+}
+
+func TestNetworkCapture_APIDetection(t *testing.T) {
+	// Unit test for IsAPI detection logic — uses NetworkRequest values directly.
+	// IsAPI must be true when resource type is XHR or Fetch AND content type contains "json".
+	tests := []struct {
+		resourceType string
+		contentType  string
+		wantIsAPI    bool
+	}{
+		{"XHR", "application/json", true},
+		{"Fetch", "application/json; charset=utf-8", true},
+		{"XHR", "text/html", false},
+		{"Fetch", "text/plain", false},
+		{"Script", "application/json", false},
+		{"Document", "application/json", false},
+		{"XHR", "", false},
+	}
+
+	for _, tt := range tests {
+		got := isAPIRequest(tt.resourceType, tt.contentType)
+		if got != tt.wantIsAPI {
+			t.Errorf("isAPIRequest(%q, %q) = %v; want %v", tt.resourceType, tt.contentType, got, tt.wantIsAPI)
+		}
+	}
+}
+
+func TestNetworkCapture_WithConfigAndNetwork(t *testing.T) {
+	if !headlessEnabled() {
+		t.Skip("set SCRAPER_HEADLESS_ENABLED=true to run headless browser tests")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/data":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, apiDataJSON)
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = fmt.Fprint(w, xhrPageHTML)
+		}
+	}))
+	defer srv.Close()
+
+	logger := zerolog.Nop()
+	ext := newTestExtractorAllowLocalhost(logger)
+
+	cfg := SourceConfig{
+		Name:    "test-network-config",
+		URL:     srv.URL + "/",
+		Tier:    2,
+		Enabled: true,
+		Headless: HeadlessConfig{
+			WaitSelector:  "#result",
+			WaitTimeoutMs: 5000,
+		},
+	}
+
+	html, requests, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("RenderHTMLWithConfigAndNetwork returned error: %v", err)
+	}
+
+	if html == "" {
+		t.Error("expected non-empty HTML")
+	}
+
+	// Should capture network activity including the API call.
+	var foundAPI bool
+	for _, req := range requests {
+		if strings.Contains(req.URL, "/api/data") && req.IsAPI {
+			foundAPI = true
+			break
+		}
+	}
+	if !foundAPI {
+		t.Errorf("expected to find IsAPI=true request to /api/data, got: %v", requests)
+	}
+}
+
+func TestRenderHTMLWithNetwork_HeadlessDisabled(t *testing.T) {
+	logger := zerolog.Nop()
+	ext := NewRodExtractor(logger, 2, "", false)
+
+	_, _, err := ext.RenderHTMLWithNetwork(context.Background(), "https://example.com", "body", 0)
+	if err != ErrHeadlessDisabled {
+		t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
+	}
+}
+
+func TestRenderHTMLWithConfigAndNetwork_HeadlessDisabled(t *testing.T) {
+	logger := zerolog.Nop()
+	ext := NewRodExtractor(logger, 2, "", false)
+
+	cfg := SourceConfig{Name: "test", URL: "https://example.com"}
+	_, _, err := ext.RenderHTMLWithConfigAndNetwork(context.Background(), cfg)
+	if err != ErrHeadlessDisabled {
+		t.Errorf("expected ErrHeadlessDisabled, got: %v", err)
+	}
+}
+
 // --- RodExtractor iframe extraction tests (require headless browser) ---
 
 // parentPageHTML is served at / and contains a same-origin iframe.
