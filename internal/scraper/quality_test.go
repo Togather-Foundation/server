@@ -146,7 +146,13 @@ func TestCheckDateSelectorQuality(t *testing.T) {
 			wantSubstrings: []string{"partial_match", "first container:", "9:30 PM"},
 		},
 		{
-			name: "nil probes — backward compat",
+			// Tier 1 (Colly) path: Colly appends only non-empty results, so
+			// DateParts may be shorter than DateSelectors. Here one event has a
+			// single DatePart against two DateSelectors, and firstProbes is nil
+			// because the Colly path does not populate probe data. This is
+			// intentional Colly backward-compat behavior — not a regression in
+			// the always-indexed path used by Tier 2 (Rod).
+			name: "nil probes — Tier 1 Colly path: DateParts shorter than DateSelectors",
 			rawEvents: []RawEvent{
 				{Name: "A", DateParts: []string{"Thu 5th March"}},
 			},

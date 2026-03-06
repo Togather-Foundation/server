@@ -1636,6 +1636,25 @@ rest:
 		assert.Equal(t, "pagination.next", cfg.REST.NextField, "explicit next_field must not be overridden")
 	})
 
+	t.Run("preserves bare array sentinel dot", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST Bare Array Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+  results_field: "."
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest_dot.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.Equal(t, ".", cfg.REST.ResultsField, "results_field '.' sentinel must not be overridden to default")
+	})
+
 	t.Run("nil REST config does not panic", func(t *testing.T) {
 		t.Parallel()
 		yamlContent := `

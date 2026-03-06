@@ -857,6 +857,24 @@ func TestFetchAndExtractREST_BareArrayWithFieldMap(t *testing.T) {
 	assert.Equal(t, "A description", e.Description)
 }
 
+func TestFetchAndExtractREST_BareArrayInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	// Server returns a JSON object, not a bare array.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data": [{"name": "Event"}]}`))
+	}))
+	defer srv.Close()
+
+	source := bareArrayRestSource(srv.URL, nil, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.FetchAndExtractREST(t.Context(), source, &http.Client{})
+	require.Error(t, err, "a JSON object body in bare array mode must return an error")
+	assert.Contains(t, err.Error(), "rest: decoding bare array from", "error must identify the bare array decode failure")
+}
+
 func TestFetchAndExtractREST_TimeoutMs(t *testing.T) {
 	t.Parallel()
 

@@ -53,23 +53,14 @@ func (e *RestExtractor) FetchAndExtractREST(
 
 	// Create a local client copy to avoid mutating the caller's client.
 	// Apply config timeout when it exceeds the caller-supplied timeout.
-	localClient := &http.Client{
-		Transport: client.Transport,
-		Timeout:   client.Timeout,
-	}
+	// Limit redirects to prevent abuse via redirect chains. Unlike jsonld.go
+	// which blocks all redirects (SSRF hardening for arbitrary web pages),
+	// REST API endpoints may legitimately redirect (e.g. Showpass 301).
+	localClient := safeClient(client, limitRedirects(maxRESTRedirects))
 	if cfg.TimeoutMs > 0 {
 		if cfgTimeout := time.Duration(cfg.TimeoutMs) * time.Millisecond; cfgTimeout > localClient.Timeout {
 			localClient.Timeout = cfgTimeout
 		}
-	}
-	// Limit redirects to prevent abuse via redirect chains. Unlike jsonld.go
-	// which blocks all redirects (SSRF hardening for arbitrary web pages),
-	// REST API endpoints may legitimately redirect (e.g. Showpass 301).
-	localClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= maxRESTRedirects {
-			return http.ErrUseLastResponse
-		}
-		return nil
 	}
 	client = localClient
 
