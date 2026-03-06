@@ -118,7 +118,7 @@ server scrape capture --source-file configs/sources/my-venue.yaml
 server scrape capture https://example.com/events --network
 
 # Network capture with JSON output (machine-readable for agents)
-server scrape capture https://example.com/events --network --json
+server scrape capture https://example.com/events --network --format json
 ```
 
 **`--network` flag:** Enables CDP network activity capture during rendering.
