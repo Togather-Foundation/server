@@ -2064,6 +2064,212 @@ func TestExtractionDiagnostic_NoDateSelectorConfigured(t *testing.T) {
 
 // TestExtractionDiagnostic_DateSelectorsAllEmpty tests the date_selectors
 // (multi-part) path reports correctly when all miss.
+func TestProbesSummary(t *testing.T) {
+	tests := []struct {
+		name   string
+		probes []DateSelectorProbe
+		want   string
+	}{
+		{
+			name:   "nil probes",
+			probes: nil,
+			want:   " (first container:)",
+		},
+		{
+			name:   "empty probes",
+			probes: []DateSelectorProbe{},
+			want:   " (first container:)",
+		},
+		{
+			name: "single matched probe with text",
+			probes: []DateSelectorProbe{
+				{Selector: ".date", Matched: true, Text: "2026-03-06"},
+			},
+			want: ` (first container: ".date"→"2026-03-06";)`,
+		},
+		{
+			name: "single matched probe with empty text",
+			probes: []DateSelectorProbe{
+				{Selector: ".time", Matched: true, Text: ""},
+			},
+			want: ` (first container: ".time"→empty text;)`,
+		},
+		{
+			name: "single unmatched probe",
+			probes: []DateSelectorProbe{
+				{Selector: ".missing", Matched: false, Text: ""},
+			},
+			want: ` (first container: ".missing"→no element;)`,
+		},
+		{
+			name: "mixed probes matched and unmatched",
+			probes: []DateSelectorProbe{
+				{Selector: ".date", Matched: true, Text: "March 6"},
+				{Selector: ".time", Matched: false, Text: ""},
+				{Selector: ".year", Matched: true, Text: ""},
+			},
+			want: ` (first container: ".date"→"March 6"; ".time"→no element; ".year"→empty text;)`,
+		},
+		{
+			name: "multiple probes all matched",
+			probes: []DateSelectorProbe{
+				{Selector: ".start", Matched: true, Text: "9:00am"},
+				{Selector: ".end", Matched: true, Text: "5:00pm"},
+			},
+			want: ` (first container: ".start"→"9:00am"; ".end"→"5:00pm";)`,
+		},
+		{
+			name: "long text preserved verbatim",
+			probes: []DateSelectorProbe{
+				{Selector: ".desc", Matched: true, Text: strings.Repeat("x", 200)},
+			},
+			want: ` (first container: ".desc"→"` + strings.Repeat("x", 200) + `";)`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := probesSummary(tc.probes)
+			if got != tc.want {
+				t.Errorf("probesSummary() =\n  %q\nwant\n  %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestExtractionDiagnostic_WithProbes calls extractionDiagnostic directly with
+// non-nil firstProbes to verify that probe detail is appended to date-miss
+// warning messages. Covers both the "all dates empty" (missDate==total) and
+// "partial dates empty" (0 < missDate < total) paths, and also verifies that
+// non-date diagnostics (name miss, URL miss) are NOT enriched with probe data.
+func TestExtractionDiagnostic_WithProbes(t *testing.T) {
+	t.Parallel()
+
+	// Mixed probes: one fully matched, one matched but empty text, one unmatched.
+	mixedProbes := []DateSelectorProbe{
+		{Selector: ".day", Matched: true, Text: "Thu 5th March"},
+		{Selector: ".time", Matched: true, Text: ""},
+		{Selector: ".venue", Matched: false, Text: ""},
+	}
+
+	cfg := SourceConfig{
+		Name: "probe-enrichment-source",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList:     ".card",
+			Name:          ".name",
+			DateSelectors: []string{".day", ".time", ".venue"},
+			URL:           ".link",
+		},
+	}
+
+	t.Run("all dates empty enriched with probe summary", func(t *testing.T) {
+		t.Parallel()
+		// total=3, missName=0, missDate=3 (all miss), missURL=0
+		err := extractionDiagnostic(cfg, 3, 0, 3, 0, mixedProbes)
+		if err == nil {
+			t.Fatal("expected diagnostic error, got nil")
+		}
+		msg := err.Error()
+
+		// Must contain the all-dates-empty warning text.
+		if !strings.Contains(msg, "all 3 containers had empty dates") {
+			t.Errorf("expected all-dates-empty warning; got: %s", msg)
+		}
+		// Must contain the probe summary opener.
+		if !strings.Contains(msg, "(first container:") {
+			t.Errorf("expected probe summary '(first container:' in message; got: %s", msg)
+		}
+		// Matched probe with text must appear as selector→"text".
+		if !strings.Contains(msg, `".day"→"Thu 5th March"`) {
+			t.Errorf("expected matched probe with text in summary; got: %s", msg)
+		}
+		// Matched probe with empty text must appear as selector→empty text.
+		if !strings.Contains(msg, `".time"→empty text`) {
+			t.Errorf("expected matched-but-empty probe in summary; got: %s", msg)
+		}
+		// Unmatched probe must appear as selector→no element.
+		if !strings.Contains(msg, `".venue"→no element`) {
+			t.Errorf("expected unmatched probe in summary; got: %s", msg)
+		}
+	})
+
+	t.Run("partial date miss enriched with probe summary", func(t *testing.T) {
+		t.Parallel()
+		// total=5, missName=0, missDate=2 (partial miss), missURL=0
+		err := extractionDiagnostic(cfg, 5, 0, 2, 0, mixedProbes)
+		if err == nil {
+			t.Fatal("expected diagnostic error, got nil")
+		}
+		msg := err.Error()
+
+		// Partial miss warning.
+		if !strings.Contains(msg, "2 of 5 containers had empty dates") {
+			t.Errorf("expected partial-dates warning; got: %s", msg)
+		}
+		// Probe summary must also appear on the partial-miss path.
+		if !strings.Contains(msg, "(first container:") {
+			t.Errorf("expected probe summary on partial-miss path; got: %s", msg)
+		}
+		if !strings.Contains(msg, `".day"→"Thu 5th March"`) {
+			t.Errorf("expected matched probe with text in partial-miss summary; got: %s", msg)
+		}
+	})
+
+	t.Run("nil probes produces no probe summary in date-miss warning", func(t *testing.T) {
+		t.Parallel()
+		// total=3, missDate=3, firstProbes=nil → no probe summary appended.
+		err := extractionDiagnostic(cfg, 3, 0, 3, 0, nil)
+		if err == nil {
+			t.Fatal("expected diagnostic error, got nil")
+		}
+		msg := err.Error()
+
+		if !strings.Contains(msg, "all 3 containers had empty dates") {
+			t.Errorf("expected all-dates-empty warning; got: %s", msg)
+		}
+		if strings.Contains(msg, "(first container:") {
+			t.Errorf("expected NO probe summary when firstProbes is nil; got: %s", msg)
+		}
+	})
+
+	t.Run("name-miss diagnostic is not enriched with probe summary", func(t *testing.T) {
+		t.Parallel()
+		// total=3, missName=3 (all miss) → FATAL for names, probes irrelevant.
+		err := extractionDiagnostic(cfg, 3, 3, 0, 0, mixedProbes)
+		if err == nil {
+			t.Fatal("expected FATAL diagnostic error for all-names-empty, got nil")
+		}
+		msg := err.Error()
+
+		if !strings.Contains(msg, "FATAL") {
+			t.Errorf("expected FATAL in name-miss error; got: %s", msg)
+		}
+		// The name-miss path must NOT receive probe enrichment.
+		if strings.Contains(msg, "(first container:") {
+			t.Errorf("name-miss warning should not contain probe summary; got: %s", msg)
+		}
+	})
+
+	t.Run("URL-miss diagnostic is not enriched with probe summary", func(t *testing.T) {
+		t.Parallel()
+		// total=2, missURL=2 (all miss), probes provided but irrelevant to URL path.
+		err := extractionDiagnostic(cfg, 2, 0, 0, 2, mixedProbes)
+		if err == nil {
+			t.Fatal("expected diagnostic warning for all-URLs-empty, got nil")
+		}
+		msg := err.Error()
+
+		if !strings.Contains(msg, "all 2 containers had empty URLs") {
+			t.Errorf("expected all-URLs-empty warning; got: %s", msg)
+		}
+		// The URL-miss path must NOT receive probe enrichment.
+		if strings.Contains(msg, "(first container:") {
+			t.Errorf("URL-miss warning should not contain probe summary; got: %s", msg)
+		}
+	})
+}
+
 func TestExtractionDiagnostic_DateSelectorsAllEmpty(t *testing.T) {
 	html := `
 <html><body>
