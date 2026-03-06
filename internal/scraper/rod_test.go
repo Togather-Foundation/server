@@ -113,20 +113,29 @@ func TestExtractEventsFromHTML_Empty(t *testing.T) {
 		},
 	}
 
-	// Empty HTML should return no events, no error.
+	// Empty HTML should return no events with a diagnostic about 0 containers.
 	events, err := extractEventsFromHTML("", cfg, "https://example.com")
-	if err != nil {
-		t.Fatalf("expected no error on empty HTML, got: %v", err)
+	if err == nil {
+		t.Fatal("expected diagnostic error for 0 containers on empty HTML")
+	}
+	if !strings.Contains(err.Error(), "matched 0 containers") {
+		t.Errorf("expected '0 containers' diagnostic, got: %v", err)
 	}
 	if len(events) != 0 {
 		t.Errorf("expected 0 events from empty HTML, got %d", len(events))
 	}
 
-	// HTML with no matching elements.
+	// HTML with no matching elements — same diagnostic.
 	plain := `<html><body><p>Nothing here</p></body></html>`
 	events, err = extractEventsFromHTML(plain, cfg, "https://example.com")
-	if err != nil {
-		t.Fatalf("expected no error on unmatching HTML, got: %v", err)
+	if err == nil {
+		t.Fatal("expected diagnostic error for 0 containers on unmatching HTML")
+	}
+	if !strings.Contains(err.Error(), "matched 0 containers") {
+		t.Errorf("expected '0 containers' diagnostic, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "scrape capture") {
+		t.Errorf("expected actionable hint about 'scrape capture' in error, got: %v", err)
 	}
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
@@ -134,7 +143,7 @@ func TestExtractEventsFromHTML_Empty(t *testing.T) {
 }
 
 func TestExtractEventsFromHTML_MissingFields(t *testing.T) {
-	// Events with empty name should be skipped.
+	// Events with empty name should be skipped, and a diagnostic warning returned.
 	html := `
 <html><body>
   <div class="event">
@@ -158,8 +167,15 @@ func TestExtractEventsFromHTML_MissingFields(t *testing.T) {
 	}
 
 	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// Partial name miss → diagnostic warning error returned with valid events.
+	if err == nil {
+		t.Fatal("expected diagnostic warning error for partial name miss, got nil")
+	}
+	if !strings.Contains(err.Error(), "WARNING") {
+		t.Errorf("expected WARNING in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "1 of 2") {
+		t.Errorf("expected '1 of 2' skip count in error, got: %v", err)
 	}
 
 	// The empty-name event should be skipped.
@@ -1716,5 +1732,266 @@ func TestRodHardTimeoutAccommodatesWaitTimeout(t *testing.T) {
 				t.Errorf("rodHardTimeout() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestExtractionDiagnostic_AllNamesEmpty verifies that when every container has
+// an empty name, the error is FATAL-level and includes actionable hints about
+// the most common cause (descendant selector vs element-is-target).
+func TestExtractionDiagnostic_AllNamesEmpty(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card"><a class="title" href="/e/1">Concert A</a><span class="date">2026-05-01</span></div>
+  <div class="card"><a class="title" href="/e/2">Concert B</a><span class="date">2026-05-02</span></div>
+  <div class="card"><a class="title" href="/e/3">Concert C</a><span class="date">2026-05-03</span></div>
+</body></html>`
+
+	// Bug: ".title a" looks for <a> inside .title, but .title IS the <a>.
+	cfg := SourceConfig{
+		Name: "rcmusic-like",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".card",
+			Name:      ".title a", // wrong — should be ".title"
+			StartDate: ".date",
+			URL:       "a[href]",
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err == nil {
+		t.Fatal("expected FATAL diagnostic error when all names are empty")
+	}
+	if events != nil {
+		t.Errorf("expected nil events on FATAL, got %d", len(events))
+	}
+
+	errMsg := err.Error()
+
+	// Must contain FATAL.
+	if !strings.Contains(errMsg, "FATAL") {
+		t.Errorf("expected FATAL in error, got: %s", errMsg)
+	}
+	// Must identify the source.
+	if !strings.Contains(errMsg, "rcmusic-like") {
+		t.Errorf("expected source name in error, got: %s", errMsg)
+	}
+	// Must show the broken selector.
+	if !strings.Contains(errMsg, ".title a") {
+		t.Errorf("expected broken selector in error, got: %s", errMsg)
+	}
+	// Must show the container count.
+	if !strings.Contains(errMsg, "all 3 containers") {
+		t.Errorf("expected 'all 3 containers' in error, got: %s", errMsg)
+	}
+	// Must include the hint about element-is-target.
+	if !strings.Contains(errMsg, "IS the selector target") {
+		t.Errorf("expected hint about element IS target in error, got: %s", errMsg)
+	}
+}
+
+// TestExtractionDiagnostic_AllDatesEmpty verifies that all-dates-empty produces
+// a WARNING with guidance about datetime/data-utc-date attributes.
+func TestExtractionDiagnostic_AllDatesEmpty(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card"><h2 class="name">Event A</h2><span class="when">Tomorrow</span></div>
+  <div class="card"><h2 class="name">Event B</h2><span class="when">Next Week</span></div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "date-miss",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".card",
+			Name:      ".name",
+			StartDate: ".date", // wrong — should be ".when"
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err == nil {
+		t.Fatal("expected diagnostic warning for all-dates-empty")
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 events (names OK), got %d", len(events))
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "all 2 containers had empty dates") {
+		t.Errorf("expected all-dates-empty warning, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "datetime") {
+		t.Errorf("expected hint about datetime attribute, got: %s", errMsg)
+	}
+}
+
+// TestExtractionDiagnostic_AllURLsEmpty verifies that all-URLs-empty produces
+// a WARNING with guidance about href attributes.
+func TestExtractionDiagnostic_AllURLsEmpty(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card"><h2 class="name">Event A</h2><span class="date">2026-05-01</span></div>
+  <div class="card"><h2 class="name">Event B</h2><span class="date">2026-05-02</span></div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "url-miss",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".card",
+			Name:      ".name",
+			StartDate: ".date",
+			URL:       "a.detail-link", // nothing matches
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err == nil {
+		t.Fatal("expected diagnostic warning for all-URLs-empty")
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 events (names OK), got %d", len(events))
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "all 2 containers had empty URLs") {
+		t.Errorf("expected all-URLs-empty warning, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "a.detail-link") {
+		t.Errorf("expected broken URL selector in error, got: %s", errMsg)
+	}
+}
+
+// TestExtractionDiagnostic_MultipleFieldsMissing verifies that when multiple
+// fields are broken, all are reported in a single error separated by semicolons.
+func TestExtractionDiagnostic_MultipleFieldsMissing(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card"><h2 class="name">Event A</h2></div>
+  <div class="card"><h2 class="name">Event B</h2></div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "multi-miss",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".card",
+			Name:      ".name",
+			StartDate: ".date", // nothing matches
+			URL:       ".link", // nothing matches
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err == nil {
+		t.Fatal("expected diagnostic error for multiple missing fields")
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 events, got %d", len(events))
+	}
+
+	errMsg := err.Error()
+	// Both date and URL warnings should appear, joined by semicolons.
+	if !strings.Contains(errMsg, "dates") {
+		t.Errorf("expected date warning in combined error, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "URLs") {
+		t.Errorf("expected URL warning in combined error, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "; ") {
+		t.Errorf("expected semicolon-separated diagnostics, got: %s", errMsg)
+	}
+}
+
+// TestExtractionDiagnostic_NoIssues verifies that a clean extraction returns
+// no error.
+func TestExtractionDiagnostic_NoIssues(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card">
+    <h2 class="name">Event A</h2>
+    <span class="date">2026-05-01</span>
+    <a class="link" href="/events/a">Details</a>
+  </div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "clean",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".card",
+			Name:      ".name",
+			StartDate: ".date",
+			URL:       ".link",
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err != nil {
+		t.Fatalf("expected no error for clean extraction, got: %v", err)
+	}
+	if len(events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(events))
+	}
+}
+
+// TestExtractionDiagnostic_NoDateSelectorConfigured verifies that missing dates
+// are NOT reported when no date selector was configured (intentional omission).
+func TestExtractionDiagnostic_NoDateSelectorConfigured(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card"><h2 class="name">Event A</h2></div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "no-date-sel",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".card",
+			Name:      ".name",
+			// No StartDate, EndDate, or DateSelectors — intentional.
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err != nil {
+		t.Fatalf("expected no error when date selector is intentionally omitted, got: %v", err)
+	}
+	if len(events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(events))
+	}
+}
+
+// TestExtractionDiagnostic_DateSelectorsAllEmpty tests the date_selectors
+// (multi-part) path reports correctly when all miss.
+func TestExtractionDiagnostic_DateSelectorsAllEmpty(t *testing.T) {
+	html := `
+<html><body>
+  <div class="card"><h2 class="name">Event A</h2></div>
+  <div class="card"><h2 class="name">Event B</h2></div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "date-selectors-miss",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList:     ".card",
+			Name:          ".name",
+			DateSelectors: []string{".day", ".time"}, // nothing matches
+		},
+	}
+
+	events, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	if err == nil {
+		t.Fatal("expected diagnostic warning for all-dates-empty via date_selectors")
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 events, got %d", len(events))
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "date_selectors") {
+		t.Errorf("expected date_selectors reference in error, got: %s", errMsg)
 	}
 }

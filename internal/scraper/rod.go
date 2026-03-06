@@ -449,7 +449,11 @@ func (e *RodExtractor) scrapeSinglePage(
 	// Extract events from rendered HTML using goquery + selectors.
 	pageEvents, extractErr := extractEventsFromHTML(html, config, pageURL)
 	if extractErr != nil {
-		e.logger.Warn().Err(extractErr).Str("source", config.Name).Msg("rod: event extraction error")
+		logLevel := e.logger.Warn()
+		if strings.Contains(extractErr.Error(), "FATAL") {
+			logLevel = e.logger.Error()
+		}
+		logLevel.Err(extractErr).Str("source", config.Name).Msg("rod: event extraction diagnostic")
 	}
 
 	// If intercept is configured, parse captured JSON responses and merge events.
@@ -647,7 +651,12 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 
 	var events []RawEvent
 
+	// Per-field miss counters for diagnostic reporting.
+	var totalContainers int
+	var missName, missDate, missURL int
+
 	doc.Find(config.Selectors.EventList).Each(func(_ int, s *goquery.Selection) {
+		totalContainers++
 		raw := RawEvent{}
 
 		if config.Selectors.Name != "" {
@@ -698,6 +707,18 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 			}
 		}
 
+		// Track per-field misses.
+		if raw.Name == "" {
+			missName++
+		}
+		hasDate := raw.StartDate != "" || raw.EndDate != "" || len(raw.DateParts) > 0
+		if !hasDate {
+			missDate++
+		}
+		if raw.URL == "" {
+			missURL++
+		}
+
 		// Only collect events with a non-empty name.
 		if raw.Name == "" {
 			return
@@ -706,7 +727,90 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 		events = append(events, raw)
 	})
 
+	// Build a diagnostic error when selectors miss fields.
+	// This gives the scraper-worker agent actionable feedback to fix configs.
+	if diagErr := extractionDiagnostic(config, totalContainers, missName, missDate, missURL); diagErr != nil {
+		return events, diagErr
+	}
+
 	return events, nil
+}
+
+// extractionDiagnostic builds an actionable error when CSS selectors miss fields
+// during event extraction. Returns nil when there are no problems.
+//
+// Error severity:
+//   - All containers have empty names → fatal (events returned as nil).
+//     The name selector is almost certainly wrong; the agent should inspect the
+//     DOM and try a different selector.
+//   - Some containers have empty names → warning (partial events returned).
+//   - All containers missing dates or URLs → warning appended.
+//
+// The error messages are intentionally verbose and prescriptive so that the
+// scraper-worker agent can self-correct without human intervention.
+func extractionDiagnostic(config SourceConfig, total, missName, missDate, missURL int) error {
+	if total == 0 {
+		// No containers matched — the event_list selector is likely wrong, or
+		// the page hasn't finished rendering (common with JS-heavy sites).
+		return fmt.Errorf("rod: extractEventsFromHTML (source %q): "+
+			"event_list=%q matched 0 containers — "+
+			"the selector may be wrong, or the page content may not have loaded yet; "+
+			"try 'scrape capture --wait-selector %q --wait-timeout 30000' to inspect the rendered DOM",
+			config.Name, config.Selectors.EventList, config.Selectors.EventList)
+	}
+
+	var parts []string
+
+	// Name misses.
+	if missName > 0 && missName == total {
+		parts = append(parts, fmt.Sprintf(
+			"FATAL: all %d containers matched by event_list=%q had empty names using name=%q — "+
+				"this selector likely targets a child element that does not exist. "+
+				"Hint: check whether the title element IS the selector target (e.g. <a class=\"title\">) "+
+				"rather than a descendant of it (e.g. .title a when <a> has the class itself)",
+			total, config.Selectors.EventList, config.Selectors.Name))
+	} else if missName > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"WARNING: %d of %d containers had empty names using name=%q — "+
+				"some events were skipped; the selector may be too specific for certain card variants",
+			missName, total, config.Selectors.Name))
+	}
+
+	// Date misses (only report if a date selector was configured).
+	hasDateSelector := config.Selectors.StartDate != "" || config.Selectors.EndDate != "" || len(config.Selectors.DateSelectors) > 0
+	if hasDateSelector && missDate > 0 && missDate == total {
+		dateSel := config.Selectors.StartDate
+		if dateSel == "" && len(config.Selectors.DateSelectors) > 0 {
+			dateSel = fmt.Sprintf("date_selectors=%v", config.Selectors.DateSelectors)
+		}
+		parts = append(parts, fmt.Sprintf(
+			"WARNING: all %d containers had empty dates using %s — "+
+				"events will lack start times; check for datetime attributes, "+
+				"data-utc-date attributes, or different text containers",
+			total, dateSel))
+	} else if hasDateSelector && missDate > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"WARNING: %d of %d containers had empty dates", missDate, total))
+	}
+
+	// URL misses (only report if a URL selector was configured).
+	if config.Selectors.URL != "" && missURL > 0 && missURL == total {
+		parts = append(parts, fmt.Sprintf(
+			"WARNING: all %d containers had empty URLs using url=%q — "+
+				"events will lack detail links; check for href attributes on <a> tags "+
+				"within the container or try a broader selector",
+			total, config.Selectors.URL))
+	} else if config.Selectors.URL != "" && missURL > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"WARNING: %d of %d containers had empty URLs", missURL, total))
+	}
+
+	if len(parts) == 0 {
+		return nil
+	}
+
+	prefix := fmt.Sprintf("rod: extractEventsFromHTML (source %q): ", config.Name)
+	return fmt.Errorf("%s%s", prefix, strings.Join(parts, "; "))
 }
 
 // extractDateFromSelection finds a child element matching selector in the goquery

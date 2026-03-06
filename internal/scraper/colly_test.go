@@ -308,3 +308,58 @@ func TestScrapeWithSelectors_ContextCancellation(t *testing.T) {
 	// We just verify it doesn't block or crash.
 	_ = err
 }
+
+// TestWwwVariants verifies that wwwVariants produces both www and non-www forms.
+func TestWwwVariants(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"example.com", []string{"example.com", "www.example.com"}},
+		{"www.example.com", []string{"www.example.com", "example.com"}},
+		{"sub.example.com", []string{"sub.example.com", "www.sub.example.com"}},
+		{"www.sub.example.com", []string{"www.sub.example.com", "sub.example.com"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := wwwVariants(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestScrapeWithSelectors_WwwRedirect verifies that a www → non-www redirect
+// (or vice versa) is followed successfully instead of being blocked by
+// Colly's AllowedDomains check.
+func TestScrapeWithSelectors_WwwRedirect(t *testing.T) {
+	// Target server: the "non-www" version that serves the actual content.
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event"><h2 class="name">Redirected Event</h2></div>
+</body></html>`)
+	}))
+	defer target.Close()
+
+	// Redirect server: simulates www → non-www redirect.
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.RequestURI, http.StatusMovedPermanently)
+	}))
+	defer redirect.Close()
+
+	extractor := newTestExtractor()
+
+	cfg := SourceConfig{
+		Name: "redirect-test",
+		URL:  redirect.URL, // start at the "www" version
+		Tier: 1,
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      ".name",
+		},
+	}
+
+	events, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, events, 1, "redirect should be followed and events extracted")
+	assert.Equal(t, "Redirected Event", events[0].Name)
+}

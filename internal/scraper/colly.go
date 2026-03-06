@@ -55,11 +55,13 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 		return nil, err
 	}
 
-	// Extract the allowed domain from the source URL.
+	// Extract the allowed domain from the source URL and also allow
+	// the www/non-www variant so that redirects between them are not blocked.
 	allowedDomain, err := extractDomain(config.URL)
 	if err != nil {
 		return nil, err
 	}
+	allowedDomains := wwwVariants(allowedDomain)
 
 	var (
 		mu        sync.Mutex
@@ -74,7 +76,7 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 
 	c := colly.NewCollector(
 		colly.UserAgent(e.userAgent),
-		colly.AllowedDomains(allowedDomain),
+		colly.AllowedDomains(allowedDomains...),
 		// robots.txt is respected by default in Colly; do NOT use IgnoreRobotsTxt.
 	)
 
@@ -231,6 +233,17 @@ func extractDomain(rawURL string) (string, error) {
 	}
 	host := u.Hostname() // strips port if present
 	return host, nil
+}
+
+// wwwVariants returns both the www and non-www forms of a domain so that
+// Colly's AllowedDomains check doesn't block redirects between them.
+// For example, "www.example.com" → ["www.example.com", "example.com"]
+// and "example.com" → ["example.com", "www.example.com"].
+func wwwVariants(domain string) []string {
+	if strings.HasPrefix(domain, "www.") {
+		return []string{domain, strings.TrimPrefix(domain, "www.")}
+	}
+	return []string{domain, "www." + domain}
 }
 
 // extractDateFromElement finds a child element matching selector and returns
