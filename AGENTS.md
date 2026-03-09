@@ -149,6 +149,24 @@ Docs:
 - `docs/deploy/rollback.md` — when health checks fail
 - `docs/deploy/troubleshooting.md` — diagnosing failures
 
+## Scraper Source Configuration
+
+When asked to add, fix, or debug a scraper source config:
+
+1. **Use `/configure-source <URL>`** — the OpenCode command that orchestrates the full
+   workflow (platform detection, DOM inspection, selector validation, YAML writing).
+   It dispatches `scraper-worker` subagents in parallel for batch URLs.
+2. **For single-source deep work**, use the Task tool with `subagent_type: "scraper-worker"`.
+3. **After writing configs**, sync to DB: `server scrape sync` (YAML changes are ignored
+   at runtime until synced — the scraper reads from the database by default).
+
+Key docs:
+- `docs/integration/scraper.md` — full scraper guide including config storage model and CLI reference
+- `docs/integration/event-platforms.md` — platform recognition cheatsheet (read before inspecting a new site)
+- `configs/sources/README.md` — YAML config format and field reference
+
+Do NOT manually write scraper configs from scratch — always use `/configure-source` or `scraper-worker`, which handle platform detection, tier selection, live validation, and org database lookup.
+
 ## Entry Points
 
 - `cmd/` — binary entrypoint
