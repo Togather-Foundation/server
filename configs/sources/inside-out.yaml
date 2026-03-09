@@ -1,15 +1,41 @@
 name: "inside-out"
-# Disabled: Film programme page at /initiatives/toronto-festival/festival/program/ 2026-03-05.
-# Page loads but film list is rendered by Eventive JS widget (div.eventive-login);
-# the div.tab-pane > div.program-film-wrap is empty in the rendered DOM.
-# No static or headless-extractable event containers found.
-# Festival is annual (May); off-season the page has no content.
-# Re-enable only if Eventive widget is replaced with server-side rendered content,
-# or if an RSS/API feed becomes available.
-url: "https://insideout.ca/"
-tier: 0
+# DISABLED — Film programme uses Eventive widget (insideoutfilmfestival.eventive.org).
+#
+# 2026-03-09 UPDATE: 2026 programme page is LIVE at /festival/program/.
+#   Festival dates: May 22-31, 2026. Programme page shows:
+#     - Eventive widget with filters (Streams: Galas/Icons/Shorts/etc.)
+#     - Interest categories (many)
+#     - Location selectors (TIFF Lightbox, Virtual)
+#     - Date selectors visible ("Fri, Apr 24", "Sat, Apr 25" — possibly remnant data)
+#     - "Download Program" link and "All Screenings & Events" header
+#
+#   STILL BLOCKED: Film list containers remain empty in headless mode. Eventive widget
+#   populates asynchronously via API call to api.eventive.org which requires authentication.
+#   The Eventive JS widget never renders <div class="eventive-film"> containers even after
+#   25s network idle wait. Headless capture with wait_network_idle + undetected confirms
+#   filters/search UI loads but event data does not populate.
+#
+# BLOCKERS:
+#   1. Eventive API not publicly accessible (requires auth token).
+#   2. JS widget does not render event content in headless — only shows empty UI shell.
+#   3. No public RSS/iCal feed found.
+#
+# NEXT STEPS:
+#   1. Check if "Download Program" link points to a static PDF/HTML that could be parsed.
+#   2. Look for alternative data endpoints (RSS, iCal) closer to festival date.
+#   3. If Eventive adds server-side rendering, Tier 1 selectors may become feasible.
+url: "https://insideout.ca/festival/program/"
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
 max_pages: 3
+headless:
+  wait_selector: "div.program-film-wrap"
+  wait_timeout_ms: 25000
+  wait_network_idle: true
+selectors:
+  event_list: "div.program-film-wrap"
+  name: "h3.film-title"
+  url: "a.film-link"

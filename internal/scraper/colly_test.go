@@ -494,6 +494,67 @@ func TestScrapeWithSelectors_DateSelectorsProbesMissing(t *testing.T) {
 	assert.Empty(t, probes[2].Text)
 }
 
+// TestParseSelector verifies that parseSelector correctly splits a selector
+// string into its CSS selector and optional attribute name components.
+func TestParseSelector(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantSel  string
+		wantAttr string
+	}{
+		{
+			name:     "plain selector returns empty attribute",
+			input:    "span.title",
+			wantSel:  "span.title",
+			wantAttr: "",
+		},
+		{
+			name:     "selector with attribute",
+			input:    "span.prices::data-event",
+			wantSel:  "span.prices",
+			wantAttr: "data-event",
+		},
+		{
+			name:     "class-only selector with attribute",
+			input:    ".card::data-url",
+			wantSel:  ".card",
+			wantAttr: "data-url",
+		},
+		{
+			name:     "double-colon but no attribute name",
+			input:    "div.thing::",
+			wantSel:  "div.thing",
+			wantAttr: "",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			wantSel:  "",
+			wantAttr: "",
+		},
+		{
+			name:     "no dot, just tag with attribute",
+			input:    "a::href",
+			wantSel:  "a",
+			wantAttr: "href",
+		},
+		{
+			name:     "selector with multiple classes, no attribute",
+			input:    "div.foo.bar",
+			wantSel:  "div.foo.bar",
+			wantAttr: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSel, gotAttr := parseSelector(tt.input)
+			assert.Equal(t, tt.wantSel, gotSel, "selector part")
+			assert.Equal(t, tt.wantAttr, gotAttr, "attribute part")
+		})
+	}
+}
+
 // TestScrapeWithSelectors_DateSelectorsFallback verifies that when
 // date_selectors is set, StartDate/EndDate are NOT populated (the
 // date_selectors path takes priority).

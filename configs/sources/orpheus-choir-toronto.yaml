@@ -1,17 +1,21 @@
 name: "orpheus-choir-toronto"
-# Disabled. WordPress page with Gutenberg blocks containing ~3-4 concerts per season.
-# Analysis (2026-02-25):
-# - Page uses freeform Gutenberg layout (wp-block-columns, spacers, separators)
-# - Concerts are titled with h2.wp-block-heading (Rejoice in the Lamb, Sound | Space, etc.)
-# - Each concert followed by wp-block-columns div with two columns:
-#   Left: date (h3 with "Saturday YYYY-MM-DD – H:MM pm"), location (h3), description (p)
-#   Right: poster image, ticketspice booking link
-# - No repeating container wrapper (hr separator between concerts, not a div)
-# - CSS selectors cannot extract "all siblings until next h2" without per-concert wrapper
-# - Content is stable and scrapeable, but needs Rod JavaScript extraction or page restructuring
-# - Consider: custom extractor, OR ask site to wrap each concert in a div.concert class
+# Disabled. WordPress Gutenberg page with freeform layout — structural blocker.
+# Analysis (2026-03-09, re-inspected):
+# - Platform: WordPress + Gutenberg (static HTML, no JS rendering required)
+# - Content: ~3-4 concerts/year with stable data (verified in REST API + DOM)
+# - Structure: Concerts are h2.wp-block-heading + following h3/p sibling elements
+# - BLOCKER: No repeating container div. Events separated by <hr class="wp-block-separator">,
+#   not wrapped in a concert-level div. CSS selectors require a container to group related fields.
+#   The scraper expects: event_list="div.concert" → name, date, location as descendants.
+#   This page has: h2 → hr → h2, with metadata as loose siblings (h3, p) in different
+#   wp-block-column divs. Impossible to extract all siblings until next h2 using CSS alone.
+# - Workaround: Contact choir to add <div class="concert">...</div> wrapper around each
+#   concert block in Gutenberg editor (minor edit, makes scraping trivial).
+# - Alternative: Low-volume venue (~4/year) — manual entry via admin UI more pragmatic.
+# - WordPress REST API returns full page content in /wp-json/wp/v2/pages?slug=...
+#   but still suffers from same sibling-grouping limitation if using CSS extraction.
 url: "https://orpheuschoirtoronto.com/2025-2026-concert-season/"
-tier: 2
+tier: 1
 schedule: "manual"
 trust_level: 6
 license: "CC0-1.0"

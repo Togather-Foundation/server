@@ -4,18 +4,23 @@ tier: 2
 schedule: "weekly"
 trust_level: 5
 license: "CC0-1.0"
-# Wix Events OOI widget never renders within the 30s Rod hard timeout.
-# The widget container (#comp-mbl3z9lq) is always an empty div — no event
-# data-hooks appear in the DOM regardless of wait selector used.
-# Wix Thunderbolt OOI requires full JS platform bootstrap which does not
-# complete under headless Rod. Events sitemap exists at
-# /dynamic-events-sitemap.xml (13 events) but individual pages also lack
-# JSON-LD Event structured data.
+# Wix Events OOI widget remains permanently unscrapeable in headless Rod.
+# March 2026 retry with wait_network_idle=true + undetected=true flags:
+#   - Page renders to blank (2.2 MB HTML downloaded, screenshot shows only header)
+#   - Widget container (#comp-mbl3z9lq) is always an empty div
+#   - No [data-hook] attributes for event-list-item, ev-title, ev-date, ev-rsvp-button
+#   - Network idle 30s timeout: no XHR/Fetch API calls detected (no async widget populator)
+#   - Events sitemap at /dynamic-events-sitemap.xml exists (12 events listed)
+#   - Individual event pages lack JSON-LD Event schema (only ImageObject found)
+# Verdict: Wix OOI widget requires full JS platform bootstrap that does not
+# complete under headless Rod. Cannot be scraped. No alternative data source.
 enabled: false
 max_pages: 3
 headless:
-  wait_selector: "body"
-  wait_timeout_ms: 20000
+  wait_selector: "[data-hook='event-list-item']"
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+  undetected: true
 selectors:
   event_list: "[data-hook='event-list-item']"
   name: "[data-hook='ev-title']"

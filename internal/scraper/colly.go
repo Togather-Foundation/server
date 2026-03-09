@@ -113,7 +113,7 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 		raw := RawEvent{}
 
 		if config.Selectors.Name != "" {
-			raw.Name = strings.TrimSpace(h.ChildText(config.Selectors.Name))
+			raw.Name = extractTextOrAttr(h, config.Selectors.Name)
 		}
 
 		// Date extraction: prefer date_selectors (smart assembler) over
@@ -151,11 +151,11 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 		}
 
 		if config.Selectors.Location != "" {
-			raw.Location = strings.TrimSpace(h.ChildText(config.Selectors.Location))
+			raw.Location = extractTextOrAttr(h, config.Selectors.Location)
 		}
 
 		if config.Selectors.Description != "" {
-			raw.Description = strings.TrimSpace(h.ChildText(config.Selectors.Description))
+			raw.Description = extractTextOrAttr(h, config.Selectors.Description)
 		}
 
 		if config.Selectors.URL != "" {
@@ -280,6 +280,90 @@ func wwwVariants(domain string) []string {
 		return []string{domain, strings.TrimPrefix(domain, "www.")}
 	}
 	return []string{domain, "www." + domain}
+}
+
+// parseSelector parses a selector that may include an attribute specifier.
+// Format: "selector::attribute" returns (selector, attribute).
+// Format: "selector" returns (selector, "").
+// Example: "span.prices::data-event" returns ("span.prices", "data-event")
+func parseSelector(sel string) (string, string) {
+	if idx := strings.Index(sel, "::"); idx != -1 {
+		return sel[:idx], sel[idx+2:]
+	}
+	return sel, ""
+}
+
+// extractTextOrAttr extracts either an attribute value or text content from the
+// current element or a child element. If selector contains "::attribute",
+// extracts that attribute; otherwise extracts text content.
+//
+// For self-extraction: if h matches the selector, extract from h itself.
+// For child-extraction: if h doesn't match, extract from the first child matching selector.
+// This handles cases where the event_list selector IS the container element itself
+// (e.g., event_list="span.prices" and name="span.prices::data-event").
+func extractTextOrAttr(h *colly.HTMLElement, selector string) string {
+	sel, attr := parseSelector(selector)
+
+	// Check if the current element matches the selector.
+	// This is a simple check: if selector is a class, test if h has that class.
+	// If selector is an element+class, test if h is that element and has the class.
+	matches := elementMatches(h, sel)
+
+	if matches {
+		// Extract from the current element itself.
+		if attr != "" {
+			return strings.TrimSpace(h.Attr(attr))
+		}
+		return strings.TrimSpace(h.Text)
+	}
+
+	// Extract from a child element.
+	if attr != "" {
+		return strings.TrimSpace(h.ChildAttr(sel, attr))
+	}
+	return strings.TrimSpace(h.ChildText(sel))
+}
+
+// elementMatches checks if h matches the given CSS selector in a simple way.
+// It handles:
+// - ".classname" → h has class "classname"
+// - "tag.classname" → h is tag and has class "classname"
+// - "tag" → h is tag
+// This is NOT a full CSS selector parser, but covers the common cases for event_list selectors.
+func elementMatches(h *colly.HTMLElement, selector string) bool {
+	// Handle class selectors.
+	if strings.HasPrefix(selector, ".") {
+		className := strings.TrimPrefix(selector, ".")
+		classes := strings.Fields(h.Attr("class"))
+		for _, c := range classes {
+			if c == className {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Handle tag.class selectors.
+	if strings.Contains(selector, ".") {
+		parts := strings.Split(selector, ".")
+		tag := parts[0]
+		className := strings.Join(parts[1:], ".")
+
+		if h.Name != tag {
+			return false
+		}
+
+		classes := strings.Fields(h.Attr("class"))
+		for _, c := range classes {
+			if c == className {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Handle simple tag selectors.
+	return h.Name == selector
 }
 
 // extractDateFromElement finds a child element matching selector and returns

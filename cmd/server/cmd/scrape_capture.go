@@ -306,8 +306,8 @@ func formatNetworkSummary(requests []scraper.NetworkRequest) string {
 			if r.Status > 0 {
 				status = fmt.Sprintf(" → %d", r.Status)
 			}
-			sb.WriteString(fmt.Sprintf("  %-4s %s%s %s%s\n",
-				r.Method, r.URL, status, r.ContentType, size))
+			fmt.Fprintf(&sb, "  %-4s %s%s %s%s\n",
+				r.Method, r.URL, status, r.ContentType, size)
 		}
 	} else {
 		sb.WriteString("API Calls (XHR/Fetch + JSON): none\n")
@@ -332,7 +332,7 @@ func formatNetworkSummary(requests []scraper.NetworkRequest) string {
 			}
 			parts = append(parts, fmt.Sprintf("%s: %d", t, other[t]))
 		}
-		sb.WriteString(fmt.Sprintf("\nOther Requests (%d total):\n  %s\n", otherTotal, strings.Join(parts, ", ")))
+		fmt.Fprintf(&sb, "\nOther Requests (%d total):\n  %s\n", otherTotal, strings.Join(parts, ", "))
 	}
 
 	return sb.String()

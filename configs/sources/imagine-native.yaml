@@ -1,13 +1,41 @@
 name: "imagine-native"
-# Disabled: /year-round/events/ returns 404 (URL no longer exists) 2026-03-05.
-# Homepage has article.elementor-post with h3.elementor-post__title + span.elementor-post-date
-# but these are news/blog post announcements, not structured events with start times.
-# Festival programming is seasonal (Oct); year-round page was removed.
-# Re-enable only if a structured event listing page is added to the site.
-url: "https://imaginenative.org/year-round/events/"
-tier: 0
+# DISABLED — Seasonal festival (June annually). 2026 programme not yet announced.
+#
+# Platform: WordPress + Elementor + FacetWP + Elevent plugin for event calendar.
+# Previously: /year-round/events/ URL returned 404 (removed). Updated to /festival/schedule/.
+#
+# WP REST API DISCOVERY (2026-03-09):
+#   /wp-json/wp/v2/types reveals Elevent custom post types:
+#     events — "Events from Elevent" (primary event listing)
+#     event_showtimes — "Elevent Showtimes" (individual screening times)
+#     institute-events — Institute events (year-round programming)
+#     artists — Artist profiles
+#     works — Film/work entries
+#   Taxonomies: country, event_dates, event_types, festival_season_or_series,
+#     genre, search_keywords, sections, venue
+#   All event endpoints currently return empty results (seasonal — festival is June/October).
+#
+# FacetWP widget is active on schedule page but does not populate events in headless mode
+# (no published events yet for 2026 season).
+#
+# NEXT STEPS:
+#   1. Re-check WP REST API in May when 2026 festival events are expected to be published.
+#   2. Try T3 REST: /wp-json/wp/v2/events?per_page=100 — if event dates are in structured
+#      fields (not just content HTML), this becomes a config-only enable.
+#   3. Also try /wp-json/wp/v2/event_showtimes for individual screening times.
+#   4. FacetWP display selectors (.fwpl-row etc.) as fallback if REST API dates are insufficient.
+url: "https://imaginenative.org/festival/schedule/"
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
-max_pages: 3
+headless:
+  wait_selector: ".fwpl-layout"
+  wait_timeout_ms: 25000
+  wait_network_idle: true
+selectors:
+  event_list: ".fwpl-row"
+  name: ".fwpl-item-title"
+  start_date: ".fwpl-item-date"
+  url: "a.fwpl-item-link"

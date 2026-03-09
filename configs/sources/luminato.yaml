@@ -1,12 +1,47 @@
 name: "luminato"
-# Disabled: DM/website-builder SPA; events rendered by eventscalendar.co widget
-# (data-project-id="proj_QrmXauVHd8e0ohna92KJg", embed.js from dist.eventscalendar.co).
-# Tier 2 headless tried 2026-03-04: .cl-view-cards wait selector times out (widget JS never loads in Rod).
-# No public eventscalendar.co API found. Unscrapable without vendor API access or network interception.
+# DISABLED — DM website-builder page with eventscalendar.co embed (Shadow DOM, unscrapeable).
+#
+# MAJOR DISCOVERY (2026-03-09): Individual show pages are FULLY SCRAPEABLE!
+#   The /events listing page uses an eventscalendar.co embed (data-project-id="proj_QrmXauVHd8e0ohna92KJg")
+#   which wraps DOM in Shadow DOM / cross-origin iframe isolation — confirmed unscrapeable even with
+#   wait_network_idle=true, undetected=true, wait_timeout_ms=30000.
+#
+#   BUT: Individual show pages have full structured data in static HTML:
+#     /PennTeller — Penn & Teller (June 5-6, 2026 at Meridian Hall)
+#     /10-days-in-a-madhouse — 10 Days in a Madhouse (June 16-21, 2026 at Bluma Appel Theatre)
+#     /play-dead — Play Dead (June 25-28, 2026 at Meridian Arts Centre)
+#     + Industry Series, LuminoCity, and other events
+#
+#   Each show page contains: title, dates & times table, venue, run time, ticket links, artist bios.
+#   Sitemap at /sitemap.xml has ~150 pages including all show URLs.
+#
+# VIABLE PATHS:
+#   A. Multi-URL config: List known show page URLs and scrape each individually.
+#      Requires scraper support for multiple URLs per source (not yet implemented).
+#   B. Depth-2 scraping: Scrape /events or nav menu to discover show URLs, then
+#      follow each to extract structured event data from detail pages.
+#   C. Sitemap-based discovery: Parse /sitemap.xml to find show page URLs,
+#      filter by URL pattern, scrape each for event data.
+#
+# Current selectors target the unscrapeable eventscalendar.co widget — these are
+# placeholder and will not work. Real extraction should target individual show pages.
+#
+# Festival: Annual, June. 2026 festival is confirmed with active show pages.
+# See docs: docs/integration/event-platforms.md § 8 (eventscalendar.co).
 url: "https://www.luminatofestival.com/events"
-tier: 0
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
 max_pages: 3
+headless:
+  wait_selector: "div.cl-calendar"
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+  undetected: true
+selectors:
+  event_list: "div.cl-card"
+  name: ".cl-event-card__name"
+  start_date: "time[datetime]"
+  url: "a[href]"

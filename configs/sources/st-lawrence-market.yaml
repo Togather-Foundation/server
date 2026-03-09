@@ -1,12 +1,22 @@
 name: "st-lawrence-market"
-# Disabled: Page returns a near-empty skeleton (~1261 bytes, only 2 CSS classes:
-# "js" and "stylish-select") — the site fails to render meaningful content.
-# Events likely JS-rendered; Tier 2 headless would be required, but given the
-# minimal page skeleton observed, the site may have anti-bot measures or
-# require session/cookie state to load events. Not viable without further investigation.
+# March 2026: Seasonal venue with no events currently scheduled. Site uses legacy jQuery
+# AJAX to load events dynamically (loadPiece() → .event_list). Tested with T2 headless
+# using wait_network_idle: true + undetected: true to bypass anti-bot skeleton. Page
+# renders fully (22.5 KB) but AJAX endpoint returns "No Record Found". Re-enable in
+# April-October when market has programming. Contact: City of Toronto open data / venue.
 url: "https://www.stlawrencemarket.com/events/"
-tier: 0
-schedule: "manual"
+tier: 2
+schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
+headless:
+  wait_selector: ".event_list > div"
+  wait_timeout_ms: 20000
+  wait_network_idle: true
+  undetected: true
+selectors:
+  event_list: ".event_list > div"
+  name: "strong a"
+  start_date: ".event_date"
+  url: "strong a"
