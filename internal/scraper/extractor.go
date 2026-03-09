@@ -2,11 +2,16 @@ package scraper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/rs/zerolog"
 )
+
+// ErrNoExtractorConfig is returned by NewExtractor when a source has neither
+// a REST nor GraphQL configuration.
+var ErrNoExtractorConfig = errors.New("no REST or GraphQL config for source")
 
 // Extractor fetches events from an API endpoint. RestExtractor and
 // GraphQLExtractor both satisfy this interface; scrapeTier3 dispatches
@@ -30,6 +35,6 @@ func NewExtractor(source SourceConfig, logger zerolog.Logger) (Extractor, error)
 	case source.GraphQL != nil:
 		return NewGraphQLExtractor(logger), nil
 	default:
-		return nil, fmt.Errorf("no REST or GraphQL config for source %q", source.Name)
+		return nil, fmt.Errorf("%w %q", ErrNoExtractorConfig, source.Name)
 	}
 }

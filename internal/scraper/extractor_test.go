@@ -45,5 +45,6 @@ func TestNewExtractor_NoConfig(t *testing.T) {
 	source := SourceConfig{Name: "empty-src"}
 	_, err := NewExtractor(source, zerolog.Nop())
 	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNoExtractorConfig)
 	assert.Contains(t, err.Error(), "empty-src")
 }
