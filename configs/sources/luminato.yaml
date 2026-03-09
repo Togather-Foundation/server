@@ -1,12 +1,26 @@
 name: "luminato"
-# Disabled: DM/website-builder SPA; events rendered by eventscalendar.co widget
-# (data-project-id="proj_QrmXauVHd8e0ohna92KJg", embed.js from dist.eventscalendar.co).
-# Tier 2 headless tried 2026-03-04: .cl-view-cards wait selector times out (widget JS never loads in Rod).
-# No public eventscalendar.co API found. Unscrapable without vendor API access or network interception.
+# Disabled: DM website-builder page with eventscalendar.co embed (data-project-id="proj_QrmXauVHd8e0ohna92KJg").
+# Widget IS rendering visually in headless browser (confirmed via screenshot 2026-03-09),
+# but DOM is NOT accessible via standard CSS selectors — uses Shadow DOM or cross-origin iframe isolation.
+# Attempted T2 headless with: wait_selector="div.cl-calendar", wait_network_idle=true, wait_timeout_ms=30000, undetected=true.
+# Result: wait_selector never matches (context deadline exceeded after 30s), even though widget visually renders.
+# Root cause: eventscalendar.co wraps its DOM in Shadow DOM or cross-origin iframe; no public API available.
+# No further attempts recommended — vendor integration would be required.
+# See docs: docs/integration/event-platforms.md § 8 (eventscalendar.co).
 url: "https://www.luminatofestival.com/events"
-tier: 0
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
 max_pages: 3
+headless:
+  wait_selector: "div.cl-calendar"
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+  undetected: true
+selectors:
+  event_list: "div.cl-card"
+  name: ".cl-event-card__name"
+  start_date: "time[datetime]"
+  url: "a[href]"

@@ -1,15 +1,34 @@
 name: "hot-docs"
-# Disabled: Event data is served via Agile Technologies box office widget
-# (boxoffice.hotdocs.ca/websales/agile_widget.ashx?orgid=2338&epgid=210).
-# The widget JS loads event listings from a third-party domain; even with
-# Rod headless rendering (25s wait) the event items do not appear in the main
-# page DOM (body only shows the date-picker shell, ~30-82KB).
-# Fix: Use Agile box office API directly (if publicly accessible), or scrape
-# the dedicated film detail pages once individual film slugs are known.
-url: "https://hotdocs.ca/whats-on/watch-cinema"
-tier: 0
+# Disabled: Origin server returning 502 Bad Gateway as of March 2026.
+# 
+# Previous blocker (March 2026): Event data is served via Agile Technologies
+# box office widget (boxoffice.hotdocs.ca/websales/agile_widget.ashx?orgid=2338&epgid=210).
+# Attempted fixes with `wait_network_idle: true` and `undetected: true` flags;
+# the widget still did not render in DOM even with 30s headless wait.
+# 
+# March 2026 update: The /whats-on/cinema endpoint itself now returns Cloudflare
+# 502 Bad Gateway. The origin ApostropheCMS server may be down or misconfigured.
+# The main domain (hotdocs.ca) loads successfully, but the events page does not.
+# 
+# Next steps when infrastructure recovers:
+# 1. Verify /whats-on/cinema is accessible from a standard browser
+# 2. Inspect the Agile widget loader script source and check for public API endpoint
+# 3. Consider direct Agile box office API scraping if available
+# 4. Fall back to scraping individual film detail pages via slug discovery
+url: "https://hotdocs.ca/whats-on/cinema"
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
 max_pages: 3
+headless:
+  wait_selector: "body"
+  wait_timeout_ms: 30000
+  wait_network_idle: true
+  undetected: true
+selectors:
+  event_list: ".agile-event"
+  name: ".event-title"
+  start_date: ".event-date"
+  url: "a[href*='boxoffice']"
