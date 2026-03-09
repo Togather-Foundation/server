@@ -1,12 +1,14 @@
 name: "theatre-passe-muraille"
-# Disabled: Elementor-built pages; no structured event containers found 2026-03-05.
-# /25-26-season/ contains individual productions as h5 + plain <p> text (e.g. "Playing Feb. 1-21, 2026").
-# Dates are embedded in Elementor text-editor paragraphs with no distinguishing CSS selectors.
-# Individual show pages (e.g. /butch-femme/, /through-the-eyes-of-god/) are separate Elementor pages.
-# Nav submenu under 25-26-season lists all show URLs, but each page has no consistent structured schema.
-# /tickets/ is a Woocommerce/Elementor accordion (FAQ), not an event list.
-# Re-enable only if show pages gain structured date markup (e.g. schema.org Event JSON-LD, <time> elements),
-# or if a dedicated event listing page with CSS-selectable date fields is added.
+# Disabled: Requires depth-2 (detail-page) scraping. 
+# Season page (/25-26-season/) lists shows as h5 title + unstructured <p> dates (e.g. "Playing Feb. 1-21, 2026").
+# Dates in season page are scattered across h5 + p tags with no CSS class selectors; no repeating container div.
+# Individual show pages (e.g. /butch-femme/, /through-the-eyes-of-god/) have CLEAN structured dates
+#   with "Show Dates" heading followed by "Sep. 20th – 27th, 2025" — much better quality.
+# Nav submenu under 25-26-season lists all show URLs (butch-femme, what-brings-you-in, through-the-eyes-of-god, etc.).
+# Workarounds: (1) Implement depth-2 scraping to extract from detail pages (requires scraper enhancement).
+#              (2) NLP date parsing of "Playing MMM. D-D, YYYY" format (fragile, prone to extraction errors).
+# Alternative: Contact venue to add <time> elements or schema.org Event JSON-LD to season page.
+# Last review: 2026-03-09 — season has 6-8 productions; current structure unchanged since 2026-03-05.
 url: "https://passemuraille.ca/25-26-season/"
 tier: 0
 schedule: "weekly"

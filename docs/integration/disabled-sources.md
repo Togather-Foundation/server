@@ -1,7 +1,8 @@
 # Disabled Scraper Sources — Status and Fix Paths
 
-**Last reviewed:** 2026-03-05  
-**Audit bead:** `srv-2oipr` (closed)  
+**Last reviewed:** 2026-03-09  
+**Audit bead:** `srv-mo1xw` (orpheus-choir-toronto re-inspection) — re-inspected orpheus-choir-toronto, confirmed structural blocker, documented fix path  
+**Previous audits:** 2026-03-05 (`srv-2oipr`, `srv-n8qi1`, `srv-mwy3y`)  
 **Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)  
 **Cross-origin iframe extraction added:** 2026-03-05 (`srv-mwy3y`, closed) — adds `headless.iframe:` config block; unblocks reel-asian and lula-lounge  
 **T3 REST tier bead:** `srv-hi014` (open) — adds `rest:` config block; unblocks burdock-brewery, workman-arts, and others
@@ -26,7 +27,8 @@ Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-r
 | Seasonal — re-enable on a calendar trigger | heritage-toronto, imagine-native, inside-out | None |
 | T3 REST API — unblocked by `srv-hi014` | burdock-brewery, workman-arts | Low (config only once `srv-hi014` lands) |
 | T2 widget never renders (third-party embed) | rcmusic, hot-docs | Low–Medium (find underlying API endpoint) |
-| Need depth-2 (detail-page) scraping | obsidian-theatre, east-end-arts, theatre-passe-muraille, orpheus-choir-toronto | Medium (new feature) |
+| Freeform layout — no repeating container | orpheus-choir-toronto | Low (contact venue for minor markup edit) |
+| Need depth-2 (detail-page) scraping | obsidian-theatre, east-end-arts, theatre-passe-muraille | Medium (new feature) |
 | Cross-origin iframe — config written, pending verification | lula-lounge | Low (verify selectors, flip enabled) |
 | ~~Cross-origin iframe~~ — **now Tier 1 static** | reel-asian | **Done** (enabled) |
 | Blocked by third-party widget / no listing page | luminato, church-wellesley-village-bia | Low–Medium (contact/API) |
@@ -186,15 +188,16 @@ depth-2 mode would follow each event URL and extract additional fields.
   config that targets each show page's date field. Season has ~3–5 shows so manual
   entry is also viable as a short-term workaround.
 
-### east-end-arts
+### east-end-arts ✅ RESOLVED
 - **URL:** `https://eastendarts.ca/`
-- **Platform:** WordPress (VCEx theme)
-- **Extracts now:** Article titles and URLs (`article.vcex-recent-news-entry`).
-- **Missing:** Date — appears only in body text of individual posts, not as a
-  structured `<time>` element on the listing page.
-- **Action:** Depth-2 scraping to extract `<time>` or date metadata from each
-  post page. Alternatively, check if the site exposes a WordPress REST API
-  (`/wp-json/wp/v2/posts`) which includes `date` as a structured field.
+- **Platform:** WordPress with REST API
+- **Previous blocker:** Dates only in excerpt text, not structured `<time>` elements on listing page.
+- **Resolution:** Upgraded to **Tier 3 REST API**. WordPress REST API endpoint
+  `/wp-json/wp/v2/posts?per_page=10` returns structured RFC 3339 dates in the
+  `date` field. Tested: 10 events extracted with title, start_date (RFC 3339), url.
+- **Config:** `tier: 3`, `results_field: "."`, field_map maps `title.rendered`,
+  `date`, `link`. Note: per_page=10 (not 100) to avoid HTTP client buffer issues.
+- **Status:** `enabled: true` as of 2026-03-09. Config: `configs/sources/east-end-arts.yaml`.
 
 ### theatre-passe-muraille
 - **URL:** `https://passemuraille.ca/25-26-season/`
@@ -206,15 +209,44 @@ depth-2 mode would follow each event URL and extract additional fields.
   OR contact the venue to request they add `<time>` elements or JSON-LD Event markup
   to their show pages (a single theme change would fix this permanently).
 
+---
+
+## 4b. Freeform layout — no repeating container wrapper
+
+These venues use CMS layouts (WordPress Gutenberg, Elementor, etc.) where content
+blocks are freeform siblings without a shared repeating container div. CSS selectors
+require a repeating container to group related fields (name, date, location). These
+sites need either a markup edit from the venue or a different extraction strategy.
+
 ### orpheus-choir-toronto
 - **URL:** `https://orpheuschoirtoronto.com/2025-2026-concert-season/`
-- **Platform:** WordPress Gutenberg
-- **Situation:** ~4 concerts per season. Dates are in `h3` siblings with no wrapper
-  div — concerts are separated by `<hr>` elements, not by a repeating container CSS
-  selectors can target.
-- **Action:** Given the very low volume (~4 events/year), manual entry via the admin
-  UI is the most pragmatic path. Alternatively, contact the choir to add a `div.concert`
-  wrapper around each concert block (a minor Gutenberg edit).
+- **Platform:** WordPress Gutenberg (static HTML, no JS rendering)
+- **Re-inspected:** 2026-03-09 via /configure-source
+- **Content:** ~3–4 concerts per season (verified 4 events in current year)
+- **Structure:** Concerts are `<h2 class="wp-block-heading">` (title) followed by
+  `<h3>` siblings for date/location and `<p>` for description, all separated by
+  `<hr class="wp-block-separator">` elements. Metadata is nested in different
+  `wp-block-column` divs (left: text; right: poster image).
+- **Blocker:** No wrapping div around each concert. CSS selector architecture
+  expects `event_list` to be a repeating container with descendants. This page
+  has: `h2` → `hr` → `h2`, with loose sibling elements in `wp-block-column` divs.
+  Extracting "all siblings until next h2" requires custom logic beyond CSS selectors.
+- **REST API:** WordPress exposes `/wp-json/wp/v2/pages?slug=2025-2026-concert-season`
+  which includes the full rendered HTML in `content.rendered`, but the same sibling-grouping
+  limitation applies.
+- **Action:** Contact the choir to add a `<div class="concert">...</div>` wrapper
+  around each concert block in the Gutenberg editor (a minor block-grouping edit,
+  requires no custom CSS). Once wrapped, selectors become:
+  ```yaml
+  event_list: "div.concert"
+  name: "h2.wp-block-heading"
+  start_date: "h3.wp-block-heading"
+  location: "h3.wp-block-heading:last-of-type"
+  url: "a[href*='ticketspice']"
+  ```
+  Alternatively, given the very low volume (~4 events/year), manual entry via the admin
+  UI is a pragmatic short-term solution. Long-term, a Gutenberg block group will solve
+  this permanently.
 
 ---
 
