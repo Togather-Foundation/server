@@ -1,8 +1,6 @@
 module github.com/Togather-Foundation/server
 
-go 1.24.1
-
-toolchain go1.24.13
+go 1.25.8
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0

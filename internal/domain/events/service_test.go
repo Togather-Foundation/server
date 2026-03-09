@@ -350,7 +350,7 @@ func TestParseFilters_DefaultStartDateToday(t *testing.T) {
 	todayBefore := time.Date(before.Year(), before.Month(), before.Day(), 0, 0, 0, 0, loc)
 	todayAfter := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, loc)
 	require.True(t,
-		*filters.StartDate == todayBefore || *filters.StartDate == todayAfter,
+		filters.StartDate.Equal(todayBefore) || filters.StartDate.Equal(todayAfter),
 		"startDate %v should be today at midnight in %s (before=%v, after=%v)",
 		*filters.StartDate, loc, todayBefore, todayAfter,
 	)

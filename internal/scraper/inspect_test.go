@@ -123,7 +123,7 @@ func TestFormatInspectResultSafe_HasBoundaryMarkers(t *testing.T) {
 		t.Errorf("nonce length = %d, want 16 hex chars", len(nonce))
 	}
 	for _, c := range nonce {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("nonce contains non-hex char: %c", c)
 			break
 		}
