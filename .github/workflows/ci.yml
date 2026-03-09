@@ -129,7 +129,12 @@ jobs:
         run: go test -v -race ./internal/...
 
       - name: Generate coverage profile
-        run: go test -coverprofile=coverage.out -covermode=atomic ./internal/...
+        # internal/loadtest and internal/telemetry have no test files and import test-only
+        # packages that trigger "go: no such tool covdata" under Go 1.25+ coverage instrumentation.
+        # Exclude them; they are operator tools, not units under test.
+        run: |
+          PKGS=$(go list ./internal/... | grep -v 'internal/loadtest$\|internal/telemetry$' | tr '\n' ' ')
+          go test -coverprofile=coverage.out -covermode=atomic $PKGS
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

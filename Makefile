@@ -135,7 +135,7 @@ test-ci:
 	@echo "Running all test suites..."
 	@echo ""
 	@echo "==> Running unit tests..."
-	@$(RUN) go test -v -coverprofile=coverage.out ./internal/...
+	@$(RUN) go test -v -coverprofile=coverage.out $(shell go list ./internal/... | grep -v 'internal/loadtest$$\|internal/telemetry$$')
 	@echo ""
 	@echo "==> Running contract tests..."
 	@if ! command -v pyshacl > /dev/null 2>&1; then \
@@ -161,7 +161,7 @@ test-ci-race:
 	@echo "Running tests exactly as CI does (with race detector)..."
 	@echo ""
 	@echo "==> Running unit tests..."
-	@$(RUN) go test -v -race -coverprofile=coverage.out ./internal/...
+	@$(RUN) go test -v -race -coverprofile=coverage.out $(shell go list ./internal/... | grep -v 'internal/loadtest$$\|internal/telemetry$$')
 	@echo ""
 	@echo "==> Running contract tests..."
 	@if ! command -v pyshacl > /dev/null 2>&1; then \
