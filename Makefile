@@ -623,17 +623,9 @@ install-tools:
 	@echo "Installing development tools..."
 	@echo ""
 	@echo "==> Installing Go tools..."
-	@echo "Installing golangci-lint v1.64.8 (building from source)..."
-	@# Note: Using v1.64.8 which supports Go 1.23-1.24
-	@# v2.x requires latest Go which may not be available yet
-	@TEMP_DIR=$$(mktemp -d); \
-	cd $$TEMP_DIR && \
-	git clone --depth 1 --branch v1.64.8 https://github.com/golangci/golangci-lint.git && \
-	cd golangci-lint && \
-	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o $(HOME)/go/bin/golangci-lint ./cmd/golangci-lint && \
-	cd ~ && \
-	rm -rf $$TEMP_DIR && \
-	echo "✓ golangci-lint v1.64.8 built from source with Go $$(go version | awk '{print $$3}')"
+	@echo "Installing golangci-lint v2.11.2..."
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(HOME)/go/bin v2.11.2 && \
+	echo "✓ golangci-lint v2.11.2 installed"
 	@echo "Installing air (live reload)..."
 	@go install github.com/air-verse/air@latest
 	@echo "Installing sqlc..."

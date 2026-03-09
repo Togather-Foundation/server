@@ -34,12 +34,12 @@ func SerializeToTurtle(jsonldData map[string]any) (string, error) {
 	}
 
 	// Write subject with angle brackets
-	builder.WriteString(fmt.Sprintf("<%s>\n", subjectURI))
+	fmt.Fprintf(&builder, "<%s>\n", subjectURI)
 
 	// Extract @type
 	typeVal := extractType(jsonldData)
 	if typeVal != "" {
-		builder.WriteString(fmt.Sprintf("    a schema:%s ;\n", typeVal))
+		fmt.Fprintf(&builder, "    a schema:%s ;\n", typeVal)
 	}
 
 	// Process properties in sorted order for consistent output
@@ -57,9 +57,9 @@ func SerializeToTurtle(jsonldData map[string]any) (string, error) {
 		turtle := serializeProperty(prop, value)
 		if turtle != "" {
 			if i == len(properties)-1 {
-				builder.WriteString(fmt.Sprintf("    %s .\n", turtle))
+				fmt.Fprintf(&builder, "    %s .\n", turtle)
 			} else {
-				builder.WriteString(fmt.Sprintf("    %s ;\n", turtle))
+				fmt.Fprintf(&builder, "    %s ;\n", turtle)
 			}
 		}
 	}

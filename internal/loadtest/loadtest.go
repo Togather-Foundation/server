@@ -507,11 +507,11 @@ func (s *Statistics) Report() string {
 	report.WriteString("═══════════════════════════════════════════════════════════════\n\n")
 
 	// Overall statistics
-	report.WriteString(fmt.Sprintf("Duration:        %s\n", duration.Round(time.Second)))
-	report.WriteString(fmt.Sprintf("Total Requests:  %d\n", totalReqs))
-	report.WriteString(fmt.Sprintf("Successful:      %d (%.1f%%)\n", s.successRequests, float64(s.successRequests)/float64(totalReqs)*100))
-	report.WriteString(fmt.Sprintf("Failed:          %d (%.1f%%)\n", s.failedRequests, float64(s.failedRequests)/float64(totalReqs)*100))
-	report.WriteString(fmt.Sprintf("Requests/sec:    %.2f\n\n", float64(totalReqs)/duration.Seconds()))
+	fmt.Fprintf(&report, "Duration:        %s\n", duration.Round(time.Second))
+	fmt.Fprintf(&report, "Total Requests:  %d\n", totalReqs)
+	fmt.Fprintf(&report, "Successful:      %d (%.1f%%)\n", s.successRequests, float64(s.successRequests)/float64(totalReqs)*100)
+	fmt.Fprintf(&report, "Failed:          %d (%.1f%%)\n", s.failedRequests, float64(s.failedRequests)/float64(totalReqs)*100)
+	fmt.Fprintf(&report, "Requests/sec:    %.2f\n\n", float64(totalReqs)/duration.Seconds())
 
 	// Response time percentiles
 	if len(s.responseTimes) > 0 {
@@ -519,10 +519,10 @@ func (s *Statistics) Report() string {
 		avgTime := s.calculateAverage()
 
 		report.WriteString("Response Times (ms):\n")
-		report.WriteString(fmt.Sprintf("  Average:  %d\n", avgTime))
-		report.WriteString(fmt.Sprintf("  p50:      %d\n", p50))
-		report.WriteString(fmt.Sprintf("  p95:      %d\n", p95))
-		report.WriteString(fmt.Sprintf("  p99:      %d\n\n", p99))
+		fmt.Fprintf(&report, "  Average:  %d\n", avgTime)
+		fmt.Fprintf(&report, "  p50:      %d\n", p50)
+		fmt.Fprintf(&report, "  p95:      %d\n", p95)
+		fmt.Fprintf(&report, "  p99:      %d\n\n", p99)
 	}
 
 	// Error breakdown
@@ -530,7 +530,7 @@ func (s *Statistics) Report() string {
 		report.WriteString("Errors by Status Code:\n")
 		for code, count := range s.errors {
 			if code != 0 {
-				report.WriteString(fmt.Sprintf("  %d: %d\n", code, count))
+				fmt.Fprintf(&report, "  %d: %d\n", code, count)
 			}
 		}
 		report.WriteString("\n")
@@ -540,7 +540,7 @@ func (s *Statistics) Report() string {
 	if len(s.endpointStats) > 0 {
 		report.WriteString("Per-Endpoint Statistics:\n")
 		report.WriteString("─────────────────────────────────────────────────────────────\n")
-		report.WriteString(fmt.Sprintf("%-20s %8s %8s %8s %8s %8s\n", "Endpoint", "Count", "Avg(ms)", "p95(ms)", "Min", "Max"))
+		fmt.Fprintf(&report, "%-20s %8s %8s %8s %8s %8s\n", "Endpoint", "Count", "Avg(ms)", "p95(ms)", "Min", "Max")
 		report.WriteString("─────────────────────────────────────────────────────────────\n")
 
 		for endpoint, stats := range s.endpointStats {
@@ -549,8 +549,8 @@ func (s *Statistics) Report() string {
 			}
 			avg := stats.total / stats.count
 			p95 := calculatePercentile(stats.times, 0.95)
-			report.WriteString(fmt.Sprintf("%-20s %8d %8d %8d %8d %8d\n",
-				endpoint, stats.count, avg, p95, stats.minTime, stats.maxTime))
+			fmt.Fprintf(&report, "%-20s %8d %8d %8d %8d %8d\n",
+				endpoint, stats.count, avg, p95, stats.minTime, stats.maxTime)
 		}
 		report.WriteString("\n")
 	}

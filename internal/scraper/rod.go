@@ -681,7 +681,7 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 		raw := RawEvent{}
 
 		if config.Selectors.Name != "" {
-			raw.Name = strings.TrimSpace(s.Find(config.Selectors.Name).First().Text())
+			raw.Name = extractTextOrAttrFromSelection(s, config.Selectors.Name)
 		}
 
 		// Date extraction: prefer date_selectors (smart assembler) over
@@ -718,11 +718,11 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 		}
 
 		if config.Selectors.Location != "" {
-			raw.Location = strings.TrimSpace(s.Find(config.Selectors.Location).First().Text())
+			raw.Location = extractTextOrAttrFromSelection(s, config.Selectors.Location)
 		}
 
 		if config.Selectors.Description != "" {
-			raw.Description = strings.TrimSpace(s.Find(config.Selectors.Description).First().Text())
+			raw.Description = extractTextOrAttrFromSelection(s, config.Selectors.Description)
 		}
 
 		if config.Selectors.URL != "" {
@@ -873,11 +873,11 @@ func probesSummary(probes []DateSelectorProbe) string {
 	sb.WriteString(" (first container:")
 	for _, p := range probes {
 		if !p.Matched {
-			sb.WriteString(fmt.Sprintf(" %q→no element;", p.Selector))
+			fmt.Fprintf(&sb, " %q→no element;", p.Selector)
 		} else if p.Text == "" {
-			sb.WriteString(fmt.Sprintf(" %q→empty text;", p.Selector))
+			fmt.Fprintf(&sb, " %q→empty text;", p.Selector)
 		} else {
-			sb.WriteString(fmt.Sprintf(" %q→%q;", p.Selector, p.Text))
+			fmt.Fprintf(&sb, " %q→%q;", p.Selector, p.Text)
 		}
 	}
 	sb.WriteString(")")
@@ -1391,4 +1391,19 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 func (e *RodExtractor) RenderHTMLWithConfig(ctx context.Context, config SourceConfig) (string, error) {
 	html, _, err := e.RenderHTMLWithConfigAndNetwork(ctx, config, "")
 	return html, err
+}
+
+// extractTextOrAttrFromSelection extracts either an attribute value or text content
+// from a goquery selection (Rod-based extraction). If selector contains "::attribute",
+// extracts that attribute; otherwise extracts text content.
+func extractTextOrAttrFromSelection(s *goquery.Selection, selector string) string {
+	sel, attr := parseSelector(selector)
+	el := s.Find(sel).First()
+	if attr != "" {
+		if val, exists := el.Attr(attr); exists {
+			return strings.TrimSpace(val)
+		}
+		return ""
+	}
+	return strings.TrimSpace(el.Text())
 }
