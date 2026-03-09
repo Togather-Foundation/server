@@ -15,17 +15,88 @@ see [building-scrapers.md](building-scrapers.md).
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [CLI Reference](#cli-reference)
-3. [Tiered Extraction](#tiered-extraction)
-4. [Source Configuration](#source-configuration)
-5. [Periodic Scheduling](#periodic-scheduling)
-6. [Scraper Global Config](#scraper-global-config)
-7. [Database Run Tracking](#database-run-tracking)
-8. [Environment Variables](#environment-variables)
-9. [Staging Scrape Workflow](#staging-scrape-workflow)
-10. [Adding New Sources](#adding-new-sources)
-11. [Security Design](#security-design)
+1. [Config Storage: YAML + Database](#config-storage-yaml--database)
+2. [Quick Start](#quick-start)
+3. [CLI Reference](#cli-reference)
+4. [Tiered Extraction](#tiered-extraction)
+5. [Source Configuration](#source-configuration)
+6. [Periodic Scheduling](#periodic-scheduling)
+7. [Scraper Global Config](#scraper-global-config)
+8. [Database Run Tracking](#database-run-tracking)
+9. [Environment Variables](#environment-variables)
+10. [Staging Scrape Workflow](#staging-scrape-workflow)
+11. [Adding New Sources](#adding-new-sources)
+12. [Agentic Scraping Workflow](#agentic-scraping-workflow)
+13. [Security Design](#security-design)
+
+---
+
+## Config Storage: YAML + Database
+
+Source configs exist in **two locations** that must be kept in sync:
+
+| Location | Path / Table | Purpose |
+|----------|-------------|---------|
+| **YAML files** | `configs/sources/*.yaml` | Version-controlled source of truth for config authoring. Agents and humans edit these. |
+| **Database table** | `scraper_sources` (PostgreSQL) | Runtime source of truth. The scraper reads from here by default when `DATABASE_URL` is set. |
+
+### How the scraper resolves configs at runtime
+
+The scraper uses this priority order when loading a source config:
+
+1. **`--source-file <path>` flag** — loads directly from the specified YAML file, bypassing both the database and the `configs/sources/` directory. The source runs regardless of its `enabled` flag. **Use this for testing draft configs.**
+2. **Database (`scraper_sources` table)** — if `DATABASE_URL` is set and the source exists in the DB, the scraper uses the DB row. This is the default for `scrape source <name>`, `scrape all`, and `scrape list`.
+3. **YAML directory fallback** — if the DB is unavailable or the source is not found in the DB, falls back to loading from `configs/sources/`.
+
+**This means:** if you edit a YAML file but don't sync it to the database, the scraper will still use the old DB version. This is the most common source of confusion.
+
+### Sync commands
+
+| Command | Direction | Description |
+|---------|-----------|-------------|
+| `server scrape sync` | YAML → DB | Reads all `configs/sources/*.yaml` files and upserts them into `scraper_sources`. Reports created/updated counts. |
+| `server scrape export` | DB → YAML | Reads all `scraper_sources` rows and writes them as YAML files to `configs/sources/`. Overwrites existing files. |
+
+**Typical workflow after editing a YAML config:**
+
+```bash
+# 1. Edit the YAML file
+vim configs/sources/my-source.yaml
+
+# 2. Test with --source-file (bypasses DB, uses the file directly)
+server scrape source --source-file configs/sources/my-source.yaml --dry-run --verbose
+
+# 3. Once happy, sync to database
+server scrape sync
+
+# 4. Verify the DB-backed scrape works
+server scrape source my-source --dry-run
+```
+
+**When to sync:**
+- After adding or modifying any YAML config file
+- After deploying new configs (the deploy pipeline should run `server scrape sync`)
+- After merging a PR that changes configs
+
+**When to export:**
+- To pull configs modified via the admin API back into version-controlled YAML
+- To bootstrap YAML files from a database that was populated by another means
+
+### Bypassing the database entirely
+
+Use `--source-file` to test a config without syncing to the database:
+
+```bash
+# Test a draft config — DB is never consulted
+server scrape source --source-file /tmp/my-draft.yaml --dry-run --verbose
+
+# Test a disabled source (--source-file ignores the enabled flag)
+SCRAPER_HEADLESS_ENABLED=true server scrape source \
+  --source-file configs/sources/burdock-brewery.yaml --dry-run
+```
+
+This is the recommended approach during config development, and is what the agentic
+tools (`/generate-selectors`, `scraper-worker`) use for validation.
 
 ---
 
@@ -231,6 +302,31 @@ server scrape all --tier 1          # CSS-selector sources only
 | `3` | Tier 3 — API (GraphQL or REST JSON) sources only |
 
 Output: per-source table with totals row.
+
+### `server scrape sync`
+
+Sync all YAML source configs from `configs/sources/` into the `scraper_sources`
+database table. Upserts by source name — new sources are created, existing sources
+are updated. Requires `DATABASE_URL`.
+
+```bash
+server scrape sync
+server scrape sync --sources /custom/path
+```
+
+See [Config Storage: YAML + Database](#config-storage-yaml--database).
+
+### `server scrape export`
+
+Export all `scraper_sources` database rows back to YAML files in the sources
+directory. Existing files are overwritten. Requires `DATABASE_URL`.
+
+```bash
+server scrape export
+server scrape export --sources configs/sources
+```
+
+See [Config Storage: YAML + Database](#config-storage-yaml--database).
 
 ---
 
@@ -906,7 +1002,15 @@ Use the `/generate-selectors` OpenCode slash command (see `agents/commands/gener
 
 The command inspects the URL, proposes CSS selectors, validates live, checks the
 org database for a match, and writes `configs/sources/<name>.yaml`. It runs up to
-5 URLs in parallel via subagents.
+5 URLs in parallel via subagents. See [Agentic Scraping Workflow](#agentic-scraping-workflow)
+for a detailed comparison of `/generate-selectors` vs `scraper-worker` and when to
+use each.
+
+**After generating configs, sync to the database:**
+
+```bash
+server scrape sync
+```
 
 ### Manual path
 
@@ -918,11 +1022,12 @@ org database for a match, and writes `configs/sources/<name>.yaml`. It runs up t
 2. If JSON-LD exists, create a minimal Tier 0 config.
 3. If the site exposes a GraphQL API (e.g. DatoCMS), create a Tier 3 config with a `graphql:` block.
 4. If no JSON-LD and no GraphQL, use `server scrape test` to iterate on selectors before writing the config. Use `tier: 2` if the site requires JavaScript rendering.
-5. Test with `--dry-run`:
+5. Test with `--source-file` (bypasses DB, uses the file directly):
    ```bash
-   server scrape source my-new-source --dry-run
+   server scrape source --source-file configs/sources/my-new-source.yaml --dry-run --verbose
    ```
-6. Submit a PR with the new `configs/sources/<slug>.yaml` file.
+6. Sync to database: `server scrape sync`
+7. Submit a PR with the new `configs/sources/<slug>.yaml` file.
 
 ### Currently Configured Sources (Tier 1)
 
@@ -1058,6 +1163,95 @@ PATCH /api/v1/admin/scraper/submissions/{id}
 ```
 
 Valid `status` values for admin PATCH: `processed` | `rejected`.
+
+---
+
+## Agentic Scraping Workflow
+
+Two AI-assisted tools are available for generating scraper configs. They serve
+different purposes and are designed to work together.
+
+### Tool comparison
+
+| | `/generate-selectors` command | `scraper-worker` agent |
+|---|---|---|
+| **What it is** | An OpenCode slash command (orchestrator) | An OpenCode subagent type |
+| **When to use** | Adding new sources — one or many URLs at once | Single-URL deep investigation, fixing broken configs, manual config work |
+| **Invocation** | `/generate-selectors https://example.com/events` | Launched automatically by `/generate-selectors`, or manually via Task tool with `subagent_type: "scraper-worker"` |
+| **Parallelism** | Dispatches up to 5 `scraper-worker` subagents in parallel | Runs as a single focused agent |
+| **Handles** | URL parsing, conflict detection, batch dispatch, result summary, git instructions | Platform detection, DOM inspection, selector proposal, live validation, YAML writing |
+| **Does NOT** | Run git commands (tells you what to commit) | Run git commands (orchestrator handles that) |
+
+### How they relate
+
+`/generate-selectors` is the **orchestrator** and `scraper-worker` is the **worker**.
+When you run `/generate-selectors https://a.com https://b.com`, the orchestrator:
+
+1. Checks for existing configs in `configs/sources/`
+2. Launches one `scraper-worker` subagent per URL (up to 5 in parallel)
+3. Collects results and prints a summary table
+4. Tells you what to commit
+
+You can also use `scraper-worker` directly when you need focused, interactive work
+on a single source — e.g. debugging a broken config, iterating on selectors, or
+handling a complex site that needs manual guidance.
+
+### Recommended workflow
+
+#### Adding new sources (batch)
+
+```bash
+# 1. Run the orchestrator with one or more URLs
+/generate-selectors https://example.com/events https://another.ca/calendar
+
+# 2. Review the generated YAML files
+cat configs/sources/example.yaml
+
+# 3. Test with --source-file (bypasses DB)
+server scrape source --source-file configs/sources/example.yaml --dry-run --verbose
+
+# 4. Sync to database
+server scrape sync
+
+# 5. Commit
+git add configs/sources/ && git commit -m "feat(scraper): add selectors for example, another"
+```
+
+#### Fixing or debugging a single source
+
+Use `scraper-worker` directly via the Task tool, or just work manually with
+the CLI:
+
+```bash
+# Inspect what the scraper sees
+server scrape inspect https://example.com/events
+
+# Headless capture with screenshot for visual debugging
+SCRAPER_HEADLESS_ENABLED=true server scrape capture https://example.com/events \
+  --screenshot /tmp/page.png --network
+
+# Test selectors live (Tier 1 only)
+server scrape test https://example.com/events \
+  --event-list ".event-card" --name "h2" --url "a.event-link"
+
+# Validate full config via --source-file
+server scrape source --source-file configs/sources/example.yaml --dry-run --verbose
+
+# After fixing, sync to DB
+server scrape sync
+```
+
+#### After any config change
+
+Always sync to the database after modifying YAML configs. The scraper reads from
+the database by default — unsync'd YAML changes will be ignored at runtime.
+
+```bash
+server scrape sync
+```
+
+See [Config Storage: YAML + Database](#config-storage-yaml--database) for the full
+explanation of the dual storage model.
 
 ---
 
