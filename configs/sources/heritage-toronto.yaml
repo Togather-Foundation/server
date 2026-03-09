@@ -1,11 +1,18 @@
 name: "heritage-toronto"
-# Disabled: Off-season confirmed 2026-03-09 — /events/ page explicitly states
-# "There are no upcoming events scheduled. Check back soon for events being planned for our 2026 season."
-# /events-base/ (raw Events Calendar plugin view) contains only 1 test event from 2026-02-25.
-# Site is WordPress + The Events Calendar (tribe_events) plugin.
-# Page structure: li.wp-block-post.tribe_events > h3.wp-block-post-title > a (name + url),
-# div.is-meta-field.event-start-end-block > div.value (start_date).
-# Re-inspect and re-enable when season starts (typically spring/summer).
+# DISABLED — Off-season. Selectors confirmed working, ready to re-enable when events appear.
+#
+# 2026-03-09 CONFIRMED: Site is UP and accessible. /events/ page explicitly states:
+#   "There are no upcoming events scheduled. Check back soon for events being planned
+#   for our 2026 season."
+#   /events-base/ (raw Events Calendar plugin view) contains only 1 test event from 2026-02-25.
+#
+# Platform: WordPress + The Events Calendar (tribe_events) plugin.
+# Page structure verified — selectors below match the actual DOM:
+#   li.wp-block-post.tribe_events > h3.wp-block-post-title > a (name + url)
+#   div.is-meta-field.event-start-end-block > div.value (start_date)
+#
+# ACTION: Set enabled: true and run `server scrape sync` when the spring/summer
+#   walking-tour season begins (typically April-May).
 url: "https://www.heritagetoronto.org/events/"
 tier: 1
 schedule: "weekly"

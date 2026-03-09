@@ -1,21 +1,35 @@
 name: "hot-docs"
-# Disabled: Origin server returning 502 Bad Gateway as of March 2026.
-# 
-# Previous blocker (March 2026): Event data is served via Agile Technologies
-# box office widget (boxoffice.hotdocs.ca/websales/agile_widget.ashx?orgid=2338&epgid=210).
-# Attempted fixes with `wait_network_idle: true` and `undetected: true` flags;
-# the widget still did not render in DOM even with 30s headless wait.
-# 
-# March 2026 update: The /whats-on/cinema endpoint itself now returns Cloudflare
-# 502 Bad Gateway. The origin ApostropheCMS server may be down or misconfigured.
-# The main domain (hotdocs.ca) loads successfully, but the events page does not.
-# 
-# Next steps when infrastructure recovers:
-# 1. Verify /whats-on/cinema is accessible from a standard browser
-# 2. Inspect the Agile widget loader script source and check for public API endpoint
-# 3. Consider direct Agile box office API scraping if available
-# 4. Fall back to scraping individual film detail pages via slug discovery
-url: "https://hotdocs.ca/whats-on/cinema"
+# DISABLED — Agile Technologies box office widget does not render in headless.
+#
+# 2026-03-09 UPDATE: Site is BACK UP (no longer 502 Bad Gateway).
+#   Main domain hotdocs.ca loads successfully. /whats-on page shows series overview:
+#     Doc Soup, Jukedocs, For Viola, Stories We Told, Truth and Dare.
+#   Festival dates: April 23 - May 3, 2026 ("Films and full lineup announced March 24").
+#
+#   URL CHANGES:
+#     /whats-on/cinema-films-events → 404 (old URL, removed)
+#     /whats-on/cinema → 404 (old URL, removed)
+#     /whats-on/film → 404
+#     /api → 404 (no REST API)
+#     /whats-on → loads but shows series overview, not individual film listings
+#
+#   Platform: ApostropheCMS (custom Node.js CMS). No public REST API found.
+#   The Agile Technologies box office widget (boxoffice.hotdocs.ca) is still used
+#   for ticketing but the cinema listings page URL structure has changed.
+#
+# BLOCKERS:
+#   1. The previous cinema listings URL no longer exists (404).
+#   2. No individual film listings page found yet — may not exist until festival lineup
+#      is announced (expected March 24, 2026).
+#   3. The Agile widget still does not render in headless mode.
+#
+# NEXT STEPS:
+#   1. Re-check after March 24, 2026 when full lineup is announced — new film listings
+#      URLs may appear.
+#   2. Check /whats-on for updated navigation to cinema/film listings.
+#   3. Inspect Agile widget JS for underlying data endpoint (.ashx URL may accept JSON).
+#   4. Individual film detail pages may be scrapeable once slug discovery is possible.
+url: "https://hotdocs.ca/whats-on"
 tier: 2
 schedule: "weekly"
 trust_level: 7

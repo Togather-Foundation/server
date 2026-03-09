@@ -1,15 +1,31 @@
 name: "obsidian-theatre"
-# Tier 2 (DISABLED). WordPress Gutenberg season page with JS-rendered show cards (div.proditem).
-# Successfully extracts: show title, image, URL to detail page.
-# STRUCTURAL BLOCKER: No performance dates visible on listing page — all dates are on individual show detail pages.
-# Inspection 2026-03-09: .meta div confirmed empty across all 2 listing cards. Detail pages link to Tarragon Theatre's
-# ticketing system (EventId parameters) but embed no event dates in their HTML. Would require either:
-#   (1) Post-processing: scrape detail pages individually to extract dates from ticketing links
-#   (2) Third-party API: attempt to reverse-engineer Tarragon Theatre's event API
-#   (3) Multi-step extraction: parse EventId from detail pages and correlate with Tarragon's public calendar
-# None of these approaches are practical within current scraper architecture (T2/T3 scope).
-# Organization match: no API lookup (server unavailable Mar 9 2026)
-# Trust level: 8 (major Black-led theatre company in Toronto)
+# DISABLED — WordPress with custom post types (event, show).
+#
+# WP REST API DISCOVERY (2026-03-09):
+#   /wp-json/wp/v2/event?per_page=100 — 6 items (special events: readings, showcases, concerts)
+#     • Dates embedded in content HTML <h5> tags (e.g., "Wednesday, Sept 10, 2025, 7:30PM at Tarragon Theatre")
+#     • WordPress `date` field is the publish timestamp, NOT the event date
+#     • Most events are 2025-dated; no upcoming 2026 events currently published
+#   /wp-json/wp/v2/show?per_page=100 — 52 items (full production archive back to 2004)
+#     • No dates in content or custom fields (ACF empty)
+#     • Performance dates appear ONLY on individual show detail pages (e.g., "April 23 - May 17, 2026")
+#     • Detail pages also show venue ("Soulpepper Theatre") and "BUY TICKETS" link
+#
+# Season listing page (/season-listings/) shows 2 current productions with descriptions
+# but NO dates — dates are only on individual show pages (/show/{slug}/).
+#
+# BLOCKERS:
+#   1. REST API: `date` field = publish date, not performance date. Need HTML content parsing for events.
+#   2. Shows: Performance dates only on detail pages. Need depth-2 scraping to extract.
+#   3. Events CPT: Currently stale (2025 data). Obsidian may publish new events for 2026.
+#
+# VIABLE PATHS:
+#   A. T3 REST for events CPT once HTML content date parsing is supported
+#   B. Depth-2 scraping: listing page → show detail pages → extract date from SHOW DETAILS section
+#   C. Contact venue to add schema.org Event JSON-LD to show pages (one-time theme change)
+#
+# Current season: "a profoundly affectionate..." and "How to Catch Creation" (April 23 - May 17, 2026 at Soulpepper)
+# Trust level: 8 (major Black-led theatre company in Toronto, Canada's leading culturally specific theatre co.)
 url: "https://www.obsidiantheatre.com/season-listings/"
 tier: 2
 schedule: "weekly"

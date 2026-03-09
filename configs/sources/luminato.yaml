@@ -1,11 +1,32 @@
 name: "luminato"
-# Disabled: DM website-builder page with eventscalendar.co embed (data-project-id="proj_QrmXauVHd8e0ohna92KJg").
-# Widget IS rendering visually in headless browser (confirmed via screenshot 2026-03-09),
-# but DOM is NOT accessible via standard CSS selectors — uses Shadow DOM or cross-origin iframe isolation.
-# Attempted T2 headless with: wait_selector="div.cl-calendar", wait_network_idle=true, wait_timeout_ms=30000, undetected=true.
-# Result: wait_selector never matches (context deadline exceeded after 30s), even though widget visually renders.
-# Root cause: eventscalendar.co wraps its DOM in Shadow DOM or cross-origin iframe; no public API available.
-# No further attempts recommended — vendor integration would be required.
+# DISABLED — DM website-builder page with eventscalendar.co embed (Shadow DOM, unscrapeable).
+#
+# MAJOR DISCOVERY (2026-03-09): Individual show pages are FULLY SCRAPEABLE!
+#   The /events listing page uses an eventscalendar.co embed (data-project-id="proj_QrmXauVHd8e0ohna92KJg")
+#   which wraps DOM in Shadow DOM / cross-origin iframe isolation — confirmed unscrapeable even with
+#   wait_network_idle=true, undetected=true, wait_timeout_ms=30000.
+#
+#   BUT: Individual show pages have full structured data in static HTML:
+#     /PennTeller — Penn & Teller (June 5-6, 2026 at Meridian Hall)
+#     /10-days-in-a-madhouse — 10 Days in a Madhouse (June 16-21, 2026 at Bluma Appel Theatre)
+#     /play-dead — Play Dead (June 25-28, 2026 at Meridian Arts Centre)
+#     + Industry Series, LuminoCity, and other events
+#
+#   Each show page contains: title, dates & times table, venue, run time, ticket links, artist bios.
+#   Sitemap at /sitemap.xml has ~150 pages including all show URLs.
+#
+# VIABLE PATHS:
+#   A. Multi-URL config: List known show page URLs and scrape each individually.
+#      Requires scraper support for multiple URLs per source (not yet implemented).
+#   B. Depth-2 scraping: Scrape /events or nav menu to discover show URLs, then
+#      follow each to extract structured event data from detail pages.
+#   C. Sitemap-based discovery: Parse /sitemap.xml to find show page URLs,
+#      filter by URL pattern, scrape each for event data.
+#
+# Current selectors target the unscrapeable eventscalendar.co widget — these are
+# placeholder and will not work. Real extraction should target individual show pages.
+#
+# Festival: Annual, June. 2026 festival is confirmed with active show pages.
 # See docs: docs/integration/event-platforms.md § 8 (eventscalendar.co).
 url: "https://www.luminatofestival.com/events"
 tier: 2

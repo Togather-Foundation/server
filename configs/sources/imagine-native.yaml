@@ -1,13 +1,29 @@
 name: "imagine-native"
-# Disabled: Seasonal festival (June annually). 2026 programme not yet announced as of 2026-03-09.
-# Platform: WordPress + Elementor + FacetwP + Elevent plugin for event calendar.
+# DISABLED — Seasonal festival (June annually). 2026 programme not yet announced.
+#
+# Platform: WordPress + Elementor + FacetWP + Elevent plugin for event calendar.
 # Previously: /year-round/events/ URL returned 404 (removed). Updated to /festival/schedule/.
-# Findings: FacetwP widget is active on schedule page but does not populate events in headless mode
-# (no published events yet for 2026 season). WordPress REST API endpoints exist (wp/v2/events,
-# /event_dates, /event_showtimes) but return empty results (only 3 draft events in database).
-# The site has Elevent plugin installed but relies on FacetwP faceted search for display.
-# Re-enable when 2026 festival events are published (typically May-June for June event).
-# Expected structure: .fwpl-row containers with .fwpl-item-title, .fwpl-item-date, etc.
+#
+# WP REST API DISCOVERY (2026-03-09):
+#   /wp-json/wp/v2/types reveals Elevent custom post types:
+#     events — "Events from Elevent" (primary event listing)
+#     event_showtimes — "Elevent Showtimes" (individual screening times)
+#     institute-events — Institute events (year-round programming)
+#     artists — Artist profiles
+#     works — Film/work entries
+#   Taxonomies: country, event_dates, event_types, festival_season_or_series,
+#     genre, search_keywords, sections, venue
+#   All event endpoints currently return empty results (seasonal — festival is June/October).
+#
+# FacetWP widget is active on schedule page but does not populate events in headless mode
+# (no published events yet for 2026 season).
+#
+# NEXT STEPS:
+#   1. Re-check WP REST API in May when 2026 festival events are expected to be published.
+#   2. Try T3 REST: /wp-json/wp/v2/events?per_page=100 — if event dates are in structured
+#      fields (not just content HTML), this becomes a config-only enable.
+#   3. Also try /wp-json/wp/v2/event_showtimes for individual screening times.
+#   4. FacetWP display selectors (.fwpl-row etc.) as fallback if REST API dates are insufficient.
 url: "https://imaginenative.org/festival/schedule/"
 tier: 2
 schedule: "weekly"
