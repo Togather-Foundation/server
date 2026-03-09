@@ -1,15 +1,30 @@
 name: "inside-out"
-# Disabled: Film programme page at /initiatives/toronto-festival/festival/program/ 2026-03-05.
-# Page loads but film list is rendered by Eventive JS widget (div.eventive-login);
-# the div.tab-pane > div.program-film-wrap is empty in the rendered DOM.
-# No static or headless-extractable event containers found.
-# Festival is annual (May); off-season the page has no content.
-# Re-enable only if Eventive widget is replaced with server-side rendered content,
-# or if an RSS/API feed becomes available.
-url: "https://insideout.ca/"
-tier: 0
+# Disabled: Film programme at /festival/program/ uses Eventive widget (insideoutfilmfestival.eventive.org).
+# 2026-03-09 re-inspection: 2026 programme page exists (May 22-31, 2026 dates confirmed in HTML).
+# Headless capture with 25s wait + network-idle shows the Eventive UI loads (filters, search)
+# but film list containers remain empty — Eventive widget populates asynchronously via API call to
+# https://api.eventive.org/event_buckets/66f5b5a502f43a004f4f9a6a but the API requires
+# authentication token (no public access). The Eventive JS widget never actually renders
+# the <div class="eventive-film"> containers even after 25s network idle wait.
+# 
+# Blocker: Eventive API is not publicly accessible and the JS widget does not render
+# event content in headless. Only viable path would be to find a public RSS/iCal feed
+# (none currently known) or if Eventive adds server-side rendering to the initial HTML.
+# 
+# Festival is annual (May); 2026 programme posted but remains unscrapeable due to
+# Eventive widget constraints.
+url: "https://insideout.ca/festival/program/"
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
 max_pages: 3
+headless:
+  wait_selector: "div.program-film-wrap"
+  wait_timeout_ms: 25000
+  wait_network_idle: true
+selectors:
+  event_list: "div.program-film-wrap"
+  name: "h3.film-title"
+  url: "a.film-link"

@@ -1,13 +1,25 @@
 name: "imagine-native"
-# Disabled: /year-round/events/ returns 404 (URL no longer exists) 2026-03-05.
-# Homepage has article.elementor-post with h3.elementor-post__title + span.elementor-post-date
-# but these are news/blog post announcements, not structured events with start times.
-# Festival programming is seasonal (Oct); year-round page was removed.
-# Re-enable only if a structured event listing page is added to the site.
-url: "https://imaginenative.org/year-round/events/"
-tier: 0
+# Disabled: Seasonal festival (June annually). 2026 programme not yet announced as of 2026-03-09.
+# Platform: WordPress + Elementor + FacetwP + Elevent plugin for event calendar.
+# Previously: /year-round/events/ URL returned 404 (removed). Updated to /festival/schedule/.
+# Findings: FacetwP widget is active on schedule page but does not populate events in headless mode
+# (no published events yet for 2026 season). WordPress REST API endpoints exist (wp/v2/events,
+# /event_dates, /event_showtimes) but return empty results (only 3 draft events in database).
+# The site has Elevent plugin installed but relies on FacetwP faceted search for display.
+# Re-enable when 2026 festival events are published (typically May-June for June event).
+# Expected structure: .fwpl-row containers with .fwpl-item-title, .fwpl-item-date, etc.
+url: "https://imaginenative.org/festival/schedule/"
+tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
-max_pages: 3
+headless:
+  wait_selector: ".fwpl-layout"
+  wait_timeout_ms: 25000
+  wait_network_idle: true
+selectors:
+  event_list: ".fwpl-row"
+  name: ".fwpl-item-title"
+  start_date: ".fwpl-item-date"
+  url: "a.fwpl-item-link"

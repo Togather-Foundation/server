@@ -1,8 +1,11 @@
 name: "heritage-toronto"
-# Disabled: Currently off-season — no upcoming events listed (2026-03-04).
-# Page is static WordPress block theme (server-side rendered, no JS required).
-# When in season, events render as li.wp-block-post with h2.wp-block-post-title > a.
-# Re-enable and run scrape sync when season resumes (typically spring/summer).
+# Disabled: Off-season confirmed 2026-03-09 — /events/ page explicitly states
+# "There are no upcoming events scheduled. Check back soon for events being planned for our 2026 season."
+# /events-base/ (raw Events Calendar plugin view) contains only 1 test event from 2026-02-25.
+# Site is WordPress + The Events Calendar (tribe_events) plugin.
+# Page structure: li.wp-block-post.tribe_events > h3.wp-block-post-title > a (name + url),
+# div.is-meta-field.event-start-end-block > div.value (start_date).
+# Re-inspect and re-enable when season starts (typically spring/summer).
 url: "https://www.heritagetoronto.org/events/"
 tier: 1
 schedule: "weekly"
@@ -11,6 +14,7 @@ license: "CC0-1.0"
 enabled: false
 max_pages: 3
 selectors:
-  event_list: "li.wp-block-post"
-  name: "h2.wp-block-post-title a"
-  url: "h2.wp-block-post-title a"
+  event_list: "li.wp-block-post.tribe_events"
+  name: "h3.wp-block-post-title a"
+  start_date: "div.is-meta-field.event-start-end-block div.value"
+  url: "h3.wp-block-post-title a"
