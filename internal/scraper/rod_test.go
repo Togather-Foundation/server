@@ -572,6 +572,126 @@ func TestExtractDateFromSelection(t *testing.T) {
 	}
 }
 
+// TestExtractTextOrAttrFromSelection verifies that extractTextOrAttrFromSelection
+// correctly handles text extraction, attribute extraction, self-matching (where the
+// selection itself matches the selector), child-matching, and the no-match case.
+func TestExtractTextOrAttrFromSelection(t *testing.T) {
+	// HTML fixture: a container span.prices with a data-event attribute and
+	// child elements for various extraction scenarios.
+	const fixture = `
+<div class="container">
+  <span class="prices" data-event="EVT-42">
+    <a class="link" href="https://example.com/evt">Buy tickets</a>
+    <time class="date" datetime="2026-06-01">June 1</time>
+    <span class="empty"></span>
+  </span>
+</div>`
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatalf("failed to parse HTML fixture: %v", err)
+	}
+
+	// The outer container — s does NOT match "span.prices" but has it as a child.
+	outer := doc.Find(".container")
+	// The span.prices element itself.
+	self := doc.Find("span.prices")
+
+	tests := []struct {
+		name     string
+		sel      *goquery.Selection // the selection passed as 's'
+		selector string             // the selector argument (may contain ::attr)
+		want     string
+	}{
+		// --- text extraction ---
+		{
+			name:     "child text extraction",
+			sel:      outer,
+			selector: ".link",
+			want:     "Buy tickets",
+		},
+		{
+			name:     "child text extraction concatenates all child text",
+			sel:      outer,
+			selector: "span.prices",
+			want:     "Buy tickets\n    June 1", // goquery .Text() concatenates descendant text; TrimSpace trims trailing newline/spaces
+		},
+		{
+			name:     "self text extraction when selection matches selector",
+			sel:      self,
+			selector: "span.prices",
+			want:     "Buy tickets\n    June 1",
+		},
+		// --- attribute extraction ---
+		{
+			name:     "child attribute extraction via ::attr syntax",
+			sel:      outer,
+			selector: "span.prices::data-event",
+			want:     "EVT-42",
+		},
+		{
+			name:     "self attribute extraction when selection matches",
+			sel:      self,
+			selector: "span.prices::data-event",
+			want:     "EVT-42",
+		},
+		{
+			name:     "child href attribute extraction",
+			sel:      outer,
+			selector: "a.link::href",
+			want:     "https://example.com/evt",
+		},
+		{
+			name:     "child datetime attribute extraction",
+			sel:      outer,
+			selector: "time.date::datetime",
+			want:     "2026-06-01",
+		},
+		// --- no match cases ---
+		{
+			name:     "selector matches no child returns empty",
+			sel:      outer,
+			selector: ".nonexistent",
+			want:     "",
+		},
+		{
+			name:     "selector with attribute but element absent returns empty",
+			sel:      outer,
+			selector: ".nonexistent::href",
+			want:     "",
+		},
+		{
+			name:     "attribute does not exist on matched element returns empty",
+			sel:      outer,
+			selector: "span.prices::data-missing",
+			want:     "",
+		},
+		// --- empty selector ---
+		{
+			name:     "empty selector returns empty",
+			sel:      outer,
+			selector: "",
+			want:     "",
+		},
+		// --- whitespace trimming ---
+		{
+			name:     "empty child element returns empty string",
+			sel:      outer,
+			selector: "span.empty",
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractTextOrAttrFromSelection(tt.sel, tt.selector)
+			if got != tt.want {
+				t.Errorf("extractTextOrAttrFromSelection(sel, %q) = %q; want %q", tt.selector, got, tt.want)
+			}
+		})
+	}
+}
+
 // --- RenderHTMLWithNetwork tests (require headless browser) ---
 
 // xhrPageHTML is an HTML page that, once loaded, makes an XHR request to /api/data.

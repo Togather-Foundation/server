@@ -87,7 +87,34 @@ Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 | orpheus-choir-toronto | disabled | 0 | Gutenberg WP | No repeating container; `wp-block-columns` with `hr` separators — not selectable |
 | reel-asian | disabled | 0 | WordPress + Elevent | Cross-origin Elevent iframe; same-origin policy blocks CSS access |
 | tranzac | disabled | 25 | DatoCMS | No ISO dates in rendered DOM; DatoCMS API adapter needed (`srv-wz0h7`) |
-| xtsc | disabled | 0 | Zuluru | Event titles in `data-event` attributes; CSS selectors can't extract attribute values |
+| xtsc | disabled | 102 names | Zuluru | Event titles in `data-event` attributes now extractable via `::attribute` syntax; dates not on listing page |
+
+## Selector Syntax
+
+### Standard CSS selectors
+All selectors use standard CSS syntax (e.g. `.class-name`, `#id`, `tag`, `tag.class`).
+Attribute selectors like `[href*='pattern']` are supported on Tier 1 and Tier 2.
+
+### Attribute extraction with `::attribute` syntax
+When event data is stored in HTML attributes (not visible in the DOM text), use the
+`selector::attribute` syntax to extract the attribute value instead of text content.
+
+**Example:**
+```yaml
+selectors:
+  event_list: "span.prices"
+  name: "span.prices::data-event"  # Extract from the data-event attribute
+  url: "span.prices::data-link"    # Extract from the data-link attribute
+```
+
+This works on **Tier 1 (static CSS) and Tier 2 (headless)** for any selector field
+that extracts text: `name`, `location`, `description`, `start_date`, `end_date`, etc.
+Attribute extraction falls back to text content extraction if the selector contains no `::attribute` part.
+
+The syntax is especially useful for:
+- **Zuluru** sports league sites (e.g. XTSC) where event names live in `data-event` attributes
+- **Calendar widgets** that store dates/times in data attributes and render them via JavaScript
+- **Data-driven sites** that embed JSON or structured data in element attributes
 
 ## Individual Source Notes
 
@@ -204,6 +231,14 @@ Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 ### heritage-toronto.yaml (Tier 1, disabled — seasonal)
 - Selectors ready: `li.wp-block-post` containers; date in `time.wp-element-button`.
 - Currently off-season (0 events). Re-enable in spring when programming resumes.
+
+### xtsc.yaml (Tier 1, disabled)
+- Extreme Toronto Sports Club (trans/queer recreational sports league).
+- Zuluru platform: event titles stored in `data-event` HTML attributes (e.g. "CoEd Turf Soccer 6s - Monday").
+- 102 events found via `span.prices` containers with name extracted via `span.prices::data-event`.
+- **Blocker:** Event dates/times not visible on listing page (`https://www.xtsc.ca/zuluru/events/`).
+  Detail pages (`/zuluru/events/view?event=<id>`) contain dates but would require separate depth scrape.
+  Not viable without detail-page scraping (Tier 2+ feature). Site respects `robots.txt` (Crawl-delay: 10).
 
 ---
 

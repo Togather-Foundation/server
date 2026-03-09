@@ -1,13 +1,29 @@
 name: "xtsc"
-# XTSC (eXperience the Best League in Town). Toronto trans/queer sports league.
-# Zuluru platform stores event names in data-event HTML attributes, not in DOM text.
-# CSS selectors cannot extract attribute values directly. Would require headless browser
-# or custom parsing logic. Disabled until Tier 2 can be implemented.
+# Extreme Toronto Sports Club (XTSC) — trans/queer recreational sports league in Toronto.
+# Zuluru platform (zuluru.org) — sports league registration/scheduling system.
+#
+# Platform: Zuluru v3.5+
+# Event listings use HTML structure: <span class="prices option_id_XXXX" data-event="EVENT_NAME" data-link="HTML_ENCODED_LINK" ...>
+# Event names are stored in data-event attributes, not in DOM text.
+#
+# Selector syntax: "selector::attribute" extracts the attribute value instead of text.
+# Example: "span.prices::data-event" extracts the data-event attribute.
+#
+# The URL in data-link is HTML-encoded and contains an <a> tag that can't be parsed
+# via CSS selectors alone. For now, extracting only the event name via attribute syntax.
+#
+# Note: This page is dynamic (JavaScript form filters) but events are visible in static HTML.
+# Tier 1 static extraction is viable for event names; URLs would require JS parsing.
+#
+# Organization match: Extreme Toronto Sports Club (no direct match in database; sports league)
 url: "https://www.xtsc.ca/zuluru/events/"
-tier: 2
+tier: 1
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
 enabled: false
 max_pages: 2
-notes: "Event titles stored in data-event attributes, inaccessible via CSS selectors. Requires headless browser."
+selectors:
+  event_list: "span.prices"
+  # Event name extracted from data-event attribute using new :: syntax
+  name: "span.prices::data-event"

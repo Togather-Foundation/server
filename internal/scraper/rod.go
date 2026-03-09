@@ -1396,9 +1396,30 @@ func (e *RodExtractor) RenderHTMLWithConfig(ctx context.Context, config SourceCo
 // extractTextOrAttrFromSelection extracts either an attribute value or text content
 // from a goquery selection (Rod-based extraction). If selector contains "::attribute",
 // extracts that attribute; otherwise extracts text content.
+//
+// For self-extraction: if s matches the selector, extract from s itself.
+// For child-extraction: if s doesn't match, extract from the first child matching selector.
+// This handles cases where the event_list selector IS the container element itself
+// (e.g., event_list="span.prices" and name="span.prices::data-event").
 func extractTextOrAttrFromSelection(s *goquery.Selection, selector string) string {
 	sel, attr := parseSelector(selector)
-	el := s.Find(sel).First()
+
+	// Check if s matches the selector using goquery's Is() method.
+	// This handles classes and element names.
+	var el *goquery.Selection
+	if s.Is(sel) {
+		// The selection itself matches the selector.
+		el = s
+	} else {
+		// Look for children matching the selector.
+		el = s.Find(sel).First()
+	}
+
+	// If nothing matched, return empty string.
+	if el.Length() == 0 {
+		return ""
+	}
+
 	if attr != "" {
 		if val, exists := el.Attr(attr); exists {
 			return strings.TrimSpace(val)

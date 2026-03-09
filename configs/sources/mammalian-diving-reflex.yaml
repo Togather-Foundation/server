@@ -1,12 +1,12 @@
 name: "mammalian-diving-reflex"
-# Tier 2 (disabled). The configured URL https://www.mammalian.ca/shows/ returns 404.
-# Mammalian Diving Reflex is a prominent Toronto performance arts organization.
-# The website does not have a dedicated events/shows listing page.
-# Site structure: /projects/ (archive, current, in-development) but these list projects,
-# not individual performances/tour dates with event-specific metadata (dates, times, venues).
-# Confirmed via headless inspection: no event containers or tour date listings found.
-# Site would require custom scraping of individual project pages to extract events.
-url: "https://www.mammalian.ca/shows/"
+# Tier 2 (disabled — March 2026 re-inspection).
+# URL https://www.mammalian.ca/shows/ returns 404.
+# Alternative /calendar/ page exists but renders no event listings with dates/times.
+# Organization publishes artistic projects (/projects/) not performance events.
+# No JSON-LD Event schema, iCal feed, or API detected.
+# Website structure indicates events/tour dates managed off-site.
+# Not scrapeable as events-focused source.
+url: "https://www.mammalian.ca/calendar/"
 tier: 2
 schedule: "weekly"
 trust_level: 7
