@@ -113,6 +113,7 @@ curl -X POST https://toronto.togather.foundation/api/v1/events \
 - **[Developer Quick Start](docs/integration/developer-quickstart.md)** - 4-step onboarding guide
 - **[Authentication Guide](docs/integration/authentication.md)** - API keys, JWT tokens, and security
 - **[API Guide](docs/integration/api-guide.md)** - Endpoint reference and examples
+- **[Scraper Guide](docs/integration/scraper.md)** - Built-in scraper, source config generation, AI-assisted workflows
 
 ---
 
@@ -201,7 +202,7 @@ make build
 - [Database Guide](docs/contributors/database.md) - Schema and migrations
 - [Testing Guide](docs/contributors/testing.md) - TDD workflow and test commands
 - [Security Guide](docs/contributors/security.md) - Security model and practices
-- [Integration Guides](docs/integration/README.md) - API usage and scraper guidance
+- [Integration Guides](docs/integration/README.md) - API usage, scraper source configuration, and data submission
 - [Development Velocity](docs/contributors/meta/agent_workflows.md) - Collaboration highlights and delivery pace
 
 ## Thanks

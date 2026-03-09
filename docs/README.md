@@ -33,6 +33,7 @@ Welcome to the Shared Events Library (SEL) documentation. This guide will help y
 - [API Guide](integration/api-guide.md) - Practical API reference with examples
 - [Authentication](integration/authentication.md) - API keys & rate limits
 - [Building Scrapers](integration/building-scrapers.md) - Idempotency, deduplication, submission patterns
+- [Scraper Source Configuration](integration/scraper.md#agentic-scraping-workflow) - AI-assisted source config generation (`/configure-source`)
 - [Code Examples](integration/examples/) - Working code samples
 
 **Minimal example:**
@@ -103,6 +104,7 @@ These resources are useful for everyone:
 2. Get API key (see [Authentication](integration/authentication.md))
 3. Copy [minimal scraper example](integration/examples/minimal_scraper.js)
 4. Submit events with `source.url` for duplicate detection
+5. Or use the built-in scraper: [Scraper Guide](integration/scraper.md) with `/configure-source` for AI-assisted config generation
 
 ### SEL Node Implementer
 1. Read [Core Profile](interop/core-profile-v0.1.md) for requirements

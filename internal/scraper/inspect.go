@@ -115,7 +115,7 @@ func FormatInspectResult(r *InspectResult) string {
 
 // FormatInspectResultSafe wraps FormatInspectResult output in a dynamic
 // boundary marker to mitigate prompt injection when the output is consumed
-// by an LLM agent (e.g. the /generate-selectors workflow).
+// by an LLM agent (e.g. the /configure-source workflow).
 //
 // The boundary is a random hex nonce that an attacker cannot predict, making
 // it impossible for injected instructions inside the HTML to "escape" the

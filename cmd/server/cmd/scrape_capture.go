@@ -27,7 +27,7 @@ var (
 )
 
 // scrapeCaptureCmd renders a URL via headless browser and dumps the HTML or an
-// inspect-style DOM analysis. Designed to feed the generate-selectors workflow
+// inspect-style DOM analysis. Designed to feed the configure-source workflow
 // for JS-rendered pages where static Inspect/Tier 1 scraping is insufficient.
 var scrapeCaptureCmd = &cobra.Command{
 	Use:   "capture [URL]",

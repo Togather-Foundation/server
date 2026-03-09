@@ -1,6 +1,6 @@
-# Generate Scraper Selectors
+# Configure Source
 
-Given one or more URLs, generate working CSS selector configs (Tier 0–3) for the
+Given one or more URLs, generate working scraper source configs (Tier 0–3) for the
 SEL scraper by dispatching each URL to a `scraper-worker` subagent.
 
 You are an **orchestrator**. Parse the input, build the URL list, then delegate each URL
@@ -9,9 +9,9 @@ to a parallel subagent via the Task tool. Collect results and print a summary.
 ## Input
 
 The argument(s) to this command can be:
-- A single URL: `/generate-selectors https://example.com/events`
-- Space-separated URLs: `/generate-selectors https://a.com/events https://b.com/events`
-- A plain-text file of URLs (one per line): `/generate-selectors urls.txt`
+- A single URL: `/configure-source https://example.com/events`
+- Space-separated URLs: `/configure-source https://a.com/events https://b.com/events`
+- A plain-text file of URLs (one per line): `/configure-source urls.txt`
 
 If a file path is given, read it and extract all non-empty, non-comment lines as URLs.
 

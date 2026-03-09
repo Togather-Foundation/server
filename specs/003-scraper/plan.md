@@ -245,7 +245,7 @@ The normalizer must handle all of these gracefully.
 
 ## Source Config Findings (Phase 2 expansion)
 
-Selector authoring now leans on the `/generate-selectors` agent workflow (`agents/generate-selectors.md`).
+Selector authoring now leans on the `/configure-source` agent workflow (`agents/commands/configure-source.md`).
 It inspects candidate URLs, proposes Tier 1 selectors, validates them with `server scrape test`,
 and writes vetted YAML configs via parallel subagents.
 

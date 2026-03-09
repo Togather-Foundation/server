@@ -210,7 +210,7 @@ Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 ## Research Archive: Unverified Candidates
 
 The following sites from `docs/gta-events-report.md` have not yet been tested with
-`server scrape inspect`. Run `/generate-selectors <url>` to evaluate:
+`server scrape inspect`. Run `/configure-source <url>` to evaluate:
 
 - **Burlington PAC**: https://burlingtonpac.ca/events
 - **TIFF**: https://www.tiff.net/events

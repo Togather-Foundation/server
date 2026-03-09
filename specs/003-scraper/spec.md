@@ -26,10 +26,10 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
 
 ### Design Additions (post-v0.1)
 
-- **Agent-led selector generation**: `/generate-selectors` orchestrates parallel
+- **Agent-led selector generation**: `/configure-source` orchestrates parallel
   subagents that run `server scrape inspect`, propose Tier 1 selectors, validate via
   `server scrape test`, and commit vetted YAML configs. This workflow is defined in
-  `agents/generate-selectors.md` and is now the default Tier 1 authoring path.
+  `agents/commands/configure-source.md` and is now the default Tier 1 authoring path.
 - **DB-backed source configs**: `scraper_sources` table stores configs alongside
   YAML files as the canonical seed format. `server scrape sync` imports YAML→DB;
   `server scrape export` dumps DB→YAML. Scraper runtime reads from DB with YAML

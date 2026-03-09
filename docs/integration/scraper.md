@@ -96,7 +96,7 @@ SCRAPER_HEADLESS_ENABLED=true server scrape source \
 ```
 
 This is the recommended approach during config development, and is what the agentic
-tools (`/generate-selectors`, `scraper-worker`) use for validation.
+tools (`/configure-source`, `scraper-worker`) use for validation.
 
 ---
 
@@ -122,7 +122,7 @@ server scrape inspect https://example.com/events
 server scrape test https://example.com/events --event-list ".event-card" --name "h2"
 
 # AI-assisted: generate a source config for a URL (requires OpenCode)
-# /generate-selectors https://example.com/events
+# /configure-source https://example.com/events
 ```
 
 The scraper submits events to the SEL batch ingest API (`POST /api/v1/events:batch`),
@@ -990,20 +990,20 @@ psql "$DATABASE_URL" -c "
 
 ### Quickest path: AI-assisted generation (recommended)
 
-Use the `/generate-selectors` OpenCode slash command (see `agents/commands/generate-selectors.md`):
+Use the `/configure-source` OpenCode slash command (see `agents/commands/configure-source.md`):
 
 ```bash
 # Single URL
-/generate-selectors https://example.com/events
+/configure-source https://example.com/events
 
 # File of URLs (one per line)
-/generate-selectors urls.txt
+/configure-source urls.txt
 ```
 
 The command inspects the URL, proposes CSS selectors, validates live, checks the
 org database for a match, and writes `configs/sources/<name>.yaml`. It runs up to
 5 URLs in parallel via subagents. See [Agentic Scraping Workflow](#agentic-scraping-workflow)
-for a detailed comparison of `/generate-selectors` vs `scraper-worker` and when to
+for a detailed comparison of `/configure-source` vs `scraper-worker` and when to
 use each.
 
 **After generating configs, sync to the database:**
@@ -1173,19 +1173,19 @@ different purposes and are designed to work together.
 
 ### Tool comparison
 
-| | `/generate-selectors` command | `scraper-worker` agent |
+| | `/configure-source` command | `scraper-worker` agent |
 |---|---|---|
 | **What it is** | An OpenCode slash command (orchestrator) | An OpenCode subagent type |
 | **When to use** | Adding new sources — one or many URLs at once | Single-URL deep investigation, fixing broken configs, manual config work |
-| **Invocation** | `/generate-selectors https://example.com/events` | Launched automatically by `/generate-selectors`, or manually via Task tool with `subagent_type: "scraper-worker"` |
+| **Invocation** | `/configure-source https://example.com/events` | Launched automatically by `/configure-source`, or manually via Task tool with `subagent_type: "scraper-worker"` |
 | **Parallelism** | Dispatches up to 5 `scraper-worker` subagents in parallel | Runs as a single focused agent |
 | **Handles** | URL parsing, conflict detection, batch dispatch, result summary, git instructions | Platform detection, DOM inspection, selector proposal, live validation, YAML writing |
 | **Does NOT** | Run git commands (tells you what to commit) | Run git commands (orchestrator handles that) |
 
 ### How they relate
 
-`/generate-selectors` is the **orchestrator** and `scraper-worker` is the **worker**.
-When you run `/generate-selectors https://a.com https://b.com`, the orchestrator:
+`/configure-source` is the **orchestrator** and `scraper-worker` is the **worker**.
+When you run `/configure-source https://a.com https://b.com`, the orchestrator:
 
 1. Checks for existing configs in `configs/sources/`
 2. Launches one `scraper-worker` subagent per URL (up to 5 in parallel)
@@ -1202,7 +1202,7 @@ handling a complex site that needs manual guidance.
 
 ```bash
 # 1. Run the orchestrator with one or more URLs
-/generate-selectors https://example.com/events https://another.ca/calendar
+/configure-source https://example.com/events https://another.ca/calendar
 
 # 2. Review the generated YAML files
 cat configs/sources/example.yaml

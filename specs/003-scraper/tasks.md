@@ -20,7 +20,7 @@ description: "Task list for integrated event scraper"
 | Phase 4 — Scheduling & admin UI | River `ScrapeSourceWorker`, `scraper_config` tunables, admin UI surfacing scrape status/history | ✅ Delivered (srv-pfeud, srv-5127b) |
 
 Supporting assets:
-- `/agents/generate-selectors.md` orchestrates Tier 1 selector authoring via `server scrape inspect` + `server scrape test` and writes vetted configs.
+- `/agents/commands/configure-source.md` orchestrates Tier 1 selector authoring via `server scrape inspect` + `server scrape test` and writes vetted configs.
 - `configs/sources/_example.yaml` documents the full schema; real configs live beside it and mirror DB rows via `server scrape sync/export`.
 - `docs/integration/scraper.md` and `docs/integration/api-guide.md` describe `sel:scraperSource` exposure.
 
@@ -63,7 +63,7 @@ Supporting assets:
 - ✅ `srv-msbmm` — Spec doc
 
 ### Operational Hygiene
-- Keep `/agents/generate-selectors.md` workflow up-to-date with new CLI options (e.g., tier 2 flags) and ensure new configs round-trip via `server scrape sync/export`.
+- Keep `/agents/commands/configure-source.md` workflow up-to-date with new CLI options (e.g., tier 2 flags) and ensure new configs round-trip via `server scrape sync/export`.
 - Re-run `server scrape all --dry-run` whenever configs change materially and document findings in `configs/sources/README.md`.
 
 ---

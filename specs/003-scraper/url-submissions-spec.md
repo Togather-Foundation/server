@@ -11,7 +11,7 @@
 The scraper system (Tiers 0-3) is mature, with DB-backed source configs, scheduling, admin UI, and CLI tooling. However, adding new sources currently requires either:
 
 1. An admin creating a YAML config or DB entry, or
-2. An agent authoring selectors via the `/generate-selectors` workflow.
+2. An agent authoring selectors via the `/configure-source` workflow.
 
 There is no way for the public to suggest a URL for consideration. Community members who know about great event sources have no channel to contribute them. This feature adds a rate-limited, public-facing endpoint where anyone can submit one or more URLs for admin review and eventual scraping.
 

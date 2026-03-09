@@ -1,6 +1,6 @@
 # Event Platform Knowledge Base
 
-**Purpose:** Agent-readable reference for the `/generate-selectors` command. Before
+**Purpose:** Agent-readable reference for the `/configure-source` command. Before
 inspecting an unknown site's DOM, check the recognition cheatsheet below to identify
 the platform. If a match is found, use the known selectors and headless flags as a
 starting point rather than deriving everything from scratch.
