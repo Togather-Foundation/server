@@ -37,6 +37,8 @@ type Source struct {
 	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
 	// REST fields (Tier 3)
 	RestConfig []byte // JSONB-encoded RestConfig; nil for non-Tier-3 REST sources
+	// Sitemap fields (URL discovery)
+	SitemapConfig []byte // JSONB-encoded SitemapConfig; nil for non-sitemap sources
 }
 
 // UpsertParams contains the fields used to create or update a scraper source.
@@ -62,6 +64,8 @@ type UpsertParams struct {
 	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
 	// REST fields (Tier 3)
 	RestConfig []byte // JSONB-encoded RestConfig; nil for non-Tier-3 REST sources
+	// Sitemap fields (URL discovery)
+	SitemapConfig []byte // JSONB-encoded SitemapConfig; nil for non-sitemap sources
 }
 
 // Repository defines the persistence interface for scraper sources.

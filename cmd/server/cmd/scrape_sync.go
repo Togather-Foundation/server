@@ -183,6 +183,15 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		}
 	}
 
+	var sitemapConfigJSON []byte
+	if cfg.Sitemap != nil {
+		var encErr error
+		sitemapConfigJSON, encErr = json.Marshal(cfg.Sitemap)
+		if encErr != nil {
+			return domainScraper.UpsertParams{}, fmt.Errorf("encode sitemap config: %w", encErr)
+		}
+	}
+
 	return domainScraper.UpsertParams{
 		Name:                  cfg.Name,
 		URL:                   cfg.URL,
@@ -201,5 +210,6 @@ func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertP
 		HeadlessRateLimitMs:   cfg.Headless.RateLimitMs,
 		GraphQLConfig:         graphqlConfigJSON,
 		RestConfig:            restConfigJSON,
+		SitemapConfig:         sitemapConfigJSON,
 	}, nil
 }

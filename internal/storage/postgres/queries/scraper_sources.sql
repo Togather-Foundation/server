@@ -9,6 +9,7 @@ INSERT INTO scraper_sources (
   headless_headers, headless_rate_limit_ms,
   graphql_config,
   rest_config,
+  sitemap_config,
   updated_at
 ) VALUES (
   sqlc.arg('name'),
@@ -29,6 +30,7 @@ INSERT INTO scraper_sources (
   sqlc.arg('headless_rate_limit_ms'),
   sqlc.arg('graphql_config'),
   sqlc.arg('rest_config'),
+  sqlc.arg('sitemap_config'),
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -49,18 +51,21 @@ ON CONFLICT (name) DO UPDATE SET
   headless_rate_limit_ms   = EXCLUDED.headless_rate_limit_ms,
   graphql_config           = EXCLUDED.graphql_config,
   rest_config              = EXCLUDED.rest_config,
+  sitemap_config           = EXCLUDED.sitemap_config,
   updated_at               = NOW()
 RETURNING id, name, url, tier, schedule, trust_level, license, enabled,
           max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms, graphql_config, rest_config;
+          headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
+          sitemap_config;
 
 -- name: GetScraperSourceByName :one
 -- Get a single scraper source by unique name.
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
        max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms, graphql_config, rest_config
+       headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
+       sitemap_config
   FROM scraper_sources
  WHERE name = sqlc.arg('name');
 
@@ -69,7 +74,8 @@ SELECT id, name, url, tier, schedule, trust_level, license, enabled,
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
        max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms, graphql_config, rest_config
+       headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
+       sitemap_config
   FROM scraper_sources
  WHERE id = sqlc.arg('id');
 
@@ -78,7 +84,8 @@ SELECT id, name, url, tier, schedule, trust_level, license, enabled,
 SELECT id, name, url, tier, schedule, trust_level, license, enabled,
        max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms, graphql_config, rest_config
+       headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
+       sitemap_config
   FROM scraper_sources
  WHERE (sqlc.narg('enabled')::boolean IS NULL OR enabled = sqlc.narg('enabled'))
  ORDER BY name ASC;
@@ -111,7 +118,8 @@ DELETE FROM org_scraper_sources
 SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
        s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config
+       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config,
+       s.sitemap_config
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = sqlc.arg('organization_id')
@@ -134,7 +142,8 @@ DELETE FROM place_scraper_sources
 SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
        s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config
+       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config,
+       s.sitemap_config
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = sqlc.arg('place_id')
@@ -150,6 +159,7 @@ SELECT
   s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
   s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
   s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config,
+  s.sitemap_config,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,

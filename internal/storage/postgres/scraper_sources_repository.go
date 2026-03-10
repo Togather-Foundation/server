@@ -59,6 +59,7 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		HeadlessRateLimitMs: int32(params.HeadlessRateLimitMs),
 		GraphqlConfig:       params.GraphQLConfig,
 		RestConfig:          params.RestConfig,
+		SitemapConfig:       params.SitemapConfig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
@@ -231,6 +232,8 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		GraphQLConfig: row.GraphqlConfig,
 		// REST fields (Tier 3)
 		RestConfig: row.RestConfig,
+		// Sitemap fields (URL discovery)
+		SitemapConfig: row.SitemapConfig,
 	}
 	if row.Notes.Valid {
 		s.Notes = row.Notes.String
