@@ -88,7 +88,7 @@ type SitemapConfig struct {
 	// This is a safety net to prevent runaway scrapes on large sitemaps.
 	MaxURLs int `yaml:"max_urls" json:"max_urls"`
 	// RateLimitMs is the delay in milliseconds between fetching individual detail
-	// pages. 0 means use the default (500 ms).
+	// pages. 0 means use the default (500 ms). Set to 1 for minimal delay.
 	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
 }
 
@@ -492,6 +492,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	}
 
 	if cfg.Sitemap != nil {
+		if len(cfg.URLs) > 0 {
+			errs = append(errs, "sitemap: mutually exclusive with urls (set one or the other)")
+		}
 		if cfg.Tier == 3 {
 			errs = append(errs, "sitemap: not supported for tier 3 sources (use graphql/rest config instead)")
 		}

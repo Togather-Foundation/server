@@ -2056,6 +2056,20 @@ func TestValidate_SitemapConfig(t *testing.T) {
 			},
 			wantErr: "sitemap.rate_limit_ms: must be >= 0, got -100",
 		},
+		{
+			name: "sitemap with urls is invalid",
+			cfg: SourceConfig{
+				Name: "test",
+				URL:  "https://example.com",
+				URLs: []string{"https://example.com/page1"},
+				Tier: 0,
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: "/events/.+",
+				},
+			},
+			wantErr: "sitemap: mutually exclusive with urls",
+		},
 	}
 
 	for _, tt := range tests {

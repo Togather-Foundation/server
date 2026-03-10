@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,14 +88,22 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 	var index xmlSitemapIndex
 	if xml.Unmarshal(body, &index) == nil && len(index.Sitemaps) > 0 {
 		var entries []SitemapEntry
+		var childErrors []error
 		for _, sm := range index.Sitemaps {
 			children, childErr := fetchSitemapRecursive(ctx, sm.Loc, client, depth+1)
 			if childErr != nil {
-				// Log but don't fail the whole sitemap -- partial results are acceptable.
+				childErrors = append(childErrors, fmt.Errorf("child sitemap %s: %w", sm.Loc, childErr))
 				continue
 			}
 			entries = append(entries, children...)
 		}
+		// Return partial results with a combined error if all children failed
+		// and we have no entries at all.
+		if len(childErrors) > 0 && len(entries) == 0 {
+			return nil, errors.Join(childErrors...)
+		}
+		// When we have some entries (or no errors), return them with nil error —
+		// partial success is acceptable and callers proceed with what we have.
 		return entries, nil
 	}
 
@@ -122,7 +131,6 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 func parseLastMod(s string) (time.Time, error) {
 	formats := []string{
 		time.RFC3339,
-		"2006-01-02T15:04:05-07:00",
 		"2006-01-02T15:04:05Z",
 		"2006-01-02",
 		"2006-01",

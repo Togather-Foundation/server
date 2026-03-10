@@ -209,12 +209,15 @@ func TestFetchSitemap_IndexDepthExceeded(t *testing.T) {
 
 	client := &http.Client{}
 	entries, err := FetchSitemap(t.Context(), root.URL+"/root.xml", client)
-	if err != nil {
-		t.Fatalf("unexpected top-level error: %v", err)
+	// With error-propagation semantics, when all children in a sitemap index
+	// fail (depth exceeded bubbles up), FetchSitemap returns a non-nil error.
+	if err == nil {
+		t.Error("expected error from depth-exceeded children, got nil")
 	}
-
-	// The leaf at depth 3 should have been skipped (child errors are swallowed
-	// for partial result tolerance). Result: 0 entries (not the deep URL).
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(entries))
+	}
+	// The deep URL must never appear in the results.
 	for _, e := range entries {
 		if e.URL == "https://example.com/event/deep" {
 			t.Errorf("deep URL should not have been reached, got entry: %v", e.URL)
