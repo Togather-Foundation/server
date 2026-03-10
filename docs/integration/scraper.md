@@ -1,8 +1,8 @@
 # Integrated Event Scraper
 
-**Version:** 0.5.0
-**Date:** 2026-03-06
-**Status:** Implemented (Tier 0–3, DB-backed source configs, periodic River scheduling, network capture + intercept)
+**Version:** 0.6.0
+**Date:** 2026-03-10
+**Status:** Implemented (Tier 0–3, sitemap-based URL discovery, DB-backed source configs, periodic River scheduling, network capture + intercept)
 
 The Togather SEL server includes a built-in four-tier event scraper for automatically
 extracting events from Toronto-area arts and culture websites. This document covers
@@ -20,14 +20,15 @@ see [building-scrapers.md](building-scrapers.md).
 3. [CLI Reference](#cli-reference)
 4. [Tiered Extraction](#tiered-extraction)
 5. [Source Configuration](#source-configuration)
-6. [Periodic Scheduling](#periodic-scheduling)
-7. [Scraper Global Config](#scraper-global-config)
-8. [Database Run Tracking](#database-run-tracking)
-9. [Environment Variables](#environment-variables)
-10. [Staging Scrape Workflow](#staging-scrape-workflow)
-11. [Adding New Sources](#adding-new-sources)
-12. [Agentic Scraping Workflow](#agentic-scraping-workflow)
-13. [Security Design](#security-design)
+6. [Sitemap-Based URL Discovery](#sitemap-based-url-discovery)
+7. [Periodic Scheduling](#periodic-scheduling)
+8. [Scraper Global Config](#scraper-global-config)
+9. [Database Run Tracking](#database-run-tracking)
+10. [Environment Variables](#environment-variables)
+11. [Staging Scrape Workflow](#staging-scrape-workflow)
+12. [Adding New Sources](#adding-new-sources)
+13. [Agentic Scraping Workflow](#agentic-scraping-workflow)
+14. [Security Design](#security-design)
 
 ---
 
@@ -704,6 +705,7 @@ at debug level and the URL is left empty.
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
 | `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
 | `rest` | — | Required for `tier: 3` REST variant (mutually exclusive with `graphql`) |
+| `sitemap` | — | Sitemap-based URL discovery (mutually exclusive with `urls`). See [Sitemap-Based URL Discovery](#sitemap-based-url-discovery). |
 
 ### Headless Config Fields (`headless:`)
 
@@ -771,6 +773,113 @@ Values are source JSON keys from the GraphQL response record; use dot-separated 
 Values are source JSON keys; use dot-separated paths to traverse nested objects (e.g. `"logo.url"`, `"title.text"`).
 
 > **Redirect behaviour:** The REST HTTP client allows up to 10 redirects. This is intentionally explicit — it matches the Go default but is configurable for auditability. JSON-LD (Tier 0) blocks all redirects for SSRF hardening.
+
+---
+
+## Sitemap-Based URL Discovery
+
+Use sitemap scraping when a site's listing page is unscrapeable (e.g. Wix Thunderbolt,
+Duda builder, heavy JavaScript frameworks) but individual event **detail pages** contain
+structured data (JSON-LD, CSS-selectable content, etc.).
+
+Sitemap is a **URL discovery mechanism**, not a new tier. The scraper:
+
+1. Fetches the sitemap XML (supports `<urlset>` and `<sitemapindex>` with recursive child sitemaps, max depth 3)
+2. Filters URLs by the configured `filter_pattern` (Go regex)
+3. Applies freshness filtering: skips URLs whose `<lastmod>` is older than the source's `last_scraped_at` timestamp
+4. Scrapes each matching URL individually using the source's configured tier (0, 1, or 2)
+
+Each detail page URL goes through the same extraction pipeline as a regular single-URL
+scrape. Events from all pages are aggregated into a single `ScrapeResult` per source.
+
+### When to use sitemap vs urls
+
+| Approach | Use when |
+|----------|----------|
+| `url` / `urls` | You know the exact listing page(s) and they're scrapeable |
+| `sitemap` | Listing pages are broken/JS-heavy, but detail pages have structured data. Also useful for large sites where you want regex-based URL selection |
+
+`sitemap` and `urls` are **mutually exclusive** — validation rejects configs that set both.
+
+### Sitemap Config Example
+
+```yaml
+# Tier 0: detail pages have JSON-LD
+name: "wix-venue"
+url: "https://wix-venue.ca/events"        # metadata only (not scraped directly)
+tier: 0
+enabled: true
+schedule: "daily"
+sitemap:
+  url: "https://wix-venue.ca/sitemap.xml"
+  filter_pattern: "/events/.+"             # Go regex: match event detail URLs
+  max_urls: 100                            # cap per run (default: 200)
+  rate_limit_ms: 500                       # ms between page fetches (default: 500)
+```
+
+```yaml
+# Tier 1: detail pages need CSS selectors
+name: "css-detail-venue"
+url: "https://example.com"
+tier: 1
+enabled: true
+sitemap:
+  url: "https://example.com/sitemap.xml"
+  filter_pattern: "/shows/[^/]+$"
+selectors:
+  event_list: "article.event-detail"       # applied to each detail page
+  name: "h1.event-title"
+  start_date: "time[datetime]"
+  description: ".event-description"
+```
+
+### Sitemap Config Fields (`sitemap:`)
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `url` | string | yes | — | URL of the sitemap XML file (e.g. `https://example.com/sitemap.xml`). Supports both `<urlset>` and `<sitemapindex>` formats. |
+| `filter_pattern` | string | yes | — | Go regular expression matched against each URL in the sitemap. Only matching URLs are scraped. Example: `/events/.+` |
+| `max_urls` | int | no | `200` | Maximum number of URLs to scrape per run. Safety cap to prevent runaway scrapes on large sitemaps. |
+| `rate_limit_ms` | int | no | `500` | Delay in milliseconds between fetching individual detail pages. Set to `1` for minimal delay. |
+
+### Freshness Filtering
+
+When a sitemap entry includes a `<lastmod>` element, the scraper compares it against
+the source's `last_scraped_at` timestamp (set automatically after each successful run).
+URLs whose `<lastmod>` is older than `last_scraped_at` are skipped, reducing
+unnecessary re-scraping.
+
+When `<lastmod>` is absent (common in simpler sitemaps), all filtered URLs are scraped
+up to the `max_urls` cap. The `max_urls` default of 200 provides a safety net for
+sitemaps without lastmod data.
+
+Supported `<lastmod>` formats: RFC 3339, `YYYY-MM-DDThh:mm:ssZ`, `YYYY-MM-DD`, `YYYY-MM`.
+
+### Sitemap Index Support
+
+The scraper handles both simple sitemaps (`<urlset>`) and sitemap indexes
+(`<sitemapindex>`) that reference child sitemaps. Index recursion is capped at
+depth 3 to prevent infinite loops.
+
+When fetching child sitemaps from an index, partial failures are tolerated — if some
+children fail but others succeed, the scraper proceeds with the successfully-fetched
+entries. If **all** children fail, the error is propagated to the caller.
+
+### Validation Rules
+
+- `sitemap.url` must be a valid `http://` or `https://` URL
+- `sitemap.filter_pattern` must be a valid Go regex
+- `sitemap` is not supported for tier 3 sources (use `graphql` or `rest` config instead)
+- `sitemap` and `urls` are mutually exclusive
+- `sitemap.max_urls` must be non-negative
+- `sitemap.rate_limit_ms` must be non-negative
+
+### Database Storage
+
+`SitemapConfig` is stored as a JSONB column (`sitemap_config`) on the `scraper_sources`
+table, following the same pattern as `rest_config` and `graphql_config`. The YAML → DB
+sync (`server scrape sync`) and DB → YAML export (`server scrape export`) both handle
+sitemap config round-tripping.
 
 ---
 
