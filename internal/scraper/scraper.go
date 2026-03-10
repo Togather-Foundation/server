@@ -392,6 +392,67 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 	return results, nil
 }
 
+// normalizeRawEvents groups RawEvents by (URL, Name) and consolidates multi-row
+// groups into single EventInputs with Occurrences. Single-row groups are normalized
+// individually. Returns valid EventInputs and the count of skipped (failed) groups.
+//
+// A limit of 0 means no limit. The logger is used for per-group warning messages.
+func normalizeRawEvents(rawEvents []RawEvent, source SourceConfig, limit int, logger zerolog.Logger) ([]events.EventInput, int) {
+	// Group RawEvents by (URL, Name) so we can detect multi-row cases.
+	// Map key: "url|||name" (using triple-pipe to avoid collisions).
+	// An ordered slice tracks insertion order so results are deterministic.
+	type group struct {
+		key  string
+		rows []RawEvent
+	}
+	groupMap := make(map[string]*group)
+	var groupOrder []string
+
+	for _, raw := range rawEvents {
+		key := fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
+		if _, ok := groupMap[key]; !ok {
+			groupMap[key] = &group{key: key}
+			groupOrder = append(groupOrder, key)
+		}
+		groupMap[key].rows = append(groupMap[key].rows, raw)
+	}
+
+	var validEvents []events.EventInput
+	skipped := 0
+
+	for _, key := range groupOrder {
+		if limit > 0 && len(validEvents) >= limit {
+			break
+		}
+
+		g := groupMap[key]
+
+		var input events.EventInput
+		var normErr error
+
+		if len(g.rows) > 1 {
+			// Multi-row case: consolidate into a single EventInput with Occurrences.
+			input, normErr = consolidateOccurrences(g.rows, source)
+		} else {
+			// Single-row case: normalize as before.
+			input, normErr = NormalizeRawEvent(g.rows[0], source)
+		}
+
+		if normErr != nil {
+			logger.Warn().Str("source", source.Name).
+				Str("name", g.rows[0].Name).
+				Err(normErr).
+				Msg("scraper: skipping raw event(s) that failed normalisation")
+			skipped++
+			continue
+		}
+
+		validEvents = append(validEvents, input)
+	}
+
+	return validEvents, skipped
+}
+
 // scrapeTier1 fetches and processes a Tier 1 (Colly CSS-selector) source.
 func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
 	result := ScrapeResult{
@@ -438,51 +499,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		var warnings []string
 		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
-		// Group RawEvents by (URL, Name) so we can detect multi-row cases.
-		// Map key: "url|||name" (using triple-pipe to avoid collisions)
-		eventGroups := make(map[string][]RawEvent)
-		for _, raw := range rawEvents {
-			key := fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
-			eventGroups[key] = append(eventGroups[key], raw)
-		}
-
-		limit := opts.Limit
-		var validEvents []events.EventInput
-		skipped := 0
-		eventCount := 0
-
-		for _, group := range eventGroups {
-			if limit > 0 && eventCount >= limit {
-				break
-			}
-
-			// If this group has multiple RawEvents (multi-row date table),
-			// consolidate them into a single EventInput with Occurrences.
-			// Otherwise, normalize the single RawEvent as usual.
-			var input events.EventInput
-			var normErr error
-
-			if len(group) > 1 {
-				// Multi-row case: consolidate.
-				input, normErr = consolidateOccurrences(group, source)
-			} else {
-				// Single-row case: normalize as before.
-				input, normErr = NormalizeRawEvent(group[0], source)
-			}
-
-			if normErr != nil {
-				s.logger.Warn().Str("source", source.Name).
-					Str("name", group[0].Name).
-					Err(normErr).
-					Msg("scraper: skipping raw event(s) that failed normalisation")
-				skipped++
-				continue
-			}
-
-			validEvents = append(validEvents, input)
-			eventCount++
-		}
-
+		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger)
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 1 events skipped during normalisation")
@@ -540,24 +557,7 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 		var warnings []string
 		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
-		var validEvents []events.EventInput
-		skipped := 0
-		limit := opts.Limit
-
-		for i, raw := range rawEvents {
-			if limit > 0 && i >= limit {
-				break
-			}
-			input, normErr := NormalizeRawEvent(raw, source)
-			if normErr != nil {
-				s.logger.Warn().Str("source", source.Name).Err(normErr).
-					Msg("scraper: skipping raw event that failed normalisation (tier 2)")
-				skipped++
-				continue
-			}
-			validEvents = append(validEvents, input)
-		}
-
+		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger)
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 2 events skipped during normalisation")
@@ -825,16 +825,14 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 				} else {
 					totalFound += len(rawEvts)
 					warnings = append(warnings, checkDateSelectorQuality(rawEvts, clone, probes)...)
-					for _, raw := range rawEvts {
-						if opts.Limit > 0 && len(allEvents)+len(pageEvents) >= opts.Limit {
-							break
-						}
-						input, normErr := NormalizeRawEvent(raw, clone)
-						if normErr != nil {
-							continue
-						}
-						pageEvents = append(pageEvents, input)
+					// Pass limit=0; the global limit is enforced after pageEvents are
+					// appended to allEvents below.
+					valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger)
+					if skipped > 0 {
+						s.logger.Warn().Str("source", source.Name).Str("url", pageURL).Int("skipped", skipped).
+							Msg("scraper: sitemap T1 events skipped during normalisation")
 					}
+					pageEvents = valid
 				}
 
 			case 2:
@@ -847,16 +845,14 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 					} else {
 						totalFound += len(rawEvts)
 						warnings = append(warnings, checkDateSelectorQuality(rawEvts, clone, probes)...)
-						for _, raw := range rawEvts {
-							if opts.Limit > 0 && len(allEvents)+len(pageEvents) >= opts.Limit {
-								break
-							}
-							input, normErr := NormalizeRawEvent(raw, clone)
-							if normErr != nil {
-								continue
-							}
-							pageEvents = append(pageEvents, input)
+						// Pass limit=0; the global limit is enforced after pageEvents are
+						// appended to allEvents below.
+						valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger)
+						if skipped > 0 {
+							s.logger.Warn().Str("source", source.Name).Str("url", pageURL).Int("skipped", skipped).
+								Msg("scraper: sitemap T2 events skipped during normalisation")
 						}
+						pageEvents = valid
 					}
 				}
 

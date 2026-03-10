@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/rs/zerolog"
+
 	"github.com/Togather-Foundation/server/internal/domain/events"
 )
 
@@ -987,5 +989,151 @@ func TestMustJSONHelper(t *testing.T) {
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil || s != "hello" {
 		t.Errorf("mustJSON round-trip failed: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// normalizeRawEvents helper tests
+// ---------------------------------------------------------------------------
+
+// makeRaw is a shorthand for building a RawEvent in tests.
+func makeRaw(name, url, startDate string) RawEvent {
+	return RawEvent{
+		Name:      name,
+		URL:       url,
+		StartDate: startDate,
+	}
+}
+
+// TestNormalizeRawEvents_MultiRowGrouping verifies that RawEvents sharing the
+// same URL+Name are consolidated into a single EventInput with Occurrences,
+// while a RawEvent with a distinct URL+Name becomes its own EventInput.
+func TestNormalizeRawEvents_MultiRowGrouping(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	raws := []RawEvent{
+		makeRaw("Hamlet", "https://example.com/hamlet", "2026-06-01T20:00:00"),
+		makeRaw("Hamlet", "https://example.com/hamlet", "2026-06-02T20:00:00"),
+		makeRaw("Hamlet", "https://example.com/hamlet", "2026-06-03T20:00:00"),
+		makeRaw("Oak Tree", "https://example.com/oak-tree", "2026-06-05T19:30:00"),
+	}
+
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped, got %d", skipped)
+	}
+	if len(valid) != 2 {
+		t.Fatalf("expected 2 EventInputs, got %d", len(valid))
+	}
+
+	// Find the Hamlet event (3 occurrences).
+	var hamlet, oakTree *events.EventInput
+	for i := range valid {
+		switch valid[i].Name {
+		case "Hamlet":
+			hamlet = &valid[i]
+		case "Oak Tree":
+			oakTree = &valid[i]
+		}
+	}
+
+	if hamlet == nil {
+		t.Fatal("Hamlet EventInput not found")
+	}
+	if oakTree == nil {
+		t.Fatal("Oak Tree EventInput not found")
+	}
+	if len(hamlet.Occurrences) != 3 {
+		t.Errorf("expected Hamlet to have 3 occurrences, got %d", len(hamlet.Occurrences))
+	}
+	if len(oakTree.Occurrences) != 0 {
+		t.Errorf("expected Oak Tree to have 0 occurrences (single-row), got %d", len(oakTree.Occurrences))
+	}
+}
+
+// TestNormalizeRawEvents_SingleEvents verifies that RawEvents all with distinct
+// URL+Name keys each produce a separate EventInput with no Occurrences set.
+func TestNormalizeRawEvents_SingleEvents(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	raws := []RawEvent{
+		makeRaw("Event A", "https://example.com/a", "2026-06-01T20:00:00"),
+		makeRaw("Event B", "https://example.com/b", "2026-06-02T20:00:00"),
+		makeRaw("Event C", "https://example.com/c", "2026-06-03T20:00:00"),
+	}
+
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped, got %d", skipped)
+	}
+	if len(valid) != 3 {
+		t.Fatalf("expected 3 EventInputs, got %d", len(valid))
+	}
+	for _, ev := range valid {
+		if len(ev.Occurrences) != 0 {
+			t.Errorf("event %q: expected no occurrences for single-row, got %d", ev.Name, len(ev.Occurrences))
+		}
+	}
+}
+
+// TestNormalizeRawEvents_Limit verifies that the limit parameter caps the
+// number of returned EventInputs.
+func TestNormalizeRawEvents_Limit(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	raws := []RawEvent{
+		makeRaw("Event A", "https://example.com/a", "2026-06-01T20:00:00"),
+		makeRaw("Event B", "https://example.com/b", "2026-06-02T20:00:00"),
+		makeRaw("Event C", "https://example.com/c", "2026-06-03T20:00:00"),
+		makeRaw("Event D", "https://example.com/d", "2026-06-04T20:00:00"),
+		makeRaw("Event E", "https://example.com/e", "2026-06-05T20:00:00"),
+	}
+
+	valid, _ := normalizeRawEvents(raws, src, 2, logger)
+
+	if len(valid) != 2 {
+		t.Errorf("expected 2 EventInputs with limit=2, got %d", len(valid))
+	}
+}
+
+// TestNormalizeRawEvents_SkipsInvalidDates verifies that within a multi-row
+// group, rows with empty DateParts (no parseable date) are skipped from the
+// occurrence list rather than failing the whole group.
+func TestNormalizeRawEvents_SkipsInvalidDates(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	// Three rows for the same event: two have valid dates, one has empty DateParts.
+	raws := []RawEvent{
+		makeRaw("Show", "https://example.com/show", "2026-06-01T20:00:00"),
+		// Empty StartDate and no DateParts → normalizeStartDate returns "".
+		{Name: "Show", URL: "https://example.com/show"},
+		makeRaw("Show", "https://example.com/show", "2026-06-03T20:00:00"),
+	}
+
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+
+	// The group as a whole should succeed (2 valid occurrences).
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped groups, got %d", skipped)
+	}
+	if len(valid) != 1 {
+		t.Fatalf("expected 1 EventInput, got %d", len(valid))
+	}
+	if len(valid[0].Occurrences) != 2 {
+		t.Errorf("expected 2 occurrences (bad row skipped), got %d", len(valid[0].Occurrences))
 	}
 }
