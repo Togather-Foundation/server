@@ -677,24 +677,7 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 			return 0, nil, nil, err
 		}
 
-		var validEvents []events.EventInput
-		skipped := 0
-		limit := opts.Limit
-
-		for i, raw := range rawEvents {
-			if limit > 0 && i >= limit {
-				break
-			}
-			input, normErr := NormalizeRawEvent(raw, source)
-			if normErr != nil {
-				s.logger.Warn().Str("source", source.Name).Err(normErr).
-					Msg("scraper: skipping raw event that failed normalisation (tier 3)")
-				skipped++
-				continue
-			}
-			validEvents = append(validEvents, input)
-		}
-
+		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger)
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 3 events skipped during normalisation")
