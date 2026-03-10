@@ -497,6 +497,7 @@ type ScraperSource struct {
 	HeadlessRateLimitMs   int32              `json:"headless_rate_limit_ms"`
 	GraphqlConfig         []byte             `json:"graphql_config"`
 	RestConfig            []byte             `json:"rest_config"`
+	SitemapConfig         []byte             `json:"sitemap_config"`
 }
 
 type ScraperSubmission struct {

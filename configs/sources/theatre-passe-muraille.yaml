@@ -1,40 +1,24 @@
 name: "theatre-passe-muraille"
-# DISABLED — Requires depth-2 (detail-page) scraping.
-#
-# 2026-03-09 UPDATE: Site is UP and working (previously reported unreachable).
-#   Full 25.26 season page lists 11+ productions with freeform date text:
-#     BUTCH/FEMME (Sept 20-27, 2025)
-#     What Brings You In (Oct 17-25, 2025)
-#     Through the Eyes of God (Feb 1-21, 2026)
-#     PXR Conference (Feb 20-22 & Feb 27-Mar 1, 2026)
-#     As I Must Live It (touring)
-#     Wayqeycuna (upcoming)
-#     Mark of A Woman (upcoming)
-#     #BeyondTO Series 2026 (upcoming)
-#     VUKA (upcoming)
-#     Buzz 25.26 (upcoming)
-#
-# STRUCTURE:
-#   Season page (/25-26-season/) lists shows as h5 title + unstructured <p> dates
-#   (e.g. "Playing Feb. 1-21, 2026"). Dates are in freeform <p> text with no CSS class.
-#   No repeating container div per show.
-#   Individual show pages (e.g. /butch-femme/, /what-brings-you-in/, /through-the-eyes-of-god/)
-#   have CLEAN structured dates with "Show Dates" heading followed by date text.
-#   Nav submenu under 25-26-season lists all show URLs.
-#
-# BLOCKERS:
-#   1. Dates in freeform <p> text with no CSS class — no repeating container per show.
-#   2. Need depth-2 scraping to follow show URLs and extract from detail pages.
-#
-# VIABLE PATHS:
-#   A. Depth-2 scraping: listing page → individual show pages → extract dates from
-#      "Show Dates" section (requires scraper enhancement).
-#   B. NLP date parsing of "Playing MMM. D-D, YYYY" format from season page (fragile).
-#   C. Contact venue to add <time> elements or schema.org Event JSON-LD (one-time theme change).
+# WordPress + Elementor site. Listing page unscrapeable, but individual show detail
+# pages (in page-sitemap.xml) have clean structure: h1.page-title for show name,
+# freeform date text in <p> tags after h5 "Show Dates" heading.
+# Sitemap filter: match only main show URLs (butch-femme, what-brings-you-in, etc.),
+# exclude program/digital variants. date_selectors extracts date-only text (times default midnight).
+# Extracted 2025-26 season: BUTCH/FEMME, What Brings You In, Through the Eyes of God (Wayqeycuna no dates).
 url: "https://passemuraille.ca/25-26-season/"
-tier: 0
+tier: 1
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
-max_pages: 3
+enabled: true
+sitemap:
+  url: "https://passemuraille.ca/sitemap_index.xml"
+  filter_pattern: "/(?:butch-femme|what-brings-you-in|wayqeycuna|eachother|unscripted|through-the-eyes-of-god)/$"
+  max_urls: 50
+  rate_limit_ms: 500
+selectors:
+  event_list: "article"
+  name: "h1.page-title"
+  url: "link[rel='canonical']"
+  date_selectors:
+    - "p"  # matches any p tag (first one is date text)

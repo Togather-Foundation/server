@@ -105,6 +105,19 @@ if Cloudflare blocks it. See `docs/integration/event-platforms.md` section 16.
 
 **Tier 0 path** (JSON-LD or iCal feed detected): skip to Step 7 and write a tier: 0 config — no CSS selectors needed.
 
+**Sitemap path** (listing page unscrapeable but detail pages have data): If the listing
+page is unscrapeable (Wix Thunderbolt, Duda, heavy JS) but you suspect detail pages
+have structured data, check for a sitemap:
+
+```bash
+curl -sL --max-time 10 "<DOMAIN>/sitemap.xml" | head -c 4000
+curl -sL --max-time 10 "<DOMAIN>/robots.txt" | grep -i sitemap
+```
+
+If a sitemap exists with event-like URLs, use sitemap-based scraping instead of the
+regular listing-page approach. See **Sitemap Config** section below for the template
+and workflow.
+
 **Tier 3 GraphQL path** (DatoCMS/GraphQL detected): find the API token in the page JS source, write a tier: 3 graphql config. Refer to `docs/integration/event-platforms.md` for the DatoCMS profile.
 
 **Tier 3 REST path** (Showpass or other platform with a **confirmed public API**
@@ -500,6 +513,89 @@ rest:
 ```
 
 Omit selector/graphql lines whose value is empty. `trust_level: 8` for museums/libraries/government, `3` for aggregators, `5` otherwise.
+
+---
+
+## Sitemap Config
+
+Use sitemap-based scraping when the listing page is unscrapeable (Wix Thunderbolt, Duda
+builder, heavy JS frameworks) but individual event **detail pages** contain structured
+data (JSON-LD, CSS-selectable content, etc.).
+
+Sitemap is a URL discovery mechanism, not a new tier. The scraper fetches the sitemap XML,
+filters URLs by include/exclude patterns, applies freshness filtering, then scrapes each
+matching URL using the source's configured tier.
+
+### When to use sitemap
+
+- Listing page is JS-rendered and unscrapeable, but detail pages have static HTML
+- Site has a large sitemap and you want regex-based URL selection
+- `sitemap` and `urls` are mutually exclusive — validation rejects both set
+
+### Discovering sitemaps
+
+```bash
+# Check common sitemap locations
+curl -sL --max-time 10 "<DOMAIN>/sitemap.xml" | head -c 4000
+curl -sL --max-time 10 "<DOMAIN>/robots.txt" | grep -i sitemap
+# Some sites use custom paths (e.g. /dynamic-events-sitemap.xml)
+```
+
+Look for `<urlset>` (simple sitemap) or `<sitemapindex>` (index referencing child sitemaps).
+Count URLs and note if `<lastmod>` is present — it enables freshness filtering.
+
+### Choosing filter_pattern and exclude_pattern
+
+- `filter_pattern` (required): Go regex that **includes** matching URLs. Example: `/events/.+`
+- `exclude_pattern` (optional): Go regex that **rejects** URLs that passed the include filter.
+  Use when the sitemap has many non-event pages and exclusion is easier than precise inclusion.
+
+Example for a 327-entry sitemap where ~30 are shows:
+```yaml
+filter_pattern: "."             # include everything
+exclude_pattern: "/(artists|news|info|about|contact|donate|accessibility|press|privacy|terms)(/|$)"
+```
+
+### Validating sitemap configs
+
+After writing the config, validate with dry-run:
+
+```bash
+./server scrape source <name> --source-file configs/sources/<name>.yaml --dry-run --verbose
+```
+
+Check that:
+1. The number of filtered URLs is reasonable (not 0, not the entire sitemap)
+2. Events are extracted with non-empty names
+3. No unexpected URLs slipped through the filters
+
+### Sitemap YAML template
+
+```yaml
+name: "<name>"
+# <description: sitemap-based, detail pages have structured data>
+# Organization match: <org name> (<ulid>) — or "no match found" / "API unavailable"
+url: "<events-page-URL>"            # metadata only (not scraped directly)
+tier: 1                              # tier used for each detail page (0, 1, or 2)
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+sitemap:
+  url: "<sitemap-XML-URL>"
+  filter_pattern: "<Go regex>"       # required: include matching URLs
+  exclude_pattern: "<Go regex>"      # optional: reject matching URLs after include
+  max_urls: 200                      # cap per run (default: 200)
+  rate_limit_ms: 500                 # ms between page fetches (default: 500)
+selectors:                           # only needed for tier 1/2
+  event_list: "<selector>"           # on the detail page (often "body" or "main")
+  name: "<selector>"
+  start_date: "<selector>"
+  # date_selectors:                  # use when no <time> elements
+  #   - "<date-text-selector>"
+```
+
+When using sitemap with Tier 0, omit the `selectors` block — JSON-LD extraction is automatic.
 
 ---
 

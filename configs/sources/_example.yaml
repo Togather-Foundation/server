@@ -134,6 +134,38 @@ max_pages: 5
 #     end_date: "dates.end"
 #     location: "venue.name"          # Dot-notation: nested venue name
 
+# --- SITEMAP-BASED SCRAPING EXAMPLE ---
+# Use when the listing page is unscrapeable (e.g. Wix Thunderbolt, Duda builder)
+# but individual event detail pages contain structured data (JSON-LD, CSS, etc.).
+# The scraper fetches the sitemap XML, filters URLs by pattern, and scrapes each
+# matching URL using the source's configured tier. Works with tier 0, 1, or 2.
+#
+# name: "my-detail-page-venue"
+# url: "https://myvenue.ca/events"           # metadata only (not scraped)
+# tier: 0                                     # tier used for each detail page
+# schedule: "daily"
+# sitemap:
+#   url: "https://myvenue.ca/sitemap.xml"     # sitemap XML to fetch
+#   filter_pattern: "/events/.+"              # Go regex: only scrape event URLs
+#   exclude_pattern: "/events/archive"        # Go regex: reject matched URLs (optional)
+#   max_urls: 100                             # cap per run (default: 200)
+#   rate_limit_ms: 500                        # delay between pages (default: 500)
+#
+# With tier 1 (CSS selectors on detail pages):
+#
+# name: "my-css-detail-venue"
+# url: "https://myvenue.ca"
+# tier: 1
+# sitemap:
+#   url: "https://myvenue.ca/sitemap.xml"
+#   filter_pattern: "/shows/[^/]+$"
+#   exclude_pattern: "/(artists|info|about)/"  # exclude non-event pages
+# selectors:
+#   event_list: "article.event-detail"        # on the detail page
+#   name: "h1.event-title"
+#   start_date: "time[datetime]"
+#   description: ".event-description"
+
 # --- TIER 2 HEADLESS WITH INTERCEPT EXAMPLE ---
 # Use when the site renders events via JS and the DOM never populates
 # with structured data, but the underlying API response contains it.

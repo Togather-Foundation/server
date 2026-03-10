@@ -39,6 +39,23 @@ Flag any URLs where a config already exists. If more than one such URL exists, a
 the user once: "The following configs already exist: X, Y, Z. Overwrite all, skip all,
 or decide per-URL?" Apply the answer to all subagents as their `conflict_policy`.
 
+### Step 2b — Sitemap hint (optional)
+
+If the user mentions "sitemap" or the URL points to a sitemap XML, or you have prior
+knowledge that the site's listing page is unscrapeable (Wix, Duda, etc.), include a
+**sitemap hint** in the worker dispatch prompt. This tells the worker to check for a
+sitemap before attempting regular listing-page scraping.
+
+The scraper-worker already knows how to discover and configure sitemaps — you just
+need to trigger the path by adding to the prompt:
+
+```
+Sitemap hint: the listing page may be unscrapeable. Check for a sitemap at
+<DOMAIN>/sitemap.xml and /robots.txt before attempting listing-page scraping.
+If a sitemap with event URLs exists, use sitemap-based config (see Sitemap Config
+section in your instructions).
+```
+
 ### Step 3 — Dispatch subagents in parallel batches
 
 Launch subagents in parallel batches of **up to 5** at a time.

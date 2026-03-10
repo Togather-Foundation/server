@@ -56,5 +56,17 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		cfg.REST = &rest
 	}
 
+	if len(src.SitemapConfig) > 0 {
+		var sitemap SitemapConfig
+		if err := json.Unmarshal(src.SitemapConfig, &sitemap); err != nil {
+			return SourceConfig{}, fmt.Errorf("decode sitemap config for %q: %w", src.Name, err)
+		}
+		cfg.Sitemap = &sitemap
+	}
+
+	if src.LastScrapedAt != nil {
+		cfg.LastScrapedAt = src.LastScrapedAt
+	}
+
 	return cfg, nil
 }

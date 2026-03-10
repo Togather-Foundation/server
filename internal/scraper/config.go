@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -53,6 +54,11 @@ type SourceConfig struct {
 	// REST holds Tier 3 REST JSON feed options. Ignored for tier 0/1/2.
 	// Exactly one of GraphQL or REST must be set for tier 3.
 	REST *RestConfig `yaml:"rest,omitempty" json:"rest,omitempty"`
+	// Sitemap holds sitemap-based URL discovery options. When set, the scraper
+	// fetches the sitemap XML and scrapes each matching URL individually using
+	// the source's configured tier. Mutually exclusive with urls (but url is
+	// kept as human-readable metadata). Ignored for tier 3.
+	Sitemap *SitemapConfig `yaml:"sitemap,omitempty" json:"sitemap,omitempty"`
 	// Timezone is an IANA timezone name (e.g. "America/Toronto") used when
 	// parsing human-readable dates that lack timezone information (common in
 	// Tier 1/2 CSS selector scraping). When empty, falls back to the
@@ -60,6 +66,36 @@ type SourceConfig struct {
 	// node serves one geographic location). If that is also unset, defaults
 	// to "America/Toronto".
 	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
+	// LastScrapedAt is populated from the DB when loading configs via the
+	// source repository. It is NOT read from YAML. Used by sitemap scraping
+	// to filter URLs by lastmod date.
+	LastScrapedAt *time.Time `yaml:"-" json:"-"`
+}
+
+// SitemapConfig holds sitemap-based URL discovery options. When set on a
+// SourceConfig, the scraper fetches the sitemap XML, filters URLs by
+// FilterPattern (and optionally ExcludePattern), and scrapes each matching
+// URL individually using the source's configured tier (0, 1, or 2). This
+// replaces the static url/urls fields as the URL source for the scrape run.
+type SitemapConfig struct {
+	// URL is the sitemap XML URL to fetch (e.g. https://example.com/sitemap.xml).
+	URL string `yaml:"url" json:"url"`
+	// FilterPattern is a Go regular expression matched against each URL in the
+	// sitemap. Only URLs matching this pattern are scraped. Required.
+	// Example: "/events/.+" to match event detail pages.
+	FilterPattern string `yaml:"filter_pattern" json:"filter_pattern"`
+	// ExcludePattern is an optional Go regular expression. URLs matching this
+	// pattern are excluded even if they match FilterPattern. Useful for large
+	// sitemaps where it's easier to exclude non-event pages (e.g. artist bios,
+	// about pages) than to enumerate all event URL patterns.
+	// Example: "/(artist|about|terms|contact)" to exclude non-event pages.
+	ExcludePattern string `yaml:"exclude_pattern,omitempty" json:"exclude_pattern,omitempty"`
+	// MaxURLs caps the number of URLs scraped per run. 0 means use the default (200).
+	// This is a safety net to prevent runaway scrapes on large sitemaps.
+	MaxURLs int `yaml:"max_urls" json:"max_urls"`
+	// RateLimitMs is the delay in milliseconds between fetching individual detail
+	// pages. 0 means use the default (500 ms). Set to 1 for minimal delay.
+	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2
@@ -343,8 +379,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	hasURL := strings.TrimSpace(cfg.URL) != ""
 	hasURLs := len(cfg.URLs) > 0
 
-	if !hasURL && !hasURLs {
-		errs = append(errs, "url: required (set url or urls)")
+	hasSitemap := cfg.Sitemap != nil
+	if !hasURL && !hasURLs && !hasSitemap {
+		errs = append(errs, "url: required (set url, urls, or sitemap)")
 	}
 	// Validate url only when it will actually be used (i.e. urls is not set).
 	// When urls is present, url is ignored by GetURLs(), so a malformed url
@@ -457,6 +494,39 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 					errs = append(errs, fmt.Sprintf("rest.url_template: invalid Go template: %v", err))
 				}
 			}
+		}
+	}
+
+	if cfg.Sitemap != nil {
+		if len(cfg.URLs) > 0 {
+			errs = append(errs, "sitemap: mutually exclusive with urls (set one or the other)")
+		}
+		if cfg.Tier == 3 {
+			errs = append(errs, "sitemap: not supported for tier 3 sources (use graphql/rest config instead)")
+		}
+		if strings.TrimSpace(cfg.Sitemap.URL) == "" {
+			errs = append(errs, "sitemap.url: required when sitemap block is set")
+		} else {
+			u, err := url.Parse(cfg.Sitemap.URL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				errs = append(errs, fmt.Sprintf("sitemap.url: must be a valid http/https URL, got %q", cfg.Sitemap.URL))
+			}
+		}
+		if strings.TrimSpace(cfg.Sitemap.FilterPattern) == "" {
+			errs = append(errs, "sitemap.filter_pattern: required when sitemap block is set")
+		} else if _, err := regexp.Compile(cfg.Sitemap.FilterPattern); err != nil {
+			errs = append(errs, fmt.Sprintf("sitemap.filter_pattern: invalid Go regex: %v", err))
+		}
+		if cfg.Sitemap.ExcludePattern != "" {
+			if _, err := regexp.Compile(cfg.Sitemap.ExcludePattern); err != nil {
+				errs = append(errs, fmt.Sprintf("sitemap.exclude_pattern: invalid Go regex: %v", err))
+			}
+		}
+		if cfg.Sitemap.MaxURLs < 0 {
+			errs = append(errs, fmt.Sprintf("sitemap.max_urls: must be >= 0, got %d", cfg.Sitemap.MaxURLs))
+		}
+		if cfg.Sitemap.RateLimitMs < 0 {
+			errs = append(errs, fmt.Sprintf("sitemap.rate_limit_ms: must be >= 0, got %d", cfg.Sitemap.RateLimitMs))
 		}
 	}
 

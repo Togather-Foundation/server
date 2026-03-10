@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -305,6 +306,12 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 		}
 	}
 
+	// Sitemap-based scraping: dispatch before the tier switch since sitemap
+	// is a URL discovery mechanism that delegates to the configured tier.
+	if found.Sitemap != nil {
+		return s.scrapeSitemap(ctx, *found, opts)
+	}
+
 	switch found.Tier {
 	case 0:
 		return s.scrapeTier0(ctx, *found, opts)
@@ -359,17 +366,22 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 			res       ScrapeResult
 			scrapeErr error
 		)
-		switch cfg.Tier {
-		case 0:
-			res, scrapeErr = s.scrapeTier0(ctx, cfg, opts)
-		case 1:
-			res, scrapeErr = s.scrapeTier1(ctx, cfg, opts)
-		case 2:
-			res, scrapeErr = s.scrapeTier2(ctx, cfg, opts)
-		case 3:
-			res, scrapeErr = s.scrapeTier3(ctx, cfg, opts)
-		default:
-			scrapeErr = fmt.Errorf("unknown tier %d for source %s", cfg.Tier, cfg.Name)
+		// Sitemap-based scraping.
+		if cfg.Sitemap != nil {
+			res, scrapeErr = s.scrapeSitemap(ctx, cfg, opts)
+		} else {
+			switch cfg.Tier {
+			case 0:
+				res, scrapeErr = s.scrapeTier0(ctx, cfg, opts)
+			case 1:
+				res, scrapeErr = s.scrapeTier1(ctx, cfg, opts)
+			case 2:
+				res, scrapeErr = s.scrapeTier2(ctx, cfg, opts)
+			case 3:
+				res, scrapeErr = s.scrapeTier3(ctx, cfg, opts)
+			default:
+				scrapeErr = fmt.Errorf("unknown tier %d for source %s", cfg.Tier, cfg.Name)
+			}
 		}
 		if scrapeErr != nil {
 			res.Error = scrapeErr
@@ -653,6 +665,204 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 
 		// Quality check: all-midnight heuristic.
 		return len(rawEvents), validEvents, checkAllMidnight(validEvents), nil
+	}), nil
+}
+
+// scrapeSitemap discovers URLs from a sitemap XML and scrapes each one
+// individually using the source's configured tier. Results are aggregated
+// into a single ScrapeResult.
+func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts ScrapeOptions) (ScrapeResult, error) {
+	result := ScrapeResult{
+		SourceName: source.Name,
+		SourceURL:  source.Sitemap.URL, // Use sitemap URL as the "source URL" for tracking
+		Tier:       source.Tier,
+		DryRun:     opts.DryRun,
+	}
+
+	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		// 1. Compile filter regex
+		pattern, err := regexp.Compile(source.Sitemap.FilterPattern)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("compile sitemap filter pattern: %w", err)
+		}
+
+		// 1b. Compile optional exclude regex
+		var exclude *regexp.Regexp
+		if source.Sitemap.ExcludePattern != "" {
+			exclude, err = regexp.Compile(source.Sitemap.ExcludePattern)
+			if err != nil {
+				return 0, nil, nil, fmt.Errorf("compile sitemap exclude pattern: %w", err)
+			}
+		}
+
+		// 2. Fetch sitemap
+		entries, err := FetchSitemap(ctx, source.Sitemap.URL, opts.HTTPClient(fetchTimeout))
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("fetch sitemap: %w", err)
+		}
+
+		totalInSitemap := len(entries)
+
+		// 3. Filter by include regex + optional exclude regex + lastmod
+		filtered := FilterSitemapEntries(entries, pattern, exclude, source.LastScrapedAt)
+
+		afterFilter := len(filtered)
+
+		// 4. Apply MaxURLs cap
+		maxURLs := source.Sitemap.MaxURLs
+		if maxURLs <= 0 {
+			maxURLs = defaultSitemapMaxURLs
+		}
+		if len(filtered) > maxURLs {
+			filtered = filtered[:maxURLs]
+		}
+
+		s.logger.Info().
+			Str("source", source.Name).
+			Int("sitemap_total", totalInSitemap).
+			Int("after_filter", afterFilter).
+			Int("scraping", len(filtered)).
+			Msg("scraper: sitemap URL discovery complete")
+
+		if len(filtered) == 0 {
+			return 0, nil, nil, nil
+		}
+
+		// 5. Rate limit config
+		rateLimitMs := source.Sitemap.RateLimitMs
+		if rateLimitMs <= 0 {
+			rateLimitMs = defaultSitemapRateLimitMs
+		}
+		rateDelay := time.Duration(rateLimitMs) * time.Millisecond
+
+		// 6. Scrape each URL
+		var allEvents []events.EventInput
+		var warnings []string
+		totalFound := 0
+		failCount := 0
+
+		for i, entry := range filtered {
+			if ctx.Err() != nil {
+				break
+			}
+
+			// Rate limit (skip delay before first URL)
+			if i > 0 {
+				select {
+				case <-ctx.Done():
+					break // will be caught by the loop check above next iteration
+				case <-time.After(rateDelay):
+				}
+			}
+
+			pageURL := entry.URL
+			clone := source
+			clone.URL = pageURL
+			clone.Sitemap = nil // prevent recursion
+			clone.URLs = nil    // single URL mode
+
+			s.logger.Debug().
+				Str("source", source.Name).
+				Str("url", pageURL).
+				Int("index", i+1).
+				Int("total", len(filtered)).
+				Msg("scraper: sitemap scraping detail page")
+
+			var pageEvents []events.EventInput
+			var pageErr error
+
+			switch source.Tier {
+			case 0:
+				rawEvts, fetchErr := FetchAndExtractJSONLD(ctx, pageURL, opts.HTTPClient(fetchTimeout))
+				if fetchErr != nil {
+					pageErr = fetchErr
+				} else {
+					totalFound += len(rawEvts)
+					valid, skipped := s.normalizeJSONLDEvents(rawEvts, clone, opts.Limit)
+					if skipped > 0 {
+						s.logger.Warn().Str("source", source.Name).Str("url", pageURL).Int("skipped", skipped).
+							Msg("scraper: sitemap T0 events skipped during normalisation")
+					}
+					pageEvents = valid
+				}
+
+			case 1:
+				extractor := NewCollyExtractor(s.logger)
+				extractor.SetTransport(opts.Transport)
+				if opts.RateLimitMs > 0 {
+					extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
+				}
+				rawEvts, probes, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
+				if fetchErr != nil {
+					pageErr = fetchErr
+				} else {
+					totalFound += len(rawEvts)
+					warnings = append(warnings, checkDateSelectorQuality(rawEvts, clone, probes)...)
+					for _, raw := range rawEvts {
+						if opts.Limit > 0 && len(allEvents)+len(pageEvents) >= opts.Limit {
+							break
+						}
+						input, normErr := NormalizeRawEvent(raw, clone)
+						if normErr != nil {
+							continue
+						}
+						pageEvents = append(pageEvents, input)
+					}
+				}
+
+			case 2:
+				if s.rodExtractor == nil {
+					pageErr = fmt.Errorf("tier 2 scraping requires a RodExtractor")
+				} else {
+					rawEvts, probes, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
+					if fetchErr != nil {
+						pageErr = fetchErr
+					} else {
+						totalFound += len(rawEvts)
+						warnings = append(warnings, checkDateSelectorQuality(rawEvts, clone, probes)...)
+						for _, raw := range rawEvts {
+							if opts.Limit > 0 && len(allEvents)+len(pageEvents) >= opts.Limit {
+								break
+							}
+							input, normErr := NormalizeRawEvent(raw, clone)
+							if normErr != nil {
+								continue
+							}
+							pageEvents = append(pageEvents, input)
+						}
+					}
+				}
+
+			default:
+				pageErr = fmt.Errorf("sitemap scraping not supported for tier %d", source.Tier)
+			}
+
+			if pageErr != nil {
+				s.logger.Warn().Str("source", source.Name).Str("url", pageURL).Err(pageErr).
+					Msg("scraper: sitemap detail page failed, continuing")
+				failCount++
+				continue
+			}
+
+			allEvents = append(allEvents, pageEvents...)
+
+			// Respect global limit
+			if opts.Limit > 0 && len(allEvents) >= opts.Limit {
+				allEvents = allEvents[:opts.Limit]
+				break
+			}
+		}
+
+		if failCount > 0 {
+			s.logger.Warn().Str("source", source.Name).
+				Int("failed", failCount).Int("total", len(filtered)).
+				Msg("scraper: sitemap detail page failures")
+		}
+
+		// Quality check: all-midnight heuristic.
+		warnings = append(warnings, checkAllMidnight(allEvents)...)
+
+		return totalFound, allEvents, warnings, nil
 	}), nil
 }
 

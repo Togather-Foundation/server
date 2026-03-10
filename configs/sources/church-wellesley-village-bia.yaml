@@ -1,29 +1,30 @@
 name: "church-wellesley-village-bia"
+# UNSCRAPEABLE: Wix OOI (Out-of-iFrame) widget on /events listing page prevents both
+# static extraction (JS-required) and headless scraping (OOI anti-scraping protection).
+# Attempted Tier 2 approaches:
+# - Default wait_selector="body": widget never populates (stays empty)
+# - Extended wait_network_idle + 25s timeout: still empty
+# - Targeting [data-events-calendar-app]: selector doesn't exist on page
+# Sitemap detail pages (/events/<slug>) are individually scrapeable but lack event
+# date metadata (only time, location, title present; no full date). This blocks
+# normalization (events rejected for missing startDate).
+# Recommendation: Implement custom API client if Wix provides an events API.
+# Or monitor Wix for future OOI accessibility changes.
+# Organization match: no match found in database (API unavailable)
 url: "https://www.churchwellesleyvillage.ca/events"
 tier: 2
 schedule: "weekly"
 trust_level: 5
 license: "CC0-1.0"
-# Wix Events OOI widget remains permanently unscrapeable in headless Rod.
-# March 2026 retry with wait_network_idle=true + undetected=true flags:
-#   - Page renders to blank (2.2 MB HTML downloaded, screenshot shows only header)
-#   - Widget container (#comp-mbl3z9lq) is always an empty div
-#   - No [data-hook] attributes for event-list-item, ev-title, ev-date, ev-rsvp-button
-#   - Network idle 30s timeout: no XHR/Fetch API calls detected (no async widget populator)
-#   - Events sitemap at /dynamic-events-sitemap.xml exists (12 events listed)
-#   - Individual event pages lack JSON-LD Event schema (only ImageObject found)
-# Verdict: Wix OOI widget requires full JS platform bootstrap that does not
-# complete under headless Rod. Cannot be scraped. No alternative data source.
 enabled: false
-max_pages: 3
+max_pages: 1
 headless:
-  wait_selector: "[data-hook='event-list-item']"
-  wait_timeout_ms: 30000
+  wait_selector: "body"
+  wait_timeout_ms: 25000
   wait_network_idle: true
-  undetected: true
 selectors:
-  event_list: "[data-hook='event-list-item']"
-  name: "[data-hook='ev-title']"
-  start_date: "[data-hook='ev-date']"
-  url: "a[data-hook='ev-rsvp-button']"
-  image: "[data-hook='ev-image'] img"
+  event_list: "[data-events-calendar-app] [class*='event']"
+  name: "[class*='event-title'], h3, h2"
+  start_date: "[class*='event-date'], [class*='event-time'], time"
+  location: "[class*='event-location'], [class*='event-venue']"
+  url: "a[href*='/events/']"
