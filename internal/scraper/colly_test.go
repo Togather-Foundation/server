@@ -782,11 +782,11 @@ func TestScrapeWithSelectors_MultiRowConsolidation(t *testing.T) {
 		MaxPages: 1,
 		Timezone: "America/Toronto",
 		Selectors: SelectorConfig{
-			EventList: "div#detail",
-			Name:      "h1",
-			Location:  "p.loc",
+			EventList:   "div#detail",
+			Name:        "h1",
+			Location:    "p.loc",
 			Description: "p.desc",
-			URL:       "link[rel='canonical']",
+			URL:         "link[rel='canonical']",
 			DateSelectors: []string{
 				"table tr td.date",
 				"table tr td.time",
