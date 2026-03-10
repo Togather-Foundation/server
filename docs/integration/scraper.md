@@ -785,8 +785,9 @@ structured data (JSON-LD, CSS-selectable content, etc.).
 Sitemap is a **URL discovery mechanism**, not a new tier. The scraper:
 
 1. Fetches the sitemap XML (supports `<urlset>` and `<sitemapindex>` with recursive child sitemaps, max depth 3)
-2. Filters URLs by the configured `filter_pattern` (Go regex)
-3. Applies freshness filtering: skips URLs whose `<lastmod>` is older than the source's `last_scraped_at` timestamp
+2. Filters URLs by the configured `filter_pattern` (Go regex) — only matching URLs are kept
+3. Rejects URLs matching `exclude_pattern` (optional Go regex) — removes unwanted paths that slipped through the include filter
+4. Applies freshness filtering: skips URLs whose `<lastmod>` is older than the source's `last_scraped_at` timestamp
 4. Scrapes each matching URL individually using the source's configured tier (0, 1, or 2)
 
 Each detail page URL goes through the same extraction pipeline as a regular single-URL
@@ -813,6 +814,7 @@ schedule: "daily"
 sitemap:
   url: "https://wix-venue.ca/sitemap.xml"
   filter_pattern: "/events/.+"             # Go regex: match event detail URLs
+  exclude_pattern: "/events/archive"       # Go regex: reject matched URLs (optional)
   max_urls: 100                            # cap per run (default: 200)
   rate_limit_ms: 500                       # ms between page fetches (default: 500)
 ```
@@ -839,6 +841,7 @@ selectors:
 |-------|------|----------|---------|-------------|
 | `url` | string | yes | — | URL of the sitemap XML file (e.g. `https://example.com/sitemap.xml`). Supports both `<urlset>` and `<sitemapindex>` formats. |
 | `filter_pattern` | string | yes | — | Go regular expression matched against each URL in the sitemap. Only matching URLs are scraped. Example: `/events/.+` |
+| `exclude_pattern` | string | no | — | Go regular expression matched against URLs that passed `filter_pattern`. Matching URLs are **rejected**. Useful for large sitemaps where exclusion is easier than precise inclusion (e.g. exclude `/artists/` and `/info/` pages). Applied after `filter_pattern`. |
 | `max_urls` | int | no | `200` | Maximum number of URLs to scrape per run. Safety cap to prevent runaway scrapes on large sitemaps. |
 | `rate_limit_ms` | int | no | `500` | Delay in milliseconds between fetching individual detail pages. Set to `1` for minimal delay. |
 
@@ -869,6 +872,7 @@ entries. If **all** children fail, the error is propagated to the caller.
 
 - `sitemap.url` must be a valid `http://` or `https://` URL
 - `sitemap.filter_pattern` must be a valid Go regex
+- `sitemap.exclude_pattern`, if set, must be a valid Go regex
 - `sitemap` is not supported for tier 3 sources (use `graphql` or `rest` config instead)
 - `sitemap` and `urls` are mutually exclusive
 - `sitemap.max_urls` must be non-negative

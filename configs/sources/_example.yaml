@@ -147,6 +147,7 @@ max_pages: 5
 # sitemap:
 #   url: "https://myvenue.ca/sitemap.xml"     # sitemap XML to fetch
 #   filter_pattern: "/events/.+"              # Go regex: only scrape event URLs
+#   exclude_pattern: "/events/archive"        # Go regex: reject matched URLs (optional)
 #   max_urls: 100                             # cap per run (default: 200)
 #   rate_limit_ms: 500                        # delay between pages (default: 500)
 #
@@ -158,6 +159,7 @@ max_pages: 5
 # sitemap:
 #   url: "https://myvenue.ca/sitemap.xml"
 #   filter_pattern: "/shows/[^/]+$"
+#   exclude_pattern: "/(artists|info|about)/"  # exclude non-event pages
 # selectors:
 #   event_list: "article.event-detail"        # on the detail page
 #   name: "h1.event-title"
