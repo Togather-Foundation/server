@@ -686,6 +686,15 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 			return 0, nil, nil, fmt.Errorf("compile sitemap filter pattern: %w", err)
 		}
 
+		// 1b. Compile optional exclude regex
+		var exclude *regexp.Regexp
+		if source.Sitemap.ExcludePattern != "" {
+			exclude, err = regexp.Compile(source.Sitemap.ExcludePattern)
+			if err != nil {
+				return 0, nil, nil, fmt.Errorf("compile sitemap exclude pattern: %w", err)
+			}
+		}
+
 		// 2. Fetch sitemap
 		entries, err := FetchSitemap(ctx, source.Sitemap.URL, opts.HTTPClient(fetchTimeout))
 		if err != nil {
@@ -694,8 +703,8 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 
 		totalInSitemap := len(entries)
 
-		// 3. Filter by regex + lastmod
-		filtered := FilterSitemapEntries(entries, pattern, source.LastScrapedAt)
+		// 3. Filter by include regex + optional exclude regex + lastmod
+		filtered := FilterSitemapEntries(entries, pattern, exclude, source.LastScrapedAt)
 
 		afterFilter := len(filtered)
 

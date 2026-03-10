@@ -2070,6 +2070,34 @@ func TestValidate_SitemapConfig(t *testing.T) {
 			},
 			wantErr: "sitemap: mutually exclusive with urls",
 		},
+		{
+			name: "sitemap with valid exclude_pattern — ok",
+			cfg: SourceConfig{
+				Name: "test",
+				URL:  "https://example.com",
+				Tier: 0,
+				Sitemap: &SitemapConfig{
+					URL:            "https://example.com/sitemap.xml",
+					FilterPattern:  "/events/.+",
+					ExcludePattern: "/(artist|about|terms)",
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "sitemap with invalid exclude_pattern — error",
+			cfg: SourceConfig{
+				Name: "test",
+				URL:  "https://example.com",
+				Tier: 0,
+				Sitemap: &SitemapConfig{
+					URL:            "https://example.com/sitemap.xml",
+					FilterPattern:  "/events/.+",
+					ExcludePattern: "[invalid(regex",
+				},
+			},
+			wantErr: "sitemap.exclude_pattern: invalid Go regex",
+		},
 	}
 
 	for _, tt := range tests {

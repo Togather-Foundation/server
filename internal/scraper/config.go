@@ -74,9 +74,9 @@ type SourceConfig struct {
 
 // SitemapConfig holds sitemap-based URL discovery options. When set on a
 // SourceConfig, the scraper fetches the sitemap XML, filters URLs by
-// FilterPattern, and scrapes each matching URL individually using the
-// source's configured tier (0, 1, or 2). This replaces the static url/urls
-// fields as the URL source for the scrape run.
+// FilterPattern (and optionally ExcludePattern), and scrapes each matching
+// URL individually using the source's configured tier (0, 1, or 2). This
+// replaces the static url/urls fields as the URL source for the scrape run.
 type SitemapConfig struct {
 	// URL is the sitemap XML URL to fetch (e.g. https://example.com/sitemap.xml).
 	URL string `yaml:"url" json:"url"`
@@ -84,6 +84,12 @@ type SitemapConfig struct {
 	// sitemap. Only URLs matching this pattern are scraped. Required.
 	// Example: "/events/.+" to match event detail pages.
 	FilterPattern string `yaml:"filter_pattern" json:"filter_pattern"`
+	// ExcludePattern is an optional Go regular expression. URLs matching this
+	// pattern are excluded even if they match FilterPattern. Useful for large
+	// sitemaps where it's easier to exclude non-event pages (e.g. artist bios,
+	// about pages) than to enumerate all event URL patterns.
+	// Example: "/(artist|about|terms|contact)" to exclude non-event pages.
+	ExcludePattern string `yaml:"exclude_pattern,omitempty" json:"exclude_pattern,omitempty"`
 	// MaxURLs caps the number of URLs scraped per run. 0 means use the default (200).
 	// This is a safety net to prevent runaway scrapes on large sitemaps.
 	MaxURLs int `yaml:"max_urls" json:"max_urls"`
@@ -510,6 +516,11 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 			errs = append(errs, "sitemap.filter_pattern: required when sitemap block is set")
 		} else if _, err := regexp.Compile(cfg.Sitemap.FilterPattern); err != nil {
 			errs = append(errs, fmt.Sprintf("sitemap.filter_pattern: invalid Go regex: %v", err))
+		}
+		if cfg.Sitemap.ExcludePattern != "" {
+			if _, err := regexp.Compile(cfg.Sitemap.ExcludePattern); err != nil {
+				errs = append(errs, fmt.Sprintf("sitemap.exclude_pattern: invalid Go regex: %v", err))
+			}
 		}
 		if cfg.Sitemap.MaxURLs < 0 {
 			errs = append(errs, fmt.Sprintf("sitemap.max_urls: must be >= 0, got %d", cfg.Sitemap.MaxURLs))

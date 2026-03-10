@@ -144,13 +144,17 @@ func parseLastMod(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unrecognised lastmod format: %q", s)
 }
 
-// FilterSitemapEntries filters entries by a compiled regex pattern and
-// optionally by lastmod freshness (entries modified after the cutoff).
-// When cutoff is nil, no time-based filtering is applied.
-func FilterSitemapEntries(entries []SitemapEntry, pattern *regexp.Regexp, cutoff *time.Time) []SitemapEntry {
+// FilterSitemapEntries filters entries by a compiled include regex pattern,
+// an optional exclude regex pattern, and optionally by lastmod freshness
+// (entries modified after the cutoff). When cutoff is nil, no time-based
+// filtering is applied. When exclude is nil, no exclusion filtering is applied.
+func FilterSitemapEntries(entries []SitemapEntry, pattern *regexp.Regexp, exclude *regexp.Regexp, cutoff *time.Time) []SitemapEntry {
 	var filtered []SitemapEntry
 	for _, e := range entries {
 		if !pattern.MatchString(e.URL) {
+			continue
+		}
+		if exclude != nil && exclude.MatchString(e.URL) {
 			continue
 		}
 		// Time-based filtering: skip entries with lastmod <= cutoff.

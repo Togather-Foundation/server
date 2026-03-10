@@ -245,6 +245,7 @@ func TestFilterSitemapEntries(t *testing.T) {
 	tests := []struct {
 		name    string
 		pattern string
+		exclude string // optional exclude pattern
 		cutoff  *time.Time
 		wantLen int
 		wantURL []string
@@ -298,6 +299,41 @@ func TestFilterSitemapEntries(t *testing.T) {
 			cutoff:  nil,
 			wantLen: 0,
 		},
+		{
+			name:    "exclude pattern removes matching URLs",
+			pattern: `/events/`,
+			exclude: `winter`,
+			cutoff:  nil,
+			wantLen: 3,
+			wantURL: []string{
+				"https://example.com/events/summer-festival",
+				"https://example.com/events/autumn-show",
+				"https://example.com/events/no-lastmod",
+			},
+		},
+		{
+			name:    "exclude pattern with include narrows results",
+			pattern: `/events/`,
+			exclude: `(summer|autumn)`,
+			cutoff:  nil,
+			wantLen: 2,
+			wantURL: []string{
+				"https://example.com/events/winter-gala",
+				"https://example.com/events/no-lastmod",
+			},
+		},
+		{
+			name:    "exclude pattern combined with cutoff",
+			pattern: `/events/`,
+			exclude: `no-lastmod`,
+			cutoff:  timePtr(time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC)),
+			// summer (June) filtered by cutoff; autumn (Aug) + winter (Oct) kept; no-lastmod excluded by pattern
+			wantLen: 2,
+			wantURL: []string{
+				"https://example.com/events/autumn-show",
+				"https://example.com/events/winter-gala",
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -310,7 +346,11 @@ func TestFilterSitemapEntries(t *testing.T) {
 			}
 
 			pattern := regexp.MustCompile(tc.pattern)
-			got := FilterSitemapEntries(input, pattern, tc.cutoff)
+			var exclude *regexp.Regexp
+			if tc.exclude != "" {
+				exclude = regexp.MustCompile(tc.exclude)
+			}
+			got := FilterSitemapEntries(input, pattern, exclude, tc.cutoff)
 
 			if len(got) != tc.wantLen {
 				t.Fatalf("got %d entries, want %d; entries: %v", len(got), tc.wantLen, got)
