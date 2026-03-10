@@ -518,6 +518,27 @@ Existing configs using `start_date` with ISO 8601 dates (e.g. `"2026-05-10T19:00
 or `<time datetime="...">` attributes continue to work unchanged — the fuzzy parser
 detects partial ISO 8601 and passes through without modification.
 
+#### Multi-Occurrence Consolidation
+
+When an event detail page (or listing card) contains a **table of performance dates**
+(e.g. Luminato Festival, theatre run schedules), `date_selectors` extracts one
+`RawEvent` per row. The scraper then groups these by `(URL, Name)` and consolidates
+them into a single `EventInput` with multiple `Occurrences` — each occurrence carrying
+its own start date, end date, and status.
+
+This happens automatically across all code paths (Tier 1, Tier 2, sitemap-based
+discovery). No special configuration is needed beyond a correctly-scoped
+`date_selectors` config that matches per-row elements.
+
+**Grouping rules:**
+
+- Events with the same URL and name are grouped and consolidated into one event
+  with multiple occurrences.
+- Events with an **empty URL** are never grouped (each row becomes its own event)
+  to avoid merging unrelated events that happen to share a name.
+- Within a group, rows with unparseable dates are silently skipped from the
+  occurrence list; the group succeeds as long as at least one row has a valid date.
+
 ### Quality Warnings
 
 The scraper performs automatic quality checks during extraction and reports warnings

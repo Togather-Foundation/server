@@ -11,8 +11,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/Togather-Foundation/server/internal/domain/events"
 )
 
 // newTestCollector returns a CollyExtractor with zero rate limit for fast tests.
@@ -782,11 +780,11 @@ func TestScrapeWithSelectors_MultiRowConsolidation(t *testing.T) {
 		MaxPages: 1,
 		Timezone: "America/Toronto",
 		Selectors: SelectorConfig{
-			EventList: "div#detail",
-			Name:      "h1",
-			Location:  "p.loc",
+			EventList:   "div#detail",
+			Name:        "h1",
+			Location:    "p.loc",
 			Description: "p.desc",
-			URL:       "link[rel='canonical']",
+			URL:         "link[rel='canonical']",
 			DateSelectors: []string{
 				"table tr td.date",
 				"table tr td.time",
@@ -799,23 +797,12 @@ func TestScrapeWithSelectors_MultiRowConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rawEvents, 2, "should extract 2 RawEvents (one per row)")
 
-	// Now normalize and consolidate like the scraper does.
-	eventGroups := make(map[string][]RawEvent)
-	for _, raw := range rawEvents {
-		key := fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
-		eventGroups[key] = append(eventGroups[key], raw)
-	}
-
-	require.Len(t, eventGroups, 1, "both RawEvents should group under the same key (same URL+Name)")
-
-	var consolidated events.EventInput
-	for _, group := range eventGroups {
-		if len(group) > 1 {
-			var consolidateErr error
-			consolidated, consolidateErr = consolidateOccurrences(group, cfg)
-			require.NoError(t, consolidateErr, "consolidation should succeed")
-		}
-	}
+	// Use normalizeRawEvents (the same helper the scraper uses) to group and consolidate.
+	logger := zerolog.Nop()
+	validEvents, skipped := normalizeRawEvents(rawEvents, cfg, 0, logger)
+	require.Equal(t, 0, skipped, "no events should be skipped")
+	require.Len(t, validEvents, 1, "both RawEvents should consolidate into a single EventInput")
+	consolidated := validEvents[0]
 
 	// Verify consolidated event.
 	assert.Equal(t, "Show Name", consolidated.Name)
