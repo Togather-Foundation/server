@@ -408,8 +408,18 @@ func normalizeRawEvents(rawEvents []RawEvent, source SourceConfig, limit int, lo
 	groupMap := make(map[string]*group)
 	var groupOrder []string
 
+	ungroupedIdx := 0
 	for _, raw := range rawEvents {
-		key := fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
+		var key string
+		if raw.URL != "" {
+			// URL present — group by URL+Name (multi-occurrence detection).
+			key = fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
+		} else {
+			// No URL — cannot reliably group; treat each as its own event
+			// to avoid merging unrelated events that happen to share a name.
+			key = fmt.Sprintf("__nourl_%d|||%s", ungroupedIdx, raw.Name)
+			ungroupedIdx++
+		}
 		if _, ok := groupMap[key]; !ok {
 			groupMap[key] = &group{key: key}
 			groupOrder = append(groupOrder, key)

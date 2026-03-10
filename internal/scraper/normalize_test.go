@@ -1137,3 +1137,30 @@ func TestNormalizeRawEvents_SkipsInvalidDates(t *testing.T) {
 		t.Errorf("expected 2 occurrences (bad row skipped), got %d", len(valid[0].Occurrences))
 	}
 }
+
+// TestNormalizeRawEvents_EmptyURLNoCollision verifies that RawEvents with empty
+// URLs and the same Name are NOT merged. Without the disambiguation guard each
+// would collide on the key "|||SameName" and be incorrectly treated as
+// multi-occurrence rows of one event.
+func TestNormalizeRawEvents_EmptyURLNoCollision(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	raws := []RawEvent{
+		makeRaw("Same Name", "", "2026-06-01T20:00:00"),
+		makeRaw("Same Name", "", "2026-06-02T20:00:00"),
+		makeRaw("Same Name", "", "2026-06-03T20:00:00"),
+	}
+
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped, got %d", skipped)
+	}
+	// Each row should produce its own EventInput — they must NOT be merged.
+	if len(valid) != 3 {
+		t.Errorf("expected 3 separate EventInputs for empty-URL rows with same name, got %d", len(valid))
+	}
+}
