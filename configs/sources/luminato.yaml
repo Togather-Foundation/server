@@ -1,47 +1,26 @@
 name: "luminato"
-# DISABLED — DM website-builder page with eventscalendar.co embed (Shadow DOM, unscrapeable).
-#
-# MAJOR DISCOVERY (2026-03-09): Individual show pages are FULLY SCRAPEABLE!
-#   The /events listing page uses an eventscalendar.co embed (data-project-id="proj_QrmXauVHd8e0ohna92KJg")
-#   which wraps DOM in Shadow DOM / cross-origin iframe isolation — confirmed unscrapeable even with
-#   wait_network_idle=true, undetected=true, wait_timeout_ms=30000.
-#
-#   BUT: Individual show pages have full structured data in static HTML:
-#     /PennTeller — Penn & Teller (June 5-6, 2026 at Meridian Hall)
-#     /10-days-in-a-madhouse — 10 Days in a Madhouse (June 16-21, 2026 at Bluma Appel Theatre)
-#     /play-dead — Play Dead (June 25-28, 2026 at Meridian Arts Centre)
-#     + Industry Series, LuminoCity, and other events
-#
-#   Each show page contains: title, dates & times table, venue, run time, ticket links, artist bios.
-#   Sitemap at /sitemap.xml has ~150 pages including all show URLs.
-#
-# VIABLE PATHS:
-#   A. Multi-URL config: List known show page URLs and scrape each individually.
-#      Requires scraper support for multiple URLs per source (not yet implemented).
-#   B. Depth-2 scraping: Scrape /events or nav menu to discover show URLs, then
-#      follow each to extract structured event data from detail pages.
-#   C. Sitemap-based discovery: Parse /sitemap.xml to find show page URLs,
-#      filter by URL pattern, scrape each for event data.
-#
-# Current selectors target the unscrapeable eventscalendar.co widget — these are
-# placeholder and will not work. Real extraction should target individual show pages.
-#
-# Festival: Annual, June. 2026 festival is confirmed with active show pages.
-# See docs: docs/integration/event-platforms.md § 8 (eventscalendar.co).
+# DudaOne builder site. /events listing page uses eventscalendar.co embed (Shadow DOM,
+# unscrapeable). Individual show detail pages have static HTML with dates in <table>
+# rows, title in h1, and venue in paragraph text. Sitemap-based URL discovery with
+# exclude_pattern to filter out non-show pages (press releases, programme info, etc.).
+# Festival: Annual, June. 2026 festival confirmed with active show pages.
+# Organization match: Luminato Festival — or "no match found" / "API unavailable"
 url: "https://www.luminatofestival.com/events"
-tier: 2
+tier: 1
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
 enabled: false
-max_pages: 3
-headless:
-  wait_selector: "div.cl-calendar"
-  wait_timeout_ms: 30000
-  wait_network_idle: true
-  undetected: true
+sitemap:
+  url: "https://www.luminatofestival.com/sitemap.xml"
+  filter_pattern: "luminatofestival\\.com/[A-Za-z0-9][A-Za-z0-9-]*$"
+  exclude_pattern: "(artist-page|artist-detail-page|category/|product/|checkout|about|accesshub|access-program|becomeadonor|become-a-partner|careers|contact-us|development-intern|donate|donors|events$|feedback|festival-partners|home|inthecommunity|leadership|leave-a-legacy|media-kit|miigwech|news-and-media|newsletter-signup|ourlegacy|privacy-policy|spektrix-|staff|start-at-|supportus|terms-and|thank-you|volunteer|ways-to-save|copy-of-|Artist-Partner|press-release|programme-announce|programmer-statement|curatorial-statement|festival-survey|staff-list|peter-herndorf|tockify-calendar|rainbow-waiver)"
+  max_urls: 50
+  rate_limit_ms: 1000
 selectors:
-  event_list: "div.cl-card"
-  name: ".cl-event-card__name"
-  start_date: "time[datetime]"
-  url: "a[href]"
+  event_list: "#dm_content"
+  name: "#1338798650 h1"
+  url: "link[rel='canonical']"
+  date_selectors:
+    - ".dmTable td.cell:first-child"
+    - ".dmTable td.cell:nth-child(2)"
