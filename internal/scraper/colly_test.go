@@ -11,6 +11,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Togather-Foundation/server/internal/domain/events"
 )
 
 // newTestCollector returns a CollyExtractor with zero rate limit for fast tests.
@@ -602,4 +604,235 @@ func TestScrapeWithSelectors_DateSelectorsFallback(t *testing.T) {
 	require.Len(t, probes, 2)
 	assert.True(t, probes[0].Matched)
 	assert.True(t, probes[1].Matched)
+}
+
+// TestScrapeWithSelectors_MultiRowDateTable verifies that when date_selectors
+// match multiple rows (e.g., table rows with dates in one column and times in another),
+// the extractor emits one RawEvent per row with per-row DateParts.
+//
+// This is the core feature for multi-occurrence events like Luminato Festival:
+// if a show detail page has a date table with 3 performances, we emit 3 RawEvents
+// (each with the same name/location/description/URL/image, but different DateParts).
+func TestScrapeWithSelectors_MultiRowDateTable(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div id="show-detail">
+  <h1 class="show-title">Hamlet</h1>
+  <p class="venue-name">Princess of Wales Theatre</p>
+  <table class="dmTable">
+    <tr>
+      <td class="cell">June 1</td>
+      <td class="cell">7:30 PM</td>
+    </tr>
+    <tr>
+      <td class="cell">June 2</td>
+      <td class="cell">8:00 PM</td>
+    </tr>
+    <tr>
+      <td class="cell">June 3</td>
+      <td class="cell">7:30 PM</td>
+    </tr>
+  </table>
+  <link rel="canonical" href="https://example.com/hamlet">
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-multi-row",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 5,
+		Selectors: SelectorConfig{
+			EventList: "div#show-detail",
+			Name:      "h1.show-title",
+			Location:  "p.venue-name",
+			URL:       "link[rel='canonical']",
+			DateSelectors: []string{
+				"table.dmTable tr td.cell:first-child",
+				"table.dmTable tr td.cell:nth-child(2)",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, probes, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+
+	// Should emit 3 RawEvents (one per row).
+	require.Len(t, events, 3, "expected 3 events (one per table row)")
+
+	// All events share the same name, location, and URL.
+	for i, ev := range events {
+		assert.Equal(t, "Hamlet", ev.Name, "event %d: name mismatch", i)
+		assert.Equal(t, "Princess of Wales Theatre", ev.Location, "event %d: location mismatch", i)
+		assert.Equal(t, "https://example.com/hamlet", ev.URL, "event %d: URL mismatch", i) // h.Request.AbsoluteURL resolves relative URLs
+	}
+
+	// Each event has its own DateParts (from its row).
+	expectedParts := [][]string{
+		{"June 1", "7:30 PM"},
+		{"June 2", "8:00 PM"},
+		{"June 3", "7:30 PM"},
+	}
+	for i, expected := range expectedParts {
+		require.Len(t, events[i].DateParts, 2, "event %d: DateParts length mismatch", i)
+		assert.Equal(t, expected[0], events[i].DateParts[0], "event %d: date mismatch", i)
+		assert.Equal(t, expected[1], events[i].DateParts[1], "event %d: time mismatch", i)
+	}
+
+	// Probes should be captured from the first row.
+	require.Len(t, probes, 2, "expected 2 probes (one per date_selector)")
+	assert.Equal(t, "table.dmTable tr td.cell:first-child", probes[0].Selector)
+	assert.True(t, probes[0].Matched)
+	assert.Equal(t, "June 1", probes[0].Text, "probe should show first row's date")
+
+	assert.Equal(t, "table.dmTable tr td.cell:nth-child(2)", probes[1].Selector)
+	assert.True(t, probes[1].Matched)
+	assert.Equal(t, "7:30 PM", probes[1].Text, "probe should show first row's time")
+}
+
+// TestScrapeWithSelectors_SingleRowDateTable verifies backward compatibility:
+// when date_selectors match only one row (or the old concatenated-text behavior),
+// we emit a single RawEvent.
+func TestScrapeWithSelectors_SingleRowDateTable(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event-card">
+  <h2 class="title">One-Time Concert</h2>
+  <span class="date">December 25</span>
+  <span class="time">6:00 PM</span>
+  <span class="venue">Concert Hall</span>
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-single-row",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 5,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+			Location:  "span.venue",
+			DateSelectors: []string{
+				"span.date",
+				"span.time",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, probes, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+
+	// Should emit 1 RawEvent.
+	require.Len(t, events, 1)
+
+	// Event has name, location, and DateParts from the single row.
+	assert.Equal(t, "One-Time Concert", events[0].Name)
+	assert.Equal(t, "Concert Hall", events[0].Location)
+	require.Len(t, events[0].DateParts, 2)
+	assert.Equal(t, "December 25", events[0].DateParts[0])
+	assert.Equal(t, "6:00 PM", events[0].DateParts[1])
+
+	// Probes captured.
+	require.Len(t, probes, 2)
+	assert.True(t, probes[0].Matched)
+	assert.Equal(t, "December 25", probes[0].Text)
+	assert.True(t, probes[1].Matched)
+	assert.Equal(t, "6:00 PM", probes[1].Text)
+}
+
+// TestScrapeWithSelectors_MultiRowConsolidation tests the full tier 1 pipeline
+// with multi-row extraction and consolidation into EventInput with Occurrences.
+//
+// This is an end-to-end test that verifies multi-occurrence events are correctly
+// built by the normalizer and consolidation logic.
+func TestScrapeWithSelectors_MultiRowConsolidation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div id="detail">
+  <h1>Show Name</h1>
+  <p class="loc">Theatre X</p>
+  <p class="desc">A wonderful show</p>
+  <table>
+    <tr>
+      <td class="date">2026-06-01</td>
+      <td class="time">19:30</td>
+    </tr>
+    <tr>
+      <td class="date">2026-06-02</td>
+      <td class="time">19:30</td>
+    </tr>
+  </table>
+  <link rel="canonical" href="https://example.com/show">
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-consolidate",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 1,
+		Timezone: "America/Toronto",
+		Selectors: SelectorConfig{
+			EventList: "div#detail",
+			Name:      "h1",
+			Location:  "p.loc",
+			Description: "p.desc",
+			URL:       "link[rel='canonical']",
+			DateSelectors: []string{
+				"table tr td.date",
+				"table tr td.time",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	rawEvents, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, rawEvents, 2, "should extract 2 RawEvents (one per row)")
+
+	// Now normalize and consolidate like the scraper does.
+	eventGroups := make(map[string][]RawEvent)
+	for _, raw := range rawEvents {
+		key := fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
+		eventGroups[key] = append(eventGroups[key], raw)
+	}
+
+	require.Len(t, eventGroups, 1, "both RawEvents should group under the same key (same URL+Name)")
+
+	var consolidated events.EventInput
+	for _, group := range eventGroups {
+		if len(group) > 1 {
+			var consolidateErr error
+			consolidated, consolidateErr = consolidateOccurrences(group, cfg)
+			require.NoError(t, consolidateErr, "consolidation should succeed")
+		}
+	}
+
+	// Verify consolidated event.
+	assert.Equal(t, "Show Name", consolidated.Name)
+	require.NotNil(t, consolidated.Location)
+	assert.Equal(t, "Theatre X", consolidated.Location.Name)
+	assert.Equal(t, "A wonderful show", consolidated.Description)
+	assert.Equal(t, "https://example.com/show", consolidated.URL)
+
+	// Verify occurrences.
+	require.Len(t, consolidated.Occurrences, 2, "consolidated event should have 2 occurrences")
+
+	// Each occurrence should have a start date.
+	for i, occ := range consolidated.Occurrences {
+		require.NotEmpty(t, occ.StartDate, "occurrence %d should have a start date", i)
+		// Dates should be in RFC 3339 format (contains 'T' for datetime or is just YYYY-MM-DD)
+		assert.True(t, strings.Contains(occ.StartDate, "2026-06-0"+(string(rune('1'+i)))) ||
+			strings.Contains(occ.StartDate, "2026-06-0"+string(rune('1'+i))),
+			"occurrence %d start date should contain 2026-06-0%d", i, 1+i)
+	}
 }

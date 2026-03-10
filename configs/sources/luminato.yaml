@@ -10,7 +10,7 @@ tier: 1
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
-enabled: false
+enabled: true
 sitemap:
   url: "https://www.luminatofestival.com/sitemap.xml"
   filter_pattern: "luminatofestival\\.com/[A-Za-z0-9][A-Za-z0-9-]*$"

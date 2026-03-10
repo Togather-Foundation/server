@@ -157,6 +157,88 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, er
 	}, nil
 }
 
+// consolidateOccurrences takes a set of RawEvents that were extracted from the same
+// event_list container (and thus share Name, Location, Description, URL, and Image),
+// and consolidates them into a single EventInput with multiple occurrences.
+//
+// This handles the multi-row date table case where a show detail page lists
+// multiple performance dates (e.g., Luminato Festival with 3 performances per show).
+//
+// Returns the consolidated EventInput if there are multiple rows, or the original
+// single event if there's only one.
+func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventInput, error) {
+	if len(raws) == 0 {
+		return events.EventInput{}, fmt.Errorf("consolidateOccurrences: empty input")
+	}
+
+	// Normalize each raw event to get dates and build occurrence list.
+	var occurrences []events.OccurrenceInput
+	tz := source.GetTimezone()
+
+	for _, raw := range raws {
+		// Normalize the date parts for this row.
+		startDate, endDate := normalizeStartDate(raw, tz)
+		if startDate == "" {
+			// Skip rows that don't have a valid start date.
+			continue
+		}
+
+		occ := events.OccurrenceInput{
+			StartDate: startDate,
+			EndDate:   endDate,
+			// Note: Timezone, DoorTime, VenueID, and VirtualURL would need additional
+			// extraction logic if the config provided selectors for them. For now,
+			// they remain empty.
+		}
+		occurrences = append(occurrences, occ)
+	}
+
+	if len(occurrences) == 0 {
+		return events.EventInput{}, fmt.Errorf("consolidateOccurrences: no valid dates found in any row")
+	}
+
+	// Use the first raw event's fields for the consolidated event.
+	first := raws[0]
+	multiSessionThreshold, err := parseMultiSessionThreshold(source.MultiSessionDurationThreshold)
+	if err != nil {
+		return events.EventInput{}, err
+	}
+
+	var loc *events.PlaceInput
+	if first.Location != "" {
+		loc = &events.PlaceInput{Name: first.Location}
+	}
+
+	// Use the first occurrence's start date as the event's primary StartDate.
+	// This is a convention for backward compatibility.
+	startDate := ""
+	if len(occurrences) > 0 {
+		startDate = occurrences[0].StartDate
+	}
+
+	input := events.EventInput{
+		Type:                          "Event",
+		Name:                          first.Name,
+		StartDate:                     startDate,
+		Description:                   first.Description,
+		URL:                           first.URL,
+		Image:                         first.Image,
+		Location:                      loc,
+		Occurrences:                   occurrences,
+		License:                       source.License,
+		SkipMultiSessionCheck:         source.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: multiSessionThreshold,
+		Source: &events.SourceInput{
+			URL:     source.URL,
+			EventID: eventIDFromRaw(first, source),
+			Name:    source.Name,
+			License: source.License,
+		},
+	}
+
+	return input, nil
+}
+
 // eventIDFromRaw returns a stable dedup key for a Tier 1 scraped event.
 // Prefers the event URL. Falls back to a hash of name+startDate+sourceName.
 func eventIDFromRaw(raw RawEvent, source SourceConfig) string {

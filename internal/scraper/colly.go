@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
 	"github.com/rs/zerolog"
 )
@@ -110,37 +111,133 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 		isFirst := eventIndex == 1
 		mu.Unlock()
 
-		raw := RawEvent{}
-
+		// Extract static fields (Name, Location, Description, URL, Image)
+		// that appear once per event container.
+		staticName := ""
 		if config.Selectors.Name != "" {
-			raw.Name = extractTextOrAttr(h, config.Selectors.Name)
+			staticName = extractTextOrAttr(h, config.Selectors.Name)
+		}
+
+		staticLocation := ""
+		if config.Selectors.Location != "" {
+			staticLocation = extractTextOrAttr(h, config.Selectors.Location)
+		}
+
+		staticDescription := ""
+		if config.Selectors.Description != "" {
+			staticDescription = extractTextOrAttr(h, config.Selectors.Description)
+		}
+
+		staticURL := ""
+		if config.Selectors.URL != "" {
+			href := h.ChildAttr(config.Selectors.URL, "href")
+			if href != "" {
+				staticURL = h.Request.AbsoluteURL(href)
+			}
+		}
+
+		staticImage := ""
+		if config.Selectors.Image != "" {
+			src := h.ChildAttr(config.Selectors.Image, "src")
+			if src != "" {
+				staticImage = h.Request.AbsoluteURL(src)
+			}
+		}
+
+		// Skip events with no name.
+		if staticName == "" {
+			return
 		}
 
 		// Date extraction: prefer date_selectors (smart assembler) over
 		// start_date/end_date (single-selector legacy path).
 		if len(config.Selectors.DateSelectors) > 0 {
+			// Try multi-row extraction first.
+			dateRows := extractDateSelectorPartsPerRow(h, config.Selectors.DateSelectors)
+
+			// Capture probes from the first event for diagnostics.
 			var probes []DateSelectorProbe
-			for _, sel := range config.Selectors.DateSelectors {
-				text := strings.TrimSpace(h.ChildText(sel))
-				matched := text != ""
-				// Always append to DateParts (empty string for misses) so that
-				// index i reliably corresponds to DateSelectors[i].
-				// assembleDateTimeParts already skips empty strings.
-				raw.DateParts = append(raw.DateParts, text)
-				if isFirst {
+			if isFirst {
+				for i, sel := range config.Selectors.DateSelectors {
+					var matched bool
+					var text string
+					if len(dateRows) > 0 && i < len(dateRows[0]) {
+						text = dateRows[0][i]
+						matched = text != ""
+					} else {
+						// Fallback single-row detection for probe reporting.
+						text = strings.TrimSpace(h.ChildText(sel))
+						matched = text != ""
+					}
 					probes = append(probes, DateSelectorProbe{
 						Selector: sel,
 						Matched:  matched,
 						Text:     text,
 					})
 				}
+				if len(probes) > 0 {
+					mu.Lock()
+					firstProbes = probes
+					mu.Unlock()
+				}
 			}
-			if isFirst && len(probes) > 0 {
+
+			// Emit one RawEvent per row (multi-row case) or one RawEvent with combined DateParts (single-row case).
+			if len(dateRows) > 1 {
+				// Multi-row case: emit one RawEvent per row.
+				for _, row := range dateRows {
+					raw := RawEvent{
+						Name:        staticName,
+						Location:    staticLocation,
+						Description: staticDescription,
+						URL:         staticURL,
+						Image:       staticImage,
+						DateParts:   row, // Each row's parts
+					}
+					mu.Lock()
+					results = append(results, raw)
+					mu.Unlock()
+				}
+			} else if len(dateRows) == 1 {
+				// Single-row case: emit one RawEvent.
+				raw := RawEvent{
+					Name:        staticName,
+					Location:    staticLocation,
+					Description: staticDescription,
+					URL:         staticURL,
+					Image:       staticImage,
+					DateParts:   dateRows[0],
+				}
 				mu.Lock()
-				firstProbes = probes
+				results = append(results, raw)
+				mu.Unlock()
+			} else {
+				// No rows matched; try fallback single-text-per-selector approach (backward compat).
+				raw := RawEvent{
+					Name:        staticName,
+					Location:    staticLocation,
+					Description: staticDescription,
+					URL:         staticURL,
+					Image:       staticImage,
+				}
+				for _, sel := range config.Selectors.DateSelectors {
+					text := strings.TrimSpace(h.ChildText(sel))
+					raw.DateParts = append(raw.DateParts, text)
+				}
+				mu.Lock()
+				results = append(results, raw)
 				mu.Unlock()
 			}
 		} else {
+			// Legacy start_date/end_date selectors.
+			raw := RawEvent{
+				Name:        staticName,
+				Location:    staticLocation,
+				Description: staticDescription,
+				URL:         staticURL,
+				Image:       staticImage,
+			}
+
 			if config.Selectors.StartDate != "" {
 				raw.StartDate = extractDateFromElement(h, config.Selectors.StartDate)
 			}
@@ -148,38 +245,11 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 			if config.Selectors.EndDate != "" {
 				raw.EndDate = extractDateFromElement(h, config.Selectors.EndDate)
 			}
-		}
 
-		if config.Selectors.Location != "" {
-			raw.Location = extractTextOrAttr(h, config.Selectors.Location)
+			mu.Lock()
+			results = append(results, raw)
+			mu.Unlock()
 		}
-
-		if config.Selectors.Description != "" {
-			raw.Description = extractTextOrAttr(h, config.Selectors.Description)
-		}
-
-		if config.Selectors.URL != "" {
-			href := h.ChildAttr(config.Selectors.URL, "href")
-			if href != "" {
-				raw.URL = h.Request.AbsoluteURL(href)
-			}
-		}
-
-		if config.Selectors.Image != "" {
-			src := h.ChildAttr(config.Selectors.Image, "src")
-			if src != "" {
-				raw.Image = h.Request.AbsoluteURL(src)
-			}
-		}
-
-		// Only collect events with a non-empty name.
-		if raw.Name == "" {
-			return
-		}
-
-		mu.Lock()
-		results = append(results, raw)
-		mu.Unlock()
 	})
 
 	// OnHTML: follow pagination links if configured.
@@ -280,6 +350,56 @@ func wwwVariants(domain string) []string {
 		return []string{domain, strings.TrimPrefix(domain, "www.")}
 	}
 	return []string{domain, "www." + domain}
+}
+
+// extractDateSelectorPartsPerRow extracts text from multiple date selectors,
+// returning a 2D array where rows[rowIndex][selectorIndex] is the text extracted
+// from that selector's rowIndex-th match. This handles multi-row date tables where
+// each row contains a date occurrence.
+//
+// Example: if selector ".dmTable td:nth-child(1)" matches ["June 1", "June 2"] and
+// selector ".dmTable td:nth-child(2)" matches ["7:30 PM", "7:30 PM"], the result is:
+//
+//	[[June 1, 7:30 PM], [June 2, 7:30 PM]]
+func extractDateSelectorPartsPerRow(h *colly.HTMLElement, dateSelectors []string) [][]string {
+	if len(dateSelectors) == 0 {
+		return nil
+	}
+
+	// Collect all matches for each selector.
+	selectorMatches := make([][]string, len(dateSelectors))
+	maxRows := 0
+	for i, sel := range dateSelectors {
+		var matches []string
+		h.DOM.Find(sel).Each(func(_ int, s *goquery.Selection) {
+			text := strings.TrimSpace(s.Text())
+			matches = append(matches, text)
+		})
+		selectorMatches[i] = matches
+		if len(matches) > maxRows {
+			maxRows = len(matches)
+		}
+	}
+
+	// If no matches at all, return empty.
+	if maxRows == 0 {
+		return nil
+	}
+
+	// Build rows: rows[rowIndex][selectorIndex].
+	// For selectors with fewer matches than maxRows, pad with empty strings.
+	rows := make([][]string, maxRows)
+	for rowIdx := 0; rowIdx < maxRows; rowIdx++ {
+		rows[rowIdx] = make([]string, len(dateSelectors))
+		for selIdx, matches := range selectorMatches {
+			if rowIdx < len(matches) {
+				rows[rowIdx][selIdx] = matches[rowIdx]
+			}
+			// else: zero value "" is already set
+		}
+	}
+
+	return rows
 }
 
 // parseSelector parses a selector that may include an attribute specifier.

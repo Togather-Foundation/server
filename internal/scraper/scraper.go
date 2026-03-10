@@ -438,22 +438,49 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		var warnings []string
 		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
+		// Group RawEvents by (URL, Name) so we can detect multi-row cases.
+		// Map key: "url|||name" (using triple-pipe to avoid collisions)
+		eventGroups := make(map[string][]RawEvent)
+		for _, raw := range rawEvents {
+			key := fmt.Sprintf("%s|||%s", raw.URL, raw.Name)
+			eventGroups[key] = append(eventGroups[key], raw)
+		}
+
 		limit := opts.Limit
 		var validEvents []events.EventInput
 		skipped := 0
+		eventCount := 0
 
-		for i, raw := range rawEvents {
-			if limit > 0 && i >= limit {
+		for _, group := range eventGroups {
+			if limit > 0 && eventCount >= limit {
 				break
 			}
-			input, normErr := NormalizeRawEvent(raw, source)
+
+			// If this group has multiple RawEvents (multi-row date table),
+			// consolidate them into a single EventInput with Occurrences.
+			// Otherwise, normalize the single RawEvent as usual.
+			var input events.EventInput
+			var normErr error
+
+			if len(group) > 1 {
+				// Multi-row case: consolidate.
+				input, normErr = consolidateOccurrences(group, source)
+			} else {
+				// Single-row case: normalize as before.
+				input, normErr = NormalizeRawEvent(group[0], source)
+			}
+
 			if normErr != nil {
-				s.logger.Warn().Str("source", source.Name).Err(normErr).
-					Msg("scraper: skipping raw event that failed normalisation")
+				s.logger.Warn().Str("source", source.Name).
+					Str("name", group[0].Name).
+					Err(normErr).
+					Msg("scraper: skipping raw event(s) that failed normalisation")
 				skipped++
 				continue
 			}
+
 			validEvents = append(validEvents, input)
+			eventCount++
 		}
 
 		if skipped > 0 {
