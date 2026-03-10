@@ -82,7 +82,7 @@ func TestFetchSitemap(t *testing.T) {
 			name: "invalid XML",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/xml")
-				fmt.Fprint(w, "<not valid xml <<>>")
+				_, _ = fmt.Fprint(w, "<not valid xml <<>>")
 			},
 			wantErr: true,
 		},
@@ -459,7 +459,7 @@ func TestSitemapEntryURLs(t *testing.T) {
 func serveXML(body string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
-		fmt.Fprint(w, body)
+		_, _ = fmt.Fprint(w, body)
 	}
 }
 

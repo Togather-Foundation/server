@@ -71,7 +71,7 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 	if err != nil {
 		return nil, fmt.Errorf("fetch sitemap %s: %w", sitemapURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch sitemap %s: HTTP %d", sitemapURL, resp.StatusCode)
