@@ -1837,3 +1837,238 @@ func TestValidate_InterceptConfig(t *testing.T) {
 		}
 	})
 }
+
+// --------------------------------------------------------------------------
+// SitemapConfig validation (srv-8tzi6)
+// --------------------------------------------------------------------------
+
+func TestValidate_SitemapConfig(t *testing.T) {
+	t.Parallel()
+
+	// validSitemap returns a minimal valid SitemapConfig.
+	validSitemap := func() *SitemapConfig {
+		return &SitemapConfig{
+			URL:           "https://example.com/sitemap.xml",
+			FilterPattern: `/events/.+`,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		cfg     SourceConfig
+		wantErr string // empty = no error expected; substring match
+	}{
+		// --- valid cases ---
+		{
+			name: "valid sitemap config tier 0",
+			cfg: SourceConfig{
+				Name:       "Sitemap Source Tier 0",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap:    validSitemap(),
+			},
+		},
+		{
+			name: "valid sitemap config tier 1 with selectors",
+			cfg: SourceConfig{
+				Name:       "Sitemap Source Tier 1",
+				Tier:       1,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Selectors:  SelectorConfig{EventList: ".event-card"},
+				Sitemap:    validSitemap(),
+			},
+		},
+		{
+			name: "valid sitemap config tier 2 with selectors and headless",
+			cfg: SourceConfig{
+				Name:       "Sitemap Source Tier 2",
+				Tier:       2,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Selectors:  SelectorConfig{EventList: ".event-card"},
+				Headless:   HeadlessConfig{WaitSelector: "body"},
+				Sitemap:    validSitemap(),
+			},
+		},
+		{
+			name: "sitemap allows url field to be empty (sitemap provides URLs)",
+			cfg: SourceConfig{
+				Name:       "Sitemap No URL Metadata",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				// URL intentionally omitted — sitemap provides URLs at runtime
+				Sitemap: validSitemap(),
+			},
+		},
+		{
+			name: "sitemap allows url field to be set as metadata",
+			cfg: SourceConfig{
+				Name:       "Sitemap With URL Metadata",
+				URL:        "https://example.com",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap:    validSitemap(),
+			},
+		},
+		{
+			name: "sitemap with zero max_urls is valid (uses default)",
+			cfg: SourceConfig{
+				Name:       "Sitemap Zero MaxURLs",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: `/events/.+`,
+					MaxURLs:       0,
+				},
+			},
+		},
+		{
+			name: "sitemap with zero rate_limit_ms is valid (uses default)",
+			cfg: SourceConfig{
+				Name:       "Sitemap Zero RateLimit",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: `/events/.+`,
+					RateLimitMs:   0,
+				},
+			},
+		},
+		// --- error cases ---
+		{
+			name: "sitemap with tier 3 — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap Tier 3",
+				URL:        "https://example.com",
+				Tier:       3,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				REST:       &RestConfig{Endpoint: "https://api.example.com/events"},
+				Sitemap:    validSitemap(),
+			},
+			wantErr: "sitemap: not supported for tier 3",
+		},
+		{
+			name: "sitemap with missing url — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap No Sitemap URL",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "",
+					FilterPattern: `/events/.+`,
+				},
+			},
+			wantErr: "sitemap.url: required when sitemap block is set",
+		},
+		{
+			name: "sitemap with invalid url — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap Invalid URL",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "ftp://example.com/sitemap.xml",
+					FilterPattern: `/events/.+`,
+				},
+			},
+			wantErr: "sitemap.url: must be a valid http/https URL",
+		},
+		{
+			name: "sitemap with missing filter_pattern — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap No Filter",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: "",
+				},
+			},
+			wantErr: "sitemap.filter_pattern: required when sitemap block is set",
+		},
+		{
+			name: "sitemap with invalid regex in filter_pattern — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap Bad Regex",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: "[invalid(regex",
+				},
+			},
+			wantErr: "sitemap.filter_pattern: invalid Go regex",
+		},
+		{
+			name: "sitemap with negative max_urls — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap Negative MaxURLs",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: `/events/.+`,
+					MaxURLs:       -1,
+				},
+			},
+			wantErr: "sitemap.max_urls: must be >= 0, got -1",
+		},
+		{
+			name: "sitemap with negative rate_limit_ms — error",
+			cfg: SourceConfig{
+				Name:       "Sitemap Negative RateLimit",
+				Tier:       0,
+				TrustLevel: 5,
+				MaxPages:   10,
+				Schedule:   "daily",
+				Sitemap: &SitemapConfig{
+					URL:           "https://example.com/sitemap.xml",
+					FilterPattern: `/events/.+`,
+					RateLimitMs:   -100,
+				},
+			},
+			wantErr: "sitemap.rate_limit_ms: must be >= 0, got -100",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateConfig(tt.cfg)
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
