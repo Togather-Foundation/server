@@ -24,6 +24,7 @@ var (
 	scrapeTestURL          string
 	scrapeTestImage        string
 	scrapeTestPagination   string
+	scrapeTestDateSels     []string
 )
 
 // scrapeInspectCmd fetches a URL and prints a DOM structure summary to help
@@ -69,12 +70,22 @@ enabling a source config.
 Selectors can be specified via flags or loaded from a YAML source config file
 (--config). Flags take precedence over the config file.
 
+When --date-selectors is used, each selector's extracted text is shown in the
+DateParts output field. The smart date assembler combines them into start/end
+dates during normalisation.
+
 Examples:
   # Test with inline flags
   server scrape test https://harbourfrontcentre.com/whats-on/ \
     --event-list ".wo-event" \
     --name ".date-copy div:nth-child(2)" \
     --start-date ".date-copy div:first-child"
+
+  # Test with date_selectors
+  server scrape test https://example.com/show \
+    --event-list "body" \
+    --name "h1" \
+    --date-selectors ".date,.time"
 
   # Test using an existing source config file
   server scrape test https://harbourfrontcentre.com/whats-on/ \
@@ -130,6 +141,9 @@ Examples:
 		if scrapeTestPagination != "" {
 			cfg.Selectors.Pagination = scrapeTestPagination
 		}
+		if len(scrapeTestDateSels) > 0 {
+			cfg.Selectors.DateSelectors = scrapeTestDateSels
+		}
 
 		if cfg.Selectors.EventList == "" {
 			return fmt.Errorf("--event-list (or --config with selectors.event_list) is required")
@@ -157,6 +171,9 @@ Examples:
 			fmt.Printf("    Location:    %s\n", e.Location)
 			fmt.Printf("    URL:         %s\n", e.URL)
 			fmt.Printf("    Image:       %s\n", e.Image)
+			if len(e.DateParts) > 0 {
+				fmt.Printf("    DateParts:   %v\n", e.DateParts)
+			}
 			if e.Description != "" {
 				desc := e.Description
 				if len(desc) > 120 {
