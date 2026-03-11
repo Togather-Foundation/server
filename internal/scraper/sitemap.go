@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // defaultSitemapMaxURLs is the default cap on URLs scraped per sitemap run.
@@ -59,11 +60,11 @@ type xmlSitemap struct {
 // FetchSitemap fetches a sitemap XML URL and returns all URL entries found.
 // It handles both regular sitemaps (<urlset>) and sitemap index files
 // (<sitemapindex>), recursing into child sitemaps up to maxSitemapIndexDepth.
-func FetchSitemap(ctx context.Context, sitemapURL string, client *http.Client) ([]SitemapEntry, error) {
-	return fetchSitemapRecursive(ctx, sitemapURL, client, 0)
+func FetchSitemap(ctx context.Context, sitemapURL string, client *http.Client, logger zerolog.Logger) ([]SitemapEntry, error) {
+	return fetchSitemapRecursive(ctx, sitemapURL, client, logger, 0)
 }
 
-func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.Client, depth int) ([]SitemapEntry, error) {
+func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.Client, logger zerolog.Logger, depth int) ([]SitemapEntry, error) {
 	if depth > maxSitemapIndexDepth {
 		return nil, fmt.Errorf("sitemap index recursion depth exceeded (%d)", maxSitemapIndexDepth)
 	}
@@ -96,10 +97,10 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 		var entries []SitemapEntry
 		var childErrors []error
 		for _, sm := range index.Sitemaps {
-			children, childErr := fetchSitemapRecursive(ctx, sm.Loc, client, depth+1)
+			children, childErr := fetchSitemapRecursive(ctx, sm.Loc, client, logger, depth+1)
 			if childErr != nil {
 				childErrors = append(childErrors, fmt.Errorf("child sitemap %s: %w", sm.Loc, childErr))
-				slog.Debug("child sitemap fetch failed, continuing with partial results", "url", sm.Loc, "error", childErr)
+				logger.Debug().Str("url", sm.Loc).Err(childErr).Msg("child sitemap fetch failed, continuing with partial results")
 				continue
 			}
 			entries = append(entries, children...)

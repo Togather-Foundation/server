@@ -716,7 +716,7 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 		}
 
 		// 2. Fetch sitemap
-		entries, err := FetchSitemap(ctx, source.Sitemap.URL, opts.HTTPClient(fetchTimeout))
+		entries, err := FetchSitemap(ctx, source.Sitemap.URL, opts.HTTPClient(fetchTimeout), s.logger)
 		if err != nil {
 			return 0, nil, nil, fmt.Errorf("fetch sitemap: %w", err)
 		}
