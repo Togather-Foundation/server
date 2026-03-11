@@ -2888,7 +2888,7 @@ components:
         status:
           type: string
           enum: [active, inactive, pending]
-          description: "Derived user status. active=is_active; pending=!is_active and no password set (invitation not accepted); inactive=!is_active and password set (was deactivated)"
+          description: "Derived user status. active: account is active; pending: account created but invitation not yet accepted (no password set); inactive: account was active but has been deactivated"
         created_at:
           type: string
           format: date-time

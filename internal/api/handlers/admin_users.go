@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -75,15 +76,15 @@ type AdminUserResponse struct {
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 }
 
-// deriveUserStatus derives a user's status string from stored fields.
-// active: user is active (is_active=true)
-// pending: user has never accepted their invitation (is_active=false, no password set)
-// inactive: user was active but has been deactivated (is_active=false, has password)
-func deriveUserStatus(isActive bool, passwordHash string) string {
+// deriveUserStatus derives a user's status string.
+// active: is_active=true
+// pending: !is_active and no password set (invitation not accepted)
+// inactive: !is_active and has password (was deactivated)
+func deriveUserStatus(isActive bool, hasPassword bool) string {
 	if isActive {
 		return "active"
 	}
-	if passwordHash == "" {
+	if !hasPassword {
 		return "pending"
 	}
 	return "inactive"
@@ -162,7 +163,7 @@ func (h *AdminUsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
-		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash != ""),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
@@ -176,6 +177,7 @@ func (h *AdminUsersHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	// Parse filters
 	var isActive *bool
+	filterToPending := false
 	if statusParam := query.Get("status"); statusParam != "" {
 		switch statusParam {
 		case "active":
@@ -184,8 +186,14 @@ func (h *AdminUsersHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		case "inactive":
 			inactive := false
 			isActive = &inactive
+		case "pending":
+			// pending = is_active=false AND no password set; narrow by is_active=false,
+			// then post-filter in Go to keep only users where Status == "pending".
+			inactive := false
+			isActive = &inactive
+			filterToPending = true
 		default:
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Status must be 'active' or 'inactive'", nil, h.env)
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Status must be 'active', 'inactive', or 'pending'", nil, h.env)
 			return
 		}
 	}
@@ -243,9 +251,17 @@ func (h *AdminUsersHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			Email:       user.Email,
 			Role:        user.Role,
 			IsActive:    user.IsActive,
-			Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
+			Status:      deriveUserStatus(user.IsActive, user.PasswordHash != ""),
 			CreatedAt:   user.CreatedAt.Time,
 			LastLoginAt: timePtr(user.LastLoginAt),
+		})
+	}
+
+	// Post-filter for pending status: keep only users with no password set.
+	// The SQL query narrows to is_active=false, but pending requires no password hash.
+	if filterToPending {
+		items = slices.DeleteFunc(items, func(u AdminUserResponse) bool {
+			return u.Status != "pending"
 		})
 	}
 
@@ -298,7 +314,7 @@ func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
-		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash != ""),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
@@ -400,7 +416,7 @@ func (h *AdminUsersHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Email:       updatedUser.Email,
 		Role:        updatedUser.Role,
 		IsActive:    updatedUser.IsActive,
-		Status:      deriveUserStatus(updatedUser.IsActive, updatedUser.PasswordHash),
+		Status:      deriveUserStatus(updatedUser.IsActive, updatedUser.PasswordHash != ""),
 		CreatedAt:   updatedUser.CreatedAt.Time,
 		LastLoginAt: timePtr(updatedUser.LastLoginAt),
 	}
@@ -496,7 +512,7 @@ func (h *AdminUsersHandler) DeactivateUser(w http.ResponseWriter, r *http.Reques
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
-		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash != ""),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
@@ -555,7 +571,7 @@ func (h *AdminUsersHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
-		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash != ""),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}

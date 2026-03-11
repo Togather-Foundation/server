@@ -717,19 +717,19 @@ func TestFormatUUID(t *testing.T) {
 
 func TestDeriveUserStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		isActive bool
-		hash     string
-		want     string
+		name        string
+		isActive    bool
+		hasPassword bool
+		want        string
 	}{
-		{name: "active user with password", isActive: true, hash: "hash", want: "active"},
-		{name: "active user without password", isActive: true, hash: "", want: "active"},
-		{name: "pending user (no password)", isActive: false, hash: "", want: "pending"},
-		{name: "inactive user (has password)", isActive: false, hash: "hash", want: "inactive"},
+		{name: "active user with password", isActive: true, hasPassword: true, want: "active"},
+		{name: "active user without password", isActive: true, hasPassword: false, want: "active"},
+		{name: "pending user (no password)", isActive: false, hasPassword: false, want: "pending"},
+		{name: "inactive user (has password)", isActive: false, hasPassword: true, want: "inactive"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := deriveUserStatus(tt.isActive, tt.hash)
+			got := deriveUserStatus(tt.isActive, tt.hasPassword)
 			assert.Equal(t, tt.want, got)
 		})
 	}

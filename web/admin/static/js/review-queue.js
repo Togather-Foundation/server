@@ -1092,6 +1092,9 @@
             `;
             container.innerHTML = html;
         } catch (err) {
+            // Note: a 404 here is expected when the candidate event is still in
+            // pending_review state (not yet published) and not accessible via the
+            // public events API.
             console.error('Failed to fetch duplicate event:', err);
             container.innerHTML = `<div class="text-muted small">Could not load duplicate details: ${escapeHtml(err.message || 'unknown error')}</div>`;
         }

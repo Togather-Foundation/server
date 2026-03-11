@@ -32,6 +32,11 @@
       "description": "Senior diagnostic expert for hard problems",
       "mode": "subagent",
       "model": "github-copilot/claude-opus-4.6"
+    },
+    "basic": {
+      "description": "Basic agent for simple tasks and code generation",
+      "mode": "subagent",
+      "model": "openrouter/minimax/minimax-m2.5"
     }
   },
   "mcp": {
