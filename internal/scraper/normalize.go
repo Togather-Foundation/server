@@ -100,10 +100,17 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 	return evt, nil
 }
 
-// parseSubEvents extracts sub-event JSON objects from a subEvent field.
-// Handles a single Event object or an array of objects. String-only
-// references (URLs to other pages) are skipped because they cannot be
-// resolved inline. Returns nil when no valid objects are found.
+// parseSubEvents splits a JSON-LD subEvent field into individual raw JSON
+// objects suitable for date extraction. It does NOT validate @type — the
+// caller is responsible for unmarshalling each returned message.
+//
+// Input shapes handled:
+//   - Single JSON object → returned as a one-element slice
+//   - JSON array of objects → each non-string element returned
+//   - Single string / array of strings (URL references) → skipped (nil)
+//   - nil, empty, or "null" → nil
+//
+// Returns nil (not an empty slice) when no usable objects are found.
 func parseSubEvents(raw json.RawMessage) []json.RawMessage {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil

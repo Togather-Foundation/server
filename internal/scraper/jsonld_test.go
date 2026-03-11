@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +73,21 @@ func TestFetchAndExtractJSONLD_Fixtures(t *testing.T) {
 		{
 			name:      "event with string location",
 			fixture:   "string_location.html",
+			wantCount: 1,
+		},
+		{
+			name:      "multiple events same show (Pattern 1)",
+			fixture:   "multiple_events_same_show.html",
+			wantCount: 4, // 3 Hamlet + 1 Tempest (raw extraction, no grouping)
+		},
+		{
+			name:      "eventseries with subevents (Pattern 2)",
+			fixture:   "eventseries_subevents.html",
+			wantCount: 1, // parent EventSeries only; subEvents are inline
+		},
+		{
+			name:      "event with single subevent (Pattern 4)",
+			fixture:   "subevent_single.html",
 			wantCount: 1,
 		},
 	}
@@ -347,6 +363,9 @@ func TestFixtureFilesExist(t *testing.T) {
 		"no_jsonld.html",
 		"malformed_jsonld.html",
 		"string_location.html",
+		"multiple_events_same_show.html",
+		"eventseries_subevents.html",
+		"subevent_single.html",
 	}
 	for _, f := range fixtures {
 		path := filepath.Join("testdata", f)
@@ -413,6 +432,73 @@ func TestCheckRedirect_FetchFullDescription(t *testing.T) {
 	gotErr := client.CheckRedirect(nil, nil)
 	require.NoError(t, gotErr,
 		"caller's CheckRedirect was replaced by the SSRF-guard (returns ErrUseLastResponse)")
+}
+
+// ---- Multi-occurrence integration tests -------------------------------------------------
+//
+// These tests exercise the full Tier 0 pipeline for the three multi-occurrence
+// patterns: FetchAndExtractJSONLD (extraction) → groupJSONLDEvents (grouping +
+// NormalizeJSONLDEvent + subEvent parsing). This is the integration test for
+// bead srv-03air.
+
+func TestMultiOccurrenceFixtures_Integration(t *testing.T) {
+	_, urlFor := fixtureServer(t)
+	logger := zerolog.Nop()
+
+	tests := []struct {
+		name            string
+		fixture         string
+		wantEvents      int   // distinct EventInput objects after grouping
+		wantOccurrences []int // len(Occurrences) per EventInput, in order
+		wantFirstName   string
+	}{
+		{
+			name:            "Pattern 1: separate events grouped by URL+Name",
+			fixture:         "multiple_events_same_show.html",
+			wantEvents:      2,           // Hamlet (grouped) + Tempest (standalone)
+			wantOccurrences: []int{3, 0}, // 3 Hamlet occurrences, Tempest has 0 (single event)
+			wantFirstName:   "Hamlet",
+		},
+		{
+			name:            "Pattern 2: EventSeries with subEvent array",
+			fixture:         "eventseries_subevents.html",
+			wantEvents:      1,
+			wantOccurrences: []int{3}, // 3 subEvents unfolded into Occurrences
+			wantFirstName:   "Jazz Festival 2026",
+		},
+		{
+			name:            "Pattern 4: Event with single subEvent object",
+			fixture:         "subevent_single.html",
+			wantEvents:      1,
+			wantOccurrences: []int{1}, // 1 subEvent unfolded
+			wantFirstName:   "Workshop Series",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Step 1: Extract raw JSON-LD events from the fixture HTML.
+			rawEvents, err := FetchAndExtractJSONLD(context.Background(), urlFor(tc.fixture), nil)
+			require.NoError(t, err, "extraction must succeed")
+
+			// Step 2: Run grouping + normalisation pipeline.
+			source := SourceConfig{Name: "integration-test"}
+			eventInputs, skipped := groupJSONLDEvents(rawEvents, source, 0, logger)
+			assert.Zero(t, skipped, "no events should be skipped")
+			require.Len(t, eventInputs, tc.wantEvents, "wrong number of EventInputs")
+
+			// Step 3: Verify occurrence counts per event.
+			for i, wantOccs := range tc.wantOccurrences {
+				got := len(eventInputs[i].Occurrences)
+				assert.Equalf(t, wantOccs, got,
+					"EventInput[%d] (%s): wrong occurrence count", i, eventInputs[i].Name)
+			}
+
+			// Step 4: Verify the first event's name.
+			assert.Equal(t, tc.wantFirstName, eventInputs[0].Name,
+				"first EventInput should have the expected name")
+		})
+	}
 }
 
 // ---- helpers ---------------------------------------------------------------------------
