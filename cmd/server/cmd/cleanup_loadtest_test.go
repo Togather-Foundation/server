@@ -213,6 +213,25 @@ func TestDBURLHost(t *testing.T) {
 	}
 }
 
+// TestCleanupLoadtestCommand_InvalidSourceIDUUID verifies that an invalid UUID
+// passed via --source-id is rejected before any database connection is attempted.
+func TestCleanupLoadtestCommand_InvalidSourceIDUUID(t *testing.T) {
+	resetLoadtestFlags(t)
+	cmd := newRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"cleanup", "loadtest", "--env=staging", "--source-id=not-a-uuid", "--dry-run"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error for invalid UUID, got nil (output: %s)", buf.String())
+	}
+	if !strings.Contains(err.Error(), "not a valid UUID") {
+		t.Errorf("expected error to contain %q, got: %v", "not a valid UUID", err)
+	}
+}
+
 // TestGuardNotProductionDB verifies production-host detection logic.
 func TestGuardNotProductionDB(t *testing.T) {
 	tests := []struct {

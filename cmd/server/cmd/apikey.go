@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
@@ -149,6 +150,9 @@ func createAPIKey(name, role, sourceID string) (string, error) {
 
 	// Insert into database; source_id is optional (NULL when not provided)
 	if sourceID != "" {
+		if _, err := uuid.Parse(sourceID); err != nil {
+			return "", fmt.Errorf("--source-id %q is not a valid UUID: %w", sourceID, err)
+		}
 		_, err = pool.Exec(ctx,
 			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, source_id, is_active)
 			 VALUES ($1, $2, $3, $4, $5, $6, true)`,

@@ -39,8 +39,9 @@ type IngestOptions struct {
 type IngestOption func(*IngestOptions)
 
 // WithSourceID sets a pre-resolved source ID on the ingest options.
-// Use this to associate an ingested event with a known source (e.g. derived from
-// the authenticated API key) without requiring a source URL in the event payload.
+// It is used only when the event input has no Source.URL — if input.Source.URL
+// is present, GetOrCreateSource is called instead and this option is ignored.
+// An empty id is a no-op.
 func WithSourceID(id string) IngestOption {
 	return func(o *IngestOptions) {
 		o.SourceID = id

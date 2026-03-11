@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
@@ -86,6 +87,13 @@ func runCleanupLoadtest(cmd *cobra.Command, args []string) error {
 	// --- Guard 2: at least one deletion mode must be specified ---
 	if loadtestSourceID == "" && !loadtestLegacy {
 		return fmt.Errorf("specify --source-id=<uuid> or --legacy (or both)")
+	}
+
+	// --- Guard 2b: --source-id must be a valid UUID ---
+	if loadtestSourceID != "" {
+		if _, err := uuid.Parse(loadtestSourceID); err != nil {
+			return fmt.Errorf("--source-id %q is not a valid UUID: %w", loadtestSourceID, err)
+		}
 	}
 
 	// --- Guard 3: either --dry-run or --confirm required ---
