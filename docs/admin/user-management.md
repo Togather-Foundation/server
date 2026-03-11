@@ -101,19 +101,20 @@ In the admin UI, roles are displayed with these badge styles:
 
 ## User States
 
-Users can be in one of these states:
+The API returns a derived `status` field on every user object. The three possible values map to the underlying `is_active` flag and whether a password hash exists:
 
-| State | Description | Can Login? | Actions Available |
-|-------|-------------|------------|-------------------|
-| **Inactive (Pending Invitation)** | User created but hasn't accepted invitation yet | ❌ No | Admin can resend invitation |
-| **Active** | User has accepted invitation and set password | ✅ Yes | Admin can deactivate or delete |
-| **Inactive (Deactivated)** | Admin has deactivated the account | ❌ No | Admin can reactivate |
-| **Deleted** | Account soft-deleted (retained for audit) | ❌ No | Data remains in database, cannot be restored via UI |
+| `status` value | Description | Can Login? | Actions Available |
+|----------------|-------------|------------|-------------------|
+| `pending` | Account created but invitation not yet accepted (no password set) | ❌ No | Admin can resend invitation |
+| `active` | User has accepted invitation, set a password, and account is active | ✅ Yes | Admin can deactivate or delete |
+| `inactive` | Account was active but has been deactivated by an admin | ❌ No | Admin can reactivate |
+
+> **Note:** Soft-deleted accounts (`deleted_at IS NOT NULL`) are not returned by the list endpoint. They remain in the database for audit purposes only.
 
 **State Badges:**
 
 ```html
-<span class="badge bg-warning">Pending Invitation</span>
+<span class="badge bg-warning">Pending</span>
 <span class="badge bg-success">Active</span>
 <span class="badge bg-secondary">Inactive</span>
 ```
@@ -206,7 +207,7 @@ curl -X POST https://your-domain.com/api/v1/admin/users \
   }'
 ```
 
-**Response:** User object with `is_active: false`
+**Response:** User object with `status: "pending"` (invitation sent but not yet accepted)
 
 ---
 
@@ -218,7 +219,7 @@ curl -X POST https://your-domain.com/api/v1/admin/users \
 - Navigate to **Users** page
 - View paginated list of all users
 - Filter by:
-  - **Status**: Active or Inactive
+  - **Status**: Active, Inactive, or Pending
   - **Role**: Admin, Editor, or Viewer
 - Search by username or email
 
@@ -885,7 +886,7 @@ Also check: `grep "invitation" /var/log/sel-backend/email.log`
 
 ### User Still Can't Log In After Accepting Invitation
 
-- Verify user state is `active` (not `pending_invitation` or `inactive`)
+- Verify user `status` is `active` (not `pending` or `inactive`) via `GET /api/v1/admin/users/{id}`
 - Clear browser cookies and try again
 - Check authentication logs: `grep "login.*username" /var/log/sel-backend/auth.log`
 

@@ -359,6 +359,17 @@ function renderEventRow(event) {
 </div>
 ```
 
+### Review Queue — Inline Duplicate Diff (`review-queue.js`)
+
+**Purpose:** Surface duplicate warnings directly in the review queue fold-down, without requiring navigation to a separate duplicates page.
+
+**Behaviour:**
+- When a review item has a `duplicate_warning`, expanding the fold-down triggers `fetchAndRenderInlineDuplicate(eventUlid, candidateUlid)`, which calls `GET /api/v1/events/{ulid}` for the candidate event and renders a compact field-by-field diff.
+- **Merge** action calls `mergeDirect(sourceId, targetId)` — no modal, fires `POST /api/v1/admin/events/merge` immediately and reloads the queue on success.
+- **Not a Duplicate** action dismisses the warning on _both_ the reviewed event and its companion via `dismissCompanionDuplicateWarning`, so neither card re-shows the warning after the decision.
+
+> **Known limitation (tracked as `srv-15rwp`):** The inline diff fetches via the public events API, which only returns published events. If the candidate is still in `pending_review` state the diff will silently fail to render. A follow-up will embed candidate data at ingest time to fix this.
+
 ### API Keys (`api_keys.html`)
 
 **Purpose:** Manage API keys for agents
