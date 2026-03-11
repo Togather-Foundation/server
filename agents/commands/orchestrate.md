@@ -192,8 +192,14 @@ After: review changes, `make sqlc` if needed, commit.
 Staging deploys are slow -- all testing and user review should happen locally first
 (Phase 4-5). Staging is for final confirmation, not debugging.
 
+**Step 1 — Push the branch first (REQUIRED). The remote deploy pulls this exact commit.
+If the branch is not pushed, the deploy will fail with "reference is not a tree".**
 ```bash
 git push -u origin HEAD
+```
+
+**Step 2 — Deploy and test:**
+```bash
 source .deploy.conf.staging 2>/dev/null
 scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
 scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
