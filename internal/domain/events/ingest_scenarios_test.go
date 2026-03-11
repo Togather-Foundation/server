@@ -53,7 +53,7 @@ func defaultDedupConfig() config.DedupConfig {
 
 // defaultValidationConfig returns a ValidationConfig that requires image.
 func defaultValidationConfig() config.ValidationConfig {
-	return config.ValidationConfig{RequireImage: true}
+	return config.ValidationConfig{RequireImage: true, AllowTestDomains: true}
 }
 
 // newTestService creates an IngestService with the test repository and default configs.

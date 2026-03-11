@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
@@ -136,10 +137,18 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		result *events.IngestResult
 		err    error
 	)
+
+	// Build ingest options: if the API key has an associated source, propagate it
+	// so the event is linked to that source even when the payload has no source.url.
+	var ingestOpts []events.IngestOption
+	if apiKey := middleware.AgentKey(r); apiKey != nil && apiKey.SourceID != "" {
+		ingestOpts = append(ingestOpts, events.WithSourceID(apiKey.SourceID))
+	}
+
 	if key := idempotencyKey(r); key != "" {
-		result, err = h.Ingest.IngestWithIdempotency(r.Context(), input, key)
+		result, err = h.Ingest.IngestWithIdempotency(r.Context(), input, key, ingestOpts...)
 	} else {
-		result, err = h.Ingest.Ingest(r.Context(), input)
+		result, err = h.Ingest.Ingest(r.Context(), input, ingestOpts...)
 	}
 	if err != nil {
 		if errors.Is(err, events.ErrConflict) {

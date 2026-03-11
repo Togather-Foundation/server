@@ -219,6 +219,11 @@ type ValidationConfig struct {
 	// admin update operations.
 	// Environment variable: VALIDATION_MAX_EVENT_NAME_LENGTH (default: 500)
 	MaxEventNameLength int
+
+	// AllowTestDomains disables the example.com / images.example.com blocklist check.
+	// Set to true only in test code. Never set via environment variable.
+	// Zero value (false) activates the blocklist in production.
+	AllowTestDomains bool
 }
 
 // WithDefaults returns a copy of ValidationConfig with zero-values replaced by

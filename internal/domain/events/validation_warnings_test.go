@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/config"
 )
 
 func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
@@ -115,7 +117,7 @@ func TestValidateEventInputWithWarnings_ReversedDates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ValidateEventInputWithWarnings(tt.input, "https://test.com", nil)
+			result, err := ValidateEventInputWithWarnings(tt.input, "https://test.com", nil, config.ValidationConfig{})
 
 			if tt.wantErr {
 				if err == nil {
@@ -254,10 +256,10 @@ func TestValidateEventInputWithWarnings_DetectNormalizationCorrections(t *testin
 
 			if tt.name == "no warning when original is nil (backward compat)" {
 				// Test backward compatibility - pass nil for original
-				result, err = ValidateEventInputWithWarnings(tt.normalized, "https://test.com", nil)
+				result, err = ValidateEventInputWithWarnings(tt.normalized, "https://test.com", nil, config.ValidationConfig{})
 			} else {
 				// Test with original input
-				result, err = ValidateEventInputWithWarnings(tt.normalized, "https://test.com", &tt.original)
+				result, err = ValidateEventInputWithWarnings(tt.normalized, "https://test.com", &tt.original, config.ValidationConfig{})
 			}
 
 			if err != nil {
@@ -367,7 +369,7 @@ func TestValidateEventInputWithWarnings_ErrorsStillRejected(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ValidateEventInputWithWarnings(tt.input, "https://test.com", nil)
+			result, err := ValidateEventInputWithWarnings(tt.input, "https://test.com", nil, config.ValidationConfig{})
 
 			if tt.wantErr {
 				if err == nil {

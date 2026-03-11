@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
@@ -117,7 +118,7 @@ type OccurrenceInput struct {
 }
 
 func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error) {
-	result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil)
+	result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil, config.ValidationConfig{})
 	if err != nil {
 		return input, err
 	}
@@ -129,7 +130,10 @@ func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error)
 //
 // If original is provided (non-nil), it compares original dates with normalized dates to detect
 // auto-corrections (like correctEndDateTimezoneError) and generates appropriate warnings.
-func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, original *EventInput) (*ValidationResult, error) {
+//
+// cfg controls optional validation behaviour (e.g. AllowTestDomains).  Pass the zero value for
+// production defaults (all guards active).
+func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, original *EventInput, cfg config.ValidationConfig) (*ValidationResult, error) {
 	var warnings []ValidationWarning
 
 	name := strings.TrimSpace(input.Name)
@@ -276,6 +280,21 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 	if input.URL != "" {
 		if err := validateURL(input.URL); err != nil {
 			return nil, ValidationError{Field: "url", Message: "invalid URI"}
+		}
+	}
+
+	// Blocklist: reject example.com / images.example.com test-domain URLs in production.
+	// AllowTestDomains bypasses this check (test-only; never set via env var).
+	if !cfg.AllowTestDomains {
+		if input.URL != "" {
+			if host := urlHost(input.URL); isReservedTestDomain(host) {
+				return nil, ValidationError{Field: "url", Message: fmt.Sprintf("event URL uses reserved test domain %q; use a real source URL", host)}
+			}
+		}
+		if input.Image != "" {
+			if host := urlHost(input.Image); isReservedTestDomain(host) {
+				return nil, ValidationError{Field: "image", Message: fmt.Sprintf("event image uses reserved test domain %q; use a real image URL", host)}
+			}
 		}
 	}
 
@@ -539,6 +558,26 @@ func isCC0License(value string) bool {
 		"http://creativecommons.org/publicdomain/zero/1.0/",
 		"cc0",
 		"cc0-1.0":
+		return true
+	default:
+		return false
+	}
+}
+
+// urlHost parses a raw URL and returns its hostname, or empty string on error.
+func urlHost(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
+}
+
+// isReservedTestDomain reports whether host is a reserved test domain that must
+// not appear in real event data.
+func isReservedTestDomain(host string) bool {
+	switch host {
+	case "example.com", "images.example.com":
 		return true
 	default:
 		return false

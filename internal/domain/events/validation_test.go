@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,7 +74,7 @@ func TestValidateEventInput_EndBeforeStart(t *testing.T) {
 	input.StartDate = "2026-02-01T12:00:00Z"
 	input.EndDate = "2026-02-01T10:00:00Z" // 2 hours before start
 	// Changed behavior: this now returns a WARNING instead of an error
-	result, err := ValidateEventInputWithWarnings(input, "example.com", nil)
+	result, err := ValidateEventInputWithWarnings(input, "example.com", nil, config.ValidationConfig{})
 	require.NoError(t, err, "Reversed dates should not cause validation error")
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.Warnings, "Should have warning for reversed dates")
@@ -596,6 +597,75 @@ func TestValidatePlaceInput(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateEventInput_TestDomainBlocklist tests the example.com / images.example.com blocklist.
+func TestValidateEventInput_TestDomainBlocklist(t *testing.T) {
+	base := func() EventInput {
+		return EventInput{
+			Name:      "Test Event",
+			StartDate: "2026-06-01T10:00:00Z",
+			Location:  &PlaceInput{Name: "Venue"},
+		}
+	}
+
+	tests := []struct {
+		name             string
+		url              string
+		image            string
+		allowTestDomains bool
+		wantErrContains  string // non-empty means expect a hard error containing this string
+	}{
+		{
+			name:            "example.com URL is blocked",
+			url:             "https://example.com/events/1234",
+			wantErrContains: "reserved test domain",
+		},
+		{
+			name:            "images.example.com image is blocked",
+			image:           "https://images.example.com/events/5.jpg",
+			wantErrContains: "reserved test domain",
+		},
+		{
+			name:  "real URL passes",
+			url:   "https://realvenue.ca/event/abc",
+			image: "https://cdn.realvenue.ca/img/abc.jpg",
+		},
+		{
+			name:             "AllowTestDomains suppresses example.com URL error",
+			url:              "https://example.com/events/99",
+			allowTestDomains: true,
+		},
+		{
+			name:             "AllowTestDomains suppresses images.example.com image error",
+			image:            "https://images.example.com/events/3.jpg",
+			allowTestDomains: true,
+		},
+		{
+			name:            "subdomain of example.com is not blocked",
+			url:             "https://sub.example.com/event/1",
+			wantErrContains: "", // subdomain is a different host, not blocked
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			input := base()
+			input.URL = tc.url
+			input.Image = tc.image
+
+			cfg := config.ValidationConfig{AllowTestDomains: tc.allowTestDomains}
+			result, err := ValidateEventInputWithWarnings(input, "node.togather.ca", nil, cfg)
+
+			if tc.wantErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErrContains)
+			} else {
+				require.NoError(t, err)
+				assert.NotNil(t, result)
 			}
 		})
 	}
