@@ -302,6 +302,32 @@ go mod tidy
 go build -o bin/loadtest ./cmd/loadtest
 ```
 
+## Staging Cleanup
+
+Events ingested during a load test persist in the staging database. Clean them up after
+each run to avoid data contamination.
+
+**Preferred workflow** — use a source-tagged API key (see
+[Load Testing Operations](../operations/load-testing.md) for one-time setup):
+
+```bash
+server cleanup loadtest --env=staging --source-id=<source-uuid> --confirm
+```
+
+**Legacy cleanup** — for events ingested before source tagging (matches `example.com`
+placeholder URLs injected by the fixture generator):
+
+```bash
+server cleanup loadtest --env=staging --legacy --confirm
+```
+
+Use `--dry-run` instead of `--confirm` to preview without deleting.
+
+> **Note:** `example.com` and `images.example.com` URLs are blocked at ingest (HTTP 422)
+> in staging and production. The load tester must use a valid API key to submit events;
+> the fixture data itself uses placeholder domains that pass validation internally via
+> `AllowTestDomains: true` in the load-test harness.
+
 ## Performance Test Data
 
 The load tester uses realistic test fixtures from `tests/testdata/`:
