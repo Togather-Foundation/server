@@ -1,11 +1,13 @@
 package scraper
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -308,5 +310,269 @@ sitemap:
 	}
 	if result.Error == nil {
 		t.Error("expected result.Error to be set on sitemap fetch failure, got nil")
+	}
+}
+
+// TestScrapeSitemap_Tier1 verifies that a sitemap source with tier 1 discovers
+// URLs via sitemap XML, then scrapes each detail page using CSS selectors
+// (not JSON-LD). The selector config must match the HTML structure served.
+//
+// Note: Tier 2 (Rod/headless browser) is not tested here because it requires
+// a running headless browser instance which is not available in unit tests.
+func TestScrapeSitemap_Tier1(t *testing.T) {
+	t.Parallel()
+
+	var srvURL string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/robots.txt":
+			http.NotFound(w, r)
+
+		case "/sitemap.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>%s/events/1</loc></url>
+  <url><loc>%s/events/2</loc></url>
+</urlset>`, srvURL, srvURL)
+
+		case "/events/1":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event">
+  <h1>CSS Event One</h1>
+  <time datetime="2026-07-01T19:00:00">July 1</time>
+  <span class="venue">Test Hall</span>
+  <p class="desc">First CSS event</p>
+</div></body></html>`)
+
+		case "/events/2":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event">
+  <h1>CSS Event Two</h1>
+  <time datetime="2026-07-02T20:00:00">July 2</time>
+  <span class="venue">Test Hall</span>
+  <p class="desc">Second CSS event</p>
+</div></body></html>`)
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	srvURL = srv.URL
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`name: sitemap-tier1-test
+url: %s
+tier: 1
+enabled: true
+trust_level: 5
+schedule: manual
+sitemap:
+  url: %s/sitemap.xml
+  filter_pattern: "/events/.+"
+  rate_limit_ms: 1
+selectors:
+  event_list: "div.event"
+  name: "h1"
+  start_date: "time"
+  location: "span.venue"
+  description: "p.desc"
+`, srvURL, srvURL)
+	if err := os.WriteFile(filepath.Join(dir, "tier1-sitemap.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	scraper := newTestScraper(t, "http://unused")
+
+	result, err := scraper.ScrapeSource(t.Context(), "sitemap-tier1-test", ScrapeOptions{
+		DryRun:     true,
+		SourcesDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("ScrapeSource returned error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("result.Error = %v, want nil", result.Error)
+	}
+	if result.EventsFound < 2 {
+		t.Errorf("EventsFound = %d, want >= 2", result.EventsFound)
+	}
+	if result.EventsSubmitted != 2 {
+		t.Errorf("EventsSubmitted = %d, want 2", result.EventsSubmitted)
+	}
+}
+
+// TestScrapeSitemap_ContextCancellation verifies that cancelling the context
+// mid-scrape stops the sitemap loop and returns partial results (not all URLs).
+func TestScrapeSitemap_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	var srvURL string
+	var requestCount atomic.Int32
+	var cancel context.CancelFunc
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/robots.txt":
+			http.NotFound(w, r)
+
+		case "/sitemap.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>%s/events/1</loc></url>
+  <url><loc>%s/events/2</loc></url>
+  <url><loc>%s/events/3</loc></url>
+  <url><loc>%s/events/4</loc></url>
+  <url><loc>%s/events/5</loc></url>
+</urlset>`, srvURL, srvURL, srvURL, srvURL, srvURL)
+
+		case "/events/1", "/events/2", "/events/3", "/events/4", "/events/5":
+			n := requestCount.Add(1)
+			// Cancel the context after the second detail page is served so the
+			// loop is interrupted mid-flight.
+			if n == 2 {
+				cancel()
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(buildEventPageHTML("Event "+r.URL.Path[len("/events/"):], srvURL+r.URL.Path)))
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	srvURL = srv.URL
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`name: cancel-sitemap-source
+url: %s
+tier: 0
+enabled: true
+trust_level: 5
+schedule: manual
+sitemap:
+  url: %s/sitemap.xml
+  filter_pattern: "/events/.+"
+  rate_limit_ms: 1
+`, srvURL, srvURL)
+	if err := os.WriteFile(filepath.Join(dir, "cancel-sitemap.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	ctx, cancelFn := context.WithCancel(t.Context())
+	cancel = cancelFn
+	defer cancelFn()
+
+	scraper := newTestScraper(t, "http://unused")
+
+	result, err := scraper.ScrapeSource(ctx, "cancel-sitemap-source", ScrapeOptions{
+		DryRun:     true,
+		SourcesDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("ScrapeSource returned error: %v", err)
+	}
+	// After cancellation, we expect fewer than 5 events.
+	if result.EventsSubmitted >= 5 {
+		t.Errorf("EventsSubmitted = %d, want < 5 (loop should have been cancelled)", result.EventsSubmitted)
+	}
+	if requestCount.Load() >= 5 {
+		t.Errorf("requestCount = %d, want < 5 (cancellation should stop loop)", requestCount.Load())
+	}
+}
+
+// TestScrapeSitemap_SitemapIndex verifies that scrapeSitemap handles a sitemap
+// index (sitemapindex XML) by recursively fetching the child sitemaps and
+// collecting all event URLs across them.
+func TestScrapeSitemap_SitemapIndex(t *testing.T) {
+	t.Parallel()
+
+	var srvURL string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/robots.txt":
+			http.NotFound(w, r)
+
+		case "/sitemap-index.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>%s/sitemap-events-1.xml</loc></sitemap>
+  <sitemap><loc>%s/sitemap-events-2.xml</loc></sitemap>
+</sitemapindex>`, srvURL, srvURL)
+
+		case "/sitemap-events-1.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>%s/events/1</loc></url>
+  <url><loc>%s/events/2</loc></url>
+</urlset>`, srvURL, srvURL)
+
+		case "/sitemap-events-2.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>%s/events/3</loc></url>
+</urlset>`, srvURL)
+
+		case "/events/1":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(buildEventPageHTML("Index Event One", srvURL+"/events/1")))
+
+		case "/events/2":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(buildEventPageHTML("Index Event Two", srvURL+"/events/2")))
+
+		case "/events/3":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(buildEventPageHTML("Index Event Three", srvURL+"/events/3")))
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	srvURL = srv.URL
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	cfg := fmt.Sprintf(`name: sitemap-index-source
+url: %s
+tier: 0
+enabled: true
+trust_level: 5
+schedule: manual
+sitemap:
+  url: %s/sitemap-index.xml
+  filter_pattern: "/events/.+"
+  rate_limit_ms: 1
+`, srvURL, srvURL)
+	if err := os.WriteFile(filepath.Join(dir, "sitemap-index.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	scraper := newTestScraper(t, "http://unused")
+
+	result, err := scraper.ScrapeSource(t.Context(), "sitemap-index-source", ScrapeOptions{
+		DryRun:     true,
+		SourcesDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("ScrapeSource returned error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("result.Error = %v, want nil", result.Error)
+	}
+	if result.EventsFound != 3 {
+		t.Errorf("EventsFound = %d, want 3 (from both child sitemaps)", result.EventsFound)
+	}
+	if result.EventsSubmitted != 3 {
+		t.Errorf("EventsSubmitted = %d, want 3", result.EventsSubmitted)
 	}
 }

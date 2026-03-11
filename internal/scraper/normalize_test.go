@@ -1649,3 +1649,35 @@ func TestGroupJSONLDEvents_SingleEventWithSubEvents(t *testing.T) {
 		t.Errorf("Occurrences[0].EndDate = %q, want 2026-08-01T12:00:00", evt.Occurrences[0].EndDate)
 	}
 }
+
+// TestNormalizeRawEvents_AllInvalidDatesGroup verifies that when ALL rows in a
+// multi-row group have unparseable/empty dates, consolidateOccurrences returns
+// an error ("no valid dates found") and normalizeRawEvents correctly increments
+// skipped and continues to the next group.
+func TestNormalizeRawEvents_AllInvalidDatesGroup(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	raws := []RawEvent{
+		// Group 1: all rows have no valid dates → should be skipped
+		{Name: "Bad Show", URL: "https://example.com/bad"},
+		{Name: "Bad Show", URL: "https://example.com/bad"},
+		{Name: "Bad Show", URL: "https://example.com/bad"},
+		// Group 2: valid single event
+		makeRaw("Good Show", "https://example.com/good", "2026-06-01T20:00:00"),
+	}
+
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+
+	if skipped != 1 {
+		t.Errorf("expected 1 skipped group (all-invalid-dates), got %d", skipped)
+	}
+	if len(valid) != 1 {
+		t.Fatalf("expected 1 valid EventInput, got %d", len(valid))
+	}
+	if valid[0].Name != "Good Show" {
+		t.Errorf("expected surviving event to be 'Good Show', got %q", valid[0].Name)
+	}
+}
