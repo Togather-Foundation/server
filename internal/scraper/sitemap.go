@@ -9,10 +9,17 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // defaultSitemapMaxURLs is the default cap on URLs scraped per sitemap run.
 const defaultSitemapMaxURLs = 200
+
+// maxSitemapMaxURLs is the upper bound above which a warning is emitted during
+// config validation. Values above this threshold are not rejected but may
+// overwhelm the target site.
+const maxSitemapMaxURLs = 10000
 
 // defaultSitemapRateLimitMs is the default delay between detail page fetches.
 const defaultSitemapRateLimitMs = 500
@@ -53,11 +60,11 @@ type xmlSitemap struct {
 // FetchSitemap fetches a sitemap XML URL and returns all URL entries found.
 // It handles both regular sitemaps (<urlset>) and sitemap index files
 // (<sitemapindex>), recursing into child sitemaps up to maxSitemapIndexDepth.
-func FetchSitemap(ctx context.Context, sitemapURL string, client *http.Client) ([]SitemapEntry, error) {
-	return fetchSitemapRecursive(ctx, sitemapURL, client, 0)
+func FetchSitemap(ctx context.Context, sitemapURL string, client *http.Client, logger zerolog.Logger) ([]SitemapEntry, error) {
+	return fetchSitemapRecursive(ctx, sitemapURL, client, logger, 0)
 }
 
-func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.Client, depth int) ([]SitemapEntry, error) {
+func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.Client, logger zerolog.Logger, depth int) ([]SitemapEntry, error) {
 	if depth > maxSitemapIndexDepth {
 		return nil, fmt.Errorf("sitemap index recursion depth exceeded (%d)", maxSitemapIndexDepth)
 	}
@@ -90,9 +97,10 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 		var entries []SitemapEntry
 		var childErrors []error
 		for _, sm := range index.Sitemaps {
-			children, childErr := fetchSitemapRecursive(ctx, sm.Loc, client, depth+1)
+			children, childErr := fetchSitemapRecursive(ctx, sm.Loc, client, logger, depth+1)
 			if childErr != nil {
 				childErrors = append(childErrors, fmt.Errorf("child sitemap %s: %w", sm.Loc, childErr))
+				logger.Debug().Str("url", sm.Loc).Err(childErr).Msg("child sitemap fetch failed, continuing with partial results")
 				continue
 			}
 			entries = append(entries, children...)
@@ -131,7 +139,6 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 func parseLastMod(s string) (time.Time, error) {
 	formats := []string{
 		time.RFC3339,
-		"2006-01-02T15:04:05Z",
 		"2006-01-02",
 		"2006-01",
 		"2006",
@@ -165,13 +172,4 @@ func FilterSitemapEntries(entries []SitemapEntry, pattern *regexp.Regexp, exclud
 		filtered = append(filtered, e)
 	}
 	return filtered
-}
-
-// SitemapEntryURLs extracts just the URL strings from a slice of SitemapEntry.
-func SitemapEntryURLs(entries []SitemapEntry) []string {
-	urls := make([]string, len(entries))
-	for i, e := range entries {
-		urls[i] = e.URL
-	}
-	return urls
 }

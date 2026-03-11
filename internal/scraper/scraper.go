@@ -716,7 +716,7 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 		}
 
 		// 2. Fetch sitemap
-		entries, err := FetchSitemap(ctx, source.Sitemap.URL, opts.HTTPClient(fetchTimeout))
+		entries, err := FetchSitemap(ctx, source.Sitemap.URL, opts.HTTPClient(fetchTimeout), s.logger)
 		if err != nil {
 			return 0, nil, nil, fmt.Errorf("fetch sitemap: %w", err)
 		}
@@ -755,7 +755,26 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 		}
 		rateDelay := time.Duration(rateLimitMs) * time.Millisecond
 
-		// 6. Scrape each URL
+		// 6. Build the selector scrape function once (outside the loop).
+		// CollyExtractor is safe to reuse across URLs because ScrapeWithSelectors
+		// creates a fresh Colly collector on every call — it holds no per-URL state.
+		var selectorScrape selectorPageScrapeFunc
+		switch source.Tier {
+		case 1:
+			extractor := NewCollyExtractor(s.logger)
+			extractor.SetTransport(opts.Transport)
+			if opts.RateLimitMs > 0 {
+				extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
+			}
+			selectorScrape = extractor.ScrapeWithSelectors
+		case 2:
+			if s.rodExtractor == nil {
+				return 0, nil, nil, fmt.Errorf("tier 2 scraping requires a RodExtractor")
+			}
+			selectorScrape = s.rodExtractor.ScrapeWithBrowser
+		}
+
+		// 7. Scrape each URL
 		var allEvents []events.EventInput
 		var warnings []string
 		totalFound := 0
@@ -806,48 +825,12 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 					pageEvents = valid
 				}
 
-			case 1:
-				extractor := NewCollyExtractor(s.logger)
-				extractor.SetTransport(opts.Transport)
-				if opts.RateLimitMs > 0 {
-					extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
-				}
-				rawEvts, probes, fetchErr := extractor.ScrapeWithSelectors(ctx, clone)
-				if fetchErr != nil {
-					pageErr = fetchErr
-				} else {
-					totalFound += len(rawEvts)
-					warnings = append(warnings, checkDateSelectorQuality(rawEvts, clone, probes)...)
-					// Pass limit=0; the global limit is enforced after pageEvents are
-					// appended to allEvents below.
-					valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger)
-					if skipped > 0 {
-						s.logger.Warn().Str("source", source.Name).Str("url", pageURL).Int("skipped", skipped).
-							Msg("scraper: sitemap T1 events skipped during normalisation")
-					}
-					pageEvents = valid
-				}
-
-			case 2:
-				if s.rodExtractor == nil {
-					pageErr = fmt.Errorf("tier 2 scraping requires a RodExtractor")
-				} else {
-					rawEvts, probes, fetchErr := s.rodExtractor.ScrapeWithBrowser(ctx, clone)
-					if fetchErr != nil {
-						pageErr = fetchErr
-					} else {
-						totalFound += len(rawEvts)
-						warnings = append(warnings, checkDateSelectorQuality(rawEvts, clone, probes)...)
-						// Pass limit=0; the global limit is enforced after pageEvents are
-						// appended to allEvents below.
-						valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger)
-						if skipped > 0 {
-							s.logger.Warn().Str("source", source.Name).Str("url", pageURL).Int("skipped", skipped).
-								Msg("scraper: sitemap T2 events skipped during normalisation")
-						}
-						pageEvents = valid
-					}
-				}
+			case 1, 2:
+				var warns []string
+				var found int
+				pageEvents, warns, found, pageErr = s.scrapeSitemapSelectorPage(ctx, selectorScrape, clone, fmt.Sprintf("T%d", source.Tier))
+				warnings = append(warnings, warns...)
+				totalFound += found
 
 			default:
 				pageErr = fmt.Errorf("sitemap scraping not supported for tier %d", source.Tier)
@@ -887,6 +870,36 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 // any error. Quality warnings are accumulated into ScrapeResult.QualityWarnings
 // by runWithTracking.
 type scrapeFunc func(ctx context.Context) (eventsFound int, validEvents []events.EventInput, qualityWarnings []string, err error)
+
+// selectorPageScrapeFunc extracts raw events from a single page using CSS selectors.
+// Both CollyExtractor.ScrapeWithSelectors and RodExtractor.ScrapeWithBrowser satisfy
+// this signature.
+type selectorPageScrapeFunc func(ctx context.Context, cfg SourceConfig) ([]RawEvent, []DateSelectorProbe, error)
+
+// scrapeSitemapSelectorPage scrapes a single sitemap detail page using a CSS-selector
+// extractor (tier 1 Colly or tier 2 Rod). It normalizes the results and returns
+// page events, quality warnings, the raw event count, and any error.
+func (s *Scraper) scrapeSitemapSelectorPage(
+	ctx context.Context,
+	scrapeFn selectorPageScrapeFunc,
+	clone SourceConfig,
+	tierLabel string,
+) (pageEvents []events.EventInput, warnings []string, rawCount int, err error) {
+	rawEvts, probes, fetchErr := scrapeFn(ctx, clone)
+	if fetchErr != nil {
+		return nil, nil, 0, fetchErr
+	}
+	rawCount = len(rawEvts)
+	warnings = checkDateSelectorQuality(rawEvts, clone, probes)
+	// Pass limit=0; the global limit is enforced after pageEvents are
+	// appended to allEvents in scrapeSitemap.
+	valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger)
+	if skipped > 0 {
+		s.logger.Warn().Str("source", clone.Name).Str("url", clone.URL).Int("skipped", skipped).
+			Msgf("scraper: sitemap %s events skipped during normalisation", tierLabel)
+	}
+	return valid, warnings, rawCount, nil
+}
 
 // runWithTracking wraps a scrapeFunc with DB scraper_run insert/update bookkeeping.
 // If queries is nil all DB operations are skipped (best-effort).

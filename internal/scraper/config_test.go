@@ -2114,3 +2114,123 @@ func TestValidate_SitemapConfig(t *testing.T) {
 		})
 	}
 }
+
+// --------------------------------------------------------------------------
+// Sitemap validation warnings (B1, B3, B4)
+// --------------------------------------------------------------------------
+
+func TestValidate_SitemapWarnings(t *testing.T) {
+	t.Parallel()
+
+	baseSitemap := func() *SitemapConfig {
+		return &SitemapConfig{
+			URL:           "https://example.com/sitemap.xml",
+			FilterPattern: `/events/.+`,
+		}
+	}
+
+	baseCfg := func() SourceConfig {
+		return SourceConfig{
+			Name:       "Sitemap Warning Source",
+			URL:        "https://example.com/events",
+			Tier:       0,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			Sitemap:    baseSitemap(),
+		}
+	}
+
+	t.Run("B1: rate_limit_ms=0 produces warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.Sitemap.RateLimitMs = 0
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "sitemap.rate_limit_ms: 0 means use default") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected rate_limit_ms=0 warning, got warnings: %v", warnings)
+		}
+	})
+
+	t.Run("B1: rate_limit_ms=1 produces no zero warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.Sitemap.RateLimitMs = 1
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		for _, w := range warnings {
+			if strings.Contains(w, "sitemap.rate_limit_ms: 0 means use default") {
+				t.Errorf("unexpected rate_limit_ms=0 warning for RateLimitMs=1, got warnings: %v", warnings)
+			}
+		}
+	})
+
+	t.Run("B3: max_urls > 10000 produces warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.Sitemap.MaxURLs = 10001
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "sitemap.max_urls") && strings.Contains(w, "very high") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected max_urls high warning, got warnings: %v", warnings)
+		}
+	})
+
+	t.Run("B3: max_urls = 10000 produces no warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.Sitemap.MaxURLs = 10000
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		for _, w := range warnings {
+			if strings.Contains(w, "sitemap.max_urls") && strings.Contains(w, "very high") {
+				t.Errorf("unexpected max_urls warning for MaxURLs=10000, got warnings: %v", warnings)
+			}
+		}
+	})
+
+	t.Run("B4: sitemap without url field produces warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.URL = "" // no top-level url
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "url: recommended for sitemap sources") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected url recommended warning for sitemap without url, got warnings: %v", warnings)
+		}
+	})
+
+	t.Run("B4: sitemap with url field produces no recommendation warning", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.URL = "https://example.com/events" // url is set
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		for _, w := range warnings {
+			if strings.Contains(w, "url: recommended for sitemap sources") {
+				t.Errorf("unexpected url recommendation warning when url is set, got warnings: %v", warnings)
+			}
+		}
+	})
+}

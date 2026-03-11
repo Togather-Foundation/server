@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // ── FetchSitemap ──────────────────────────────────────────────────────
@@ -95,7 +97,7 @@ func TestFetchSitemap(t *testing.T) {
 			srv := httptest.NewServer(tc.handler)
 			defer srv.Close()
 
-			entries, err := FetchSitemap(t.Context(), srv.URL+"/sitemap.xml", srv.Client())
+			entries, err := FetchSitemap(t.Context(), srv.URL+"/sitemap.xml", srv.Client(), zerolog.Nop())
 
 			if tc.wantErr {
 				if err == nil {
@@ -155,7 +157,7 @@ func TestFetchSitemap_Index(t *testing.T) {
 
 	// Use a client that allows cross-server requests.
 	client := &http.Client{}
-	entries, err := FetchSitemap(t.Context(), index.URL+"/sitemap_index.xml", client)
+	entries, err := FetchSitemap(t.Context(), index.URL+"/sitemap_index.xml", client, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +210,7 @@ func TestFetchSitemap_IndexDepthExceeded(t *testing.T) {
 	defer root.Close()
 
 	client := &http.Client{}
-	entries, err := FetchSitemap(t.Context(), root.URL+"/root.xml", client)
+	entries, err := FetchSitemap(t.Context(), root.URL+"/root.xml", client, zerolog.Nop())
 	// With error-propagation semantics, when all children in a sitemap index
 	// fail (depth exceeded bubbles up), FetchSitemap returns a non-nil error.
 	if err == nil {
@@ -451,49 +453,6 @@ func TestParseLastMod(t *testing.T) {
 			}
 		})
 	}
-}
-
-// ── SitemapEntryURLs ──────────────────────────────────────────────────
-
-func TestSitemapEntryURLs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("extracts URL strings correctly", func(t *testing.T) {
-		t.Parallel()
-
-		now := time.Now()
-		entries := []SitemapEntry{
-			{URL: "https://example.com/1", LastMod: &now},
-			{URL: "https://example.com/2"},
-			{URL: "https://example.com/3", LastMod: &now},
-		}
-
-		got := SitemapEntryURLs(entries)
-
-		want := []string{
-			"https://example.com/1",
-			"https://example.com/2",
-			"https://example.com/3",
-		}
-
-		if len(got) != len(want) {
-			t.Fatalf("got %d URLs, want %d", len(got), len(want))
-		}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Errorf("URLs[%d] = %q, want %q", i, got[i], want[i])
-			}
-		}
-	})
-
-	t.Run("empty input returns empty slice", func(t *testing.T) {
-		t.Parallel()
-
-		got := SitemapEntryURLs(nil)
-		if len(got) != 0 {
-			t.Fatalf("got %d URLs, want 0", len(got))
-		}
-	})
 }
 
 // ── helpers ───────────────────────────────────────────────────────────

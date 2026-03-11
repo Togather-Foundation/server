@@ -867,8 +867,8 @@ selectors:
 | `url` | string | yes | — | URL of the sitemap XML file (e.g. `https://example.com/sitemap.xml`). Supports both `<urlset>` and `<sitemapindex>` formats. |
 | `filter_pattern` | string | yes | — | Go regular expression matched against each URL in the sitemap. Only matching URLs are scraped. Example: `/events/.+` |
 | `exclude_pattern` | string | no | — | Go regular expression matched against URLs that passed `filter_pattern`. Matching URLs are **rejected**. Useful for large sitemaps where exclusion is easier than precise inclusion (e.g. exclude `/artists/` and `/info/` pages). Applied after `filter_pattern`. |
-| `max_urls` | int | no | `200` | Maximum number of URLs to scrape per run. Safety cap to prevent runaway scrapes on large sitemaps. |
-| `rate_limit_ms` | int | no | `500` | Delay in milliseconds between fetching individual detail pages. Set to `1` for minimal delay. |
+| `max_urls` | int | no | `200` | Maximum number of URLs to scrape per run. Safety cap to prevent runaway scrapes on large sitemaps. Values above 10,000 trigger a validation warning. |
+| `rate_limit_ms` | int | no | `500` | Delay in milliseconds between fetching individual detail pages. A value of `0` means **use the default** (500 ms), not no delay — set to `1` for minimal delay. |
 
 ### Freshness Filtering
 
@@ -881,13 +881,13 @@ When `<lastmod>` is absent (common in simpler sitemaps), all filtered URLs are s
 up to the `max_urls` cap. The `max_urls` default of 200 provides a safety net for
 sitemaps without lastmod data.
 
-Supported `<lastmod>` formats: RFC 3339, `YYYY-MM-DDThh:mm:ssZ`, `YYYY-MM-DD`, `YYYY-MM`.
+Supported `<lastmod>` formats: RFC 3339, `YYYY-MM-DD`, `YYYY-MM`.
 
 ### Sitemap Index Support
 
 The scraper handles both simple sitemaps (`<urlset>`) and sitemap indexes
 (`<sitemapindex>`) that reference child sitemaps. Index recursion is capped at
-depth 3 to prevent infinite loops.
+depth 2 (allowing up to 3 levels of nesting) to prevent infinite loops.
 
 When fetching child sitemaps from an index, partial failures are tolerated — if some
 children fail but others succeed, the scraper proceeds with the successfully-fetched
@@ -902,6 +902,12 @@ entries. If **all** children fail, the error is propagated to the caller.
 - `sitemap` and `urls` are mutually exclusive
 - `sitemap.max_urls` must be non-negative
 - `sitemap.rate_limit_ms` must be non-negative
+
+**Validation warnings** (non-fatal, logged at WARN level):
+
+- `sitemap.rate_limit_ms` set to `0` — warns that 0 means use default (500 ms), not no delay; set to `1` for minimal delay
+- `sitemap.max_urls` above 10,000 — warns that the value is very high and may overwhelm the target site
+- `sitemap` block present without a `url` field — warns that the sitemap block has no effect without a URL
 
 ### Database Storage
 
