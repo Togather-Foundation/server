@@ -117,6 +117,10 @@ type OccurrenceInput struct {
 	VirtualURL string `json:"virtualUrl,omitempty"`
 }
 
+// ValidateEventInput validates event input using production defaults (blocklist active).
+// example.com / images.example.com URLs will be rejected as hard errors.
+// Use ValidateEventInputWithWarnings with AllowTestDomains:true in test code that needs
+// fixture URLs from those domains.
 func ValidateEventInput(input EventInput, nodeDomain string) (EventInput, error) {
 	result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil, config.ValidationConfig{})
 	if err != nil {

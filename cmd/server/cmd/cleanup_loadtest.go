@@ -115,12 +115,12 @@ func runCleanupLoadtest(cmd *cobra.Command, args []string) error {
 
 	// --- Count + delete ---
 	if loadtestSourceID != "" {
-		if err := handleSourceIDCleanup(ctx, pool, cmd, loadtestSourceID, loadtestDryRun, loadtestConfirm); err != nil {
+		if err := handleSourceIDCleanup(ctx, pool, cmd, loadtestSourceID, loadtestDryRun); err != nil {
 			return err
 		}
 	}
 	if loadtestLegacy {
-		if err := handleLegacyCleanup(ctx, pool, cmd, loadtestDryRun, loadtestConfirm); err != nil {
+		if err := handleLegacyCleanup(ctx, pool, cmd, loadtestDryRun); err != nil {
 			return err
 		}
 	}
@@ -188,7 +188,7 @@ func dbURLHost(dbURL string) (string, error) {
 
 // handleSourceIDCleanup counts (and optionally deletes) events linked to the
 // given source UUID via the event_sources table.
-func handleSourceIDCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.Command, sourceID string, dryRun, confirm bool) error {
+func handleSourceIDCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.Command, sourceID string, dryRun bool) error {
 	// Count events linked to this source.
 	var count int64
 	err := pool.QueryRow(ctx,
@@ -214,7 +214,6 @@ func handleSourceIDCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.C
 		return nil
 	}
 
-	// confirm must be true here (enforced earlier in runCleanupLoadtest).
 	result, err := pool.Exec(ctx,
 		`DELETE FROM events
 		 WHERE id IN (
@@ -235,7 +234,7 @@ func handleSourceIDCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.C
 //
 //	image_url LIKE 'https://images.example.com/events/%.jpg'
 //	public_url LIKE 'https://example.com/events/%'
-func handleLegacyCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.Command, dryRun, confirm bool) error {
+func handleLegacyCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.Command, dryRun bool) error {
 	var count int64
 	err := pool.QueryRow(ctx,
 		`SELECT COUNT(*)
