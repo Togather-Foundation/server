@@ -742,12 +742,12 @@ func buildTombstonePayload(ulid, name string, supersededBy *string, reason strin
 
 // FindSimilarPlaces returns places with similar names in the same locality/region.
 func (s *AdminService) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
-	return s.repo.FindSimilarPlaces(ctx, name, locality, region, threshold)
+	return s.repo.FindSimilarPlaces(ctx, name, locality, normalizeRegion(region), threshold)
 }
 
 // FindSimilarOrganizations returns organizations with similar names in the same locality/region.
 func (s *AdminService) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
-	return s.repo.FindSimilarOrganizations(ctx, name, locality, region, threshold)
+	return s.repo.FindSimilarOrganizations(ctx, name, locality, normalizeRegion(region), threshold)
 }
 
 // MergePlaces merges a duplicate place into a primary place.

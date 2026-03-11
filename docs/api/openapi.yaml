@@ -2862,6 +2862,42 @@ components:
           type: string
           description: Explanation of why the change was made
 
+    AdminUserResponse:
+      type: object
+      required: [id, username, email, role, is_active, status, created_at]
+      description: Admin user representation returned by user management endpoints.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User's unique identifier
+        username:
+          type: string
+          description: User's login username
+        email:
+          type: string
+          format: email
+          description: User's email address
+        role:
+          type: string
+          enum: [admin, editor, viewer]
+          description: User's role
+        is_active:
+          type: boolean
+          description: Whether the user account is active
+        status:
+          type: string
+          enum: [active, inactive, pending]
+          description: "Derived user status. active=is_active; pending=!is_active and no password set (invitation not accepted); inactive=!is_active and password set (was deactivated)"
+        created_at:
+          type: string
+          format: date-time
+          description: When the user account was created
+        last_login_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the user last logged in, or null if never
+
     ProblemDetails:
       type: object
       required: [type, title, status]

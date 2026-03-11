@@ -845,3 +845,37 @@ func TestIsMultiSessionEvent(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeRegion(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Ontario", "ON"},
+		{"ontario", "ON"},
+		{"ONTARIO", "ON"},
+		{"ON", "ON"},
+		{"  on  ", "ON"},
+		{"British Columbia", "BC"},
+		{"Washington", "WA"},
+		{"WA", "WA"},
+		{"Québec", "QC"},
+		{"Quebec", "QC"},
+		{"", ""},
+		{"SomeUnknownRegion", "SOMEUNKNOWNREGION"},
+		{"Alberta", "AB"},
+		{"New York", "NY"},
+		{"California", "CA"},
+		{"Newfoundland and Labrador", "NL"},
+		{"Newfoundland", "NL"},
+		{"Prince Edward Island", "PE"},
+		{"Northwest Territories", "NT"},
+		{"Yukon", "YT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := normalizeRegion(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

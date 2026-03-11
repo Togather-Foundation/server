@@ -124,7 +124,7 @@ SET deleted_at = now()
 WHERE id = $1;
 
 -- name: ListUsersWithFilters :many
-SELECT id, username, email, role, is_active, created_at, last_login_at
+SELECT id, username, email, role, is_active, password_hash, created_at, last_login_at
 FROM users
 WHERE 
   (sqlc.narg('is_active')::boolean IS NULL OR is_active = sqlc.narg('is_active')) AND

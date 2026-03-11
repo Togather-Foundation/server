@@ -237,7 +237,7 @@ func normalizePlaceInput(place PlaceInput) *PlaceInput {
 	place.Name = strings.TrimSpace(place.Name)
 	place.StreetAddress = strings.TrimSpace(place.StreetAddress)
 	place.AddressLocality = strings.TrimSpace(place.AddressLocality)
-	place.AddressRegion = strings.TrimSpace(place.AddressRegion)
+	place.AddressRegion = normalizeRegion(place.AddressRegion)
 	place.PostalCode = strings.TrimSpace(place.PostalCode)
 	place.AddressCountry = strings.TrimSpace(place.AddressCountry)
 	return &place
@@ -449,4 +449,88 @@ func IsMultiSessionEvent(input EventInput) (bool, string) {
 	}
 
 	return false, ""
+}
+
+// normalizeRegion normalises an addressRegion value to its ISO 3166-2 short
+// subdivision code (upper-case). This matches the schema.org addressRegion
+// convention (e.g. "WA" rather than "Washington").
+// Unknown or already-abbreviated values are returned trimmed and upper-cased.
+func normalizeRegion(region string) string {
+	r := strings.ToUpper(strings.TrimSpace(region))
+	if code, ok := regionNameToCode[r]; ok {
+		return code
+	}
+	return r
+}
+
+// regionNameToCode maps full region names (upper-cased) to ISO 3166-2 short codes.
+var regionNameToCode = map[string]string{
+	// Canadian provinces & territories
+	"ALBERTA":                   "AB",
+	"BRITISH COLUMBIA":          "BC",
+	"MANITOBA":                  "MB",
+	"NEW BRUNSWICK":             "NB",
+	"NEWFOUNDLAND AND LABRADOR": "NL",
+	"NEWFOUNDLAND":              "NL",
+	"NOVA SCOTIA":               "NS",
+	"ONTARIO":                   "ON",
+	"PRINCE EDWARD ISLAND":      "PE",
+	"QUEBEC":                    "QC",
+	"QUÉBEC":                    "QC",
+	"SASKATCHEWAN":              "SK",
+	"NORTHWEST TERRITORIES":     "NT",
+	"NUNAVUT":                   "NU",
+	"YUKON":                     "YT",
+	// US states
+	"ALABAMA":              "AL",
+	"ALASKA":               "AK",
+	"ARIZONA":              "AZ",
+	"ARKANSAS":             "AR",
+	"CALIFORNIA":           "CA",
+	"COLORADO":             "CO",
+	"CONNECTICUT":          "CT",
+	"DELAWARE":             "DE",
+	"FLORIDA":              "FL",
+	"GEORGIA":              "GA",
+	"HAWAII":               "HI",
+	"IDAHO":                "ID",
+	"ILLINOIS":             "IL",
+	"INDIANA":              "IN",
+	"IOWA":                 "IA",
+	"KANSAS":               "KS",
+	"KENTUCKY":             "KY",
+	"LOUISIANA":            "LA",
+	"MAINE":                "ME",
+	"MARYLAND":             "MD",
+	"MASSACHUSETTS":        "MA",
+	"MICHIGAN":             "MI",
+	"MINNESOTA":            "MN",
+	"MISSISSIPPI":          "MS",
+	"MISSOURI":             "MO",
+	"MONTANA":              "MT",
+	"NEBRASKA":             "NE",
+	"NEVADA":               "NV",
+	"NEW HAMPSHIRE":        "NH",
+	"NEW JERSEY":           "NJ",
+	"NEW MEXICO":           "NM",
+	"NEW YORK":             "NY",
+	"NORTH CAROLINA":       "NC",
+	"NORTH DAKOTA":         "ND",
+	"OHIO":                 "OH",
+	"OKLAHOMA":             "OK",
+	"OREGON":               "OR",
+	"PENNSYLVANIA":         "PA",
+	"RHODE ISLAND":         "RI",
+	"SOUTH CAROLINA":       "SC",
+	"SOUTH DAKOTA":         "SD",
+	"TENNESSEE":            "TN",
+	"TEXAS":                "TX",
+	"UTAH":                 "UT",
+	"VERMONT":              "VT",
+	"VIRGINIA":             "VA",
+	"WASHINGTON":           "WA",
+	"WEST VIRGINIA":        "WV",
+	"WISCONSIN":            "WI",
+	"WYOMING":              "WY",
+	"DISTRICT OF COLUMBIA": "DC",
 }

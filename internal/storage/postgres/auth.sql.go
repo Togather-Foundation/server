@@ -548,7 +548,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 }
 
 const listUsersWithFilters = `-- name: ListUsersWithFilters :many
-SELECT id, username, email, role, is_active, created_at, last_login_at
+SELECT id, username, email, role, is_active, password_hash, created_at, last_login_at
 FROM users
 WHERE 
   ($1::boolean IS NULL OR is_active = $1) AND
@@ -566,13 +566,14 @@ type ListUsersWithFiltersParams struct {
 }
 
 type ListUsersWithFiltersRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Username    string             `json:"username"`
-	Email       string             `json:"email"`
-	Role        string             `json:"role"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
+	ID           pgtype.UUID        `json:"id"`
+	Username     string             `json:"username"`
+	Email        string             `json:"email"`
+	Role         string             `json:"role"`
+	IsActive     bool               `json:"is_active"`
+	PasswordHash string             `json:"password_hash"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
 }
 
 func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error) {
@@ -595,6 +596,7 @@ func (q *Queries) ListUsersWithFilters(ctx context.Context, arg ListUsersWithFil
 			&i.Email,
 			&i.Role,
 			&i.IsActive,
+			&i.PasswordHash,
 			&i.CreatedAt,
 			&i.LastLoginAt,
 		); err != nil {

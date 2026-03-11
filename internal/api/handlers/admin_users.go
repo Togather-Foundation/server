@@ -70,8 +70,23 @@ type AdminUserResponse struct {
 	Email       string     `json:"email"`
 	Role        string     `json:"role"`
 	IsActive    bool       `json:"is_active"`
+	Status      string     `json:"status"`
 	CreatedAt   time.Time  `json:"created_at"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+}
+
+// deriveUserStatus derives a user's status string from stored fields.
+// active: user is active (is_active=true)
+// pending: user has never accepted their invitation (is_active=false, no password set)
+// inactive: user was active but has been deactivated (is_active=false, has password)
+func deriveUserStatus(isActive bool, passwordHash string) string {
+	if isActive {
+		return "active"
+	}
+	if passwordHash == "" {
+		return "pending"
+	}
+	return "inactive"
 }
 
 // ListUsersResponse represents the paginated list of users
@@ -147,6 +162,7 @@ func (h *AdminUsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
@@ -227,6 +243,7 @@ func (h *AdminUsersHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			Email:       user.Email,
 			Role:        user.Role,
 			IsActive:    user.IsActive,
+			Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
 			CreatedAt:   user.CreatedAt.Time,
 			LastLoginAt: timePtr(user.LastLoginAt),
 		})
@@ -281,6 +298,7 @@ func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
@@ -382,6 +400,7 @@ func (h *AdminUsersHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Email:       updatedUser.Email,
 		Role:        updatedUser.Role,
 		IsActive:    updatedUser.IsActive,
+		Status:      deriveUserStatus(updatedUser.IsActive, updatedUser.PasswordHash),
 		CreatedAt:   updatedUser.CreatedAt.Time,
 		LastLoginAt: timePtr(updatedUser.LastLoginAt),
 	}
@@ -477,6 +496,7 @@ func (h *AdminUsersHandler) DeactivateUser(w http.ResponseWriter, r *http.Reques
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
@@ -535,6 +555,7 @@ func (h *AdminUsersHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 		Email:       user.Email,
 		Role:        user.Role,
 		IsActive:    user.IsActive,
+		Status:      deriveUserStatus(user.IsActive, user.PasswordHash),
 		CreatedAt:   user.CreatedAt.Time,
 		LastLoginAt: timePtr(user.LastLoginAt),
 	}
