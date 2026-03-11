@@ -1048,28 +1048,103 @@ func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *S
 	}
 }
 
-// opts.Limit to the number processed. Returns valid events and the count of
-// skipped (failed) events.
+// normalizeJSONLDEvents groups raw JSON-LD events by URL+Name and delegates
+// to groupJSONLDEvents. Returns valid EventInputs and count of skipped events.
 func (s *Scraper) normalizeJSONLDEvents(rawEvents []json.RawMessage, source SourceConfig, limit int) ([]events.EventInput, int) {
-	toProcess := rawEvents
-	if limit > 0 && len(toProcess) > limit {
-		toProcess = toProcess[:limit]
+	return groupJSONLDEvents(rawEvents, source, limit, s.logger)
+}
+
+// groupJSONLDEvents groups raw JSON-LD Event objects by (URL, Name) composite
+// key so that multiple separate Event objects describing different dates of the
+// same show are consolidated into a single EventInput with Occurrences.
+//
+// This handles Pattern 1 from schema.org: Google-recommended separate Event
+// objects sharing URL+Name but with different startDates.
+//
+// Events without a URL are not grouped (each becomes its own EventInput) to
+// avoid false merges on events that merely share a name.
+func groupJSONLDEvents(rawEvents []json.RawMessage, source SourceConfig, limit int, logger zerolog.Logger) ([]events.EventInput, int) {
+	// Peek struct to extract URL+Name without full normalization.
+	type peekEvent struct {
+		Name json.RawMessage `json:"name"`
+		URL  json.RawMessage `json:"url"`
+	}
+
+	type group struct {
+		key  string
+		raws []json.RawMessage
+	}
+	groupMap := make(map[string]*group)
+	var groupOrder []string
+	ungroupedIdx := 0
+
+	for _, raw := range rawEvents {
+		var peek peekEvent
+		if err := json.Unmarshal(raw, &peek); err != nil {
+			logger.Debug().Str("source", source.Name).Err(err).
+				Msg("scraper: skipping unparseable JSON-LD event during grouping")
+			continue
+		}
+
+		name := extractStringValue(peek.Name)
+		url := extractStringValue(peek.URL)
+
+		var key string
+		if url != "" {
+			key = fmt.Sprintf("%s|||%s", url, name)
+		} else {
+			key = fmt.Sprintf("__nourl_%d|||%s", ungroupedIdx, name)
+			ungroupedIdx++
+		}
+
+		if _, ok := groupMap[key]; !ok {
+			groupMap[key] = &group{key: key}
+			groupOrder = append(groupOrder, key)
+		}
+		groupMap[key].raws = append(groupMap[key].raws, raw)
 	}
 
 	var valid []events.EventInput
 	skipped := 0
 
-	for _, raw := range toProcess {
-		evt, err := NormalizeJSONLDEvent(raw, source)
-		if err != nil {
-			s.logger.Debug().
-				Str("source", source.Name).
-				Err(err).
-				Msg("scraper: skipping event that failed normalisation")
-			skipped++
-			continue
+	for _, key := range groupOrder {
+		if limit > 0 && len(valid) >= limit {
+			break
 		}
-		valid = append(valid, evt)
+
+		g := groupMap[key]
+
+		if len(g.raws) == 1 {
+			// Single event — normalize directly.
+			evt, err := NormalizeJSONLDEvent(g.raws[0], source)
+			if err != nil {
+				logger.Debug().Str("source", source.Name).Err(err).
+					Msg("scraper: skipping event that failed normalisation")
+				skipped++
+				continue
+			}
+			valid = append(valid, evt)
+		} else {
+			// Multi-event group — consolidate into one EventInput with Occurrences.
+			evt, err := NormalizeJSONLDEvent(g.raws[0], source)
+			if err != nil {
+				logger.Debug().Str("source", source.Name).Err(err).
+					Msg("scraper: skipping event group that failed normalisation")
+				skipped++
+				continue
+			}
+
+			// If NormalizeJSONLDEvent already populated Occurrences from
+			// subEvent data, preserve those (they carry richer per-occurrence
+			// metadata like endDate and doorTime). Only build occurrences
+			// from the group's top-level dates when subEvent didn't provide any.
+			if len(evt.Occurrences) == 0 {
+				if occs := occurrencesFromRawMessages(g.raws); len(occs) > 0 {
+					evt.Occurrences = occs
+				}
+			}
+			valid = append(valid, evt)
+		}
 	}
 
 	return valid, skipped

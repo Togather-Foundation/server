@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -619,6 +620,133 @@ func TestNormalizeJSONLDEvent(t *testing.T) {
 			source:  testSource,
 			wantErr: true,
 		},
+		{
+			name: "EventSeries with subEvent array",
+			raw: `{
+				"@type": "EventSeries",
+				"name": "Jazz Festival 2026",
+				"startDate": "2026-07-10T20:00:00",
+				"subEvent": [
+					{"@type": "Event", "name": "Night 1", "startDate": "2026-07-10T20:00:00", "endDate": "2026-07-10T23:00:00"},
+					{"@type": "Event", "name": "Night 2", "startDate": "2026-07-11T19:00:00", "endDate": "2026-07-11T22:00:00"},
+					{"@type": "Event", "name": "Night 3", "startDate": "2026-07-12T20:00:00", "endDate": "2026-07-12T23:30:00"}
+				]
+			}`,
+			source: testSource,
+			check: func(t *testing.T, got events.EventInput) {
+				t.Helper()
+				if len(got.Occurrences) != 3 {
+					t.Fatalf("Occurrences len = %d, want 3", len(got.Occurrences))
+				}
+				if got.Occurrences[0].StartDate != "2026-07-10T20:00:00" {
+					t.Errorf("Occurrences[0].StartDate = %q", got.Occurrences[0].StartDate)
+				}
+				if got.Occurrences[1].StartDate != "2026-07-11T19:00:00" {
+					t.Errorf("Occurrences[1].StartDate = %q", got.Occurrences[1].StartDate)
+				}
+				if got.Occurrences[2].EndDate != "2026-07-12T23:30:00" {
+					t.Errorf("Occurrences[2].EndDate = %q", got.Occurrences[2].EndDate)
+				}
+				if got.Type != "EventSeries" {
+					t.Errorf("Type = %q, want EventSeries", got.Type)
+				}
+			},
+		},
+		{
+			name: "Event with single subEvent object",
+			raw: `{
+				"@type": "Event",
+				"name": "Workshop Series",
+				"startDate": "2026-08-01T10:00:00",
+				"subEvent": {
+					"@type": "Event",
+					"name": "Session 1",
+					"startDate": "2026-08-01T10:00:00",
+					"endDate": "2026-08-01T12:00:00"
+				}
+			}`,
+			source: testSource,
+			check: func(t *testing.T, got events.EventInput) {
+				t.Helper()
+				if len(got.Occurrences) != 1 {
+					t.Fatalf("Occurrences len = %d, want 1", len(got.Occurrences))
+				}
+				if got.Occurrences[0].StartDate != "2026-08-01T10:00:00" {
+					t.Errorf("Occurrences[0].StartDate = %q", got.Occurrences[0].StartDate)
+				}
+				if got.Occurrences[0].EndDate != "2026-08-01T12:00:00" {
+					t.Errorf("Occurrences[0].EndDate = %q", got.Occurrences[0].EndDate)
+				}
+			},
+		},
+		{
+			name: "subEvent with URL-only references skipped",
+			raw: `{
+				"@type": "EventSeries",
+				"name": "Mixed Series",
+				"startDate": "2026-09-01T10:00:00",
+				"subEvent": [
+					"https://example.com/events/1",
+					{"@type": "Event", "name": "Inline Event", "startDate": "2026-09-01T10:00:00"},
+					"https://example.com/events/2"
+				]
+			}`,
+			source: testSource,
+			check: func(t *testing.T, got events.EventInput) {
+				t.Helper()
+				if len(got.Occurrences) != 1 {
+					t.Fatalf("Occurrences len = %d, want 1 (URL references skipped)", len(got.Occurrences))
+				}
+				if got.Occurrences[0].StartDate != "2026-09-01T10:00:00" {
+					t.Errorf("Occurrences[0].StartDate = %q", got.Occurrences[0].StartDate)
+				}
+			},
+		},
+		{
+			name: "subEvent without startDate skipped",
+			raw: `{
+				"@type": "EventSeries",
+				"name": "Partial Series",
+				"startDate": "2026-10-01T10:00:00",
+				"subEvent": [
+					{"@type": "Event", "name": "Has Date", "startDate": "2026-10-01T10:00:00"},
+					{"@type": "Event", "name": "No Date"},
+					{"@type": "Event", "name": "Also Has Date", "startDate": "2026-10-02T10:00:00"}
+				]
+			}`,
+			source: testSource,
+			check: func(t *testing.T, got events.EventInput) {
+				t.Helper()
+				if len(got.Occurrences) != 2 {
+					t.Fatalf("Occurrences len = %d, want 2 (no-date sub-event skipped)", len(got.Occurrences))
+				}
+				if got.Occurrences[0].StartDate != "2026-10-01T10:00:00" {
+					t.Errorf("Occurrences[0].StartDate = %q", got.Occurrences[0].StartDate)
+				}
+				if got.Occurrences[1].StartDate != "2026-10-02T10:00:00" {
+					t.Errorf("Occurrences[1].StartDate = %q", got.Occurrences[1].StartDate)
+				}
+			},
+		},
+		{
+			name: "event without subEvent unchanged",
+			raw: `{
+				"@type": "Event",
+				"name": "Simple Concert",
+				"startDate": "2026-11-01T20:00:00",
+				"endDate": "2026-11-01T22:00:00"
+			}`,
+			source: testSource,
+			check: func(t *testing.T, got events.EventInput) {
+				t.Helper()
+				if len(got.Occurrences) != 0 {
+					t.Errorf("Occurrences len = %d, want 0 for event without subEvent", len(got.Occurrences))
+				}
+				if got.StartDate != "2026-11-01T20:00:00" {
+					t.Errorf("StartDate = %q", got.StartDate)
+				}
+			},
+		},
 	}
 
 	// Suppress unused variable warnings for boolTrue/boolFalse — they are
@@ -644,6 +772,81 @@ func TestNormalizeJSONLDEvent(t *testing.T) {
 			}
 			if tc.check != nil {
 				tc.check(t, got)
+			}
+		})
+	}
+}
+
+// TestParseSubEvents covers the parseSubEvents helper function.
+func TestParseSubEvents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		raw       string
+		wantCount int
+		wantNil   bool
+	}{
+		{
+			name:    "nil input",
+			raw:     ``,
+			wantNil: true,
+		},
+		{
+			name:    "null string",
+			raw:     `null`,
+			wantNil: true,
+		},
+		{
+			name:      "single object",
+			raw:       `{"@type":"Event","startDate":"2026-06-01"}`,
+			wantCount: 1,
+		},
+		{
+			name:      "array of three objects",
+			raw:       `[{"@type":"Event","startDate":"2026-06-01"},{"@type":"Event","startDate":"2026-06-02"},{"@type":"Event","startDate":"2026-06-03"}]`,
+			wantCount: 3,
+		},
+		{
+			name:      "array with mixed objects and URL strings",
+			raw:       `["https://example.com/1",{"@type":"Event","startDate":"2026-06-01"},"https://example.com/2",{"@type":"Event","startDate":"2026-06-02"}]`,
+			wantCount: 2,
+		},
+		{
+			name:    "single string URL reference",
+			raw:     `"https://example.com/events/1"`,
+			wantNil: true,
+		},
+		{
+			name:    "malformed JSON",
+			raw:     `[{not valid`,
+			wantNil: true,
+		},
+		{
+			name:    "empty array",
+			raw:     `[]`,
+			wantNil: true,
+		},
+		{
+			name:      "array with all URL strings filtered out yields nil result",
+			raw:       `["https://example.com/1","https://example.com/2"]`,
+			wantCount: 0,
+			wantNil:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := parseSubEvents(json.RawMessage(tc.raw))
+			if tc.wantNil {
+				if got != nil {
+					t.Errorf("parseSubEvents(%s) = %v (len %d), want nil", tc.raw, got, len(got))
+				}
+				return
+			}
+			if len(got) != tc.wantCount {
+				t.Errorf("parseSubEvents(%s) len = %d, want %d", tc.raw, len(got), tc.wantCount)
 			}
 		})
 	}
@@ -1162,5 +1365,287 @@ func TestNormalizeRawEvents_EmptyURLNoCollision(t *testing.T) {
 	// Each row should produce its own EventInput — they must NOT be merged.
 	if len(valid) != 3 {
 		t.Errorf("expected 3 separate EventInputs for empty-URL rows with same name, got %d", len(valid))
+	}
+}
+
+// makeJSONLDRaw builds a minimal JSON-LD Event json.RawMessage for testing.
+func makeJSONLDRaw(name, url, startDate string) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"@type":"Event","name":%q,"url":%q,"startDate":%q}`, name, url, startDate))
+}
+
+// TestGroupJSONLDEvents covers the groupJSONLDEvents function.
+func TestGroupJSONLDEvents(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	tests := []struct {
+		name        string
+		raws        []json.RawMessage
+		limit       int
+		wantCount   int
+		wantSkipped int
+		check       func(t *testing.T, valid []events.EventInput)
+	}{
+		{
+			name: "three events same URL+Name → one EventInput with 3 Occurrences",
+			raws: []json.RawMessage{
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-01T20:00:00"),
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-02T20:00:00"),
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-03T20:00:00"),
+			},
+			wantCount:   1,
+			wantSkipped: 0,
+			check: func(t *testing.T, valid []events.EventInput) {
+				t.Helper()
+				if valid[0].Name != "Hamlet" {
+					t.Errorf("expected Name=Hamlet, got %q", valid[0].Name)
+				}
+				if len(valid[0].Occurrences) != 3 {
+					t.Errorf("expected 3 Occurrences, got %d", len(valid[0].Occurrences))
+				}
+			},
+		},
+		{
+			name: "different shows not grouped",
+			raws: []json.RawMessage{
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-01T20:00:00"),
+				makeJSONLDRaw("Macbeth", "https://example.com/macbeth", "2026-06-02T20:00:00"),
+			},
+			wantCount:   2,
+			wantSkipped: 0,
+			check: func(t *testing.T, valid []events.EventInput) {
+				t.Helper()
+				if len(valid[0].Occurrences) != 0 {
+					t.Errorf("expected 0 Occurrences for first event, got %d", len(valid[0].Occurrences))
+				}
+				if len(valid[1].Occurrences) != 0 {
+					t.Errorf("expected 0 Occurrences for second event, got %d", len(valid[1].Occurrences))
+				}
+			},
+		},
+		{
+			name: "mixed — some grouped, some standalone",
+			raws: []json.RawMessage{
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-01T20:00:00"),
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-02T20:00:00"),
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-03T20:00:00"),
+				makeJSONLDRaw("The Tempest", "https://example.com/tempest", "2026-06-05T19:30:00"),
+			},
+			wantCount:   2,
+			wantSkipped: 0,
+			check: func(t *testing.T, valid []events.EventInput) {
+				t.Helper()
+				// First output = Hamlet (3 occurrences).
+				if valid[0].Name != "Hamlet" {
+					t.Errorf("expected first event Name=Hamlet, got %q", valid[0].Name)
+				}
+				if len(valid[0].Occurrences) != 3 {
+					t.Errorf("expected 3 Occurrences for Hamlet, got %d", len(valid[0].Occurrences))
+				}
+				// Second output = The Tempest (no occurrences).
+				if valid[1].Name != "The Tempest" {
+					t.Errorf("expected second event Name=The Tempest, got %q", valid[1].Name)
+				}
+				if len(valid[1].Occurrences) != 0 {
+					t.Errorf("expected 0 Occurrences for The Tempest, got %d", len(valid[1].Occurrences))
+				}
+			},
+		},
+		{
+			name: "events without URL not grouped",
+			raws: []json.RawMessage{
+				makeJSONLDRaw("Same Name", "", "2026-06-01T20:00:00"),
+				makeJSONLDRaw("Same Name", "", "2026-06-02T20:00:00"),
+			},
+			wantCount:   2,
+			wantSkipped: 0,
+			check: func(t *testing.T, valid []events.EventInput) {
+				t.Helper()
+				if len(valid[0].Occurrences) != 0 {
+					t.Errorf("expected 0 Occurrences for first no-URL event, got %d", len(valid[0].Occurrences))
+				}
+				if len(valid[1].Occurrences) != 0 {
+					t.Errorf("expected 0 Occurrences for second no-URL event, got %d", len(valid[1].Occurrences))
+				}
+			},
+		},
+		{
+			name: "limit caps output EventInputs",
+			raws: []json.RawMessage{
+				makeJSONLDRaw("Event A", "https://example.com/a", "2026-06-01T20:00:00"),
+				makeJSONLDRaw("Event B", "https://example.com/b", "2026-06-02T20:00:00"),
+				makeJSONLDRaw("Event C", "https://example.com/c", "2026-06-03T20:00:00"),
+				makeJSONLDRaw("Event D", "https://example.com/d", "2026-06-04T20:00:00"),
+				makeJSONLDRaw("Event E", "https://example.com/e", "2026-06-05T20:00:00"),
+			},
+			limit:       2,
+			wantCount:   2,
+			wantSkipped: 0,
+		},
+		{
+			name: "invalid event in group skipped",
+			raws: []json.RawMessage{
+				// Missing name → NormalizeJSONLDEvent will fail.
+				json.RawMessage(`{"@type":"Event","url":"https://example.com/x","startDate":"2026-06-01T20:00:00"}`),
+			},
+			wantCount:   0,
+			wantSkipped: 1,
+		},
+		{
+			name: "single event passthrough",
+			raws: []json.RawMessage{
+				makeJSONLDRaw("Solo Show", "https://example.com/solo", "2026-06-01T20:00:00"),
+			},
+			wantCount:   1,
+			wantSkipped: 0,
+			check: func(t *testing.T, valid []events.EventInput) {
+				t.Helper()
+				if len(valid[0].Occurrences) != 0 {
+					t.Errorf("expected 0 Occurrences for single event, got %d", len(valid[0].Occurrences))
+				}
+			},
+		},
+		{
+			name: "multi-event group preserves first event's metadata",
+			raws: []json.RawMessage{
+				json.RawMessage(`{"@type":"Event","name":"Hamlet","url":"https://example.com/hamlet","startDate":"2026-06-01T20:00:00","description":"First night","location":{"@type":"Place","name":"Royal Theatre"},"image":"https://example.com/hamlet.jpg"}`),
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-02T20:00:00"),
+				makeJSONLDRaw("Hamlet", "https://example.com/hamlet", "2026-06-03T20:00:00"),
+			},
+			wantCount:   1,
+			wantSkipped: 0,
+			check: func(t *testing.T, valid []events.EventInput) {
+				t.Helper()
+				evt := valid[0]
+				if evt.Description != "First night" {
+					t.Errorf("expected Description=%q from first event, got %q", "First night", evt.Description)
+				}
+				if evt.Location == nil || evt.Location.Name != "Royal Theatre" {
+					vn := "<nil>"
+					if evt.Location != nil {
+						vn = evt.Location.Name
+					}
+					t.Errorf("expected Location.Name=Royal Theatre, got %q", vn)
+				}
+				if len(evt.Occurrences) != 3 {
+					t.Errorf("expected 3 Occurrences, got %d", len(evt.Occurrences))
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			valid, skipped := groupJSONLDEvents(tc.raws, src, tc.limit, logger)
+
+			if len(valid) != tc.wantCount {
+				t.Errorf("expected %d valid EventInputs, got %d", tc.wantCount, len(valid))
+			}
+			if skipped != tc.wantSkipped {
+				t.Errorf("expected %d skipped, got %d", tc.wantSkipped, skipped)
+			}
+			if tc.check != nil && len(valid) > 0 {
+				tc.check(t, valid)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SubEvent + Grouping interaction tests
+// ---------------------------------------------------------------------------
+
+// TestGroupJSONLDEvents_SubEventPreserved verifies that when an EventSeries
+// with subEvent-derived Occurrences lands in a multi-event group, the richer
+// subEvent Occurrences (which include endDate and doorTime) are preserved
+// rather than being overwritten by the group's top-level startDates.
+func TestGroupJSONLDEvents_SubEventPreserved(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	// An EventSeries with subEvents appears twice with the same URL+Name
+	// (this could happen if a page duplicates the JSON-LD block).
+	seriesJSON := json.RawMessage(`{
+		"@type": "EventSeries",
+		"name": "Jazz Festival",
+		"url": "https://example.com/jazz",
+		"startDate": "2026-07-10T20:00:00",
+		"subEvent": [
+			{"@type": "Event", "startDate": "2026-07-10T20:00:00", "endDate": "2026-07-10T23:00:00", "doorTime": "2026-07-10T19:00:00"},
+			{"@type": "Event", "startDate": "2026-07-11T19:00:00", "endDate": "2026-07-11T22:00:00"},
+			{"@type": "Event", "startDate": "2026-07-12T20:00:00", "endDate": "2026-07-12T23:30:00"}
+		]
+	}`)
+
+	// Two copies of the same EventSeries → forms a multi-event group.
+	raws := []json.RawMessage{seriesJSON, seriesJSON}
+
+	valid, skipped := groupJSONLDEvents(raws, src, 0, logger)
+
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped, got %d", skipped)
+	}
+	if len(valid) != 1 {
+		t.Fatalf("expected 1 EventInput, got %d", len(valid))
+	}
+
+	evt := valid[0]
+	// The subEvent-derived Occurrences from NormalizeJSONLDEvent should be
+	// preserved (3 occurrences with endDate+doorTime), not overwritten by
+	// the 2-item group's top-level startDates.
+	if len(evt.Occurrences) != 3 {
+		t.Fatalf("expected 3 Occurrences from subEvents, got %d", len(evt.Occurrences))
+	}
+	// Verify richer metadata is preserved.
+	if evt.Occurrences[0].EndDate != "2026-07-10T23:00:00" {
+		t.Errorf("Occurrences[0].EndDate = %q, want 2026-07-10T23:00:00", evt.Occurrences[0].EndDate)
+	}
+	if evt.Occurrences[0].DoorTime != "2026-07-10T19:00:00" {
+		t.Errorf("Occurrences[0].DoorTime = %q, want 2026-07-10T19:00:00", evt.Occurrences[0].DoorTime)
+	}
+}
+
+// TestGroupJSONLDEvents_SingleEventWithSubEvents verifies that a single-group
+// EventSeries with subEvents correctly preserves the subEvent Occurrences.
+func TestGroupJSONLDEvents_SingleEventWithSubEvents(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+	logger := zerolog.Nop()
+
+	raws := []json.RawMessage{
+		json.RawMessage(`{
+			"@type": "EventSeries",
+			"name": "Workshop Series",
+			"url": "https://example.com/workshop",
+			"startDate": "2026-08-01T10:00:00",
+			"subEvent": [
+				{"@type": "Event", "startDate": "2026-08-01T10:00:00", "endDate": "2026-08-01T12:00:00"},
+				{"@type": "Event", "startDate": "2026-08-02T10:00:00", "endDate": "2026-08-02T12:00:00"}
+			]
+		}`),
+	}
+
+	valid, skipped := groupJSONLDEvents(raws, src, 0, logger)
+
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped, got %d", skipped)
+	}
+	if len(valid) != 1 {
+		t.Fatalf("expected 1 EventInput, got %d", len(valid))
+	}
+
+	evt := valid[0]
+	if len(evt.Occurrences) != 2 {
+		t.Errorf("expected 2 Occurrences from subEvents, got %d", len(evt.Occurrences))
+	}
+	if evt.Occurrences[0].EndDate != "2026-08-01T12:00:00" {
+		t.Errorf("Occurrences[0].EndDate = %q, want 2026-08-01T12:00:00", evt.Occurrences[0].EndDate)
 	}
 }

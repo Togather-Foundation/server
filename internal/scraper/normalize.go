@@ -29,6 +29,7 @@ type rawEvent struct {
 	IsAccessibleForFree json.RawMessage `json:"isAccessibleForFree"` // may be bool or "True"/"False"
 	SameAs              json.RawMessage `json:"sameAs"`              // may be string or []string
 	Identifier          json.RawMessage `json:"identifier"`          // may be string or {"@value":"..."}
+	SubEvent            json.RawMessage `json:"subEvent"`            // may be object or array of Event objects
 }
 
 // NormalizeJSONLDEvent converts a raw JSON-LD Event object (schema.org) to an
@@ -89,7 +90,93 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		},
 	}
 
+	// Unfold subEvent objects into Occurrences.
+	if subs := parseSubEvents(re.SubEvent); len(subs) > 0 {
+		if occs := occurrencesFromRawMessages(subs); len(occs) > 0 {
+			evt.Occurrences = occs
+		}
+	}
+
 	return evt, nil
+}
+
+// parseSubEvents splits a JSON-LD subEvent field into individual raw JSON
+// objects suitable for date extraction. It does NOT validate @type — the
+// caller is responsible for unmarshalling each returned message.
+//
+// Input shapes handled:
+//   - Single JSON object → returned as a one-element slice
+//   - JSON array of objects → each non-string element returned
+//   - Single string / array of strings (URL references) → skipped (nil)
+//   - nil, empty, or "null" → nil
+//
+// Returns nil (not an empty slice) when no usable objects are found.
+func parseSubEvents(raw json.RawMessage) []json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+
+	// Try as array first.
+	trimmed := strings.TrimSpace(string(raw))
+	if strings.HasPrefix(trimmed, "[") {
+		var arr []json.RawMessage
+		if err := json.Unmarshal(raw, &arr); err != nil {
+			return nil
+		}
+		var result []json.RawMessage
+		for _, item := range arr {
+			// Skip string-only items (URL references).
+			var s string
+			if json.Unmarshal(item, &s) == nil {
+				continue
+			}
+			result = append(result, item)
+		}
+		if len(result) == 0 {
+			return nil
+		}
+		return result
+	}
+
+	// Try as single object (not a string).
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		// It's a plain string URL reference — skip.
+		return nil
+	}
+
+	// Single object.
+	return []json.RawMessage{raw}
+}
+
+// occurrencesFromRawMessages extracts OccurrenceInput values from a slice of
+// raw JSON-LD event messages. Each message is partially unmarshalled to read
+// startDate, endDate, and doorTime. Messages without a startDate are skipped.
+//
+// This helper is shared by NormalizeJSONLDEvent (for subEvent unfolding) and
+// groupJSONLDEvents (for URL+Name multi-occurrence consolidation).
+func occurrencesFromRawMessages(raws []json.RawMessage) []events.OccurrenceInput {
+	var occs []events.OccurrenceInput
+	for _, raw := range raws {
+		var re struct {
+			StartDate json.RawMessage `json:"startDate"`
+			EndDate   json.RawMessage `json:"endDate"`
+			DoorTime  json.RawMessage `json:"doorTime"`
+		}
+		if err := json.Unmarshal(raw, &re); err != nil {
+			continue
+		}
+		sd := parseDate(re.StartDate)
+		if sd == "" {
+			continue
+		}
+		occs = append(occs, events.OccurrenceInput{
+			StartDate: sd,
+			EndDate:   parseDate(re.EndDate),
+			DoorTime:  parseDate(re.DoorTime),
+		})
+	}
+	return occs
 }
 
 // RawEvent holds extracted text fields from Tier 1 CSS selector scraping.
