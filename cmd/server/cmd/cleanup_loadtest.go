@@ -222,6 +222,19 @@ func handleSourceIDCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.C
 		return nil
 	}
 
+	// NULL out duplicate_of_event_id references before deleting to avoid FK violation.
+	_, err = pool.Exec(ctx,
+		`UPDATE event_review_queue
+		 SET duplicate_of_event_id = NULL
+		 WHERE duplicate_of_event_id IN (
+		   SELECT DISTINCT event_id FROM event_sources WHERE source_id = $1
+		 )`,
+		sourceID,
+	)
+	if err != nil {
+		return fmt.Errorf("clear review queue references for source %s: %w", sourceID, err)
+	}
+
 	result, err := pool.Exec(ctx,
 		`DELETE FROM events
 		 WHERE id IN (
@@ -264,6 +277,21 @@ func handleLegacyCleanup(ctx context.Context, pool *pgxpool.Pool, cmd *cobra.Com
 	if dryRun {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "[legacy] dry-run: no changes made")
 		return nil
+	}
+
+	// NULL out duplicate_of_event_id references before deleting to avoid FK violation
+	// (event_review_queue.duplicate_of_event_id references events(id) without ON DELETE SET NULL).
+	_, err = pool.Exec(ctx,
+		`UPDATE event_review_queue
+		 SET duplicate_of_event_id = NULL
+		 WHERE duplicate_of_event_id IN (
+		   SELECT id FROM events
+		   WHERE image_url  LIKE 'https://images.example.com/events/%.jpg'
+		      OR public_url LIKE 'https://example.com/events/%'
+		 )`,
+	)
+	if err != nil {
+		return fmt.Errorf("clear review queue references for legacy events: %w", err)
 	}
 
 	result, err := pool.Exec(ctx,
