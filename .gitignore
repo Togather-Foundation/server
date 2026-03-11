@@ -88,7 +88,7 @@ reports/
 .specify/
 
 # beads
-# beads state (kept on beads-sync)
+# beads JSONL backup (state lives in .beads/dolt/, not this file)
 .beads/issues.jsonl
 
 # Deployment files

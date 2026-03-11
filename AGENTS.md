@@ -95,13 +95,28 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 
 ```bash
 bd ready                              # find unblocked work
-bd update <id> --status in_progress  # claim before starting
+bd update <id> --claim               # atomically claim (assignee + in_progress)
 bd close <id> --reason "..."         # close when done
 ```
 
-Beads state is persisted in a local Dolt SQL server and auto-flushed to `.beads/issues.jsonl`, which is committed to git. There is no Dolt remote — `bd dolt push` will fail. Beads travel with the repo via normal `git push`.
+Beads state is persisted in a local Dolt SQL database (`.beads/dolt/`). Every `bd` write auto-commits to Dolt — no manual sync or flush is needed.
 
-Never merge `beads-sync` into main. For full workflow: `bd prime`.
+**This project has no Dolt remote configured.** `bd dolt push` / `bd dolt pull` will fail. That's fine — beads state lives locally and doesn't need to be shared via Dolt.
+
+**Commands that do NOT exist (agents: stop hallucinating these):**
+- ~~`bd sync`~~ — removed in v0.56
+- ~~`bd flush`~~ — never existed
+- ~~`bd stats`~~ — use `bd status` instead
+- ~~`bd edit`~~ — opens $EDITOR, blocks agents; use `bd update --notes` instead
+
+**Useful commands beyond the basics:**
+- `bd status` — project health (open/closed/blocked counts)
+- `bd backup` — export JSONL backup to `.beads/backup/`
+- `bd remember "insight"` — persistent memory across sessions
+- `bd memories <keyword>` — search remembered insights
+- `bd doctor` — diagnose configuration problems
+
+For full workflow context: `bd prime`.
 
 ## Session Close Protocol
 
