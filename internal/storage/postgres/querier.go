@@ -141,6 +141,8 @@ type Querier interface {
 	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
+	// Get the pending review queue entry for an event by its ULID, if any.
+	GetPendingReviewByEventUlid(ctx context.Context, eventUlid string) (GetPendingReviewByEventUlidRow, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
 	// Check if a url_norm was submitted within the given interval (for dedup).
@@ -280,6 +282,8 @@ type Querier interface {
 	UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error)
 	// Update existing review entry (for resubmissions with same issues)
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
+	// Update only the warnings JSON of a review queue entry (used for companion warning dismissal).
+	UpdateReviewWarnings(ctx context.Context, arg UpdateReviewWarningsParams) error
 	// Mark a scraper run as completed with event counts.
 	UpdateScraperRunCompleted(ctx context.Context, arg UpdateScraperRunCompletedParams) error
 	// Mark a scraper run as failed with an error message.

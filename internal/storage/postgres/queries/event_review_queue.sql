@@ -196,3 +196,39 @@ UPDATE events
    WHERE status = 'pending' AND event_start_time < NOW()
  )
    AND lifecycle_state = 'pending_review';
+
+-- name: GetPendingReviewByEventUlid :one
+-- Get the pending review queue entry for an event by its ULID, if any.
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at,
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
+ WHERE e.ulid = sqlc.arg('event_ulid')
+   AND r.status = 'pending'
+ LIMIT 1;
+
+-- name: UpdateReviewWarnings :exec
+-- Update only the warnings JSON of a review queue entry (used for companion warning dismissal).
+UPDATE event_review_queue
+   SET warnings = sqlc.arg('warnings'),
+       updated_at = NOW()
+ WHERE id = sqlc.arg('id');

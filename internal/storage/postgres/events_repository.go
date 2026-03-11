@@ -2003,6 +2003,34 @@ func (r EventReviewQueue) GetUpdatedAt() pgtype.Timestamptz      { return r.Upda
 func (r EventReviewQueue) GetDuplicateOfEventID() pgtype.UUID    { return r.DuplicateOfEventID }
 func (r EventReviewQueue) GetDuplicateOfEventUlid() pgtype.Text  { return pgtype.Text{} } // Not available without JOIN
 
+// Implement reviewQueueRowFields for GetPendingReviewByEventUlidRow
+func (r GetPendingReviewByEventUlidRow) GetID() int32                     { return r.ID }
+func (r GetPendingReviewByEventUlidRow) GetEventID() pgtype.UUID          { return r.EventID }
+func (r GetPendingReviewByEventUlidRow) GetEventUlid() string             { return r.EventUlid }
+func (r GetPendingReviewByEventUlidRow) GetOriginalPayload() []byte       { return r.OriginalPayload }
+func (r GetPendingReviewByEventUlidRow) GetNormalizedPayload() []byte     { return r.NormalizedPayload }
+func (r GetPendingReviewByEventUlidRow) GetWarnings() []byte              { return r.Warnings }
+func (r GetPendingReviewByEventUlidRow) GetSourceID() pgtype.Text         { return r.SourceID }
+func (r GetPendingReviewByEventUlidRow) GetSourceExternalID() pgtype.Text { return r.SourceExternalID }
+func (r GetPendingReviewByEventUlidRow) GetDedupHash() pgtype.Text        { return r.DedupHash }
+func (r GetPendingReviewByEventUlidRow) GetEventStartTime() pgtype.Timestamptz {
+	return r.EventStartTime
+}
+func (r GetPendingReviewByEventUlidRow) GetEventEndTime() pgtype.Timestamptz { return r.EventEndTime }
+func (r GetPendingReviewByEventUlidRow) GetStatus() string                   { return r.Status }
+func (r GetPendingReviewByEventUlidRow) GetReviewedBy() pgtype.Text          { return r.ReviewedBy }
+func (r GetPendingReviewByEventUlidRow) GetReviewedAt() pgtype.Timestamptz   { return r.ReviewedAt }
+func (r GetPendingReviewByEventUlidRow) GetReviewNotes() pgtype.Text         { return r.ReviewNotes }
+func (r GetPendingReviewByEventUlidRow) GetRejectionReason() pgtype.Text     { return r.RejectionReason }
+func (r GetPendingReviewByEventUlidRow) GetCreatedAt() pgtype.Timestamptz    { return r.CreatedAt }
+func (r GetPendingReviewByEventUlidRow) GetUpdatedAt() pgtype.Timestamptz    { return r.UpdatedAt }
+func (r GetPendingReviewByEventUlidRow) GetDuplicateOfEventID() pgtype.UUID {
+	return r.DuplicateOfEventID
+}
+func (r GetPendingReviewByEventUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
+	return r.DuplicateOfEventUlid
+}
+
 // Note: ApproveReviewRow, RejectReviewRow, CreateReviewQueueEntryRow, and
 // UpdateReviewQueueEntryRow no longer exist as separate types — these queries
 // now use RETURNING * and return EventReviewQueue directly (which already
@@ -2152,6 +2180,36 @@ func (r *EventRepository) GetReviewQueueEntry(ctx context.Context, id int) (*eve
 	}
 
 	return convertGetReviewQueueEntryRow(row), nil
+}
+
+// GetPendingReviewByEventUlid returns the pending review queue entry for the given event ULID,
+// or (nil, nil) if no pending review exists.
+func (r *EventRepository) GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetPendingReviewByEventUlid(ctx, eventULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get pending review by event ulid %s: %w", eventULID, err)
+	}
+
+	return convertReviewQueueRowGeneric(row), nil
+}
+
+// UpdateReviewWarnings updates only the warnings JSON on a review queue entry.
+// Used for best-effort companion warning dismissal after a not-duplicate decision.
+func (r *EventRepository) UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error {
+	queries := Queries{db: r.queryer()}
+	err := queries.UpdateReviewWarnings(ctx, UpdateReviewWarningsParams{
+		ID:       int32(id),
+		Warnings: warnings,
+	})
+	if err != nil {
+		return fmt.Errorf("update review warnings id=%d: %w", id, err)
+	}
+	return nil
 }
 
 // ListReviewQueue lists review queue entries with filters and pagination

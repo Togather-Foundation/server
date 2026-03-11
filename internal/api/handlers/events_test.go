@@ -187,6 +187,12 @@ func (s stubEventsRepo) InsertNotDuplicate(_ context.Context, _ string, _ string
 func (s stubEventsRepo) IsNotDuplicate(_ context.Context, _ string, _ string) (bool, error) {
 	return false, nil
 }
+func (s stubEventsRepo) GetPendingReviewByEventUlid(_ context.Context, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+func (s stubEventsRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
+	return nil
+}
 
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{

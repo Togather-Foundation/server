@@ -745,6 +745,14 @@ func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, ev
 	return m.notDuplicates[a+"|"+b], nil
 }
 
+func (m *MockRepository) GetPendingReviewByEventUlid(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *MockRepository) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
+	return nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

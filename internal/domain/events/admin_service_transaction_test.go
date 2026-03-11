@@ -290,6 +290,12 @@ func (m *mockTransactionalRepo) InsertNotDuplicate(ctx context.Context, eventIDa
 func (m *mockTransactionalRepo) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
 	return false, nil
 }
+func (m *mockTransactionalRepo) GetPendingReviewByEventUlid(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+func (m *mockTransactionalRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
+	return nil
+}
 
 // mockTxCommitter implements TxCommitter
 type mockTxCommitter struct {

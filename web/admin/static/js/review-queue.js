@@ -133,10 +133,13 @@
                     e.preventDefault();
                     notADuplicate(id);
                     break;
-                case 'merge':
+                case 'merge': {
                     e.preventDefault();
-                    showMergeModal(id);
+                    const mergeBtn = target.closest('[data-action="merge"]');
+                    const dupEventId = mergeBtn ? mergeBtn.dataset.duplicateEventId : '';
+                    mergeDirect(id, dupEventId);
                     break;
+                }
                 case 'show-more':
                     e.preventDefault();
                     showMoreText(target);
@@ -417,6 +420,14 @@
                                         <a href="/admin/events/${matchUlid}" class="text-reset">${matchName}</a>
                                         <span class="badge bg-purple-lt ms-1">${similarity}%</span>
                                     </div>
+                                    <div id="dup-detail-${matchUlid}" data-dup-ulid="${matchUlid}" class="mt-2 mb-2">
+                                        <div class="text-center text-muted small py-2">
+                                            <div class="spinner-border spinner-border-sm" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            Loading duplicate event details...
+                                        </div>
+                                    </div>
                                 `;
                             } else {
                                 warningHtml += `
@@ -628,6 +639,17 @@
                 </div>
             </td>
         `;
+
+        // Fetch and render inline duplicate diffs for each potential_duplicate match
+        const dupContainers = detailRow.querySelectorAll('[data-dup-ulid]');
+        if (dupContainers.length > 0) {
+            const thisEventData = detail.normalized || null;
+            dupContainers.forEach(container => {
+                const dupUlid = container.dataset.dupUlid;
+                if (!dupUlid) return;
+                fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData);
+            });
+        }
     }
     
     /**
@@ -1042,6 +1064,73 @@
         }
     }
     
+    /**
+     * Fetch a candidate event and render its summary inline in the fold-down.
+     * Shows a side-by-side diff against the current review entry's normalized data.
+     * @param {HTMLElement} container - The placeholder div to populate
+     * @param {string} dupUlid - ULID of the candidate event to fetch
+     * @param {Object|null} thisEventData - Normalized data of the current review entry for diff highlighting
+     */
+    async function fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData) {
+        try {
+            const event = await API.request('/api/v1/events/' + encodeURIComponent(dupUlid));
+            const html = `
+                <div class="row g-2 mt-1">
+                    <div class="col-md-6">
+                        <div class="card bg-light">
+                            <div class="card-header py-1"><small class="text-muted fw-semibold">This event</small></div>
+                            <div class="card-body py-2">${renderMergeEventSummary(thisEventData, event)}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-light">
+                            <div class="card-header py-1"><small class="text-muted fw-semibold">Candidate duplicate</small></div>
+                            <div class="card-body py-2">${renderMergeEventSummary(event, thisEventData)}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+        } catch (err) {
+            console.error('Failed to fetch duplicate event:', err);
+            container.innerHTML = `<div class="text-muted small">Could not load duplicate details: ${escapeHtml(err.message || 'unknown error')}</div>`;
+        }
+    }
+
+    /**
+     * Directly merge a duplicate without showing a modal.
+     * Uses the duplicate event ID already stored on the Merge Duplicate button.
+     * Shows a spinner on the button while the request is in flight.
+     * @param {string} id - Review queue entry ID
+     * @param {string} duplicateEventId - ULID of the primary event to merge into
+     */
+    async function mergeDirect(id, duplicateEventId) {
+        if (!duplicateEventId) {
+            showToast('No duplicate event ID available to merge', 'error');
+            return;
+        }
+        const btn = document.querySelector(`[data-action="merge"][data-id="${id}"]`);
+        if (btn) setLoading(btn, true);
+        try {
+            await API.reviewQueue.merge(id, duplicateEventId);
+            showToast('Events merged successfully', 'success');
+            if (currentFilter === 'pending') {
+                removeEntryFromList(id);
+                const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
+                if (mergedBadge) {
+                    const currentCount = parseInt(mergedBadge.textContent) || 0;
+                    mergedBadge.textContent = currentCount + 1;
+                }
+            } else {
+                loadEntries();
+            }
+        } catch (err) {
+            console.error('Failed to merge events:', err);
+            showToast(err.message || 'Failed to merge events', 'error');
+            if (btn) setLoading(btn, false);
+        }
+    }
+
     /**
      * Show merge modal dialog
      * Opens Bootstrap modal for confirming merge of duplicate event.

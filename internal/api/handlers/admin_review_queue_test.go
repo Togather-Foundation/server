@@ -284,6 +284,19 @@ func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, ev
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepository) GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {
+	args := m.Called(ctx, eventULID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
+}
+
+func (m *MockRepository) UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error {
+	args := m.Called(ctx, id, warnings)
+	return args.Error(0)
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{
@@ -1192,4 +1205,186 @@ func TestFixReview_InvalidJSON(t *testing.T) {
 	handler.FixReview(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// ---------------------------------------------------------------------------
+// Tests for dismissCompanionDuplicateWarning (srv-ihnz7)
+// ---------------------------------------------------------------------------
+
+// companionReviewEntry builds a ReviewQueueEntry for a companion event with
+// warnings that include a potential_duplicate match pointing at targetULID.
+func companionReviewEntry(id int, companionULID, targetULID string) *events.ReviewQueueEntry {
+	warnings := []events.ValidationWarning{
+		{
+			Code:    "potential_duplicate",
+			Message: "Potential duplicate event detected",
+			Details: map[string]any{
+				"matches": []any{
+					map[string]any{
+						"ulid":       targetULID,
+						"name":       "Target Event",
+						"similarity": 0.95,
+					},
+				},
+			},
+		},
+	}
+	warningsJSON, _ := json.Marshal(warnings)
+	entry := testReviewQueueEntry(id, companionULID)
+	entry.Warnings = warningsJSON
+	return entry
+}
+
+// companionReviewEntryMultiMatch builds a companion entry with two duplicate
+// matches — the one pointing at targetULID and an unrelated one.
+func companionReviewEntryMultiMatch(id int, companionULID, targetULID, otherULID string) *events.ReviewQueueEntry {
+	warnings := []events.ValidationWarning{
+		{
+			Code:    "potential_duplicate",
+			Message: "Potential duplicate event detected",
+			Details: map[string]any{
+				"matches": []any{
+					map[string]any{
+						"ulid":       targetULID,
+						"name":       "Target Event",
+						"similarity": 0.95,
+					},
+					map[string]any{
+						"ulid":       otherULID,
+						"name":       "Other Event",
+						"similarity": 0.80,
+					},
+				},
+			},
+		},
+	}
+	warningsJSON, _ := json.Marshal(warnings)
+	entry := testReviewQueueEntry(id, companionULID)
+	entry.Warnings = warningsJSON
+	return entry
+}
+
+// TestDismissCompanionDuplicateWarning_MatchFound verifies that when the
+// companion review entry has a potential_duplicate warning pointing to
+// eventULID, that match is removed and UpdateReviewWarnings is called.
+func TestDismissCompanionDuplicateWarning_MatchFound(t *testing.T) {
+	mockRepo := new(MockRepository)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	companionULID := "01COMPANION000000000000001"
+	eventULID := "01EVENTTARGET000000000001"
+	companion := companionReviewEntry(42, companionULID, eventULID)
+
+	// Expect lookup then update with empty matches list
+	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, companionULID).Return(companion, nil)
+	mockRepo.On("UpdateReviewWarnings", mock.Anything, 42, mock.MatchedBy(func(b []byte) bool {
+		var ws []events.ValidationWarning
+		if err := json.Unmarshal(b, &ws); err != nil {
+			return false
+		}
+		// The potential_duplicate warning should still be present but with empty matches
+		if len(ws) != 1 || ws[0].Code != "potential_duplicate" {
+			return false
+		}
+		matches, _ := ws[0].Details["matches"].([]any)
+		return len(matches) == 0
+	})).Return(nil)
+
+	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestDismissCompanionDuplicateWarning_MultiMatch verifies that when there are
+// multiple matches in the warning, only the target is removed and the other
+// match is preserved. UpdateReviewWarnings is still called.
+func TestDismissCompanionDuplicateWarning_MultiMatch(t *testing.T) {
+	mockRepo := new(MockRepository)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	companionULID := "01COMPANION000000000000002"
+	eventULID := "01EVENTTARGET000000000002"
+	otherULID := "01OTHEREVNT000000000000001"
+	companion := companionReviewEntryMultiMatch(43, companionULID, eventULID, otherULID)
+
+	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, companionULID).Return(companion, nil)
+	mockRepo.On("UpdateReviewWarnings", mock.Anything, 43, mock.MatchedBy(func(b []byte) bool {
+		var ws []events.ValidationWarning
+		if err := json.Unmarshal(b, &ws); err != nil {
+			return false
+		}
+		if len(ws) != 1 || ws[0].Code != "potential_duplicate" {
+			return false
+		}
+		matches, _ := ws[0].Details["matches"].([]any)
+		if len(matches) != 1 {
+			return false
+		}
+		m, _ := matches[0].(map[string]any)
+		return m["ulid"] == otherULID
+	})).Return(nil)
+
+	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestDismissCompanionDuplicateWarning_NotFound verifies no-op when the
+// companion has no pending review entry.
+func TestDismissCompanionDuplicateWarning_NotFound(t *testing.T) {
+	mockRepo := new(MockRepository)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	companionULID := "01COMPANION000000000000003"
+	eventULID := "01EVENTTARGET000000000003"
+
+	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, companionULID).Return(nil, nil)
+	// UpdateReviewWarnings must NOT be called
+
+	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
+
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "UpdateReviewWarnings")
+}
+
+// TestDismissCompanionDuplicateWarning_FetchError verifies that a fetch error
+// is logged but does not panic.
+func TestDismissCompanionDuplicateWarning_FetchError(t *testing.T) {
+	mockRepo := new(MockRepository)
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	companionULID := "01COMPANION000000000000004"
+	eventULID := "01EVENTTARGET000000000004"
+
+	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, companionULID).Return(nil, errors.New("db error"))
+
+	// Should not panic, UpdateReviewWarnings must NOT be called
+	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
+
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "UpdateReviewWarnings")
 }
