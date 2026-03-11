@@ -94,7 +94,9 @@ type SitemapConfig struct {
 	// This is a safety net to prevent runaway scrapes on large sitemaps.
 	MaxURLs int `yaml:"max_urls" json:"max_urls"`
 	// RateLimitMs is the delay in milliseconds between fetching individual detail
-	// pages. 0 means use the default (500 ms). Set to 1 for minimal delay.
+	// pages. 0 does NOT mean no delay — it means use the default (500 ms).
+	// Set to 1 for minimal delay. A warning is emitted at load time when 0 is
+	// set explicitly, to avoid silent misconfigurations.
 	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
 }
 
@@ -399,6 +401,10 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		}
 	}
 
+	if hasSitemap && !hasURL {
+		warnings = append(warnings, "url: recommended for sitemap sources (used as display/tracking identifier in scraper_run records)")
+	}
+
 	if cfg.Tier < 0 || cfg.Tier > 3 {
 		errs = append(errs, fmt.Sprintf("tier: must be 0, 1, 2, or 3, got %d", cfg.Tier))
 	}
@@ -524,9 +530,13 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		}
 		if cfg.Sitemap.MaxURLs < 0 {
 			errs = append(errs, fmt.Sprintf("sitemap.max_urls: must be >= 0, got %d", cfg.Sitemap.MaxURLs))
+		} else if cfg.Sitemap.MaxURLs > maxSitemapMaxURLs {
+			warnings = append(warnings, fmt.Sprintf("sitemap.max_urls: %d is very high; consider a lower value to avoid overwhelming the target site", cfg.Sitemap.MaxURLs))
 		}
 		if cfg.Sitemap.RateLimitMs < 0 {
 			errs = append(errs, fmt.Sprintf("sitemap.rate_limit_ms: must be >= 0, got %d", cfg.Sitemap.RateLimitMs))
+		} else if cfg.Sitemap.RateLimitMs == 0 {
+			warnings = append(warnings, "sitemap.rate_limit_ms: 0 means use default (500 ms), not no delay; set to 1 for minimal delay")
 		}
 	}
 

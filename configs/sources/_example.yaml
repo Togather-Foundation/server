@@ -149,7 +149,9 @@ max_pages: 5
 #   filter_pattern: "/events/.+"              # Go regex: only scrape event URLs
 #   exclude_pattern: "/events/archive"        # Go regex: reject matched URLs (optional)
 #   max_urls: 100                             # cap per run (default: 200)
-#   rate_limit_ms: 500                        # delay between pages (default: 500)
+#   rate_limit_ms: 500                        # delay between pages (default: 500 ms)
+#                                              # 0 = use default (500 ms), NOT no delay
+#                                              # set to 1 for minimal delay
 #
 # With tier 1 (CSS selectors on detail pages):
 #

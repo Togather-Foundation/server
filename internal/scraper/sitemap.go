@@ -15,6 +15,11 @@ import (
 // defaultSitemapMaxURLs is the default cap on URLs scraped per sitemap run.
 const defaultSitemapMaxURLs = 200
 
+// maxSitemapMaxURLs is the upper bound above which a warning is emitted during
+// config validation. Values above this threshold are not rejected but may
+// overwhelm the target site.
+const maxSitemapMaxURLs = 10000
+
 // defaultSitemapRateLimitMs is the default delay between detail page fetches.
 const defaultSitemapRateLimitMs = 500
 
