@@ -347,7 +347,11 @@ extraction method.
    - `@graph` arrays containing Events
    - `ItemList` with `Event` list items
    - `EventSeries` parent containers
-6. Normalize each event to `EventInput` and submit via batch API
+6. Handle multi-occurrence patterns:
+   - **URL+Name grouping**: Multiple separate Event objects sharing the same URL and Name (Google's recommended pattern for recurring events) are consolidated into a single EventInput with multiple Occurrences
+   - **subEvent unfolding**: `EventSeries` or `Event` objects with inline `subEvent` arrays have their sub-events extracted as Occurrences (URL-only string references are skipped)
+   - **eventSchedule**: `Schedule`-based recurrence patterns (RRULE) are deferred to a follow-up
+7. Normalize each event (or group) to `EventInput` and submit via batch API
 
 Most modern CMS platforms (WordPress, Drupal, Squarespace) inject schema.org JSON-LD
 via SEO plugins. Tier 0 handles these automatically without per-site configuration.
