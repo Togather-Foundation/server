@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/stretchr/testify/require"
 )
@@ -281,7 +282,7 @@ func TestReversedDatesRegressions_srv_67i_WarningCodeConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test through normalization path
 			normalized := events.NormalizeEventInput(tt.input)
-			result, err := events.ValidateEventInputWithWarnings(normalized, nodeDomain, &tt.input)
+			result, err := events.ValidateEventInputWithWarnings(normalized, nodeDomain, &tt.input, config.ValidationConfig{})
 			require.NoError(t, err)
 
 			foundCode := false
@@ -449,7 +450,7 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test through full normalization and validation path
 			normalized := events.NormalizeEventInput(tt.input)
-			result, err := events.ValidateEventInputWithWarnings(normalized, nodeDomain, &tt.input)
+			result, err := events.ValidateEventInputWithWarnings(normalized, nodeDomain, &tt.input, config.ValidationConfig{})
 			require.NoError(t, err)
 
 			if !tt.wantWarning {
@@ -640,7 +641,7 @@ func TestReversedDatesRegressions_WarningMessageContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			normalized := events.NormalizeEventInput(tt.input)
-			result, err := events.ValidateEventInputWithWarnings(normalized, nodeDomain, &tt.input)
+			result, err := events.ValidateEventInputWithWarnings(normalized, nodeDomain, &tt.input, config.ValidationConfig{})
 			require.NoError(t, err)
 
 			found := false

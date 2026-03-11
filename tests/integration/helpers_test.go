@@ -243,6 +243,9 @@ func testConfig(dbURL string) config.Config {
 			Level:  "debug",
 			Format: "json",
 		},
+		Validation: config.ValidationConfig{
+			AllowTestDomains: true,
+		},
 		Environment:     "test",
 		DefaultTimezone: "America/Toronto",
 	}

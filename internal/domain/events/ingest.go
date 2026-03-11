@@ -26,6 +26,28 @@ type IngestResult struct {
 	OrganizerULID string // ULID of created/matched organization (for reconciliation)
 }
 
+// IngestOptions holds optional parameters for Ingest and IngestWithIdempotency.
+// Build via the WithSourceID functional option; zero value is safe for all callers
+// that do not need these overrides.
+type IngestOptions struct {
+	// SourceID overrides source resolution when input.Source is nil.
+	// The value must be a valid UUID referencing an existing sources row.
+	SourceID string
+}
+
+// IngestOption is a functional option for Ingest / IngestWithIdempotency.
+type IngestOption func(*IngestOptions)
+
+// WithSourceID sets a pre-resolved source ID on the ingest options.
+// It is used only when the event input has no Source.URL — if input.Source.URL
+// is present, GetOrCreateSource is called instead and this option is ignored.
+// An empty id is a no-op.
+func WithSourceID(id string) IngestOption {
+	return func(o *IngestOptions) {
+		o.SourceID = id
+	}
+}
+
 type IngestService struct {
 	repo             Repository
 	nodeDomain       string
@@ -49,11 +71,16 @@ func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
 	return s
 }
 
-func (s *IngestService) Ingest(ctx context.Context, input EventInput) (*IngestResult, error) {
-	return s.IngestWithIdempotency(ctx, input, "")
+func (s *IngestService) Ingest(ctx context.Context, input EventInput, opts ...IngestOption) (*IngestResult, error) {
+	return s.IngestWithIdempotency(ctx, input, "", opts...)
 }
 
-func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventInput, idempotencyKey string) (*IngestResult, error) {
+func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventInput, idempotencyKey string, opts ...IngestOption) (*IngestResult, error) {
+	var options IngestOptions
+	for _, o := range opts {
+		o(&options)
+	}
+
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("ingest: repository not configured")
 	}
@@ -100,7 +127,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 	normalized := NormalizeEventInput(input)
 
 	// Pass original input so validation can detect auto-corrections
-	validationResult, err := ValidateEventInputWithWarnings(normalized, s.nodeDomain, &input)
+	validationResult, err := ValidateEventInputWithWarnings(normalized, s.nodeDomain, &input, s.validationConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +207,10 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		if err != nil && err != ErrNotFound {
 			return nil, err
 		}
+	} else if options.SourceID != "" {
+		// No source URL in payload; use the pre-resolved source ID from options
+		// (e.g. derived from the authenticated API key).
+		sourceID = options.SourceID
 	}
 
 	dedupHash := BuildDedupHash(DedupCandidate{

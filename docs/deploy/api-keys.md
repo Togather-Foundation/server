@@ -40,6 +40,9 @@ source .env.staging  # or .env.production
 # Create an admin key (for administrative operations)
 ./server api-key create "Production Admin" --role admin
 
+# Create a key linked to a specific source (e.g. load tester, dedicated scraper)
+./server api-key create "Load Tester" --source-id <source-uuid>
+
 # List all API keys
 ./server api-key list
 
@@ -323,6 +326,9 @@ curl -H "Authorization: Bearer ${PERF_AGENT_API_KEY}" \
 # Create admin key
 ./server api-key create "My Admin" --role admin
 
+# Create key linked to a source (events ingested with this key are attributed to it)
+./server api-key create "Load Tester" --source-id <source-uuid>
+
 # List all keys (shows prefix, role, name)
 ./server api-key list
 
@@ -343,6 +349,7 @@ psql "$DATABASE_URL" -c "SELECT * FROM api_keys WHERE prefix = '<prefix>';"
 - [Authentication Guide](../integration/authentication.md) - Complete authentication documentation
 - [Deployment Guide](deployment-testing.md)
 - [Performance Testing](performance-testing.md)
+- [Load Testing Operations](../operations/load-testing.md) - Source-tagged key setup and staging cleanup
 - [Environment Configuration](deploy-conf.md)
 
 ---

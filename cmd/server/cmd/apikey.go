@@ -10,13 +10,15 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 )
 
 var (
-	apiKeyRole string
+	apiKeyRole     string
+	apiKeySourceID string
 )
 
 // apiKeyCmd represents the api-key command group
@@ -57,11 +59,14 @@ Examples:
   server api-key create my-agent
 
   # Create admin key
-  server api-key create my-admin --role admin`,
+  server api-key create my-admin --role admin
+
+  # Create agent key linked to a source
+  server api-key create my-scraper --source-id <uuid>`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		_, err := createAPIKey(name, apiKeyRole)
+		_, err := createAPIKey(name, apiKeyRole, apiKeySourceID)
 		return err
 	},
 }
@@ -113,9 +118,10 @@ func init() {
 
 	// Flags for create
 	apiKeyCreateCmd.Flags().StringVar(&apiKeyRole, "role", "agent", "role for the API key (agent or admin)")
+	apiKeyCreateCmd.Flags().StringVar(&apiKeySourceID, "source-id", "", "UUID of the source to associate with this key (optional)")
 }
 
-func createAPIKey(name, role string) (string, error) {
+func createAPIKey(name, role, sourceID string) (string, error) {
 	// Load DATABASE_URL from environment or .env files
 	dbURL := getDatabaseURL()
 	if dbURL == "" {
@@ -142,12 +148,23 @@ func createAPIKey(name, role string) (string, error) {
 		return "", fmt.Errorf("hash API key: %w", err)
 	}
 
-	// Insert into database
-	_, err = pool.Exec(ctx,
-		`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, is_active)
-		 VALUES ($1, $2, $3, $4, $5, true)`,
-		prefix, hash, auth.HashVersionBcrypt, name, role,
-	)
+	// Insert into database; source_id is optional (NULL when not provided)
+	if sourceID != "" {
+		if _, err := uuid.Parse(sourceID); err != nil {
+			return "", fmt.Errorf("--source-id %q is not a valid UUID: %w", sourceID, err)
+		}
+		_, err = pool.Exec(ctx,
+			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, source_id, is_active)
+			 VALUES ($1, $2, $3, $4, $5, $6, true)`,
+			prefix, hash, auth.HashVersionBcrypt, name, role, sourceID,
+		)
+	} else {
+		_, err = pool.Exec(ctx,
+			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, is_active)
+			 VALUES ($1, $2, $3, $4, $5, true)`,
+			prefix, hash, auth.HashVersionBcrypt, name, role,
+		)
+	}
 	if err != nil {
 		return "", fmt.Errorf("insert API key: %w", err)
 	}
@@ -156,6 +173,9 @@ func createAPIKey(name, role string) (string, error) {
 	fmt.Printf("✓ API key created successfully!\n\n")
 	fmt.Printf("Name:   %s\n", name)
 	fmt.Printf("Role:   %s\n", role)
+	if sourceID != "" {
+		fmt.Printf("Source: %s\n", sourceID)
+	}
 	fmt.Printf("Key:    %s\n\n", key)
 	fmt.Printf("⚠️  Save this key - it cannot be retrieved later!\n\n")
 	fmt.Printf("Usage:\n")

@@ -53,7 +53,7 @@ func defaultDedupConfig() config.DedupConfig {
 
 // defaultValidationConfig returns a ValidationConfig that requires image.
 func defaultValidationConfig() config.ValidationConfig {
-	return config.ValidationConfig{RequireImage: true}
+	return config.ValidationConfig{RequireImage: true, AllowTestDomains: true}
 }
 
 // newTestService creates an IngestService with the test repository and default configs.
@@ -2105,6 +2105,109 @@ func TestScenario_MultiSession(t *testing.T) {
 			if w.Code == "multi_session_likely" {
 				t.Errorf("Did not expect multi_session_likely warning when SkipMultiSessionCheck = true")
 			}
+		}
+	})
+}
+
+// --- WithSourceID Scenarios ---
+
+func TestScenario_WithSourceID(t *testing.T) {
+	t.Run("WithSourceID used when input.Source is nil", func(t *testing.T) {
+		// Given: no Source on the event input; a pre-resolved source ID is supplied
+		// via WithSourceID. GetOrCreateSource must NOT be called because there is
+		// no Source.URL to resolve.
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		input := completeEventInput("Source ID Test Event")
+		// input.Source is nil by default from completeEventInput
+
+		result, err := service.Ingest(context.Background(), input, WithSourceID("source-uuid-123"))
+
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Expected non-nil result and event")
+		}
+		if repo.getOrCreateSourceCallCount != 0 {
+			t.Errorf("Expected GetOrCreateSource NOT to be called, but it was called %d time(s)", repo.getOrCreateSourceCallCount)
+		}
+	})
+
+	t.Run("input.Source.URL takes precedence over WithSourceID", func(t *testing.T) {
+		// Given: event input has a Source.URL AND WithSourceID provides an override.
+		// The Source.URL path (GetOrCreateSource) must win; the override is ignored.
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		input := completeEventInputWithSource(
+			"Precedence Test Event",
+			"https://real-source.com/events/99",
+			"evt-99",
+			"Real Source",
+		)
+
+		result, err := service.Ingest(context.Background(), input, WithSourceID("override-uuid"))
+
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Expected non-nil result and event")
+		}
+		// GetOrCreateSource must have been called (source URL path was taken).
+		if repo.getOrCreateSourceCallCount == 0 {
+			t.Error("Expected GetOrCreateSource to be called (source URL path), but it was not")
+		}
+		// The source registered in the mock must be derived from the URL, not "override-uuid".
+		foundOverride := false
+		for _, sourceID := range repo.sources {
+			if sourceID == "override-uuid" {
+				foundOverride = true
+			}
+		}
+		if foundOverride {
+			t.Error("Expected WithSourceID override to be ignored, but 'override-uuid' was registered as a source")
+		}
+	})
+
+	t.Run("WithSourceID empty string is a no-op", func(t *testing.T) {
+		// Given: WithSourceID("") — an empty string must be treated as no option at all.
+		// The ingest path should behave identically to calling Ingest with no options.
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		input := completeEventInput("No-Op Source ID Event")
+		// input.Source is nil
+
+		// Baseline: ingest with no options
+		repoBaseline := NewMockRepository()
+		serviceBaseline := newTestService(repoBaseline)
+		baselineResult, baselineErr := serviceBaseline.Ingest(context.Background(), input)
+
+		// Under test: ingest with WithSourceID("")
+		result, err := service.Ingest(context.Background(), input, WithSourceID(""))
+
+		// Both should succeed or fail identically
+		if (err == nil) != (baselineErr == nil) {
+			t.Fatalf("error mismatch: baseline=%v, with-empty-source-id=%v", baselineErr, err)
+		}
+		if err != nil {
+			return // both errored identically
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Expected non-nil result and event")
+		}
+		if baselineResult == nil || baselineResult.Event == nil {
+			t.Fatal("Expected non-nil baseline result and event")
+		}
+		// GetOrCreateSource must not have been called in either case
+		if repo.getOrCreateSourceCallCount != 0 {
+			t.Errorf("Expected GetOrCreateSource NOT to be called with empty WithSourceID, called %d time(s)", repo.getOrCreateSourceCallCount)
+		}
+		if repoBaseline.getOrCreateSourceCallCount != 0 {
+			t.Errorf("Expected GetOrCreateSource NOT to be called in baseline, called %d time(s)", repoBaseline.getOrCreateSourceCallCount)
 		}
 	})
 }

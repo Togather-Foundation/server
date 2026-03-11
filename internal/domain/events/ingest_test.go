@@ -40,12 +40,13 @@ type MockRepository struct {
 	occurrenceDates    map[string]*occurrenceDateUpdate // eventULID -> updated dates
 
 	// Tracking for assertions
-	approveReviewCalled bool
-	approveReviewID     int
-	updateEventCalls    []updateEventCall
-	mergePlacesCalled   bool
-	mergePlacesDupID    string
-	mergePlacesPriID    string
+	approveReviewCalled        bool
+	approveReviewID            int
+	updateEventCalls           []updateEventCall
+	mergePlacesCalled          bool
+	mergePlacesDupID           string
+	mergePlacesPriID           string
+	getOrCreateSourceCallCount int
 
 	// Behavior controls
 	shouldFailCreate                 bool
@@ -215,6 +216,8 @@ func (m *MockRepository) FindByDedupHash(ctx context.Context, dedupHash string) 
 func (m *MockRepository) GetOrCreateSource(ctx context.Context, params SourceLookupParams) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	m.getOrCreateSourceCallCount++
 
 	if m.shouldFailGetOrCreateSource {
 		return "", errors.New("mock get or create source error")
@@ -947,7 +950,7 @@ func TestIngestService_Ingest(t *testing.T) {
 			} else {
 				repo = NewMockRepository()
 				tt.setupRepo(repo)
-				service = NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
+				service = NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
 			}
 
 			result, err := service.Ingest(context.Background(), tt.input)
@@ -1102,7 +1105,7 @@ func TestIngestService_IngestWithIdempotency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
 			tt.setupRepo(repo)
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
 
 			result, err := service.IngestWithIdempotency(context.Background(), tt.input, tt.idempotencyKey)
 
@@ -1264,7 +1267,7 @@ func TestIngestService_ReversedDates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
 
 			result, err := service.Ingest(context.Background(), tt.input)
 
@@ -1396,7 +1399,7 @@ func TestIngestService_PipelineOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
 
 			result, err := service.Ingest(context.Background(), tt.input)
 
@@ -1479,7 +1482,7 @@ func TestIngestService_WarningsInDuplicateDetection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
 			tt.setupRepo(repo)
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
 
 			result, err := service.Ingest(context.Background(), tt.input)
 
