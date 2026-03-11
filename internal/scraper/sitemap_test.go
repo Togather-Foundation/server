@@ -453,49 +453,6 @@ func TestParseLastMod(t *testing.T) {
 	}
 }
 
-// ── SitemapEntryURLs ──────────────────────────────────────────────────
-
-func TestSitemapEntryURLs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("extracts URL strings correctly", func(t *testing.T) {
-		t.Parallel()
-
-		now := time.Now()
-		entries := []SitemapEntry{
-			{URL: "https://example.com/1", LastMod: &now},
-			{URL: "https://example.com/2"},
-			{URL: "https://example.com/3", LastMod: &now},
-		}
-
-		got := SitemapEntryURLs(entries)
-
-		want := []string{
-			"https://example.com/1",
-			"https://example.com/2",
-			"https://example.com/3",
-		}
-
-		if len(got) != len(want) {
-			t.Fatalf("got %d URLs, want %d", len(got), len(want))
-		}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Errorf("URLs[%d] = %q, want %q", i, got[i], want[i])
-			}
-		}
-	})
-
-	t.Run("empty input returns empty slice", func(t *testing.T) {
-		t.Parallel()
-
-		got := SitemapEntryURLs(nil)
-		if len(got) != 0 {
-			t.Fatalf("got %d URLs, want 0", len(got))
-		}
-	})
-}
-
 // ── helpers ───────────────────────────────────────────────────────────
 
 // serveXML returns an http.HandlerFunc that writes the given XML body.

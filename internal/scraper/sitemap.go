@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
@@ -93,6 +94,7 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 			children, childErr := fetchSitemapRecursive(ctx, sm.Loc, client, depth+1)
 			if childErr != nil {
 				childErrors = append(childErrors, fmt.Errorf("child sitemap %s: %w", sm.Loc, childErr))
+				slog.Debug("child sitemap fetch failed, continuing with partial results", "url", sm.Loc, "error", childErr)
 				continue
 			}
 			entries = append(entries, children...)
@@ -131,7 +133,6 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 func parseLastMod(s string) (time.Time, error) {
 	formats := []string{
 		time.RFC3339,
-		"2006-01-02T15:04:05Z",
 		"2006-01-02",
 		"2006-01",
 		"2006",
@@ -165,13 +166,4 @@ func FilterSitemapEntries(entries []SitemapEntry, pattern *regexp.Regexp, exclud
 		filtered = append(filtered, e)
 	}
 	return filtered
-}
-
-// SitemapEntryURLs extracts just the URL strings from a slice of SitemapEntry.
-func SitemapEntryURLs(entries []SitemapEntry) []string {
-	urls := make([]string, len(entries))
-	for i, e := range entries {
-		urls[i] = e.URL
-	}
-	return urls
 }
