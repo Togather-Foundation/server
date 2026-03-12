@@ -65,6 +65,14 @@ func (f *flusherRecorder) BodyBytes() []byte {
 	return cp
 }
 
+// FlushCount returns the number of times Flush() has been called. Safe to call
+// concurrently — consistent with the rest of the accessor pattern on this type.
+func (f *flusherRecorder) FlushCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.flushed
+}
+
 // makeScrapeSourceEvent builds a *river.Event for a scrape_source job.
 func makeScrapeSourceEvent(kind river.EventKind, jobID int64, sourceName string) *river.Event {
 	args, _ := json.Marshal(map[string]string{"source_name": sourceName})
@@ -245,7 +253,7 @@ func TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent(t *testing.T) {
 	}
 
 	// Handler must have called Flush() after writing the event
-	if rec.flushed == 0 {
+	if rec.FlushCount() == 0 {
 		t.Error("Flush() was never called — handler did not flush after forwarding event")
 	}
 }
