@@ -72,7 +72,7 @@
             if (!newRow) return;
 
             // Cells: 0=source, 1=tier, 2=schedule, 3=lastRun, 4=eventCounts, 5=status, 6=enabled, 7=actions
-            var UPDATE_CELLS = [3, 4, 5]; // last run, event counts, status badge
+            var UPDATE_CELLS = [3, 4, 5, 6]; // last run, event counts, status badge, enabled button
             UPDATE_CELLS.forEach(function (idx) {
                 if (existing.cells[idx] && newRow.cells[idx]) {
                     existing.cells[idx].innerHTML = newRow.cells[idx].innerHTML;
@@ -251,7 +251,9 @@
         try {
             await API.scraper.setEnabled(name, enabled);
             showToast('Source ' + (enabled ? 'enabled' : 'disabled') + ': ' + name, 'success');
-            updateSourceRow(name);
+            await updateSourceRow(name);
+            // updateSourceRow replaces cell 6 with a fresh button, so the old
+            // btn reference is gone — no need to call setLoading on it.
         } catch (err) {
             showToast('Failed to update source: ' + err.message, 'error');
             setLoading(btn, false);
