@@ -139,7 +139,9 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	for _, review := range result.Entries {
 		item, err := buildReviewQueueItem(review)
 		if err != nil {
-			// Log error but continue processing other items
+			slog.ErrorContext(r.Context(), "ListReviewQueue: skipping review item due to build error",
+				slog.Int("review_id", review.ID),
+				slog.String("error", err.Error()))
 			continue
 		}
 		items = append(items, item)
@@ -822,71 +824,13 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 // that references eventULID from the companion event's pending review entry.
 // This prevents the companion's review from showing a stale duplicate alert after
 // the pair has been marked as not-duplicates.
+// Uses a single atomic SQL UPDATE — no read-modify-write race.
 // Errors are logged but not propagated — this is a best-effort cleanup.
 func (h *AdminReviewQueueHandler) dismissCompanionDuplicateWarning(ctx context.Context, companionULID, eventULID string) {
-	companion, err := h.Repository.GetPendingReviewByEventUlid(ctx, companionULID)
-	if err != nil {
-		slog.Warn("dismissCompanionWarning: failed to fetch companion review",
+	if err := h.Repository.DismissCompanionWarningMatch(ctx, companionULID, eventULID); err != nil {
+		slog.WarnContext(ctx, "dismissCompanionWarning: failed to atomically dismiss warning match",
 			slog.String("companion_ulid", companionULID),
-			slog.String("error", err.Error()))
-		return
-	}
-	if companion == nil {
-		return // no pending review — nothing to dismiss
-	}
-
-	var warnings []events.ValidationWarning
-	if err := json.Unmarshal(companion.Warnings, &warnings); err != nil {
-		slog.Warn("dismissCompanionWarning: failed to parse companion warnings",
-			slog.Int("review_id", companion.ID),
-			slog.String("error", err.Error()))
-		return
-	}
-
-	modified := false
-	for i, w := range warnings {
-		if w.Code != "potential_duplicate" {
-			continue
-		}
-		matchesRaw, ok := w.Details["matches"]
-		if !ok {
-			continue
-		}
-		matches, ok := matchesRaw.([]any)
-		if !ok {
-			continue
-		}
-		filtered := make([]any, 0, len(matches))
-		for _, m := range matches {
-			matchMap, ok := m.(map[string]any)
-			if !ok {
-				filtered = append(filtered, m)
-				continue
-			}
-			if ulid, _ := matchMap["ulid"].(string); ulid == eventULID {
-				modified = true
-				continue // drop this match
-			}
-			filtered = append(filtered, m)
-		}
-		warnings[i].Details["matches"] = filtered
-	}
-
-	if !modified {
-		return
-	}
-
-	updated, err := json.Marshal(warnings)
-	if err != nil {
-		slog.Warn("dismissCompanionWarning: failed to marshal updated warnings",
-			slog.Int("review_id", companion.ID),
-			slog.String("error", err.Error()))
-		return
-	}
-
-	if err := h.Repository.UpdateReviewWarnings(ctx, companion.ID, updated); err != nil {
-		slog.Warn("dismissCompanionWarning: failed to update companion warnings",
-			slog.Int("review_id", companion.ID),
+			slog.String("event_ulid", eventULID),
 			slog.String("error", err.Error()))
 	}
 }

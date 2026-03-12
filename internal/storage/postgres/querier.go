@@ -80,6 +80,10 @@ type Querier interface {
 	// Delete a scraper source by name.
 	DeleteScraperSource(ctx context.Context, name string) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
+	// Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
+	// from the companion's pending review queue entry, identified by the companion's event ULID.
+	// Rebuilds the warnings JSONB in one UPDATE — no read-modify-write race.
+	DismissCompanionWarningMatch(ctx context.Context, arg DismissCompanionWarningMatchParams) error
 	// Expires all pending (non-accepted, non-expired) invitations for a user by
 	// setting accepted_at. This satisfies the unique partial index
 	// idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new

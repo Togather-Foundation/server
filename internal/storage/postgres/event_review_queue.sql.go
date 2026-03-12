@@ -187,6 +187,48 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 	return i, err
 }
 
+const dismissCompanionWarningMatch = `-- name: DismissCompanionWarningMatch :exec
+UPDATE event_review_queue
+   SET warnings = (
+         SELECT COALESCE(jsonb_agg(new_w ORDER BY idx), '[]'::jsonb)
+         FROM (
+           SELECT idx,
+                  CASE
+                    WHEN w->>'code' = 'potential_duplicate' THEN
+                      jsonb_set(
+                        w,
+                        '{details,matches}',
+                        COALESCE((
+                          SELECT jsonb_agg(m)
+                          FROM jsonb_array_elements(w->'details'->'matches') m
+                          WHERE m->>'ulid' <> $1::text
+                        ), '[]'::jsonb)
+                      )
+                    ELSE w
+                  END AS new_w
+           FROM jsonb_array_elements(warnings) WITH ORDINALITY AS t(w, idx)
+         ) sub
+       ),
+       updated_at = NOW()
+ WHERE event_id = (
+         SELECT e.id FROM events e WHERE e.ulid = $2::text LIMIT 1
+       )
+   AND status = 'pending'
+`
+
+type DismissCompanionWarningMatchParams struct {
+	EventUlid     string `json:"event_ulid"`
+	CompanionUlid string `json:"companion_ulid"`
+}
+
+// Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
+// from the companion's pending review queue entry, identified by the companion's event ULID.
+// Rebuilds the warnings JSONB in one UPDATE — no read-modify-write race.
+func (q *Queries) DismissCompanionWarningMatch(ctx context.Context, arg DismissCompanionWarningMatchParams) error {
+	_, err := q.db.Exec(ctx, dismissCompanionWarningMatch, arg.EventUlid, arg.CompanionUlid)
+	return err
+}
+
 const findReviewByDedup = `-- name: FindReviewByDedup :one
 
 SELECT r.id,

@@ -193,6 +193,9 @@ func (s stubEventsRepo) GetPendingReviewByEventUlid(_ context.Context, _ string)
 func (s stubEventsRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
 	return nil
 }
+func (s stubEventsRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
+	return nil
+}
 
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
