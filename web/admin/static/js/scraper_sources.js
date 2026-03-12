@@ -217,7 +217,7 @@
         try {
             await API.scraper.setEnabled(name, enabled);
             showToast('Source ' + (enabled ? 'enabled' : 'disabled') + ': ' + name, 'success');
-            loadSources();
+            updateSourceRow(name);
         } catch (err) {
             showToast('Failed to update source: ' + err.message, 'error');
             setLoading(btn, false);
@@ -233,9 +233,9 @@
         try {
             await API.scraper.triggerScrape(name);
             showToast('Scrape triggered for: ' + name, 'success');
-            // SSE will update the table when the job completes.
-            // Reload once immediately so "running" status appears quickly.
-            setTimeout(function () { loadSources(); }, 1000);
+            // Show "running" status immediately via targeted row update.
+            // SSE will handle the final completed/failed state.
+            setTimeout(function () { updateSourceRow(name); }, 1000);
         } catch (err) {
             showToast('Failed to trigger scrape: ' + err.message, 'error');
         } finally {
