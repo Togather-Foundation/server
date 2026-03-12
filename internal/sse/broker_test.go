@@ -237,6 +237,155 @@ func TestBroker_ShutdownOnNilEvent(t *testing.T) {
 	}
 }
 
+// TestBroker_SubscriberCount: reflects active subscriber count.
+func TestBroker_SubscriberCount(t *testing.T) {
+	b := NewBroker()
+
+	if got := b.SubscriberCount(); got != 0 {
+		t.Fatalf("initial count = %d, want 0", got)
+	}
+
+	_, unsub1 := b.Subscribe()
+	if got := b.SubscriberCount(); got != 1 {
+		t.Fatalf("after 1st subscribe count = %d, want 1", got)
+	}
+
+	_, unsub2 := b.Subscribe()
+	if got := b.SubscriberCount(); got != 2 {
+		t.Fatalf("after 2nd subscribe count = %d, want 2", got)
+	}
+
+	unsub1()
+	if got := b.SubscriberCount(); got != 1 {
+		t.Fatalf("after unsub1 count = %d, want 1", got)
+	}
+
+	unsub2()
+	if got := b.SubscriberCount(); got != 0 {
+		t.Fatalf("after unsub2 count = %d, want 0", got)
+	}
+}
+
+// TestBroker_Subscribe_KindsFilter_AcceptsMatchingKind: subscriber with kinds filter receives matching events.
+func TestBroker_Subscribe_KindsFilter_AcceptsMatchingKind(t *testing.T) {
+	subCh := make(chan *river.Event, 10)
+	b := NewBroker()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	b.Start(ctx, subCh)
+
+	// Subscribe only for completed events
+	ch, unsub := b.Subscribe(river.EventKindJobCompleted)
+	defer unsub()
+
+	ev := makeEvent(river.EventKindJobCompleted, 10, "scrape_source")
+	subCh <- ev
+
+	got, ok := receiveWithTimeout(ch, time.Second)
+	if !ok {
+		t.Fatal("timed out waiting for matching event")
+	}
+	if got.Job.ID != 10 {
+		t.Errorf("got job ID %d, want 10", got.Job.ID)
+	}
+}
+
+// TestBroker_Subscribe_KindsFilter_DropsNonMatchingKind: subscriber with kinds filter drops non-matching events.
+func TestBroker_Subscribe_KindsFilter_DropsNonMatchingKind(t *testing.T) {
+	subCh := make(chan *river.Event, 10)
+	b := NewBroker()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	b.Start(ctx, subCh)
+
+	// Subscribe only for completed events; send a failed event — must be dropped.
+	ch, unsub := b.Subscribe(river.EventKindJobCompleted)
+	defer unsub()
+
+	ev := makeEvent(river.EventKindJobFailed, 11, "scrape_source")
+	subCh <- ev
+
+	_, ok := receiveWithTimeout(ch, 100*time.Millisecond)
+	if ok {
+		t.Error("received non-matching event — kinds filter did not drop it")
+	}
+}
+
+// TestBroker_Subscribe_NoKindsFilter_AcceptsAll: subscriber with no kinds filter receives all events.
+func TestBroker_Subscribe_NoKindsFilter_AcceptsAll(t *testing.T) {
+	subCh := make(chan *river.Event, 10)
+	b := NewBroker()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	b.Start(ctx, subCh)
+
+	// No kinds filter — accepts everything
+	ch, unsub := b.Subscribe()
+	defer unsub()
+
+	kinds := []river.EventKind{
+		river.EventKindJobCompleted,
+		river.EventKindJobFailed,
+		river.EventKindJobCancelled,
+	}
+	for i, k := range kinds {
+		subCh <- makeEvent(k, int64(i), "any_job")
+	}
+
+	for i := range kinds {
+		got, ok := receiveWithTimeout(ch, time.Second)
+		if !ok {
+			t.Fatalf("timed out waiting for event %d", i)
+		}
+		if int(got.Job.ID) != i {
+			t.Errorf("event %d: got job ID %d, want %d", i, got.Job.ID, i)
+		}
+	}
+}
+
+// TestBroker_Subscribe_MultipleKindsFilter: subscriber with multiple kinds receives any of them.
+func TestBroker_Subscribe_MultipleKindsFilter(t *testing.T) {
+	subCh := make(chan *river.Event, 10)
+	b := NewBroker()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	b.Start(ctx, subCh)
+
+	ch, unsub := b.Subscribe(river.EventKindJobCompleted, river.EventKindJobFailed)
+	defer unsub()
+
+	// Completed — should pass
+	subCh <- makeEvent(river.EventKindJobCompleted, 20, "j")
+	got, ok := receiveWithTimeout(ch, time.Second)
+	if !ok {
+		t.Fatal("timed out waiting for completed event")
+	}
+	if got.Job.ID != 20 {
+		t.Errorf("got job ID %d, want 20", got.Job.ID)
+	}
+
+	// Failed — should pass
+	subCh <- makeEvent(river.EventKindJobFailed, 21, "j")
+	got, ok = receiveWithTimeout(ch, time.Second)
+	if !ok {
+		t.Fatal("timed out waiting for failed event")
+	}
+	if got.Job.ID != 21 {
+		t.Errorf("got job ID %d, want 21", got.Job.ID)
+	}
+
+	// Cancelled — should be dropped
+	subCh <- makeEvent(river.EventKindJobCancelled, 22, "j")
+	_, ok = receiveWithTimeout(ch, 100*time.Millisecond)
+	if ok {
+		t.Error("received cancelled event — should have been filtered by kinds filter")
+	}
+}
+
 // TestBroker_ShutdownOnCtxCancel: cancelling ctx stops the broker run loop.
 func TestBroker_ShutdownOnCtxCancel(t *testing.T) {
 	subCh := make(chan *river.Event, 10)

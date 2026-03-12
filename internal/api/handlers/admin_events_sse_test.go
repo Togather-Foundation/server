@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,12 +17,51 @@ import (
 )
 
 // flusherRecorder is an httptest.ResponseRecorder that also implements http.Flusher.
+// It guards Body writes/reads with a mutex to avoid data races when the handler
+// goroutine writes concurrently with the test goroutine polling the body.
 type flusherRecorder struct {
 	*httptest.ResponseRecorder
+	mu      sync.Mutex
 	flushed int
 }
 
-func (f *flusherRecorder) Flush() { f.flushed++ }
+func newFlusherRecorder() *flusherRecorder {
+	rec := httptest.NewRecorder()
+	// Replace the Body with a new buffer that we will guard — httptest sets its
+	// own buffer, so we just reuse it but protect all access via our mutex.
+	return &flusherRecorder{ResponseRecorder: rec}
+}
+
+func (f *flusherRecorder) Write(b []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ResponseRecorder.Write(b)
+}
+
+func (f *flusherRecorder) Flush() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.flushed++
+}
+
+// BodyString returns a snapshot of the body captured so far. Safe to call
+// concurrently with the handler goroutine writing to the recorder.
+func (f *flusherRecorder) BodyString() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// httptest.ResponseRecorder.Body is a *bytes.Buffer — copy it safely.
+	return f.Body.String()
+}
+
+// BodyBytes returns a copy of the body bytes. Safe to call concurrently.
+func (f *flusherRecorder) BodyBytes() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b := f.Body.Bytes()
+	cp := make([]byte, len(b))
+	copy(cp, b)
+	return cp
+}
 
 // makeScrapeSourceEvent builds a *river.Event for a scrape_source job.
 func makeScrapeSourceEvent(kind river.EventKind, jobID int64, sourceName string) *river.Event {
@@ -56,12 +96,40 @@ func newCancelableRequest(t *testing.T, method, target string) (*http.Request, c
 	return req.WithContext(ctx), cancel
 }
 
+// pollBody polls rec.BodyString() until it contains substr or timeout elapses.
+// Calls t.Fatal on timeout.
+func pollBody(t *testing.T, rec *flusherRecorder, substr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(rec.BodyString(), substr) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("pollBody: timed out waiting for %q in body", substr)
+}
+
+// waitForSubscribers polls broker.SubscriberCount() until it reaches at least n
+// or the timeout elapses. Calls t.Fatal on timeout.
+func waitForSubscribers(t *testing.T, b *sse.Broker, n int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if b.SubscriberCount() >= n {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("waitForSubscribers: timed out waiting for %d subscriber(s)", n)
+}
+
 // TestAdminEventsSSEHandler_SetsSSEHeaders verifies SSE headers and retry directive.
 func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
 	broker := sse.NewBroker()
 	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
 
-	rec := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
+	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
 	defer cancelReq()
 
@@ -89,7 +157,7 @@ func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
 		t.Errorf("X-Accel-Buffering = %q, want %q", got, "no")
 	}
 
-	body := rec.Body.String()
+	body := rec.BodyString()
 	if !strings.Contains(body, "retry: 5000") {
 		t.Errorf("body missing retry directive, got: %q", body)
 	}
@@ -105,7 +173,7 @@ func TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent(t *testing.T) {
 
 	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
 
-	rec := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
+	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
 	defer cancelReq()
 
@@ -115,21 +183,21 @@ func TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent(t *testing.T) {
 		close(done)
 	}()
 
-	// Give handler time to subscribe and write initial retry line
-	time.Sleep(50 * time.Millisecond)
+	// Wait for handler to subscribe before sending event
+	waitForSubscribers(t, broker, 1, time.Second)
 
 	// Send a scrape_source completed event
 	ev := makeScrapeSourceEvent(river.EventKindJobCompleted, 42, "my-source")
 	subCh <- ev
 
-	// Wait for handler to flush the event
-	time.Sleep(100 * time.Millisecond)
+	// Poll body until the data line appears
+	pollBody(t, rec, "data:", time.Second)
 
 	// Cancel request to stop handler
 	cancelReq()
 	<-done
 
-	body := rec.Body.String()
+	body := rec.BodyString()
 
 	// Must contain a data: line
 	if !strings.Contains(body, "data:") {
@@ -183,7 +251,7 @@ func TestAdminEventsSSEHandler_FiltersNonScrapeEvents(t *testing.T) {
 
 	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
 
-	rec := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
+	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
 	defer cancelReq()
 
@@ -193,21 +261,34 @@ func TestAdminEventsSSEHandler_FiltersNonScrapeEvents(t *testing.T) {
 		close(done)
 	}()
 
-	// Give handler time to subscribe
-	time.Sleep(50 * time.Millisecond)
+	// Wait for handler to subscribe before sending event
+	waitForSubscribers(t, broker, 1, time.Second)
 
-	// Send a non-scrape event
+	// Add a sentinel subscriber so we can detect when the event was broadcast.
+	// This lets us confirm the handler had a chance to receive (and discard) the
+	// event before we cancel, making the assertion meaningful.
+	sentinel, unsubSentinel := broker.Subscribe(river.EventKindJobCompleted)
+	defer unsubSentinel()
+
+	// Send a non-scrape event (geocode_address) — broker delivers it to both
+	// the handler subscriber and the sentinel, handler discards it by job kind.
 	ev := makeOtherEvent(river.EventKindJobCompleted, 7, "geocode_address")
 	subCh <- ev
 
-	// Wait briefly for any forwarding
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the sentinel to receive the event, confirming the broker broadcast
+	// it and the handler had a chance to process (and discard) it.
+	select {
+	case <-sentinel:
+		// broadcast confirmed
+	case <-time.After(time.Second):
+		t.Fatal("sentinel timed out — event was not broadcast")
+	}
 
 	// Cancel request
 	cancelReq()
 	<-done
 
-	body := rec.Body.String()
+	body := rec.BodyString()
 
 	// Should NOT contain a data: line (only retry: and maybe keepalive comments)
 	for _, line := range strings.Split(body, "\n") {
@@ -222,7 +303,7 @@ func TestAdminEventsSSEHandler_DisconnectCleanup(t *testing.T) {
 	broker := sse.NewBroker()
 	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
 
-	rec := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
+	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
 
 	done := make(chan struct{})
@@ -231,8 +312,10 @@ func TestAdminEventsSSEHandler_DisconnectCleanup(t *testing.T) {
 		close(done)
 	}()
 
-	// Give handler time to start
-	time.Sleep(50 * time.Millisecond)
+	// Wait for handler to subscribe before cancelling — no broker.Start() in this
+	// test but the handler still calls broker.Subscribe() synchronously before
+	// entering its select loop.
+	waitForSubscribers(t, broker, 1, time.Second)
 
 	// Cancel the request context
 	cancelReq()

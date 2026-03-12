@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/riverqueue/river"
+
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/sse"
@@ -42,7 +44,11 @@ func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	flusher.Flush()
 
-	ch, cancel := h.Broker.Subscribe()
+	ch, cancel := h.Broker.Subscribe(
+		river.EventKindJobCompleted,
+		river.EventKindJobFailed,
+		river.EventKindJobCancelled,
+	)
 	defer cancel()
 
 	ticker := time.NewTicker(15 * time.Second)
