@@ -962,6 +962,27 @@ PATCH /api/admin/scraper/config  — Update one or more fields (partial JSON bod
 
 Both endpoints require an admin API key (`Authorization: Bearer <key>`).
 
+### Admin SSE Push (scraper job events)
+
+```
+GET /api/v1/admin/scraper/events   — SSE stream of River job progress events
+```
+
+Requires an active admin session (cookie auth — `auth_token` HttpOnly cookie). The
+stream fans out River job lifecycle events (`job_update`) to all connected clients in
+real time. The scraper admin UI uses this to update run status without polling.
+
+```javascript
+const es = new EventSource('/api/v1/admin/scraper/events');
+es.addEventListener('job_update', e => {
+    const data = JSON.parse(e.data); // { job_id, source, status, ... }
+});
+```
+
+**Authentication note:** `EventSource` cannot set `Authorization` headers, so this
+endpoint uses `adminCookieAuth` instead of Bearer JWT. The cookie is sent
+automatically for same-origin requests.
+
 ### Admin UI Toggle
 
 The `/admin/scraper` page includes an **Auto-scrape** toggle that sets `auto_scrape`
