@@ -457,21 +457,56 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 						// Below auto-merge but above review threshold — flag for review
 						matches := make([]map[string]any, 0, len(filtered))
 						for _, c := range filtered {
-							matches = append(matches, map[string]any{
+							match := map[string]any{
 								"ulid":       c.ULID,
 								"name":       c.Name,
 								"similarity": c.Similarity,
-							})
+							}
+							if c.AddressStreet != nil {
+								match["address_street"] = *c.AddressStreet
+							}
+							if c.AddressLocality != nil {
+								match["address_locality"] = *c.AddressLocality
+							}
+							if c.AddressRegion != nil {
+								match["address_region"] = *c.AddressRegion
+							}
+							if c.PostalCode != nil {
+								match["postal_code"] = *c.PostalCode
+							}
+							if c.URL != nil {
+								match["url"] = *c.URL
+							}
+							if c.Telephone != nil {
+								match["telephone"] = *c.Telephone
+							}
+							if c.Email != nil {
+								match["email"] = *c.Email
+							}
+							matches = append(matches, match)
+						}
+						placeDetails := map[string]any{
+							"matches":        matches,
+							"new_place_ulid": place.ULID,
+							"new_place_name": validated.Location.Name,
+						}
+						if validated.Location.StreetAddress != "" {
+							placeDetails["new_place_street"] = validated.Location.StreetAddress
+						}
+						if validated.Location.AddressLocality != "" {
+							placeDetails["new_place_locality"] = validated.Location.AddressLocality
+						}
+						if validated.Location.AddressRegion != "" {
+							placeDetails["new_place_region"] = validated.Location.AddressRegion
+						}
+						if validated.Location.PostalCode != "" {
+							placeDetails["new_place_postal_code"] = validated.Location.PostalCode
 						}
 						warnings = append(warnings, ValidationWarning{
 							Field:   "location.name",
 							Message: fmt.Sprintf("Possible duplicate place: found %d similar place(s) in the same area", len(filtered)),
 							Code:    "place_possible_duplicate",
-							Details: map[string]any{
-								"matches":        matches,
-								"new_place_ulid": place.ULID,
-								"new_place_name": validated.Location.Name,
-							},
+							Details: placeDetails,
 						})
 						needsReview = true
 					}
@@ -628,21 +663,53 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 						// Below auto-merge but above review threshold — flag for review
 						matches := make([]map[string]any, 0, len(filtered))
 						for _, c := range filtered {
-							matches = append(matches, map[string]any{
+							match := map[string]any{
 								"ulid":       c.ULID,
 								"name":       c.Name,
 								"similarity": c.Similarity,
-							})
+							}
+							if c.AddressLocality != nil {
+								match["address_locality"] = *c.AddressLocality
+							}
+							if c.AddressRegion != nil {
+								match["address_region"] = *c.AddressRegion
+							}
+							if c.URL != nil {
+								match["url"] = *c.URL
+							}
+							if c.Telephone != nil {
+								match["telephone"] = *c.Telephone
+							}
+							if c.Email != nil {
+								match["email"] = *c.Email
+							}
+							matches = append(matches, match)
+						}
+						orgDetails := map[string]any{
+							"matches":      matches,
+							"new_org_ulid": org.ULID,
+							"new_org_name": validated.Organizer.Name,
+						}
+						if addressLocality != "" {
+							orgDetails["new_org_locality"] = addressLocality
+						}
+						if addressRegion != "" {
+							orgDetails["new_org_region"] = addressRegion
+						}
+						if validated.Organizer.URL != "" {
+							orgDetails["new_org_url"] = validated.Organizer.URL
+						}
+						if validated.Organizer.Email != "" {
+							orgDetails["new_org_email"] = validated.Organizer.Email
+						}
+						if validated.Organizer.Telephone != "" {
+							orgDetails["new_org_telephone"] = validated.Organizer.Telephone
 						}
 						warnings = append(warnings, ValidationWarning{
 							Field:   "organizer.name",
 							Message: fmt.Sprintf("Possible duplicate organization: found %d similar org(s) in the same area", len(filtered)),
 							Code:    "org_possible_duplicate",
-							Details: map[string]any{
-								"matches":      matches,
-								"new_org_ulid": org.ULID,
-								"new_org_name": validated.Organizer.Name,
-							},
+							Details: orgDetails,
 						})
 						needsReview = true
 					}
@@ -807,7 +874,17 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 					Msg("Near-duplicate: failed to reconstruct payload for existing event, using empty")
 				reconstructedPayload = []byte("{}")
 			}
-			existingWarnings, warnErr := nearDuplicateWarnings(existingEvent, event.ULID)
+			existingWarnings, warnErr := nearDuplicateWarnings(existingEvent, event.ULID, nearDupNewEventData{
+				Name:      validated.Name,
+				StartDate: validated.StartDate,
+				EndDate:   validated.EndDate,
+				VenueName: func() string {
+					if validated.Location != nil {
+						return validated.Location.Name
+					}
+					return ""
+				}(),
+			})
 			if warnErr != nil {
 				log.Warn().Err(warnErr).
 					Str("candidate_ulid", c.ULID).
@@ -1440,18 +1517,42 @@ func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
 	return json.Marshal(payload)
 }
 
+// nearDupNewEventData holds the data to embed from the newly-ingested event
+// so the review queue can render a side-by-side diff card.
+type nearDupNewEventData struct {
+	Name      string
+	StartDate string // RFC3339, empty if unknown
+	EndDate   string // RFC3339, empty if unknown
+	VenueName string // empty if unknown
+}
+
 // nearDuplicateWarnings generates validation warnings for an existing event
 // being flagged as a near-duplicate of a newly ingested event.
-func nearDuplicateWarnings(existingEvent *Event, newEventULID string) ([]byte, error) {
+func nearDuplicateWarnings(existingEvent *Event, newEventULID string, newEvent nearDupNewEventData) ([]byte, error) {
 	msg := fmt.Sprintf("This existing event may be a near-duplicate of newly ingested event %s", newEventULID)
 	if existingEvent != nil && existingEvent.Name != "" {
 		msg = fmt.Sprintf("Existing event %q may be a near-duplicate of newly ingested event %s", existingEvent.Name, newEventULID)
 	}
+
+	details := map[string]any{
+		"new_event_name": newEvent.Name,
+	}
+	if newEvent.StartDate != "" {
+		details["new_event_startDate"] = newEvent.StartDate
+	}
+	if newEvent.EndDate != "" {
+		details["new_event_endDate"] = newEvent.EndDate
+	}
+	if newEvent.VenueName != "" {
+		details["new_event_venue"] = newEvent.VenueName
+	}
+
 	warnings := []ValidationWarning{
 		{
 			Field:   "near_duplicate",
 			Code:    "near_duplicate_of_new_event",
 			Message: msg,
+			Details: details,
 		},
 	}
 	return json.Marshal(warnings)

@@ -279,7 +279,7 @@ func TestNearDuplicateWarnings(t *testing.T) {
 		}
 		newULID := "01NEWULID"
 
-		data, err := nearDuplicateWarnings(event, newULID)
+		data, err := nearDuplicateWarnings(event, newULID, nearDupNewEventData{Name: "New Jazz Event"})
 		require.NoError(t, err)
 
 		var warnings []ValidationWarning
@@ -297,7 +297,7 @@ func TestNearDuplicateWarnings(t *testing.T) {
 
 		newULID := "01NEWULID2"
 
-		data, err := nearDuplicateWarnings(nil, newULID)
+		data, err := nearDuplicateWarnings(nil, newULID, nearDupNewEventData{Name: "New Jazz Event"})
 		require.NoError(t, err)
 
 		var warnings []ValidationWarning
@@ -318,7 +318,7 @@ func TestNearDuplicateWarnings(t *testing.T) {
 		}
 		newULID := "01NEWULID3"
 
-		data, err := nearDuplicateWarnings(event, newULID)
+		data, err := nearDuplicateWarnings(event, newULID, nearDupNewEventData{Name: "New Jazz Event"})
 		require.NoError(t, err)
 
 		var warnings []ValidationWarning

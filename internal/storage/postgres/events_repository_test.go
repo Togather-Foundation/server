@@ -125,3 +125,142 @@ func TestEventRepositoryGetByULID(t *testing.T) {
 	require.ErrorIs(t, err, events.ErrNotFound)
 	require.Nil(t, missing)
 }
+
+func TestFindSimilarPlacesReturnsAddressFields(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool}
+
+	// Insert a place with all optional fields populated.
+	placeULID := "01JPLCTEST00000000001"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO places (ulid, name, address_locality, address_region, street_address, postal_code, url, telephone, email)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, placeULID, "The Rex Jazz Bar", "Toronto", "ON",
+		"194 Queen St W", "M5V 1Z1",
+		"https://therex.com", "+1-416-598-2475", "info@therex.com",
+	)
+	require.NoError(t, err)
+
+	candidates, err := repo.FindSimilarPlaces(ctx, "Rex Jazz Bar", "Toronto", "ON", 0.3)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+
+	c := candidates[0]
+	require.Equal(t, placeULID, c.ULID)
+	require.Equal(t, "The Rex Jazz Bar", c.Name)
+
+	require.NotNil(t, c.AddressStreet, "AddressStreet should be populated")
+	require.Equal(t, "194 Queen St W", *c.AddressStreet)
+
+	require.NotNil(t, c.AddressLocality, "AddressLocality should be populated")
+	require.Equal(t, "Toronto", *c.AddressLocality)
+
+	require.NotNil(t, c.AddressRegion, "AddressRegion should be populated")
+	require.Equal(t, "ON", *c.AddressRegion)
+
+	require.NotNil(t, c.PostalCode, "PostalCode should be populated")
+	require.Equal(t, "M5V 1Z1", *c.PostalCode)
+
+	require.NotNil(t, c.URL, "URL should be populated")
+	require.Equal(t, "https://therex.com", *c.URL)
+
+	require.NotNil(t, c.Telephone, "Telephone should be populated")
+	require.Equal(t, "+1-416-598-2475", *c.Telephone)
+
+	require.NotNil(t, c.Email, "Email should be populated")
+	require.Equal(t, "info@therex.com", *c.Email)
+}
+
+func TestFindSimilarPlacesNullableFieldsAreNilWhenAbsent(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool}
+
+	// Insert a place with only required fields.
+	placeULID := "01JPLCTEST00000000002"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO places (ulid, name, address_locality, address_region)
+		VALUES ($1, $2, $3, $4)
+	`, placeULID, "The Rex Jazz Bar", "Toronto", "ON")
+	require.NoError(t, err)
+
+	candidates, err := repo.FindSimilarPlaces(ctx, "Rex Jazz Bar", "Toronto", "ON", 0.3)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+
+	c := candidates[0]
+	require.Nil(t, c.AddressStreet)
+	require.Nil(t, c.PostalCode)
+	require.Nil(t, c.URL)
+	require.Nil(t, c.Telephone)
+	require.Nil(t, c.Email)
+	// locality/region come back non-nil since they were set (used for filtering)
+	require.NotNil(t, c.AddressLocality)
+	require.NotNil(t, c.AddressRegion)
+}
+
+func TestFindSimilarOrganizationsReturnsAddressFields(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool}
+
+	orgULID := "01JORGTEST00000000001"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO organizations (ulid, name, address_locality, address_region, url, telephone, email)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, orgULID, "Toronto Jazz Society", "Toronto", "ON",
+		"https://torjazz.org", "+1-416-555-0200", "info@torjazz.org",
+	)
+	require.NoError(t, err)
+
+	candidates, err := repo.FindSimilarOrganizations(ctx, "Tor Jazz Society", "Toronto", "ON", 0.3)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+
+	c := candidates[0]
+	require.Equal(t, orgULID, c.ULID)
+
+	require.NotNil(t, c.AddressLocality, "AddressLocality should be populated")
+	require.Equal(t, "Toronto", *c.AddressLocality)
+
+	require.NotNil(t, c.AddressRegion, "AddressRegion should be populated")
+	require.Equal(t, "ON", *c.AddressRegion)
+
+	require.NotNil(t, c.URL, "URL should be populated")
+	require.Equal(t, "https://torjazz.org", *c.URL)
+
+	require.NotNil(t, c.Telephone, "Telephone should be populated")
+	require.Equal(t, "+1-416-555-0200", *c.Telephone)
+
+	require.NotNil(t, c.Email, "Email should be populated")
+	require.Equal(t, "info@torjazz.org", *c.Email)
+}
+
+func TestFindSimilarOrganizationsNullableFieldsAreNilWhenAbsent(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool}
+
+	orgULID := "01JORGTEST00000000002"
+	_, err := pool.Exec(ctx, `
+		INSERT INTO organizations (ulid, name, address_locality, address_region)
+		VALUES ($1, $2, $3, $4)
+	`, orgULID, "Toronto Jazz Society", "Toronto", "ON")
+	require.NoError(t, err)
+
+	candidates, err := repo.FindSimilarOrganizations(ctx, "Tor Jazz Society", "Toronto", "ON", 0.3)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+
+	c := candidates[0]
+	require.Nil(t, c.URL)
+	require.Nil(t, c.Telephone)
+	require.Nil(t, c.Email)
+	require.NotNil(t, c.AddressLocality)
+	require.NotNil(t, c.AddressRegion)
+}
