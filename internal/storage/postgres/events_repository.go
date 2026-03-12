@@ -1188,17 +1188,20 @@ func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string
 	// Match events at the same venue on the same calendar date with similar names.
 	// Uses pg_trgm similarity() which returns a float between 0 and 1.
 	rows, err := queryer.Query(ctx, `
-SELECT e.ulid, e.name, similarity(e.name, $3) AS sim,
-       o.start_time, o.end_time, COALESCE(p.name, '') AS venue_name
-  FROM events e
-  JOIN event_occurrences o ON o.event_id = e.id
-  LEFT JOIN places p ON p.id = e.primary_venue_id
- WHERE e.deleted_at IS NULL
-   AND e.primary_venue_id = $1
-   AND DATE(o.start_time) = DATE($2::timestamptz)
-   AND similarity(e.name, $3) >= $4
- ORDER BY sim DESC
- LIMIT 5
+SELECT * FROM (
+  SELECT DISTINCT ON (e.id) e.ulid, e.name, similarity(e.name, $3) AS sim,
+         o.start_time, o.end_time, COALESCE(p.name, '') AS venue_name
+    FROM events e
+    JOIN event_occurrences o ON o.event_id = e.id
+    LEFT JOIN places p ON p.id = e.primary_venue_id
+   WHERE e.deleted_at IS NULL
+     AND e.primary_venue_id = $1
+     AND DATE(o.start_time) = DATE($2::timestamptz)
+     AND similarity(e.name, $3) >= $4
+   ORDER BY e.id, sim DESC
+) sub
+ORDER BY sim DESC
+LIMIT 5
 `, venueID, startTime, eventName, threshold)
 	if err != nil {
 		return nil, fmt.Errorf("find near duplicates: %w", err)

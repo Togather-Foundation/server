@@ -1087,14 +1087,17 @@
     async function fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData, matchData) {
         try {
             let event;
-            if (matchData && matchData.startDate) {
-                // Fast path: use embedded data from the warning — no API fetch needed.
-                // This also handles candidates still in pending_review state (not yet published).
+            // Fast path: use embedded data from the warning — no API fetch needed.
+            // NOTE: Only name/startDate/endDate/location are embedded; description and
+            // organizer fields will be absent from the side-by-side diff card. This is
+            // intentional — the fast path prioritises avoiding 404s for pending-review
+            // candidates over showing a complete diff.
+            if (matchData && matchData.name) {
                 event = {
                     name: matchData.name,
-                    startDate: matchData.startDate,
-                    endDate: matchData.endDate,
-                    location: matchData.location,
+                    startDate: matchData.startDate || null,
+                    endDate: matchData.endDate || null,
+                    location: matchData.location || null,
                 };
             } else {
                 event = await API.request('/api/v1/events/' + encodeURIComponent(dupUlid));
