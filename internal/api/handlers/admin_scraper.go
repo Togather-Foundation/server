@@ -209,15 +209,20 @@ func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Verify the source exists — callers get a 404 for typos/invalid names
-	// rather than a silent background failure.
-	if _, err := h.Queries.GetScraperSourceByName(r.Context(), name); err != nil {
+	// Verify the source exists and is enabled — callers get a 404 for typos/invalid
+	// names and a 409 for disabled sources rather than a silent background failure.
+	src, err := h.Queries.GetScraperSourceByName(r.Context(), name)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Scraper source not found", nil, h.Env)
 			return
 		}
 		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: lookup source for trigger")
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up scraper source", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
+		return
+	}
+	if !src.Enabled {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Scraper source is disabled", nil, h.Env)
 		return
 	}
 

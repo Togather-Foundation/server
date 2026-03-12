@@ -30,6 +30,15 @@
                 triggerScrape(target, name);
             } else if (action === 'toggle-enabled') {
                 toggleEnabled(target, name);
+            } else if (action === 'toggle-run-detail') {
+                var detailRow = document.getElementById(target.dataset.target);
+                if (detailRow) {
+                    var isHidden = detailRow.style.display === 'none';
+                    detailRow.style.display = isHidden ? '' : 'none';
+                    // Flip the arrow indicator
+                    var arrow = target.querySelector('[title="Click row for details"]');
+                    if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
+                }
             }
         });
 
@@ -118,7 +127,8 @@
             '</td>' +
             '<td>' +
                 '<div class="btn-group">' +
-                    '<button class="btn btn-sm btn-outline-primary" data-action="trigger-scrape" data-name="' + escapeHtml(src.name) + '">Run</button>' +
+                    '<button class="btn btn-sm btn-outline-primary" data-action="trigger-scrape" data-name="' + escapeHtml(src.name) + '"' +
+                        (!src.enabled ? ' disabled title="Enable this source before running"' : '') + '>Run</button>' +
                     '<button class="btn btn-sm btn-outline-secondary" data-action="view-runs" data-name="' + escapeHtml(src.name) + '">History</button>' +
                 '</div>' +
             '</td>' +
@@ -151,6 +161,12 @@
         try {
             await API.scraper.triggerScrape(name);
             showToast('Scrape triggered for: ' + name, 'success');
+            // Poll the source list a few times so last-run columns update as the
+            // job progresses through River. First reload is fast (catches quick runs);
+            // second catches slower crawls.
+            setTimeout(function () { loadSources(); }, 3000);
+            setTimeout(function () { loadSources(); }, 10000);
+            setTimeout(function () { loadSources(); }, 30000);
         } catch (err) {
             showToast('Failed to trigger scrape: ' + err.message, 'error');
         } finally {
@@ -218,22 +234,54 @@
 
     function renderRuns(runs) {
         var tbody = document.getElementById('runs-table');
-        tbody.innerHTML = runs.map(function (run) {
+        var rows = [];
+        runs.forEach(function (run, i) {
             var cls = run.status === 'completed' ? 'bg-success-lt'
                 : run.status === 'failed' ? 'bg-danger-lt'
                 : run.status === 'running' ? 'bg-warning-lt'
                 : 'bg-secondary-lt';
-            return '<tr>' +
+            var hasError = run.error_message && run.error_message.length > 0;
+            var detailId = 'run-detail-' + i;
+
+            // Main row — if there's an error, clicking the row expands it
+            var rowAttrs = hasError
+                ? ' class="cursor-pointer" data-action="toggle-run-detail" data-target="' + detailId + '"'
+                : '';
+            var statusCell = hasError
+                ? '<span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span>' +
+                  ' <span class="text-muted small" title="Click row for details">▸</span>'
+                : '<span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span>';
+
+            rows.push(
+                '<tr' + rowAttrs + '>' +
                 '<td class="text-muted small">' + escapeHtml(run.started_at ? formatDate(run.started_at) : '—') + '</td>' +
                 '<td class="text-muted small">' + escapeHtml(run.completed_at ? formatDate(run.completed_at) : '—') + '</td>' +
-                '<td><span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span></td>' +
+                '<td>' + statusCell + '</td>' +
                 '<td>' + escapeHtml(String(run.events_found)) + '</td>' +
                 '<td>' + escapeHtml(String(run.events_new)) + '</td>' +
                 '<td>' + escapeHtml(String(run.events_dup)) + '</td>' +
-                '<td>' + escapeHtml(String(run.events_failed)) + '</td>' +
-                '<td class="text-muted small">' + escapeHtml(run.error_message || '') + '</td>' +
-                '</tr>';
-        }).join('');
+                '<td>' +
+                    (run.events_failed > 0
+                        ? '<span class="badge bg-danger-lt">' + escapeHtml(String(run.events_failed)) + '</span>'
+                        : escapeHtml(String(run.events_failed))) +
+                '</td>' +
+                '</tr>'
+            );
+
+            // Collapsible detail row for error message
+            if (hasError) {
+                rows.push(
+                    '<tr id="' + detailId + '" style="display:none;">' +
+                    '<td colspan="7" class="bg-danger-lt">' +
+                    '<div class="small text-danger"><strong>Error:</strong> <span class="font-monospace">' +
+                    escapeHtml(run.error_message) +
+                    '</span></div>' +
+                    '</td>' +
+                    '</tr>'
+                );
+            }
+        });
+        tbody.innerHTML = rows.join('');
     }
 
     // -------------------------------------------------------------------------

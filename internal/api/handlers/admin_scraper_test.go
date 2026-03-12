@@ -292,9 +292,9 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 	tests := []struct {
 		name         string
 		sourceName   string
+		getSourceRow postgres.ScraperSource
 		getSourceErr error
 		wantStatus   int
-		wantName     string
 	}{
 		{
 			name:       "returns 400 when name is missing",
@@ -302,15 +302,22 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "returns 503 when RiverClient is nil (not configured)",
-			sourceName: "my-source",
-			wantStatus: http.StatusServiceUnavailable,
+			name:         "returns 503 when RiverClient is nil (not configured)",
+			sourceName:   "my-source",
+			getSourceRow: postgres.ScraperSource{Enabled: true},
+			wantStatus:   http.StatusServiceUnavailable,
 		},
 		{
 			name:         "returns 404 when source does not exist",
 			sourceName:   "unknown-source",
 			getSourceErr: pgx.ErrNoRows,
 			wantStatus:   http.StatusNotFound,
+		},
+		{
+			name:         "returns 409 when source is disabled",
+			sourceName:   "disabled-source",
+			getSourceRow: postgres.ScraperSource{Enabled: false},
+			wantStatus:   http.StatusConflict,
 		},
 	}
 
@@ -320,9 +327,10 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 			t.Parallel()
 
 			q := &fakeScraperQueries{
+				getSourceRow: tc.getSourceRow,
 				getSourceErr: tc.getSourceErr,
 			}
-			// Scraper is always nil in these tests — TriggerScrape now returns 503 for nil.
+			// RiverClient is always nil in these tests — hits 503 after enabled check.
 			h := newTestScraperHandler(q)
 
 			var path string
@@ -356,7 +364,7 @@ func TestAdminScraperHandler_TriggerScrape_WithRiver(t *testing.T) {
 		t.Parallel()
 
 		inserter := &fakeRiverInserter{}
-		q := &fakeScraperQueries{} // source lookup succeeds (zero-value row, no error)
+		q := &fakeScraperQueries{getSourceRow: postgres.ScraperSource{Enabled: true}}
 		h := &AdminScraperHandler{
 			Queries:     q,
 			Logger:      zerolog.Nop(),
@@ -377,7 +385,7 @@ func TestAdminScraperHandler_TriggerScrape_WithRiver(t *testing.T) {
 		t.Parallel()
 
 		inserter := &fakeRiverInserter{err: errStubNotImplemented}
-		q := &fakeScraperQueries{}
+		q := &fakeScraperQueries{getSourceRow: postgres.ScraperSource{Enabled: true}}
 		h := &AdminScraperHandler{
 			Queries:     q,
 			Logger:      zerolog.Nop(),

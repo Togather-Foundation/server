@@ -1,6 +1,9 @@
 /* SEL Admin Custom Styles */
 /* Extends Tabler with project-specific overrides */
 
+/* Utility: pointer cursor for clickable non-button elements */
+.cursor-pointer { cursor: pointer; }
+
 :root {
     /* Lifecycle state colors (align with backend enum) */
     --sel-published: var(--tblr-success);
