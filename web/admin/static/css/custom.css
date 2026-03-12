@@ -4,6 +4,18 @@
 /* Utility: pointer cursor for clickable non-button elements */
 .cursor-pointer { cursor: pointer; }
 
+/* Users table: fixed-width primary action slot so Edit/Activity/Delete
+   align consistently regardless of which button (Deactivate / Activate /
+   Resend Invitation) is shown. Width fits the longest label. */
+.user-primary-action {
+    display: inline-flex;
+    width: 10rem;
+}
+.user-primary-action .btn {
+    width: 100%;
+    justify-content: center;
+}
+
 :root {
     /* Lifecycle state colors (align with backend enum) */
     --sel-published: var(--tblr-success);

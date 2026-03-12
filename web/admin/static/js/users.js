@@ -197,40 +197,24 @@
             const lastLogin = user.last_login_at ? formatDate(user.last_login_at, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Never';
             const createdAt = user.created_at ? formatDate(user.created_at, { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
             
-            // Build action buttons based on status
-            let actionButtons = '';
-            
+            // Build action buttons based on status.
+            // The primary action is wrapped in a fixed-width span so that
+            // Edit / Activity / Delete always align across rows.
+            let primaryAction = '';
             if (status === 'active') {
-                actionButtons += `
-                    <button class="btn btn-sm btn-warning deactivate-user-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">
-                        Deactivate
-                    </button>
-                `;
+                primaryAction = `<button class="btn btn-sm btn-warning deactivate-user-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">Deactivate</button>`;
             } else if (status === 'inactive') {
-                actionButtons += `
-                    <button class="btn btn-sm btn-success activate-user-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">
-                        Activate
-                    </button>
-                `;
+                primaryAction = `<button class="btn btn-sm btn-success activate-user-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">Activate</button>`;
             } else if (status === 'pending') {
                 var resendLabel = emailEnabled ? 'Resend Invitation' : 'Resend Invitation (no email)';
-                actionButtons += `
-                    <button class="btn btn-sm btn-info resend-invitation-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}"${emailEnabled ? '' : ' title="Email is disabled — invitation will be regenerated but no email sent"'}>
-                        ${resendLabel}
-                    </button>
-                `;
+                primaryAction = `<button class="btn btn-sm btn-info resend-invitation-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}"${emailEnabled ? '' : ' title="Email is disabled — invitation will be regenerated but no email sent"'}>${resendLabel}</button>`;
             }
-            
-            actionButtons += `
-                <button class="btn btn-sm edit-user-btn" data-user-id="${user.id}">
-                    Edit
-                </button>
-                <a href="/admin/users/${user.id}/activity" class="btn btn-sm">
-                    Activity
-                </a>
-                <button class="btn btn-sm btn-ghost-danger delete-user-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">
-                    Delete
-                </button>
+
+            const actionButtons = `
+                <div class="user-primary-action">${primaryAction}</div>
+                <button class="btn btn-sm edit-user-btn" data-user-id="${user.id}">Edit</button>
+                <a href="/admin/users/${user.id}/activity" class="btn btn-sm">Activity</a>
+                <button class="btn btn-sm btn-ghost-danger delete-user-btn" data-user-id="${user.id}" data-username="${escapeHtml(username)}">Delete</button>
             `;
             
             return `
