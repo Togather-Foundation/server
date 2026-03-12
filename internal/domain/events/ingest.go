@@ -515,11 +515,21 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 					// Build details about the matches for the review queue
 					matches := make([]map[string]any, 0, len(candidates))
 					for _, c := range candidates {
-						matches = append(matches, map[string]any{
+						match := map[string]any{
 							"ulid":       c.ULID,
 							"name":       c.Name,
 							"similarity": c.Similarity,
-						})
+						}
+						if c.StartDate != "" {
+							match["startDate"] = c.StartDate
+						}
+						if c.EndDate != "" {
+							match["endDate"] = c.EndDate
+						}
+						if c.VenueName != "" {
+							match["location"] = map[string]any{"name": c.VenueName}
+						}
+						matches = append(matches, match)
 					}
 					warnings = append(warnings, ValidationWarning{
 						Field:   "name",

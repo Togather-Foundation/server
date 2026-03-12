@@ -83,7 +83,9 @@ es.addEventListener('job_update', e => { /* ... */ });
 ```
 
 Reconnect with exponential back-off; close the `EventSource` when the component is
-torn down to avoid leaked connections.
+torn down to avoid leaked connections. Use `pagehide` (not `beforeunload`) to close
+`EventSource` on navigation; register the handler once at module init level (not inside
+the connect function) to avoid accumulation.
 
 ## Shared Utilities (`components.js`)
 

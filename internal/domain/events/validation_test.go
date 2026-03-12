@@ -645,9 +645,14 @@ func TestValidateEventInput_TestDomainBlocklist(t *testing.T) {
 			allowTestDomains: true,
 		},
 		{
-			name:            "subdomain of example.com is not blocked",
+			name:            "subdomain of example.com is blocked",
 			url:             "https://sub.example.com/event/1",
-			wantErrContains: "", // subdomain is a different host, not blocked
+			wantErrContains: "reserved test domain",
+		},
+		{
+			name:             "AllowTestDomains suppresses sub.example.com URL error",
+			url:              "https://sub.example.com/event/1",
+			allowTestDomains: true,
 		},
 	}
 

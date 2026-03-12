@@ -578,12 +578,8 @@ func urlHost(raw string) string {
 }
 
 // isReservedTestDomain reports whether host is a reserved test domain that must
-// not appear in real event data.
+// not appear in real event data. This covers example.com and all subdomains
+// (RFC 2606 reserves the entire example.com zone).
 func isReservedTestDomain(host string) bool {
-	switch host {
-	case "example.com", "images.example.com":
-		return true
-	default:
-		return false
-	}
+	return host == "example.com" || strings.HasSuffix(host, ".example.com")
 }

@@ -644,10 +644,22 @@
         const dupContainers = detailRow.querySelectorAll('[data-dup-ulid]');
         if (dupContainers.length > 0) {
             const thisEventData = detail.normalized || null;
+
+            // Build a lookup map from ulid → match object for embedded fast-path rendering
+            const matchDataByUlid = {};
+            const dupWarnings = (detail.warnings || []).filter(w => w.code === 'potential_duplicate');
+            dupWarnings.forEach(w => {
+                if (w.details && Array.isArray(w.details.matches)) {
+                    w.details.matches.forEach(m => {
+                        if (m.ulid) matchDataByUlid[m.ulid] = m;
+                    });
+                }
+            });
+
             dupContainers.forEach(container => {
                 const dupUlid = container.dataset.dupUlid;
                 if (!dupUlid) return;
-                fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData);
+                fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData, matchDataByUlid[dupUlid] || null);
             });
         }
     }
@@ -1070,10 +1082,26 @@
      * @param {HTMLElement} container - The placeholder div to populate
      * @param {string} dupUlid - ULID of the candidate event to fetch
      * @param {Object|null} thisEventData - Normalized data of the current review entry for diff highlighting
+     * @param {Object|null} matchData - Embedded match data from the warning (fast path, avoids API fetch)
      */
-    async function fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData) {
+    async function fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData, matchData) {
         try {
-            const event = await API.request('/api/v1/events/' + encodeURIComponent(dupUlid));
+            let event;
+            // Fast path: use embedded data from the warning — no API fetch needed.
+            // NOTE: Only name/startDate/endDate/location are embedded; description and
+            // organizer fields will be absent from the side-by-side diff card. This is
+            // intentional — the fast path prioritises avoiding 404s for pending-review
+            // candidates over showing a complete diff.
+            if (matchData && matchData.name) {
+                event = {
+                    name: matchData.name,
+                    startDate: matchData.startDate || null,
+                    endDate: matchData.endDate || null,
+                    location: matchData.location || null,
+                };
+            } else {
+                event = await API.request('/api/v1/events/' + encodeURIComponent(dupUlid));
+            }
             const html = `
                 <div class="row g-2 mt-1">
                     <div class="col-md-6">

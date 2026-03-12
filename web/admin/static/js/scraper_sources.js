@@ -13,6 +13,11 @@
         loadSources();
         loadConfig();
         connectSSE();
+        window.addEventListener('pagehide', handlePageHide);
+    }
+
+    function handlePageHide() {
+        if (_sseConn) { _sseConn.close(); }
     }
 
     function connectSSE() {

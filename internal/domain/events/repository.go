@@ -350,6 +350,9 @@ type NearDuplicateCandidate struct {
 	ULID       string  // ULID of the candidate event
 	Name       string  // Name of the candidate event
 	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+	StartDate  string  // ISO-8601 from event_occurrences.start_time (may be empty)
+	EndDate    string  // ISO-8601 from event_occurrences.end_time (may be empty)
+	VenueName  string  // from places.name (may be empty)
 }
 
 // SimilarPlaceCandidate represents an existing place that may be a fuzzy duplicate
