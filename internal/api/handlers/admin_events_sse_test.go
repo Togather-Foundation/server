@@ -72,10 +72,12 @@ func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait briefly for headers to be written
-	time.Sleep(50 * time.Millisecond)
+	// Cancel and wait for handler to fully stop before reading recorder state.
+	// Reading rec.Result() concurrently with the handler writing to rec is a data race.
+	cancelReq()
+	<-done
 
-	// Check headers
+	// Now safe to read recorder — handler goroutine has exited.
 	result := rec.Result()
 	if got := result.Header.Get("Content-Type"); got != "text/event-stream" {
 		t.Errorf("Content-Type = %q, want %q", got, "text/event-stream")
@@ -86,10 +88,6 @@ func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
 	if got := result.Header.Get("X-Accel-Buffering"); got != "no" {
 		t.Errorf("X-Accel-Buffering = %q, want %q", got, "no")
 	}
-
-	// Cancel and wait for handler to finish
-	cancelReq()
-	<-done
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "retry: 5000") {

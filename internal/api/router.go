@@ -231,12 +231,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		sseShutdownCtx = context.Background()
 	}
 	broker := sse.NewBroker()
-	subCh, _ := riverClient.Subscribe(
+	subCh, sseUnsub := riverClient.Subscribe(
 		river.EventKindJobCompleted,
 		river.EventKindJobFailed,
 		river.EventKindJobCancelled,
 	)
 	broker.Start(sseShutdownCtx, subCh)
+	// Release the River subscription when the server shuts down.
+	go func() { <-sseShutdownCtx.Done(); sseUnsub() }()
 
 	// Load configured timezone for default date filtering (srv-h7j38)
 	loc, err := time.LoadLocation(cfg.DefaultTimezone)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/sse"
 )
@@ -20,7 +21,9 @@ type AdminEventsSSEHandler struct {
 func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		problem.Write(w, r, http.StatusInternalServerError,
+			"https://sel.events/problems/server-error",
+			"Streaming not supported", nil, h.Env)
 		return
 	}
 
@@ -34,7 +37,9 @@ func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	// Tell browser to reconnect after 5s if disconnected
-	fmt.Fprintf(w, "retry: 5000\n\n")
+	if _, err := fmt.Fprintf(w, "retry: 5000\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
 
 	ch, cancel := h.Broker.Subscribe()
@@ -61,10 +66,14 @@ func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 				"source_name": args.SourceName,
 				"job_id":      event.Job.ID,
 			})
-			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", event.Job.ID, payload)
+			if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", event.Job.ID, payload); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-ticker.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
+			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
