@@ -72,7 +72,7 @@
             if (!newRow) return;
 
             // Cells: 0=source, 1=tier, 2=schedule, 3=lastRun, 4=eventCounts, 5=status, 6=enabled, 7=actions
-            var UPDATE_CELLS = [3, 4, 5, 6]; // last run, event counts, status badge, enabled button
+            var UPDATE_CELLS = [3, 4, 5, 6, 7]; // last run, event counts, status badge, enabled button, actions
             UPDATE_CELLS.forEach(function (idx) {
                 if (existing.cells[idx] && newRow.cells[idx]) {
                     existing.cells[idx].innerHTML = newRow.cells[idx].innerHTML;
@@ -156,12 +156,12 @@
             items.forEach(function (src) {
                 var row = tbody.querySelector('tr[data-source-name="' + CSS.escape(src.name) + '"]');
                 if (row) {
-                    // Patch only mutable cells: lastRun(3), eventCounts(4), status(5), enabled(6)
+                    // Patch only mutable cells: lastRun(3), eventCounts(4), status(5), enabled(6), actions(7)
                     var tmp = document.createElement('tbody');
                     tmp.innerHTML = renderSourceRow(src);
                     var newRow = tmp.firstElementChild;
                     if (!newRow) return;
-                    [3, 4, 5, 6].forEach(function (idx) {
+                    [3, 4, 5, 6, 7].forEach(function (idx) {
                         if (row.cells[idx] && newRow.cells[idx]) {
                             row.cells[idx].innerHTML = newRow.cells[idx].innerHTML;
                         }
