@@ -1188,9 +1188,11 @@ func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string
 	// Match events at the same venue on the same calendar date with similar names.
 	// Uses pg_trgm similarity() which returns a float between 0 and 1.
 	rows, err := queryer.Query(ctx, `
-SELECT e.ulid, e.name, similarity(e.name, $3) AS sim
+SELECT e.ulid, e.name, similarity(e.name, $3) AS sim,
+       o.start_time, o.end_time, COALESCE(p.name, '') AS venue_name
   FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
+  LEFT JOIN places p ON p.id = e.primary_venue_id
  WHERE e.deleted_at IS NULL
    AND e.primary_venue_id = $1
    AND DATE(o.start_time) = DATE($2::timestamptz)
@@ -1206,8 +1208,14 @@ SELECT e.ulid, e.name, similarity(e.name, $3) AS sim
 	var candidates []events.NearDuplicateCandidate
 	for rows.Next() {
 		var c events.NearDuplicateCandidate
-		if err := rows.Scan(&c.ULID, &c.Name, &c.Similarity); err != nil {
+		var startT time.Time
+		var endT *time.Time
+		if err := rows.Scan(&c.ULID, &c.Name, &c.Similarity, &startT, &endT, &c.VenueName); err != nil {
 			return nil, fmt.Errorf("scan near duplicate: %w", err)
+		}
+		c.StartDate = startT.UTC().Format(time.RFC3339)
+		if endT != nil {
+			c.EndDate = endT.UTC().Format(time.RFC3339)
 		}
 		candidates = append(candidates, c)
 	}

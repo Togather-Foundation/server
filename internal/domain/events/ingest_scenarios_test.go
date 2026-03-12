@@ -646,6 +646,109 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 		}
 	})
 
+	t.Run("S6.1b_near_duplicate_embeds_candidate_fields", func(t *testing.T) {
+		// Given: A near-duplicate candidate with start/end dates and venue name.
+		// Expected: The potential_duplicate warning Details.matches entry embeds
+		// startDate, endDate, and location.name from the candidate struct.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{
+				ULID:       candidateULID,
+				Name:       "Jazz at the Rex",
+				Similarity: 0.72,
+				StartDate:  "2026-06-15T20:00:00Z",
+				EndDate:    "2026-06-15T23:00:00Z",
+				VenueName:  "The Rex Hotel Jazz Bar",
+			},
+		})
+
+		service := newTestService(repo)
+		result, err := service.Ingest(context.Background(), completeEventInput("Rex Jazz Night"))
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		var dupWarning *ValidationWarning
+		for i := range result.Warnings {
+			if result.Warnings[i].Code == "potential_duplicate" {
+				dupWarning = &result.Warnings[i]
+				break
+			}
+		}
+		if dupWarning == nil {
+			t.Fatalf("Expected potential_duplicate warning, got %v", result.Warnings)
+		}
+
+		matches, ok := dupWarning.Details["matches"].([]map[string]any)
+		if !ok || len(matches) == 0 {
+			t.Fatalf("Expected non-empty Details.matches, got %v", dupWarning.Details)
+		}
+		m := matches[0]
+
+		if m["ulid"] != candidateULID {
+			t.Errorf("match.ulid = %v, want %v", m["ulid"], candidateULID)
+		}
+		if m["startDate"] != "2026-06-15T20:00:00Z" {
+			t.Errorf("match.startDate = %v, want 2026-06-15T20:00:00Z", m["startDate"])
+		}
+		if m["endDate"] != "2026-06-15T23:00:00Z" {
+			t.Errorf("match.endDate = %v, want 2026-06-15T23:00:00Z", m["endDate"])
+		}
+		loc, ok := m["location"].(map[string]any)
+		if !ok {
+			t.Fatalf("match.location should be map[string]any, got %T", m["location"])
+		}
+		if loc["name"] != "The Rex Hotel Jazz Bar" {
+			t.Errorf("match.location.name = %v, want The Rex Hotel Jazz Bar", loc["name"])
+		}
+	})
+
+	t.Run("S6.1c_near_duplicate_omits_empty_candidate_fields", func(t *testing.T) {
+		// Given: A candidate with only ULID/Name/Similarity (no dates, no venue).
+		// Expected: startDate, endDate, location keys are absent from the match entry.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.55},
+		})
+
+		service := newTestService(repo)
+		result, err := service.Ingest(context.Background(), completeEventInput("Rex Jazz Night"))
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		var dupWarning *ValidationWarning
+		for i := range result.Warnings {
+			if result.Warnings[i].Code == "potential_duplicate" {
+				dupWarning = &result.Warnings[i]
+				break
+			}
+		}
+		if dupWarning == nil {
+			t.Fatalf("Expected potential_duplicate warning")
+		}
+
+		matches, ok := dupWarning.Details["matches"].([]map[string]any)
+		if !ok || len(matches) == 0 {
+			t.Fatalf("Expected non-empty Details.matches")
+		}
+		m := matches[0]
+
+		if _, exists := m["startDate"]; exists {
+			t.Error("startDate should be absent when candidate.StartDate is empty")
+		}
+		if _, exists := m["endDate"]; exists {
+			t.Error("endDate should be absent when candidate.EndDate is empty")
+		}
+		if _, exists := m["location"]; exists {
+			t.Error("location should be absent when candidate.VenueName is empty")
+		}
+	})
+
 	t.Run("S6.2_same_venue_different_name_no_match", func(t *testing.T) {
 		// Given: No near-duplicates returned (similarity below threshold).
 		// Expected: No near-duplicate warning.
