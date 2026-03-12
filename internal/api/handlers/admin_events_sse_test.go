@@ -138,7 +138,7 @@ func waitForSubscribers(t *testing.T, b *sse.Broker, n int, timeout time.Duratio
 func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
 	t.Parallel()
 	broker := sse.NewBroker()
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
+	h := NewAdminEventsSSEHandler(broker, "test", zerolog.Nop())
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -183,7 +183,7 @@ func TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent(t *testing.T) {
 	defer cancel()
 	broker.Start(ctx, subCh)
 
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
+	h := NewAdminEventsSSEHandler(broker, "test", zerolog.Nop())
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -267,7 +267,7 @@ func TestAdminEventsSSEHandler_FiltersNonScrapeEvents(t *testing.T) {
 	defer cancel()
 	broker.Start(ctx, subCh)
 
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
+	h := NewAdminEventsSSEHandler(broker, "test", zerolog.Nop())
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -320,7 +320,7 @@ func TestAdminEventsSSEHandler_FiltersNonScrapeEvents(t *testing.T) {
 func TestAdminEventsSSEHandler_DisconnectCleanup(t *testing.T) {
 	t.Parallel()
 	broker := sse.NewBroker()
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
+	h := NewAdminEventsSSEHandler(broker, "test", zerolog.Nop())
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -374,7 +374,7 @@ func (w *noFlusherWriter) WriteHeader(code int) {
 func TestAdminEventsSSEHandler_NoFlusher_Returns500(t *testing.T) {
 	t.Parallel()
 	broker := sse.NewBroker()
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
+	h := NewAdminEventsSSEHandler(broker, "test", zerolog.Nop())
 
 	// noFlusherWriter does NOT implement http.Flusher
 	rec := &noFlusherWriter{}

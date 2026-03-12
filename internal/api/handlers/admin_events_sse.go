@@ -16,10 +16,20 @@ import (
 
 // AdminEventsSSEHandler streams River job events to SSE clients.
 // GET /api/v1/admin/scraper/events — protected by adminCookieAuth middleware.
+//
+// Always construct via NewAdminEventsSSEHandler — a zero-value zerolog.Logger
+// is silently a no-op, so direct struct literal construction risks losing log
+// output without any compile-time or runtime error.
 type AdminEventsSSEHandler struct {
 	Broker *sse.Broker
 	Env    string
 	Logger zerolog.Logger
+}
+
+// NewAdminEventsSSEHandler constructs an AdminEventsSSEHandler with all
+// required fields. Pass zerolog.Nop() in tests that do not need log output.
+func NewAdminEventsSSEHandler(broker *sse.Broker, env string, logger zerolog.Logger) *AdminEventsSSEHandler {
+	return &AdminEventsSSEHandler{Broker: broker, Env: env, Logger: logger}
 }
 
 func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
