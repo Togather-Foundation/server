@@ -9,15 +9,21 @@ import (
 	"github.com/riverqueue/river"
 )
 
+// subscriber holds a client channel and its optional event-kind filter.
+type subscriber struct {
+	ch    chan *river.Event
+	kinds map[river.EventKind]struct{} // nil = accept all
+}
+
 // Broker fans River job events out to N connected SSE clients.
 type Broker struct {
 	mu      sync.RWMutex
-	clients map[chan *river.Event]struct{}
+	clients map[chan *river.Event]subscriber
 }
 
 // NewBroker creates a broker. Call Start separately.
 func NewBroker() *Broker {
-	return &Broker{clients: make(map[chan *river.Event]struct{})}
+	return &Broker{clients: make(map[chan *river.Event]subscriber)}
 }
 
 // Start begins reading from subCh and fanning events to all subscribers.
@@ -44,21 +50,37 @@ func (b *Broker) run(ctx context.Context, subCh <-chan *river.Event) {
 func (b *Broker) broadcast(event *river.Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	for ch := range b.clients {
+	for _, sub := range b.clients {
+		// Apply kinds filter: nil map means accept all.
+		if sub.kinds != nil {
+			if _, ok := sub.kinds[event.Kind]; !ok {
+				continue
+			}
+		}
 		select {
-		case ch <- event:
+		case sub.ch <- event:
 		default: // drop if client slow
 		}
 	}
 }
 
 // Subscribe returns a channel that receives events and a cancel func.
+// Pass one or more EventKind values to filter; omit for all events.
 // The cancel func removes the client and closes the channel (unblocking any reader).
 // Safe to call cancel multiple times.
-func (b *Broker) Subscribe() (<-chan *river.Event, func()) {
+func (b *Broker) Subscribe(kinds ...river.EventKind) (<-chan *river.Event, func()) {
 	ch := make(chan *river.Event, 16)
+
+	var kindsMap map[river.EventKind]struct{}
+	if len(kinds) > 0 {
+		kindsMap = make(map[river.EventKind]struct{}, len(kinds))
+		for _, k := range kinds {
+			kindsMap[k] = struct{}{}
+		}
+	}
+
 	b.mu.Lock()
-	b.clients[ch] = struct{}{}
+	b.clients[ch] = subscriber{ch: ch, kinds: kindsMap}
 	b.mu.Unlock()
 
 	var once sync.Once
@@ -71,4 +93,11 @@ func (b *Broker) Subscribe() (<-chan *river.Event, func()) {
 		})
 	}
 	return ch, cancel
+}
+
+// SubscriberCount returns the number of active subscribers.
+func (b *Broker) SubscriberCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.clients)
 }

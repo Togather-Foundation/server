@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/riverqueue/river"
+	"github.com/rs/zerolog/log"
+
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/sse"
@@ -42,7 +45,14 @@ func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	flusher.Flush()
 
-	ch, cancel := h.Broker.Subscribe()
+	// Subscribe to job-terminal kinds. The upstream River subscription in router.go
+	// already limits to these three, but we pass them explicitly so this handler's
+	// intent is self-documenting and robust to future upstream changes.
+	ch, cancel := h.Broker.Subscribe(
+		river.EventKindJobCompleted,
+		river.EventKindJobFailed,
+		river.EventKindJobCancelled,
+	)
 	defer cancel()
 
 	ticker := time.NewTicker(15 * time.Second)
@@ -59,7 +69,10 @@ func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 				continue
 			}
 			var args jobs.ScrapeSourceArgs
-			_ = json.Unmarshal(event.Job.EncodedArgs, &args)
+			if err := json.Unmarshal(event.Job.EncodedArgs, &args); err != nil {
+				log.Warn().Err(err).Int64("job_id", event.Job.ID).Msg("admin SSE: failed to unmarshal job args")
+				// args is zero value; source_name will be "" in the payload
+			}
 			payload, _ := json.Marshal(map[string]any{
 				"kind":        string(event.Kind),
 				"job_kind":    event.Job.Kind,
