@@ -12,6 +12,7 @@ import (
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/sse"
 )
@@ -42,6 +43,7 @@ func (f *flusherRecorder) Flush() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.flushed++
+	f.ResponseRecorder.Flush() // maintain ResponseRecorder.Flushed invariant
 }
 
 // BodyString returns a snapshot of the body captured so far. Safe to call
@@ -61,6 +63,14 @@ func (f *flusherRecorder) BodyBytes() []byte {
 	cp := make([]byte, len(b))
 	copy(cp, b)
 	return cp
+}
+
+// FlushCount returns the number of times Flush() has been called. Safe to call
+// concurrently — consistent with the rest of the accessor pattern on this type.
+func (f *flusherRecorder) FlushCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.flushed
 }
 
 // makeScrapeSourceEvent builds a *river.Event for a scrape_source job.
@@ -126,8 +136,9 @@ func waitForSubscribers(t *testing.T, b *sse.Broker, n int, timeout time.Duratio
 
 // TestAdminEventsSSEHandler_SetsSSEHeaders verifies SSE headers and retry directive.
 func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
+	t.Parallel()
 	broker := sse.NewBroker()
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
+	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -165,13 +176,14 @@ func TestAdminEventsSSEHandler_SetsSSEHeaders(t *testing.T) {
 
 // TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent verifies that a scrape_source event is forwarded.
 func TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent(t *testing.T) {
+	t.Parallel()
 	broker := sse.NewBroker()
 	subCh := make(chan *river.Event, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	broker.Start(ctx, subCh)
 
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
+	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -239,17 +251,23 @@ func TestAdminEventsSSEHandler_ForwardsScrapeSourceEvent(t *testing.T) {
 	if !strings.Contains(body, "id: 42") {
 		t.Errorf("body missing id: 42 line, got: %q", body)
 	}
+
+	// Handler must have called Flush() after writing the event
+	if rec.FlushCount() == 0 {
+		t.Error("Flush() was never called — handler did not flush after forwarding event")
+	}
 }
 
 // TestAdminEventsSSEHandler_FiltersNonScrapeEvents verifies non-scrape events are not forwarded.
 func TestAdminEventsSSEHandler_FiltersNonScrapeEvents(t *testing.T) {
+	t.Parallel()
 	broker := sse.NewBroker()
 	subCh := make(chan *river.Event, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	broker.Start(ctx, subCh)
 
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
+	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -300,8 +318,9 @@ func TestAdminEventsSSEHandler_FiltersNonScrapeEvents(t *testing.T) {
 
 // TestAdminEventsSSEHandler_DisconnectCleanup verifies handler exits when request context is cancelled.
 func TestAdminEventsSSEHandler_DisconnectCleanup(t *testing.T) {
+	t.Parallel()
 	broker := sse.NewBroker()
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
+	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
 
 	rec := newFlusherRecorder()
 	req, cancelReq := newCancelableRequest(t, http.MethodGet, "/api/v1/admin/scraper/events")
@@ -353,8 +372,9 @@ func (w *noFlusherWriter) WriteHeader(code int) {
 
 // TestAdminEventsSSEHandler_NoFlusher_Returns500 verifies 500 when ResponseWriter doesn't implement Flusher.
 func TestAdminEventsSSEHandler_NoFlusher_Returns500(t *testing.T) {
+	t.Parallel()
 	broker := sse.NewBroker()
-	h := &AdminEventsSSEHandler{Broker: broker, Env: "test"}
+	h := &AdminEventsSSEHandler{Broker: broker, Env: "test", Logger: zerolog.Nop()}
 
 	// noFlusherWriter does NOT implement http.Flusher
 	rec := &noFlusherWriter{}

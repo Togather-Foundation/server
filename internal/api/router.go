@@ -795,7 +795,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// SSE stream of River job events for the scraper admin page (srv-lahwo).
 	// Uses cookie auth (no CSRF needed — GET, no state mutation, same-origin EventSource).
-	adminEventsSSEHandler := &handlers.AdminEventsSSEHandler{Broker: broker, Env: cfg.Environment}
+	adminEventsSSEHandler := &handlers.AdminEventsSSEHandler{Broker: broker, Env: cfg.Environment, Logger: logger.With().Str("component", "sse").Logger()}
 	adminScraperEvents := adminCookieAuth(http.HandlerFunc(adminEventsSSEHandler.ServeHTTP))
 	mux.Handle("GET /api/v1/admin/scraper/events", adminScraperEvents)
 
