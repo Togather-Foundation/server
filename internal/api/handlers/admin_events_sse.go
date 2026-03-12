@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/riverqueue/river"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/jobs"
@@ -19,6 +19,7 @@ import (
 type AdminEventsSSEHandler struct {
 	Broker *sse.Broker
 	Env    string
+	Logger zerolog.Logger
 }
 
 func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +71,7 @@ func (h *AdminEventsSSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 			}
 			var args jobs.ScrapeSourceArgs
 			if err := json.Unmarshal(event.Job.EncodedArgs, &args); err != nil {
-				log.Warn().Err(err).Int64("job_id", event.Job.ID).Msg("admin SSE: failed to unmarshal job args")
+				h.Logger.Warn().Err(err).Int64("job_id", event.Job.ID).Msg("admin SSE: failed to unmarshal job args")
 				// args is zero value; source_name will be "" in the payload
 			}
 			payload, _ := json.Marshal(map[string]any{

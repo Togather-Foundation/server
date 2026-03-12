@@ -33,6 +33,7 @@ func receiveWithTimeout(ch <-chan *river.Event, d time.Duration) (*river.Event, 
 
 // TestBroker_Subscribe_ReceivesEvents: send an event on subCh, assert subscriber receives it.
 func TestBroker_Subscribe_ReceivesEvents(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -57,6 +58,7 @@ func TestBroker_Subscribe_ReceivesEvents(t *testing.T) {
 
 // TestBroker_Subscribe_FanOut: two subscribers both receive the same event.
 func TestBroker_Subscribe_FanOut(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,6 +93,7 @@ func TestBroker_Subscribe_FanOut(t *testing.T) {
 
 // TestBroker_Unsubscribe_ChannelClosed: cancel() closes the channel.
 func TestBroker_Unsubscribe_ChannelClosed(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 
 	ch, cancel := b.Subscribe()
@@ -109,6 +112,7 @@ func TestBroker_Unsubscribe_ChannelClosed(t *testing.T) {
 
 // TestBroker_Unsubscribe_NoLongerReceivesEvents: after cancel(), no events delivered.
 func TestBroker_Unsubscribe_NoLongerReceivesEvents(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -142,6 +146,7 @@ func TestBroker_Unsubscribe_NoLongerReceivesEvents(t *testing.T) {
 
 // TestBroker_CancelIdempotent: calling cancel() twice does not panic.
 func TestBroker_CancelIdempotent(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 	_, cancel := b.Subscribe()
 
@@ -158,6 +163,7 @@ func TestBroker_CancelIdempotent(t *testing.T) {
 
 // TestBroker_SlowConsumer_DropsEvent: subscriber with full buffer (cap=1) does not block broadcast.
 func TestBroker_SlowConsumer_DropsEvent(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -203,6 +209,7 @@ func TestBroker_SlowConsumer_DropsEvent(t *testing.T) {
 
 // TestBroker_ShutdownOnNilEvent: sending nil on subCh stops the broker run loop.
 func TestBroker_ShutdownOnNilEvent(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx := context.Background()
@@ -239,6 +246,7 @@ func TestBroker_ShutdownOnNilEvent(t *testing.T) {
 
 // TestBroker_SubscriberCount: reflects active subscriber count.
 func TestBroker_SubscriberCount(t *testing.T) {
+	t.Parallel()
 	b := NewBroker()
 
 	if got := b.SubscriberCount(); got != 0 {
@@ -268,6 +276,7 @@ func TestBroker_SubscriberCount(t *testing.T) {
 
 // TestBroker_Subscribe_KindsFilter_AcceptsMatchingKind: subscriber with kinds filter receives matching events.
 func TestBroker_Subscribe_KindsFilter_AcceptsMatchingKind(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -293,6 +302,7 @@ func TestBroker_Subscribe_KindsFilter_AcceptsMatchingKind(t *testing.T) {
 
 // TestBroker_Subscribe_KindsFilter_DropsNonMatchingKind: subscriber with kinds filter drops non-matching events.
 func TestBroker_Subscribe_KindsFilter_DropsNonMatchingKind(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -315,6 +325,7 @@ func TestBroker_Subscribe_KindsFilter_DropsNonMatchingKind(t *testing.T) {
 
 // TestBroker_Subscribe_NoKindsFilter_AcceptsAll: subscriber with no kinds filter receives all events.
 func TestBroker_Subscribe_NoKindsFilter_AcceptsAll(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -348,6 +359,7 @@ func TestBroker_Subscribe_NoKindsFilter_AcceptsAll(t *testing.T) {
 
 // TestBroker_Subscribe_MultipleKindsFilter: subscriber with multiple kinds receives any of them.
 func TestBroker_Subscribe_MultipleKindsFilter(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -388,6 +400,7 @@ func TestBroker_Subscribe_MultipleKindsFilter(t *testing.T) {
 
 // TestBroker_ShutdownOnCtxCancel: cancelling ctx stops the broker run loop.
 func TestBroker_ShutdownOnCtxCancel(t *testing.T) {
+	t.Parallel()
 	subCh := make(chan *river.Event, 10)
 	b := NewBroker()
 	ctx, cancel := context.WithCancel(context.Background())
