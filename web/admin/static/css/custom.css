@@ -1,4 +1,28 @@
-/* SEL Admin Custom Styles */
+/* Scraper sources table: fixed layout prevents column-width reflow when
+   cells are patched in place by SSE updates. Widths must sum to ~100%. */
+#sources-container .table {
+    table-layout: fixed;
+}
+#sources-container .table thead th:nth-child(1) { width: 28%; } /* Source */
+#sources-container .table thead th:nth-child(2) { width: 5%;  } /* Tier */
+#sources-container .table thead th:nth-child(3) { width: 10%; } /* Schedule */
+#sources-container .table thead th:nth-child(4) { width: 12%; } /* Last Run */
+#sources-container .table thead th:nth-child(5) { width: 18%; } /* Events */
+#sources-container .table thead th:nth-child(6) { width: 9%;  } /* Status */
+#sources-container .table thead th:nth-child(7) { width: 9%;  } /* Enabled */
+#sources-container .table thead th:nth-child(8) { width: 9%;  } /* Actions */
+#sources-container .table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Source cell (col 1) may wrap — allow it */
+#sources-container .table td:nth-child(1) {
+    white-space: normal;
+    word-break: break-word;
+}
+
+
 /* Extends Tabler with project-specific overrides */
 
 /* Utility: pointer cursor for clickable non-button elements */

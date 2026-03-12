@@ -138,7 +138,7 @@
                 return;
             }
             renderSources(items);
-            showState('table');
+            if (!alreadyShowing) { showState('table'); }
             document.getElementById('showing-text').textContent =
                 'Showing ' + items.length + ' source' + (items.length === 1 ? '' : 's');
         } catch (err) {
