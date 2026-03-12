@@ -6,10 +6,36 @@
 
     document.addEventListener('DOMContentLoaded', init);
 
+    var _sseConn = null;
+
     function init() {
         setupEventHandlers();
         loadSources();
         loadConfig();
+        connectSSE();
+    }
+
+    function connectSSE() {
+        if (!window.EventSource) {
+            // Graceful degradation: browser doesn't support SSE
+            return;
+        }
+        _sseConn = new EventSource('/api/v1/admin/scraper/events');
+        var reloadTimer = null;
+        _sseConn.onmessage = function (e) {
+            try {
+                var ev = JSON.parse(e.data);
+                if (ev.kind === 'job_completed' || ev.kind === 'job_failed' || ev.kind === 'job_cancelled') {
+                    // Debounce: if multiple jobs complete rapidly, reload once
+                    if (reloadTimer) { clearTimeout(reloadTimer); }
+                    reloadTimer = setTimeout(loadSources, 500);
+                }
+            } catch (_) {}
+        };
+        _sseConn.onerror = function () {
+            // Browser handles auto-reconnect; log for debugging only
+            console.debug('scraper SSE: connection error, browser will retry');
+        };
     }
 
     // -------------------------------------------------------------------------
@@ -161,12 +187,9 @@
         try {
             await API.scraper.triggerScrape(name);
             showToast('Scrape triggered for: ' + name, 'success');
-            // Poll the source list a few times so last-run columns update as the
-            // job progresses through River. First reload is fast (catches quick runs);
-            // second catches slower crawls.
-            setTimeout(function () { loadSources(); }, 3000);
-            setTimeout(function () { loadSources(); }, 10000);
-            setTimeout(function () { loadSources(); }, 30000);
+            // SSE will update the table when the job completes.
+            // Reload once immediately so "running" status appears quickly.
+            setTimeout(function () { loadSources(); }, 1000);
         } catch (err) {
             showToast('Failed to trigger scrape: ' + err.message, 'error');
         } finally {
