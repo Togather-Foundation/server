@@ -407,14 +407,13 @@
                     let warningHtml = `<div class="mb-2">${badge} ${escapeHtml(message)}`;
                     
                     // Show match details for duplicate warnings
-                    if (w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0) {
-                        const isEventDuplicate = w.code === 'potential_duplicate';
+                    if (w.code === 'potential_duplicate' && w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0) {
                         warningHtml += `<div class="ms-4 mt-2">`;
                         w.details.matches.forEach(match => {
                             const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
                             const matchName = escapeHtml(match.name || 'Unknown');
                             const matchUlid = escapeHtml(match.ulid || '');
-                            if (isEventDuplicate && matchUlid) {
+                            if (matchUlid) {
                                 warningHtml += `
                                     <div class="mb-1">
                                         <a href="/admin/events/${matchUlid}" class="text-reset">${matchName}</a>
@@ -433,20 +432,66 @@
                                 warningHtml += `
                                     <div class="mb-1">
                                         <span>${matchName}</span>
-                                        <code class="ms-1 small">${matchUlid}</code>
                                         <span class="badge bg-purple-lt ms-1">${similarity}%</span>
                                     </div>
                                 `;
                             }
                         });
-                        
-                        // Show new place/org name for place/org duplicates
-                        if (w.code === 'place_possible_duplicate' && w.details.new_place_name) {
-                            warningHtml += `<div class="text-muted small mt-1">New place: ${escapeHtml(w.details.new_place_name)}</div>`;
-                        } else if (w.code === 'org_possible_duplicate' && w.details.new_org_name) {
-                            warningHtml += `<div class="text-muted small mt-1">New org: ${escapeHtml(w.details.new_org_name)}</div>`;
-                        }
-                        
+                        warningHtml += `</div>`;
+                    } else if (w.code === 'place_possible_duplicate' && w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0) {
+                        const newPlaceData = {
+                            name: w.details.new_place_name || '',
+                            address_street: w.details.new_place_street || null,
+                            address_locality: w.details.new_place_locality || null,
+                            address_region: w.details.new_place_region || null,
+                            postal_code: w.details.new_place_postal_code || null,
+                        };
+                        warningHtml += `<div class="ms-4 mt-2">`;
+                        w.details.matches.forEach(match => {
+                            const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
+                            const matchUlid = escapeHtml(match.ulid || '');
+                            const matchName = escapeHtml(match.name || 'Unknown');
+                            warningHtml += `<div class="mb-1"><a href="/admin/places/${matchUlid}" class="text-reset">${matchName}</a><span class="badge bg-purple-lt ms-1">${similarity}%</span></div>`;
+                            warningHtml += `<div class="row g-2 mt-1 mb-2">
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New place</small></div><div class="card-body py-2">${renderPlaceSummary(newPlaceData, match)}</div></div></div>
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">Existing place</small></div><div class="card-body py-2">${renderPlaceSummary(match, newPlaceData)}</div></div></div>
+                            </div>`;
+                        });
+                        warningHtml += `</div>`;
+                    } else if (w.code === 'org_possible_duplicate' && w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0) {
+                        const newOrgData = {
+                            name: w.details.new_org_name || '',
+                            address_locality: w.details.new_org_locality || null,
+                            address_region: w.details.new_org_region || null,
+                            url: w.details.new_org_url || null,
+                            email: w.details.new_org_email || null,
+                            telephone: w.details.new_org_telephone || null,
+                        };
+                        warningHtml += `<div class="ms-4 mt-2">`;
+                        w.details.matches.forEach(match => {
+                            const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
+                            const matchUlid = escapeHtml(match.ulid || '');
+                            const matchName = escapeHtml(match.name || 'Unknown');
+                            warningHtml += `<div class="mb-1"><a href="/admin/organizations/${matchUlid}" class="text-reset">${matchName}</a><span class="badge bg-purple-lt ms-1">${similarity}%</span></div>`;
+                            warningHtml += `<div class="row g-2 mt-1 mb-2">
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New org</small></div><div class="card-body py-2">${renderOrgSummary(newOrgData, match)}</div></div></div>
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">Existing org</small></div><div class="card-body py-2">${renderOrgSummary(match, newOrgData)}</div></div></div>
+                            </div>`;
+                        });
+                        warningHtml += `</div>`;
+                    } else if (w.code === 'near_duplicate_of_new_event' && w.details && w.details.new_event_name) {
+                        const existingEventData = detail.normalized || {};
+                        const newEventData = {
+                            name: w.details.new_event_name || '',
+                            startDate: w.details.new_event_startDate || null,
+                            endDate: w.details.new_event_endDate || null,
+                            location: w.details.new_event_venue ? { name: w.details.new_event_venue } : null,
+                        };
+                        warningHtml += `<div class="ms-4 mt-2">`;
+                        warningHtml += `<div class="row g-2 mt-1">
+                            <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">This existing event</small></div><div class="card-body py-2">${renderMergeEventSummary(existingEventData, newEventData)}</div></div></div>
+                            <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New event (incoming)</small></div><div class="card-body py-2">${renderMergeEventSummary(newEventData, existingEventData)}</div></div></div>
+                        </div>`;
                         warningHtml += `</div>`;
                     }
                     
@@ -1227,6 +1272,46 @@
         container.innerHTML = renderMergeEventSummary(data, null);
     }
     
+    /**
+     * Render a compact place summary for side-by-side duplicate diff cards.
+     * Shows name, address, URL, phone, and email with diff highlighting.
+     * @param {Object} data - Place data with name, address_street, address_locality, address_region, postal_code, url, telephone, email
+     * @param {Object|null} compareData - Optional data to compare against for diff highlighting
+     * @returns {string} HTML string
+     */
+    function renderPlaceSummary(data, compareData) {
+        if (!data) return '<p class="text-muted">No data available</p>';
+        var rows = [];
+        rows.push(renderMergeField('', data.name || '', compareData ? compareData.name || '' : null, true));
+        var addr = [data.address_street, data.address_locality, data.address_region, data.postal_code].filter(Boolean).join(', ');
+        var cmpAddr = compareData ? [compareData.address_street, compareData.address_locality, compareData.address_region, compareData.postal_code].filter(Boolean).join(', ') : null;
+        if (addr || cmpAddr) rows.push(renderMergeField('Address', addr, cmpAddr, false));
+        if (data.url || (compareData && compareData.url)) rows.push(renderMergeField('URL', data.url || '', compareData ? compareData.url || '' : null, false));
+        if (data.telephone || (compareData && compareData.telephone)) rows.push(renderMergeField('Phone', data.telephone || '', compareData ? compareData.telephone || '' : null, false));
+        if (data.email || (compareData && compareData.email)) rows.push(renderMergeField('Email', data.email || '', compareData ? compareData.email || '' : null, false));
+        return rows.join('');
+    }
+
+    /**
+     * Render a compact organization summary for side-by-side duplicate diff cards.
+     * Shows name, location, URL, phone, and email with diff highlighting.
+     * @param {Object} data - Org data with name, address_locality, address_region, url, telephone, email
+     * @param {Object|null} compareData - Optional data to compare against for diff highlighting
+     * @returns {string} HTML string
+     */
+    function renderOrgSummary(data, compareData) {
+        if (!data) return '<p class="text-muted">No data available</p>';
+        var rows = [];
+        rows.push(renderMergeField('', data.name || '', compareData ? compareData.name || '' : null, true));
+        var addr = [data.address_locality, data.address_region].filter(Boolean).join(', ');
+        var cmpAddr = compareData ? [compareData.address_locality, compareData.address_region].filter(Boolean).join(', ') : null;
+        if (addr || cmpAddr) rows.push(renderMergeField('Location', addr, cmpAddr, false));
+        if (data.url || (compareData && compareData.url)) rows.push(renderMergeField('URL', data.url || '', compareData ? compareData.url || '' : null, false));
+        if (data.telephone || (compareData && compareData.telephone)) rows.push(renderMergeField('Phone', data.telephone || '', compareData ? compareData.telephone || '' : null, false));
+        if (data.email || (compareData && compareData.email)) rows.push(renderMergeField('Email', data.email || '', compareData ? compareData.email || '' : null, false));
+        return rows.join('');
+    }
+
     /**
      * Render a compact event summary for the merge comparison panels.
      * Shows name, date, venue, organizer, and description excerpt.
