@@ -27,6 +27,14 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// Flush implements http.Flusher so that SSE and other streaming handlers
+// can flush buffered data through this wrapper to the underlying writer.
+func (w *responseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func RequestLogging(logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

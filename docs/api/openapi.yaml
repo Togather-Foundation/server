@@ -1873,6 +1873,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
+  /admin/scraper/events:
+    get:
+      operationId: streamScraperEvents
+      summary: Stream scraper job events
+      description: |
+        Server-Sent Events stream of River job lifecycle events for scraper jobs.
+        Clients receive events when scrape_source jobs complete, fail, or are cancelled.
+        Maintains a keepalive comment every 15 seconds to prevent proxy timeouts.
+        Protected by admin cookie auth (same-origin EventSource sends cookies automatically).
+      tags: [Admin]
+      x-internal: true
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: SSE stream of scraper job events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Newline-delimited SSE stream. Each event has the form:
+                    id: <job_id>
+                    data: {"kind":"job_completed","job_kind":"scrape_source","source_name":"<name>","job_id":<id>}
+
+                  Keepalive comments (`: keepalive`) are sent every 15 seconds.
+                  A `retry: 5000` directive is sent on connection.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Streaming not supported
+
   /admin/scraper/submissions:
     get:
       operationId: listScraperSubmissions
@@ -2010,6 +2042,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: JWT token for admin access
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
+      description: Admin JWT token in HttpOnly cookie (used by same-origin SSE endpoints)
     devCookie:
       type: apiKey
       in: cookie

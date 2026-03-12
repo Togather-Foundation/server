@@ -296,6 +296,9 @@ func (m *mockTransactionalRepo) GetPendingReviewByEventUlid(_ context.Context, _
 func (m *mockTransactionalRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
 	return nil
 }
+func (m *mockTransactionalRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
+	return nil
+}
 
 // mockTxCommitter implements TxCommitter
 type mockTxCommitter struct {

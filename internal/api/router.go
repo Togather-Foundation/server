@@ -38,6 +38,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/mcp"
 	"github.com/Togather-Foundation/server/internal/metrics"
 	"github.com/Togather-Foundation/server/internal/scraper"
+	"github.com/Togather-Foundation/server/internal/sse"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/web"
 	"github.com/jackc/pgx/v5"
@@ -58,6 +59,7 @@ type RouterWithClient struct {
 	Handler       http.Handler
 	RiverClient   *river.Client[pgx.Tx]
 	UsageRecorder *developers.UsageRecorder
+	Broker        *sse.Broker
 }
 
 func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string, shutdownCtx ...context.Context) *RouterWithClient {
@@ -67,6 +69,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		return &RouterWithClient{
 			Handler:     http.NewServeMux(),
 			RiverClient: nil,
+			Broker:      sse.NewBroker(),
 		}
 	}
 
@@ -103,6 +106,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		return &RouterWithClient{
 			Handler:     http.NewServeMux(),
 			RiverClient: nil,
+			Broker:      sse.NewBroker(),
 		}
 	}
 	developerJWTKey, err := auth.DeriveDeveloperJWTKey(masterSecret)
@@ -111,6 +115,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		return &RouterWithClient{
 			Handler:     http.NewServeMux(),
 			RiverClient: nil,
+			Broker:      sse.NewBroker(),
 		}
 	}
 
@@ -211,10 +216,29 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		return &RouterWithClient{
 			Handler:     http.NewServeMux(),
 			RiverClient: nil,
+			Broker:      sse.NewBroker(),
 		}
 	}
 	// Note: River workers are started in cmd/server/cmd/serve.go with proper lifecycle management
 	// DO NOT call riverClient.Start() here - it's handled during server initialization for proper graceful shutdown
+
+	// Set up SSE broker to fan River job events to connected admin clients.
+	// Subscribe must be called before riverClient.Start (called in serve.go).
+	var sseShutdownCtx context.Context
+	if len(shutdownCtx) > 0 && shutdownCtx[0] != nil {
+		sseShutdownCtx = shutdownCtx[0]
+	} else {
+		sseShutdownCtx = context.Background()
+	}
+	broker := sse.NewBroker()
+	subCh, sseUnsub := riverClient.Subscribe(
+		river.EventKindJobCompleted,
+		river.EventKindJobFailed,
+		river.EventKindJobCancelled,
+	)
+	broker.Start(sseShutdownCtx, subCh)
+	// Release the River subscription when the server shuts down.
+	go func() { <-sseShutdownCtx.Done(); sseUnsub() }()
 
 	// Load configured timezone for default date filtering (srv-h7j38)
 	loc, err := time.LoadLocation(cfg.DefaultTimezone)
@@ -354,21 +378,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminSubmissionHandler := handlers.NewAdminScraperSubmissionHandler(submissionRepo, cfg.Environment)
 
 	// Create Admin Scraper handler (srv-5127b)
+	// TriggerScrape enqueues a River ScrapeSourceJob — same path as scheduled scrapes.
 	adminScraperHandler := &handlers.AdminScraperHandler{
-		Queries: queries,
-		Logger:  logger,
-		Env:     cfg.Environment,
-		// Only assign scraperSvc when non-nil: assigning a typed nil (*scraper.Scraper)
-		// to the scraperIface field would produce a non-nil interface value, defeating
-		// the h.Scraper == nil guard in TriggerScrape and causing a nil-pointer panic.
-	}
-	if scraperSvc != nil {
-		adminScraperHandler.Scraper = scraperSvc
-	}
-	// Propagate shutdown context so the background TriggerScrape goroutine is
-	// cancelled during graceful server drain (srv-aupkq).
-	if len(shutdownCtx) > 0 && shutdownCtx[0] != nil {
-		adminScraperHandler.ShutdownCtx = shutdownCtx[0]
+		Queries:     queries,
+		Logger:      logger,
+		Env:         cfg.Environment,
+		RiverClient: riverClient,
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)
@@ -778,6 +793,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/admin/developers", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDevelopersList))))
 	mux.Handle("/admin/scraper", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeScraperSources))))
 
+	// SSE stream of River job events for the scraper admin page (srv-lahwo).
+	// Uses cookie auth (no CSRF needed — GET, no state mutation, same-origin EventSource).
+	adminEventsSSEHandler := &handlers.AdminEventsSSEHandler{Broker: broker, Env: cfg.Environment}
+	adminScraperEvents := adminCookieAuth(http.HandlerFunc(adminEventsSSEHandler.ServeHTTP))
+	mux.Handle("GET /api/v1/admin/scraper/events", adminScraperEvents)
+
 	// Redirect /admin and /admin/ to dashboard
 	adminRoot := csrfMiddleware(adminCookieAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
@@ -841,6 +862,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		Handler:       handler,
 		RiverClient:   riverClient,
 		UsageRecorder: usageRecorder,
+		Broker:        broker,
 	}
 }
 

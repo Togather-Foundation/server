@@ -35,6 +35,28 @@ toronto.togather.foundation {
 	# Reverse proxy to active slot
 	# Current: Blue slot (port 8081)
 	# To switch to green: Change to localhost:8082
+
+	# SSE streaming proxy — must come before the main reverse_proxy block.
+	# Gzip compression and keepalive-off both break SSE:
+	#   - gzip buffers the response before sending (incompatible with streaming)
+	#   - keepalive off prevents Caddy from holding the upstream connection open
+	# The deployment script updates all "reverse_proxy localhost:PORT" entries within
+	# BLUE_GREEN_SLOT_START/END, so this block stays in sync with the active slot.
+	handle /api/v1/admin/scraper/events {
+		reverse_proxy localhost:8081 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_down X-Togather-Slot "blue"
+			transport http {
+				keepalive 30s
+				keepalive_idle_conns 2
+			}
+		}
+	}
+
+	# Reverse proxy to active slot
 	reverse_proxy localhost:8081 {
 		# Health check configuration
 		health_uri /health
@@ -62,8 +84,11 @@ toronto.togather.foundation {
 	}
 	# BLUE_GREEN_SLOT_END - Managed by deployment script (do not remove this marker)
 	
-	# Compression
-	encode gzip
+	# Compression — exclude SSE endpoint (gzip buffers output, breaking streaming)
+	@compressible {
+		not path /api/v1/admin/scraper/events
+	}
+	encode @compressible gzip
 	
 	# Access logging
 	log {

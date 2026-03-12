@@ -68,6 +68,23 @@ Reference: `events.js:156-172` (`extractEventId`).
 - Token stored in `localStorage` AND `auth_token` HttpOnly cookie.
 - Logout: POST `/api/v1/admin/logout`, clear localStorage, redirect to login.
 
+### SSE / EventSource
+
+`EventSource` cannot set custom headers, so SSE endpoints **must** use `adminCookieAuth`
+(not Bearer JWT). The `auth_token` HttpOnly cookie is sent automatically for same-origin
+requests — no JS-side auth plumbing is needed.
+
+```javascript
+// Correct: cookie auth is automatic for same-origin EventSource
+const es = new EventSource('/api/v1/admin/scraper/events');
+es.addEventListener('job_update', e => { /* ... */ });
+
+// Do NOT use API.* or fetch() for SSE — use EventSource directly
+```
+
+Reconnect with exponential back-off; close the `EventSource` when the component is
+torn down to avoid leaked connections.
+
 ## Shared Utilities (`components.js`)
 
 ```javascript

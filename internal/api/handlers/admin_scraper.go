@@ -10,10 +10,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
-	"github.com/Togather-Foundation/server/internal/scraper"
+	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
@@ -27,10 +29,9 @@ type scraperQueriesIface interface {
 	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
 }
 
-// scraperIface is the subset of scraper.Scraper used by AdminScraperHandler,
-// allowing test doubles to be injected without a real Scraper instance.
-type scraperIface interface {
-	ScrapeSource(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error)
+// scraperJobInserter is the River client method subset used by AdminScraperHandler.
+type scraperJobInserter interface {
+	Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error)
 }
 
 // AdminScraperHandler handles admin scraper source management and run history.
@@ -38,8 +39,7 @@ type AdminScraperHandler struct {
 	Queries     scraperQueriesIface
 	Logger      zerolog.Logger
 	Env         string
-	Scraper     scraperIface
-	ShutdownCtx context.Context // optional; used to propagate graceful shutdown to background scrapes
+	RiverClient scraperJobInserter
 }
 
 // scraperSourceResponse is the JSON representation of a scraper source.
@@ -200,7 +200,8 @@ func (h *AdminScraperHandler) ListSourceRuns(w http.ResponseWriter, r *http.Requ
 }
 
 // TriggerScrape handles POST /api/v1/admin/scraper/sources/{name}/trigger.
-// Launches a background scrape for the named source and returns 202 immediately.
+// Enqueues a River ScrapeSourceJob for the named source and returns 202 immediately.
+// The scrape runs inside the existing ScrapeSourceWorker — same path as scheduled scrapes.
 func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name == "" {
@@ -208,9 +209,10 @@ func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Verify the source exists before checking node capability — callers get a
-	// 404 for typos/invalid names rather than a silent background failure.
-	if _, err := h.Queries.GetScraperSourceByName(r.Context(), name); err != nil {
+	// Verify the source exists and is enabled — callers get a 404 for typos/invalid
+	// names and a 409 for disabled sources rather than a silent background failure.
+	src, err := h.Queries.GetScraperSourceByName(r.Context(), name)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Scraper source not found", nil, h.Env)
 			return
@@ -219,29 +221,22 @@ func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Reque
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up scraper source", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
 		return
 	}
-
-	// Return 503 if this node has no scraper configured rather than silently
-	// returning "triggered" with nothing actually running.
-	if h.Scraper == nil {
-		problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/not-available", "Scraper not configured on this node", nil, h.Env)
+	if !src.Enabled {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Scraper source is disabled", nil, h.Env)
 		return
 	}
 
-	// Derive the background context from ShutdownCtx so the goroutine is
-	// cancelled during graceful shutdown. Fall back to context.Background()
-	// if ShutdownCtx was not wired (e.g. in tests).
-	baseCtx := h.ShutdownCtx
-	if baseCtx == nil {
-		baseCtx = context.Background()
+	// Return 503 if River is not available on this node.
+	if h.RiverClient == nil {
+		problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/not-available", "Job queue not available on this node", nil, h.Env)
+		return
 	}
-	s := h.Scraper
-	go func() {
-		ctx, cancel := context.WithTimeout(baseCtx, 10*time.Minute)
-		defer cancel()
-		if _, err := s.ScrapeSource(ctx, name, scraper.ScrapeOptions{}); err != nil {
-			h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: background trigger failed")
-		}
-	}()
+
+	if _, err := h.RiverClient.Insert(r.Context(), jobs.ScrapeSourceArgs{SourceName: name}, nil); err != nil {
+		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: failed to enqueue trigger job")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to enqueue scrape job", fmt.Errorf("insert scrape job name=%s: %w", name, err), h.Env)
+		return
+	}
 
 	writeJSON(w, http.StatusAccepted, struct {
 		SourceName string `json:"source_name"`
