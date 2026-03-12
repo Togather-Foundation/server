@@ -21,14 +21,19 @@
             return;
         }
         _sseConn = new EventSource('/api/v1/admin/scraper/events');
-        var reloadTimer = null;
+        var fallbackTimer = null;
         _sseConn.onmessage = function (e) {
             try {
                 var ev = JSON.parse(e.data);
                 if (ev.kind === 'job_completed' || ev.kind === 'job_failed' || ev.kind === 'job_cancelled') {
-                    // Debounce: if multiple jobs complete rapidly, reload once
-                    if (reloadTimer) { clearTimeout(reloadTimer); }
-                    reloadTimer = setTimeout(loadSources, 500);
+                    if (ev.source_name) {
+                        // Fast path: update just the one row that changed.
+                        updateSourceRow(ev.source_name);
+                    } else {
+                        // Fallback: no source name in event — reload whole table (debounced).
+                        if (fallbackTimer) { clearTimeout(fallbackTimer); }
+                        fallbackTimer = setTimeout(loadSources, 500);
+                    }
                 }
             } catch (_) {}
         };
@@ -36,6 +41,47 @@
             // Browser handles auto-reconnect; log for debugging only
             console.debug('scraper SSE: connection error, browser will retry');
         };
+    }
+
+    // Fetch latest data for a single source and patch its <tr> in place.
+    // Falls back to a full loadSources() if the row isn't in the DOM yet
+    // (e.g., a new source was added while the page was open).
+    async function updateSourceRow(name) {
+        try {
+            var data = await API.scraper.listSources();
+            var items = data.items || [];
+            var src = null;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].name === name) { src = items[i]; break; }
+            }
+            if (!src) return; // source removed — leave table as-is
+
+            var tbody = document.getElementById('sources-table');
+            var existing = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
+            if (!existing) {
+                // Row not present — fall back to full reload so new rows appear.
+                loadSources();
+                return;
+            }
+            // Replace only the relevant cells (status, last run, event counts).
+            // We leave name/tier/schedule/buttons alone to avoid flicker on those cells.
+            var newHtml = renderSourceRow(src);
+            var tmp = document.createElement('tbody');
+            tmp.innerHTML = newHtml;
+            var newRow = tmp.firstElementChild;
+            if (!newRow) return;
+
+            // Cells: 0=source, 1=tier, 2=schedule, 3=lastRun, 4=eventCounts, 5=status, 6=enabled, 7=actions
+            var UPDATE_CELLS = [3, 4, 5]; // last run, event counts, status badge
+            UPDATE_CELLS.forEach(function (idx) {
+                if (existing.cells[idx] && newRow.cells[idx]) {
+                    existing.cells[idx].innerHTML = newRow.cells[idx].innerHTML;
+                }
+            });
+        } catch (err) {
+            console.debug('scraper SSE row update failed, falling back:', err.message);
+            loadSources();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -134,7 +180,7 @@
         var enabledToggleLabel = src.enabled ? 'Disable' : 'Enable';
         var enabledBtnClass = src.enabled ? 'btn-success' : 'btn-outline-secondary';
 
-        return '<tr>' +
+        return '<tr data-source-name="' + escapeHtml(src.name) + '">' +
             '<td>' +
                 '<div class="font-weight-medium">' + escapeHtml(src.name) + '</div>' +
                 '<div class="text-muted small">' + escapeHtml(src.url) + '</div>' +
