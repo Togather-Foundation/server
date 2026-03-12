@@ -41,6 +41,9 @@
             // Browser handles auto-reconnect; log for debugging only
             console.debug('scraper SSE: connection error, browser will retry');
         };
+        window.addEventListener('pagehide', function() {
+            if (_sseConn) { _sseConn.close(); }
+        });
     }
 
     // Fetch latest data for a single source and patch its <tr> in place.
