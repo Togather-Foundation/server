@@ -439,12 +439,17 @@
                         });
                         warningHtml += `</div>`;
                     } else if (w.code === 'place_possible_duplicate' && w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0) {
+                        // PlaceInput does not carry url/telephone/email — set to null explicitly
+                        // so renderPlaceSummary doesn't show amber "missing" highlights on the left card.
                         const newPlaceData = {
                             name: w.details.new_place_name || '',
                             address_street: w.details.new_place_street || null,
                             address_locality: w.details.new_place_locality || null,
                             address_region: w.details.new_place_region || null,
                             postal_code: w.details.new_place_postal_code || null,
+                            url: null,
+                            telephone: null,
+                            email: null,
                         };
                         warningHtml += `<div class="ms-4 mt-2">`;
                         w.details.matches.forEach(match => {
@@ -480,6 +485,10 @@
                         });
                         warningHtml += `</div>`;
                     } else if (w.code === 'near_duplicate_of_new_event' && w.details && w.details.new_event_name) {
+                        // `detail` is the outer renderDetailCard(id, detail) parameter — captured via closure.
+                        // This is the only warning branch that reads from `detail` directly (to get the
+                        // existing event's normalized data). Keep this branch inside renderDetailCard to
+                        // preserve closure access if this code is ever extracted.
                         const existingEventData = detail.normalized || {};
                         const newEventData = {
                             name: w.details.new_event_name || '',
