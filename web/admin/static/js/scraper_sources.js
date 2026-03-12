@@ -126,7 +126,10 @@
     // -------------------------------------------------------------------------
 
     async function loadSources() {
-        showState('loading');
+        // Only show the loading spinner on the initial load (table not yet visible).
+        // Subsequent refreshes update in place to avoid hiding/showing the table.
+        var alreadyShowing = document.getElementById('sources-container').style.display !== 'none';
+        if (!alreadyShowing) { showState('loading'); }
         try {
             var data = await API.scraper.listSources();
             var items = data.items || [];
@@ -139,14 +142,45 @@
             document.getElementById('showing-text').textContent =
                 'Showing ' + items.length + ' source' + (items.length === 1 ? '' : 's');
         } catch (err) {
-            showState('empty');
+            if (!alreadyShowing) { showState('empty'); }
             showToast('Failed to load scraper sources: ' + err.message, 'error');
         }
     }
 
     function renderSources(items) {
         var tbody = document.getElementById('sources-table');
-        tbody.innerHTML = items.map(renderSourceRow).join('');
+        // If the table is already populated, patch rows in place rather than
+        // replacing the entire innerHTML (which causes column-width reflow).
+        var existing = tbody.querySelectorAll('tr[data-source-name]');
+        if (existing.length > 0) {
+            items.forEach(function (src) {
+                var row = tbody.querySelector('tr[data-source-name="' + CSS.escape(src.name) + '"]');
+                if (row) {
+                    // Patch only mutable cells: lastRun(3), eventCounts(4), status(5), enabled(6)
+                    var tmp = document.createElement('tbody');
+                    tmp.innerHTML = renderSourceRow(src);
+                    var newRow = tmp.firstElementChild;
+                    if (!newRow) return;
+                    [3, 4, 5, 6].forEach(function (idx) {
+                        if (row.cells[idx] && newRow.cells[idx]) {
+                            row.cells[idx].innerHTML = newRow.cells[idx].innerHTML;
+                        }
+                    });
+                } else {
+                    // New row — append it
+                    var tmp2 = document.createElement('tbody');
+                    tmp2.innerHTML = renderSourceRow(src);
+                    if (tmp2.firstElementChild) { tbody.appendChild(tmp2.firstElementChild); }
+                }
+            });
+            // Remove rows for sources that no longer exist
+            existing.forEach(function (row) {
+                var stillExists = items.some(function (s) { return s.name === row.dataset.sourceName; });
+                if (!stillExists) { row.parentNode.removeChild(row); }
+            });
+        } else {
+            tbody.innerHTML = items.map(renderSourceRow).join('');
+        }
     }
 
     function renderSourceRow(src) {
