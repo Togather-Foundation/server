@@ -354,21 +354,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminSubmissionHandler := handlers.NewAdminScraperSubmissionHandler(submissionRepo, cfg.Environment)
 
 	// Create Admin Scraper handler (srv-5127b)
+	// TriggerScrape enqueues a River ScrapeSourceJob — same path as scheduled scrapes.
 	adminScraperHandler := &handlers.AdminScraperHandler{
-		Queries: queries,
-		Logger:  logger,
-		Env:     cfg.Environment,
-		// Only assign scraperSvc when non-nil: assigning a typed nil (*scraper.Scraper)
-		// to the scraperIface field would produce a non-nil interface value, defeating
-		// the h.Scraper == nil guard in TriggerScrape and causing a nil-pointer panic.
-	}
-	if scraperSvc != nil {
-		adminScraperHandler.Scraper = scraperSvc
-	}
-	// Propagate shutdown context so the background TriggerScrape goroutine is
-	// cancelled during graceful server drain (srv-aupkq).
-	if len(shutdownCtx) > 0 && shutdownCtx[0] != nil {
-		adminScraperHandler.ShutdownCtx = shutdownCtx[0]
+		Queries:     queries,
+		Logger:      logger,
+		Env:         cfg.Environment,
+		RiverClient: riverClient,
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)

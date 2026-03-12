@@ -96,7 +96,15 @@ func runServer() error {
 
 	// Create database connection pool
 	poolCtx, poolCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	pool, err := pgxpool.New(poolCtx, cfg.Database.URL)
+	poolConfig, err := pgxpool.ParseConfig(cfg.Database.URL)
+	if err != nil {
+		poolCancel()
+		return fmt.Errorf("database pool config parse failed: %w", err)
+	}
+	if cfg.Database.MaxConnections > 0 {
+		poolConfig.MaxConns = int32(cfg.Database.MaxConnections)
+	}
+	pool, err := pgxpool.NewWithConfig(poolCtx, poolConfig)
 	poolCancel()
 	if err != nil {
 		return fmt.Errorf("database connection failed: %w", err)

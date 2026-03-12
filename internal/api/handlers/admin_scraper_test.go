@@ -6,42 +6,23 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
 // ----------------------------------------------------------------------------
 // Fakes / stubs
 // ----------------------------------------------------------------------------
-
-// lockedBuffer is a thread-safe bytes.Buffer for use in tests where a
-// goroutine writes log output concurrently with the test goroutine reading it.
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
 
 // fakeScraperQueries is a test double for the postgres.Queries subset used by
 // AdminScraperHandler. Only the methods exercised in this file are implemented.
@@ -68,27 +49,18 @@ type fakeScraperQueries struct {
 	configSetErr error
 }
 
-// blockingScraperFunc is a function type that implements scraperIface.
-// Useful for constructing inline test doubles that block until cancelled.
-type blockingScraperFunc func(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error)
-
-func (f blockingScraperFunc) ScrapeSource(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
-	return f(ctx, sourceName, opts)
+// fakeRiverInserter is a test double for scraperJobInserter.
+type fakeRiverInserter struct {
+	err         error // error to return from Insert
+	insertedArg river.JobArgs
 }
 
-// fakeScraper is a test double for scraperIface.
-type fakeScraper struct {
-	err  error         // error to return from ScrapeSource
-	done chan struct{} // closed when ScrapeSource is called
-}
-
-func newFakeScraper(err error) *fakeScraper {
-	return &fakeScraper{err: err, done: make(chan struct{})}
-}
-
-func (f *fakeScraper) ScrapeSource(_ context.Context, _ string, _ scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
-	defer close(f.done)
-	return scraper.ScrapeResult{}, f.err
+func (f *fakeRiverInserter) Insert(_ context.Context, args river.JobArgs, _ *river.InsertOpts) (*rivertype.JobInsertResult, error) {
+	f.insertedArg = args
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &rivertype.JobInsertResult{}, nil
 }
 
 func (f *fakeScraperQueries) ListScraperSourcesWithLatestRun(_ context.Context, _ pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error) {
@@ -330,7 +302,7 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "returns 503 when scraper is nil (not configured)",
+			name:       "returns 503 when RiverClient is nil (not configured)",
 			sourceName: "my-source",
 			wantStatus: http.StatusServiceUnavailable,
 		},
@@ -373,31 +345,44 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 	}
 }
 
-func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
+// ----------------------------------------------------------------------------
+// TestAdminScraperHandler_TriggerScrape_WithRiver
+// ----------------------------------------------------------------------------
+
+func TestAdminScraperHandler_TriggerScrape_WithRiver(t *testing.T) {
 	t.Parallel()
 
-	t.Run("cancels goroutine context when ShutdownCtx is cancelled", func(t *testing.T) {
+	t.Run("returns 202 and enqueues River job on success", func(t *testing.T) {
 		t.Parallel()
 
-		// blockingScraper blocks until its context is cancelled, then records it.
-		type blockResult struct {
-			ctxErr error
+		inserter := &fakeRiverInserter{}
+		q := &fakeScraperQueries{} // source lookup succeeds (zero-value row, no error)
+		h := &AdminScraperHandler{
+			Queries:     q,
+			Logger:      zerolog.Nop(),
+			Env:         "test",
+			RiverClient: inserter,
 		}
-		resultCh := make(chan blockResult, 1)
-		var blockScraper scraperIface = blockingScraperFunc(func(ctx context.Context, _ string, _ scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
-			<-ctx.Done()
-			resultCh <- blockResult{ctxErr: ctx.Err()}
-			return scraper.ScrapeResult{}, ctx.Err()
-		})
 
-		shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
+		req.SetPathValue("name", "my-source")
+		w := httptest.NewRecorder()
+		h.TriggerScrape(w, req)
+
+		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
+		require.NotNil(t, inserter.insertedArg, "Insert should have been called")
+	})
+
+	t.Run("returns 500 when River Insert fails", func(t *testing.T) {
+		t.Parallel()
+
+		inserter := &fakeRiverInserter{err: errStubNotImplemented}
 		q := &fakeScraperQueries{}
 		h := &AdminScraperHandler{
 			Queries:     q,
 			Logger:      zerolog.Nop(),
 			Env:         "test",
-			Scraper:     blockScraper,
-			ShutdownCtx: shutdownCtx,
+			RiverClient: inserter,
 		}
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
@@ -405,81 +390,7 @@ func TestAdminScraperHandler_TriggerScrape_WithScraper(t *testing.T) {
 		w := httptest.NewRecorder()
 		h.TriggerScrape(w, req)
 
-		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
-
-		// Cancel the shutdown context and verify the goroutine's ctx.Err() is set.
-		shutdownCancel()
-		select {
-		case res := <-resultCh:
-			assert.ErrorIs(t, res.ctxErr, context.Canceled)
-		case <-time.After(5 * time.Second):
-			t.Fatal("goroutine did not respond to shutdown context cancellation within timeout")
-		}
-	})
-
-	t.Run("returns 202 and launches goroutine on success", func(t *testing.T) {
-		t.Parallel()
-
-		fake := newFakeScraper(nil)
-		q := &fakeScraperQueries{} // source lookup succeeds (zero-value row, no error)
-		h := newTestScraperHandler(q)
-		h.Scraper = fake
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
-		req.SetPathValue("name", "my-source")
-		w := httptest.NewRecorder()
-		h.TriggerScrape(w, req)
-
-		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
-
-		// Wait for the goroutine to call ScrapeSource.
-		select {
-		case <-fake.done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("goroutine did not call ScrapeSource within timeout")
-		}
-	})
-
-	t.Run("returns 202 and logs error when scrape fails", func(t *testing.T) {
-		t.Parallel()
-
-		fake := newFakeScraper(errStubNotImplemented)
-		var logBuf lockedBuffer
-		q := &fakeScraperQueries{}
-		h := &AdminScraperHandler{
-			Queries: q,
-			Logger:  zerolog.New(&logBuf),
-			Env:     "test",
-			Scraper: fake,
-		}
-
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/sources/my-source/trigger", nil)
-		req.SetPathValue("name", "my-source")
-		w := httptest.NewRecorder()
-		h.TriggerScrape(w, req)
-
-		// Handler still returns 202 — errors are async.
-		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
-
-		// Wait for goroutine to finish and log the error.
-		select {
-		case <-fake.done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("goroutine did not call ScrapeSource within timeout")
-		}
-
-		// The goroutine logs the error after ScrapeSource returns (which is when
-		// done is closed). Yield briefly to let the log write complete.
-		deadline := time.Now().Add(500 * time.Millisecond)
-		for time.Now().Before(deadline) {
-			if logBuf.String() != "" {
-				break
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-
-		// Verify the error was logged.
-		assert.Contains(t, logBuf.String(), "background trigger failed")
+		assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
 	})
 }
 
