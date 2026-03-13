@@ -1396,10 +1396,20 @@
     function extractMergeFields(data) {
         if (!data) return {};
         
+        // Prefer top-level camelCase startDate/endDate (original submission or enriched
+        // reconstructed payload). Fall back to occurrences[0].start_date (snake_case) for
+        // older reconstructed payloads that predate the camelCase enrichment.
+        let startDate = data.startDate || null;
+        let endDate = data.endDate || null;
+        if (!startDate && Array.isArray(data.occurrences) && data.occurrences.length > 0) {
+            startDate = data.occurrences[0].start_date || null;
+            endDate = data.occurrences[0].end_date || null;
+        }
+
         return {
             name: data.name || 'Untitled Event',
-            startDate: data.startDate ? formatDateValue(data.startDate) : 'No date',
-            endDate: data.endDate ? formatDateValue(data.endDate) : '',
+            startDate: startDate ? formatDateValue(startDate) : 'No date',
+            endDate: endDate ? formatDateValue(endDate) : '',
             venue: extractVenueName(data.location),
             organizer: extractOrganizerName(data.organizer),
             description: data.description || ''

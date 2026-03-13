@@ -42,6 +42,7 @@ type Event struct {
 	OrganizerID         *string
 	PrimaryVenueID      *string // UUID from events.primary_venue_id (for DB operations)
 	PrimaryVenueULID    *string // ULID from places.ulid (for URI building)
+	PrimaryVenueName    *string // Name from places.name (for display/payload reconstruction)
 	VirtualURL          string
 	ImageURL            string
 	PublicURL           string

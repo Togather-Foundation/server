@@ -33,6 +33,7 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 
 		venueID := "venue-uuid-001"
 		venueULID := "01VENUEULIDX"
+		venueName := "The Rex Hotel"
 		organizerID := "org-uuid-001"
 
 		event := &Event{
@@ -53,6 +54,7 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 			LifecycleState:      "published",
 			PrimaryVenueID:      &venueID,
 			PrimaryVenueULID:    &venueULID,
+			PrimaryVenueName:    &venueName,
 			OrganizerID:         &organizerID,
 			Occurrences: []Occurrence{
 				{
@@ -94,6 +96,15 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 		assert.Equal(t, "venue-uuid-001", result["primary_venue_id"])
 		assert.Equal(t, "01VENUEULIDX", result["primary_venue_ulid"])
 		assert.Equal(t, "org-uuid-001", result["organizer_id"])
+
+		// Top-level camelCase date fields for frontend diff card rendering
+		assert.Equal(t, start.UTC().Format(time.RFC3339), result["startDate"])
+		assert.Equal(t, end.UTC().Format(time.RFC3339), result["endDate"])
+
+		// Location with venue name for frontend diff card rendering
+		loc, ok := result["location"].(map[string]any)
+		require.True(t, ok, "location should be a map")
+		assert.Equal(t, "The Rex Hotel", loc["name"])
 
 		occs, ok := result["occurrences"].([]any)
 		require.True(t, ok, "occurrences should be a slice")
@@ -149,6 +160,10 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 		assert.NotContains(t, result, "primary_venue_id")
 		assert.NotContains(t, result, "primary_venue_ulid")
 		assert.NotContains(t, result, "organizer_id")
+		// Enriched fields absent when no occurrences/venue
+		assert.NotContains(t, result, "startDate")
+		assert.NotContains(t, result, "endDate")
+		assert.NotContains(t, result, "location")
 	})
 
 	t.Run("multiple occurrences all included", func(t *testing.T) {
@@ -182,6 +197,10 @@ func TestReconstructPayloadFromEvent(t *testing.T) {
 		occ1 := occs[1].(map[string]any)
 		assert.Equal(t, start1.Format(time.RFC3339), occ0["start_date"])
 		assert.Equal(t, start2.Format(time.RFC3339), occ1["start_date"])
+
+		// Top-level startDate uses the first occurrence
+		assert.Equal(t, start1.UTC().Format(time.RFC3339), result["startDate"])
+		assert.NotContains(t, result, "endDate") // first occurrence has no end time
 
 		// No optional fields on sparse occurrences
 		assert.NotContains(t, occ0, "end_date")
