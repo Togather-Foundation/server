@@ -1192,6 +1192,8 @@ func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string
 	// Uses pg_trgm similarity() which returns a float between 0 and 1.
 	rows, err := queryer.Query(ctx, `
 SELECT * FROM (
+  -- DISTINCT ON (e.id): an event may have multiple occurrences on the same date;
+  -- deduplicate to one row per event, keeping the occurrence with highest name similarity.
   SELECT DISTINCT ON (e.id) e.ulid, e.name, similarity(e.name, $3) AS sim,
          o.start_time, o.end_time, COALESCE(p.name, '') AS venue_name
     FROM events e
@@ -1214,6 +1216,7 @@ LIMIT 5
 	var candidates []events.NearDuplicateCandidate
 	for rows.Next() {
 		var c events.NearDuplicateCandidate
+		// start_time is NOT NULL in event_occurrences schema; scanning into time.Time (not *time.Time) is safe.
 		var startT time.Time
 		var endT *time.Time
 		if err := rows.Scan(&c.ULID, &c.Name, &c.Similarity, &startT, &endT, &c.VenueName); err != nil {

@@ -416,10 +416,11 @@
                             const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
                             const matchName = escapeHtml(match.name || 'Unknown');
                             const matchUlid = escapeHtml(match.ulid || '');
+                            const matchHref = encodeURIComponent(match.ulid || '');
                             if (matchUlid) {
                                 warningHtml += `
                                     <div class="mb-1">
-                                        <a href="/admin/events/${matchUlid}" class="text-reset">${matchName}</a>
+                                        <a href="/admin/events/${matchHref}" class="text-reset">${matchName}</a>
                                         <span class="badge bg-purple-lt ms-1">${similarity}%</span>
                                     </div>
                                     <div id="dup-detail-${matchUlid}" data-dup-ulid="${matchUlid}" class="mt-2 mb-2">
@@ -459,7 +460,7 @@
                             const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
                             const matchUlid = escapeHtml(match.ulid || '');
                             const matchName = escapeHtml(match.name || 'Unknown');
-                            warningHtml += `<div class="mb-1"><a href="/admin/places/${matchUlid}" class="text-reset">${matchName}</a><span class="badge bg-purple-lt ms-1">${similarity}%</span></div>`;
+                            warningHtml += `<div class="mb-1"><a href="/admin/places/${encodeURIComponent(match.ulid || '')}" class="text-reset">${matchName}</a><span class="badge bg-purple-lt ms-1">${similarity}%</span></div>`;
                             warningHtml += `<div class="row g-2 mt-1 mb-2">
                                 <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New place</small></div><div class="card-body py-2">${renderPlaceSummary(newPlaceData, match)}</div></div></div>
                                 <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">Existing place</small></div><div class="card-body py-2">${renderPlaceSummary(match, newPlaceData)}</div></div></div>
@@ -480,7 +481,7 @@
                             const similarity = match.similarity ? Math.round(match.similarity * 100) : 0;
                             const matchUlid = escapeHtml(match.ulid || '');
                             const matchName = escapeHtml(match.name || 'Unknown');
-                            warningHtml += `<div class="mb-1"><a href="/admin/organizations/${matchUlid}" class="text-reset">${matchName}</a><span class="badge bg-purple-lt ms-1">${similarity}%</span></div>`;
+                            warningHtml += `<div class="mb-1"><a href="/admin/organizations/${encodeURIComponent(match.ulid || '')}" class="text-reset">${matchName}</a><span class="badge bg-purple-lt ms-1">${similarity}%</span></div>`;
                             warningHtml += `<div class="row g-2 mt-1 mb-2">
                                 <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New org</small></div><div class="card-body py-2">${renderOrgSummary(newOrgData, match)}</div></div></div>
                                 <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">Existing org</small></div><div class="card-body py-2">${renderOrgSummary(match, newOrgData)}</div></div></div>
@@ -606,7 +607,7 @@
             <div class="alert alert-warning mb-3">
                 <strong>Near-duplicate detected:</strong>
                 This event may be a duplicate of
-                <a href="/admin/events/${escapeHtml(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
+                <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
             </div>
         ` : '';
 
@@ -702,7 +703,7 @@
         ` : `
             <div class="text-muted">
                 ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
-                ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${escapeHtml(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
+                ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
                 ${detail.reviewNotes ? `<br>Notes: ${escapeHtml(detail.reviewNotes)}` : ''}
                 ${detail.rejectionReason ? `<br>Reason: ${escapeHtml(detail.rejectionReason)}` : ''}
             </div>

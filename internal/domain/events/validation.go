@@ -69,6 +69,9 @@ type EventInput struct {
 	MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"` // Custom duration threshold for multi-session detection; 0 means use default (168h)
 }
 
+// PlaceInput represents a venue/location attached to an event during ingest.
+// It intentionally omits contact fields (URL, telephone, email) — those belong
+// to a full Place record, not to a location stub provided at ingest time.
 type PlaceInput struct {
 	ID              string  `json:"@id,omitempty"`
 	Name            string  `json:"name,omitempty"`
