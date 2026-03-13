@@ -607,7 +607,7 @@
             <div class="alert alert-warning mb-3">
                 <strong>Near-duplicate detected:</strong>
                 This event may be a duplicate of
-                <a href="/admin/events/${escapeHtml(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
+                <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
             </div>
         ` : '';
 
@@ -703,7 +703,7 @@
         ` : `
             <div class="text-muted">
                 ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
-                ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${escapeHtml(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
+                ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
                 ${detail.reviewNotes ? `<br>Notes: ${escapeHtml(detail.reviewNotes)}` : ''}
                 ${detail.rejectionReason ? `<br>Reason: ${escapeHtml(detail.rejectionReason)}` : ''}
             </div>

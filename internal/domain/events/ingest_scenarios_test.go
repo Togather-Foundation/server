@@ -1125,7 +1125,7 @@ func TestScenario_S6_NearDuplicateDetails(t *testing.T) {
 		}
 		repo.AddEvent(existingEvent)
 		repo.SetNearDuplicates([]NearDuplicateCandidate{
-			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.60},
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.60, VenueName: "Test Venue"},
 		})
 
 		service := newTestService(repo)
