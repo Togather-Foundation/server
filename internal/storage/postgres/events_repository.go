@@ -1236,7 +1236,8 @@ func (r *EventRepository) FindSimilarPlaces(ctx context.Context, name string, lo
 	queryer := r.queryer()
 
 	rows, err := queryer.Query(ctx, `
-SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
+SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim,
+       street_address, address_locality, address_region, postal_code, url, telephone, email
   FROM places
  WHERE deleted_at IS NULL
    AND merged_into_id IS NULL
@@ -1254,8 +1255,31 @@ SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
 	var candidates []events.SimilarPlaceCandidate
 	for rows.Next() {
 		var c events.SimilarPlaceCandidate
-		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity); err != nil {
+		var street, loc, reg, postal, url, telephone, email pgtype.Text
+		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity,
+			&street, &loc, &reg, &postal, &url, &telephone, &email); err != nil {
 			return nil, fmt.Errorf("scan similar place: %w", err)
+		}
+		if street.Valid {
+			c.AddressStreet = &street.String
+		}
+		if loc.Valid {
+			c.AddressLocality = &loc.String
+		}
+		if reg.Valid {
+			c.AddressRegion = &reg.String
+		}
+		if postal.Valid {
+			c.PostalCode = &postal.String
+		}
+		if url.Valid {
+			c.URL = &url.String
+		}
+		if telephone.Valid {
+			c.Telephone = &telephone.String
+		}
+		if email.Valid {
+			c.Email = &email.String
 		}
 		candidates = append(candidates, c)
 	}
@@ -1273,7 +1297,8 @@ func (r *EventRepository) FindSimilarOrganizations(ctx context.Context, name str
 	queryer := r.queryer()
 
 	rows, err := queryer.Query(ctx, `
-SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
+SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim,
+       address_locality, address_region, url, telephone, email
   FROM organizations
  WHERE deleted_at IS NULL
    AND merged_into_id IS NULL
@@ -1291,8 +1316,25 @@ SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim
 	var candidates []events.SimilarOrgCandidate
 	for rows.Next() {
 		var c events.SimilarOrgCandidate
-		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity); err != nil {
+		var loc, reg, url, telephone, email pgtype.Text
+		if err := rows.Scan(&c.ID, &c.ULID, &c.Name, &c.Similarity,
+			&loc, &reg, &url, &telephone, &email); err != nil {
 			return nil, fmt.Errorf("scan similar organization: %w", err)
+		}
+		if loc.Valid {
+			c.AddressLocality = &loc.String
+		}
+		if reg.Valid {
+			c.AddressRegion = &reg.String
+		}
+		if url.Valid {
+			c.URL = &url.String
+		}
+		if telephone.Valid {
+			c.Telephone = &telephone.String
+		}
+		if email.Valid {
+			c.Email = &email.String
 		}
 		candidates = append(candidates, c)
 	}

@@ -215,6 +215,50 @@ Validation generates two machine-readable warning codes to classify correction c
 
 **Use Case:** Requires manual admin verification.
 
+### `potential_duplicate` (Event Near-Duplicate)
+
+**Criteria:** Newly ingested event name is similar to an existing event at the same venue on the same start date (pg_trgm similarity ≥ threshold).
+
+**Badge:** Purple (`bg-purple-lt`)
+
+**Detail card:** Side-by-side diff comparing This event (left) vs Candidate duplicate (right). Fields: name, date, venue, organizer, description. Green = matching, amber = differing.
+
+**Details map keys:** `matches[]` (ulid, name, similarity, startDate, endDate, location.name)
+
+### `place_possible_duplicate` (Place Near-Duplicate)
+
+**Criteria:** A new place was created during ingest and a similar-named place already exists in the same locality/region.
+
+**Badge:** Purple (`bg-purple-lt`)
+
+**Detail card:** Side-by-side diff comparing New place (left) vs Existing place (right). Fields: name, address (street + locality + region + postal), URL, phone, email. Left card (new place) will show blank URL/phone/email — `PlaceInput` doesn't carry contact info; these fields come only from the existing DB record.
+
+**Details map keys:**
+- `matches[]` (ulid, name, similarity, address_street, address_locality, address_region, postal_code, url, telephone, email)
+- `new_place_name`, `new_place_street`, `new_place_locality`, `new_place_region`, `new_place_postal_code`
+
+### `org_possible_duplicate` (Organization Near-Duplicate)
+
+**Criteria:** A new organizer was created during ingest and a similar-named org already exists in the same locality/region.
+
+**Badge:** Purple (`bg-purple-lt`)
+
+**Detail card:** Side-by-side diff comparing New org (left) vs Existing org (right). Fields: name, location (locality + region), URL, phone, email.
+
+**Details map keys:**
+- `matches[]` (ulid, name, similarity, address_locality, address_region, url, telephone, email)
+- `new_org_name`, `new_org_locality`, `new_org_region`, `new_org_url`, `new_org_email`, `new_org_telephone`
+
+### `near_duplicate_of_new_event` (Existing Event Flagged by New Ingest)
+
+**Criteria:** An **existing** event is flagged because a newly ingested event is very similar to it. This warning appears on the *existing* event's review queue entry, not the new one.
+
+**Badge:** Purple (`bg-purple-lt`)
+
+**Detail card:** Side-by-side diff comparing This existing event (left, from `detail.normalized`) vs New event (right, from embedded Details). Fields: name, date, venue.
+
+**Details map keys:** `new_event_name`, `new_event_startDate` (RFC3339), `new_event_endDate` (RFC3339, optional), `new_event_venue` (optional)
+
 ---
 
 ## Frontend Components

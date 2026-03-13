@@ -1208,6 +1208,157 @@ func TestScenario_S7_PlaceFuzzyDedup(t *testing.T) {
 		}
 	})
 
+	t.Run("S7.2b_place_dup_warning_embeds_address_fields", func(t *testing.T) {
+		// Given: Similar place candidate has address/contact fields populated.
+		// Expected: place_possible_duplicate warning Details.matches entry embeds
+		// those fields, and Details has new_place_* entries for the incoming place.
+		repo := NewMockRepository()
+		existingPlaceULID, _ := ids.NewULID()
+		street := "100 Queen St W"
+		locality := "Toronto"
+		region := "ON"
+		postal := "M5H 2N2"
+		placeURL := "https://therex.com"
+		tel := "+1-416-555-0100"
+		email := "info@therex.com"
+
+		repo.SetSimilarPlaces([]SimilarPlaceCandidate{
+			{
+				ID:              "place-id-existing",
+				ULID:            existingPlaceULID,
+				Name:            "The Rex Jazz Bar",
+				Similarity:      0.72,
+				AddressStreet:   &street,
+				AddressLocality: &locality,
+				AddressRegion:   &region,
+				PostalCode:      &postal,
+				URL:             &placeURL,
+				Telephone:       &tel,
+				Email:           &email,
+			},
+		})
+
+		service := newTestService(repo)
+
+		input := completeEventInput("Jazz Night")
+		input.Location = &PlaceInput{
+			Name:            "Rex Pub",
+			StreetAddress:   "99 Queen St W",
+			AddressLocality: "Toronto",
+			AddressRegion:   "ON",
+			PostalCode:      "M5H 2N1",
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		var warn *ValidationWarning
+		for i := range result.Warnings {
+			if result.Warnings[i].Code == "place_possible_duplicate" {
+				warn = &result.Warnings[i]
+				break
+			}
+		}
+		if warn == nil {
+			t.Fatalf("Expected place_possible_duplicate warning, got %v", result.Warnings)
+		}
+
+		matches, ok := warn.Details["matches"].([]map[string]any)
+		if !ok || len(matches) == 0 {
+			t.Fatalf("Expected non-empty Details.matches, got %v", warn.Details)
+		}
+		m := matches[0]
+
+		if m["address_street"] != street {
+			t.Errorf("match.address_street = %v, want %v", m["address_street"], street)
+		}
+		if m["address_locality"] != locality {
+			t.Errorf("match.address_locality = %v, want %v", m["address_locality"], locality)
+		}
+		if m["address_region"] != region {
+			t.Errorf("match.address_region = %v, want %v", m["address_region"], region)
+		}
+		if m["postal_code"] != postal {
+			t.Errorf("match.postal_code = %v, want %v", m["postal_code"], postal)
+		}
+		if m["url"] != placeURL {
+			t.Errorf("match.url = %v, want %v", m["url"], placeURL)
+		}
+		if m["telephone"] != tel {
+			t.Errorf("match.telephone = %v, want %v", m["telephone"], tel)
+		}
+		if m["email"] != email {
+			t.Errorf("match.email = %v, want %v", m["email"], email)
+		}
+
+		// Also check new_place_* fields in Details
+		if warn.Details["new_place_street"] != "99 Queen St W" {
+			t.Errorf("Details.new_place_street = %v, want 99 Queen St W", warn.Details["new_place_street"])
+		}
+		if warn.Details["new_place_locality"] != "Toronto" {
+			t.Errorf("Details.new_place_locality = %v, want Toronto", warn.Details["new_place_locality"])
+		}
+		if warn.Details["new_place_region"] != "ON" {
+			t.Errorf("Details.new_place_region = %v, want ON", warn.Details["new_place_region"])
+		}
+		if warn.Details["new_place_postal_code"] != "M5H 2N1" {
+			t.Errorf("Details.new_place_postal_code = %v, want M5H 2N1", warn.Details["new_place_postal_code"])
+		}
+	})
+
+	t.Run("S7.2c_place_dup_warning_omits_nil_optional_fields", func(t *testing.T) {
+		// Given: Candidate has no optional address fields (all nil).
+		// Expected: None of the optional keys appear in the match entry.
+		repo := NewMockRepository()
+		existingPlaceULID, _ := ids.NewULID()
+
+		repo.SetSimilarPlaces([]SimilarPlaceCandidate{
+			{
+				ID:         "place-id-existing",
+				ULID:       existingPlaceULID,
+				Name:       "The Rex Jazz Bar",
+				Similarity: 0.72,
+				// All optional fields nil
+			},
+		})
+
+		service := newTestService(repo)
+
+		input := completeEventInput("Jazz Night")
+		input.Location = &PlaceInput{
+			Name:            "Rex Pub",
+			AddressLocality: "Toronto",
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		var warn *ValidationWarning
+		for i := range result.Warnings {
+			if result.Warnings[i].Code == "place_possible_duplicate" {
+				warn = &result.Warnings[i]
+				break
+			}
+		}
+		if warn == nil {
+			t.Fatalf("Expected place_possible_duplicate warning")
+		}
+		matches, ok := warn.Details["matches"].([]map[string]any)
+		if !ok || len(matches) == 0 {
+			t.Fatalf("Expected non-empty Details.matches")
+		}
+		m := matches[0]
+		for _, key := range []string{"address_street", "address_locality", "address_region", "postal_code", "url", "telephone", "email"} {
+			if _, exists := m[key]; exists {
+				t.Errorf("key %q should be absent when candidate field is nil", key)
+			}
+		}
+	})
+
 	t.Run("S7.3_low_similarity_no_action", func(t *testing.T) {
 		// Given: No places above the review threshold.
 		// Expected: No warning, no merge.
@@ -1283,6 +1434,157 @@ func TestScenario_S7_PlaceFuzzyDedup(t *testing.T) {
 		}
 
 		_ = result
+	})
+}
+
+// --- S8: Org Fuzzy Dedup Scenarios ---
+
+func TestScenario_S8_OrgFuzzyDedup(t *testing.T) {
+	t.Run("S8.1_org_dup_warning_embeds_address_and_contact_fields", func(t *testing.T) {
+		// Given: Similar org candidate has address and contact fields populated.
+		// Expected: org_possible_duplicate warning Details.matches entry embeds
+		// address_locality, address_region, url, telephone, email.
+		// Also Details has new_org_* fields for the incoming organizer.
+		repo := NewMockRepository()
+		existingOrgULID, _ := ids.NewULID()
+		locality := "Toronto"
+		region := "ON"
+		orgURL := "https://torjazz.org"
+		tel := "+1-416-555-0200"
+		email := "info@torjazz.org"
+
+		repo.SetSimilarOrgs([]SimilarOrgCandidate{
+			{
+				ID:              "org-id-existing",
+				ULID:            existingOrgULID,
+				Name:            "Toronto Jazz Society",
+				Similarity:      0.75,
+				AddressLocality: &locality,
+				AddressRegion:   &region,
+				URL:             &orgURL,
+				Telephone:       &tel,
+				Email:           &email,
+			},
+		})
+
+		service := newTestService(repo)
+
+		input := completeEventInput("Jazz Night")
+		input.Location = &PlaceInput{
+			Name:            "The Rex",
+			AddressLocality: "Toronto",
+			AddressRegion:   "ON",
+		}
+		input.Organizer = &OrganizationInput{
+			Name:      "Tor Jazz Soc",
+			URL:       "https://neworg.org",
+			Email:     "contact@neworg.org",
+			Telephone: "+1-416-555-0300",
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		var warn *ValidationWarning
+		for i := range result.Warnings {
+			if result.Warnings[i].Code == "org_possible_duplicate" {
+				warn = &result.Warnings[i]
+				break
+			}
+		}
+		if warn == nil {
+			t.Fatalf("Expected org_possible_duplicate warning, got %v", result.Warnings)
+		}
+
+		matches, ok := warn.Details["matches"].([]map[string]any)
+		if !ok || len(matches) == 0 {
+			t.Fatalf("Expected non-empty Details.matches, got %v", warn.Details)
+		}
+		m := matches[0]
+
+		if m["address_locality"] != locality {
+			t.Errorf("match.address_locality = %v, want %v", m["address_locality"], locality)
+		}
+		if m["address_region"] != region {
+			t.Errorf("match.address_region = %v, want %v", m["address_region"], region)
+		}
+		if m["url"] != orgURL {
+			t.Errorf("match.url = %v, want %v", m["url"], orgURL)
+		}
+		if m["telephone"] != tel {
+			t.Errorf("match.telephone = %v, want %v", m["telephone"], tel)
+		}
+		if m["email"] != email {
+			t.Errorf("match.email = %v, want %v", m["email"], email)
+		}
+
+		// New org fields in Details
+		if warn.Details["new_org_locality"] != "Toronto" {
+			t.Errorf("Details.new_org_locality = %v, want Toronto", warn.Details["new_org_locality"])
+		}
+		if warn.Details["new_org_region"] != "ON" {
+			t.Errorf("Details.new_org_region = %v, want ON", warn.Details["new_org_region"])
+		}
+		if warn.Details["new_org_url"] != "https://neworg.org" {
+			t.Errorf("Details.new_org_url = %v, want https://neworg.org", warn.Details["new_org_url"])
+		}
+		if warn.Details["new_org_email"] != "contact@neworg.org" {
+			t.Errorf("Details.new_org_email = %v, want contact@neworg.org", warn.Details["new_org_email"])
+		}
+		if warn.Details["new_org_telephone"] != "+1-416-555-0300" {
+			t.Errorf("Details.new_org_telephone = %v, want +1-416-555-0300", warn.Details["new_org_telephone"])
+		}
+	})
+
+	t.Run("S8.2_org_dup_warning_omits_nil_optional_fields", func(t *testing.T) {
+		// Given: Candidate has no optional fields (all nil).
+		// Expected: None of the optional keys appear in the match entry.
+		repo := NewMockRepository()
+		existingOrgULID, _ := ids.NewULID()
+
+		repo.SetSimilarOrgs([]SimilarOrgCandidate{
+			{
+				ID:         "org-id-existing",
+				ULID:       existingOrgULID,
+				Name:       "Toronto Jazz Society",
+				Similarity: 0.75,
+			},
+		})
+
+		service := newTestService(repo)
+
+		input := completeEventInput("Jazz Night")
+		input.Organizer = &OrganizationInput{
+			Name: "Tor Jazz Soc",
+		}
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		var warn *ValidationWarning
+		for i := range result.Warnings {
+			if result.Warnings[i].Code == "org_possible_duplicate" {
+				warn = &result.Warnings[i]
+				break
+			}
+		}
+		if warn == nil {
+			t.Fatalf("Expected org_possible_duplicate warning")
+		}
+		matches, ok := warn.Details["matches"].([]map[string]any)
+		if !ok || len(matches) == 0 {
+			t.Fatalf("Expected non-empty Details.matches")
+		}
+		m := matches[0]
+		for _, key := range []string{"address_locality", "address_region", "url", "telephone", "email"} {
+			if _, exists := m[key]; exists {
+				t.Errorf("key %q should be absent when candidate field is nil", key)
+			}
+		}
 	})
 }
 

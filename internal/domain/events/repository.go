@@ -357,16 +357,28 @@ type NearDuplicateCandidate struct {
 
 // SimilarPlaceCandidate represents an existing place that may be a fuzzy duplicate
 type SimilarPlaceCandidate struct {
-	ID         string  // UUID of the candidate place
-	ULID       string  // ULID of the candidate place
-	Name       string  // Name of the candidate place
-	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+	ID              string  // UUID of the candidate place
+	ULID            string  // ULID of the candidate place
+	Name            string  // Name of the candidate place
+	Similarity      float64 // Trigram similarity score (0.0 to 1.0)
+	AddressStreet   *string // street_address (may be nil)
+	AddressLocality *string // address_locality (may be nil)
+	AddressRegion   *string // address_region (may be nil)
+	PostalCode      *string // postal_code (may be nil)
+	URL             *string // url (may be nil)
+	Telephone       *string // telephone (may be nil)
+	Email           *string // email (may be nil)
 }
 
 // SimilarOrgCandidate represents an existing organization that may be a fuzzy duplicate
 type SimilarOrgCandidate struct {
-	ID         string  // UUID of the candidate organization
-	ULID       string  // ULID of the candidate organization
-	Name       string  // Name of the candidate organization
-	Similarity float64 // Trigram similarity score (0.0 to 1.0)
+	ID              string  // UUID of the candidate organization
+	ULID            string  // ULID of the candidate organization
+	Name            string  // Name of the candidate organization
+	Similarity      float64 // Trigram similarity score (0.0 to 1.0)
+	AddressLocality *string // address_locality (may be nil)
+	AddressRegion   *string // address_region (may be nil)
+	URL             *string // url (may be nil)
+	Telephone       *string // telephone (may be nil)
+	Email           *string // email (may be nil)
 }

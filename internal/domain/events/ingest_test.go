@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Togather-Foundation/server/internal/config"
@@ -1531,4 +1532,114 @@ func hasSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestNearDuplicateWarningsWithDetails(t *testing.T) {
+	t.Run("embeds_new_event_details", func(t *testing.T) {
+		existingEvent := &Event{Name: "Jazz at the Rex"}
+		newEventULID := "01ABCDEF0123456789ABCDEF"
+
+		data := nearDupNewEventData{
+			Name:      "Rex Jazz Night",
+			StartDate: "2026-06-15T20:00:00Z",
+			EndDate:   "2026-06-15T23:00:00Z",
+			VenueName: "The Rex Hotel",
+		}
+
+		b, err := nearDuplicateWarnings(existingEvent, newEventULID, data)
+		if err != nil {
+			t.Fatalf("nearDuplicateWarnings() error = %v", err)
+		}
+
+		var warnings []struct {
+			Field   string         `json:"field"`
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		}
+		if err := json.Unmarshal(b, &warnings); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(warnings) != 1 {
+			t.Fatalf("expected 1 warning, got %d", len(warnings))
+		}
+		w := warnings[0]
+		if w.Code != "near_duplicate_of_new_event" {
+			t.Errorf("code = %v, want near_duplicate_of_new_event", w.Code)
+		}
+		if w.Details == nil {
+			t.Fatal("expected Details to be non-nil")
+		}
+		if w.Details["new_event_name"] != "Rex Jazz Night" {
+			t.Errorf("new_event_name = %v, want Rex Jazz Night", w.Details["new_event_name"])
+		}
+		if w.Details["new_event_startDate"] != "2026-06-15T20:00:00Z" {
+			t.Errorf("new_event_startDate = %v, want 2026-06-15T20:00:00Z", w.Details["new_event_startDate"])
+		}
+		if w.Details["new_event_endDate"] != "2026-06-15T23:00:00Z" {
+			t.Errorf("new_event_endDate = %v, want 2026-06-15T23:00:00Z", w.Details["new_event_endDate"])
+		}
+		if w.Details["new_event_venue"] != "The Rex Hotel" {
+			t.Errorf("new_event_venue = %v, want The Rex Hotel", w.Details["new_event_venue"])
+		}
+	})
+
+	t.Run("omits_empty_optional_fields", func(t *testing.T) {
+		// Zero values for StartDate, EndDate, VenueName should not appear in Details.
+		existingEvent := &Event{Name: "Jazz"}
+		newEventULID := "01ABCDEF0123456789ABCDEF"
+
+		data := nearDupNewEventData{
+			Name:      "Jazz Night",
+			StartDate: "",
+			EndDate:   "",
+			VenueName: "",
+		}
+
+		b, err := nearDuplicateWarnings(existingEvent, newEventULID, data)
+		if err != nil {
+			t.Fatalf("nearDuplicateWarnings() error = %v", err)
+		}
+
+		var warnings []struct {
+			Details map[string]any `json:"details"`
+		}
+		if err := json.Unmarshal(b, &warnings); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(warnings) != 1 {
+			t.Fatalf("expected 1 warning")
+		}
+		d := warnings[0].Details
+		if _, ok := d["new_event_startDate"]; ok {
+			t.Error("new_event_startDate should be absent for empty StartDate")
+		}
+		if _, ok := d["new_event_endDate"]; ok {
+			t.Error("new_event_endDate should be absent for empty EndDate")
+		}
+		if _, ok := d["new_event_venue"]; ok {
+			t.Error("new_event_venue should be absent for empty VenueName")
+		}
+		// name must always be present
+		if d["new_event_name"] != "Jazz Night" {
+			t.Errorf("new_event_name = %v, want Jazz Night", d["new_event_name"])
+		}
+	})
+
+	t.Run("message_includes_existing_event_name", func(t *testing.T) {
+		existingEvent := &Event{Name: "Old Jazz Night"}
+		b, err := nearDuplicateWarnings(existingEvent, "NEW-ULID", nearDupNewEventData{Name: "New Jazz"})
+		if err != nil {
+			t.Fatalf("nearDuplicateWarnings() error = %v", err)
+		}
+		var warnings []struct {
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(b, &warnings); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if !hasSubstring(warnings[0].Message, "Old Jazz Night") {
+			t.Errorf("message %q should contain existing event name", warnings[0].Message)
+		}
+	})
 }
