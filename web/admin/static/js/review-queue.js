@@ -137,7 +137,10 @@
                     e.preventDefault();
                     const mergeBtn = target.closest('[data-action="merge"]');
                     const dupEventId = mergeBtn ? mergeBtn.dataset.duplicateEventId : '';
-                    mergeDirect(id, dupEventId);
+                    const warningCode = mergeBtn ? mergeBtn.dataset.warningCode : '';
+                    const primaryId = mergeBtn ? mergeBtn.dataset.primaryId : '';
+                    const duplicateId = mergeBtn ? mergeBtn.dataset.duplicateId : '';
+                    mergeDirect(id, dupEventId, warningCode, primaryId, duplicateId);
                     break;
                 }
                 case 'show-more':
@@ -608,6 +611,26 @@
         } else if (detail.duplicateOfEventUlid) {
             duplicateEventId = detail.duplicateOfEventUlid;
         }
+
+        // Compute warning code and place/org merge IDs for the Merge button
+        let mergeWarningCode = 'potential_duplicate';
+        let mergePrimaryId = '';
+        let mergeDuplicateId = '';
+        if (duplicateEventId) {
+            mergeWarningCode = 'potential_duplicate';
+        } else {
+            const placeWarn = warnings.find(w => w.code === 'place_possible_duplicate' && w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0);
+            const orgWarn = warnings.find(w => w.code === 'org_possible_duplicate' && w.details && w.details.matches && Array.isArray(w.details.matches) && w.details.matches.length > 0);
+            if (placeWarn) {
+                mergeWarningCode = 'place_possible_duplicate';
+                mergePrimaryId = placeWarn.details.matches[0].ulid || '';
+                mergeDuplicateId = placeWarn.details.new_place_ulid || '';
+            } else if (orgWarn) {
+                mergeWarningCode = 'org_possible_duplicate';
+                mergePrimaryId = orgWarn.details.matches[0].ulid || '';
+                mergeDuplicateId = orgWarn.details.new_org_ulid || '';
+            }
+        }
         
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
@@ -621,7 +644,7 @@
                     Approve
                 </button>
                 ${hasDuplicateWarnings ? `
-                    <button class="btn btn-purple" data-action="merge" data-id="${id}" data-duplicate-event-id="${escapeHtml(duplicateEventId)}">
+                    <button class="btn btn-purple" data-action="merge" data-id="${id}" data-duplicate-event-id="${escapeHtml(duplicateEventId)}" data-warning-code="${escapeHtml(mergeWarningCode)}" data-primary-id="${escapeHtml(mergePrimaryId)}" data-duplicate-id="${escapeHtml(mergeDuplicateId)}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                             <circle cx="7" cy="18" r="2"/>
@@ -1184,34 +1207,60 @@
 
     /**
      * Directly merge a duplicate without showing a modal.
-     * Uses the duplicate event ID already stored on the Merge Duplicate button.
+     * Uses the warning code and IDs already stored on the Merge Duplicate button.
      * Shows a spinner on the button while the request is in flight.
      * @param {string} id - Review queue entry ID
-     * @param {string} duplicateEventId - ULID of the primary event to merge into
+     * @param {string} duplicateEventId - ULID of the primary event (potential_duplicate only)
+     * @param {string} warningCode - The duplicate warning type
+     * @param {string} primaryId - Primary place/org ULID (place/org duplicate types)
+     * @param {string} duplicateId - Duplicate place/org ULID (place/org duplicate types)
      */
-    async function mergeDirect(id, duplicateEventId) {
-        if (!duplicateEventId) {
-            showToast('No duplicate event ID available to merge', 'error');
-            return;
-        }
+    async function mergeDirect(id, duplicateEventId, warningCode, primaryId, duplicateId) {
         const btn = document.querySelector(`[data-action="merge"][data-id="${id}"]`);
         if (btn) setLoading(btn, true);
         try {
-            await API.reviewQueue.merge(id, duplicateEventId);
-            showToast('Events merged successfully', 'success');
+            if (warningCode === 'place_possible_duplicate') {
+                if (!primaryId || !duplicateId) {
+                    showToast('No place IDs available to merge', 'error');
+                    if (btn) setLoading(btn, false);
+                    return;
+                }
+                await API.places.merge(primaryId, duplicateId);
+                await API.reviewQueue.approve(id);
+                showToast('Places merged successfully', 'success');
+            } else if (warningCode === 'org_possible_duplicate') {
+                if (!primaryId || !duplicateId) {
+                    showToast('No organization IDs available to merge', 'error');
+                    if (btn) setLoading(btn, false);
+                    return;
+                }
+                await API.organizations.merge(primaryId, duplicateId);
+                await API.reviewQueue.approve(id);
+                showToast('Organizations merged successfully', 'success');
+            } else {
+                if (!duplicateEventId) {
+                    showToast('No duplicate event ID available to merge', 'error');
+                    if (btn) setLoading(btn, false);
+                    return;
+                }
+                await API.reviewQueue.merge(id, duplicateEventId);
+                showToast('Events merged successfully', 'success');
+            }
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
-                const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
-                if (mergedBadge) {
-                    const currentCount = parseInt(mergedBadge.textContent) || 0;
-                    mergedBadge.textContent = currentCount + 1;
+                if (warningCode !== 'place_possible_duplicate' && warningCode !== 'org_possible_duplicate') {
+                    const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
+                    if (mergedBadge) {
+                        const currentCount = parseInt(mergedBadge.textContent) || 0;
+                        mergedBadge.textContent = currentCount + 1;
+                    }
                 }
             } else {
                 loadEntries();
             }
         } catch (err) {
-            console.error('Failed to merge events:', err);
-            showToast(err.message || 'Failed to merge events', 'error');
+            console.error('Failed to merge:', err);
+            showToast(err.message || 'Failed to merge', 'error');
             if (btn) setLoading(btn, false);
         }
     }
