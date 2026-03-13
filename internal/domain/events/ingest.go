@@ -1514,6 +1514,20 @@ func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
 		payload["organizer_id"] = *event.OrganizerID
 	}
 
+	// Emit top-level startDate/endDate and location.name in camelCase so the review
+	// queue frontend (extractMergeFields) can display date and venue without needing
+	// to parse the occurrences array.
+	if len(event.Occurrences) > 0 {
+		first := event.Occurrences[0]
+		payload["startDate"] = first.StartTime.UTC().Format(time.RFC3339)
+		if first.EndTime != nil {
+			payload["endDate"] = first.EndTime.UTC().Format(time.RFC3339)
+		}
+	}
+	if event.PrimaryVenueName != nil && *event.PrimaryVenueName != "" {
+		payload["location"] = map[string]any{"name": *event.PrimaryVenueName}
+	}
+
 	return json.Marshal(payload)
 }
 

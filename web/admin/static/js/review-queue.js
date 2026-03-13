@@ -487,23 +487,35 @@
                             </div>`;
                         });
                         warningHtml += `</div>`;
-                    } else if (w.code === 'near_duplicate_of_new_event' && w.details && w.details.new_event_name) {
+                    } else if (w.code === 'near_duplicate_of_new_event') {
                         // `detail` is the outer renderDetailCard(id, detail) parameter — captured via closure.
                         // This is the only warning branch that reads from `detail` directly (to get the
                         // existing event's normalized data). Keep this branch inside renderDetailCard to
                         // preserve closure access if this code is ever extracted.
+                        //
+                        // Old DB rows (written before the enriched nearDuplicateWarnings) have no details
+                        // at all. Fall back gracefully: show the existing event side, and show the new
+                        // event side only when details are present.
                         const existingEventData = detail.normalized || {};
-                        const newEventData = {
-                            name: w.details.new_event_name || '',
-                            startDate: w.details.new_event_startDate || null,
-                            endDate: w.details.new_event_endDate || null,
-                            location: w.details.new_event_venue ? { name: w.details.new_event_venue } : null,
-                        };
+                        const d = w.details || {};
+                        const newEventData = d.new_event_name ? {
+                            name: d.new_event_name,
+                            startDate: d.new_event_startDate || null,
+                            endDate: d.new_event_endDate || null,
+                            location: d.new_event_venue ? { name: d.new_event_venue } : null,
+                        } : null;
                         warningHtml += `<div class="ms-4 mt-2">`;
-                        warningHtml += `<div class="row g-2 mt-1">
-                            <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">This existing event</small></div><div class="card-body py-2">${renderMergeEventSummary(existingEventData, newEventData)}</div></div></div>
-                            <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New event (incoming)</small></div><div class="card-body py-2">${renderMergeEventSummary(newEventData, existingEventData)}</div></div></div>
-                        </div>`;
+                        if (newEventData) {
+                            warningHtml += `<div class="row g-2 mt-1">
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">This existing event</small></div><div class="card-body py-2">${renderMergeEventSummary(existingEventData, newEventData)}</div></div></div>
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New event (incoming)</small></div><div class="card-body py-2">${renderMergeEventSummary(newEventData, existingEventData)}</div></div></div>
+                            </div>`;
+                        } else {
+                            warningHtml += `<div class="row g-2 mt-1">
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">This existing event</small></div><div class="card-body py-2">${renderMergeEventSummary(existingEventData, {})}</div></div></div>
+                                <div class="col-md-6"><div class="card bg-light"><div class="card-header py-1"><small class="text-muted fw-semibold">New event (incoming)</small></div><div class="card-body py-2"><span class="text-muted small">Details not available (legacy entry)</span></div></div></div>
+                            </div>`;
+                        }
                         warningHtml += `</div>`;
                     }
                     
@@ -1396,10 +1408,20 @@
     function extractMergeFields(data) {
         if (!data) return {};
         
+        // Prefer top-level camelCase startDate/endDate (original submission or enriched
+        // reconstructed payload). Fall back to occurrences[0].start_date (snake_case) for
+        // older reconstructed payloads that predate the camelCase enrichment.
+        let startDate = data.startDate || null;
+        let endDate = data.endDate || null;
+        if (!startDate && Array.isArray(data.occurrences) && data.occurrences.length > 0) {
+            startDate = data.occurrences[0].start_date || null;
+            endDate = data.occurrences[0].end_date || null;
+        }
+
         return {
             name: data.name || 'Untitled Event',
-            startDate: data.startDate ? formatDateValue(data.startDate) : 'No date',
-            endDate: data.endDate ? formatDateValue(data.endDate) : '',
+            startDate: startDate ? formatDateValue(startDate) : 'No date',
+            endDate: endDate ? formatDateValue(endDate) : '',
             venue: extractVenueName(data.location),
             organizer: extractOrganizerName(data.organizer),
             description: data.description || ''

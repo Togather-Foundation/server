@@ -278,7 +278,7 @@ func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.E
 	rows, err := queryer.Query(ctx, `
 SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	   e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
-	   e.organizer_id, e.primary_venue_id, pv.ulid AS primary_venue_ulid,
+	   e.organizer_id, e.primary_venue_id, pv.ulid AS primary_venue_ulid, pv.name AS primary_venue_name,
 	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
 	   e.keywords, e.in_language, e.is_accessible_for_free,
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
@@ -313,6 +313,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			organizerID         *string
 			primaryVenueID      *string
 			primaryVenueULID    *string
+			primaryVenueName    *string
 			virtualURL          *string
 			imageURL            *string
 			publicURL           *string
@@ -354,6 +355,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&organizerID,
 			&primaryVenueID,
 			&primaryVenueULID,
+			&primaryVenueName,
 			&virtualURL,
 			&imageURL,
 			&publicURL,
@@ -399,6 +401,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 				OrganizerID:         organizerID,
 				PrimaryVenueID:      primaryVenueID,
 				PrimaryVenueULID:    primaryVenueULID,
+				PrimaryVenueName:    primaryVenueName,
 				VirtualURL:          derefString(virtualURL),
 				ImageURL:            derefString(imageURL),
 				PublicURL:           derefString(publicURL),
