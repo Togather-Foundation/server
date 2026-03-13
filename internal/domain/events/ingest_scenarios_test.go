@@ -1107,6 +1107,81 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 	})
 }
 
+func TestScenario_S6_NearDuplicateDetails(t *testing.T) {
+	t.Run("S6.10_near_duplicate_new_event_warning_details_populated", func(t *testing.T) {
+		// Given: A published event "Jazz at the Rex" exists at venue V1.
+		// Action: "Rex Jazz Night" ingested for same venue/date. StartDate and venue name are set.
+		// Expected: The existing event's review queue entry Warnings contain a
+		// near_duplicate_of_new_event warning with Details.new_event_name,
+		// Details.new_event_startDate, and Details.new_event_venue correctly populated.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+
+		existingEvent := &Event{
+			ID:             "existing-event-uuid-s610",
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.60},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true")
+		}
+
+		// Verify the existing event's review queue entry has near_duplicate_of_new_event
+		// with correctly populated Details.
+		entries := repo.GetReviewQueueByEventID("existing-event-uuid-s610")
+		if len(entries) == 0 {
+			t.Fatal("Expected review queue entry for existing event, got none")
+		}
+		entry := entries[0]
+
+		var warnings []ValidationWarning
+		if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
+			t.Fatalf("Failed to unmarshal existing event Warnings: %v", err)
+		}
+
+		var dupWarning *ValidationWarning
+		for i := range warnings {
+			if warnings[i].Code == "near_duplicate_of_new_event" {
+				dupWarning = &warnings[i]
+				break
+			}
+		}
+		if dupWarning == nil {
+			t.Fatalf("Expected near_duplicate_of_new_event warning, got %v", warnings)
+		}
+		if dupWarning.Details == nil {
+			t.Fatal("Expected Details to be non-nil on near_duplicate_of_new_event warning")
+		}
+		details := dupWarning.Details
+		if _, ok := details["new_event_name"]; !ok {
+			t.Error("Expected Details.new_event_name to be set")
+		}
+		if _, ok := details["new_event_startDate"]; !ok {
+			t.Error("Expected Details.new_event_startDate to be set")
+		}
+		if _, ok := details["new_event_venue"]; !ok {
+			t.Error("Expected Details.new_event_venue to be set")
+		}
+		// Verify values match the ingested event's data.
+		if name, ok := details["new_event_name"].(string); !ok || name == "" {
+			t.Errorf("Expected non-empty new_event_name, got %v", details["new_event_name"])
+		}
+	})
+}
+
 // --- S7: Place Fuzzy Dedup Scenarios ---
 
 func TestScenario_S7_PlaceFuzzyDedup(t *testing.T) {

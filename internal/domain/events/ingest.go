@@ -485,6 +485,11 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 							}
 							matches = append(matches, match)
 						}
+						// NOTE: PlaceInput intentionally does not carry url, telephone, or email.
+						// Venue data attached to event ingest inputs is a location stub (name + address)
+						// not a full place record. Contact info is not captured at ingest time.
+						// The frontend sets url/telephone/email to null for the "new place" diff card,
+						// which prevents false "missing" highlights on fields that were never available.
 						placeDetails := map[string]any{
 							"matches":        matches,
 							"new_place_ulid": place.ULID,
