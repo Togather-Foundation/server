@@ -1608,6 +1608,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.EventStartTime = now
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
@@ -1636,17 +1637,25 @@ func TestAddOccurrenceReview(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "Error - missing target_event_ulid",
-			reviewID:       "1",
-			requestBody:    map[string]string{},
-			mockSetup:      func(m *MockRepository) {},
+			name:        "Error - missing target_event_ulid",
+			reviewID:    "1",
+			requestBody: map[string]string{},
+			mockSetup: func(m *MockRepository) {
+				// GetReviewQueueEntry is called to determine dispatch path.
+				// No near-dup warning → forward path → target_event_ulid is required.
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "Error - malformed target_event_ulid",
-			reviewID:       "1",
-			requestBody:    map[string]string{"target_event_ulid": "not-a-ulid"},
-			mockSetup:      func(m *MockRepository) {},
+			name:        "Error - malformed target_event_ulid",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": "not-a-ulid"},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
@@ -1654,10 +1663,10 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "999",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
-				setupTxMock(m)
-				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 999).Return(
+				// Peek returns not-found before the transaction even starts.
+				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
-					events.ErrNotFound,
+					pgx.ErrNoRows,
 				)
 			},
 			expectedStatus: http.StatusNotFound,
@@ -1669,6 +1678,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.EventStartTime = now
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
@@ -1683,6 +1693,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				deleted := testTargetEvent()
@@ -1698,6 +1709,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				entry.Status = "approved"
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
@@ -1711,6 +1723,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.EventStartTime = now
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				draftTarget := testTargetEvent()
@@ -1734,6 +1747,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				// The review entry's EventULID matches targetEventULID → ErrCannotMergeSameEvent
 				entry := testReviewQueueEntry(1, targetEventULID)
 				entry.EventStartTime = now
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
@@ -1767,6 +1781,173 @@ func TestAddOccurrenceReview(t *testing.T) {
 			handler.AddOccurrenceReview(rec, req)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code)
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+// TestAddOccurrenceReviewNearDupPath tests the near_duplicate_of_new_event dispatch
+// path and verifies that targetEventUlid is returned in the response.
+func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	targetEventID := "target-event-uuid"
+	sourceEventULID := "01HSOURCE00000000000000001"
+	now := time.Now()
+
+	// nearDupEntry returns a review entry with a near_duplicate_of_new_event warning
+	// and DuplicateOfEventULID pointing to the source (newly ingested) event.
+	nearDupEntry := func() *events.ReviewQueueEntry {
+		warningJSON, _ := json.Marshal([]events.ValidationWarning{
+			{Code: "near_duplicate_of_new_event"},
+		})
+		return &events.ReviewQueueEntry{
+			ID:                   1,
+			EventID:              "target-event-id",
+			EventULID:            targetEventULID,
+			DuplicateOfEventULID: &sourceEventULID,
+			OriginalPayload:      []byte(`{"name":"Series Event"}`),
+			NormalizedPayload:    []byte(`{"name":"Series Event"}`),
+			Warnings:             warningJSON,
+			Status:               "pending",
+			EventStartTime:       now,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+		}
+	}
+
+	mergedEntry := func() *events.ReviewQueueEntry {
+		e := nearDupEntry()
+		e.Status = "merged"
+		e.DuplicateOfEventULID = &targetEventULID
+		return e
+	}
+
+	tests := []struct {
+		name           string
+		requestBody    any
+		mockSetup      func(*MockRepository)
+		expectedStatus int
+		checkResponse  func(t *testing.T, body []byte)
+	}{
+		{
+			name:        "Near-dup path: success — no target_event_ulid required",
+			requestBody: map[string]string{}, // no target_event_ulid
+			mockSetup: func(m *MockRepository) {
+				// Handler peeks the entry first.
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry(), nil)
+				// Service transaction.
+				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry(), nil)
+				// GetByULID called twice for target (pre-lock + post-lock) and once for source.
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(
+					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, sourceEventULID).Return(
+					&events.Event{ID: "source-id", ULID: sourceEventULID, Name: "New Instance",
+						Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
+				m.On("SoftDeleteEvent", mock.Anything, sourceEventULID, "absorbed_as_occurrence").Return(nil)
+				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
+				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(mergedEntry(), nil)
+			},
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, body []byte) {
+				var resp addOccurrenceResponse
+				assert.NoError(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, targetEventULID, resp.TargetEventULID,
+					"targetEventUlid should be the existing series ULID")
+			},
+		},
+		{
+			name:        "Near-dup path: overlap returns 409",
+			requestBody: map[string]string{},
+			mockSetup: func(m *MockRepository) {
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry(), nil)
+				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry(), nil)
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(
+					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, sourceEventULID).Return(
+					&events.Event{ID: "source-id", ULID: sourceEventULID, Name: "New Instance",
+						Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
+			},
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:        "Forward path still works with target_event_ulid",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				// No near_duplicate_of_new_event warning → forward path.
+				fwdEntry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(fwdEntry, nil)
+				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(fwdEntry, nil)
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(
+					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
+				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
+					&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance"}, nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
+				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(
+					&events.ReviewQueueEntry{ID: 1, EventID: "review-event-id", EventULID: "01HREVIEW000000000000000001",
+						OriginalPayload: []byte(`{"name":"Series Event"}`), NormalizedPayload: []byte(`{"name":"Series Event"}`),
+						Warnings: []byte(`[]`), Status: "merged", DuplicateOfEventULID: &targetEventULID,
+						EventStartTime: now, CreatedAt: now, UpdatedAt: now}, nil)
+			},
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, body []byte) {
+				var resp addOccurrenceResponse
+				assert.NoError(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, targetEventULID, resp.TargetEventULID,
+					"targetEventUlid should equal the supplied target ULID")
+			},
+		},
+		{
+			name:        "Near-dup path: missing DuplicateOfEventULID returns 400",
+			requestBody: map[string]string{},
+			mockSetup: func(m *MockRepository) {
+				entry := nearDupEntry()
+				entry.DuplicateOfEventULID = nil // broken entry
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockRepository)
+			tt.mockSetup(mockRepo)
+
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			handler := &AdminReviewQueueHandler{
+				Repository:   mockRepo,
+				AdminService: adminService,
+				AuditLogger:  audit.NewLogger(),
+				Env:          "test",
+			}
+
+			body, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/add-occurrence", bytes.NewReader(body))
+			req.SetPathValue("id", "1")
+			req = withAdminUser(req, "admin")
+			rec := httptest.NewRecorder()
+
+			handler.AddOccurrenceReview(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+			if tt.checkResponse != nil && rec.Code == http.StatusOK {
+				tt.checkResponse(t, rec.Body.Bytes())
+			}
 			mockRepo.AssertExpectations(t)
 		})
 	}

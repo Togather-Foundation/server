@@ -1052,13 +1052,29 @@ paths:
       summary: Add event as occurrence of recurring series
       description: |
         When a review entry's event is actually a new occurrence of an existing recurring-series
-        event rather than a true duplicate, use this endpoint to:
-        1. Add the review event's start/end time as a new occurrence on the target recurring-series event.
-        2. Soft-delete the review's own event (with tombstone reason `absorbed_as_occurrence`).
+        event rather than a true duplicate, use this endpoint to atomically:
+        1. Add the absorbed event's start/end time as a new occurrence on the target series.
+        2. Soft-delete the absorbed event (tombstone reason `absorbed_as_occurrence`).
         3. Mark the review as merged.
 
-        All operations are performed atomically. Returns HTTP 409 if the new occurrence
-        would overlap an existing occurrence on the target event.
+        **Two dispatch paths** are selected automatically based on the warning type in the review:
+
+        - **`potential_duplicate` (forward path):** The review's own event is the source to be
+          absorbed. `target_event_ulid` is **required** and identifies the existing recurring-series
+          event to add the occurrence to.
+
+        - **`near_duplicate_of_new_event` (inverted path):** The review entry sits on the
+          *existing* series event; the newly-ingested counterpart (stored in the review's
+          `duplicate_of_event_id` column) is the source to be absorbed into the existing series.
+          `target_event_ulid` is **NOT required** for this path — the target is derived from the
+          review entry itself.  Any provided `target_event_ulid` is ignored.
+
+        Returns HTTP 409 if the new occurrence would overlap an existing occurrence on the target
+        event, or if the review entry is not in `pending` status.
+
+        The response includes a `targetEventUlid` field at the top level that always identifies
+        the surviving series event, regardless of which path was used. The frontend can use this
+        to navigate directly to the series after a successful action.
       tags: [Admin]
       x-internal: true
       security:
@@ -1077,23 +1093,37 @@ paths:
           application/json:
             schema:
               type: object
-              required: [target_event_ulid]
               properties:
                 target_event_ulid:
                   type: string
-                  description: ULID of the existing recurring-series event to add the occurrence to
+                  description: |
+                    ULID of the existing recurring-series event to add the occurrence to.
+                    Required for the `potential_duplicate` path; ignored for the
+                    `near_duplicate_of_new_event` path (backend derives target automatically).
             examples:
-              addOccurrence:
-                summary: Add as occurrence of recurring series
+              addOccurrenceForwardPath:
+                summary: Add as occurrence (potential_duplicate path)
                 value:
                   target_event_ulid: "01HRECURRING000000000000001"
+              addOccurrenceNearDupPath:
+                summary: Add as occurrence (near_duplicate_of_new_event path — no body required)
+                value: {}
       responses:
         '200':
-          description: Occurrence added and review marked as merged
+          description: |
+            Occurrence added and review marked as merged.
+            The response is the updated `ReviewQueueDetail` with an additional top-level
+            `targetEventUlid` field identifying the surviving series event.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewQueueDetail'
+                allOf:
+                  - $ref: '#/components/schemas/ReviewQueueDetail'
+                  - type: object
+                    properties:
+                      targetEventUlid:
+                        type: string
+                        description: ULID of the surviving recurring-series event
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

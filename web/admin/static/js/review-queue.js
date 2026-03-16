@@ -147,7 +147,8 @@
                     e.preventDefault();
                     const occBtn = target.closest('[data-action="add-occurrence"]');
                     const targetUlid = occBtn ? occBtn.dataset.targetEventUlid : '';
-                    addOccurrenceDirect(id, targetUlid);
+                    const isNearDupPath = occBtn ? occBtn.dataset.nearDupPath === 'true' : false;
+                    addOccurrenceDirect(id, targetUlid, isNearDupPath);
                     break;
                 }
                 case 'show-more':
@@ -619,12 +620,10 @@
         ` : '';
 
         // Check if there are any duplicate-related warnings.
-        // near_duplicate_of_new_event is tracked separately: it appears on the *existing* event's
-        // review entry when a newly-ingested event was flagged as a near-duplicate of it.
-        // duplicateOfEventUlid on that entry points to the *new* (incoming) event — NOT the existing
-        // event — so it cannot be used as a safe one-click merge/add-occurrence target. We show
-        // "Not a Duplicate" for this warning but suppress one-click merge and add-occurrence until
-        // an explicit target selection UI is available.
+        // near_duplicate_of_new_event appears on the *existing* series event's review entry when a
+        // newly-ingested event was flagged as a near-duplicate of it.
+        // For add-occurrence: the existing series (review.eventId) is the target — the backend
+        // derives the source from review.duplicateOfEventUlid, so no target ULID is needed from the UI.
         const hasNearDupNewEventWarning = warnings.some(w => w.code === 'near_duplicate_of_new_event');
         const hasDuplicateWarnings = warnings.some(w => 
             w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
@@ -634,10 +633,11 @@
         
         // Extract duplicate event ID from warnings details if available.
         // Only potential_duplicate carries a known-correct counterpart ULID in its match details.
-        // near_duplicate_of_new_event is intentionally excluded: its duplicateOfEventUlid points
-        // to the newly-ingested counterpart, but for one-click merge the correct keep/discard sides
-        // are ambiguous without explicit admin input. Entry-level duplicateOfEventUlid is still used
-        // as a fallback for already-resolved (merged) entries where the field was set by a prior action.
+        // near_duplicate_of_new_event is intentionally excluded from one-click merge: its
+        // duplicateOfEventUlid points to the newly-ingested counterpart, so the keep/discard
+        // sides for a full merge are ambiguous without explicit admin input.
+        // Add-as-occurrence IS supported: the backend inverts the semantics automatically —
+        // it absorbs duplicateOfEventUlid (new event) into eventId (existing series).
         const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
         let duplicateEventId = '';
         if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
@@ -668,9 +668,10 @@
             }
         }
 
-        // "Add as Occurrence" is only relevant for potential_duplicate warnings where we have a
-        // confirmed target ULID. near_duplicate_of_new_event is excluded because duplicateOfEventUlid
-        // on that entry points to the newly-ingested event (wrong merge direction for one-click use).
+        // "Add as Occurrence" — two paths:
+        //   forward path: potential_duplicate warning with a known candidate ULID.
+        //   near-dup path: near_duplicate_of_new_event — backend derives source/target automatically;
+        //                   no target ULID is supplied from the UI (data-near-dup-path="true").
         const hasEventDuplicateWarnings = warnings.some(w => w.code === 'potential_duplicate');
         const addOccurrenceTargetUlid = duplicateEventId;
         
@@ -711,6 +712,20 @@
                         Add as Occurrence
                     </button>
                     ` : ''}
+                ` : ''}
+                ${hasNearDupNewEventWarning ? `
+                    <button class="btn btn-outline-purple" data-action="add-occurrence" data-id="${id}" data-near-dup-path="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <rect x="4" y="5" width="16" height="16" rx="2"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="4" y1="11" x2="20" y2="11"/>
+                            <line x1="12" y1="15" x2="12" y2="19"/>
+                            <line x1="10" y1="17" x2="14" y2="17"/>
+                        </svg>
+                        Add as Occurrence
+                    </button>
                 ` : ''}
                 ${hasAnyDuplicateWarning ? `
                     <button class="btn btn-outline-success" data-action="not-a-duplicate" data-id="${id}">
@@ -1325,20 +1340,29 @@
 
     /**
      * Add the review entry's event as a new occurrence on the target recurring-series event.
-     * Soft-deletes the review's own event and marks the review as merged — all atomically.
+     * Soft-deletes the absorbed event and marks the review as merged — all atomically.
+     *
+     * Two paths:
+     *   - Forward path (potential_duplicate): caller supplies targetEventUlid from the button's
+     *     data-target-event-ulid attribute. The review's own event is absorbed into that series.
+     *   - Near-dup path (near_duplicate_of_new_event): isNearDupPath=true, no targetEventUlid
+     *     needed. The backend derives source/target from the review entry itself and returns
+     *     the series ULID in response.targetEventUlid so we can show a navigation link.
+     *
      * @param {string|number} id - Review queue entry ID
-     * @param {string} targetEventUlid - ULID of the recurring-series event to add the occurrence to
+     * @param {string} targetEventUlid - ULID of the recurring-series event (forward path only)
+     * @param {boolean} isNearDupPath - true if this is a near_duplicate_of_new_event entry
      */
-    async function addOccurrenceDirect(id, targetEventUlid) {
-        if (!targetEventUlid) {
+    async function addOccurrenceDirect(id, targetEventUlid, isNearDupPath) {
+        if (!isNearDupPath && !targetEventUlid) {
             showToast('No target event ULID available to add occurrence', 'error');
             return;
         }
         const btn = document.querySelector(`[data-action="add-occurrence"][data-id="${id}"]`);
         if (btn) setLoading(btn, true);
         try {
-            await API.reviewQueue.addOccurrence(id, targetEventUlid);
-            showToast('Occurrence added successfully', 'success');
+            const resp = await API.reviewQueue.addOccurrence(id, isNearDupPath ? null : targetEventUlid);
+            const seriesUlid = resp && resp.targetEventUlid ? resp.targetEventUlid : targetEventUlid;
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
                 const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
@@ -1346,8 +1370,23 @@
                     const currentCount = parseInt(mergedBadge.textContent) || 0;
                     mergedBadge.textContent = currentCount + 1;
                 }
+                // Show a brief success notice with a link to the target series.
+                if (seriesUlid) {
+                    const notice = document.createElement('div');
+                    notice.className = 'alert alert-success alert-dismissible mt-2';
+                    notice.setAttribute('role', 'alert');
+                    notice.innerHTML = `Occurrence added. <a href="/admin/events/${escapeHtml(seriesUlid)}" class="alert-link">View series →</a>` +
+                        `<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+                    const list = document.querySelector('#review-queue-list') || document.querySelector('.review-queue-container');
+                    if (list) list.prepend(notice);
+                } else {
+                    showToast('Occurrence added successfully', 'success');
+                }
             } else {
                 loadEntries();
+                if (seriesUlid) {
+                    showToast('Occurrence added successfully', 'success');
+                }
             }
         } catch (err) {
             console.error('Failed to add occurrence:', err);

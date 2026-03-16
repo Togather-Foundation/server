@@ -294,6 +294,7 @@ type mockTransactionalRepo struct {
 	updateEventFunc                   func(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	updateOccurrenceDatesFunc         func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
 	lockEventForUpdateFunc            func(ctx context.Context, eventID string) error
+	getPendingReviewByEventUlidFunc   func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	commitCalled                      bool
 	rollbackCalled                    bool
 }
@@ -468,7 +469,10 @@ func (m *mockTransactionalRepo) InsertNotDuplicate(ctx context.Context, eventIDa
 func (m *mockTransactionalRepo) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
 	return false, nil
 }
-func (m *mockTransactionalRepo) GetPendingReviewByEventUlid(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+func (m *mockTransactionalRepo) GetPendingReviewByEventUlid(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	if m.getPendingReviewByEventUlidFunc != nil {
+		return m.getPendingReviewByEventUlidFunc(context.Background(), ulid)
+	}
 	return nil, nil
 }
 func (m *mockTransactionalRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
@@ -977,6 +981,256 @@ func TestFixAndApproveEventWithReview_SuccessLockFirst(t *testing.T) {
 	}
 	if !repo.commitCalled {
 		t.Error("commit should be called on success")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for AddOccurrenceFromReviewNearDup atomicity (srv-izykp)
+// ---------------------------------------------------------------------------
+
+// makeNearDupOccurrenceRepo builds a mockTransactionalRepo pre-wired for the
+// "happy path" of AddOccurrenceFromReviewNearDup. Individual tests override
+// the func fields that correspond to the step they want to fail or inspect.
+func makeNearDupOccurrenceRepo(targetID, targetULID, sourceULID string, startTime time.Time) *mockTransactionalRepo {
+	sourceDup := sourceULID
+	return &mockTransactionalRepo{
+		lockReviewQueueEntryForUpdateFunc: func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{
+				ID:                   id,
+				EventID:              "target-event-id",
+				EventULID:            targetULID,
+				DuplicateOfEventULID: &sourceDup,
+				Status:               "pending",
+				EventStartTime:       startTime,
+			}, nil
+		},
+		getByULIDFunc: func(_ context.Context, ulid string) (*Event, error) {
+			if ulid == targetULID {
+				return &Event{
+					ID:             targetID,
+					ULID:           targetULID,
+					Name:           "Series",
+					LifecycleState: "published",
+				}, nil
+			}
+			// source event
+			return &Event{
+				ID:   "source-event-id",
+				ULID: sourceULID,
+				Name: "New Instance",
+				Occurrences: []Occurrence{
+					{StartTime: startTime},
+				},
+			}, nil
+		},
+		lockEventForUpdateFunc: func(_ context.Context, _ string) error { return nil },
+		checkOccurrenceOverlapFunc: func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+			return false, nil
+		},
+		createOccurrenceFunc: func(_ context.Context, _ OccurrenceCreateParams) error { return nil },
+		softDeleteEventFunc:  func(_ context.Context, _, _ string) error { return nil },
+		createTombstoneFunc:  func(_ context.Context, _ TombstoneCreateParams) error { return nil },
+		mergeReviewFunc: func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+		},
+		// getPendingReviewByEventUlidFunc defaults to nil → returns nil, nil (no companion)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_CommitOnSuccess verifies that a successful
+// near-dup add-occurrence commits the transaction.
+func TestAddOccurrenceFromReviewNearDup_CommitOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	entry, targetULID, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected non-nil review entry")
+	}
+	if targetULID == nil || *targetULID != "01HTARGET00000000000000001" {
+		t.Errorf("expected targetULID=%q, got %v", "01HTARGET00000000000000001", targetULID)
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called on success")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_MissingDuplicateULID verifies that when
+// the review entry has no DuplicateOfEventULID, the method returns ErrInvalidUpdateParams.
+func TestAddOccurrenceFromReviewNearDup_MissingDuplicateULID(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, EventULID: "01HTARGET00000000000000001", Status: "pending"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrInvalidUpdateParams) {
+		t.Errorf("expected ErrInvalidUpdateParams, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called on validation error")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_AlreadyProcessed verifies that a non-pending
+// review entry returns ErrConflict without committing.
+func TestAddOccurrenceFromReviewNearDup_AlreadyProcessed(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		dup := "01HSOURCE00000000000000001"
+		return &ReviewQueueEntry{ID: id, EventULID: "01HTARGET00000000000000001", DuplicateOfEventULID: &dup, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrConflict, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when review is already processed")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_DeletedTarget verifies that a deleted target
+// event returns ErrEventDeleted and rolls back.
+func TestAddOccurrenceFromReviewNearDup_DeletedTarget(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-id", ULID: targetULID, LifecycleState: "deleted"}, nil
+		}
+		return &Event{ID: "source-id", ULID: sourceULID, Name: "New Instance"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrEventDeleted, got nil")
+	}
+	if !errors.Is(err, ErrEventDeleted) {
+		t.Errorf("expected ErrEventDeleted, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when target is deleted")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_Overlap verifies that an overlap returns
+// ErrOccurrenceOverlap and rolls back.
+func TestAddOccurrenceFromReviewNearDup_Overlap(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo.checkOccurrenceOverlapFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+		return true, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrOccurrenceOverlap, got nil")
+	}
+	if !errors.Is(err, ErrOccurrenceOverlap) {
+		t.Errorf("expected ErrOccurrenceOverlap, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called on overlap")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal verifies that a
+// failure to dismiss the companion review entry is non-fatal: the transaction
+// still commits and the near-dup review entry is resolved.
+func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T) {
+	ctx := context.Background()
+	sourceULID := "01HSOURCE00000000000000001"
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
+	companionID := 42
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == sourceULID {
+			return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
+		}
+		return nil, nil
+	}
+	mergeCallCount := 0
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergeCallCount++
+		if id == companionID {
+			return nil, errors.New("companion merge failed") // non-fatal error
+		}
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	entry, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success (companion failure is non-fatal), got: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected non-nil review entry")
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called despite companion merge failure")
+	}
+	if mergeCallCount != 2 {
+		t.Errorf("expected 2 MergeReview calls (companion + near-dup), got %d", mergeCallCount)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_TargetIsKeepNotAbsorbed verifies that the
+// semantic direction is correct: the review's EventULID (existing series) is the
+// target that is kept, and DuplicateOfEventULID (newly ingested event) is the
+// source that is soft-deleted.
+func TestAddOccurrenceFromReviewNearDup_TargetIsKeepNotAbsorbed(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+
+	var softDeletedULID string
+	var mergedWithTargetULID string
+
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
+	repo.softDeleteEventFunc = func(_ context.Context, ulid, _ string) error {
+		softDeletedULID = ulid
+		return nil
+	}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, primaryULID string) (*ReviewQueueEntry, error) {
+		mergedWithTargetULID = primaryULID
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if softDeletedULID != sourceULID {
+		t.Errorf("wrong event soft-deleted: want %s (source/new), got %s", sourceULID, softDeletedULID)
+	}
+	if mergedWithTargetULID != targetULID {
+		t.Errorf("review merged with wrong target: want %s (existing series), got %s", targetULID, mergedWithTargetULID)
 	}
 }
 

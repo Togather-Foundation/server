@@ -371,7 +371,9 @@ const API = {
 
         addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, {
             method: 'POST',
-            body: JSON.stringify({ target_event_ulid: targetEventUlid })
+            // target_event_ulid is omitted for the near_duplicate_of_new_event path;
+            // the backend derives source and target from the review entry itself.
+            body: JSON.stringify(targetEventUlid ? { target_event_ulid: targetEventUlid } : {})
         })
     },
     

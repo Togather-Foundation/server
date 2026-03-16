@@ -261,6 +261,218 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	return reviewEntry, nil
 }
 
+// AddOccurrenceFromReviewNearDup handles the near_duplicate_of_new_event case:
+// the review entry sits on the *existing* recurring-series event, and
+// DuplicateOfEventULID points to the *newly ingested* event that should be
+// absorbed as an occurrence.
+//
+// Semantics (reversed from AddOccurrenceFromReview):
+//   - Target  = review.EventULID  (existing series — preserved)
+//   - Source  = review.DuplicateOfEventULID (newly ingested event — absorbed)
+//
+// The method atomically:
+//  1. Locks the near-dup review entry and verifies it is still pending.
+//  2. Locks and re-reads the target (existing series) event.
+//  3. Checks overlap for the new event's start/end time on the target.
+//  4. Creates the occurrence on the target.
+//  5. Soft-deletes the new (source) event.
+//  6. Creates a tombstone for the source event.
+//  7. If the source event has a companion pending review entry, marks it merged.
+//  8. Marks the near-dup review entry as merged (sets duplicateOfEventUlid to
+//     the target ULID so the admin can navigate to the series after the action).
+func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, reviewID int, reviewedBy string) (*ReviewQueueEntry, *string, error) {
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	// Lock the near-dup review entry first.
+	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("lock near-dup review entry: %w", err)
+	}
+	if review.Status != "pending" {
+		return nil, nil, fmt.Errorf("near-dup review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
+	}
+
+	// The near-dup review entry must have a DuplicateOfEventULID (the new event).
+	if review.DuplicateOfEventULID == nil || *review.DuplicateOfEventULID == "" {
+		return nil, nil, fmt.Errorf("near-dup review entry %d has no duplicate event ULID: %w", reviewID, ErrInvalidUpdateParams)
+	}
+	sourceEventULID := *review.DuplicateOfEventULID // new event → to be absorbed
+	targetEventULID := review.EventULID             // existing series → kept
+
+	if sourceEventULID == targetEventULID {
+		return nil, nil, fmt.Errorf("near-dup review source and target are the same (%s): %w", targetEventULID, ErrCannotMergeSameEvent)
+	}
+
+	// Fetch target (existing series) for locking.
+	target, err := txRepo.GetByULID(ctx, targetEventULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get target event %s: %w", targetEventULID, err)
+	}
+
+	// Lock target before eligibility recheck (TOCTOU guard).
+	if err := txRepo.LockEventForUpdate(ctx, target.ID); err != nil {
+		return nil, nil, fmt.Errorf("lock target event %s: %w", targetEventULID, err)
+	}
+
+	// Re-read target under lock.
+	target, err = txRepo.GetByULID(ctx, targetEventULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get target event %s (post-lock): %w", targetEventULID, err)
+	}
+	if target.LifecycleState == "deleted" {
+		return nil, nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
+	}
+
+	// Fetch the source (new) event to extract timing and occurrence metadata.
+	sourceEvent, err := txRepo.GetByULID(ctx, sourceEventULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get source event %s: %w", sourceEventULID, err)
+	}
+
+	// Derive start/end times for the new occurrence from the source event.
+	// Use the first occurrence if available; fall back to zero time (ingest always
+	// creates at least one occurrence, so this should not happen in practice).
+	var occStartTime time.Time
+	var occEndTime *time.Time
+	if len(sourceEvent.Occurrences) > 0 {
+		occStartTime = sourceEvent.Occurrences[0].StartTime
+		occEndTime = sourceEvent.Occurrences[0].EndTime
+	} else {
+		// Fallback: derive from the *review entry's* stored start/end times, which
+		// are set from the existing event's first occurrence during ingest.
+		// For near_duplicate_of_new_event the review entry holds the existing
+		// event's times, not the new event's — so this branch is last resort only.
+		occStartTime = review.EventStartTime
+		occEndTime = review.EventEndTime
+	}
+
+	// Overlap check on the target.
+	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, target.ID, occStartTime, occEndTime)
+	if err != nil {
+		return nil, nil, fmt.Errorf("check overlap: %w", err)
+	}
+	if overlaps {
+		return nil, nil, fmt.Errorf("new occurrence [%s, %v] on event %s: %w",
+			occStartTime.Format(time.RFC3339),
+			occEndTime,
+			targetEventULID,
+			ErrOccurrenceOverlap,
+		)
+	}
+
+	// Collect occurrence-level metadata from the source event's first occurrence.
+	occTimezone := s.defaultTZ
+	occVenueID := target.PrimaryVenueID
+	var occVirtualURL *string
+	var occDoorTime *time.Time
+	var occTicketURL *string
+	var occPriceMin *float64
+	var occPriceMax *float64
+	var occPriceCurrency string
+	var occAvailability string
+
+	if len(sourceEvent.Occurrences) > 0 {
+		occ := &sourceEvent.Occurrences[0]
+		if occ.Timezone != "" {
+			occTimezone = occ.Timezone
+		}
+		if occ.VenueID != nil {
+			occVenueID = occ.VenueID
+		}
+		if occ.VirtualURL != nil && *occ.VirtualURL != "" {
+			occVirtualURL = occ.VirtualURL
+		}
+		if occ.DoorTime != nil {
+			occDoorTime = occ.DoorTime
+		}
+		if occ.TicketURL != "" {
+			occTicketURL = &occ.TicketURL
+		}
+		if occ.PriceMin != nil {
+			occPriceMin = occ.PriceMin
+		}
+		if occ.PriceMax != nil {
+			occPriceMax = occ.PriceMax
+		}
+		if occ.PriceCurrency != "" {
+			occPriceCurrency = occ.PriceCurrency
+		}
+		if occ.Availability != "" {
+			occAvailability = occ.Availability
+		}
+	}
+
+	// Add the occurrence to the target series.
+	if err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
+		EventID:       target.ID,
+		StartTime:     occStartTime,
+		EndTime:       occEndTime,
+		Timezone:      occTimezone,
+		DoorTime:      occDoorTime,
+		VenueID:       occVenueID,
+		VirtualURL:    occVirtualURL,
+		TicketURL:     occTicketURL,
+		PriceMin:      occPriceMin,
+		PriceMax:      occPriceMax,
+		PriceCurrency: occPriceCurrency,
+		Availability:  occAvailability,
+	}); err != nil {
+		return nil, nil, fmt.Errorf("create occurrence: %w", err)
+	}
+
+	// Soft-delete the source (new) event.
+	if err = txRepo.SoftDeleteEvent(ctx, sourceEventULID, "absorbed_as_occurrence"); err != nil {
+		return nil, nil, fmt.Errorf("soft-delete source event: %w", err)
+	}
+
+	// Tombstone for the absorbed source event.
+	targetURI := fmt.Sprintf("https://togather.foundation/events/%s", targetEventULID)
+	tombstonePayload, err := buildTombstonePayload(sourceEvent.ULID, sourceEvent.Name, &targetURI, "absorbed_as_occurrence")
+	if err != nil {
+		return nil, nil, fmt.Errorf("build tombstone: %w", err)
+	}
+	if err = txRepo.CreateTombstone(ctx, TombstoneCreateParams{
+		EventID:      sourceEvent.ID,
+		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", sourceEvent.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       "absorbed_as_occurrence",
+		SupersededBy: &targetURI,
+		Payload:      tombstonePayload,
+	}); err != nil {
+		return nil, nil, fmt.Errorf("create tombstone: %w", err)
+	}
+
+	// If the source event has its own pending review entry (the new-event side of the
+	// near-dup pair), mark it merged too so it doesn't linger in the queue.
+	companionReview, err := txRepo.GetPendingReviewByEventUlid(ctx, sourceEventULID)
+	if err == nil && companionReview != nil && companionReview.Status == "pending" {
+		if _, mergeErr := txRepo.MergeReview(ctx, companionReview.ID, reviewedBy, targetEventULID); mergeErr != nil {
+			// Non-fatal: companion entry may already be gone or processed by another
+			// request. Log and continue so the primary near-dup review is still resolved.
+			_ = mergeErr
+		}
+	}
+
+	// Mark the near-dup review entry as merged.
+	// We call MergeReview with targetEventULID so that duplicateOfEventUlid is set to
+	// the series ULID — giving the admin a direct navigation link after the action.
+	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, targetEventULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("update near-dup review status: %w", err)
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return reviewEntry, &targetEventULID, nil
+}
+
 // UpdateEvent updates event fields with admin attribution
 // Returns the updated event
 func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
