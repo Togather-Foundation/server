@@ -682,6 +682,82 @@ func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 	}
 }
 
+// TestAddOccurrenceFromReview_PreservesAvailability verifies that the occurrence
+// Availability field is forwarded from the review event's matched occurrence to
+// OccurrenceCreateParams, and that it falls back to empty string when not set.
+// This is a regression test for the phase-5 review finding.
+func TestAddOccurrenceFromReview_PreservesAvailability(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	t.Run("forwards Availability when set on matched occurrence", func(t *testing.T) {
+		var capturedParams OccurrenceCreateParams
+		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+		repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+			if ulid == "01HTARGET00000000000000001" {
+				return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "published"}, nil
+			}
+			return &Event{
+				ID:   "review-event-id",
+				ULID: ulid,
+				Name: "Instance",
+				Occurrences: []Occurrence{
+					{
+						StartTime:    startTime,
+						Availability: "members_only",
+					},
+				},
+			}, nil
+		}
+		repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
+			capturedParams = params
+			return nil
+		}
+
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+		if capturedParams.Availability != "members_only" {
+			t.Errorf("Availability: got %q, want %q", capturedParams.Availability, "members_only")
+		}
+	})
+
+	t.Run("Availability is empty string when not set", func(t *testing.T) {
+		var capturedParams OccurrenceCreateParams
+		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+		repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+			if ulid == "01HTARGET00000000000000001" {
+				return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "published"}, nil
+			}
+			return &Event{
+				ID:   "review-event-id",
+				ULID: ulid,
+				Name: "Instance",
+				Occurrences: []Occurrence{
+					{StartTime: startTime},
+				},
+			}, nil
+		}
+		repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
+			capturedParams = params
+			return nil
+		}
+
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+		if capturedParams.Availability != "" {
+			t.Errorf("Availability: expected empty string, got %q", capturedParams.Availability)
+		}
+	})
+}
+
 // TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty verifies
 // that when the review event has no occurrence-level metadata overrides, the new
 // occurrence inherits series-level defaults (timezone from service config, venue

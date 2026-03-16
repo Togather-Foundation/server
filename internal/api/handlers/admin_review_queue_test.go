@@ -376,6 +376,222 @@ func testReviewQueueEntry(id int, eventULID string) *events.ReviewQueueEntry {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Sentinel error mapping: ApproveReview, RejectReview, FixReview, MergeReview
+// ---------------------------------------------------------------------------
+
+// TestApproveReview_SentinelErrors verifies that service-layer sentinel errors
+// from ApproveEventWithReview map to the correct HTTP status codes.
+func TestApproveReview_SentinelErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		serviceErr     error
+		expectedStatus int
+	}{
+		{
+			name:           "ErrConflict → 409",
+			serviceErr:     events.ErrConflict,
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:           "ErrEventDeleted → 410",
+			serviceErr:     events.ErrEventDeleted,
+			expectedStatus: http.StatusGone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockRepository)
+			entry := testReviewQueueEntry(1, "01HTEST1")
+			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			setupTxMock(mockRepo)
+			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "approved"},
+				tt.serviceErr,
+			)
+
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			handler := &AdminReviewQueueHandler{
+				Repository:   mockRepo,
+				AdminService: adminService,
+				AuditLogger:  audit.NewLogger(),
+				Env:          "test",
+			}
+
+			body, _ := json.Marshal(map[string]string{})
+			req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/approve", bytes.NewReader(body))
+			req.SetPathValue("id", "1")
+			req = withAdminUser(req, "admin")
+			rec := httptest.NewRecorder()
+
+			handler.ApproveReview(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+		})
+	}
+}
+
+// TestRejectReview_SentinelErrors verifies that service-layer sentinel errors
+// from RejectEventWithReview map to the correct HTTP status codes.
+func TestRejectReview_SentinelErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		serviceErr     error
+		expectedStatus int
+	}{
+		{
+			name:           "ErrConflict → 409",
+			serviceErr:     events.ErrConflict,
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:           "ErrEventDeleted → 410",
+			serviceErr:     events.ErrEventDeleted,
+			expectedStatus: http.StatusGone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockRepository)
+			entry := testReviewQueueEntry(1, "01HTEST1")
+			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			setupTxMock(mockRepo)
+			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "rejected"},
+				tt.serviceErr,
+			)
+
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			handler := &AdminReviewQueueHandler{
+				Repository:   mockRepo,
+				AdminService: adminService,
+				AuditLogger:  audit.NewLogger(),
+				Env:          "test",
+			}
+
+			body, _ := json.Marshal(map[string]string{"reason": "test reason"})
+			req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/reject", bytes.NewReader(body))
+			req.SetPathValue("id", "1")
+			req = withAdminUser(req, "admin")
+			rec := httptest.NewRecorder()
+
+			handler.RejectReview(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+		})
+	}
+}
+
+// TestFixReview_SentinelErrors verifies that service-layer sentinel errors
+// from FixAndApproveEventWithReview map to the correct HTTP status codes.
+func TestFixReview_SentinelErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		serviceErr     error
+		expectedStatus int
+	}{
+		{
+			name:           "ErrConflict → 409",
+			serviceErr:     events.ErrConflict,
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:           "ErrEventDeleted → 410",
+			serviceErr:     events.ErrEventDeleted,
+			expectedStatus: http.StatusGone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockRepository)
+			entry := testReviewQueueEntry(1, "01HTEST1")
+			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			setupTxMock(mockRepo)
+			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "approved"},
+				tt.serviceErr,
+			)
+
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			handler := &AdminReviewQueueHandler{
+				Repository:   mockRepo,
+				AdminService: adminService,
+				AuditLogger:  audit.NewLogger(),
+				Env:          "test",
+			}
+
+			body, _ := json.Marshal(map[string]any{
+				"corrections": map[string]string{"startDate": "2024-01-01T10:00:00Z"},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/fix", bytes.NewReader(body))
+			req.SetPathValue("id", "1")
+			req = withAdminUser(req, "admin")
+			rec := httptest.NewRecorder()
+
+			handler.FixReview(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+		})
+	}
+}
+
+// TestMergeReview_SentinelErrors verifies that service-layer sentinel errors
+// from MergeEventsWithReview map to the correct HTTP status codes.
+func TestMergeReview_SentinelErrors(t *testing.T) {
+	primaryULID := "01HPRIMARY0000000000000001"
+
+	tests := []struct {
+		name           string
+		serviceErr     error
+		expectedStatus int
+	}{
+		{
+			name:           "ErrConflict → 409",
+			serviceErr:     events.ErrConflict,
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:           "ErrEventDeleted → 410",
+			serviceErr:     events.ErrEventDeleted,
+			expectedStatus: http.StatusGone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockRepository)
+			entry := testReviewQueueEntry(1, "01HTEST1")
+			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			setupTxMock(mockRepo)
+			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "merged"},
+				tt.serviceErr,
+			)
+
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			handler := &AdminReviewQueueHandler{
+				Repository:   mockRepo,
+				AdminService: adminService,
+				AuditLogger:  audit.NewLogger(),
+				Env:          "test",
+			}
+
+			body, _ := json.Marshal(map[string]string{"primary_event_ulid": primaryULID})
+			req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/merge", bytes.NewReader(body))
+			req.SetPathValue("id", "1")
+			req = withAdminUser(req, "admin")
+			rec := httptest.NewRecorder()
+
+			handler.MergeReview(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+		})
+	}
+}
+
 // TestListReviewQueue tests listing review queue entries
 func TestListReviewQueue(t *testing.T) {
 	tests := []struct {
