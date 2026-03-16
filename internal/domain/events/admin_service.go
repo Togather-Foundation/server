@@ -160,6 +160,7 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	var occPriceMin *float64
 	var occPriceMax *float64
 	var occPriceCurrency string
+	var occAvailability string
 
 	if len(reviewEvent.Occurrences) > 0 {
 		var matchedOcc *Occurrence
@@ -200,6 +201,9 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 			if matchedOcc.PriceCurrency != "" {
 				occPriceCurrency = matchedOcc.PriceCurrency
 			}
+			if matchedOcc.Availability != "" {
+				occAvailability = matchedOcc.Availability
+			}
 		}
 	}
 
@@ -215,6 +219,7 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		PriceMin:      occPriceMin,
 		PriceMax:      occPriceMax,
 		PriceCurrency: occPriceCurrency,
+		Availability:  occAvailability,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create occurrence: %w", err)

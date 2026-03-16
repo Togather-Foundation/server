@@ -280,6 +280,14 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
 			return
 		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", fmt.Errorf("approve review id=%d event=%s: %w", id, eventULID, err), h.Env)
 		return
 	}
@@ -383,6 +391,14 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to reject review", fmt.Errorf("reject review id=%d event=%s: %w", id, eventULID, err), h.Env)
@@ -504,6 +520,14 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
 			return
 		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fix and approve review", fmt.Errorf("fix review id=%d event=%s: %w", id, eventULID, err), h.Env)
 		return
 	}
@@ -605,6 +629,14 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 		}
 		if errors.Is(err, events.ErrCannotMergeSameEvent) {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event into itself", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "One or more events have been deleted", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to merge events", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)

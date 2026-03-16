@@ -111,6 +111,7 @@ type OccurrenceCreateParams struct {
 	PriceMin      *float64
 	PriceMax      *float64
 	PriceCurrency string
+	Availability  string
 }
 
 type EventSourceCreateParams struct {

@@ -611,8 +611,9 @@ INSERT INTO event_occurrences (
 	ticket_url,
 	price_min,
 	price_max,
-	price_currency
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''))
+	price_currency,
+	availability
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), NULLIF($12, ''))
 `,
 		params.EventID,
 		params.StartTime,
@@ -625,6 +626,7 @@ INSERT INTO event_occurrences (
 		params.PriceMin,
 		params.PriceMax,
 		params.PriceCurrency,
+		params.Availability,
 	)
 	if err != nil {
 		return fmt.Errorf("create occurrence: %w", err)

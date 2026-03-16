@@ -808,6 +808,18 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -864,6 +876,18 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has already been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -940,6 +964,18 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -991,6 +1027,18 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: One or more events have been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
