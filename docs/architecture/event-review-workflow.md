@@ -681,8 +681,10 @@ Available when the review entry has a `potential_duplicate` or `near_duplicate_o
 
 **Responses:**
 - `200 OK` — merged successfully
-- `404 Not Found` — review entry or candidate event not found
-- `409 Conflict` — review entry no longer pending; or candidate event deleted
+- `400 Bad Request` — `primary_event_ulid` missing or review event and target are the same
+- `404 Not Found` — review entry or target event not found
+- `409 Conflict` — review entry no longer pending
+- `410 Gone` — primary or duplicate event has been deleted
 
 ---
 
@@ -690,7 +692,7 @@ Available when the review entry has a `potential_duplicate` or `near_duplicate_o
 
 Add the reviewed event as a new occurrence on an existing recurring-series event instead of merging. Use this when the two events share the same name/venue but have different dates and are legitimately separate occurrences of the same series.
 
-Available when the review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning (i.e. the same warning types that enable Merge Duplicate).
+Available when the review entry has a `potential_duplicate` warning with a known target ULID in its match details. The one-click **Add as Occurrence** button is intentionally suppressed for `near_duplicate_of_new_event` entries because the `duplicateOfEventUlid` on those entries points to the newly-ingested counterpart, making the correct keep/discard sides ambiguous without explicit admin target selection.
 
 **Request:**
 ```json

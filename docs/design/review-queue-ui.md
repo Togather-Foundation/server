@@ -182,7 +182,7 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
 3. Mark the review as merged — all atomically.
 
-**Button visibility**: shown alongside "Merge Duplicate" for event-level duplicate warnings only (`potential_duplicate`, `near_duplicate_of_new_event`). Not shown for place/org duplicate warnings.
+**Button visibility**: shown alongside "Merge Duplicate" for `potential_duplicate` warnings where a known target ULID is available from the warning match details. One-click Add as Occurrence is intentionally suppressed for `near_duplicate_of_new_event` entries: their `duplicateOfEventUlid` points to the newly-ingested counterpart, making the correct target ambiguous without explicit admin input. Not shown for place/org duplicate warnings.
 
 **Overlap guard**: the backend rejects with HTTP 409 if the new occurrence would overlap an existing occurrence on the target event.
 

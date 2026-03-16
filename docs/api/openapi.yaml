@@ -697,7 +697,7 @@ paths:
           description: Filter by review status (defaults to 'pending')
           schema:
             type: string
-            enum: [pending, approved, rejected]
+            enum: [pending, approved, rejected, merged]
             default: pending
         - name: cursor
           in: query

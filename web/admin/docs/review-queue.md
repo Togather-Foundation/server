@@ -146,11 +146,11 @@ All endpoints in `internal/api/handlers/admin_review_queue.go` (694 lines).
 
 **Page:** `/admin/review-queue` ([review_queue.html](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/templates/review_queue.html))
 - Single-page design with list view and inline detail expansion
-- Status filter tabs: Pending / Approved / Rejected
+- Status filter tabs: Pending / Approved / Rejected / Merged
 - Table columns: Event Name, Start Time, Warning Badge, Created, Actions
 - Inline detail card expands below row when clicked
 
-**JavaScript:** `web/admin/static/js/review-queue.js` (845 lines)
+**JavaScript:** `web/admin/static/js/review-queue.js`
 - IIFE pattern, no global variables
 - State management: `entries`, `currentFilter`, `expandedId`, `cursor`
 - Event delegation via `data-action` attributes (CSP-compliant)
@@ -164,7 +164,9 @@ reviewQueue: {
     get: (id) => API.request(`/api/v1/admin/review-queue/${id}`),
     approve: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
     reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
-    fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, { method: 'POST', body: JSON.stringify(data) })
+    fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, { method: 'POST', body: JSON.stringify(data) }),
+    merge: (id, primaryEventId) => API.request(`/api/v1/admin/review-queue/${id}/merge`, { method: 'POST', body: JSON.stringify({ primary_event_ulid: primaryEventId }) }),
+    addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, { method: 'POST', body: JSON.stringify({ target_event_ulid: targetEventUlid }) })
 }
 ```
 
@@ -265,13 +267,14 @@ Validation generates two machine-readable warning codes to classify correction c
 
 ### Status Filter Tabs
 
-Three tabs styled as Tabler `nav-tabs`:
+Four tabs styled as Tabler `nav-tabs`:
 
 | Tab | Status Filter | Badge | Description |
 |-----|--------------|-------|-------------|
 | **Pending** | `pending` | Count badge (e.g., "3") | Default view, shows unreviewed entries |
 | **Approved** | `approved` | None | Historical approved reviews |
 | **Rejected** | `rejected` | None | Historical rejections |
+| **Merged** | `merged` | None | Reviews resolved via Merge Duplicate or Add as Occurrence |
 
 Implementation: [review_queue.html:33](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/templates/review_queue.html:33)
 
@@ -456,7 +459,7 @@ Implementation: [review-queue.js:678](file:///home/ryankelln/Documents/Projects/
 4. **Check warnings:** Now empty (fixed!)
 5. **Action:** 
    - Update `events.lifecycle_state = 'published'`
-   - Update `event_review_queue.status = 'superseded'`
+   - Update `event_review_queue.status = 'merged'`
 6. **Response:** HTTP 201 Created (or 409 Conflict depending on dedup strategy)
 
 **Result:** Event auto-published, no admin action needed.
