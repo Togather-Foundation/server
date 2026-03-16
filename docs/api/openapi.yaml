@@ -947,6 +947,126 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /admin/review-queue/{id}/merge:
+    post:
+      operationId: mergeReviewQueueEntry
+      summary: Merge duplicate event
+      description: |
+        Merge the review entry's event into a primary event, soft-delete the duplicate,
+        and mark the review as merged. All operations are performed atomically.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [primary_event_ulid]
+              properties:
+                primary_event_ulid:
+                  type: string
+                  description: ULID of the primary (canonical) event to merge into
+            examples:
+              mergeDuplicate:
+                summary: Merge duplicate into primary
+                value:
+                  primary_event_ulid: "01HPRIMARY00000000000000001"
+      responses:
+        '200':
+          description: Events merged and review marked as merged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/review-queue/{id}/add-occurrence:
+    post:
+      operationId: addOccurrenceFromReview
+      summary: Add event as occurrence of recurring series
+      description: |
+        When a review entry's event is actually a new occurrence of an existing recurring-series
+        event rather than a true duplicate, use this endpoint to:
+        1. Add the review event's start/end time as a new occurrence on the target recurring-series event.
+        2. Soft-delete the review's own event (with tombstone reason `absorbed_as_occurrence`).
+        3. Mark the review as merged.
+
+        All operations are performed atomically. Returns HTTP 409 if the new occurrence
+        would overlap an existing occurrence on the target event.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_event_ulid]
+              properties:
+                target_event_ulid:
+                  type: string
+                  description: ULID of the existing recurring-series event to add the occurrence to
+            examples:
+              addOccurrence:
+                summary: Add as occurrence of recurring series
+                value:
+                  target_event_ulid: "01HRECURRING000000000000001"
+      responses:
+        '200':
+          description: Occurrence added and review marked as merged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The new occurrence overlaps an existing occurrence on the target event, or the review is not in pending status
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: The target event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /admin/login:
     post:
       operationId: login

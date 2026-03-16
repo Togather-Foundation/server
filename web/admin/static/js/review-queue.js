@@ -143,6 +143,13 @@
                     mergeDirect(id, dupEventId, warningCode, primaryId, duplicateId);
                     break;
                 }
+                case 'add-occurrence': {
+                    e.preventDefault();
+                    const occBtn = target.closest('[data-action="add-occurrence"]');
+                    const targetUlid = occBtn ? occBtn.dataset.targetEventUlid : '';
+                    addOccurrenceDirect(id, targetUlid);
+                    break;
+                }
                 case 'show-more':
                     e.preventDefault();
                     showMoreText(target);
@@ -644,6 +651,13 @@
                 mergeDuplicateId = orgWarn.details.new_org_ulid || '';
             }
         }
+
+        // "Add as Occurrence" is only relevant for event-level duplicate warnings,
+        // not place/org duplicates.  The target event ULID is the primary duplicate candidate.
+        const hasEventDuplicateWarnings = warnings.some(w =>
+            w.code && (w.code === 'potential_duplicate' || w.code === 'near_duplicate_of_new_event')
+        );
+        const addOccurrenceTargetUlid = duplicateEventId;
         
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
@@ -665,9 +679,23 @@
                             <circle cx="17" cy="12" r="2"/>
                             <line x1="7" y1="8" x2="7" y2="16"/>
                             <path d="M7 8a4 4 0 0 0 4 4h4"/>
-                        </svg>
-                        Merge Duplicate
+                    </svg>
+                    Merge Duplicate
                     </button>
+                    ${hasEventDuplicateWarnings && addOccurrenceTargetUlid ? `
+                    <button class="btn btn-outline-purple" data-action="add-occurrence" data-id="${id}" data-target-event-ulid="${escapeHtml(addOccurrenceTargetUlid)}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <rect x="4" y="5" width="16" height="16" rx="2"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="4" y1="11" x2="20" y2="11"/>
+                            <line x1="12" y1="15" x2="12" y2="19"/>
+                            <line x1="10" y1="17" x2="14" y2="17"/>
+                        </svg>
+                        Add as Occurrence
+                    </button>
+                    ` : ''}
                     <button class="btn btn-outline-success" data-action="not-a-duplicate" data-id="${id}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -1274,6 +1302,39 @@
         } catch (err) {
             console.error('Failed to merge:', err);
             showToast(err.message || 'Failed to merge', 'error');
+            if (btn) setLoading(btn, false);
+        }
+    }
+
+    /**
+     * Add the review entry's event as a new occurrence on the target recurring-series event.
+     * Soft-deletes the review's own event and marks the review as merged — all atomically.
+     * @param {string|number} id - Review queue entry ID
+     * @param {string} targetEventUlid - ULID of the recurring-series event to add the occurrence to
+     */
+    async function addOccurrenceDirect(id, targetEventUlid) {
+        if (!targetEventUlid) {
+            showToast('No target event ULID available to add occurrence', 'error');
+            return;
+        }
+        const btn = document.querySelector(`[data-action="add-occurrence"][data-id="${id}"]`);
+        if (btn) setLoading(btn, true);
+        try {
+            await API.reviewQueue.addOccurrence(id, targetEventUlid);
+            showToast('Occurrence added successfully', 'success');
+            if (currentFilter === 'pending') {
+                removeEntryFromList(id);
+                const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
+                if (mergedBadge) {
+                    const currentCount = parseInt(mergedBadge.textContent) || 0;
+                    mergedBadge.textContent = currentCount + 1;
+                }
+            } else {
+                loadEntries();
+            }
+        } catch (err) {
+            console.error('Failed to add occurrence:', err);
+            showToast(err.message || 'Failed to add occurrence', 'error');
             if (btn) setLoading(btn, false);
         }
     }

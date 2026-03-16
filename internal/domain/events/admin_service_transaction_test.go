@@ -299,6 +299,9 @@ func (m *mockTransactionalRepo) UpdateReviewWarnings(_ context.Context, _ int, _
 func (m *mockTransactionalRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
 	return nil
 }
+func (m *mockTransactionalRepo) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+	return false, nil
+}
 
 // mockTxCommitter implements TxCommitter
 type mockTxCommitter struct {

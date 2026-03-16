@@ -629,6 +629,90 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
+// AddOccurrenceReview adds the review entry's event as a new occurrence on a target
+// recurring-series event, soft-deletes the review's own event, and marks the review
+// as merged — all atomically.
+// It handles POST /api/v1/admin/review-queue/:id/add-occurrence.
+func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Repository == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing review ID", nil, h.Env)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid review ID", nil, h.Env)
+		return
+	}
+
+	var req struct {
+		TargetEventULID string `json:"target_event_ulid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+	if req.TargetEventULID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "target_event_ulid is required", nil, h.Env)
+		return
+	}
+
+	reviewedBy := getUserFromContext(r)
+
+	updatedReview, err := h.AdminService.AddOccurrenceFromReview(r.Context(), id, req.TargetEventULID, reviewedBy)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":        err.Error(),
+				"target_event": req.TargetEventULID,
+			})
+		}
+
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry or target event not found", fmt.Errorf("add-occurrence review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrCannotMergeSameEvent) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Review event and target event are the same", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceOverlap) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "New occurrence overlaps an existing occurrence on the target event", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Target event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry is not in pending status", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to add occurrence", fmt.Errorf("add-occurrence review id=%d target=%s: %w", id, req.TargetEventULID, err), h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "success", map[string]string{
+			"target_event": req.TargetEventULID,
+			"reviewed_by":  reviewedBy,
+		})
+	}
+
+	detail, err := buildReviewQueueDetail(*updatedReview)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("add-occurrence review id=%d: build detail: %w", id, err), h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, detail, "application/json")
+}
+
 // Helper functions
 
 // populateReviewQueueBase extracts the shared fields from a ReviewQueueEntry into

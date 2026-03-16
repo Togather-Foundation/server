@@ -197,6 +197,10 @@ func (s stubEventsRepo) DismissCompanionWarningMatch(_ context.Context, _ string
 	return nil
 }
 
+func (s stubEventsRepo) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+	return false, nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

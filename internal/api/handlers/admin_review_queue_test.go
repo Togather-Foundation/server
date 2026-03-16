@@ -302,6 +302,11 @@ func (m *MockRepository) DismissCompanionWarningMatch(ctx context.Context, compa
 	return args.Error(0)
 }
 
+func (m *MockRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
+	args := m.Called(ctx, eventID, startTime, endTime)
+	return args.Bool(0), args.Error(1)
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{
@@ -1303,4 +1308,173 @@ func TestDismissCompanionDuplicateWarning_FetchError(t *testing.T) {
 	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
 
 	mockRepo.AssertExpectations(t)
+}
+
+// ---------------------------------------------------------------------------
+// Tests for AddOccurrenceReview (srv-izykp)
+// ---------------------------------------------------------------------------
+
+func TestAddOccurrenceReview(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	targetEventID := "target-event-uuid"
+	now := time.Now()
+
+	// testTargetEvent returns a published target event suitable for add-occurrence tests.
+	testTargetEvent := func() *events.Event {
+		return &events.Event{
+			ID:             targetEventID,
+			ULID:           targetEventULID,
+			Name:           "Recurring Series",
+			LifecycleState: "published",
+		}
+	}
+
+	// testMergedReview returns a review entry in "merged" state (post-operation result).
+	testMergedReview := func(id int, eventULID string) *events.ReviewQueueEntry {
+		mergedStatus := "merged"
+		_ = mergedStatus
+		return &events.ReviewQueueEntry{
+			ID:                   id,
+			EventID:              "review-event-id",
+			EventULID:            eventULID,
+			OriginalPayload:      []byte(`{"name":"Series Event"}`),
+			NormalizedPayload:    []byte(`{"name":"Series Event"}`),
+			Warnings:             []byte(`[]`),
+			Status:               "merged",
+			DuplicateOfEventULID: &targetEventULID,
+			EventStartTime:       now,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+		}
+	}
+
+	tests := []struct {
+		name           string
+		reviewID       string
+		requestBody    any
+		mockSetup      func(*MockRepository)
+		expectedStatus int
+	}{
+		{
+			name:        "Success - occurrence added",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				entry.EventStartTime = now
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
+				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event"}, nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
+				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Error - missing review ID",
+			reviewID:       "",
+			requestBody:    map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Error - invalid review ID",
+			reviewID:       "abc",
+			requestBody:    map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Error - missing target_event_ulid",
+			reviewID:       "1",
+			requestBody:    map[string]string{},
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:        "Error - review entry not found",
+			reviewID:    "999",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
+					(*events.ReviewQueueEntry)(nil),
+					events.ErrNotFound,
+				)
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:        "Error - occurrence overlaps existing",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				entry.EventStartTime = now
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
+			},
+			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:        "Error - target event deleted",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				deleted := testTargetEvent()
+				deleted.LifecycleState = "deleted"
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(deleted, nil)
+			},
+			expectedStatus: http.StatusGone,
+		},
+		{
+			name:        "Error - review already processed",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				entry.Status = "approved"
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+			},
+			expectedStatus: http.StatusConflict,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := new(MockRepository)
+			tt.mockSetup(mockRepo)
+
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			handler := &AdminReviewQueueHandler{
+				Repository:   mockRepo,
+				AdminService: adminService,
+				AuditLogger:  audit.NewLogger(),
+				Env:          "test",
+			}
+
+			body, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/"+tt.reviewID+"/add-occurrence", bytes.NewReader(body))
+			if tt.reviewID != "" {
+				req.SetPathValue("id", tt.reviewID)
+			}
+			req = withAdminUser(req, "admin")
+			rec := httptest.NewRecorder()
+
+			handler.AddOccurrenceReview(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+			mockRepo.AssertExpectations(t)
+		})
+	}
 }

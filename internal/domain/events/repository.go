@@ -10,6 +10,9 @@ var ErrNotFound = errors.New("event not found")
 
 var ErrConflict = errors.New("event conflict")
 
+// ErrOccurrenceOverlap is returned when a new occurrence would overlap an existing one.
+var ErrOccurrenceOverlap = errors.New("occurrence overlaps an existing occurrence")
+
 // ErrAlreadyMerged is returned when attempting to merge an entity that has
 // already been merged into another entity by a concurrent operation.
 var ErrAlreadyMerged = errors.New("entity already merged")
@@ -193,6 +196,11 @@ type Repository interface {
 	FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error)
 	MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
 	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
+
+	// Occurrence overlap check: returns true if [startTime, endTime) overlaps any
+	// existing occurrence on the event identified by eventID (UUID).
+	// endTime may be nil, in which case a point-in-time check is used (start < existing_end).
+	CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
 
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error

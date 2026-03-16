@@ -632,6 +632,49 @@ INSERT INTO event_occurrences (
 	return nil
 }
 
+// CheckOccurrenceOverlap returns true if [startTime, endTime) overlaps any existing
+// occurrence on the given event. When endTime is nil the new occurrence is treated as
+// a point-in-time event; overlap is detected if that instant falls inside any
+// existing occurrence whose end_time is non-null, or equals the start_time of any
+// occurrence without an end_time.
+func (r *EventRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
+	queryer := r.queryer()
+
+	var overlaps bool
+	var err error
+	if endTime == nil {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND (
+          -- point-in-time: startTime falls within [occ.start, occ.end)
+          (end_time IS NOT NULL AND $2 >= start_time AND $2 < end_time)
+          -- or exactly matches the start of a point-in-time occurrence
+       OR (end_time IS NULL AND start_time = $2)
+      )
+)`, eventID, startTime).Scan(&overlaps)
+	} else {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND (
+          -- new [s,e) overlaps existing [occ.start, occ.end)
+          (end_time IS NOT NULL AND $2 < end_time AND $3 > start_time)
+          -- new range contains a point-in-time occurrence
+       OR (end_time IS NULL AND start_time >= $2 AND start_time < $3)
+      )
+)`, eventID, startTime, *endTime).Scan(&overlaps)
+	}
+	if err != nil {
+		return false, fmt.Errorf("check occurrence overlap: %w", err)
+	}
+	return overlaps, nil
+}
+
 func (r *EventRepository) CreateSource(ctx context.Context, params events.EventSourceCreateParams) error {
 	queryer := r.queryer()
 

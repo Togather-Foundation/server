@@ -54,6 +54,118 @@ var (
 	ErrEventAlreadyMerged   = errors.New("event has already been merged")
 )
 
+// AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
+// recurring-series event, soft-deletes the review's own event, and marks the review
+// as "merged" — all in a single database transaction.
+//
+// The targetEventULID identifies the existing recurring-series event.  The new
+// occurrence is constructed from the review entry's EventStartTime / EventEndTime.
+// If the new time range overlaps any existing occurrence on the target event,
+// ErrOccurrenceOverlap is returned and the transaction is rolled back.
+func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int, targetEventULID string, reviewedBy string) (*ReviewQueueEntry, error) {
+	if targetEventULID == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	// Begin transaction
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	// Fetch the review entry (within the transaction for serialisability)
+	review, err := txRepo.GetReviewQueueEntry(ctx, reviewID)
+	if err != nil {
+		return nil, fmt.Errorf("get review entry: %w", err)
+	}
+	if review.Status != "pending" {
+		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
+	}
+
+	// Fetch the target (recurring-series) event
+	target, err := txRepo.GetByULID(ctx, targetEventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get target event %s: %w", targetEventULID, err)
+	}
+	if target.LifecycleState == "deleted" {
+		return nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
+	}
+
+	// Ensure the review's own event is not the same as the target
+	if review.EventULID == targetEventULID {
+		return nil, fmt.Errorf("review event and target event are the same (%s): %w", targetEventULID, ErrCannotMergeSameEvent)
+	}
+
+	// Overlap check
+	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, target.ID, review.EventStartTime, review.EventEndTime)
+	if err != nil {
+		return nil, fmt.Errorf("check overlap: %w", err)
+	}
+	if overlaps {
+		return nil, fmt.Errorf("new occurrence [%s, %v] on event %s: %w",
+			review.EventStartTime.Format(time.RFC3339),
+			review.EventEndTime,
+			targetEventULID,
+			ErrOccurrenceOverlap,
+		)
+	}
+
+	// Add the new occurrence to the target event
+	err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
+		EventID:    target.ID,
+		StartTime:  review.EventStartTime,
+		EndTime:    review.EventEndTime,
+		Timezone:   s.defaultTZ,
+		VenueID:    target.PrimaryVenueID,
+		VirtualURL: nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create occurrence: %w", err)
+	}
+
+	// Soft-delete the review's own event (it has been absorbed as an occurrence)
+	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
+	}
+
+	err = txRepo.SoftDeleteEvent(ctx, review.EventULID, "absorbed_as_occurrence")
+	if err != nil {
+		return nil, fmt.Errorf("soft-delete review event: %w", err)
+	}
+
+	// Tombstone for the absorbed event
+	targetURI := fmt.Sprintf("https://togather.foundation/events/%s", targetEventULID)
+	tombstonePayload, err := buildTombstonePayload(reviewEvent.ULID, reviewEvent.Name, &targetURI, "absorbed_as_occurrence")
+	if err != nil {
+		return nil, fmt.Errorf("build tombstone: %w", err)
+	}
+	err = txRepo.CreateTombstone(ctx, TombstoneCreateParams{
+		EventID:      reviewEvent.ID,
+		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", reviewEvent.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       "absorbed_as_occurrence",
+		SupersededBy: &targetURI,
+		Payload:      tombstonePayload,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create tombstone: %w", err)
+	}
+
+	// Mark the review as merged (re-using the MergeReview status path with the target ULID)
+	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, targetEventULID)
+	if err != nil {
+		return nil, fmt.Errorf("update review status: %w", err)
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return reviewEntry, nil
+}
+
 // UpdateEvent updates event fields with admin attribution
 // Returns the updated event
 func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {

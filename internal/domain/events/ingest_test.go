@@ -758,6 +758,10 @@ func (m *MockRepository) DismissCompanionWarningMatch(_ context.Context, _ strin
 	return nil
 }
 
+func (m *MockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+	return false, nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

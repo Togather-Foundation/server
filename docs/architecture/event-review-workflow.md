@@ -667,6 +667,58 @@ Manually correct the dates.
 
 ---
 
+### POST /admin/review-queue/:id/merge
+
+Merge a near-duplicate event into an existing published event, keeping the target and soft-deleting the reviewed event.
+
+Available when the review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning with a `duplicate_of` candidate ULID in the warning details.
+
+**Request body:** none required (target ULID taken from warning details).
+
+**Action:**
+- Soft-delete the review entry's event (`lifecycle_state = 'deleted'`, tombstone reason `"merged"`, `superseded_by` → target event URI)
+- Mark `event_review_queue.status = 'merged'`
+
+**Responses:**
+- `200 OK` — merged successfully
+- `404 Not Found` — review entry or candidate event not found
+- `409 Conflict` — review entry no longer pending; or candidate event deleted
+
+---
+
+### POST /admin/review-queue/:id/add-occurrence
+
+Add the reviewed event as a new occurrence on an existing recurring-series event instead of merging. Use this when the two events share the same name/venue but have different dates and are legitimately separate occurrences of the same series.
+
+Available when the review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning (i.e. the same warning types that enable Merge Duplicate).
+
+**Request:**
+```json
+{
+  "targetEventUlid": "01HQRS7T8G"
+}
+```
+
+`targetEventUlid` must be a ULID for an existing published event (typically taken from the `duplicate_of` candidate in the warning details).
+
+**Action:**
+1. Validate the target event exists and is not deleted.
+2. Check that the review event's occurrence does **not** overlap any existing occurrence on the target — if it does, return `409 Conflict`.
+3. Copy the review event's start/end time into a new `event_occurrences` row on the target event.
+4. Soft-delete the review event (`lifecycle_state = 'deleted'`, tombstone reason `"absorbed_as_occurrence"`, `superseded_by` → target event URI).
+5. Mark `event_review_queue.status = 'merged'`.
+
+All five steps run inside a single database transaction.
+
+**Responses:**
+- `200 OK` — occurrence added and review entry resolved
+- `400 Bad Request` — `targetEventUlid` missing or malformed
+- `404 Not Found` — review entry or target event not found
+- `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target; or target event is deleted (410 Gone)
+- `410 Gone` — target event has been deleted
+
+---
+
 ## Cleanup & Maintenance
 
 ### Background Job: Clean Expired Reviews

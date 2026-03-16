@@ -170,7 +170,24 @@ No new CSS file needed. Tabler classes used:
 - All click handlers use `data-action` attributes (CSP compliance)
 - Template files are auto-discovered via Go's `embed.FS` in `web/embed.go`
 - The `_footer.html` template already loads `bootstrap.bundle.min.js`, `tabler.min.js`, `api.js`, and `components.js`
-- The `reviewQueue` API namespace in `api.js` exposes `list`, `get`, `approve`, `reject`, `fix`
+- The `reviewQueue` API namespace in `api.js` exposes `list`, `get`, `approve`, `reject`, `fix`, `merge`, `addOccurrence`
+
+### Add as Occurrence button (srv-izykp)
+
+When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning and the events are actually different occurrences of the same recurring series (same name/venue, different date/time), an admin can use the **Add as Occurrence** button to:
+
+1. Add the review event's date/time as a new occurrence on the target (duplicate) recurring-series event.
+2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
+3. Mark the review as merged — all atomically.
+
+**Button visibility**: shown alongside "Merge Duplicate" for event-level duplicate warnings only (`potential_duplicate`, `near_duplicate_of_new_event`). Not shown for place/org duplicate warnings.
+
+**Overlap guard**: the backend rejects with HTTP 409 if the new occurrence would overlap an existing occurrence on the target event.
+
+**Data flow**:
+- Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`
+- JS: `addOccurrenceDirect(id, targetUlid)` → `API.reviewQueue.addOccurrence(id, targetUlid)`
+- Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with body `{ target_event_ulid: "..." }`
 
 ## Testing
 
