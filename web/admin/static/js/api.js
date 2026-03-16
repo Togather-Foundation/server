@@ -366,7 +366,7 @@ const API = {
         
         merge: (id, primaryEventId) => API.request(`/api/v1/admin/review-queue/${id}/merge`, {
             method: 'POST',
-            body: JSON.stringify({ primary_event_id: primaryEventId })
+            body: JSON.stringify({ primary_event_ulid: primaryEventId })
         }),
 
         addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, {

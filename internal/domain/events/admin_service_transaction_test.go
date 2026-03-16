@@ -477,3 +477,97 @@ func (m *mockTxCommitter) Rollback(ctx context.Context) error {
 	m.repo.rollbackCalled = true
 	return nil
 }
+
+// TestAddOccurrenceFromReview_RejectsNonPublishedTarget verifies that the service
+// returns ErrEventNotPublished when the target event is not in "published" state.
+func TestAddOccurrenceFromReview_RejectsNonPublishedTarget(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	for _, state := range []string{"draft", "pending_review", "cancelled"} {
+		state := state
+		t.Run(state, func(t *testing.T) {
+			repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+			repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+				if ulid == "01HTARGET00000000000000001" {
+					return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: state}, nil
+				}
+				return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance", LifecycleState: "published"}, nil
+			}
+
+			service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+			_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+			if err == nil {
+				t.Fatalf("state=%q: expected ErrEventNotPublished, got nil", state)
+			}
+			if !errors.Is(err, ErrEventNotPublished) {
+				t.Errorf("state=%q: expected ErrEventNotPublished, got: %v", state, err)
+			}
+			if repo.commitCalled {
+				t.Errorf("state=%q: commit must not be called when target is not published", state)
+			}
+		})
+	}
+}
+
+// TestAddOccurrenceFromReview_PreservesOccurrenceMetadata verifies that the
+// occurrence is created using the review event's timezone, venue, and virtual URL
+// rather than the series-level defaults.
+func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	reviewVenueID := "review-venue-uuid"
+	reviewVirtualURL := "https://example.com/livestream"
+	reviewTimezone := "America/Vancouver"
+
+	var capturedParams OccurrenceCreateParams
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			targetVenueID := "target-venue-uuid"
+			return &Event{
+				ID:             "target-uuid",
+				ULID:           ulid,
+				Name:           "Series",
+				LifecycleState: "published",
+				PrimaryVenueID: &targetVenueID,
+			}, nil
+		}
+		// Review event with a specific occurrence
+		return &Event{
+			ID:   "review-event-id",
+			ULID: ulid,
+			Name: "Instance",
+			Occurrences: []Occurrence{
+				{
+					Timezone:   reviewTimezone,
+					VenueID:    &reviewVenueID,
+					VirtualURL: &reviewVirtualURL,
+				},
+			},
+		}, nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
+		capturedParams = params
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if capturedParams.Timezone != reviewTimezone {
+		t.Errorf("timezone: got %q, want %q", capturedParams.Timezone, reviewTimezone)
+	}
+	if capturedParams.VenueID == nil || *capturedParams.VenueID != reviewVenueID {
+		t.Errorf("venueID: got %v, want %q", capturedParams.VenueID, reviewVenueID)
+	}
+	if capturedParams.VirtualURL == nil || *capturedParams.VirtualURL != reviewVirtualURL {
+		t.Errorf("virtualURL: got %v, want %q", capturedParams.VirtualURL, reviewVirtualURL)
+	}
+}

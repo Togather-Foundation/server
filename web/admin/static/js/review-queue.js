@@ -623,11 +623,19 @@
             w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate' || w.code === 'near_duplicate_of_new_event')
         );
         
-        // Extract duplicate event ID from warnings details if available
+        // Extract duplicate event ID from warnings details if available.
+        // Priority: potential_duplicate match ULID → near_duplicate_of_new_event
+        // (uses the review entry's duplicateOfEventUlid, which is the incoming
+        // new event's ULID recorded at ingest time) → entry-level duplicateOfEventUlid.
         const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
+        const nearDupNewEventWarning = warnings.find(w => w.code === 'near_duplicate_of_new_event');
         let duplicateEventId = '';
         if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
             duplicateEventId = duplicateWarning.details.matches[0].ulid || '';
+        } else if (nearDupNewEventWarning && detail.duplicateOfEventUlid) {
+            // For near_duplicate_of_new_event the target is the new event whose
+            // ULID is stored on the review entry (set at ingest time).
+            duplicateEventId = detail.duplicateOfEventUlid;
         } else if (detail.duplicateOfEventUlid) {
             duplicateEventId = detail.duplicateOfEventUlid;
         }

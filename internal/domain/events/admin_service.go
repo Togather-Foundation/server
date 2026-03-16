@@ -52,6 +52,7 @@ var (
 	ErrCannotMergeSameEvent = errors.New("cannot merge event with itself")
 	ErrEventDeleted         = errors.New("event has been deleted")
 	ErrEventAlreadyMerged   = errors.New("event has already been merged")
+	ErrEventNotPublished    = errors.New("target event is not published")
 )
 
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
@@ -91,6 +92,9 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	if target.LifecycleState == "deleted" {
 		return nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
 	}
+	if target.LifecycleState != "published" {
+		return nil, fmt.Errorf("target event %s is in state %q (must be published): %w", targetEventULID, target.LifecycleState, ErrEventNotPublished)
+	}
 
 	// Acquire a row-level lock on the target event before the overlap check so that
 	// two concurrent add-occurrence requests on the same event cannot both pass the
@@ -119,23 +123,45 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		)
 	}
 
-	// Add the new occurrence to the target event
-	err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
-		EventID:    target.ID,
-		StartTime:  review.EventStartTime,
-		EndTime:    review.EventEndTime,
-		Timezone:   s.defaultTZ,
-		VenueID:    target.PrimaryVenueID,
-		VirtualURL: nil,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create occurrence: %w", err)
-	}
+	// Add the new occurrence to the target event.
+	// Prefer the review event's occurrence metadata so that venue, timezone, and
+	// virtual URL reflect the specific instance being absorbed, not the series defaults.
+	occTimezone := s.defaultTZ
+	occVenueID := target.PrimaryVenueID
+	var occVirtualURL *string
 
 	// Soft-delete the review's own event (it has been absorbed as an occurrence)
 	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
+	}
+
+	// Extract occurrence-level metadata from the review event's first occurrence
+	// so the new occurrence inherits the specific venue / timezone / virtual URL
+	// of that instance rather than the series-level defaults.
+	if len(reviewEvent.Occurrences) > 0 {
+		occ := reviewEvent.Occurrences[0]
+		if occ.Timezone != "" {
+			occTimezone = occ.Timezone
+		}
+		if occ.VenueID != nil {
+			occVenueID = occ.VenueID
+		}
+		if occ.VirtualURL != nil && *occ.VirtualURL != "" {
+			occVirtualURL = occ.VirtualURL
+		}
+	}
+
+	err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
+		EventID:    target.ID,
+		StartTime:  review.EventStartTime,
+		EndTime:    review.EventEndTime,
+		Timezone:   occTimezone,
+		VenueID:    occVenueID,
+		VirtualURL: occVirtualURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create occurrence: %w", err)
 	}
 
 	err = txRepo.SoftDeleteEvent(ctx, review.EventULID, "absorbed_as_occurrence")
