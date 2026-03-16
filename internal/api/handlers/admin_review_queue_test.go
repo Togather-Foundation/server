@@ -1613,10 +1613,11 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
-				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
 					Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
+				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
@@ -1690,6 +1691,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 					ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
 					Occurrences: []events.Occurrence{{StartTime: now}},
 				}, nil)
+				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
 			},
 			expectedStatus: http.StatusConflict,
@@ -1737,10 +1739,11 @@ func TestAddOccurrenceReview(t *testing.T) {
 				draftTarget.LifecycleState = "draft"
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(draftTarget, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
-				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
 					Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
+				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
@@ -1858,6 +1861,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("SoftDeleteEvent", mock.Anything, sourceEventULID, "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+				m.On("LockEventForUpdate", mock.Anything, "source-id").Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(mergedEntry(), nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -1882,6 +1886,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 					&events.Event{ID: "source-id", ULID: sourceEventULID, Name: "New Instance",
 						Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				m.On("LockEventForUpdate", mock.Anything, "source-id").Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
 			},
 			expectedStatus: http.StatusConflict,
@@ -1904,6 +1909,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 							{StartTime: now},
 							{StartTime: now.Add(24 * time.Hour)},
 						}}, nil)
+				m.On("LockEventForUpdate", mock.Anything, "source-id").Return(nil)
 			},
 			expectedStatus: http.StatusUnprocessableEntity,
 		},
@@ -1919,11 +1925,12 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(
 					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
-				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
 					&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
 						Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
+				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(
@@ -2059,6 +2066,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 	mockRepo.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
 		&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
 			Occurrences: []events.Occurrence{}}, nil)
+	mockRepo.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 
 	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 	handler := &AdminReviewQueueHandler{
@@ -2118,6 +2126,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath(t *testing.T) {
 	mockRepo.On("GetByULID", mock.Anything, sourceEventULID).Return(
 		&events.Event{ID: "source-id", ULID: sourceEventULID, Name: "New Instance",
 			Occurrences: []events.Occurrence{}}, nil)
+	mockRepo.On("LockEventForUpdate", mock.Anything, "source-id").Return(nil)
 
 	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
 	handler := &AdminReviewQueueHandler{

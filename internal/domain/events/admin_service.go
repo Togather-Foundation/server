@@ -55,7 +55,46 @@ var (
 	ErrAmbiguousOccurrenceSource   = errors.New("source event has multiple occurrences: cannot absorb ambiguously")
 	ErrZeroOccurrenceSource        = errors.New("source event has no occurrences: cannot determine which occurrence to absorb")
 	ErrAmbiguousOccurrenceDispatch = errors.New("review entry has both potential_duplicate and near_duplicate_of_new_event warnings: cannot determine add-occurrence path unambiguously")
+	ErrWrongOccurrencePath         = errors.New("review entry warnings do not match the requested add-occurrence path")
 )
+
+// occurrenceDispatchPath classifies a raw warnings JSON blob into one of three
+// outcomes for the add-as-occurrence dispatch:
+//
+//   - "forward"  — the review has at least one potential_duplicate warning and no
+//     near_duplicate_of_new_event warning → use AddOccurrenceFromReview.
+//   - "neardup"  — the review has at least one near_duplicate_of_new_event warning
+//     and no potential_duplicate warning → use AddOccurrenceFromReviewNearDup.
+//   - ""         — neither warning type is present (e.g. no warnings or only
+//     quality/completeness warnings) → default to forward path.
+//
+// Returns ErrAmbiguousOccurrenceDispatch if BOTH warning types are present.
+func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
+	if len(warningsJSON) == 0 {
+		return "forward", nil
+	}
+	var warnings []ValidationWarning
+	if err := json.Unmarshal(warningsJSON, &warnings); err != nil {
+		// Malformed warnings JSON — treat as no warnings, default to forward path.
+		return "forward", nil
+	}
+	var hasNearDup, hasPotDup bool
+	for _, w := range warnings {
+		switch w.Code {
+		case "near_duplicate_of_new_event":
+			hasNearDup = true
+		case "potential_duplicate":
+			hasPotDup = true
+		}
+	}
+	if hasNearDup && hasPotDup {
+		return "", ErrAmbiguousOccurrenceDispatch
+	}
+	if hasNearDup {
+		return "neardup", nil
+	}
+	return "forward", nil
+}
 
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
 // recurring-series event, soft-deletes the review's own event, and marks the review
@@ -90,8 +129,18 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
 	}
 
-	// Fetch the target (recurring-series) event: a quick read to get its internal ID
-	// so that we can acquire the row-level lock before any eligibility recheck.
+	// Re-validate the dispatch path from the locked warnings to prevent a stale
+	// pre-read in the handler from routing to the wrong path.  If the warnings
+	// changed since the handler's advisory read, the locked row is authoritative.
+	lockedPath, pathErr := occurrenceDispatchPath(review.Warnings)
+	if pathErr != nil {
+		// Both warning types present — ambiguous dispatch.
+		return nil, fmt.Errorf("review entry %d: %w", reviewID, pathErr)
+	}
+	if lockedPath == "neardup" {
+		// The locked warnings indicate the near-dup path; the caller chose the wrong method.
+		return nil, fmt.Errorf("review entry %d warnings indicate near_duplicate_of_new_event path: %w", reviewID, ErrWrongOccurrencePath)
+	}
 	target, err := txRepo.GetByULID(ctx, targetEventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get target event %s: %w", targetEventULID, err)
@@ -121,15 +170,30 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("review event and target event are the same (%s): %w", targetEventULID, ErrCannotMergeSameEvent)
 	}
 
-	// Fetch the review (source) event first so that we use its locked occurrence
-	// timestamps as the source of truth, not the review-row snapshot values.
+	// Fetch the review (source) event to get its internal ID for locking.
+	// We lock the source AFTER the target lock, preserving the lock ordering:
+	// review → target event → source event.  This prevents a TOCTOU race where a
+	// concurrent request modifies the source event's occurrences between the fetch
+	// and the soft-delete.
+	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
+	}
+
+	// Acquire a row-level lock on the source event so that its occurrence timestamps
+	// cannot be mutated between our read and the soft-delete commit.
+	if err := txRepo.LockEventForUpdate(ctx, reviewEvent.ID); err != nil {
+		return nil, fmt.Errorf("lock source event %s: %w", review.EventULID, err)
+	}
+
+	// Re-read the source event under lock to get authoritative occurrence timestamps.
 	// The review row's EventStartTime / EventEndTime are a snapshot taken at ingest
 	// time and may diverge from the actual occurrence if the event was edited after
 	// ingest.  Using stale snapshot timestamps would add the wrong time slot to the
 	// target series and then soft-delete the source — data corruption.
-	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
+	reviewEvent, err = txRepo.GetByULID(ctx, review.EventULID)
 	if err != nil {
-		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
+		return nil, fmt.Errorf("get review event %s (post-lock): %w", review.EventULID, err)
 	}
 
 	// Reject multi-occurrence and zero-occurrence sources.
@@ -289,13 +353,13 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 //  2. Look up the companion review for the source event (read-only).
 //  3. Lock the companion review (if found) — all review locks before any event locks.
 //  4. Lock the target (existing series) event.
-//  5. Fetch the source event under the transaction snapshot.
+//  5. Fetch and lock the source event (after target lock to preserve ordering).
 //
 // The method atomically:
 //  1. Locks the near-dup review entry and verifies it is still pending.
 //  2. Looks up and locks the source event's companion review entry (if present).
 //  3. Locks and re-reads the target (existing series) event.
-//  4. Fetches the source event; rejects if it has multiple occurrences.
+//  4. Fetches and locks the source event; rejects if it has multiple occurrences.
 //  5. Checks overlap for the source event's occurrence on the target.
 //  6. Creates the occurrence on the target.
 //  7. Soft-deletes the source event.
@@ -320,7 +384,16 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("near-dup review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
 	}
 
-	// The near-dup review entry must have a DuplicateOfEventULID (the new event).
+	// Re-validate the dispatch path from the locked warnings to prevent a stale
+	// pre-read in the handler from routing to the wrong path.
+	lockedPath, pathErr := occurrenceDispatchPath(review.Warnings)
+	if pathErr != nil {
+		return nil, nil, fmt.Errorf("near-dup review entry %d: %w", reviewID, pathErr)
+	}
+	if lockedPath == "forward" {
+		// The locked warnings indicate the forward path; the caller chose the wrong method.
+		return nil, nil, fmt.Errorf("near-dup review entry %d warnings do not indicate near_duplicate_of_new_event path: %w", reviewID, ErrWrongOccurrencePath)
+	}
 	if review.DuplicateOfEventULID == nil || *review.DuplicateOfEventULID == "" {
 		return nil, nil, fmt.Errorf("near-dup review entry %d has no duplicate event ULID: %w", reviewID, ErrInvalidUpdateParams)
 	}
@@ -379,10 +452,25 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
 	}
 
-	// Step 5: Fetch the source (new) event.
+	// Step 5: Fetch and lock the source (new) event.
+	// Lock ordering: review rows → target event → source event.  The source is locked
+	// AFTER the target event to avoid lock-order inversion.  Without this lock a
+	// concurrent request that edits the source event's occurrence timestamps could
+	// race between our GetByULID read and the eventual soft-delete, causing us to
+	// absorb the wrong time slot (TOCTOU data corruption).
 	sourceEvent, err := txRepo.GetByULID(ctx, sourceEventULID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get source event %s: %w", sourceEventULID, err)
+	}
+
+	if err := txRepo.LockEventForUpdate(ctx, sourceEvent.ID); err != nil {
+		return nil, nil, fmt.Errorf("lock source event %s: %w", sourceEventULID, err)
+	}
+
+	// Re-read source event under lock to get authoritative occurrence timestamps.
+	sourceEvent, err = txRepo.GetByULID(ctx, sourceEventULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get source event %s (post-lock): %w", sourceEventULID, err)
 	}
 
 	// Reject ambiguous multi-occurrence sources.  The near-dup ingest path always

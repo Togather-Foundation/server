@@ -864,6 +864,20 @@ func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter,
 		problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/zero-occurrence-source", "Source event has no occurrences; cannot determine which occurrence to absorb", err, h.Env)
 		return
 	}
+	if errors.Is(err, events.ErrAmbiguousOccurrenceDispatch) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/ambiguous-occurrence-dispatch",
+			"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
+			err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrWrongOccurrencePath) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/ambiguous-occurrence-dispatch",
+			"Review entry warnings changed; add-occurrence path is no longer valid — retry the request",
+			err, h.Env)
+		return
+	}
 	problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to add occurrence", fmt.Errorf("add-occurrence review id=%d target=%s: %w", id, targetEventULID, err), h.Env)
 }
 

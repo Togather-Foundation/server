@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -1087,6 +1088,7 @@ func makeNearDupOccurrenceRepo(targetID, targetULID, sourceULID string, startTim
 				DuplicateOfEventULID: &sourceDup,
 				Status:               "pending",
 				EventStartTime:       startTime,
+				Warnings:             []byte(`[{"code":"near_duplicate_of_new_event","message":"near_duplicate_of_new_event"}]`),
 			}, nil
 		},
 		getByULIDFunc: func(_ context.Context, ulid string) (*Event, error) {
@@ -1151,7 +1153,12 @@ func TestAddOccurrenceFromReviewNearDup_MissingDuplicateULID(t *testing.T) {
 	ctx := context.Background()
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
-		return &ReviewQueueEntry{ID: id, EventULID: "01HTARGET00000000000000001", Status: "pending"}, nil
+		return &ReviewQueueEntry{
+			ID:        id,
+			EventULID: "01HTARGET00000000000000001",
+			Status:    "pending",
+			Warnings:  []byte(`[{"code":"near_duplicate_of_new_event","message":"near_duplicate_of_new_event"}]`),
+		}, nil
 	}
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
@@ -1311,6 +1318,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed(t *te
 			Status:               "pending",
 			EventULID:            "01HTARGET00000000000000001",
 			DuplicateOfEventULID: &sourceULID,
+			Warnings:             []byte(`[{"code":"near_duplicate_of_new_event","message":"near_duplicate_of_new_event"}]`),
 		}, nil
 	}
 	mergeCallIDs := []int{}
@@ -1364,6 +1372,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing
 			Status:               "pending",
 			EventULID:            "01HTARGET00000000000000001",
 			DuplicateOfEventULID: &sourceULID,
+			Warnings:             []byte(`[{"code":"near_duplicate_of_new_event","message":"near_duplicate_of_new_event"}]`),
 		}, nil
 	}
 	mergeCallIDs := []int{}
@@ -1526,6 +1535,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *test
 			Status:               "pending",
 			EventULID:            targetULID,
 			DuplicateOfEventULID: &sourceULID,
+			Warnings:             []byte(`[{"code":"near_duplicate_of_new_event","message":"near_duplicate_of_new_event"}]`),
 		}, nil
 	}
 	repo.lockEventForUpdateFunc = func(_ context.Context, _ string) error {
@@ -1588,6 +1598,376 @@ func TestAddOccurrenceFromReviewNearDup_ZeroOccurrenceSourceRejected(t *testing.
 	}
 	if repo.commitCalled {
 		t.Error("commit must not be called when source has no occurrences")
+	}
+}
+
+// makeWarningsJSON builds a minimal warnings JSON blob for the given warning codes.
+func makeWarningsJSON(codes ...string) []byte {
+	type w struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	warnings := make([]w, 0, len(codes))
+	for _, c := range codes {
+		warnings = append(warnings, w{Code: c, Message: c})
+	}
+	b, _ := json.Marshal(warnings)
+	return b
+}
+
+// ── Fix 1: source event locking ──────────────────────────────────────────────
+
+// TestAddOccurrenceFromReview_SourceEventLockedBeforeOccurrenceRead verifies
+// that the source event is locked (via LockEventForUpdate) before the
+// create-occurrence call, preventing a TOCTOU race on occurrence timestamps.
+func TestAddOccurrenceFromReview_SourceEventLockedBeforeOccurrenceRead(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	targetULID := "01HTARGET00000000000000001"
+	reviewEventULID := "01HREVIEW000000000000000001"
+
+	var callOrder []string
+	repo := makeOccurrenceRepo("target-uuid", targetULID, reviewEventULID, startTime)
+
+	repo.lockEventForUpdateFunc = func(_ context.Context, _ string) error {
+		callOrder = append(callOrder, "lock")
+		return nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, _ OccurrenceCreateParams) error {
+		callOrder = append(callOrder, "create-occurrence")
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	// Lock must be called before create-occurrence.
+	lockIdx, createIdx := -1, -1
+	for i, s := range callOrder {
+		if s == "lock" && lockIdx == -1 {
+			lockIdx = i
+		}
+		if s == "create-occurrence" && createIdx == -1 {
+			createIdx = i
+		}
+	}
+	if lockIdx == -1 {
+		t.Fatal("LockEventForUpdate was never called")
+	}
+	if createIdx == -1 {
+		t.Fatal("createOccurrence was never called")
+	}
+	if lockIdx >= createIdx {
+		t.Errorf("lock must be called before create-occurrence; order: %v", callOrder)
+	}
+}
+
+// TestAddOccurrenceFromReview_UsesPostLockSourceTimestamps verifies that when
+// getByULID is called a second time (post-lock re-read) and returns different
+// occurrence data, the post-lock data wins.
+func TestAddOccurrenceFromReview_UsesPostLockSourceTimestamps(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	reviewEventULID := "01HREVIEW000000000000000001"
+
+	preLockTime := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
+	postLockTime := time.Date(2025, 3, 15, 18, 0, 0, 0, time.UTC)
+
+	var capturedStart time.Time
+	getCallCount := 0
+
+	repo := makeOccurrenceRepo("target-uuid", targetULID, reviewEventULID, preLockTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-uuid", ULID: targetULID, Name: "Series", LifecycleState: "published"}, nil
+		}
+		// Source event: return different timestamps on second read (post-lock).
+		getCallCount++
+		st := preLockTime
+		if getCallCount > 1 {
+			st = postLockTime
+		}
+		return &Event{
+			ID:          "review-event-id",
+			ULID:        reviewEventULID,
+			Name:        "Instance",
+			Occurrences: []Occurrence{{StartTime: st}},
+		}, nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, p OccurrenceCreateParams) error {
+		capturedStart = p.StartTime
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !capturedStart.Equal(postLockTime) {
+		t.Errorf("expected post-lock timestamp %v, got %v", postLockTime, capturedStart)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_SourceEventLockedBeforeOccurrenceRead
+// verifies that the source event is locked before the create-occurrence call on
+// the near-dup path.
+func TestAddOccurrenceFromReviewNearDup_SourceEventLockedBeforeOccurrenceRead(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+
+	var callOrder []string
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
+
+	repo.lockEventForUpdateFunc = func(_ context.Context, _ string) error {
+		callOrder = append(callOrder, "lock")
+		return nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, _ OccurrenceCreateParams) error {
+		callOrder = append(callOrder, "create-occurrence")
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	// Find the LAST lock call (source lock) and ensure it precedes create-occurrence.
+	lastLockIdx, createIdx := -1, -1
+	for i, s := range callOrder {
+		if s == "lock" {
+			lastLockIdx = i
+		}
+		if s == "create-occurrence" && createIdx == -1 {
+			createIdx = i
+		}
+	}
+	if lastLockIdx == -1 {
+		t.Fatal("LockEventForUpdate was never called")
+	}
+	if createIdx == -1 {
+		t.Fatal("createOccurrence was never called")
+	}
+	if lastLockIdx >= createIdx {
+		t.Errorf("source lock must precede create-occurrence; order: %v", callOrder)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_UsesPostLockSourceTimestamps verifies that
+// the post-lock re-read of the source event is used for occurrence data on the
+// near-dup path.
+func TestAddOccurrenceFromReviewNearDup_UsesPostLockSourceTimestamps(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+
+	preLockTime := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
+	postLockTime := time.Date(2025, 3, 15, 18, 0, 0, 0, time.UTC)
+
+	var capturedStart time.Time
+	getCallCount := 0
+
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, preLockTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-id", ULID: targetULID, Name: "Series", LifecycleState: "published"}, nil
+		}
+		// Source event: return different timestamps on second read (post-lock).
+		getCallCount++
+		st := preLockTime
+		if getCallCount > 1 {
+			st = postLockTime
+		}
+		return &Event{
+			ID:          "source-event-id",
+			ULID:        sourceULID,
+			Name:        "New Instance",
+			Occurrences: []Occurrence{{StartTime: st}},
+		}, nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, p OccurrenceCreateParams) error {
+		capturedStart = p.StartTime
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !capturedStart.Equal(postLockTime) {
+		t.Errorf("expected post-lock timestamp %v, got %v", postLockTime, capturedStart)
+	}
+}
+
+// ── Fix 2: stale warning-based path selection ─────────────────────────────────
+
+// TestAddOccurrenceFromReview_WrongPathWhenLockedWarningsIndicateNearDup
+// verifies that if the locked review entry has near_duplicate_of_new_event
+// warnings, AddOccurrenceFromReview returns ErrWrongOccurrencePath.
+func TestAddOccurrenceFromReview_WrongPathWhenLockedWarningsIndicateNearDup(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{
+			ID:       id,
+			Status:   "pending",
+			Warnings: makeWarningsJSON("near_duplicate_of_new_event"),
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrWrongOccurrencePath, got nil")
+	}
+	if !errors.Is(err, ErrWrongOccurrencePath) {
+		t.Errorf("expected ErrWrongOccurrencePath, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called on wrong-path error")
+	}
+}
+
+// TestAddOccurrenceFromReview_AmbiguousDispatchFromLockedWarnings verifies that
+// if the locked review entry has both potential_duplicate and
+// near_duplicate_of_new_event warnings, AddOccurrenceFromReview returns
+// ErrAmbiguousOccurrenceDispatch.
+func TestAddOccurrenceFromReview_AmbiguousDispatchFromLockedWarnings(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{
+			ID:       id,
+			Status:   "pending",
+			Warnings: makeWarningsJSON("potential_duplicate", "near_duplicate_of_new_event"),
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrAmbiguousOccurrenceDispatch, got nil")
+	}
+	if !errors.Is(err, ErrAmbiguousOccurrenceDispatch) {
+		t.Errorf("expected ErrAmbiguousOccurrenceDispatch, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called on ambiguous dispatch error")
+	}
+}
+
+// TestAddOccurrenceFromReview_ForwardPathAcceptsNoWarnings verifies that a
+// review entry with nil/empty warnings is accepted by AddOccurrenceFromReview.
+func TestAddOccurrenceFromReview_ForwardPathAcceptsNoWarnings(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	// Default lock delegates to getReviewQueueEntryFunc which returns nil Warnings.
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success with nil warnings (forward path), got: %v", err)
+	}
+}
+
+// TestAddOccurrenceFromReview_ForwardPathAcceptsPotentialDuplicateWarning
+// verifies that a potential_duplicate warning (without near_duplicate_of_new_event)
+// is accepted by AddOccurrenceFromReview as a valid forward-path review.
+func TestAddOccurrenceFromReview_ForwardPathAcceptsPotentialDuplicateWarning(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{
+			ID:       id,
+			Status:   "pending",
+			Warnings: makeWarningsJSON("potential_duplicate"),
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success with potential_duplicate warning, got: %v", err)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing verifies
+// that if the locked review entry has no near_duplicate_of_new_event warning,
+// AddOccurrenceFromReviewNearDup returns ErrWrongOccurrencePath.
+func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		dup := "01HSOURCE00000000000000001"
+		return &ReviewQueueEntry{
+			ID:                   id,
+			Status:               "pending",
+			EventULID:            "01HTARGET00000000000000001",
+			DuplicateOfEventULID: &dup,
+			Warnings:             nil, // no near_duplicate_of_new_event warning
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrWrongOccurrencePath, got nil")
+	}
+	if !errors.Is(err, ErrWrongOccurrencePath) {
+		t.Errorf("expected ErrWrongOccurrencePath, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called on wrong-path error")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_AmbiguousDispatchFromLockedWarnings
+// verifies that if the locked review entry has both potential_duplicate and
+// near_duplicate_of_new_event warnings, AddOccurrenceFromReviewNearDup returns
+// ErrAmbiguousOccurrenceDispatch.
+func TestAddOccurrenceFromReviewNearDup_AmbiguousDispatchFromLockedWarnings(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		dup := "01HSOURCE00000000000000001"
+		return &ReviewQueueEntry{
+			ID:                   id,
+			Status:               "pending",
+			EventULID:            "01HTARGET00000000000000001",
+			DuplicateOfEventULID: &dup,
+			Warnings:             makeWarningsJSON("potential_duplicate", "near_duplicate_of_new_event"),
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrAmbiguousOccurrenceDispatch, got nil")
+	}
+	if !errors.Is(err, ErrAmbiguousOccurrenceDispatch) {
+		t.Errorf("expected ErrAmbiguousOccurrenceDispatch, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called on ambiguous dispatch error")
 	}
 }
 
