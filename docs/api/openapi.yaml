@@ -1067,9 +1067,17 @@ paths:
           *existing* series event; the newly-ingested counterpart (stored in the review's
           `duplicate_of_event_id` column) is the source to be absorbed into the existing series.
           `target_event_ulid` is **NOT required** for this path — the target is derived from the
-          review entry itself.  Any provided `target_event_ulid` is ignored.  The source event
-          must have exactly one occurrence; if it has multiple occurrences the request is rejected
-          with `422 Unprocessable Entity`.
+          review entry itself.  Any provided `target_event_ulid` is ignored.
+
+        **Source event constraints (both paths):** The source event must have exactly one
+        occurrence. A zero-occurrence source is rejected with `422` (`zero-occurrence-source`) —
+        there is no occurrence data to absorb. A multi-occurrence source is rejected with `422`
+        (`ambiguous-occurrence-source`) — absorbing one occurrence while silently deleting the
+        rest would cause data loss.
+
+        **Ambiguous dispatch:** If the review entry carries **both** `potential_duplicate` and
+        `near_duplicate_of_new_event` warnings simultaneously, the request is rejected with `422`
+        (`ambiguous-occurrence-dispatch`). Remove or resolve one of the warnings before retrying.
 
         Returns HTTP 409 if the new occurrence would overlap an existing occurrence on the target
         event, or if the review entry is not in `pending` status.
@@ -1148,8 +1156,16 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: |
-            The source event (near-dup path only) has multiple occurrences and cannot be
-            absorbed unambiguously. Resolve or split the source event first, then retry.
+            One of three unprocessable conditions:
+            - **`ambiguous-occurrence-source`** — the source event has multiple occurrences;
+              absorbing one ambiguously would silently delete the rest. Resolve or split the
+              source event first, then retry.
+            - **`zero-occurrence-source`** — the source event has no occurrences; there is
+              nothing to absorb. Ensure the source event has exactly one occurrence first.
+            - **`ambiguous-occurrence-dispatch`** — the review entry carries both
+              `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously;
+              the dispatch path cannot be determined unambiguously. Remove or resolve one warning
+              before retrying.
           content:
             application/problem+json:
               schema:

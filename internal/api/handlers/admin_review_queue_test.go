@@ -1615,7 +1615,8 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
-				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event"}, nil)
+				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
+					Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
@@ -1732,7 +1733,8 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
-				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event"}, nil)
+				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
+					Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
@@ -1914,7 +1916,8 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
-					&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance"}, nil)
+					&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
+						Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(
@@ -1973,4 +1976,159 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 			mockRepo.AssertExpectations(t)
 		})
 	}
+}
+
+// TestAddOccurrenceReview_BothWarningsRejected verifies that when a review entry
+// carries BOTH potential_duplicate and near_duplicate_of_new_event warnings the
+// handler returns 422 without touching the AdminService — the dispatch path is
+// ambiguous and requires manual resolution.
+func TestAddOccurrenceReview_BothWarningsRejected(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	sourceEventULID := "01HSOURCE00000000000000001"
+	now := time.Now()
+
+	// Build a review entry that carries both warning types.
+	bothWarnings, _ := json.Marshal([]events.ValidationWarning{
+		{Code: "potential_duplicate"},
+		{Code: "near_duplicate_of_new_event"},
+	})
+	ambiguousEntry := &events.ReviewQueueEntry{
+		ID:                   1,
+		EventID:              "target-event-id",
+		EventULID:            targetEventULID,
+		DuplicateOfEventULID: &sourceEventULID,
+		OriginalPayload:      []byte(`{"name":"Series Event"}`),
+		NormalizedPayload:    []byte(`{"name":"Series Event"}`),
+		Warnings:             bothWarnings,
+		Status:               "pending",
+		EventStartTime:       now,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+
+	mockRepo := new(MockRepository)
+	// GetReviewQueueEntry is called by the handler to peek the warnings; no TX needed.
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(ambiguousEntry, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	body, _ := json.Marshal(map[string]string{"target_event_ulid": targetEventULID})
+	req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/add-occurrence", bytes.NewReader(body))
+	req.SetPathValue("id", "1")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.AddOccurrenceReview(rec, req)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	mockRepo.AssertExpectations(t)
+}
+
+// TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath verifies that when the
+// review (source) event has no occurrences the forward-path handler returns 422.
+func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	targetEventID := "target-event-uuid"
+	now := time.Now()
+
+	fwdEntry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+	fwdEntry.EventStartTime = now
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(fwdEntry, nil)
+	setupTxMock(mockRepo)
+	mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(fwdEntry, nil)
+	mockRepo.On("GetByULID", mock.Anything, targetEventULID).Return(
+		&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
+	mockRepo.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+	// Overlap check happens before the review-event fetch; return no overlap.
+	mockRepo.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+	// Source event returned with zero occurrences → should be rejected.
+	mockRepo.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
+		&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
+			Occurrences: []events.Occurrence{}}, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	body, _ := json.Marshal(map[string]string{"target_event_ulid": targetEventULID})
+	req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/add-occurrence", bytes.NewReader(body))
+	req.SetPathValue("id", "1")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.AddOccurrenceReview(rec, req)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	mockRepo.AssertExpectations(t)
+}
+
+// TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath verifies that when the
+// source (newly-ingested) event has no occurrences the near-dup-path handler
+// returns 422 rather than absorbing the target's own timestamps.
+func TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	targetEventID := "target-event-uuid"
+	sourceEventULID := "01HSOURCE00000000000000001"
+	now := time.Now()
+
+	warningJSON, _ := json.Marshal([]events.ValidationWarning{
+		{Code: "near_duplicate_of_new_event"},
+	})
+	nearDupEntry := &events.ReviewQueueEntry{
+		ID:                   1,
+		EventID:              "target-event-id",
+		EventULID:            targetEventULID,
+		DuplicateOfEventULID: &sourceEventULID,
+		OriginalPayload:      []byte(`{"name":"Series Event"}`),
+		NormalizedPayload:    []byte(`{"name":"Series Event"}`),
+		Warnings:             warningJSON,
+		Status:               "pending",
+		EventStartTime:       now,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry, nil)
+	setupTxMock(mockRepo)
+	mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry, nil)
+	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+	mockRepo.On("GetByULID", mock.Anything, targetEventULID).Return(
+		&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
+	mockRepo.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+	// Source event has zero occurrences — should be rejected.
+	mockRepo.On("GetByULID", mock.Anything, sourceEventULID).Return(
+		&events.Event{ID: "source-id", ULID: sourceEventULID, Name: "New Instance",
+			Occurrences: []events.Occurrence{}}, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	body, _ := json.Marshal(map[string]string{})
+	req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/add-occurrence", bytes.NewReader(body))
+	req.SetPathValue("id", "1")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.AddOccurrenceReview(rec, req)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	mockRepo.AssertExpectations(t)
 }

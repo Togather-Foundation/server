@@ -182,13 +182,18 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
 3. Mark the review as merged — all atomically.
 
-**Button visibility**: shown alongside "Merge Duplicate" for both `potential_duplicate` and `near_duplicate_of_new_event` warnings. Not shown for place/org duplicate warnings.
+**Button visibility**: shown alongside "Merge Duplicate" for both `potential_duplicate` and `near_duplicate_of_new_event` warnings. Not shown for place/org duplicate warnings. **Hidden** (or disabled with an explanatory tooltip) when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`).
 
 **Near-dup path**: for `near_duplicate_of_new_event` entries the button uses inverted semantics — the existing series (`review.EventULID`) is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is absorbed. No `target_event_ulid` is sent in the request body; the backend derives the target directly from the review entry.
 
 **Forward path**: for `potential_duplicate` entries the button sends `target_event_ulid` from the warning match details.
 
 **Overlap guard**: the backend rejects with HTTP 409 if the new occurrence would overlap an existing occurrence on the target event.
+
+**Source event constraints**: the backend rejects with HTTP 422 if:
+- The source event has **zero occurrences** (`zero-occurrence-source`) — show message: "Source event has no occurrence data; resolve it before using Add as Occurrence."
+- The source event has **multiple occurrences** (`ambiguous-occurrence-source`) — show message: "Source event has multiple occurrences; resolve or split it before using Add as Occurrence."
+- The review entry has **both warning types** (`ambiguous-occurrence-dispatch`) — show message: "This review has conflicting warnings; resolve one warning before using Add as Occurrence."
 
 **Data flow (forward path)**:
 - Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`

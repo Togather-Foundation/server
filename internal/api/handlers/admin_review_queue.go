@@ -723,6 +723,18 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 
 	isNearDupPath := reviewHasNearDupNewEventWarning(review)
 
+	// Reject when the review has BOTH warning types.  The two dispatch paths have
+	// inverted source/target semantics; silently picking one would either absorb the
+	// wrong event or ignore the supplied target_event_ulid.  Require the caller to
+	// resolve which path applies (e.g. by splitting the review or clearing warnings).
+	if isNearDupPath && reviewHasPotentialDuplicateWarning(review) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/ambiguous-occurrence-dispatch",
+			"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
+			events.ErrAmbiguousOccurrenceDispatch, h.Env)
+		return
+	}
+
 	if isNearDupPath {
 		// Inverted path: absorb the newly-ingested event (DuplicateOfEventULID) into
 		// the existing series (EventULID).  target_event_ulid is not needed.
@@ -848,6 +860,10 @@ func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter,
 		problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/ambiguous-occurrence-source", "Source event has multiple occurrences and cannot be absorbed unambiguously; resolve the source event first", err, h.Env)
 		return
 	}
+	if errors.Is(err, events.ErrZeroOccurrenceSource) {
+		problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/zero-occurrence-source", "Source event has no occurrences; cannot determine which occurrence to absorb", err, h.Env)
+		return
+	}
 	problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to add occurrence", fmt.Errorf("add-occurrence review id=%d target=%s: %w", id, targetEventULID, err), h.Env)
 }
 
@@ -863,6 +879,25 @@ func reviewHasNearDupNewEventWarning(review *events.ReviewQueueEntry) bool {
 	}
 	for _, w := range warnings {
 		if w.Code == "near_duplicate_of_new_event" {
+			return true
+		}
+	}
+	return false
+}
+
+// reviewHasPotentialDuplicateWarning returns true if the review entry has at least one
+// potential_duplicate warning. Used together with reviewHasNearDupNewEventWarning to
+// detect the ambiguous "both warnings" case.
+func reviewHasPotentialDuplicateWarning(review *events.ReviewQueueEntry) bool {
+	if review == nil || len(review.Warnings) == 0 {
+		return false
+	}
+	var warnings []events.ValidationWarning
+	if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
+		return false
+	}
+	for _, w := range warnings {
+		if w.Code == "potential_duplicate" {
 			return true
 		}
 	}

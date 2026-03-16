@@ -168,7 +168,8 @@ func makeOccurrenceRepo(targetID, targetULID, reviewEventULID string, startTime 
 			if ulid == targetULID {
 				return &Event{ID: targetID, ULID: targetULID, Name: "Series", LifecycleState: "published"}, nil
 			}
-			return &Event{ID: "review-event-id", ULID: reviewEventULID, Name: "Instance"}, nil
+			return &Event{ID: "review-event-id", ULID: reviewEventULID, Name: "Instance",
+				Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 		},
 		checkOccurrenceOverlapFunc: func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 			return false, nil
@@ -524,7 +525,8 @@ func TestAddOccurrenceFromReview_AllowsNonPublishedTarget(t *testing.T) {
 				if ulid == "01HTARGET00000000000000001" {
 					return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: state}, nil
 				}
-				return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance", LifecycleState: "published"}, nil
+				return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance", LifecycleState: "published",
+					Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 			}
 
 			service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
@@ -551,7 +553,8 @@ func TestAddOccurrenceFromReview_RejectsDeletedTarget(t *testing.T) {
 		if ulid == "01HTARGET00000000000000001" {
 			return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "deleted"}, nil
 		}
-		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance", LifecycleState: "published"}, nil
+		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance", LifecycleState: "published",
+			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 	}
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
@@ -762,18 +765,14 @@ func TestAddOccurrenceFromReview_PreservesAvailability(t *testing.T) {
 	})
 }
 
-// TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty verifies
-// that when the review event has no occurrence-level metadata overrides, the new
-// occurrence inherits series-level defaults (timezone from service config, venue
-// from target event).
-func TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty(t *testing.T) {
+// TestAddOccurrenceFromReview_ZeroOccurrenceSourceRejected verifies that when the
+// review event (source) has no occurrences the method returns ErrZeroOccurrenceSource
+// without committing the transaction.  Prior to this fix the method would fall back to
+// series-level defaults and proceed — silently absorbing nothing while still
+// soft-deleting the source event.
+func TestAddOccurrenceFromReview_ZeroOccurrenceSourceRejected(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-
-	targetVenueID := "target-venue-uuid"
-	serviceDefaultTZ := "America/Toronto"
-
-	var capturedParams OccurrenceCreateParams
 
 	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
@@ -783,47 +782,78 @@ func TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty(t 
 				ULID:           ulid,
 				Name:           "Series",
 				LifecycleState: "published",
-				PrimaryVenueID: &targetVenueID,
 			}, nil
 		}
-		// Review event with no occurrences (no override metadata available)
+		// Review event with no occurrences — zero-occurrence source
 		return &Event{
 			ID:   "review-event-id",
 			ULID: ulid,
 			Name: "Instance",
 		}, nil
 	}
-	repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
-		capturedParams = params
-		return nil
-	}
 
-	service := NewAdminService(repo, false, serviceDefaultTZ, config.ValidationConfig{MaxEventNameLength: 500})
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
-	if err != nil {
-		t.Fatalf("expected success, got: %v", err)
+	if err == nil {
+		t.Fatal("expected ErrZeroOccurrenceSource, got nil")
 	}
-	if capturedParams.Timezone != serviceDefaultTZ {
-		t.Errorf("timezone: expected service default %q, got %q", serviceDefaultTZ, capturedParams.Timezone)
+	if !errors.Is(err, ErrZeroOccurrenceSource) {
+		t.Errorf("expected ErrZeroOccurrenceSource, got: %v", err)
 	}
-	if capturedParams.VenueID == nil || *capturedParams.VenueID != targetVenueID {
-		t.Errorf("venueID: expected target venue %q, got %v", targetVenueID, capturedParams.VenueID)
-	}
-	if capturedParams.DoorTime != nil {
-		t.Errorf("doorTime: expected nil (no override), got %v", capturedParams.DoorTime)
-	}
-	if capturedParams.TicketURL != nil {
-		t.Errorf("ticketURL: expected nil (no override), got %v", capturedParams.TicketURL)
-	}
-	if capturedParams.PriceMin != nil {
-		t.Errorf("priceMin: expected nil (no override), got %v", capturedParams.PriceMin)
+	if repo.commitCalled {
+		t.Error("commit must not be called when source has no occurrences")
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Lock-ordering tests: review row locked FIRST in all review-based methods
 // ---------------------------------------------------------------------------
+
+// TestAddOccurrenceFromReview_MultiOccurrenceSourceRejected verifies that when the
+// source (review) event has more than one occurrence the method returns
+// ErrAmbiguousOccurrenceSource without committing the transaction.  Absorbing only
+// one occurrence while soft-deleting the entire source event would silently lose
+// the remaining occurrences.
+func TestAddOccurrenceFromReview_MultiOccurrenceSourceRejected(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{
+				ID:             "target-uuid",
+				ULID:           ulid,
+				Name:           "Series",
+				LifecycleState: "published",
+			}, nil
+		}
+		// Review event has two occurrences — ambiguous: which one to absorb?
+		return &Event{
+			ID:   "review-event-id",
+			ULID: ulid,
+			Name: "Multi-Occurrence Instance",
+			Occurrences: []Occurrence{
+				{StartTime: startTime},
+				{StartTime: startTime.Add(24 * time.Hour)},
+			},
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrAmbiguousOccurrenceSource, got nil")
+	}
+	if !errors.Is(err, ErrAmbiguousOccurrenceSource) {
+		t.Errorf("expected ErrAmbiguousOccurrenceSource, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when source has multiple occurrences")
+	}
+}
 
 // makeReviewLockRepo returns a mockTransactionalRepo pre-wired for review-based
 // methods (approve/reject/fix/merge).  The review entry starts as "pending".
@@ -1465,6 +1495,44 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *test
 			t.Errorf("lock ordering violation: position %d want %q got %q (full order: %v)",
 				i, w, callOrder[i], callOrder)
 		}
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_ZeroOccurrenceSourceRejected verifies that
+// when the source (newly-ingested) event has zero occurrences the method returns
+// ErrZeroOccurrenceSource without committing.  Prior to this fix the method fell
+// back to review.EventStartTime which belongs to the *target* (existing series),
+// not the source — using it would absorb the wrong date into the series.
+func TestAddOccurrenceFromReviewNearDup_ZeroOccurrenceSourceRejected(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
+	// Override source to return zero occurrences.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-id", ULID: targetULID, LifecycleState: "published"}, nil
+		}
+		return &Event{
+			ID:          "source-event-id",
+			ULID:        sourceULID,
+			Name:        "Zero-Occurrence Source",
+			Occurrences: []Occurrence{}, // no occurrences
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrZeroOccurrenceSource, got nil")
+	}
+	if !errors.Is(err, ErrZeroOccurrenceSource) {
+		t.Errorf("expected ErrZeroOccurrenceSource, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when source has no occurrences")
 	}
 }
 

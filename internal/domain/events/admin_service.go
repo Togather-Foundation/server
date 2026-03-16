@@ -48,11 +48,13 @@ type MergeEventsParams struct {
 }
 
 var (
-	ErrInvalidUpdateParams       = errors.New("invalid update parameters")
-	ErrCannotMergeSameEvent      = errors.New("cannot merge event with itself")
-	ErrEventDeleted              = errors.New("event has been deleted")
-	ErrEventAlreadyMerged        = errors.New("event has already been merged")
-	ErrAmbiguousOccurrenceSource = errors.New("source event has multiple occurrences: cannot absorb ambiguously")
+	ErrInvalidUpdateParams         = errors.New("invalid update parameters")
+	ErrCannotMergeSameEvent        = errors.New("cannot merge event with itself")
+	ErrEventDeleted                = errors.New("event has been deleted")
+	ErrEventAlreadyMerged          = errors.New("event has already been merged")
+	ErrAmbiguousOccurrenceSource   = errors.New("source event has multiple occurrences: cannot absorb ambiguously")
+	ErrZeroOccurrenceSource        = errors.New("source event has no occurrences: cannot determine which occurrence to absorb")
+	ErrAmbiguousOccurrenceDispatch = errors.New("review entry has both potential_duplicate and near_duplicate_of_new_event warnings: cannot determine add-occurrence path unambiguously")
 )
 
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
@@ -145,6 +147,25 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
+	}
+
+	// Reject multi-occurrence and zero-occurrence sources.
+	//
+	// Multiple occurrences: only one occurrence can be absorbed (the one matching
+	// the review entry's EventStartTime), so soft-deleting the entire source event
+	// would silently lose the remaining occurrences — data loss.
+	//
+	// Zero occurrences: there is nothing to absorb; the review start/end timestamps
+	// belong to the review entry, not to a real occurrence on the source event.
+	//
+	// In both cases the admin must resolve the source event before retrying.
+	if len(reviewEvent.Occurrences) > 1 {
+		return nil, fmt.Errorf("source event %s has %d occurrences: %w",
+			review.EventULID, len(reviewEvent.Occurrences), ErrAmbiguousOccurrenceSource)
+	}
+	if len(reviewEvent.Occurrences) == 0 {
+		return nil, fmt.Errorf("source event %s has no occurrences: %w",
+			review.EventULID, ErrZeroOccurrenceSource)
 	}
 
 	// Find the occurrence on the review event whose StartTime matches the review
@@ -384,22 +405,18 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 			sourceEventULID, len(sourceEvent.Occurrences), ErrAmbiguousOccurrenceSource)
 	}
 
-	// Derive start/end times for the new occurrence from the source event's sole
-	// occurrence.  Fall back to the review entry's stored times as a last resort
-	// (ingest always creates at least one occurrence, so this branch is defensive).
-	var occStartTime time.Time
-	var occEndTime *time.Time
-	if len(sourceEvent.Occurrences) > 0 {
-		occStartTime = sourceEvent.Occurrences[0].StartTime
-		occEndTime = sourceEvent.Occurrences[0].EndTime
-	} else {
-		// Fallback: derive from the *review entry's* stored start/end times, which
-		// are set from the existing event's first occurrence during ingest.
-		// For near_duplicate_of_new_event the review entry holds the existing
-		// event's times, not the new event's — so this branch is last resort only.
-		occStartTime = review.EventStartTime
-		occEndTime = review.EventEndTime
+	// Reject zero-occurrence sources.  The review entry's EventStartTime belongs to
+	// the *existing series* (target), not the newly-ingested source event — using it
+	// as the occurrence start time would absorb the wrong date.  There is nothing safe
+	// to absorb without a real occurrence on the source event.
+	if len(sourceEvent.Occurrences) == 0 {
+		return nil, nil, fmt.Errorf("source event %s has no occurrences: %w",
+			sourceEventULID, ErrZeroOccurrenceSource)
 	}
+
+	// Derive start/end times for the new occurrence from the source event's sole occurrence.
+	occStartTime := sourceEvent.Occurrences[0].StartTime
+	occEndTime := sourceEvent.Occurrences[0].EndTime
 
 	// Overlap check on the target.
 	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, target.ID, occStartTime, occEndTime)

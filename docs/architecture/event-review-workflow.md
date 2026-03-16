@@ -698,7 +698,12 @@ The endpoint supports two dispatch paths depending on the warning type on the re
 
 **Near-dup path (`near_duplicate_of_new_event`):** `target_event_ulid` is not required (and is ignored if supplied). The endpoint uses inverted semantics — the existing series (`review.EventULID`) is the target that is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is the source that is soft-deleted. Any companion pending review for the source event is also dismissed atomically.
 
-The source event must have exactly one occurrence. If it has multiple occurrences the request is rejected with `422 Unprocessable Entity` (`ambiguous-occurrence-source`). In practice the near-duplicate ingest path always creates single-occurrence events, so this guard protects against non-standard database states that would otherwise silently drop occurrences.
+**Source event constraints (both paths):** The source event must have exactly one occurrence.
+
+- **Zero occurrences → `422` (`zero-occurrence-source`):** There is nothing to absorb; the review start/end timestamps come from the review entry itself, not from a real occurrence. Ensure the source event has exactly one occurrence before retrying.
+- **Multiple occurrences → `422` (`ambiguous-occurrence-source`):** Only one occurrence can be absorbed, but soft-deleting the entire source event would silently discard the rest (data loss). Resolve or split the source event first, then retry. In practice, the near-duplicate ingest path always creates single-occurrence events, so this guard primarily catches non-standard database states.
+
+**Ambiguous dispatch:** If the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously, the endpoint rejects the request with `422` (`ambiguous-occurrence-dispatch`) — the dispatch path cannot be determined unambiguously. Remove or resolve one of the warnings before retrying.
 
 **Request (forward path only):**
 ```json
@@ -724,7 +729,7 @@ All steps run inside a single database transaction.
 - `404 Not Found` — review entry or target event not found
 - `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted
-- `422 Unprocessable Entity` — near-dup source event has multiple occurrences (resolve the source event before retrying)
+- `422 Unprocessable Entity` — source event has zero or multiple occurrences, or review carries both warning types (see constraints above)
 
 ---
 
