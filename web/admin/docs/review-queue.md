@@ -166,7 +166,9 @@ reviewQueue: {
     reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
     fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, { method: 'POST', body: JSON.stringify(data) }),
     merge: (id, primaryEventId) => API.request(`/api/v1/admin/review-queue/${id}/merge`, { method: 'POST', body: JSON.stringify({ primary_event_ulid: primaryEventId }) }),
-    addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, { method: 'POST', body: JSON.stringify({ target_event_ulid: targetEventUlid }) })
+    addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, { method: 'POST', body: JSON.stringify({ target_event_ulid: targetEventUlid }) }),
+    // Near-dup path: no target_event_ulid required — backend derives target from review entry.
+    addOccurrenceNearDup: (id) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, { method: 'POST', body: JSON.stringify({}) })
 }
 ```
 

@@ -182,14 +182,23 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
 3. Mark the review as merged — all atomically.
 
-**Button visibility**: shown alongside "Merge Duplicate" for `potential_duplicate` warnings where a known target ULID is available from the warning match details. One-click Add as Occurrence is intentionally suppressed for `near_duplicate_of_new_event` entries: their `duplicateOfEventUlid` points to the newly-ingested counterpart, making the correct target ambiguous without explicit admin input. Not shown for place/org duplicate warnings.
+**Button visibility**: shown alongside "Merge Duplicate" for both `potential_duplicate` and `near_duplicate_of_new_event` warnings. Not shown for place/org duplicate warnings.
+
+**Near-dup path**: for `near_duplicate_of_new_event` entries the button uses inverted semantics — the existing series (`review.EventULID`) is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is absorbed. No `target_event_ulid` is sent in the request body; the backend derives the target directly from the review entry.
+
+**Forward path**: for `potential_duplicate` entries the button sends `target_event_ulid` from the warning match details.
 
 **Overlap guard**: the backend rejects with HTTP 409 if the new occurrence would overlap an existing occurrence on the target event.
 
-**Data flow**:
+**Data flow (forward path)**:
 - Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`
 - JS: `addOccurrenceDirect(id, targetUlid)` → `API.reviewQueue.addOccurrence(id, targetUlid)`
 - Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with body `{ target_event_ulid: "..." }`
+
+**Data flow (near-dup path)**:
+- Button: `data-action="add-occurrence-near-dup" data-id="{id}"`
+- JS: `addOccurrenceNearDup(id)` → `API.reviewQueue.addOccurrenceNearDup(id)`
+- Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with empty body `{}`
 
 ## Testing
 

@@ -692,9 +692,13 @@ Available when the review entry has a `potential_duplicate` or `near_duplicate_o
 
 Add the reviewed event as a new occurrence on an existing recurring-series event instead of merging. Use this when the two events share the same name/venue but have different dates and are legitimately separate occurrences of the same series.
 
-Available when the review entry has a `potential_duplicate` warning with a known target ULID in its match details. The one-click **Add as Occurrence** button is intentionally suppressed for `near_duplicate_of_new_event` entries because the `duplicateOfEventUlid` on those entries points to the newly-ingested counterpart, making the correct keep/discard sides ambiguous without explicit admin target selection.
+The endpoint supports two dispatch paths depending on the warning type on the review entry:
 
-**Request:**
+**Forward path (`potential_duplicate`):** `target_event_ulid` is required. The review's own event is absorbed into the provided target series.
+
+**Near-dup path (`near_duplicate_of_new_event`):** `target_event_ulid` is not required (and is ignored if supplied). The endpoint uses inverted semantics — the existing series (`review.EventULID`) is the target that is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is the source that is soft-deleted. Any companion pending review for the source event is also dismissed atomically.
+
+**Request (forward path only):**
 ```json
 {
   "target_event_ulid": "01HQRS7T8G"
@@ -710,11 +714,11 @@ Available when the review entry has a `potential_duplicate` warning with a known
 4. Soft-delete the review event (`lifecycle_state = 'deleted'`, tombstone reason `"absorbed_as_occurrence"`, `superseded_by` → target event URI).
 5. Mark `event_review_queue.status = 'merged'`.
 
-All five steps run inside a single database transaction.
+All steps run inside a single database transaction.
 
 **Responses:**
 - `200 OK` — occurrence added and review entry resolved
-- `400 Bad Request` — `target_event_ulid` missing or malformed, or review event and target are the same
+- `400 Bad Request` — `target_event_ulid` missing or malformed (forward path), or review event and target are the same
 - `404 Not Found` — review entry or target event not found
 - `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted

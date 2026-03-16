@@ -713,7 +713,7 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 	// deciding whether target_event_ulid is required.
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("add-occurrence review: get entry id=%d: %w", id, err), h.Env)
 			return
 		}

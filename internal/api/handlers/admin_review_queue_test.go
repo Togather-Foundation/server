@@ -1666,7 +1666,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				// Peek returns not-found before the transaction even starts.
 				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
-					pgx.ErrNoRows,
+					events.ErrNotFound,
 				)
 			},
 			expectedStatus: http.StatusNotFound,

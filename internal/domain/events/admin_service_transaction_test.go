@@ -1176,7 +1176,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T)
 	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
 		mergeCallCount++
 		if id == companionID {
-			return nil, errors.New("companion merge failed") // non-fatal error
+			return nil, ErrConflict // race: companion already dismissed — non-fatal
 		}
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
@@ -1195,6 +1195,35 @@ func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T)
 	}
 	if mergeCallCount != 2 {
 		t.Errorf("expected 2 MergeReview calls (companion + near-dup), got %d", mergeCallCount)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError verifies that an
+// unexpected DB error from GetPendingReviewByEventUlid (anything other than ErrNotFound)
+// surfaces and prevents the transaction from committing.
+func TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError(t *testing.T) {
+	ctx := context.Background()
+	sourceULID := "01HSOURCE00000000000000001"
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
+	dbErr := errors.New("connection reset by peer")
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == sourceULID {
+			return nil, dbErr
+		}
+		return nil, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected error from unexpected DB failure, got nil")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Errorf("expected wrapped dbErr, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when companion lookup returns unexpected error")
 	}
 }
 

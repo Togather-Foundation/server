@@ -450,11 +450,20 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	// If the source event has its own pending review entry (the new-event side of the
 	// near-dup pair), mark it merged too so it doesn't linger in the queue.
 	companionReview, err := txRepo.GetPendingReviewByEventUlid(ctx, sourceEventULID)
-	if err == nil && companionReview != nil && companionReview.Status == "pending" {
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, nil, fmt.Errorf("lookup companion review for source %s: %w", sourceEventULID, err)
+		}
+		// ErrNotFound: no companion entry — nothing to dismiss.
+	} else if companionReview != nil && companionReview.Status == "pending" {
 		if _, mergeErr := txRepo.MergeReview(ctx, companionReview.ID, reviewedBy, targetEventULID); mergeErr != nil {
-			// Non-fatal: companion entry may already be gone or processed by another
-			// request. Log and continue so the primary near-dup review is still resolved.
-			_ = mergeErr
+			if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
+				// Race outcome: companion was already dismissed by a concurrent request.
+				// Log-worthy but non-fatal — continue so the primary review is resolved.
+				_ = mergeErr
+			} else {
+				return nil, nil, fmt.Errorf("dismiss companion review id=%d: %w", companionReview.ID, mergeErr)
+			}
 		}
 	}
 
