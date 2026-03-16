@@ -425,6 +425,11 @@ func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams
 // MergeEventsWithReview atomically merges a duplicate event into a primary event AND
 // updates the review queue entry status to "merged" in a single database transaction.
 // This prevents inconsistency where the merge could succeed but the review status update fails.
+//
+// Lock ordering: review row is locked first, then event rows are acquired by
+// executeMerge.  This matches the ordering used by all other review-based
+// admin methods and prevents deadlocks when concurrent admin actions touch
+// the same review/event set.
 func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEventsParams, reviewID int, reviewedBy string) (*ReviewQueueEntry, error) {
 	if params.PrimaryULID == "" || params.DuplicateULID == "" {
 		return nil, ErrInvalidUpdateParams
@@ -444,6 +449,17 @@ func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEv
 	defer func() {
 		_ = txCommitter.Rollback(ctx)
 	}()
+
+	// Lock the review row FIRST so that concurrent requests on the same review
+	// are serialised here.  The second request will block, then re-read the
+	// already-processed status and return ErrConflict.
+	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
+	if err != nil {
+		return nil, fmt.Errorf("lock review entry: %w", err)
+	}
+	if review.Status != "pending" {
+		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
+	}
 
 	if err := s.executeMerge(ctx, txRepo, params); err != nil {
 		return nil, err
@@ -544,6 +560,10 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 // ApproveEventWithReview atomically publishes an event AND marks its review queue entry
 // as approved in a single database transaction. This prevents inconsistency where the
 // event is published but the review stays pending.
+//
+// Lock ordering: review row is locked first, then the event row is read/written.
+// This matches the ordering used by all other review-based admin methods and
+// prevents deadlocks when concurrent admin actions touch the same review/event set.
 func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID string, reviewID int, reviewedBy string, notes *string) (*ReviewQueueEntry, error) {
 	if eventULID == "" {
 		return nil, ErrInvalidUpdateParams
@@ -559,6 +579,17 @@ func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID str
 	defer func() {
 		_ = txCommitter.Rollback(ctx)
 	}()
+
+	// Lock the review row FIRST so that concurrent requests on the same review
+	// are serialised here.  The second request will block, then re-read the
+	// already-processed status and return ErrConflict.
+	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
+	if err != nil {
+		return nil, fmt.Errorf("lock review entry: %w", err)
+	}
+	if review.Status != "pending" {
+		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
+	}
 
 	// Publish the event within the transaction
 	existing, err := txRepo.GetByULID(ctx, eventULID)
@@ -594,6 +625,10 @@ func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID str
 // RejectEventWithReview atomically soft-deletes an event with a tombstone AND marks its
 // review queue entry as rejected in a single database transaction. This prevents inconsistency
 // where the event is deleted but the review stays pending.
+//
+// Lock ordering: review row is locked first, then the event row is read/written.
+// This matches the ordering used by all other review-based admin methods and
+// prevents deadlocks when concurrent admin actions touch the same review/event set.
 func (s *AdminService) RejectEventWithReview(ctx context.Context, eventULID string, reviewID int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
 	if eventULID == "" || reason == "" {
 		return nil, ErrInvalidUpdateParams
@@ -609,6 +644,17 @@ func (s *AdminService) RejectEventWithReview(ctx context.Context, eventULID stri
 	defer func() {
 		_ = txCommitter.Rollback(ctx)
 	}()
+
+	// Lock the review row FIRST so that concurrent requests on the same review
+	// are serialised here.  The second request will block, then re-read the
+	// already-processed status and return ErrConflict.
+	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
+	if err != nil {
+		return nil, fmt.Errorf("lock review entry: %w", err)
+	}
+	if review.Status != "pending" {
+		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
+	}
 
 	// Get the event for tombstone generation
 	event, err := txRepo.GetByULID(ctx, eventULID)
@@ -659,6 +705,10 @@ func (s *AdminService) RejectEventWithReview(ctx context.Context, eventULID stri
 
 // FixAndApproveEventWithReview atomically fixes occurrence dates, publishes the event,
 // AND marks the review queue entry as approved in a single database transaction.
+//
+// Lock ordering: review row is locked first, then the event row is read/written.
+// This matches the ordering used by all other review-based admin methods and
+// prevents deadlocks when concurrent admin actions touch the same review/event set.
 func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventULID string, reviewID int, reviewedBy string, notes *string, startDate *time.Time, endDate *time.Time) (*ReviewQueueEntry, error) {
 	if eventULID == "" {
 		return nil, ErrInvalidUpdateParams
@@ -674,6 +724,17 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 	defer func() {
 		_ = txCommitter.Rollback(ctx)
 	}()
+
+	// Lock the review row FIRST so that concurrent requests on the same review
+	// are serialised here.  The second request will block, then re-read the
+	// already-processed status and return ErrConflict.
+	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
+	if err != nil {
+		return nil, fmt.Errorf("lock review entry: %w", err)
+	}
+	if review.Status != "pending" {
+		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
+	}
 
 	// Get the event and its occurrences
 	existing, err := txRepo.GetByULID(ctx, eventULID)

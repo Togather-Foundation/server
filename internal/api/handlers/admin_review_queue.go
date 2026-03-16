@@ -82,7 +82,7 @@ type changeDetail struct {
 }
 
 // ListReviewQueue returns a paginated list of events pending review with quality warnings.
-// It handles GET /api/v1/admin/review-queue and supports filtering by status (pending, approved, rejected).
+// It handles GET /api/v1/admin/review-queue and supports filtering by status (pending, approved, rejected, merged).
 // Query parameters: status (default: pending), limit (1-100, default: 50), cursor (pagination).
 func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {

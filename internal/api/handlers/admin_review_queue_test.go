@@ -664,6 +664,7 @@ func TestApproveReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				notes := "Looks good"
@@ -679,6 +680,7 @@ func TestApproveReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(entry, nil)
@@ -719,6 +721,7 @@ func TestApproveReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
 					(*events.Event)(nil),
 					events.ErrNotFound,
@@ -734,6 +737,7 @@ func TestApproveReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
 					(*events.Event)(nil),
 					errors.New("service error"),
@@ -749,6 +753,7 @@ func TestApproveReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(
@@ -766,6 +771,7 @@ func TestApproveReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(
@@ -822,6 +828,7 @@ func TestRejectReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{ULID: "01HTEST1", ID: "test-id", Name: "Test Event"}, nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HTEST1", "Invalid data").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
@@ -877,6 +884,7 @@ func TestRejectReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
 					(*events.Event)(nil),
 					events.ErrNotFound,
@@ -892,6 +900,7 @@ func TestRejectReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
 					(*events.Event)(nil),
 					errors.New("service error"),
@@ -907,6 +916,7 @@ func TestRejectReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{ULID: "01HTEST1", ID: "test-id", Name: "Test Event"}, nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HTEST1", "Invalid").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
@@ -925,6 +935,7 @@ func TestRejectReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{ULID: "01HTEST1", ID: "test-id", Name: "Test Event"}, nil)
 				m.On("SoftDeleteEvent", mock.Anything, "01HTEST1", "Invalid").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
@@ -1002,6 +1013,7 @@ func TestFixReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
 				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
@@ -1022,6 +1034,7 @@ func TestFixReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
 				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
@@ -1043,6 +1056,7 @@ func TestFixReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
 				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
@@ -1091,6 +1105,7 @@ func TestFixReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
 					(*events.Event)(nil),
 					events.ErrNotFound,
@@ -1106,6 +1121,7 @@ func TestFixReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				// GetByULID succeeds, UpdateOccurrenceDates succeeds, but UpdateEvent fails
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
 				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
@@ -1124,6 +1140,7 @@ func TestFixReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HTEST1")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
 				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)

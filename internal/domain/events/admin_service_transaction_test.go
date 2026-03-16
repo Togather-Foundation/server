@@ -289,6 +289,10 @@ type mockTransactionalRepo struct {
 	createOccurrenceFunc              func(ctx context.Context, params OccurrenceCreateParams) error
 	softDeleteEventFunc               func(ctx context.Context, ulid, reason string) error
 	mergeReviewFunc                   func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
+	approveReviewFunc                 func(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
+	rejectReviewFunc                  func(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
+	updateEventFunc                   func(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
+	updateOccurrenceDatesFunc         func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
 	lockEventForUpdateFunc            func(ctx context.Context, eventID string) error
 	commitCalled                      bool
 	rollbackCalled                    bool
@@ -369,10 +373,16 @@ func (m *mockTransactionalRepo) UpsertOrganization(ctx context.Context, params O
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
-	return nil, errors.New("not implemented")
+	if m.updateEventFunc != nil {
+		return m.updateEventFunc(ctx, ulid, params)
+	}
+	return &Event{ULID: ulid}, nil
 }
 func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
-	return errors.New("not implemented")
+	if m.updateOccurrenceDatesFunc != nil {
+		return m.updateOccurrenceDatesFunc(ctx, eventULID, startTime, endTime)
+	}
+	return nil
 }
 func (m *mockTransactionalRepo) SoftDeleteEvent(ctx context.Context, ulid, reason string) error {
 	if m.softDeleteEventFunc != nil {
@@ -411,10 +421,16 @@ func (m *mockTransactionalRepo) ListReviewQueue(ctx context.Context, filters Rev
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error) {
-	return nil, errors.New("not implemented")
+	if m.approveReviewFunc != nil {
+		return m.approveReviewFunc(ctx, id, reviewedBy, notes)
+	}
+	return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
 }
 func (m *mockTransactionalRepo) RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error) {
-	return nil, errors.New("not implemented")
+	if m.rejectReviewFunc != nil {
+		return m.rejectReviewFunc(ctx, id, reviewedBy, reason)
+	}
+	return &ReviewQueueEntry{ID: id, Status: "rejected"}, nil
 }
 func (m *mockTransactionalRepo) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error) {
 	if m.mergeReviewFunc != nil {
@@ -722,5 +738,231 @@ func TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty(t 
 	}
 	if capturedParams.PriceMin != nil {
 		t.Errorf("priceMin: expected nil (no override), got %v", capturedParams.PriceMin)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Lock-ordering tests: review row locked FIRST in all review-based methods
+// ---------------------------------------------------------------------------
+
+// makeReviewLockRepo returns a mockTransactionalRepo pre-wired for review-based
+// methods (approve/reject/fix/merge).  The review entry starts as "pending".
+// Individual tests override lockReviewQueueEntryForUpdateFunc to simulate an
+// already-processed review (concurrent admin action).
+func makeReviewLockRepo(eventULID string) *mockTransactionalRepo {
+	pendingReview := &ReviewQueueEntry{ID: 1, EventULID: eventULID, Status: "pending"}
+	return &mockTransactionalRepo{
+		lockReviewQueueEntryForUpdateFunc: func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+			return pendingReview, nil
+		},
+		getByULIDFunc: func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: eventULID, Name: "Test", LifecycleState: "draft",
+				Occurrences: []Occurrence{{StartTime: time.Now()}}}, nil
+		},
+		softDeleteEventFunc: func(_ context.Context, _, _ string) error { return nil },
+		mergeEventsFunc:     func(_ context.Context, _, _ string) error { return nil },
+		mergeReviewFunc: func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+		},
+	}
+}
+
+// TestApproveEventWithReview_ConflictOnAlreadyProcessed verifies that when the
+// review row is already processed, ApproveEventWithReview returns ErrConflict.
+func TestApproveEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
+	ctx := context.Background()
+	repo := makeReviewLockRepo("01HEVENT000000000000000001")
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.ApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil)
+
+	if err == nil {
+		t.Fatal("expected ErrConflict, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when review is already processed")
+	}
+}
+
+// TestApproveEventWithReview_SuccessLockFirst verifies the happy path commits and
+// that the review lock is acquired before event work.
+func TestApproveEventWithReview_SuccessLockFirst(t *testing.T) {
+	ctx := context.Background()
+	var lockCalledBefore bool
+	var lockCallCount int
+	repo := makeReviewLockRepo("01HEVENT000000000000000001")
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		lockCallCount++
+		lockCalledBefore = true
+		return &ReviewQueueEntry{ID: id, Status: "pending"}, nil
+	}
+	repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+		// Must be called after lock
+		if !lockCalledBefore {
+			return nil, errors.New("getByULID called before lock")
+		}
+		return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.ApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil)
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if lockCallCount != 1 {
+		t.Errorf("expected lock called once, got %d", lockCallCount)
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called on success")
+	}
+}
+
+// TestRejectEventWithReview_ConflictOnAlreadyProcessed verifies that when the
+// review row is already processed, RejectEventWithReview returns ErrConflict.
+func TestRejectEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
+	ctx := context.Background()
+	repo := makeReviewLockRepo("01HEVENT000000000000000001")
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, Status: "rejected"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.RejectEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", "spam")
+
+	if err == nil {
+		t.Fatal("expected ErrConflict, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when review is already processed")
+	}
+}
+
+// TestRejectEventWithReview_SuccessLockFirst verifies the happy path commits.
+func TestRejectEventWithReview_SuccessLockFirst(t *testing.T) {
+	ctx := context.Background()
+	repo := makeReviewLockRepo("01HEVENT000000000000000001")
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.RejectEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", "spam")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called on success")
+	}
+}
+
+// TestFixAndApproveEventWithReview_ConflictOnAlreadyProcessed verifies that when
+// the review row is already processed, FixAndApproveEventWithReview returns ErrConflict.
+func TestFixAndApproveEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
+	ctx := context.Background()
+	endTime := time.Now().Add(2 * time.Hour)
+	repo := makeReviewLockRepo("01HEVENT000000000000000001")
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.FixAndApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil, nil, &endTime)
+
+	if err == nil {
+		t.Fatal("expected ErrConflict, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when review is already processed")
+	}
+}
+
+// TestFixAndApproveEventWithReview_SuccessLockFirst verifies the happy path commits.
+func TestFixAndApproveEventWithReview_SuccessLockFirst(t *testing.T) {
+	ctx := context.Background()
+	endTime := time.Now().Add(2 * time.Hour)
+	repo := makeReviewLockRepo("01HEVENT000000000000000001")
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.FixAndApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil, nil, &endTime)
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called on success")
+	}
+}
+
+// TestMergeEventsWithReview_ConflictOnAlreadyProcessed verifies that when the
+// review row is already processed, MergeEventsWithReview returns ErrConflict.
+func TestMergeEventsWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
+	ctx := context.Background()
+	repo := makeReviewLockRepo("01HDUPLICATE000000000000001")
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
+		PrimaryULID:   "01HPRIMARY000000000000001",
+		DuplicateULID: "01HDUPLICATE000000000000001",
+	}, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrConflict, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when review is already processed")
+	}
+}
+
+// TestMergeEventsWithReview_SuccessLockFirst verifies the happy path commits and
+// that review lock is acquired before any event work.
+func TestMergeEventsWithReview_SuccessLockFirst(t *testing.T) {
+	ctx := context.Background()
+	var lockCalledBefore bool
+	var lockCallCount int
+	repo := makeReviewLockRepo("01HDUPLICATE000000000000001")
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		lockCallCount++
+		lockCalledBefore = true
+		return &ReviewQueueEntry{ID: id, Status: "pending"}, nil
+	}
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		// Must be called after lock
+		if !lockCalledBefore {
+			return nil, errors.New("getByULID called before lock")
+		}
+		return &Event{ID: "event-" + ulid, ULID: ulid, Name: "Event " + ulid, LifecycleState: "published"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
+		PrimaryULID:   "01HPRIMARY000000000000001",
+		DuplicateULID: "01HDUPLICATE000000000000001",
+	}, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if lockCallCount != 1 {
+		t.Errorf("expected lock called once, got %d", lockCallCount)
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called on success")
 	}
 }
