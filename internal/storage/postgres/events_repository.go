@@ -2529,7 +2529,8 @@ RETURNING id, event_id, original_payload, normalized_payload, warnings,
 	entry.EventStartTime = eventStartTime.Time
 	entry.CreatedAt = createdAt.Time
 	entry.UpdatedAt = updatedAt.Time
-	entry.DuplicateOfEventID = &primaryEventULID
+	primaryEventIDStr := primaryEventID.String()
+	entry.DuplicateOfEventID = &primaryEventIDStr
 	entry.DuplicateOfEventULID = &primaryEventULID
 
 	if sourceID.Valid {

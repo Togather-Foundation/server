@@ -618,29 +618,33 @@
             </div>
         ` : '';
 
-        // Check if there are any duplicate-related warnings
+        // Check if there are any duplicate-related warnings.
+        // near_duplicate_of_new_event is tracked separately: it appears on the *existing* event's
+        // review entry when a newly-ingested event was flagged as a near-duplicate of it.
+        // duplicateOfEventUlid on that entry points to the *new* (incoming) event — NOT the existing
+        // event — so it cannot be used as a safe one-click merge/add-occurrence target. We show
+        // "Not a Duplicate" for this warning but suppress one-click merge and add-occurrence until
+        // an explicit target selection UI is available.
+        const hasNearDupNewEventWarning = warnings.some(w => w.code === 'near_duplicate_of_new_event');
         const hasDuplicateWarnings = warnings.some(w => 
-            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate' || w.code === 'near_duplicate_of_new_event')
+            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
         );
+        // Any duplicate-type warning (used to show the "Not a Duplicate" button)
+        const hasAnyDuplicateWarning = hasDuplicateWarnings || hasNearDupNewEventWarning;
         
         // Extract duplicate event ID from warnings details if available.
-        // Priority order:
-        //   1. potential_duplicate match ULID (from warning details.matches[0].ulid)
-        //   2. near_duplicate_of_new_event — this warning appears on the *existing* event's
-        //      review entry; detail.duplicateOfEventUlid holds the *new* (incoming) event's
-        //      ULID recorded at ingest time. That new event is the add-occurrence / merge target.
-        //   3. entry-level duplicateOfEventUlid fallback (e.g. after a merge action).
+        // Only potential_duplicate carries a known-correct counterpart ULID in its match details.
+        // near_duplicate_of_new_event is intentionally excluded: its duplicateOfEventUlid points
+        // to the newly-ingested counterpart, but for one-click merge the correct keep/discard sides
+        // are ambiguous without explicit admin input. Entry-level duplicateOfEventUlid is still used
+        // as a fallback for already-resolved (merged) entries where the field was set by a prior action.
         const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
-        const nearDupNewEventWarning = warnings.find(w => w.code === 'near_duplicate_of_new_event');
         let duplicateEventId = '';
         if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
             duplicateEventId = duplicateWarning.details.matches[0].ulid || '';
-        } else if (nearDupNewEventWarning && detail.duplicateOfEventUlid) {
-            // near_duplicate_of_new_event: this entry belongs to the existing event that was
-            // flagged as a potential duplicate of a newly-ingested event. The new event's ULID
-            // is stored in duplicateOfEventUlid. Use that as the add-occurrence / merge target.
-            duplicateEventId = detail.duplicateOfEventUlid;
-        } else if (detail.duplicateOfEventUlid) {
+        } else if (!hasNearDupNewEventWarning && detail.duplicateOfEventUlid) {
+            // Entry-level fallback: only safe when there is no near_duplicate_of_new_event warning,
+            // because in that case duplicateOfEventUlid points to the wrong event (the new one).
             duplicateEventId = detail.duplicateOfEventUlid;
         }
 
@@ -664,11 +668,10 @@
             }
         }
 
-        // "Add as Occurrence" is only relevant for event-level duplicate warnings,
-        // not place/org duplicates.  The target event ULID is the primary duplicate candidate.
-        const hasEventDuplicateWarnings = warnings.some(w =>
-            w.code && (w.code === 'potential_duplicate' || w.code === 'near_duplicate_of_new_event')
-        );
+        // "Add as Occurrence" is only relevant for potential_duplicate warnings where we have a
+        // confirmed target ULID. near_duplicate_of_new_event is excluded because duplicateOfEventUlid
+        // on that entry points to the newly-ingested event (wrong merge direction for one-click use).
+        const hasEventDuplicateWarnings = warnings.some(w => w.code === 'potential_duplicate');
         const addOccurrenceTargetUlid = duplicateEventId;
         
         // Build action buttons (only for pending status)
@@ -708,6 +711,8 @@
                         Add as Occurrence
                     </button>
                     ` : ''}
+                ` : ''}
+                ${hasAnyDuplicateWarning ? `
                     <button class="btn btn-outline-success" data-action="not-a-duplicate" data-id="${id}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
