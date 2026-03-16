@@ -1066,6 +1066,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: >
+            The target event exists but is not in `published` state (e.g. it is `pending_review`,
+            `draft`, or otherwise not yet published). Only published events may receive new occurrences.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /admin/login:
     post:
@@ -2905,8 +2913,11 @@ components:
           description: Validation warnings that triggered review
         status:
           type: string
-          enum: [pending, approved, rejected]
-          description: Current review status
+          enum: [pending, approved, rejected, merged]
+          description: >
+            Current review status. `pending` = awaiting decision; `approved` = event published;
+            `rejected` = event deleted; `merged` = event absorbed into another event
+            (via merge-duplicate or add-occurrence).
         createdAt:
           type: string
           format: date-time
@@ -2918,6 +2929,13 @@ components:
           type: string
           format: date-time
           description: When the review was completed (if reviewed)
+        duplicateOfEventUlid:
+          type: string
+          description: >
+            ULID of the primary event that this review entry was merged into or linked as a
+            near-duplicate of. Set when the review action is merge-duplicate or add-occurrence,
+            and also when near-duplicate cross-linking creates a review entry for an existing
+            published event.
 
     ReviewQueueDetail:
       description: Detailed review queue entry including original payload, normalized payload, and detected changes
@@ -2932,8 +2950,11 @@ components:
           description: Event ULID
         status:
           type: string
-          enum: [pending, approved, rejected]
-          description: Current review status
+          enum: [pending, approved, rejected, merged]
+          description: >
+            Current review status. `pending` = awaiting decision; `approved` = event published;
+            `rejected` = event deleted; `merged` = event absorbed into another event
+            (via merge-duplicate or add-occurrence).
         warnings:
           type: array
           items:
@@ -2967,6 +2988,13 @@ components:
         rejectionReason:
           type: string
           description: Reason for rejection (if rejected)
+        duplicateOfEventUlid:
+          type: string
+          description: >
+            ULID of the primary event that this review entry was merged into or linked as a
+            near-duplicate of. Set when the review action is merge-duplicate or add-occurrence,
+            and also when near-duplicate cross-linking creates a review entry for an existing
+            published event.
 
     ValidationWarning:
       description: Warning message from event validation or normalization process

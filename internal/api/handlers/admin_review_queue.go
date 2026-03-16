@@ -635,7 +635,7 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 // as merged — all atomically.
 // It handles POST /api/v1/admin/review-queue/:id/add-occurrence.
 func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.Repository == nil {
+	if h == nil || h.Repository == nil || h.AdminService == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
 		return
 	}

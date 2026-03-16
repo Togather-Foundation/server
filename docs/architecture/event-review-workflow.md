@@ -716,6 +716,7 @@ All five steps run inside a single database transaction.
 - `404 Not Found` — review entry or target event not found
 - `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted
+- `422 Unprocessable Entity` — target event exists but is not in `published` state (e.g. `pending_review`, `draft`)
 
 ---
 

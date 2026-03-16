@@ -1462,6 +1462,36 @@ func TestAddOccurrenceReview(t *testing.T) {
 			},
 			expectedStatus: http.StatusConflict,
 		},
+		{
+			name:        "Error - target event not published (422)",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
+				entry.EventStartTime = now
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				pendingTarget := testTargetEvent()
+				pendingTarget.LifecycleState = "pending_review"
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(pendingTarget, nil)
+			},
+			expectedStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:        "Error - review event same as target (400)",
+			reviewID:    "1",
+			requestBody: map[string]string{"target_event_ulid": targetEventULID},
+			mockSetup: func(m *MockRepository) {
+				// The review entry's EventULID matches targetEventULID → ErrCannotMergeSameEvent
+				entry := testReviewQueueEntry(1, targetEventULID)
+				entry.EventStartTime = now
+				setupTxMock(m)
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {
