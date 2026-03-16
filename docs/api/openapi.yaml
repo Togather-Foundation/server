@@ -1067,7 +1067,9 @@ paths:
           *existing* series event; the newly-ingested counterpart (stored in the review's
           `duplicate_of_event_id` column) is the source to be absorbed into the existing series.
           `target_event_ulid` is **NOT required** for this path — the target is derived from the
-          review entry itself.  Any provided `target_event_ulid` is ignored.
+          review entry itself.  Any provided `target_event_ulid` is ignored.  The source event
+          must have exactly one occurrence; if it has multiple occurrences the request is rejected
+          with `422 Unprocessable Entity`.
 
         Returns HTTP 409 if the new occurrence would overlap an existing occurrence on the target
         event, or if the review entry is not in `pending` status.
@@ -1140,6 +1142,14 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '410':
           description: The target event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: |
+            The source event (near-dup path only) has multiple occurrences and cannot be
+            absorbed unambiguously. Resolve or split the source event first, then retry.
           content:
             application/problem+json:
               schema:

@@ -1372,6 +1372,102 @@ func TestAddOccurrenceFromReviewNearDup_TargetIsKeepNotAbsorbed(t *testing.T) {
 	}
 }
 
+// TestAddOccurrenceFromReviewNearDup_MultiOccurrenceSourceRejected verifies that
+// when the source event has more than one occurrence the method returns
+// ErrAmbiguousOccurrenceSource without committing the transaction.
+func TestAddOccurrenceFromReviewNearDup_MultiOccurrenceSourceRejected(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+	now := time.Now()
+
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, now)
+	// Override the source event to have two occurrences.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-id", ULID: targetULID, LifecycleState: "published"}, nil
+		}
+		// source event: two occurrences — ambiguous
+		return &Event{
+			ID:   "source-event-id",
+			ULID: sourceULID,
+			Name: "Multi-occurrence source",
+			Occurrences: []Occurrence{
+				{StartTime: now},
+				{StartTime: now.Add(24 * time.Hour)},
+			},
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrAmbiguousOccurrenceSource, got nil")
+	}
+	if !errors.Is(err, ErrAmbiguousOccurrenceSource) {
+		t.Errorf("expected ErrAmbiguousOccurrenceSource, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when source has multiple occurrences")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent verifies the
+// review-first lock ordering: the companion review lock must be acquired BEFORE the
+// target event lock to prevent lock-order inversion deadlocks.
+func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *testing.T) {
+	ctx := context.Background()
+	sourceULID := "01HSOURCE00000000000000001"
+	targetULID := "01HTARGET00000000000000001"
+	companionID := 99
+
+	// Track call order via a slice.
+	var callOrder []string
+
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
+	}
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		if id == companionID {
+			callOrder = append(callOrder, "lock-companion-review")
+			return &ReviewQueueEntry{ID: id, Status: "pending"}, nil
+		}
+		// primary review
+		callOrder = append(callOrder, "lock-primary-review")
+		return &ReviewQueueEntry{
+			ID:                   id,
+			Status:               "pending",
+			EventULID:            targetULID,
+			DuplicateOfEventULID: &sourceULID,
+		}, nil
+	}
+	repo.lockEventForUpdateFunc = func(_ context.Context, _ string) error {
+		callOrder = append(callOrder, "lock-target-event")
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+
+	// Verify ordering: primary review → companion review → target event
+	want := []string{"lock-primary-review", "lock-companion-review", "lock-target-event"}
+	if len(callOrder) < 3 {
+		t.Fatalf("expected at least 3 lock calls, got %d: %v", len(callOrder), callOrder)
+	}
+	for i, w := range want {
+		if callOrder[i] != w {
+			t.Errorf("lock ordering violation: position %d want %q got %q (full order: %v)",
+				i, w, callOrder[i], callOrder)
+		}
+	}
+}
+
 // TestMergeEventsWithReview_ConflictOnAlreadyProcessed verifies that when the
 // review row is already processed, MergeEventsWithReview returns ErrConflict.
 func TestMergeEventsWithReview_ConflictOnAlreadyProcessed(t *testing.T) {

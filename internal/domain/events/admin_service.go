@@ -48,10 +48,11 @@ type MergeEventsParams struct {
 }
 
 var (
-	ErrInvalidUpdateParams  = errors.New("invalid update parameters")
-	ErrCannotMergeSameEvent = errors.New("cannot merge event with itself")
-	ErrEventDeleted         = errors.New("event has been deleted")
-	ErrEventAlreadyMerged   = errors.New("event has already been merged")
+	ErrInvalidUpdateParams       = errors.New("invalid update parameters")
+	ErrCannotMergeSameEvent      = errors.New("cannot merge event with itself")
+	ErrEventDeleted              = errors.New("event has been deleted")
+	ErrEventAlreadyMerged        = errors.New("event has already been merged")
+	ErrAmbiguousOccurrenceSource = errors.New("source event has multiple occurrences: cannot absorb ambiguously")
 )
 
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
@@ -270,16 +271,29 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 //   - Target  = review.EventULID  (existing series — preserved)
 //   - Source  = review.DuplicateOfEventULID (newly ingested event — absorbed)
 //
+// The source event must have exactly one occurrence.  If it has multiple
+// occurrences the method returns ErrAmbiguousOccurrenceSource without making
+// any changes — the admin must resolve the source event first.
+//
+// Lock ordering (review-first discipline, mirrors all other admin methods):
+//  1. Lock the near-dup review entry.
+//  2. Look up the companion review for the source event (read-only).
+//  3. Lock the companion review (if found) — all review locks before any event locks.
+//  4. Lock the target (existing series) event.
+//  5. Fetch the source event under the transaction snapshot.
+//
 // The method atomically:
 //  1. Locks the near-dup review entry and verifies it is still pending.
-//  2. Locks and re-reads the target (existing series) event.
-//  3. Checks overlap for the new event's start/end time on the target.
-//  4. Creates the occurrence on the target.
-//  5. Soft-deletes the new (source) event.
-//  6. Creates a tombstone for the source event.
-//  7. If the source event has a companion pending review entry, marks it merged.
-//  8. Marks the near-dup review entry as merged (sets duplicateOfEventUlid to
-//     the target ULID so the admin can navigate to the series after the action).
+//  2. Looks up and locks the source event's companion review entry (if present).
+//  3. Locks and re-reads the target (existing series) event.
+//  4. Fetches the source event; rejects if it has multiple occurrences.
+//  5. Checks overlap for the source event's occurrence on the target.
+//  6. Creates the occurrence on the target.
+//  7. Soft-deletes the source event.
+//  8. Creates a tombstone for the source event.
+//  9. Marks the companion review as merged (if present and still pending).
+//
+// 10. Marks the near-dup review entry as merged.
 func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, reviewID int, reviewedBy string) (*ReviewQueueEntry, *string, error) {
 	// Begin transaction
 	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
@@ -288,7 +302,7 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	}
 	defer func() { _ = txCommitter.Rollback(ctx) }()
 
-	// Lock the near-dup review entry first.
+	// Step 1: Lock the near-dup review entry first.
 	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("lock near-dup review entry: %w", err)
@@ -308,7 +322,35 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("near-dup review source and target are the same (%s): %w", targetEventULID, ErrCannotMergeSameEvent)
 	}
 
-	// Fetch target (existing series) for locking.
+	// Step 2+3: Look up the companion review for the source event and lock it BEFORE
+	// locking any event row.  This preserves the review-first lock ordering used by
+	// all other admin methods and eliminates the deadlock risk that arises when a
+	// companion review lock is acquired after an event lock (lock-order inversion).
+	//
+	// A concurrent admin action on the companion may have committed between our
+	// GetPending read and the LockForUpdate; we re-read status under lock and skip
+	// the merge if it is no longer pending.
+	companionReview, err := txRepo.GetPendingReviewByEventUlid(ctx, sourceEventULID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, nil, fmt.Errorf("lookup companion review for source %s: %w", sourceEventULID, err)
+	}
+	// companionReview == nil when ErrNotFound or no pending entry exists — both are fine.
+
+	var lockedCompanion *ReviewQueueEntry
+	if companionReview != nil {
+		lc, lockErr := txRepo.LockReviewQueueEntryForUpdate(ctx, companionReview.ID)
+		if lockErr != nil {
+			if !errors.Is(lockErr, ErrNotFound) {
+				// ErrNotFound means the companion was concurrently deleted — not fatal.
+				return nil, nil, fmt.Errorf("lock companion review id=%d: %w", companionReview.ID, lockErr)
+			}
+			// Companion was deleted; treat as if there is no companion.
+		} else {
+			lockedCompanion = lc
+		}
+	}
+
+	// Step 4: Fetch target (existing series) for locking.
 	target, err := txRepo.GetByULID(ctx, targetEventULID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get target event %s: %w", targetEventULID, err)
@@ -328,15 +370,23 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
 	}
 
-	// Fetch the source (new) event to extract timing and occurrence metadata.
+	// Step 5: Fetch the source (new) event.
 	sourceEvent, err := txRepo.GetByULID(ctx, sourceEventULID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get source event %s: %w", sourceEventULID, err)
 	}
 
-	// Derive start/end times for the new occurrence from the source event.
-	// Use the first occurrence if available; fall back to zero time (ingest always
-	// creates at least one occurrence, so this should not happen in practice).
+	// Reject ambiguous multi-occurrence sources.  The near-dup ingest path always
+	// creates single-occurrence events, so more than one occurrence indicates a
+	// non-standard state that would silently drop occurrences if we absorbed only [0].
+	if len(sourceEvent.Occurrences) > 1 {
+		return nil, nil, fmt.Errorf("source event %s has %d occurrences: %w",
+			sourceEventULID, len(sourceEvent.Occurrences), ErrAmbiguousOccurrenceSource)
+	}
+
+	// Derive start/end times for the new occurrence from the source event's sole
+	// occurrence.  Fall back to the review entry's stored times as a last resort
+	// (ingest always creates at least one occurrence, so this branch is defensive).
 	var occStartTime time.Time
 	var occEndTime *time.Time
 	if len(sourceEvent.Occurrences) > 0 {
@@ -365,7 +415,7 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		)
 	}
 
-	// Collect occurrence-level metadata from the source event's first occurrence.
+	// Collect occurrence-level metadata from the source event's sole occurrence.
 	occTimezone := s.defaultTZ
 	occVenueID := target.PrimaryVenueID
 	var occVirtualURL *string
@@ -447,43 +497,21 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("create tombstone: %w", err)
 	}
 
-	// If the source event has its own pending review entry (the new-event side of the
-	// near-dup pair), mark it merged too so it doesn't linger in the queue.
-	// Lock the companion row before merging it so that concurrent admin actions on the
-	// companion are serialised — consistent with the review-first locking discipline
-	// used by all other admin methods (approve, reject, fix, merge, forward add-occurrence).
-	companionReview, err := txRepo.GetPendingReviewByEventUlid(ctx, sourceEventULID)
-	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
-			return nil, nil, fmt.Errorf("lookup companion review for source %s: %w", sourceEventULID, err)
-		}
-		// ErrNotFound: no companion entry — nothing to dismiss.
-	} else if companionReview != nil {
-		// Lock the companion row.  A concurrent admin action on this entry will
-		// have already committed before we acquire the lock, so we re-read status
-		// under lock and skip the merge if it is no longer pending.
-		lockedCompanion, lockErr := txRepo.LockReviewQueueEntryForUpdate(ctx, companionReview.ID)
-		if lockErr != nil {
-			if errors.Is(lockErr, ErrNotFound) {
-				// Companion was concurrently deleted — nothing to dismiss.
+	// Step 9: Dismiss the companion review entry (if present and still pending).
+	// The lock was already acquired in step 3 above, maintaining review-first order.
+	if lockedCompanion != nil && lockedCompanion.Status == "pending" {
+		if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, targetEventULID); mergeErr != nil {
+			if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
+				// Race outcome: companion was already dismissed by a concurrent request.
+				// Log-worthy but non-fatal — continue so the primary review is resolved.
+				_ = mergeErr
 			} else {
-				return nil, nil, fmt.Errorf("lock companion review id=%d: %w", companionReview.ID, lockErr)
-			}
-		} else if lockedCompanion.Status == "pending" {
-			if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, targetEventULID); mergeErr != nil {
-				if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
-					// Race outcome: companion was already dismissed by a concurrent request.
-					// Log-worthy but non-fatal — continue so the primary review is resolved.
-					_ = mergeErr
-				} else {
-					return nil, nil, fmt.Errorf("dismiss companion review id=%d: %w", lockedCompanion.ID, mergeErr)
-				}
+				return nil, nil, fmt.Errorf("dismiss companion review id=%d: %w", lockedCompanion.ID, mergeErr)
 			}
 		}
-		// lockedCompanion.Status != "pending": companion already processed — skip.
 	}
 
-	// Mark the near-dup review entry as merged.
+	// Step 10: Mark the near-dup review entry as merged.
 	// We call MergeReview with targetEventULID so that duplicateOfEventUlid is set to
 	// the series ULID — giving the admin a direct navigation link after the action.
 	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, targetEventULID)

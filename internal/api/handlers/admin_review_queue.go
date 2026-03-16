@@ -844,6 +844,10 @@ func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter,
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Review entry is missing required duplicate event reference", err, h.Env)
 		return
 	}
+	if errors.Is(err, events.ErrAmbiguousOccurrenceSource) {
+		problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/ambiguous-occurrence-source", "Source event has multiple occurrences and cannot be absorbed unambiguously; resolve the source event first", err, h.Env)
+		return
+	}
 	problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to add occurrence", fmt.Errorf("add-occurrence review id=%d target=%s: %w", id, targetEventULID, err), h.Env)
 }
 

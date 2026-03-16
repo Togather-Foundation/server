@@ -1867,6 +1867,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry(), nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry(), nil)
+				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(
 					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 				m.On("GetByULID", mock.Anything, sourceEventULID).Return(
@@ -1876,6 +1877,27 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
 			},
 			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:        "Near-dup path: multi-occurrence source returns 422",
+			requestBody: map[string]string{},
+			mockSetup: func(m *MockRepository) {
+				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry(), nil)
+				setupTxMock(m)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry(), nil)
+				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(
+					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				// Source event has two occurrences → ambiguous
+				m.On("GetByULID", mock.Anything, sourceEventULID).Return(
+					&events.Event{ID: "source-id", ULID: sourceEventULID, Name: "Multi-occ Source",
+						Occurrences: []events.Occurrence{
+							{StartTime: now},
+							{StartTime: now.Add(24 * time.Hour)},
+						}}, nil)
+			},
+			expectedStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:        "Forward path still works with target_event_ulid",
