@@ -121,29 +121,12 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("review event and target event are the same (%s): %w", targetEventULID, ErrCannotMergeSameEvent)
 	}
 
-	// Overlap check
-	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, target.ID, review.EventStartTime, review.EventEndTime)
-	if err != nil {
-		return nil, fmt.Errorf("check overlap: %w", err)
-	}
-	if overlaps {
-		return nil, fmt.Errorf("new occurrence [%s, %v] on event %s: %w",
-			review.EventStartTime.Format(time.RFC3339),
-			review.EventEndTime,
-			targetEventULID,
-			ErrOccurrenceOverlap,
-		)
-	}
-
-	// Add the new occurrence to the target event.  Seed defaults from the target
-	// series, then override with the review event's matched occurrence metadata so
-	// that the absorbed instance's venue, timezone, pricing, door time, ticket URL,
-	// and virtual URL are preserved rather than silently dropped.
-	occTimezone := s.defaultTZ
-	occVenueID := target.PrimaryVenueID
-	var occVirtualURL *string
-
-	// Fetch the review event to extract its occurrence-level metadata.
+	// Fetch the review (source) event first so that we use its locked occurrence
+	// timestamps as the source of truth, not the review-row snapshot values.
+	// The review row's EventStartTime / EventEndTime are a snapshot taken at ingest
+	// time and may diverge from the actual occurrence if the event was edited after
+	// ingest.  Using stale snapshot timestamps would add the wrong time slot to the
+	// target series and then soft-delete the source — data corruption.
 	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
@@ -168,15 +151,21 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 			review.EventULID, ErrZeroOccurrenceSource)
 	}
 
-	// Find the occurrence on the review event whose StartTime matches the review
-	// entry's EventStartTime.  If no occurrence matches (e.g. multi-occurrence event
-	// whose start times don't align), fall back to [0] only when there is exactly
-	// one occurrence (unambiguous single-instance case from ingest).  If still no
-	// match, the series-level defaults above are used as-is.
-	//
-	// Carry over all occurrence-level metadata from the review event so that
-	// pricing, door time, ticket URL, etc. survive the absorption — not just
-	// the three fields that were preserved in the first implementation.
+	// Find the sole occurrence and extract its locked timestamps together with all
+	// occurrence-level metadata.  We always have exactly one occurrence at this point
+	// (the multi/zero cases above already returned).  The matched occurrence is the
+	// source of truth for start/end times — do NOT use review.EventStartTime /
+	// review.EventEndTime (snapshot values that may be stale).
+	matchedOcc := &reviewEvent.Occurrences[0]
+
+	// Occurrence timestamps — from the source event, not the review snapshot.
+	occStartTime := matchedOcc.StartTime
+	occEndTime := matchedOcc.EndTime
+
+	// Occurrence-level metadata defaults seeded from the target series.
+	occTimezone := s.defaultTZ
+	occVenueID := target.PrimaryVenueID
+	var occVirtualURL *string
 	var occDoorTime *time.Time
 	var occTicketURL *string
 	var occPriceMin *float64
@@ -184,55 +173,54 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	var occPriceCurrency string
 	var occAvailability string
 
-	if len(reviewEvent.Occurrences) > 0 {
-		var matchedOcc *Occurrence
-		for i := range reviewEvent.Occurrences {
-			if reviewEvent.Occurrences[i].StartTime.Equal(review.EventStartTime) {
-				matchedOcc = &reviewEvent.Occurrences[i]
-				break
-			}
-		}
-		// If no exact match, fall back to [0] only when the event has exactly one
-		// occurrence (unambiguous case, e.g. single-instance event from ingest).
-		if matchedOcc == nil && len(reviewEvent.Occurrences) == 1 {
-			matchedOcc = &reviewEvent.Occurrences[0]
-		}
-		if matchedOcc != nil {
-			if matchedOcc.Timezone != "" {
-				occTimezone = matchedOcc.Timezone
-			}
-			if matchedOcc.VenueID != nil {
-				occVenueID = matchedOcc.VenueID
-			}
-			if matchedOcc.VirtualURL != nil && *matchedOcc.VirtualURL != "" {
-				occVirtualURL = matchedOcc.VirtualURL
-			}
-			// Preserve remaining occurrence-level metadata
-			if matchedOcc.DoorTime != nil {
-				occDoorTime = matchedOcc.DoorTime
-			}
-			if matchedOcc.TicketURL != "" {
-				occTicketURL = &matchedOcc.TicketURL
-			}
-			if matchedOcc.PriceMin != nil {
-				occPriceMin = matchedOcc.PriceMin
-			}
-			if matchedOcc.PriceMax != nil {
-				occPriceMax = matchedOcc.PriceMax
-			}
-			if matchedOcc.PriceCurrency != "" {
-				occPriceCurrency = matchedOcc.PriceCurrency
-			}
-			if matchedOcc.Availability != "" {
-				occAvailability = matchedOcc.Availability
-			}
-		}
+	// Override with occurrence-level values from the source event so that pricing,
+	// door time, ticket URL, timezone, venue, and virtual URL survive absorption.
+	if matchedOcc.Timezone != "" {
+		occTimezone = matchedOcc.Timezone
+	}
+	if matchedOcc.VenueID != nil {
+		occVenueID = matchedOcc.VenueID
+	}
+	if matchedOcc.VirtualURL != nil && *matchedOcc.VirtualURL != "" {
+		occVirtualURL = matchedOcc.VirtualURL
+	}
+	if matchedOcc.DoorTime != nil {
+		occDoorTime = matchedOcc.DoorTime
+	}
+	if matchedOcc.TicketURL != "" {
+		occTicketURL = &matchedOcc.TicketURL
+	}
+	if matchedOcc.PriceMin != nil {
+		occPriceMin = matchedOcc.PriceMin
+	}
+	if matchedOcc.PriceMax != nil {
+		occPriceMax = matchedOcc.PriceMax
+	}
+	if matchedOcc.PriceCurrency != "" {
+		occPriceCurrency = matchedOcc.PriceCurrency
+	}
+	if matchedOcc.Availability != "" {
+		occAvailability = matchedOcc.Availability
+	}
+
+	// Overlap check uses the locked occurrence timestamps (not the review snapshot).
+	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, target.ID, occStartTime, occEndTime)
+	if err != nil {
+		return nil, fmt.Errorf("check overlap: %w", err)
+	}
+	if overlaps {
+		return nil, fmt.Errorf("new occurrence [%s, %v] on event %s: %w",
+			occStartTime.Format(time.RFC3339),
+			occEndTime,
+			targetEventULID,
+			ErrOccurrenceOverlap,
+		)
 	}
 
 	err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
 		EventID:       target.ID,
-		StartTime:     review.EventStartTime,
-		EndTime:       review.EventEndTime,
+		StartTime:     occStartTime,
+		EndTime:       occEndTime,
 		Timezone:      occTimezone,
 		DoorTime:      occDoorTime,
 		VenueID:       occVenueID,

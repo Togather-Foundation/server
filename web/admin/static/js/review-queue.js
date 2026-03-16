@@ -672,8 +672,13 @@
         //   forward path: potential_duplicate warning with a known candidate ULID.
         //   near-dup path: near_duplicate_of_new_event — backend derives source/target automatically;
         //                   no target ULID is supplied from the UI (data-near-dup-path="true").
+        //
+        // When BOTH warning types are present the backend rejects the request as ambiguous
+        // (ErrAmbiguousOccurrenceDispatch / HTTP 422).  Hide both buttons in that case so the
+        // UI matches backend behaviour — admins must resolve the warnings manually first.
         const hasEventDuplicateWarnings = warnings.some(w => w.code === 'potential_duplicate');
         const addOccurrenceTargetUlid = duplicateEventId;
+        const isAmbiguousOccurrenceDispatch = hasEventDuplicateWarnings && hasNearDupNewEventWarning;
         
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
@@ -698,7 +703,7 @@
                     </svg>
                     Merge Duplicate
                     </button>
-                    ${hasEventDuplicateWarnings && addOccurrenceTargetUlid ? `
+                    ${hasEventDuplicateWarnings && addOccurrenceTargetUlid && !isAmbiguousOccurrenceDispatch ? `
                     <button class="btn btn-outline-purple" data-action="add-occurrence" data-id="${id}" data-target-event-ulid="${escapeHtml(addOccurrenceTargetUlid)}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -713,7 +718,7 @@
                     </button>
                     ` : ''}
                 ` : ''}
-                ${hasNearDupNewEventWarning ? `
+                ${hasNearDupNewEventWarning && !isAmbiguousOccurrenceDispatch ? `
                     <button class="btn btn-outline-purple" data-action="add-occurrence" data-id="${id}" data-near-dup-path="true">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>

@@ -806,6 +806,61 @@ func TestAddOccurrenceFromReview_ZeroOccurrenceSourceRejected(t *testing.T) {
 	}
 }
 
+// TestAddOccurrenceFromReview_UsesLockedOccurrenceTimestamps verifies that the
+// occurrence added to the target series uses the source event's actual (locked)
+// occurrence timestamps rather than the review-row snapshot values.
+//
+// If the source event was edited after ingest its occurrence start/end times may
+// diverge from what the review row recorded.  Using stale snapshot values would
+// absorb the wrong time slot and then soft-delete the source event — data loss.
+func TestAddOccurrenceFromReview_UsesLockedOccurrenceTimestamps(t *testing.T) {
+	ctx := context.Background()
+	// Deliberately different timestamps: snapshot (review row) vs locked (source event).
+	snapshotStart := time.Date(2024, 9, 10, 18, 0, 0, 0, time.UTC)
+	snapshotEnd := time.Date(2024, 9, 10, 20, 0, 0, 0, time.UTC)
+	lockedStart := time.Date(2024, 9, 10, 19, 0, 0, 0, time.UTC) // different hour
+	lockedEnd := time.Date(2024, 9, 10, 21, 0, 0, 0, time.UTC)   // different hour
+
+	var capturedParams OccurrenceCreateParams
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", snapshotStart)
+	// The review queue mock returns the snapshot start (snapshotStart) — already wired.
+	// Override the source-event fetch to return a *different* occurrence time.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "published"}, nil
+		}
+		return &Event{
+			ID:   "review-event-id",
+			ULID: ulid,
+			Name: "Instance",
+			Occurrences: []Occurrence{
+				{StartTime: lockedStart, EndTime: &lockedEnd},
+			},
+		}, nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
+		capturedParams = params
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+
+	// Timestamps must come from the locked occurrence, not the snapshot.
+	if !capturedParams.StartTime.Equal(lockedStart) {
+		t.Errorf("StartTime: got %v, want locked %v (must not use snapshot %v)",
+			capturedParams.StartTime, lockedStart, snapshotStart)
+	}
+	if capturedParams.EndTime == nil || !capturedParams.EndTime.Equal(lockedEnd) {
+		t.Errorf("EndTime: got %v, want locked %v (must not use snapshot %v)",
+			capturedParams.EndTime, lockedEnd, snapshotEnd)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Lock-ordering tests: review row locked FIRST in all review-based methods
 // ---------------------------------------------------------------------------

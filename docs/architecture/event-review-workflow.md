@@ -716,10 +716,11 @@ The endpoint supports two dispatch paths depending on the warning type on the re
 
 **Action:**
 1. Validate the target event exists and is not deleted.
-2. Check that the review event's occurrence does **not** overlap any existing occurrence on the target — if it does, return `409 Conflict`.
-3. Copy the review event's start/end time into a new `event_occurrences` row on the target event.
-4. Soft-delete the review event (`lifecycle_state = 'deleted'`, tombstone reason `"absorbed_as_occurrence"`, `superseded_by` → target event URI).
-5. Mark `event_review_queue.status = 'merged'`.
+2. Fetch the source event under the transaction lock and extract its sole occurrence's start/end timestamps (the locked occurrence is the source of truth — the review row's `EventStartTime`/`EventEndTime` are a snapshot taken at ingest time and must NOT be used, as they may be stale if the event was edited after ingest).
+3. Check that the source occurrence's time range does **not** overlap any existing occurrence on the target — if it does, return `409 Conflict`.
+4. Write the source occurrence's start/end time (plus all occurrence-level metadata: timezone, venue, door time, ticket URL, pricing) into a new `event_occurrences` row on the target event.
+5. Soft-delete the source event (`lifecycle_state = 'deleted'`, tombstone reason `"absorbed_as_occurrence"`, `superseded_by` → target event URI).
+6. Mark `event_review_queue.status = 'merged'`.
 
 All steps run inside a single database transaction.
 

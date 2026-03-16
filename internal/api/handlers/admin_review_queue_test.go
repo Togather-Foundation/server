@@ -1684,6 +1684,12 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				// Forward path: review event is fetched before the overlap check so that
+				// locked occurrence timestamps (not the review-row snapshot) are used.
+				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{
+					ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
+					Occurrences: []events.Occurrence{{StartTime: now}},
+				}, nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
 			},
 			expectedStatus: http.StatusConflict,
@@ -2047,9 +2053,9 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 	mockRepo.On("GetByULID", mock.Anything, targetEventULID).Return(
 		&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 	mockRepo.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-	// Overlap check happens before the review-event fetch; return no overlap.
-	mockRepo.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
-	// Source event returned with zero occurrences → should be rejected.
+	// Source event fetched BEFORE the overlap check (so locked occurrence timestamps are
+	// used, not the review-row snapshot).  Zero occurrences → ErrZeroOccurrenceSource.
+	// CheckOccurrenceOverlap is NOT called because the method returns early.
 	mockRepo.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
 		&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
 			Occurrences: []events.Occurrence{}}, nil)
