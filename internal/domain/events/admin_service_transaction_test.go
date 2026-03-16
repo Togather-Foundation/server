@@ -1198,6 +1198,115 @@ func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T)
 	}
 }
 
+// TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed verifies that
+// when the companion review lock is acquired but the re-read status is no longer
+// "pending" (concurrent admin action already resolved it), MergeReview is NOT called
+// for the companion and the transaction still commits successfully.
+func TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed(t *testing.T) {
+	ctx := context.Background()
+	sourceULID := "01HSOURCE00000000000000001"
+	companionID := 55
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == sourceULID {
+			return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
+		}
+		return nil, nil
+	}
+	// Lock returns a non-pending entry — simulates a concurrent admin action that
+	// already resolved the companion between GetPending and LockForUpdate.
+	// The primary review lock (id=1) must still return pending.
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		if id == companionID {
+			return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+		}
+		// primary review
+		return &ReviewQueueEntry{
+			ID:                   id,
+			Status:               "pending",
+			EventULID:            "01HTARGET00000000000000001",
+			DuplicateOfEventULID: &sourceULID,
+		}, nil
+	}
+	mergeCallIDs := []int{}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergeCallIDs = append(mergeCallIDs, id)
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	entry, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success when companion already processed, got: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected non-nil review entry")
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called")
+	}
+	// Companion merge must NOT have been called — only the primary review merge.
+	for _, id := range mergeCallIDs {
+		if id == companionID {
+			t.Errorf("MergeReview must not be called for companion (id=%d) when it is already processed", companionID)
+		}
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete verifies that
+// when LockReviewQueueEntryForUpdate returns ErrNotFound for the companion (the row
+// was deleted by a concurrent request), the error is treated as non-fatal and the
+// transaction still commits.
+func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing.T) {
+	ctx := context.Background()
+	sourceULID := "01HSOURCE00000000000000001"
+	companionID := 66
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == sourceULID {
+			return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
+		}
+		return nil, nil
+	}
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		if id == companionID {
+			return nil, ErrNotFound // companion row deleted by concurrent request
+		}
+		// primary review
+		return &ReviewQueueEntry{
+			ID:                   id,
+			Status:               "pending",
+			EventULID:            "01HTARGET00000000000000001",
+			DuplicateOfEventULID: &sourceULID,
+		}, nil
+	}
+	mergeCallIDs := []int{}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergeCallIDs = append(mergeCallIDs, id)
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	entry, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success when companion lock returns ErrNotFound, got: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected non-nil review entry")
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called")
+	}
+	// Only the primary review merge should have been called.
+	for _, id := range mergeCallIDs {
+		if id == companionID {
+			t.Errorf("MergeReview must not be called for companion (id=%d) when lock returns ErrNotFound", companionID)
+		}
+	}
+}
+
 // TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError verifies that an
 // unexpected DB error from GetPendingReviewByEventUlid (anything other than ErrNotFound)
 // surfaces and prevents the transaction from committing.

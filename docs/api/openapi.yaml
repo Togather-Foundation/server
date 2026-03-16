@@ -1106,7 +1106,7 @@ paths:
                 value:
                   target_event_ulid: "01HRECURRING000000000000001"
               addOccurrenceNearDupPath:
-                summary: Add as occurrence (near_duplicate_of_new_event path — no body required)
+                summary: Add as occurrence (near_duplicate_of_new_event path — send empty JSON object)
                 value: {}
       responses:
         '200':

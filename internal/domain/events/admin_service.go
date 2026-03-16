@@ -449,22 +449,38 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 
 	// If the source event has its own pending review entry (the new-event side of the
 	// near-dup pair), mark it merged too so it doesn't linger in the queue.
+	// Lock the companion row before merging it so that concurrent admin actions on the
+	// companion are serialised — consistent with the review-first locking discipline
+	// used by all other admin methods (approve, reject, fix, merge, forward add-occurrence).
 	companionReview, err := txRepo.GetPendingReviewByEventUlid(ctx, sourceEventULID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
 			return nil, nil, fmt.Errorf("lookup companion review for source %s: %w", sourceEventULID, err)
 		}
 		// ErrNotFound: no companion entry — nothing to dismiss.
-	} else if companionReview != nil && companionReview.Status == "pending" {
-		if _, mergeErr := txRepo.MergeReview(ctx, companionReview.ID, reviewedBy, targetEventULID); mergeErr != nil {
-			if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
-				// Race outcome: companion was already dismissed by a concurrent request.
-				// Log-worthy but non-fatal — continue so the primary review is resolved.
-				_ = mergeErr
+	} else if companionReview != nil {
+		// Lock the companion row.  A concurrent admin action on this entry will
+		// have already committed before we acquire the lock, so we re-read status
+		// under lock and skip the merge if it is no longer pending.
+		lockedCompanion, lockErr := txRepo.LockReviewQueueEntryForUpdate(ctx, companionReview.ID)
+		if lockErr != nil {
+			if errors.Is(lockErr, ErrNotFound) {
+				// Companion was concurrently deleted — nothing to dismiss.
 			} else {
-				return nil, nil, fmt.Errorf("dismiss companion review id=%d: %w", companionReview.ID, mergeErr)
+				return nil, nil, fmt.Errorf("lock companion review id=%d: %w", companionReview.ID, lockErr)
+			}
+		} else if lockedCompanion.Status == "pending" {
+			if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, targetEventULID); mergeErr != nil {
+				if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
+					// Race outcome: companion was already dismissed by a concurrent request.
+					// Log-worthy but non-fatal — continue so the primary review is resolved.
+					_ = mergeErr
+				} else {
+					return nil, nil, fmt.Errorf("dismiss companion review id=%d: %w", lockedCompanion.ID, mergeErr)
+				}
 			}
 		}
+		// lockedCompanion.Status != "pending": companion already processed — skip.
 	}
 
 	// Mark the near-dup review entry as merged.
