@@ -624,17 +624,21 @@
         );
         
         // Extract duplicate event ID from warnings details if available.
-        // Priority: potential_duplicate match ULID → near_duplicate_of_new_event
-        // (uses the review entry's duplicateOfEventUlid, which is the incoming
-        // new event's ULID recorded at ingest time) → entry-level duplicateOfEventUlid.
+        // Priority order:
+        //   1. potential_duplicate match ULID (from warning details.matches[0].ulid)
+        //   2. near_duplicate_of_new_event — this warning appears on the *existing* event's
+        //      review entry; detail.duplicateOfEventUlid holds the *new* (incoming) event's
+        //      ULID recorded at ingest time. That new event is the add-occurrence / merge target.
+        //   3. entry-level duplicateOfEventUlid fallback (e.g. after a merge action).
         const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
         const nearDupNewEventWarning = warnings.find(w => w.code === 'near_duplicate_of_new_event');
         let duplicateEventId = '';
         if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
             duplicateEventId = duplicateWarning.details.matches[0].ulid || '';
         } else if (nearDupNewEventWarning && detail.duplicateOfEventUlid) {
-            // For near_duplicate_of_new_event the target is the new event whose
-            // ULID is stored on the review entry (set at ingest time).
+            // near_duplicate_of_new_event: this entry belongs to the existing event that was
+            // flagged as a potential duplicate of a newly-ingested event. The new event's ULID
+            // is stored in duplicateOfEventUlid. Use that as the add-occurrence / merge target.
             duplicateEventId = detail.duplicateOfEventUlid;
         } else if (detail.duplicateOfEventUlid) {
             duplicateEventId = detail.duplicateOfEventUlid;

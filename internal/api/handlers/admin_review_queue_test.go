@@ -195,6 +195,14 @@ func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*even
 	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
 }
 
+func (m *MockRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
+}
+
 func (m *MockRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	args := m.Called(ctx, filters)
 	if args.Get(0) == nil {
@@ -1368,7 +1376,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.EventStartTime = now
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
@@ -1414,7 +1422,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
 					events.ErrNotFound,
 				)
@@ -1429,7 +1437,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.EventStartTime = now
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
@@ -1443,10 +1451,11 @@ func TestAddOccurrenceReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				deleted := testTargetEvent()
 				deleted.LifecycleState = "deleted"
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(deleted, nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 			},
 			expectedStatus: http.StatusGone,
 		},
@@ -1458,24 +1467,31 @@ func TestAddOccurrenceReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.Status = "approved"
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 			},
 			expectedStatus: http.StatusConflict,
 		},
 		{
-			name:        "Error - target event not published (422)",
+			name:        "Success - target event in draft state (non-published target allowed)",
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
 				entry := testReviewQueueEntry(1, "01HREVIEW000000000000000001")
 				entry.EventStartTime = now
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
-				pendingTarget := testTargetEvent()
-				pendingTarget.LifecycleState = "pending_review"
-				m.On("GetByULID", mock.Anything, targetEventULID).Return(pendingTarget, nil)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
+				draftTarget := testTargetEvent()
+				draftTarget.LifecycleState = "draft"
+				m.On("GetByULID", mock.Anything, targetEventULID).Return(draftTarget, nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
+				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
+				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
+				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event"}, nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
+				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
 			},
-			expectedStatus: http.StatusUnprocessableEntity,
+			expectedStatus: http.StatusOK,
 		},
 		{
 			name:        "Error - review event same as target (400)",
@@ -1486,7 +1502,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				entry := testReviewQueueEntry(1, targetEventULID)
 				entry.EventStartTime = now
 				setupTxMock(m)
-				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 			},

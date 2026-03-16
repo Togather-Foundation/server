@@ -52,7 +52,6 @@ var (
 	ErrCannotMergeSameEvent = errors.New("cannot merge event with itself")
 	ErrEventDeleted         = errors.New("event has been deleted")
 	ErrEventAlreadyMerged   = errors.New("event has already been merged")
-	ErrEventNotPublished    = errors.New("target event is not published")
 )
 
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
@@ -75,33 +74,43 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	}
 	defer func() { _ = txCommitter.Rollback(ctx) }()
 
-	// Fetch the review entry (within the transaction for serialisability)
-	review, err := txRepo.GetReviewQueueEntry(ctx, reviewID)
+	// Lock the review queue row before inspecting its status.  This ensures that
+	// two concurrent admin requests for the same review entry are serialised: the
+	// second request will block on the lock, then re-read the already-updated
+	// status and return ErrConflict — instead of both proceeding past the pending
+	// check and producing a confusing downstream error.
+	review, err := txRepo.LockReviewQueueEntryForUpdate(ctx, reviewID)
 	if err != nil {
-		return nil, fmt.Errorf("get review entry: %w", err)
+		return nil, fmt.Errorf("lock review entry: %w", err)
 	}
 	if review.Status != "pending" {
 		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
 	}
 
-	// Fetch the target (recurring-series) event
+	// Fetch the target (recurring-series) event: a quick read to get its internal ID
+	// so that we can acquire the row-level lock before any eligibility recheck.
 	target, err := txRepo.GetByULID(ctx, targetEventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get target event %s: %w", targetEventULID, err)
 	}
-	if target.LifecycleState == "deleted" {
-		return nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
-	}
-	if target.LifecycleState != "published" {
-		return nil, fmt.Errorf("target event %s is in state %q (must be published): %w", targetEventULID, target.LifecycleState, ErrEventNotPublished)
-	}
 
-	// Acquire a row-level lock on the target event before the overlap check so that
-	// two concurrent add-occurrence requests on the same event cannot both pass the
-	// read-then-write gap.  The lock is released automatically when the transaction
-	// commits or rolls back.
+	// Acquire a row-level lock on the target event BEFORE the eligibility recheck so
+	// that two concurrent add-occurrence requests for the same target cannot both pass
+	// the read-then-write gap (TOCTOU).  The lock is held until the transaction commits
+	// or rolls back.
 	if err := txRepo.LockEventForUpdate(ctx, target.ID); err != nil {
 		return nil, fmt.Errorf("lock target event %s: %w", targetEventULID, err)
+	}
+
+	// Re-read under lock and validate eligibility.  Any lifecycle state other than
+	// "deleted" is acceptable — admins may add occurrences to draft, pending_review,
+	// cancelled, or published series events.
+	target, err = txRepo.GetByULID(ctx, targetEventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get target event %s (post-lock): %w", targetEventULID, err)
+	}
+	if target.LifecycleState == "deleted" {
+		return nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
 	}
 
 	// Ensure the review's own event is not the same as the target
@@ -136,19 +145,37 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
 	}
 
-	// Extract occurrence-level metadata from the review event's first occurrence
-	// so the new occurrence inherits the specific venue / timezone / virtual URL
-	// of that instance rather than the series-level defaults.
+	// Extract occurrence-level metadata from the review event's occurrence whose
+	// StartTime matches the review's EventStartTime, so the new occurrence inherits
+	// the specific venue / timezone / virtual URL of that instance rather than the
+	// series-level defaults.
+	//
+	// If the review event has multiple occurrences and none match the review start
+	// time, we fall back to the series-level defaults rather than silently picking
+	// the wrong occurrence.
 	if len(reviewEvent.Occurrences) > 0 {
-		occ := reviewEvent.Occurrences[0]
-		if occ.Timezone != "" {
-			occTimezone = occ.Timezone
+		var matchedOcc *Occurrence
+		for i := range reviewEvent.Occurrences {
+			if reviewEvent.Occurrences[i].StartTime.Equal(review.EventStartTime) {
+				matchedOcc = &reviewEvent.Occurrences[i]
+				break
+			}
 		}
-		if occ.VenueID != nil {
-			occVenueID = occ.VenueID
+		// If no exact match, fall back to [0] only when the event has exactly one
+		// occurrence (unambiguous case, e.g. single-instance event from ingest).
+		if matchedOcc == nil && len(reviewEvent.Occurrences) == 1 {
+			matchedOcc = &reviewEvent.Occurrences[0]
 		}
-		if occ.VirtualURL != nil && *occ.VirtualURL != "" {
-			occVirtualURL = occ.VirtualURL
+		if matchedOcc != nil {
+			if matchedOcc.Timezone != "" {
+				occTimezone = matchedOcc.Timezone
+			}
+			if matchedOcc.VenueID != nil {
+				occVenueID = matchedOcc.VenueID
+			}
+			if matchedOcc.VirtualURL != nil && *matchedOcc.VirtualURL != "" {
+				occVirtualURL = matchedOcc.VirtualURL
+			}
 		}
 	}
 

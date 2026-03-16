@@ -2301,6 +2301,34 @@ func (r *EventRepository) GetReviewQueueEntry(ctx context.Context, id int) (*eve
 	return convertGetReviewQueueEntryRow(row), nil
 }
 
+// LockReviewQueueEntryForUpdate acquires a row-level FOR UPDATE lock on the
+// review queue row identified by id and returns the current row state.  Must
+// be called inside a transaction.  This serialises concurrent admin actions
+// (approve, reject, merge, add-occurrence) on the same review entry so that
+// only the first request observes status="pending" and the second sees the
+// already-updated status and returns ErrConflict.
+func (r *EventRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
+	queryer := r.queryer()
+	var dummy int32
+	err := queryer.QueryRow(ctx, `SELECT id FROM event_review_queue WHERE id = $1 FOR UPDATE`, int32(id)).Scan(&dummy)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("lock review queue entry %d: %w", id, events.ErrNotFound)
+		}
+		return nil, fmt.Errorf("lock review queue entry %d for update: %w", id, err)
+	}
+	// Re-read the full row now that we hold the lock.
+	queries := Queries{db: queryer}
+	row, err := queries.GetReviewQueueEntry(ctx, int32(id))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("re-read review queue entry %d after lock: %w", id, events.ErrNotFound)
+		}
+		return nil, fmt.Errorf("re-read review queue entry %d after lock: %w", id, err)
+	}
+	return convertGetReviewQueueEntryRow(row), nil
+}
+
 // GetPendingReviewByEventUlid returns the pending review queue entry for the given event ULID,
 // or (nil, nil) if no pending review exists.
 func (r *EventRepository) GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {

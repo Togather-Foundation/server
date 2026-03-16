@@ -699,7 +699,7 @@ Available when the review entry has a `potential_duplicate` or `near_duplicate_o
 }
 ```
 
-`target_event_ulid` must be a ULID for an existing published event (typically taken from the `duplicate_of` candidate in the warning details).
+`target_event_ulid` must be a ULID for an existing, non-deleted event (any lifecycle state — `draft`, `pending_review`, `published`, `cancelled`, etc. are all acceptable; only `deleted` events are rejected with `410 Gone`).
 
 **Action:**
 1. Validate the target event exists and is not deleted.
@@ -712,11 +712,10 @@ All five steps run inside a single database transaction.
 
 **Responses:**
 - `200 OK` — occurrence added and review entry resolved
-- `400 Bad Request` — `target_event_ulid` missing or malformed
+- `400 Bad Request` — `target_event_ulid` missing or malformed, or review event and target are the same
 - `404 Not Found` — review entry or target event not found
 - `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted
-- `422 Unprocessable Entity` — target event exists but is not in `published` state (e.g. `pending_review`, `draft`)
 
 ---
 

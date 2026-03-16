@@ -226,6 +226,12 @@ type Repository interface {
 	CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	// LockReviewQueueEntryForUpdate acquires a row-level lock on the review queue
+	// row identified by id using SELECT ... FOR UPDATE.  Must be called inside a
+	// transaction.  Returns (nil, ErrNotFound) if the row no longer exists.
+	// Use this to serialise concurrent admin actions on the same review entry so
+	// that only the first request proceeds and the second sees the updated status.
+	LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error
 	DismissCompanionWarningMatch(ctx context.Context, companionULID string, eventULID string) error

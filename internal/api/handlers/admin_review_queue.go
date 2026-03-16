@@ -694,10 +694,6 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Target event has been deleted", err, h.Env)
 			return
 		}
-		if errors.Is(err, events.ErrEventNotPublished) {
-			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/event-not-published", "Target event must be in published state", err, h.Env)
-			return
-		}
 		if errors.Is(err, events.ErrConflict) {
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry is not in pending status", err, h.Env)
 			return

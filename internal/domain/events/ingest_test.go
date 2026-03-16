@@ -520,6 +520,11 @@ func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*Revi
 	return entry, nil
 }
 
+func (m *MockRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error) {
+	// In tests, locking is a no-op — delegate to GetReviewQueueEntry.
+	return m.GetReviewQueueEntry(ctx, id)
+}
+
 // GetReviewQueueByEventID is a test helper that returns all review queue entries for a given event UUID.
 func (m *MockRepository) GetReviewQueueByEventID(eventID string) []*ReviewQueueEntry {
 	m.mu.Lock()

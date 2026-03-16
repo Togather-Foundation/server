@@ -1057,19 +1057,11 @@ paths:
         '409':
           description: The new occurrence overlaps an existing occurrence on the target event, or the review is not in pending status
           content:
-            application/problem+json:
+             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '410':
           description: The target event has been deleted
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '422':
-          description: >
-            The target event exists but is not in `published` state (e.g. it is `pending_review`,
-            `draft`, or otherwise not yet published). Only published events may receive new occurrences.
           content:
             application/problem+json:
               schema:

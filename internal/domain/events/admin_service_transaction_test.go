@@ -280,17 +280,18 @@ func TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure(t *testing.T) {
 
 // mockTransactionalRepo implements Repository with transaction support
 type mockTransactionalRepo struct {
-	getByULIDFunc              func(ctx context.Context, ulid string) (*Event, error)
-	mergeEventsFunc            func(ctx context.Context, duplicateULID, primaryULID string) error
-	createTombstoneFunc        func(ctx context.Context, params TombstoneCreateParams) error
-	getReviewQueueEntryFunc    func(ctx context.Context, id int) (*ReviewQueueEntry, error)
-	checkOccurrenceOverlapFunc func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
-	createOccurrenceFunc       func(ctx context.Context, params OccurrenceCreateParams) error
-	softDeleteEventFunc        func(ctx context.Context, ulid, reason string) error
-	mergeReviewFunc            func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
-	lockEventForUpdateFunc     func(ctx context.Context, eventID string) error
-	commitCalled               bool
-	rollbackCalled             bool
+	getByULIDFunc                     func(ctx context.Context, ulid string) (*Event, error)
+	mergeEventsFunc                   func(ctx context.Context, duplicateULID, primaryULID string) error
+	createTombstoneFunc               func(ctx context.Context, params TombstoneCreateParams) error
+	getReviewQueueEntryFunc           func(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	lockReviewQueueEntryForUpdateFunc func(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	checkOccurrenceOverlapFunc        func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
+	createOccurrenceFunc              func(ctx context.Context, params OccurrenceCreateParams) error
+	softDeleteEventFunc               func(ctx context.Context, ulid, reason string) error
+	mergeReviewFunc                   func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
+	lockEventForUpdateFunc            func(ctx context.Context, eventID string) error
+	commitCalled                      bool
+	rollbackCalled                    bool
 }
 
 func (m *mockTransactionalRepo) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
@@ -396,6 +397,16 @@ func (m *mockTransactionalRepo) GetReviewQueueEntry(ctx context.Context, id int)
 	}
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error) {
+	if m.lockReviewQueueEntryForUpdateFunc != nil {
+		return m.lockReviewQueueEntryForUpdateFunc(ctx, id)
+	}
+	// Default: delegate to getReviewQueueEntryFunc (simulates lock + re-read).
+	if m.getReviewQueueEntryFunc != nil {
+		return m.getReviewQueueEntryFunc(ctx, id)
+	}
+	return nil, errors.New("not implemented")
+}
 func (m *mockTransactionalRepo) ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error) {
 	return nil, errors.New("not implemented")
 }
@@ -478,13 +489,14 @@ func (m *mockTxCommitter) Rollback(ctx context.Context) error {
 	return nil
 }
 
-// TestAddOccurrenceFromReview_RejectsNonPublishedTarget verifies that the service
-// returns ErrEventNotPublished when the target event is not in "published" state.
-func TestAddOccurrenceFromReview_RejectsNonPublishedTarget(t *testing.T) {
+// TestAddOccurrenceFromReview_AllowsNonPublishedTarget verifies that the service
+// accepts a target event in any non-deleted lifecycle state (draft, pending_review,
+// cancelled, postponed, etc.).  Only deleted targets are rejected.
+func TestAddOccurrenceFromReview_AllowsNonPublishedTarget(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	for _, state := range []string{"draft", "pending_review", "cancelled"} {
+	for _, state := range []string{"draft", "pending_review", "cancelled", "postponed", "rescheduled"} {
 		state := state
 		t.Run(state, func(t *testing.T) {
 			repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
@@ -498,16 +510,69 @@ func TestAddOccurrenceFromReview_RejectsNonPublishedTarget(t *testing.T) {
 			service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
 			_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
-			if err == nil {
-				t.Fatalf("state=%q: expected ErrEventNotPublished, got nil", state)
+			if err != nil {
+				t.Errorf("state=%q: expected success, got: %v", state, err)
 			}
-			if !errors.Is(err, ErrEventNotPublished) {
-				t.Errorf("state=%q: expected ErrEventNotPublished, got: %v", state, err)
-			}
-			if repo.commitCalled {
-				t.Errorf("state=%q: commit must not be called when target is not published", state)
+			if !repo.commitCalled {
+				t.Errorf("state=%q: commit must be called on success", state)
 			}
 		})
+	}
+}
+
+// TestAddOccurrenceFromReview_RejectsDeletedTarget verifies that a deleted target
+// returns ErrEventDeleted and no commit occurs.
+func TestAddOccurrenceFromReview_RejectsDeletedTarget(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "deleted"}, nil
+		}
+		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance", LifecycleState: "published"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrEventDeleted, got nil")
+	}
+	if !errors.Is(err, ErrEventDeleted) {
+		t.Errorf("expected ErrEventDeleted, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when target is deleted")
+	}
+}
+
+// TestAddOccurrenceFromReview_ConcurrentReviewLock verifies that when a second
+// concurrent request locks the same review row after it has already been processed,
+// it receives ErrConflict rather than a confusing downstream error.
+func TestAddOccurrenceFromReview_ConcurrentReviewLock(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	// Simulate the row already having been processed (status="merged") — as the
+	// second goroutine would see after the first committed.
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrConflict for already-processed review, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("expected ErrConflict, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when review is already processed")
 	}
 }
 

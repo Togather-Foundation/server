@@ -139,6 +139,10 @@ func (s stubEventsRepo) GetReviewQueueEntry(_ context.Context, _ int) (*events.R
 	return nil, events.ErrNotFound
 }
 
+func (s stubEventsRepo) LockReviewQueueEntryForUpdate(_ context.Context, _ int) (*events.ReviewQueueEntry, error) {
+	return nil, events.ErrNotFound
+}
+
 func (s stubEventsRepo) ListReviewQueue(_ context.Context, _ events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	return &events.ReviewQueueListResult{Entries: []events.ReviewQueueEntry{}, NextCursor: nil}, nil
 }
