@@ -206,7 +206,7 @@ CREATE TABLE event_review_queue (
   event_end_time TIMESTAMPTZ,
   
   -- Review workflow
-  status TEXT NOT NULL DEFAULT 'pending',  -- pending, approved, rejected, superseded
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending, approved, rejected, merged
   reviewed_by TEXT,
   reviewed_at TIMESTAMPTZ,
   review_notes TEXT,
@@ -478,7 +478,7 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 4. Check warnings: Now empty (fixed!)
 5. Action: 
    - Update `events.lifecycle_state = 'published'`
-   - Update `event_review_queue.status = 'superseded'`
+   - Update `event_review_queue.status = 'merged'`
 6. Response: 201 Created (or 409 if treating as duplicate)
 
 ---
@@ -755,10 +755,10 @@ func CleanupExpiredReviews(ctx context.Context) error {
         AND event_start_time < NOW()
     `)
     
-    // 4. Archive old approved/superseded reviews (90 day retention)
+    // 4. Archive old approved/merged reviews (90 day retention)
     db.Exec(`
         DELETE FROM event_review_queue
-        WHERE status IN ('approved', 'superseded')
+        WHERE status IN ('approved', 'merged')
         AND reviewed_at < NOW() - INTERVAL '90 days'
     `)
 }

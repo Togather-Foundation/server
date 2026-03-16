@@ -87,7 +87,7 @@ Single-page design: list view with inline detail expansion. No separate detail p
 +------------------------------------------------------------------+
 | Review Queue                                                      |
 |                                                                   |
-| [Pending (3)] [Approved] [Rejected]         [status filter tabs] |
+| [Pending (3)] [Approved] [Rejected] [Merged]  [status filter tabs] |
 +------------------------------------------------------------------+
 | Event Name       | Start Time      | Warning    | Created | Act. |
 |------------------|-----------------|------------|---------|------|
@@ -107,7 +107,9 @@ Single-page design: list view with inline detail expansion. No separate detail p
 
 ### Status Filter Tabs
 
-Three Tabler nav-tabs: **Pending** (default, with count badge), **Approved**, **Rejected**.
+Four Tabler nav-tabs: **Pending** (default, with count badge), **Approved**, **Rejected**, **Merged**.
+
+The **Merged** tab shows entries resolved via either the "Merge Duplicate" or "Add as Occurrence" actions (both set `status = 'merged'` on the review queue entry).
 
 ### List Table Columns
 

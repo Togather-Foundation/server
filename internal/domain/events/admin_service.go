@@ -132,27 +132,35 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		)
 	}
 
-	// Add the new occurrence to the target event.
-	// Prefer the review event's occurrence metadata so that venue, timezone, and
-	// virtual URL reflect the specific instance being absorbed, not the series defaults.
+	// Add the new occurrence to the target event.  Seed defaults from the target
+	// series, then override with the review event's matched occurrence metadata so
+	// that the absorbed instance's venue, timezone, pricing, door time, ticket URL,
+	// and virtual URL are preserved rather than silently dropped.
 	occTimezone := s.defaultTZ
 	occVenueID := target.PrimaryVenueID
 	var occVirtualURL *string
 
-	// Soft-delete the review's own event (it has been absorbed as an occurrence)
+	// Fetch the review event to extract its occurrence-level metadata.
 	reviewEvent, err := txRepo.GetByULID(ctx, review.EventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get review event %s: %w", review.EventULID, err)
 	}
 
-	// Extract occurrence-level metadata from the review event's occurrence whose
-	// StartTime matches the review's EventStartTime, so the new occurrence inherits
-	// the specific venue / timezone / virtual URL of that instance rather than the
-	// series-level defaults.
+	// Find the occurrence on the review event whose StartTime matches the review
+	// entry's EventStartTime.  If no occurrence matches (e.g. multi-occurrence event
+	// whose start times don't align), fall back to [0] only when there is exactly
+	// one occurrence (unambiguous single-instance case from ingest).  If still no
+	// match, the series-level defaults above are used as-is.
 	//
-	// If the review event has multiple occurrences and none match the review start
-	// time, we fall back to the series-level defaults rather than silently picking
-	// the wrong occurrence.
+	// Carry over all occurrence-level metadata from the review event so that
+	// pricing, door time, ticket URL, etc. survive the absorption — not just
+	// the three fields that were preserved in the first implementation.
+	var occDoorTime *time.Time
+	var occTicketURL *string
+	var occPriceMin *float64
+	var occPriceMax *float64
+	var occPriceCurrency string
+
 	if len(reviewEvent.Occurrences) > 0 {
 		var matchedOcc *Occurrence
 		for i := range reviewEvent.Occurrences {
@@ -176,16 +184,37 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 			if matchedOcc.VirtualURL != nil && *matchedOcc.VirtualURL != "" {
 				occVirtualURL = matchedOcc.VirtualURL
 			}
+			// Preserve remaining occurrence-level metadata
+			if matchedOcc.DoorTime != nil {
+				occDoorTime = matchedOcc.DoorTime
+			}
+			if matchedOcc.TicketURL != "" {
+				occTicketURL = &matchedOcc.TicketURL
+			}
+			if matchedOcc.PriceMin != nil {
+				occPriceMin = matchedOcc.PriceMin
+			}
+			if matchedOcc.PriceMax != nil {
+				occPriceMax = matchedOcc.PriceMax
+			}
+			if matchedOcc.PriceCurrency != "" {
+				occPriceCurrency = matchedOcc.PriceCurrency
+			}
 		}
 	}
 
 	err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
-		EventID:    target.ID,
-		StartTime:  review.EventStartTime,
-		EndTime:    review.EventEndTime,
-		Timezone:   occTimezone,
-		VenueID:    occVenueID,
-		VirtualURL: occVirtualURL,
+		EventID:       target.ID,
+		StartTime:     review.EventStartTime,
+		EndTime:       review.EventEndTime,
+		Timezone:      occTimezone,
+		DoorTime:      occDoorTime,
+		VenueID:       occVenueID,
+		VirtualURL:    occVirtualURL,
+		TicketURL:     occTicketURL,
+		PriceMin:      occPriceMin,
+		PriceMax:      occPriceMax,
+		PriceCurrency: occPriceCurrency,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create occurrence: %w", err)

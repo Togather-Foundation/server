@@ -577,8 +577,10 @@ func TestAddOccurrenceFromReview_ConcurrentReviewLock(t *testing.T) {
 }
 
 // TestAddOccurrenceFromReview_PreservesOccurrenceMetadata verifies that the
-// occurrence is created using the review event's timezone, venue, and virtual URL
-// rather than the series-level defaults.
+// occurrence is created using ALL of the review event's occurrence-level metadata
+// (timezone, venue, virtual URL, door time, ticket URL, pricing) rather than the
+// series-level defaults.  This is a regression test for the phase-5 review finding
+// that only timezone/venue/virtualURL were being forwarded.
 func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
@@ -586,6 +588,11 @@ func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 	reviewVenueID := "review-venue-uuid"
 	reviewVirtualURL := "https://example.com/livestream"
 	reviewTimezone := "America/Vancouver"
+	doorTime := startTime.Add(-30 * time.Minute) // 30 min before start
+	reviewTicketURL := "https://example.com/tickets/42"
+	reviewPriceMin := 15.0
+	reviewPriceMax := 45.0
+	reviewPriceCurrency := "CAD"
 
 	var capturedParams OccurrenceCreateParams
 
@@ -601,16 +608,22 @@ func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 				PrimaryVenueID: &targetVenueID,
 			}, nil
 		}
-		// Review event with a specific occurrence
+		// Review event with a fully-populated occurrence
 		return &Event{
 			ID:   "review-event-id",
 			ULID: ulid,
 			Name: "Instance",
 			Occurrences: []Occurrence{
 				{
-					Timezone:   reviewTimezone,
-					VenueID:    &reviewVenueID,
-					VirtualURL: &reviewVirtualURL,
+					StartTime:     startTime,
+					Timezone:      reviewTimezone,
+					VenueID:       &reviewVenueID,
+					VirtualURL:    &reviewVirtualURL,
+					DoorTime:      &doorTime,
+					TicketURL:     reviewTicketURL,
+					PriceMin:      &reviewPriceMin,
+					PriceMax:      &reviewPriceMax,
+					PriceCurrency: reviewPriceCurrency,
 				},
 			},
 		}, nil
@@ -634,5 +647,80 @@ func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 	}
 	if capturedParams.VirtualURL == nil || *capturedParams.VirtualURL != reviewVirtualURL {
 		t.Errorf("virtualURL: got %v, want %q", capturedParams.VirtualURL, reviewVirtualURL)
+	}
+	// Regression: ensure DoorTime, TicketURL, and pricing are also preserved
+	if capturedParams.DoorTime == nil || !capturedParams.DoorTime.Equal(doorTime) {
+		t.Errorf("doorTime: got %v, want %v", capturedParams.DoorTime, doorTime)
+	}
+	if capturedParams.TicketURL == nil || *capturedParams.TicketURL != reviewTicketURL {
+		t.Errorf("ticketURL: got %v, want %q", capturedParams.TicketURL, reviewTicketURL)
+	}
+	if capturedParams.PriceMin == nil || *capturedParams.PriceMin != reviewPriceMin {
+		t.Errorf("priceMin: got %v, want %v", capturedParams.PriceMin, reviewPriceMin)
+	}
+	if capturedParams.PriceMax == nil || *capturedParams.PriceMax != reviewPriceMax {
+		t.Errorf("priceMax: got %v, want %v", capturedParams.PriceMax, reviewPriceMax)
+	}
+	if capturedParams.PriceCurrency != reviewPriceCurrency {
+		t.Errorf("priceCurrency: got %q, want %q", capturedParams.PriceCurrency, reviewPriceCurrency)
+	}
+}
+
+// TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty verifies
+// that when the review event has no occurrence-level metadata overrides, the new
+// occurrence inherits series-level defaults (timezone from service config, venue
+// from target event).
+func TestAddOccurrenceFromReview_FallsBackToSeriesDefaultsWhenOccurrenceEmpty(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	targetVenueID := "target-venue-uuid"
+	serviceDefaultTZ := "America/Toronto"
+
+	var capturedParams OccurrenceCreateParams
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{
+				ID:             "target-uuid",
+				ULID:           ulid,
+				Name:           "Series",
+				LifecycleState: "published",
+				PrimaryVenueID: &targetVenueID,
+			}, nil
+		}
+		// Review event with no occurrences (no override metadata available)
+		return &Event{
+			ID:   "review-event-id",
+			ULID: ulid,
+			Name: "Instance",
+		}, nil
+	}
+	repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
+		capturedParams = params
+		return nil
+	}
+
+	service := NewAdminService(repo, false, serviceDefaultTZ, config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if capturedParams.Timezone != serviceDefaultTZ {
+		t.Errorf("timezone: expected service default %q, got %q", serviceDefaultTZ, capturedParams.Timezone)
+	}
+	if capturedParams.VenueID == nil || *capturedParams.VenueID != targetVenueID {
+		t.Errorf("venueID: expected target venue %q, got %v", targetVenueID, capturedParams.VenueID)
+	}
+	if capturedParams.DoorTime != nil {
+		t.Errorf("doorTime: expected nil (no override), got %v", capturedParams.DoorTime)
+	}
+	if capturedParams.TicketURL != nil {
+		t.Errorf("ticketURL: expected nil (no override), got %v", capturedParams.TicketURL)
+	}
+	if capturedParams.PriceMin != nil {
+		t.Errorf("priceMin: expected nil (no override), got %v", capturedParams.PriceMin)
 	}
 }
