@@ -202,6 +202,12 @@ type Repository interface {
 	// endTime may be nil, in which case a point-in-time check is used (start < existing_end).
 	CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
 
+	// LockEventForUpdate acquires a row-level lock on the event row identified by
+	// eventID (UUID) using SELECT ... FOR UPDATE. Must be called inside a transaction.
+	// Use this to serialise concurrent operations that read-then-write the same event
+	// (e.g. add-occurrence overlap check + insert).
+	LockEventForUpdate(ctx context.Context, eventID string) error
+
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)

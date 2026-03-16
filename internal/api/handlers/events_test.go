@@ -201,6 +201,10 @@ func (s stubEventsRepo) CheckOccurrenceOverlap(_ context.Context, _ string, _ ti
 	return false, nil
 }
 
+func (s stubEventsRepo) LockEventForUpdate(_ context.Context, _ string) error {
+	return nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

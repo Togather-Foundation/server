@@ -307,6 +307,11 @@ func (m *MockRepository) CheckOccurrenceOverlap(ctx context.Context, eventID str
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepository) LockEventForUpdate(ctx context.Context, eventID string) error {
+	args := m.Called(ctx, eventID)
+	return args.Error(0)
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{
@@ -1365,6 +1370,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				setupTxMock(m)
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
 				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event"}, nil)
@@ -1396,6 +1402,13 @@ func TestAddOccurrenceReview(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
+			name:           "Error - malformed target_event_ulid",
+			reviewID:       "1",
+			requestBody:    map[string]string{"target_event_ulid": "not-a-ulid"},
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
 			name:        "Error - review entry not found",
 			reviewID:    "999",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
@@ -1418,6 +1431,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				setupTxMock(m)
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
+				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
 			},
 			expectedStatus: http.StatusConflict,

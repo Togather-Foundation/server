@@ -92,6 +92,14 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("target event %s: %w", targetEventULID, ErrEventDeleted)
 	}
 
+	// Acquire a row-level lock on the target event before the overlap check so that
+	// two concurrent add-occurrence requests on the same event cannot both pass the
+	// read-then-write gap.  The lock is released automatically when the transaction
+	// commits or rolls back.
+	if err := txRepo.LockEventForUpdate(ctx, target.ID); err != nil {
+		return nil, fmt.Errorf("lock target event %s: %w", targetEventULID, err)
+	}
+
 	// Ensure the review's own event is not the same as the target
 	if review.EventULID == targetEventULID {
 		return nil, fmt.Errorf("review event and target event are the same (%s): %w", targetEventULID, ErrCannotMergeSameEvent)

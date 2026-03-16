@@ -675,6 +675,23 @@ SELECT EXISTS (
 	return overlaps, nil
 }
 
+// LockEventForUpdate acquires a row-level FOR UPDATE lock on the given event
+// (identified by UUID). Must be called inside a transaction. This serialises
+// concurrent add-occurrence requests for the same target event so that the
+// overlap check and occurrence insert are atomic from the database's perspective.
+func (r *EventRepository) LockEventForUpdate(ctx context.Context, eventID string) error {
+	queryer := r.queryer()
+	var dummy string
+	err := queryer.QueryRow(ctx, `SELECT id FROM events WHERE id = $1 FOR UPDATE`, eventID).Scan(&dummy)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("lock event %s: %w", eventID, events.ErrNotFound)
+		}
+		return fmt.Errorf("lock event %s for update: %w", eventID, err)
+	}
+	return nil
+}
+
 func (r *EventRepository) CreateSource(ctx context.Context, params events.EventSourceCreateParams) error {
 	queryer := r.queryer()
 

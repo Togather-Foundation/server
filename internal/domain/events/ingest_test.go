@@ -762,6 +762,10 @@ func (m *MockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ t
 	return false, nil
 }
 
+func (m *MockRepository) LockEventForUpdate(_ context.Context, _ string) error {
+	return nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

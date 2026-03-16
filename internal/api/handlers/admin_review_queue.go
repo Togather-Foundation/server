@@ -14,6 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -659,6 +660,10 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 	}
 	if req.TargetEventULID == "" {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "target_event_ulid is required", nil, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.TargetEventULID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "target_event_ulid is not a valid ULID", err, h.Env)
 		return
 	}
 

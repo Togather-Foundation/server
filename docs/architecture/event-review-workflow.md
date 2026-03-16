@@ -673,7 +673,7 @@ Merge a near-duplicate event into an existing published event, keeping the targe
 
 Available when the review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning with a `duplicate_of` candidate ULID in the warning details.
 
-**Request body:** none required (target ULID taken from warning details).
+**Request body:** `primary_event_ulid` — the ULID of the existing published event to merge into (typically taken from the `duplicate_of` candidate in the warning details).
 
 **Action:**
 - Soft-delete the review entry's event (`lifecycle_state = 'deleted'`, tombstone reason `"merged"`, `superseded_by` → target event URI)
@@ -695,11 +695,11 @@ Available when the review entry has a `potential_duplicate` or `near_duplicate_o
 **Request:**
 ```json
 {
-  "targetEventUlid": "01HQRS7T8G"
+  "target_event_ulid": "01HQRS7T8G"
 }
 ```
 
-`targetEventUlid` must be a ULID for an existing published event (typically taken from the `duplicate_of` candidate in the warning details).
+`target_event_ulid` must be a ULID for an existing published event (typically taken from the `duplicate_of` candidate in the warning details).
 
 **Action:**
 1. Validate the target event exists and is not deleted.
@@ -712,9 +712,9 @@ All five steps run inside a single database transaction.
 
 **Responses:**
 - `200 OK` — occurrence added and review entry resolved
-- `400 Bad Request` — `targetEventUlid` missing or malformed
+- `400 Bad Request` — `target_event_ulid` missing or malformed
 - `404 Not Found` — review entry or target event not found
-- `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target; or target event is deleted (410 Gone)
+- `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted
 
 ---

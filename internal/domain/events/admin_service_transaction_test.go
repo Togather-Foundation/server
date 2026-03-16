@@ -145,13 +145,152 @@ func TestMergeEvents_RollbackOnMergeError(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Tests for AddOccurrenceFromReview atomicity (srv-izykp)
+// ---------------------------------------------------------------------------
+
+// makeOccurrenceRepo builds a mockTransactionalRepo pre-wired for the
+// "happy path" of AddOccurrenceFromReview. Individual tests override the
+// func fields that correspond to the step they want to fail.
+func makeOccurrenceRepo(targetID, targetULID, reviewEventULID string, startTime time.Time) *mockTransactionalRepo {
+	mergedStatus := "merged"
+	return &mockTransactionalRepo{
+		getReviewQueueEntryFunc: func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{
+				ID:             id,
+				EventID:        "review-event-id",
+				EventULID:      reviewEventULID,
+				Status:         "pending",
+				EventStartTime: startTime,
+			}, nil
+		},
+		getByULIDFunc: func(_ context.Context, ulid string) (*Event, error) {
+			if ulid == targetULID {
+				return &Event{ID: targetID, ULID: targetULID, Name: "Series", LifecycleState: "published"}, nil
+			}
+			return &Event{ID: "review-event-id", ULID: reviewEventULID, Name: "Instance"}, nil
+		},
+		checkOccurrenceOverlapFunc: func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+			return false, nil
+		},
+		createOccurrenceFunc: func(_ context.Context, _ OccurrenceCreateParams) error { return nil },
+		softDeleteEventFunc:  func(_ context.Context, _, _ string) error { return nil },
+		createTombstoneFunc:  func(_ context.Context, _ TombstoneCreateParams) error { return nil },
+		mergeReviewFunc: func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{ID: id, Status: mergedStatus}, nil
+		},
+	}
+}
+
+// TestAddOccurrenceFromReview_CommitOnSuccess verifies that a successful
+// add-occurrence operation commits the transaction.
+func TestAddOccurrenceFromReview_CommitOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("Expected success, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("Commit should be called on success")
+	}
+}
+
+// TestAddOccurrenceFromReview_RollbackOnOverlap verifies that an overlap
+// conflict rolls back the transaction without committing.
+func TestAddOccurrenceFromReview_RollbackOnOverlap(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.checkOccurrenceOverlapFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+		return true, nil // overlap detected
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	err := func() error {
+		_, e := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+		return e
+	}()
+
+	if err == nil {
+		t.Fatal("Expected ErrOccurrenceOverlap, got nil")
+	}
+	if !errors.Is(err, ErrOccurrenceOverlap) {
+		t.Errorf("Expected ErrOccurrenceOverlap, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("Commit must not be called when overlap is detected")
+	}
+	if !repo.rollbackCalled {
+		t.Error("Rollback must be called via defer on error")
+	}
+}
+
+// TestAddOccurrenceFromReview_RollbackOnCreateOccurrenceFailure verifies
+// that a DB error during CreateOccurrence triggers a rollback.
+func TestAddOccurrenceFromReview_RollbackOnCreateOccurrenceFailure(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.createOccurrenceFunc = func(_ context.Context, _ OccurrenceCreateParams) error {
+		return errors.New("db write failed")
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("Expected error from CreateOccurrence failure, got nil")
+	}
+	if repo.commitCalled {
+		t.Error("Commit must not be called after CreateOccurrence error")
+	}
+	if !repo.rollbackCalled {
+		t.Error("Rollback must be called via defer on error")
+	}
+}
+
+// TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure verifies that a
+// DB error during SoftDeleteEvent triggers a rollback.
+func TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo.softDeleteEventFunc = func(_ context.Context, _, _ string) error {
+		return errors.New("soft-delete failed")
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("Expected error from SoftDeleteEvent failure, got nil")
+	}
+	if repo.commitCalled {
+		t.Error("Commit must not be called after SoftDeleteEvent error")
+	}
+	if !repo.rollbackCalled {
+		t.Error("Rollback must be called via defer on error")
+	}
+}
+
 // mockTransactionalRepo implements Repository with transaction support
 type mockTransactionalRepo struct {
-	getByULIDFunc       func(ctx context.Context, ulid string) (*Event, error)
-	mergeEventsFunc     func(ctx context.Context, duplicateULID, primaryULID string) error
-	createTombstoneFunc func(ctx context.Context, params TombstoneCreateParams) error
-	commitCalled        bool
-	rollbackCalled      bool
+	getByULIDFunc              func(ctx context.Context, ulid string) (*Event, error)
+	mergeEventsFunc            func(ctx context.Context, duplicateULID, primaryULID string) error
+	createTombstoneFunc        func(ctx context.Context, params TombstoneCreateParams) error
+	getReviewQueueEntryFunc    func(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	checkOccurrenceOverlapFunc func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
+	createOccurrenceFunc       func(ctx context.Context, params OccurrenceCreateParams) error
+	softDeleteEventFunc        func(ctx context.Context, ulid, reason string) error
+	mergeReviewFunc            func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
+	lockEventForUpdateFunc     func(ctx context.Context, eventID string) error
+	commitCalled               bool
+	rollbackCalled             bool
 }
 
 func (m *mockTransactionalRepo) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
@@ -196,6 +335,9 @@ func (m *mockTransactionalRepo) Create(ctx context.Context, params EventCreatePa
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error {
+	if m.createOccurrenceFunc != nil {
+		return m.createOccurrenceFunc(ctx, params)
+	}
 	return errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) CreateSource(ctx context.Context, params EventSourceCreateParams) error {
@@ -232,6 +374,9 @@ func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, event
 	return errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) SoftDeleteEvent(ctx context.Context, ulid, reason string) error {
+	if m.softDeleteEventFunc != nil {
+		return m.softDeleteEventFunc(ctx, ulid, reason)
+	}
 	return errors.New("not implemented")
 }
 
@@ -246,6 +391,9 @@ func (m *mockTransactionalRepo) UpdateReviewQueueEntry(ctx context.Context, id i
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {
+	if m.getReviewQueueEntryFunc != nil {
+		return m.getReviewQueueEntryFunc(ctx, id)
+	}
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error) {
@@ -258,6 +406,9 @@ func (m *mockTransactionalRepo) RejectReview(ctx context.Context, id int, review
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) MergeReview(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error) {
+	if m.mergeReviewFunc != nil {
+		return m.mergeReviewFunc(ctx, id, reviewedBy, primaryEventULID)
+	}
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) CleanupExpiredReviews(ctx context.Context) error {
@@ -299,8 +450,17 @@ func (m *mockTransactionalRepo) UpdateReviewWarnings(_ context.Context, _ int, _
 func (m *mockTransactionalRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
 	return nil
 }
-func (m *mockTransactionalRepo) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+func (m *mockTransactionalRepo) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
+	if m.checkOccurrenceOverlapFunc != nil {
+		return m.checkOccurrenceOverlapFunc(ctx, eventID, startTime, endTime)
+	}
 	return false, nil
+}
+func (m *mockTransactionalRepo) LockEventForUpdate(ctx context.Context, eventID string) error {
+	if m.lockEventForUpdateFunc != nil {
+		return m.lockEventForUpdateFunc(ctx, eventID)
+	}
+	return nil
 }
 
 // mockTxCommitter implements TxCommitter
