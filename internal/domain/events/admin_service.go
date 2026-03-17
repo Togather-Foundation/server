@@ -196,6 +196,15 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("get review event %s (post-lock): %w", review.EventULID, err)
 	}
 
+	// Reject source events that were deleted (soft-deleted via any reason) between
+	// the time the review was created and now.  The most common causes are a
+	// concurrent admin absorbing the same event or a duplicate-merge that ran in
+	// parallel.  Returning ErrEventDeleted here surfaces the same sentinel that the
+	// target-deleted guard already uses, keeping error handling uniform in the handler.
+	if reviewEvent.LifecycleState == "deleted" {
+		return nil, fmt.Errorf("source event %s is deleted: %w", review.EventULID, ErrEventDeleted)
+	}
+
 	// Reject multi-occurrence and zero-occurrence sources.
 	//
 	// Multiple occurrences: only one occurrence can be absorbed (the one matching
@@ -471,6 +480,13 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	sourceEvent, err = txRepo.GetByULID(ctx, sourceEventULID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get source event %s (post-lock): %w", sourceEventULID, err)
+	}
+
+	// Reject source events that were deleted between review creation and now.
+	// This mirrors the guard in AddOccurrenceFromReview and uses the same sentinel
+	// so the handler can treat both paths uniformly.
+	if sourceEvent.LifecycleState == "deleted" {
+		return nil, nil, fmt.Errorf("source event %s is deleted: %w", sourceEventULID, ErrEventDeleted)
 	}
 
 	// Reject ambiguous multi-occurrence sources.  The near-dup ingest path always

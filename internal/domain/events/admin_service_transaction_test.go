@@ -572,6 +572,43 @@ func TestAddOccurrenceFromReview_RejectsDeletedTarget(t *testing.T) {
 	}
 }
 
+// TestAddOccurrenceFromReview_RejectsDeletedSource verifies that when the source
+// event (the review event being absorbed) has been soft-deleted by the time the
+// post-lock re-read is performed, AddOccurrenceFromReview returns ErrEventDeleted
+// and does not commit.  This guards against a TOCTOU race where a concurrent
+// admin action deletes or absorbs the source event between the review lock and
+// the occurrence creation.
+func TestAddOccurrenceFromReview_RejectsDeletedSource(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	targetULID := "01HTARGET00000000000000001"
+	reviewULID := "01HREVIEW000000000000000001"
+
+	repo := makeOccurrenceRepo("target-uuid", targetULID, reviewULID, startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-uuid", ULID: targetULID, Name: "Series", LifecycleState: "published"}, nil
+		}
+		// Source event is soft-deleted — simulates concurrent deletion.
+		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance",
+			LifecycleState: "deleted",
+			Occurrences:    []Occurrence{{StartTime: startTime}}}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrEventDeleted, got nil")
+	}
+	if !errors.Is(err, ErrEventDeleted) {
+		t.Errorf("expected ErrEventDeleted, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when source is deleted")
+	}
+}
+
 // TestAddOccurrenceFromReview_ConcurrentReviewLock verifies that when a second
 // concurrent request locks the same review row after it has already been processed,
 // it receives ErrConflict rather than a confusing downstream error.
@@ -1224,6 +1261,42 @@ func TestAddOccurrenceFromReviewNearDup_DeletedTarget(t *testing.T) {
 	}
 	if repo.commitCalled {
 		t.Error("commit must not be called when target is deleted")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_RejectsDeletedSource verifies that when the
+// source event (the newly-ingested event, DuplicateOfEventULID) has been
+// soft-deleted by the time the post-lock re-read is performed,
+// AddOccurrenceFromReviewNearDup returns ErrEventDeleted without committing.
+// This is the near-dup sibling of TestAddOccurrenceFromReview_RejectsDeletedSource
+// and guards against the same TOCTOU race pattern on the near-dup path.
+func TestAddOccurrenceFromReviewNearDup_RejectsDeletedSource(t *testing.T) {
+	ctx := context.Background()
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSOURCE00000000000000001"
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == targetULID {
+			return &Event{ID: "target-id", ULID: targetULID, LifecycleState: "published",
+				Name: "Series"}, nil
+		}
+		// Source event is soft-deleted — simulates concurrent deletion.
+		return &Event{ID: "source-id", ULID: sourceULID, Name: "New Instance",
+			LifecycleState: "deleted",
+			Occurrences:    []Occurrence{{StartTime: time.Now()}}}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrEventDeleted, got nil")
+	}
+	if !errors.Is(err, ErrEventDeleted) {
+		t.Errorf("expected ErrEventDeleted, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when source is deleted")
 	}
 }
 

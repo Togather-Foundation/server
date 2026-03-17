@@ -791,9 +791,9 @@ func (h *AdminReviewQueueHandler) addOccurrenceForwardPath(w http.ResponseWriter
 // the newly-ingested event (DuplicateOfEventULID) is absorbed into the
 // existing series (EventULID).
 func (h *AdminReviewQueueHandler) addOccurrenceNearDupPath(w http.ResponseWriter, r *http.Request, id int, review *events.ReviewQueueEntry, reviewedBy string) {
-	targetEventULID := review.EventULID // existing series is the target
+	targetEventULID := review.EventULID // existing series is the target (pre-read fallback)
 
-	updatedReview, _, err := h.AdminService.AddOccurrenceFromReviewNearDup(r.Context(), id, reviewedBy)
+	updatedReview, authoritativeTargetULID, err := h.AdminService.AddOccurrenceFromReviewNearDup(r.Context(), id, reviewedBy)
 	if err != nil {
 		if h.AuditLogger != nil {
 			h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "failure", map[string]string{
@@ -804,6 +804,13 @@ func (h *AdminReviewQueueHandler) addOccurrenceNearDupPath(w http.ResponseWriter
 		}
 		h.writeAddOccurrenceError(w, r, id, targetEventULID, err)
 		return
+	}
+
+	// The service returns the authoritative target ULID from inside the transaction.
+	// Prefer it over the pre-read value to ensure audit logs and response are consistent
+	// with the committed state.
+	if authoritativeTargetULID != nil {
+		targetEventULID = *authoritativeTargetULID
 	}
 
 	if h.AuditLogger != nil {
