@@ -226,6 +226,39 @@ SELECT r.id,
    AND r.status = 'pending'
  LIMIT 1;
 
+-- name: GetPendingReviewByEventUlidAndDuplicateUlid :one
+-- Get the pending review queue entry for an event by its ULID, narrowed to the
+-- specific companion whose duplicate_of_event_id points to the counterpart event.
+-- Used by the add-occurrence workflow to avoid picking an unrelated pending review
+-- when the same event has multiple pending review rows.
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at,
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
+ WHERE e.ulid = sqlc.arg('event_ulid')
+   AND r.status = 'pending'
+   AND dup.ulid = sqlc.arg('duplicate_ulid')
+ LIMIT 1;
+
 -- name: UpdateReviewWarnings :exec
 -- Update only the warnings JSON of a review queue entry (used for companion warning dismissal).
 UPDATE event_review_queue

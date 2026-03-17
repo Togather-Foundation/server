@@ -2164,6 +2164,56 @@ func (r GetPendingReviewByEventUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
 	return r.DuplicateOfEventUlid
 }
 
+// Implement reviewQueueRowFields for GetPendingReviewByEventUlidAndDuplicateUlidRow
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetID() int32            { return r.ID }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventID() pgtype.UUID { return r.EventID }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventUlid() string    { return r.EventUlid }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetOriginalPayload() []byte {
+	return r.OriginalPayload
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetNormalizedPayload() []byte {
+	return r.NormalizedPayload
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetWarnings() []byte      { return r.Warnings }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetSourceID() pgtype.Text { return r.SourceID }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetSourceExternalID() pgtype.Text {
+	return r.SourceExternalID
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetDedupHash() pgtype.Text {
+	return r.DedupHash
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventStartTime() pgtype.Timestamptz {
+	return r.EventStartTime
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventEndTime() pgtype.Timestamptz {
+	return r.EventEndTime
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetStatus() string { return r.Status }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewedBy() pgtype.Text {
+	return r.ReviewedBy
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewedAt() pgtype.Timestamptz {
+	return r.ReviewedAt
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewNotes() pgtype.Text {
+	return r.ReviewNotes
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetRejectionReason() pgtype.Text {
+	return r.RejectionReason
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetCreatedAt() pgtype.Timestamptz {
+	return r.CreatedAt
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetUpdatedAt() pgtype.Timestamptz {
+	return r.UpdatedAt
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetDuplicateOfEventID() pgtype.UUID {
+	return r.DuplicateOfEventID
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
+	return r.DuplicateOfEventUlid
+}
+
 // Note: ApproveReviewRow, RejectReviewRow, CreateReviewQueueEntryRow, and
 // UpdateReviewQueueEntryRow no longer exist as separate types — these queries
 // now use RETURNING * and return EventReviewQueue directly (which already
@@ -2359,7 +2409,29 @@ func (r *EventRepository) GetPendingReviewByEventUlid(ctx context.Context, event
 	return convertReviewQueueRowGeneric(row), nil
 }
 
-// UpdateReviewWarnings updates only the warnings JSON on a review queue entry.
+// GetPendingReviewByEventUlidAndDuplicateUlid returns the pending review queue entry
+// for the given event ULID that is specifically linked to duplicateULID via
+// duplicate_of_event_id.  Returns (nil, nil) if no matching pending review exists.
+// This narrows companion-review selection to the exact counterpart in a consolidation
+// pair, preventing the wrong unrelated pending review from being dismissed when an
+// event has multiple pending review rows.
+func (r *EventRepository) GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, GetPendingReviewByEventUlidAndDuplicateUlidParams{
+		EventUlid:     eventULID,
+		DuplicateUlid: duplicateULID,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get pending review by event ulid %s and duplicate ulid %s: %w", eventULID, duplicateULID, err)
+	}
+
+	return convertReviewQueueRowGeneric(row), nil
+}
+
 // Used for best-effort companion warning dismissal after a not-duplicate decision.
 func (r *EventRepository) UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error {
 	queries := Queries{db: r.queryer()}

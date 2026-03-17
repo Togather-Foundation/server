@@ -409,6 +409,96 @@ func (q *Queries) GetPendingReviewByEventUlid(ctx context.Context, eventUlid str
 	return i, err
 }
 
+const getPendingReviewByEventUlidAndDuplicateUlid = `-- name: GetPendingReviewByEventUlidAndDuplicateUlid :one
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at,
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
+ WHERE e.ulid = $1
+   AND r.status = 'pending'
+   AND dup.ulid = $2
+ LIMIT 1
+`
+
+type GetPendingReviewByEventUlidAndDuplicateUlidParams struct {
+	EventUlid     string `json:"event_ulid"`
+	DuplicateUlid string `json:"duplicate_ulid"`
+}
+
+type GetPendingReviewByEventUlidAndDuplicateUlidRow struct {
+	ID                   int32              `json:"id"`
+	EventID              pgtype.UUID        `json:"event_id"`
+	EventUlid            string             `json:"event_ulid"`
+	OriginalPayload      []byte             `json:"original_payload"`
+	NormalizedPayload    []byte             `json:"normalized_payload"`
+	Warnings             []byte             `json:"warnings"`
+	SourceID             pgtype.Text        `json:"source_id"`
+	SourceExternalID     pgtype.Text        `json:"source_external_id"`
+	DedupHash            pgtype.Text        `json:"dedup_hash"`
+	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime         pgtype.Timestamptz `json:"event_end_time"`
+	Status               string             `json:"status"`
+	ReviewedBy           pgtype.Text        `json:"reviewed_by"`
+	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
+	ReviewNotes          pgtype.Text        `json:"review_notes"`
+	RejectionReason      pgtype.Text        `json:"rejection_reason"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	DuplicateOfEventID   pgtype.UUID        `json:"duplicate_of_event_id"`
+	DuplicateOfEventUlid pgtype.Text        `json:"duplicate_of_event_ulid"`
+}
+
+// Get the pending review queue entry for an event by its ULID, narrowed to the
+// specific companion whose duplicate_of_event_id points to the counterpart event.
+// Used by the add-occurrence workflow to avoid picking an unrelated pending review
+// when the same event has multiple pending review rows.
+func (q *Queries) GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, arg GetPendingReviewByEventUlidAndDuplicateUlidParams) (GetPendingReviewByEventUlidAndDuplicateUlidRow, error) {
+	row := q.db.QueryRow(ctx, getPendingReviewByEventUlidAndDuplicateUlid, arg.EventUlid, arg.DuplicateUlid)
+	var i GetPendingReviewByEventUlidAndDuplicateUlidRow
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.EventUlid,
+		&i.OriginalPayload,
+		&i.NormalizedPayload,
+		&i.Warnings,
+		&i.SourceID,
+		&i.SourceExternalID,
+		&i.DedupHash,
+		&i.EventStartTime,
+		&i.EventEndTime,
+		&i.Status,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.ReviewNotes,
+		&i.RejectionReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DuplicateOfEventID,
+		&i.DuplicateOfEventUlid,
+	)
+	return i, err
+}
+
 const getReviewQueueEntry = `-- name: GetReviewQueueEntry :one
 SELECT r.id,
        r.event_id,

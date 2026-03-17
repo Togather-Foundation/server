@@ -758,6 +758,10 @@ func (m *MockRepository) GetPendingReviewByEventUlid(_ context.Context, _ string
 	return nil, nil
 }
 
+func (m *MockRepository) GetPendingReviewByEventUlidAndDuplicateUlid(_ context.Context, _ string, _ string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+
 func (m *MockRepository) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
 	return nil
 }

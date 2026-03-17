@@ -204,8 +204,11 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	// any event row.  This preserves the review-first lock ordering used by all admin
 	// methods (review → companion review → target event → source event) and prevents
 	// deadlocks.  The companion review is created by near-dup ingest on the target
-	// event and cross-links to the source event (review.EventULID).
-	companionReview, compErr := txRepo.GetPendingReviewByEventUlid(ctx, targetEventULID)
+	// event and cross-links to the source event (review.EventULID) via duplicate_of_event_id.
+	// We narrow the lookup to the exact counterpart using both the target ULID and the
+	// source (review) event ULID — preventing the wrong unrelated pending review from
+	// being dismissed when the target has multiple pending review rows.
+	companionReview, compErr := txRepo.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, targetEventULID, review.EventULID)
 	if compErr != nil && !errors.Is(compErr, ErrNotFound) {
 		return nil, fmt.Errorf("lookup companion review for target %s: %w", targetEventULID, compErr)
 	}
@@ -559,10 +562,15 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	// all other admin methods and eliminates the deadlock risk that arises when a
 	// companion review lock is acquired after an event lock (lock-order inversion).
 	//
+	// We narrow the lookup to the exact counterpart using both the source event ULID
+	// and the target (existing series) ULID via duplicate_of_event_id — preventing the
+	// wrong unrelated pending review from being dismissed when the source event has
+	// multiple pending review rows.
+	//
 	// A concurrent admin action on the companion may have committed between our
 	// GetPending read and the LockForUpdate; we re-read status under lock and skip
 	// the merge if it is no longer pending.
-	companionReview, err := txRepo.GetPendingReviewByEventUlid(ctx, sourceEventULID)
+	companionReview, err := txRepo.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, sourceEventULID, targetEventULID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, nil, fmt.Errorf("lookup companion review for source %s: %w", sourceEventULID, err)
 	}

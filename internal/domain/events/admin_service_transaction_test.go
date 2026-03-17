@@ -284,24 +284,25 @@ func TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure(t *testing.T) {
 
 // mockTransactionalRepo implements Repository with transaction support
 type mockTransactionalRepo struct {
-	getByULIDFunc                     func(ctx context.Context, ulid string) (*Event, error)
-	mergeEventsFunc                   func(ctx context.Context, duplicateULID, primaryULID string) error
-	createTombstoneFunc               func(ctx context.Context, params TombstoneCreateParams) error
-	getReviewQueueEntryFunc           func(ctx context.Context, id int) (*ReviewQueueEntry, error)
-	lockReviewQueueEntryForUpdateFunc func(ctx context.Context, id int) (*ReviewQueueEntry, error)
-	checkOccurrenceOverlapFunc        func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
-	createOccurrenceFunc              func(ctx context.Context, params OccurrenceCreateParams) error
-	softDeleteEventFunc               func(ctx context.Context, ulid, reason string) error
-	mergeReviewFunc                   func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
-	approveReviewFunc                 func(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
-	rejectReviewFunc                  func(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
-	updateEventFunc                   func(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
-	updateOccurrenceDatesFunc         func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
-	lockEventForUpdateFunc            func(ctx context.Context, eventID string) error
-	getPendingReviewByEventUlidFunc   func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
-	deleteOccurrencesByEventULIDFunc  func(ctx context.Context, eventULID string) error
-	commitCalled                      bool
-	rollbackCalled                    bool
+	getByULIDFunc                                   func(ctx context.Context, ulid string) (*Event, error)
+	mergeEventsFunc                                 func(ctx context.Context, duplicateULID, primaryULID string) error
+	createTombstoneFunc                             func(ctx context.Context, params TombstoneCreateParams) error
+	getReviewQueueEntryFunc                         func(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	lockReviewQueueEntryForUpdateFunc               func(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	checkOccurrenceOverlapFunc                      func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
+	createOccurrenceFunc                            func(ctx context.Context, params OccurrenceCreateParams) error
+	softDeleteEventFunc                             func(ctx context.Context, ulid, reason string) error
+	mergeReviewFunc                                 func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
+	approveReviewFunc                               func(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
+	rejectReviewFunc                                func(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
+	updateEventFunc                                 func(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
+	updateOccurrenceDatesFunc                       func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
+	lockEventForUpdateFunc                          func(ctx context.Context, eventID string) error
+	getPendingReviewByEventUlidFunc                 func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
+	getPendingReviewByEventUlidAndDuplicateUlidFunc func(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
+	deleteOccurrencesByEventULIDFunc                func(ctx context.Context, eventULID string) error
+	commitCalled                                    bool
+	rollbackCalled                                  bool
 }
 
 func (m *mockTransactionalRepo) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
@@ -483,6 +484,12 @@ func (m *mockTransactionalRepo) IsNotDuplicate(ctx context.Context, eventIDa str
 func (m *mockTransactionalRepo) GetPendingReviewByEventUlid(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
 	if m.getPendingReviewByEventUlidFunc != nil {
 		return m.getPendingReviewByEventUlidFunc(context.Background(), ulid)
+	}
+	return nil, nil
+}
+func (m *mockTransactionalRepo) GetPendingReviewByEventUlidAndDuplicateUlid(_ context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error) {
+	if m.getPendingReviewByEventUlidAndDuplicateUlidFunc != nil {
+		return m.getPendingReviewByEventUlidAndDuplicateUlidFunc(context.Background(), eventULID, duplicateULID)
 	}
 	return nil, nil
 }
@@ -1340,7 +1347,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T)
 	sourceULID := "01HSRC00000000000000000001"
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
 	companionID := 42
-	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, _ string) (*ReviewQueueEntry, error) {
 		if ulid == sourceULID {
 			return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
 		}
@@ -1381,7 +1388,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed(t *te
 	sourceULID := "01HSRC00000000000000000001"
 	companionID := 55
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
-	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, _ string) (*ReviewQueueEntry, error) {
 		if ulid == sourceULID {
 			return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
 		}
@@ -1438,7 +1445,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing
 	sourceULID := "01HSRC00000000000000000001"
 	companionID := 66
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
-	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, _ string) (*ReviewQueueEntry, error) {
 		if ulid == sourceULID {
 			return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
 		}
@@ -1484,14 +1491,14 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing
 }
 
 // TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError verifies that an
-// unexpected DB error from GetPendingReviewByEventUlid (anything other than ErrNotFound)
+// unexpected DB error from GetPendingReviewByEventUlidAndDuplicateUlid (anything other than ErrNotFound)
 // surfaces and prevents the transaction from committing.
 func TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError(t *testing.T) {
 	ctx := context.Background()
 	sourceULID := "01HSRC00000000000000000001"
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
 	dbErr := errors.New("connection reset by peer")
-	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, _ string) (*ReviewQueueEntry, error) {
 		if ulid == sourceULID {
 			return nil, dbErr
 		}
@@ -1602,7 +1609,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *test
 	var callOrder []string
 
 	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
-	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, _ string, _ string) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{ID: companionID, Status: "pending"}, nil
 	}
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
@@ -2464,7 +2471,6 @@ func TestAddOccurrenceFromReview_KeepsTargetPendingWhenOtherReviewsRemain(t *tes
 	startTime := time.Now()
 
 	var lifecycleUpdated bool
-	callCount := 0
 
 	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	// Target is in pending_review state.
@@ -2475,20 +2481,18 @@ func TestAddOccurrenceFromReview_KeepsTargetPendingWhenOtherReviewsRemain(t *tes
 		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance",
 			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 	}
-	// First call: no companion review on the target; second call (after action):
-	// a DIFFERENT pending review still exists on the target (e.g., from a second
-	// flagged occurrence that hasn't been resolved yet).
+	// First: companion lookup via new func (targetULID) — returns no companion.
+	// Then: lifecycle recheck via old func (targetULID) — returns another pending review.
 	otherReviewID := 77
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, _ string) (*ReviewQueueEntry, error) {
+		// No companion review on target.
+		return nil, ErrNotFound
+	}
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
 		if ulid != "01HTARGET00000000000000001" {
 			return nil, ErrNotFound
 		}
-		callCount++
-		if callCount == 1 {
-			// First call: no companion review on the target event.
-			return nil, ErrNotFound
-		}
-		// Second call (post-action recompute): another review still pending.
+		// Post-action recompute: another review still pending.
 		return &ReviewQueueEntry{
 			ID:        otherReviewID,
 			EventULID: "01HTARGET00000000000000001",
@@ -2542,15 +2546,12 @@ func TestAddOccurrenceFromReviewNearDup_KeepsTargetPendingWhenOtherReviewsRemain
 		return &Event{ID: "source-event-id", ULID: ulid, Name: "New Instance",
 			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 	}
-	// Near-dup path calls GetPendingReviewByEventUlid with sourceEventULID for the
-	// companion lookup, then with targetEventULID for the post-action recompute.
-	// Return no companion on source, but return another pending review on the
-	// first (and only) call with targetEventULID.
+	// Near-dup path companion lookup uses new func with sourceEventULID — no companion.
+	// Post-action recompute uses old func with targetEventULID — another review still pending.
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, _ string, _ string) (*ReviewQueueEntry, error) {
+		return nil, ErrNotFound
+	}
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
-		if ulid == "01HSRC00000000000000000001" {
-			// Companion check on source event: no companion.
-			return nil, ErrNotFound
-		}
 		// Post-action recompute on target: another review still pending.
 		return &ReviewQueueEntry{
 			ID:        otherReviewID,
@@ -2595,8 +2596,9 @@ func TestAddOccurrenceFromReview_DismissesCompanionReview(t *testing.T) {
 	companionID := 99
 
 	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
-	// Simulate a companion review entry on the target event
-	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	// Simulate a companion review entry on the target event, cross-linked to the
+	// source/review event (01HREV00000000000000000001).
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, _ string) (*ReviewQueueEntry, error) {
 		if ulid == "01HTARGET00000000000000001" {
 			return &ReviewQueueEntry{
 				ID:        companionID,
@@ -2760,5 +2762,187 @@ func TestAddOccurrenceFromReview_RollbackOnOccurrenceDeleteError(t *testing.T) {
 	}
 	if !repo.rollbackCalled {
 		t.Error("rollback must be called via defer on error")
+	}
+}
+
+// ── Regression: precise companion selection with multiple pending reviews ─────
+
+// TestAddOccurrenceFromReview_OnlyTrueCompanionDismissed verifies that when the
+// target event has multiple pending review rows, only the one that is the true
+// companion (cross-linked to the source event via duplicate_of_event_id) is
+// dismissed.  The old code used LIMIT 1 with no duplicate filter and could pick
+// the wrong review.
+func TestAddOccurrenceFromReview_OnlyTrueCompanionDismissed(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	targetULID := "01HTARGET00000000000000001"
+	reviewEventULID := "01HREV00000000000000000001"
+	unrelatedCompanionID := 200
+	trueCompanionID := 201
+
+	repo := makeOccurrenceRepo("target-uuid", targetULID, reviewEventULID, startTime)
+
+	// New func: returns the true companion only when called with the correct
+	// (targetULID, reviewEventULID) pair.
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, dupULID string) (*ReviewQueueEntry, error) {
+		if ulid == targetULID && dupULID == reviewEventULID {
+			return &ReviewQueueEntry{
+				ID:        trueCompanionID,
+				EventULID: targetULID,
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("near_duplicate_of_new_event"),
+			}, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	// Lock handles primary (id=1), true companion (trueCompanionID), and
+	// the unrelated companion (unrelatedCompanionID).
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		switch id {
+		case 1:
+			return &ReviewQueueEntry{
+				ID:             1,
+				EventID:        "review-event-id",
+				EventULID:      reviewEventULID,
+				Status:         "pending",
+				EventStartTime: startTime,
+				Warnings:       makeWarningsJSON("potential_duplicate"),
+			}, nil
+		case trueCompanionID:
+			return &ReviewQueueEntry{
+				ID:        trueCompanionID,
+				EventULID: targetULID,
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("near_duplicate_of_new_event"),
+			}, nil
+		case unrelatedCompanionID:
+			return &ReviewQueueEntry{
+				ID:        unrelatedCompanionID,
+				EventULID: targetULID,
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("potential_duplicate"),
+			}, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	mergedIDs := []int{}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergedIDs = append(mergedIDs, id)
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	// True companion must be dismissed.
+	foundTrue := false
+	for _, id := range mergedIDs {
+		if id == trueCompanionID {
+			foundTrue = true
+		}
+		if id == unrelatedCompanionID {
+			t.Errorf("unrelated companion (id=%d) must NOT be dismissed", unrelatedCompanionID)
+		}
+	}
+	if !foundTrue {
+		t.Errorf("true companion (id=%d) must be dismissed via MergeReview", trueCompanionID)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_OnlyTrueCompanionDismissed verifies that
+// when the source event has multiple pending review rows, only the one that is
+// the true companion (cross-linked to the target event via duplicate_of_event_id)
+// is dismissed on the near-dup path.
+func TestAddOccurrenceFromReviewNearDup_OnlyTrueCompanionDismissed(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	targetULID := "01HTARGET00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
+	unrelatedCompanionID := 300
+	trueCompanionID := 301
+
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, startTime)
+
+	// New func: returns the true companion only when called with the correct
+	// (sourceULID, targetULID) pair.
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, ulid string, dupULID string) (*ReviewQueueEntry, error) {
+		if ulid == sourceULID && dupULID == targetULID {
+			return &ReviewQueueEntry{
+				ID:        trueCompanionID,
+				EventULID: sourceULID,
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("near_duplicate_of_new_event"),
+			}, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	// Lock handles primary (id=1), true companion (trueCompanionID), and
+	// the unrelated companion (unrelatedCompanionID) on the source event.
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		switch id {
+		case 1:
+			return &ReviewQueueEntry{
+				ID:                   1,
+				Status:               "pending",
+				EventULID:            targetULID,
+				DuplicateOfEventULID: &sourceULID,
+				Warnings:             []byte(`[{"code":"near_duplicate_of_new_event","message":"near_duplicate_of_new_event"}]`),
+			}, nil
+		case trueCompanionID:
+			return &ReviewQueueEntry{
+				ID:        trueCompanionID,
+				EventULID: sourceULID,
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("near_duplicate_of_new_event"),
+			}, nil
+		case unrelatedCompanionID:
+			return &ReviewQueueEntry{
+				ID:        unrelatedCompanionID,
+				EventULID: sourceULID,
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("potential_duplicate"),
+			}, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	mergedIDs := []int{}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergedIDs = append(mergedIDs, id)
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	// True companion must be dismissed.
+	foundTrue := false
+	for _, id := range mergedIDs {
+		if id == trueCompanionID {
+			foundTrue = true
+		}
+		if id == unrelatedCompanionID {
+			t.Errorf("unrelated companion (id=%d) must NOT be dismissed", unrelatedCompanionID)
+		}
+	}
+	if !foundTrue {
+		t.Errorf("true companion (id=%d) must be dismissed via MergeReview", trueCompanionID)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
 	}
 }

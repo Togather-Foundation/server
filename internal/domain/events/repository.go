@@ -235,6 +235,13 @@ type Repository interface {
 	// that only the first request proceeds and the second sees the updated status.
 	LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
+	// GetPendingReviewByEventUlidAndDuplicateUlid looks up the pending review for
+	// eventULID that is specifically linked to duplicateULID via duplicate_of_event_id.
+	// This is the precise companion-review lookup needed during add-occurrence
+	// consolidation: when an event has multiple pending reviews, only the one
+	// corresponding to the counterpart of the current consolidation pair is returned.
+	// Returns nil (not ErrNotFound) if no matching pending review exists.
+	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
 	UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error
 	DismissCompanionWarningMatch(ctx context.Context, companionULID string, eventULID string) error
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)

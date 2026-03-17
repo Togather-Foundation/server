@@ -304,6 +304,14 @@ func (m *MockRepository) GetPendingReviewByEventUlid(ctx context.Context, eventU
 	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
 }
 
+func (m *MockRepository) GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*events.ReviewQueueEntry, error) {
+	args := m.Called(ctx, eventULID, duplicateULID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
+}
+
 func (m *MockRepository) UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error {
 	args := m.Called(ctx, id, warnings)
 	return args.Error(0)
@@ -1654,7 +1662,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, "01HREV00000000000000000001").Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				m.On("GetByULID", mock.Anything, "01HREV00000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Series Event",
@@ -1728,7 +1736,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, "01HREV00000000000000000001").Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				// Forward path: review event is fetched before the overlap check so that
@@ -1751,7 +1759,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, "01HREV00000000000000000001").Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 				deleted := testTargetEvent()
 				deleted.LifecycleState = "deleted"
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(deleted, nil)
@@ -1782,7 +1790,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, "01HREV00000000000000000001").Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 				draftTarget := testTargetEvent()
 				draftTarget.LifecycleState = "draft"
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(draftTarget, nil)
@@ -1810,7 +1818,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 			},
@@ -1911,7 +1919,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("SoftDeleteEvent", mock.Anything, sourceEventULID, "absorbed_as_occurrence").Return(nil)
 				m.On("DeleteOccurrencesByEventULID", mock.Anything, sourceEventULID).Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, sourceEventULID, targetEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
 				m.On("LockEventForUpdate", mock.Anything, "source-id").Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(mergedEntry(), nil)
 			},
@@ -1930,7 +1938,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry(), nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry(), nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, sourceEventULID, targetEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(
 					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 				m.On("GetByULID", mock.Anything, sourceEventULID).Return(
@@ -1949,7 +1957,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry(), nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry(), nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, sourceEventULID, targetEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(
 					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
@@ -1973,7 +1981,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(fwdEntry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(fwdEntry, nil)
-				m.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+				m.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, "01HREV00000000000000000001").Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(
 					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
@@ -1986,11 +1994,10 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 				m.On("SoftDeleteEvent", mock.Anything, "01HREV00000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("DeleteOccurrencesByEventULID", mock.Anything, "01HREV00000000000000000001").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
-				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(
-					&events.ReviewQueueEntry{ID: 1, EventID: "review-event-id", EventULID: "01HREV00000000000000000001",
-						OriginalPayload: []byte(`{"name":"Series Event"}`), NormalizedPayload: []byte(`{"name":"Series Event"}`),
-						Warnings: []byte(`[]`), Status: "merged", DuplicateOfEventULID: &targetEventULID,
-						EventStartTime: now, CreatedAt: now, UpdatedAt: now}, nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(&events.ReviewQueueEntry{ID: 1, EventID: "review-event-id", EventULID: "01HREV00000000000000000001",
+					OriginalPayload: []byte(`{"name":"Series Event"}`), NormalizedPayload: []byte(`{"name":"Series Event"}`),
+					Warnings: []byte(`[]`), Status: "merged", DuplicateOfEventULID: &targetEventULID,
+					EventStartTime: now, CreatedAt: now, UpdatedAt: now}, nil)
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, body []byte) {
@@ -2157,7 +2164,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(fwdEntry, nil)
 	setupTxMock(mockRepo)
 	mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(fwdEntry, nil)
-	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, targetEventULID).Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, targetEventULID, "01HREV00000000000000000001").Return((*events.ReviewQueueEntry)(nil), events.ErrNotFound)
 	mockRepo.On("GetByULID", mock.Anything, targetEventULID).Return(
 		&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 	mockRepo.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
@@ -2219,7 +2226,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath(t *testing.T) {
 	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(nearDupEntry, nil)
 	setupTxMock(mockRepo)
 	mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(nearDupEntry, nil)
-	mockRepo.On("GetPendingReviewByEventUlid", mock.Anything, sourceEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, sourceEventULID, targetEventULID).Return((*events.ReviewQueueEntry)(nil), nil)
 	mockRepo.On("GetByULID", mock.Anything, targetEventULID).Return(
 		&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 	mockRepo.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)

@@ -151,6 +151,11 @@ type Querier interface {
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	// Get the pending review queue entry for an event by its ULID, if any.
 	GetPendingReviewByEventUlid(ctx context.Context, eventUlid string) (GetPendingReviewByEventUlidRow, error)
+	// Get the pending review queue entry for an event by its ULID, narrowed to the
+	// specific companion whose duplicate_of_event_id points to the counterpart event.
+	// Used by the add-occurrence workflow to avoid picking an unrelated pending review
+	// when the same event has multiple pending review rows.
+	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, arg GetPendingReviewByEventUlidAndDuplicateUlidParams) (GetPendingReviewByEventUlidAndDuplicateUlidRow, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
 	// Check if a url_norm was submitted within the given interval (for dedup).

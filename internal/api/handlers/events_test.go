@@ -197,6 +197,9 @@ func (s stubEventsRepo) IsNotDuplicate(_ context.Context, _ string, _ string) (b
 func (s stubEventsRepo) GetPendingReviewByEventUlid(_ context.Context, _ string) (*events.ReviewQueueEntry, error) {
 	return nil, nil
 }
+func (s stubEventsRepo) GetPendingReviewByEventUlidAndDuplicateUlid(_ context.Context, _ string, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
 func (s stubEventsRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
 	return nil
 }
