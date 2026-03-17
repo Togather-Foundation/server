@@ -227,6 +227,7 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="occurrence-index">
+                    <input type="hidden" id="occurrence-venue-id">
                     <div class="mb-3">
                         <label class="form-label required">Start Date & Time</label>
                         <input type="datetime-local" class="form-control" id="occurrence-start-time" required>
@@ -243,9 +244,20 @@
                         <label class="form-label">Door Time</label>
                         <input type="datetime-local" class="form-control" id="occurrence-door-time">
                     </div>
-                    <div class="mb-3">
+                    <!-- Venue override: shown when this occurrence has a physical venue different from the event default -->
+                    <div class="mb-3" id="occurrence-venue-section" style="display: none;">
+                        <label class="form-label">Physical Venue Override</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="occurrence-venue-display" readonly placeholder="(none)">
+                            <button type="button" class="btn btn-outline-danger" data-action="clear-occurrence-venue" title="Remove venue override">Clear</button>
+                        </div>
+                        <small class="form-hint">This occurrence uses a different physical venue than the event default. Clear to inherit the event venue.</small>
+                    </div>
+                    <!-- Virtual URL: only applicable when this occurrence has no physical venue override -->
+                    <div class="mb-3" id="occurrence-virtual-section">
                         <label class="form-label">Virtual URL</label>
                         <input type="url" class="form-control" id="occurrence-virtual-url">
+                        <small class="form-hint">Leave blank unless this occurrence streams online. Cannot be set alongside a physical venue override.</small>
                     </div>
                 </div>
                 <div class="modal-footer">

@@ -70,6 +70,9 @@
                 case 'remove-occurrence':
                     window.removeOccurrence(parseInt(target.dataset.index, 10));
                     break;
+                case 'clear-occurrence-venue':
+                    clearOccurrenceVenue();
+                    break;
             }
         });
     }
@@ -308,6 +311,7 @@
                             ${occ.timezone ? `<div class="text-muted small">Timezone: ${escapeHtml(occ.timezone)}</div>` : ''}
                             ${occ.door_time ? `<div class="text-muted small">Doors: ${formatDateTime(occ.door_time)}</div>` : ''}
                             ${occ.virtual_url ? `<div class="text-muted small">Virtual: ${escapeHtml(occ.virtual_url)}</div>` : ''}
+                            ${occ.venue_id ? `<div class="text-muted small"><span class="badge bg-blue-lt">Venue override</span> ${escapeHtml(venueUlidFromId(occ.venue_id))}</div>` : ''}
                         </div>
                         <div class="col-auto">
                             <div class="btn-list">
@@ -400,12 +404,14 @@
     window.addOccurrence = function() {
         // Clear modal fields
         document.getElementById('occurrence-index').value = '';
+        document.getElementById('occurrence-venue-id').value = '';
         document.getElementById('occurrence-start-time').value = '';
         document.getElementById('occurrence-end-time').value = '';
         document.getElementById('occurrence-timezone').value = 'America/Toronto';
         document.getElementById('occurrence-door-time').value = '';
         document.getElementById('occurrence-virtual-url').value = '';
         document.getElementById('occurrence-modal-title').textContent = 'Add Occurrence';
+        setOccurrenceVenueDisplay(null);
 
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('occurrence-modal'));
@@ -418,12 +424,14 @@
 
         // Populate modal with occurrence data
         document.getElementById('occurrence-index').value = index;
+        document.getElementById('occurrence-venue-id').value = occ.venue_id || '';
         document.getElementById('occurrence-start-time').value = formatForDatetimeLocal(occ.start_time);
         document.getElementById('occurrence-end-time').value = occ.end_time ? formatForDatetimeLocal(occ.end_time) : '';
         document.getElementById('occurrence-timezone').value = occ.timezone || 'America/Toronto';
         document.getElementById('occurrence-door-time').value = occ.door_time ? formatForDatetimeLocal(occ.door_time) : '';
         document.getElementById('occurrence-virtual-url').value = occ.virtual_url || '';
         document.getElementById('occurrence-modal-title').textContent = 'Edit Occurrence';
+        setOccurrenceVenueDisplay(occ.venue_id || null);
 
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('occurrence-modal'));
@@ -439,20 +447,31 @@
             return;
         }
 
+        const venueId = document.getElementById('occurrence-venue-id').value || null;
+        const virtualUrl = document.getElementById('occurrence-virtual-url').value || null;
+
+        // Enforce mutual exclusivity: a physical venue override and a virtual URL cannot coexist.
+        if (venueId && virtualUrl) {
+            showToast('An occurrence cannot have both a physical venue override and a virtual URL. Clear one before saving.', 'error');
+            return;
+        }
+
         const occurrence = {
             start_time: startTime,
             end_time: document.getElementById('occurrence-end-time').value || null,
             timezone: document.getElementById('occurrence-timezone').value || 'America/Toronto',
             door_time: document.getElementById('occurrence-door-time').value || null,
-            virtual_url: document.getElementById('occurrence-virtual-url').value || null
+            virtual_url: virtualUrl,
+            venue_id: venueId
         };
 
         if (indexValue === '') {
             // Add new occurrence
             occurrences.push(occurrence);
         } else {
-            // Update existing occurrence
+            // Update existing occurrence — preserve the id field that identifies the DB row.
             const index = parseInt(indexValue, 10);
+            occurrence.id = occurrences[index].id || null;
             occurrences[index] = occurrence;
         }
 
@@ -472,6 +491,37 @@
             showToast('Occurrence removed', 'success');
         }
     };
+
+    // setOccurrenceVenueDisplay controls the venue-override section visibility in the modal.
+    // venueId is the raw URI string (e.g. "https://.../places/01HXX...") or null.
+    function setOccurrenceVenueDisplay(venueId) {
+        const section = document.getElementById('occurrence-venue-section');
+        const display = document.getElementById('occurrence-venue-display');
+        const virtualSection = document.getElementById('occurrence-virtual-section');
+        if (venueId) {
+            display.value = venueUlidFromId(venueId);
+            section.style.display = 'block';
+            // Hide virtual URL when a physical venue override is active to prevent hybrids.
+            virtualSection.style.display = 'none';
+        } else {
+            display.value = '';
+            section.style.display = 'none';
+            virtualSection.style.display = 'block';
+        }
+    }
+
+    // clearOccurrenceVenue removes the venue override from the modal (user action).
+    function clearOccurrenceVenue() {
+        document.getElementById('occurrence-venue-id').value = '';
+        setOccurrenceVenueDisplay(null);
+    }
+
+    // venueUlidFromId extracts the trailing ULID from a venue URI, or returns the raw value.
+    function venueUlidFromId(venueId) {
+        if (!venueId) return '';
+        const m = venueId.match(/\/([A-Z0-9]{26})$/i);
+        return m ? m[1] : venueId;
+    }
 
     // Utility Functions
     function showLoading(loading) {
