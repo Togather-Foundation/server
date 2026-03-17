@@ -2453,6 +2453,133 @@ func TestAddOccurrenceFromReviewNearDup_RestoresTargetLifecycleFromPendingReview
 	}
 }
 
+// TestAddOccurrenceFromReview_KeepsTargetPendingWhenOtherReviewsRemain verifies
+// that the forward path does NOT restore the target event's lifecycle to
+// "published" when other pending review rows still exist after the companion is
+// dismissed.  This prevents a target with unresolved review issues (e.g. a
+// second flagged occurrence on the same series) from becoming publicly visible
+// before all issues are resolved.
+func TestAddOccurrenceFromReview_KeepsTargetPendingWhenOtherReviewsRemain(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var lifecycleUpdated bool
+	callCount := 0
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	// Target is in pending_review state.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "pending_review"}, nil
+		}
+		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance",
+			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
+	}
+	// First call: no companion review on the target; second call (after action):
+	// a DIFFERENT pending review still exists on the target (e.g., from a second
+	// flagged occurrence that hasn't been resolved yet).
+	otherReviewID := 77
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid != "01HTARGET00000000000000001" {
+			return nil, ErrNotFound
+		}
+		callCount++
+		if callCount == 1 {
+			// First call: no companion review on the target event.
+			return nil, ErrNotFound
+		}
+		// Second call (post-action recompute): another review still pending.
+		return &ReviewQueueEntry{
+			ID:        otherReviewID,
+			EventULID: "01HTARGET00000000000000001",
+			Status:    "pending",
+			Warnings:  makeWarningsJSON("potential_duplicate"),
+		}, nil
+	}
+	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
+		if params.LifecycleState != nil {
+			lifecycleUpdated = true
+		}
+		return &Event{ULID: "01HTARGET00000000000000001"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if lifecycleUpdated {
+		t.Error("UpdateEvent must NOT be called to restore lifecycle when other pending reviews remain")
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_KeepsTargetPendingWhenOtherReviewsRemain
+// verifies that the near-dup path does NOT restore the target event's lifecycle
+// to "published" when other pending review rows still exist after the near-dup
+// review is dismissed.
+//
+// In the near-dup path the companion lookup uses sourceEventULID (not
+// targetEventULID), so the post-action recompute call is the FIRST call with
+// targetEventULID.  The mock returns a pending review on that first call to
+// simulate another unresolved issue on the target.
+func TestAddOccurrenceFromReviewNearDup_KeepsTargetPendingWhenOtherReviewsRemain(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var lifecycleUpdated bool
+	otherReviewID := 88
+
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", startTime)
+	// Target is in pending_review state.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{ID: "target-id", ULID: ulid, Name: "Series", LifecycleState: "pending_review"}, nil
+		}
+		return &Event{ID: "source-event-id", ULID: ulid, Name: "New Instance",
+			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
+	}
+	// Near-dup path calls GetPendingReviewByEventUlid with sourceEventULID for the
+	// companion lookup, then with targetEventULID for the post-action recompute.
+	// Return no companion on source, but return another pending review on the
+	// first (and only) call with targetEventULID.
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == "01HSRC00000000000000000001" {
+			// Companion check on source event: no companion.
+			return nil, ErrNotFound
+		}
+		// Post-action recompute on target: another review still pending.
+		return &ReviewQueueEntry{
+			ID:        otherReviewID,
+			EventULID: "01HTARGET00000000000000001",
+			Status:    "pending",
+			Warnings:  makeWarningsJSON("potential_duplicate"),
+		}, nil
+	}
+	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
+		if params.LifecycleState != nil {
+			lifecycleUpdated = true
+		}
+		return &Event{ULID: "01HTARGET00000000000000001"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if lifecycleUpdated {
+		t.Error("UpdateEvent must NOT be called to restore lifecycle when other pending reviews remain")
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
 // ── Fix: forward path companion review dismissal ─────────────────────────────
 
 // TestAddOccurrenceFromReview_DismissesCompanionReview verifies that the forward

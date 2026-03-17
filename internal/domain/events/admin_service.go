@@ -451,16 +451,27 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		}
 	}
 
-	// Restore the target event's lifecycle state if it was demoted to pending_review
-	// during near-dup ingest.  The add-occurrence action resolves the review, so the
-	// target should return to published visibility.
+	// Recompute whether the target event should leave review.  The add-occurrence
+	// action resolved the primary review (and its companion, if any), but the target
+	// may have OTHER unresolved pending review rows (e.g., a second flagged
+	// occurrence on the same series).  Only restore the lifecycle to "published" if
+	// no further pending review rows remain.
 	if target.LifecycleState == "pending_review" {
-		publishedState := "published"
-		if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
-			LifecycleState: &publishedState,
-		}); err != nil {
-			return nil, fmt.Errorf("restore target lifecycle to published: %w", err)
+		remaining, remErr := txRepo.GetPendingReviewByEventUlid(ctx, targetEventULID)
+		if remErr != nil && !errors.Is(remErr, ErrNotFound) {
+			return nil, fmt.Errorf("recheck pending review for target %s: %w", targetEventULID, remErr)
 		}
+		if remaining == nil {
+			publishedState := "published"
+			if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
+				LifecycleState: &publishedState,
+			}); err != nil {
+				return nil, fmt.Errorf("restore target lifecycle to published: %w", err)
+			}
+		}
+		// If remaining != nil, other unresolved issues exist — leave lifecycle
+		// as pending_review so the event stays invisible to the public API until
+		// all review rows are resolved.
 	}
 
 	if err := txCommitter.Commit(ctx); err != nil {
@@ -772,16 +783,27 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("update near-dup review status: %w", err)
 	}
 
-	// Step 11: Restore the target event's lifecycle state if it was demoted to
-	// pending_review during near-dup ingest.  The add-occurrence action resolves
-	// the review, so the target should return to published visibility.
+	// Step 11: Recompute whether the target event should leave review.  The
+	// add-occurrence action resolved the near-dup review (and its companion, if
+	// any), but the target may have OTHER unresolved pending review rows (e.g., a
+	// second flagged occurrence on the same series).  Only restore the lifecycle to
+	// "published" if no further pending review rows remain.
 	if target.LifecycleState == "pending_review" {
-		publishedState := "published"
-		if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
-			LifecycleState: &publishedState,
-		}); err != nil {
-			return nil, nil, fmt.Errorf("restore target lifecycle to published: %w", err)
+		remaining, remErr := txRepo.GetPendingReviewByEventUlid(ctx, targetEventULID)
+		if remErr != nil && !errors.Is(remErr, ErrNotFound) {
+			return nil, nil, fmt.Errorf("recheck pending review for target %s: %w", targetEventULID, remErr)
 		}
+		if remaining == nil {
+			publishedState := "published"
+			if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
+				LifecycleState: &publishedState,
+			}); err != nil {
+				return nil, nil, fmt.Errorf("restore target lifecycle to published: %w", err)
+			}
+		}
+		// If remaining != nil, other unresolved issues exist — leave lifecycle
+		// as pending_review so the event stays invisible to the public API until
+		// all review rows are resolved.
 	}
 
 	if err := txCommitter.Commit(ctx); err != nil {
