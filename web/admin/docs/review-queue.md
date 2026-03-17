@@ -119,7 +119,7 @@ Events requiring review are stored with:
 All endpoints in `internal/api/handlers/admin_review_queue.go` (694 lines).
 
 **GET `/api/v1/admin/review-queue`** - List reviews
-- Query params: `status` (pending/approved/rejected), `limit` (1-100, default 50), `cursor`
+- Query params: `status` (pending/approved/rejected/merged, default: pending), `limit` (1-100, default 50), `cursor`
 - Returns: Paginated list of review entries with warnings and metadata
 - Example: [admin_review_queue.go:75](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:75)
 
@@ -166,9 +166,13 @@ reviewQueue: {
     reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
     fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, { method: 'POST', body: JSON.stringify(data) }),
     merge: (id, primaryEventId) => API.request(`/api/v1/admin/review-queue/${id}/merge`, { method: 'POST', body: JSON.stringify({ primary_event_ulid: primaryEventId }) }),
-    addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, { method: 'POST', body: JSON.stringify({ target_event_ulid: targetEventUlid }) }),
-    // Near-dup path: no target_event_ulid required — backend derives target from review entry.
-    addOccurrenceNearDup: (id) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, { method: 'POST', body: JSON.stringify({}) })
+    // Forward path (potential_duplicate): supply target_event_ulid; backend absorbs review event into target series.
+    // Near-dup path (near_duplicate_of_new_event): omit target_event_ulid (pass empty body {}); backend derives
+    //   target from the review entry's own event ULID.
+    addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, {
+        method: 'POST',
+        body: JSON.stringify(targetEventUlid ? { target_event_ulid: targetEventUlid } : {})
+    })
 }
 ```
 

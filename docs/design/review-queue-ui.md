@@ -182,7 +182,7 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
 3. Mark the review as merged — all atomically.
 
-**Button visibility**: shown alongside "Merge Duplicate" for both `potential_duplicate` and `near_duplicate_of_new_event` warnings. Not shown for place/org duplicate warnings. **Hidden** (or disabled with an explanatory tooltip) when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`).
+**Button visibility**: shown alongside "Merge Duplicate" for `potential_duplicate` and `near_duplicate_of_new_event` warnings when neither ambiguity condition applies. Not shown for place/org duplicate warnings. **Hidden** when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`).
 
 **Near-dup path**: for `near_duplicate_of_new_event` entries the button uses inverted semantics — the existing series (`review.EventULID`) is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is absorbed. No `target_event_ulid` is sent in the request body; the backend derives the target directly from the review entry.
 
@@ -197,12 +197,13 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 
 **Data flow (forward path)**:
 - Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`
-- JS: `addOccurrenceDirect(id, targetUlid)` → `API.reviewQueue.addOccurrence(id, targetUlid)`
+- JS: `addOccurrenceDirect(id, targetUlid, false)` → `API.reviewQueue.addOccurrence(id, targetUlid)`
 - Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with body `{ target_event_ulid: "..." }`
 
 **Data flow (near-dup path)**:
-- Button: `data-action="add-occurrence-near-dup" data-id="{id}"`
-- JS: `addOccurrenceNearDup(id)` → `API.reviewQueue.addOccurrenceNearDup(id)`
+- Button: `data-action="add-occurrence" data-id="{id}" data-near-dup-path="true"`
+- JS: reads `dataset.nearDupPath === 'true'` → calls `addOccurrenceDirect(id, null, true)` → `API.reviewQueue.addOccurrence(id, null)`
+- `addOccurrence(id, null)` sends an empty body `{}`; the backend derives the target from the review entry
 - Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with empty body `{}`
 
 ## Testing

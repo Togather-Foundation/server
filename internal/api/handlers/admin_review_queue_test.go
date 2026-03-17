@@ -592,6 +592,36 @@ func TestMergeReview_SentinelErrors(t *testing.T) {
 	}
 }
 
+// TestMergeReview_EntryNotFound verifies that a missing review ID on the initial fetch
+// returns 404 (not 500). The repo returns events.ErrNotFound for missing rows.
+func TestMergeReview_EntryNotFound(t *testing.T) {
+	primaryULID := "01HPRIMARY0000000000000001"
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 999).Return(
+		(*events.ReviewQueueEntry)(nil),
+		events.ErrNotFound,
+	)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	body, _ := json.Marshal(map[string]string{"primary_event_ulid": primaryULID})
+	req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/999/merge", bytes.NewReader(body))
+	req.SetPathValue("id", "999")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.MergeReview(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	mockRepo.AssertExpectations(t)
+}
+
 // TestListReviewQueue tests listing review queue entries
 func TestListReviewQueue(t *testing.T) {
 	tests := []struct {
@@ -813,7 +843,7 @@ func TestGetReviewQueueEntry(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
-					pgx.ErrNoRows,
+					events.ErrNotFound,
 				)
 			},
 			expectedStatus: http.StatusNotFound,
@@ -924,7 +954,7 @@ func TestApproveReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
-					pgx.ErrNoRows,
+					events.ErrNotFound,
 				)
 			},
 			expectedStatus: http.StatusNotFound,
@@ -1087,7 +1117,7 @@ func TestRejectReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
-					pgx.ErrNoRows,
+					events.ErrNotFound,
 				)
 			},
 			expectedStatus: http.StatusNotFound,
@@ -1308,7 +1338,7 @@ func TestFixReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				m.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 					(*events.ReviewQueueEntry)(nil),
-					pgx.ErrNoRows,
+					events.ErrNotFound,
 				)
 			},
 			expectedStatus: http.StatusNotFound,
