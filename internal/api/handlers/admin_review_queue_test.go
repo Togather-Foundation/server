@@ -322,6 +322,11 @@ func (m *MockRepository) DismissCompanionWarningMatch(ctx context.Context, compa
 	return args.Error(0)
 }
 
+func (m *MockRepository) DismissWarningMatchByReviewID(ctx context.Context, id int, eventULID string) error {
+	args := m.Called(ctx, id, eventULID)
+	return args.Error(0)
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	args := m.Called(ctx, eventID, startTime, endTime)
 	return args.Bool(0), args.Error(1)
@@ -1515,93 +1520,121 @@ func TestFixReview_InvalidJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Tests for dismissCompanionDuplicateWarning (srv-ihnz7)
+// Tests for dismissCompanionDuplicateWarning (srv-ihnz7 / srv-cl5a5)
 // ---------------------------------------------------------------------------
 
-// TestDismissCompanionDuplicateWarning_MatchFound verifies that the handler
-// calls DismissCompanionWarningMatch with the correct ULIDs.
-func TestDismissCompanionDuplicateWarning_MatchFound(t *testing.T) {
-	mockRepo := new(MockRepository)
+// newDismissHandler builds a minimal AdminReviewQueueHandler for dismissal tests.
+func newDismissHandler(mockRepo *MockRepository) *AdminReviewQueueHandler {
 	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
-	handler := &AdminReviewQueueHandler{
+	return &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
 		AuditLogger:  audit.NewLogger(),
 		Env:          "test",
 	}
+}
+
+// TestDismissCompanionDuplicateWarning_MatchFound verifies that when the companion
+// review is found, DismissWarningMatchByReviewID is called with its ID.
+func TestDismissCompanionDuplicateWarning_MatchFound(t *testing.T) {
+	mockRepo := new(MockRepository)
+	handler := newDismissHandler(mockRepo)
 
 	companionULID := "01COMPANION000000000000001"
 	eventULID := "01EVENTTARGET000000000001"
+	companionReviewID := 42
 
-	mockRepo.On("DismissCompanionWarningMatch", mock.Anything, companionULID, eventULID).Return(nil)
-
-	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
-
-	mockRepo.AssertExpectations(t)
-}
-
-// TestDismissCompanionDuplicateWarning_MultiMatch verifies that DismissCompanionWarningMatch
-// is called correctly when there are multiple matches (the atomic SQL handles the filtering).
-func TestDismissCompanionDuplicateWarning_MultiMatch(t *testing.T) {
-	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
-	handler := &AdminReviewQueueHandler{
-		Repository:   mockRepo,
-		AdminService: adminService,
-		AuditLogger:  audit.NewLogger(),
-		Env:          "test",
-	}
-
-	companionULID := "01COMPANION000000000000002"
-	eventULID := "01EVENTTARGET000000000002"
-
-	mockRepo.On("DismissCompanionWarningMatch", mock.Anything, companionULID, eventULID).Return(nil)
+	companionReview := &events.ReviewQueueEntry{ID: companionReviewID, EventULID: companionULID}
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, companionULID, eventULID).Return(companionReview, nil)
+	mockRepo.On("DismissWarningMatchByReviewID", mock.Anything, companionReviewID, eventULID).Return(nil)
 
 	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
 
 	mockRepo.AssertExpectations(t)
 }
 
-// TestDismissCompanionDuplicateWarning_NotFound verifies that even when the companion
-// has no pending review, DismissCompanionWarningMatch is still called (the SQL is a no-op).
+// TestDismissCompanionDuplicateWarning_NotFound verifies that when no companion
+// review is found, neither DismissWarningMatchByReviewID nor DismissCompanionWarningMatch
+// is called.
 func TestDismissCompanionDuplicateWarning_NotFound(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
-	handler := &AdminReviewQueueHandler{
-		Repository:   mockRepo,
-		AdminService: adminService,
-		AuditLogger:  audit.NewLogger(),
-		Env:          "test",
-	}
+	handler := newDismissHandler(mockRepo)
 
 	companionULID := "01COMPANION000000000000003"
 	eventULID := "01EVENTTARGET000000000003"
 
-	mockRepo.On("DismissCompanionWarningMatch", mock.Anything, companionULID, eventULID).Return(nil)
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, companionULID, eventULID).Return((*events.ReviewQueueEntry)(nil), nil)
+	// DismissWarningMatchByReviewID must NOT be called — AssertExpectations enforces this.
 
 	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
 
 	mockRepo.AssertExpectations(t)
 }
 
-// TestDismissCompanionDuplicateWarning_FetchError verifies that a DB error
-// is logged but does not panic.
-func TestDismissCompanionDuplicateWarning_FetchError(t *testing.T) {
+// TestDismissCompanionDuplicateWarning_LookupError verifies that a lookup DB error
+// is logged but does not panic; the dismiss call must not be made.
+func TestDismissCompanionDuplicateWarning_LookupError(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
-	handler := &AdminReviewQueueHandler{
-		Repository:   mockRepo,
-		AdminService: adminService,
-		AuditLogger:  audit.NewLogger(),
-		Env:          "test",
-	}
+	handler := newDismissHandler(mockRepo)
 
 	companionULID := "01COMPANION000000000000004"
 	eventULID := "01EVENTTARGET000000000004"
 
-	mockRepo.On("DismissCompanionWarningMatch", mock.Anything, companionULID, eventULID).Return(errors.New("db error"))
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, companionULID, eventULID).Return((*events.ReviewQueueEntry)(nil), errors.New("db error"))
+	// DismissWarningMatchByReviewID must NOT be called — AssertExpectations enforces this.
 
 	// Should not panic
+	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestDismissCompanionDuplicateWarning_DismissError verifies that a dismiss DB error
+// is logged but does not panic.
+func TestDismissCompanionDuplicateWarning_DismissError(t *testing.T) {
+	mockRepo := new(MockRepository)
+	handler := newDismissHandler(mockRepo)
+
+	companionULID := "01COMPANION000000000000005"
+	eventULID := "01EVENTTARGET000000000005"
+	companionReviewID := 99
+
+	companionReview := &events.ReviewQueueEntry{ID: companionReviewID, EventULID: companionULID}
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, companionULID, eventULID).Return(companionReview, nil)
+	mockRepo.On("DismissWarningMatchByReviewID", mock.Anything, companionReviewID, eventULID).Return(errors.New("dismiss error"))
+
+	// Should not panic
+	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestDismissCompanionDuplicateWarning_MultiplePendingReviews verifies that when the
+// companion event has multiple pending review rows, only the one that is cross-linked
+// to the current event via duplicate_of_event_id is updated; unrelated pending reviews
+// are not touched.
+//
+// Regression for: generic DismissCompanionWarningMatch could update the wrong row when
+// companion has more than one pending entry (LIMIT 1 or event_id-wide WHERE picked the
+// wrong row).
+func TestDismissCompanionDuplicateWarning_MultiplePendingReviews(t *testing.T) {
+	mockRepo := new(MockRepository)
+	handler := newDismissHandler(mockRepo)
+
+	companionULID := "01COMPANION000000000000006"
+	eventULID := "01EVENTTARGET000000000006"
+
+	// The exact companion review (cross-linked to eventULID).
+	exactReviewID := 77
+	exactReview := &events.ReviewQueueEntry{ID: exactReviewID, EventULID: companionULID}
+
+	// GetPendingReviewByEventUlidAndDuplicateUlid returns only the exact row.
+	mockRepo.On("GetPendingReviewByEventUlidAndDuplicateUlid", mock.Anything, companionULID, eventULID).Return(exactReview, nil)
+	// Only the exact row's ID must be passed to the dismiss call.
+	mockRepo.On("DismissWarningMatchByReviewID", mock.Anything, exactReviewID, eventULID).Return(nil)
+	// DismissCompanionWarningMatch (broad) must NOT be called — any unexpected call
+	// would fail AssertExpectations.
+
 	handler.dismissCompanionDuplicateWarning(context.Background(), companionULID, eventULID)
 
 	mockRepo.AssertExpectations(t)

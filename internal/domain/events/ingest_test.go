@@ -770,6 +770,10 @@ func (m *MockRepository) DismissCompanionWarningMatch(_ context.Context, _ strin
 	return nil
 }
 
+func (m *MockRepository) DismissWarningMatchByReviewID(_ context.Context, _ int, _ string) error {
+	return nil
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 	return false, nil
 }

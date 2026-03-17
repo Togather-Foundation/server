@@ -499,6 +499,9 @@ func (m *mockTransactionalRepo) UpdateReviewWarnings(_ context.Context, _ int, _
 func (m *mockTransactionalRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
 	return nil
 }
+func (m *mockTransactionalRepo) DismissWarningMatchByReviewID(_ context.Context, _ int, _ string) error {
+	return nil
+}
 func (m *mockTransactionalRepo) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	if m.checkOccurrenceOverlapFunc != nil {
 		return m.checkOccurrenceOverlapFunc(ctx, eventID, startTime, endTime)

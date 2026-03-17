@@ -296,3 +296,32 @@ UPDATE event_review_queue
          SELECT e.id FROM events e WHERE e.ulid = sqlc.arg('companion_ulid')::text LIMIT 1
        )
    AND status = 'pending';
+
+-- name: DismissWarningMatchByReviewID :exec
+-- Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
+-- from a specific review queue entry identified by its primary key id.
+-- Narrower than DismissCompanionWarningMatch: targets exactly one row, preventing
+-- accidental modification of unrelated pending reviews on the same companion event.
+UPDATE event_review_queue
+   SET warnings = (
+         SELECT COALESCE(jsonb_agg(new_w ORDER BY idx), '[]'::jsonb)
+         FROM (
+           SELECT idx,
+                  CASE
+                    WHEN w->>'code' = 'potential_duplicate' THEN
+                      jsonb_set(
+                        w,
+                        '{details,matches}',
+                        COALESCE((
+                          SELECT jsonb_agg(m)
+                          FROM jsonb_array_elements(w->'details'->'matches') m
+                          WHERE m->>'ulid' <> sqlc.arg('event_ulid')::text
+                        ), '[]'::jsonb)
+                      )
+                    ELSE w
+                  END AS new_w
+           FROM jsonb_array_elements(warnings) WITH ORDINALITY AS t(w, idx)
+         ) sub
+       ),
+       updated_at = NOW()
+ WHERE id = sqlc.arg('review_id')::int;

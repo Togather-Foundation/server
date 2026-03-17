@@ -244,6 +244,11 @@ type Repository interface {
 	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
 	UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error
 	DismissCompanionWarningMatch(ctx context.Context, companionULID string, eventULID string) error
+	// DismissWarningMatchByReviewID removes any potential_duplicate match referencing
+	// eventULID from the specific review row identified by id. Strictly narrower than
+	// DismissCompanionWarningMatch: targets exactly one row to avoid affecting unrelated
+	// pending reviews on the same companion event.
+	DismissWarningMatchByReviewID(ctx context.Context, id int, eventULID string) error
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)

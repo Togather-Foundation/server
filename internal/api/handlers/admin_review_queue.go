@@ -1119,15 +1119,39 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 	}
 }
 
-// dismissCompanionDuplicateWarning removes any potential_duplicate warning match
+// dismissCompanionDuplicateWarning removes the potential_duplicate warning match
 // that references eventULID from the companion event's pending review entry.
 // This prevents the companion's review from showing a stale duplicate alert after
 // the pair has been marked as not-duplicates.
-// Uses a single atomic SQL UPDATE — no read-modify-write race.
+//
+// Strategy: look up the exact companion review whose duplicate_of_event_id points
+// back at eventULID (same lookup used by add-occurrence), then update only that
+// specific row by primary key. This is strictly narrower than operating by event ULID
+// alone, which would affect ALL pending reviews on the companion event when multiple
+// such rows exist.
+//
 // Errors are logged but not propagated — this is a best-effort cleanup.
 func (h *AdminReviewQueueHandler) dismissCompanionDuplicateWarning(ctx context.Context, companionULID, eventULID string) {
-	if err := h.Repository.DismissCompanionWarningMatch(ctx, companionULID, eventULID); err != nil {
-		slog.WarnContext(ctx, "dismissCompanionWarning: failed to atomically dismiss warning match",
+	// Find the exact companion review that is cross-linked to eventULID.
+	companion, err := h.Repository.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, companionULID, eventULID)
+	if err != nil {
+		// ErrNotFound is normal (companion may have been already processed or never
+		// existed).  Any other error is unexpected but still best-effort.
+		if !errors.Is(err, events.ErrNotFound) {
+			slog.WarnContext(ctx, "dismissCompanionWarning: failed to look up companion review",
+				slog.String("companion_ulid", companionULID),
+				slog.String("event_ulid", eventULID),
+				slog.String("error", err.Error()))
+		}
+		return
+	}
+	if companion == nil {
+		// No pending review for this companion/duplicate pair — nothing to do.
+		return
+	}
+	if err := h.Repository.DismissWarningMatchByReviewID(ctx, companion.ID, eventULID); err != nil {
+		slog.WarnContext(ctx, "dismissCompanionWarning: failed to dismiss warning match by review id",
+			slog.Int("review_id", companion.ID),
 			slog.String("companion_ulid", companionULID),
 			slog.String("event_ulid", eventULID),
 			slog.String("error", err.Error()))

@@ -88,6 +88,11 @@ type Querier interface {
 	// from the companion's pending review queue entry, identified by the companion's event ULID.
 	// Rebuilds the warnings JSONB in one UPDATE — no read-modify-write race.
 	DismissCompanionWarningMatch(ctx context.Context, arg DismissCompanionWarningMatchParams) error
+	// Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
+	// from a specific review queue entry identified by its primary key id.
+	// Narrower than DismissCompanionWarningMatch: targets exactly one row, preventing
+	// accidental modification of unrelated pending reviews on the same companion event.
+	DismissWarningMatchByReviewID(ctx context.Context, arg DismissWarningMatchByReviewIDParams) error
 	// Expires all pending (non-accepted, non-expired) invitations for a user by
 	// setting accepted_at. This satisfies the unique partial index
 	// idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new

@@ -2448,6 +2448,8 @@ func (r *EventRepository) UpdateReviewWarnings(ctx context.Context, id int, warn
 // DismissCompanionWarningMatch atomically removes any potential_duplicate match
 // whose ulid equals eventULID from the companion review's warnings JSONB.
 // This is a single-statement UPDATE with no read-modify-write race.
+// NOTE: This targets any pending row for the companion event; prefer
+// DismissWarningMatchByReviewID when the exact review row ID is known.
 func (r *EventRepository) DismissCompanionWarningMatch(ctx context.Context, companionULID string, eventULID string) error {
 	queries := Queries{db: r.queryer()}
 	err := queries.DismissCompanionWarningMatch(ctx, DismissCompanionWarningMatchParams{
@@ -2456,6 +2458,22 @@ func (r *EventRepository) DismissCompanionWarningMatch(ctx context.Context, comp
 	})
 	if err != nil {
 		return fmt.Errorf("dismiss companion warning match companion=%s event=%s: %w", companionULID, eventULID, err)
+	}
+	return nil
+}
+
+// DismissWarningMatchByReviewID atomically removes any potential_duplicate match
+// whose ulid equals eventULID from the specific review row identified by id.
+// This is strictly narrower than DismissCompanionWarningMatch and should be used
+// whenever the exact companion review row is already known.
+func (r *EventRepository) DismissWarningMatchByReviewID(ctx context.Context, id int, eventULID string) error {
+	queries := Queries{db: r.queryer()}
+	err := queries.DismissWarningMatchByReviewID(ctx, DismissWarningMatchByReviewIDParams{
+		ReviewID:  int32(id),
+		EventUlid: eventULID,
+	})
+	if err != nil {
+		return fmt.Errorf("dismiss warning match review_id=%d event=%s: %w", id, eventULID, err)
 	}
 	return nil
 }
