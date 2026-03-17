@@ -2233,3 +2233,103 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 	mockRepo.AssertExpectations(t)
 }
+
+// TestAddOccurrenceReview_MalformedWarningsPreRead verifies that when the review
+// entry has malformed (non-JSON) warnings in the pre-read peek, the handler
+// returns 500 instead of silently degrading to an unsupported-review 422.
+func TestAddOccurrenceReview_MalformedWarningsPreRead(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	now := time.Now()
+
+	malformedEntry := &events.ReviewQueueEntry{
+		ID:                1,
+		EventID:           "test-event-id",
+		EventULID:         "01HREV00000000000000000001",
+		OriginalPayload:   []byte(`{"name":"Test Event"}`),
+		NormalizedPayload: []byte(`{"name":"Test Event"}`),
+		Warnings:          []byte(`not-valid-json`), // malformed
+		Status:            "pending",
+		EventStartTime:    now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	mockRepo := new(MockRepository)
+	// GetReviewQueueEntry is called for the pre-read peek; handler must not proceed
+	// to a transaction — the malformed warnings are a data-integrity fault.
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(malformedEntry, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	body, _ := json.Marshal(map[string]string{"target_event_ulid": targetEventULID})
+	req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/add-occurrence", bytes.NewReader(body))
+	req.SetPathValue("id", "1")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.AddOccurrenceReview(rec, req)
+
+	// Malformed warnings must be a 500, not a 422 unsupported-review.
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	mockRepo.AssertExpectations(t)
+}
+
+// TestAddOccurrenceReview_StaleStateRetryable verifies that when the service
+// returns ErrWrongOccurrencePath (warnings changed between pre-read and the locked
+// transaction), the handler maps this to 422 with problem type
+// "ambiguous-occurrence-dispatch".  This is the retryable stale-state case
+// documented in the OAS.
+func TestAddOccurrenceReview_StaleStateRetryable(t *testing.T) {
+	targetEventULID := "01HTARGET00000000000000001"
+	now := time.Now()
+
+	// Pre-read shows potential_duplicate (forward path), but the locked row will
+	// show near_duplicate_of_new_event — causing ErrWrongOccurrencePath.
+	fwdEntry := testPotDupEntry(1, "01HREV00000000000000000001")
+	fwdEntry.EventStartTime = now
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(fwdEntry, nil)
+	setupTxMock(mockRepo)
+	// Locked row now shows near_duplicate_of_new_event — wrong path for forward call.
+	// The service returns ErrWrongOccurrencePath before fetching the target event,
+	// so GetByULID and LockEventForUpdate are not called.
+	nearDupWarnings, _ := json.Marshal([]events.ValidationWarning{{Code: "near_duplicate_of_new_event"}})
+	mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
+		&events.ReviewQueueEntry{
+			ID:       1,
+			Status:   "pending",
+			Warnings: nearDupWarnings,
+		}, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	body, _ := json.Marshal(map[string]string{"target_event_ulid": targetEventULID})
+	req := httptest.NewRequest(http.MethodPost, "/admin/review-queue/1/add-occurrence", bytes.NewReader(body))
+	req.SetPathValue("id", "1")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.AddOccurrenceReview(rec, req)
+
+	// Stale-state path mismatch → 422 ambiguous-occurrence-dispatch (retryable).
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+
+	var prob map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &prob); err == nil {
+		assert.Equal(t, "https://sel.events/problems/ambiguous-occurrence-dispatch", prob["type"])
+	}
+	mockRepo.AssertExpectations(t)
+}

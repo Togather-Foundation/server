@@ -93,6 +93,60 @@ Each role is a **subagent type or skill** invoked by the orchestrator. They shar
 
 ## Component Design
 
+### Memory Architecture
+
+Memory lives in four places, chosen for the type of knowledge:
+
+| Memory Type | Storage | Why Here |
+|---|---|---|
+| **Decision Journal** (operational decisions, reasoning chains, rules) | JSONL files in `data/decisions/` | Self-contained documents, git-trackable, grep/jq searchable, portable |
+| **Incident Log** (operational events that may not produce decisions) | JSON files in `data/incidents/` | Transient failures, resolved issues, context for future pattern detection |
+| **Scraper source notes** (source-specific quirks, selector history, trust signals) | YAML source config files in `configs/sources/` | Co-located with the config they describe; already versioned |
+| **Runbooks** (common procedures, escalation guides, diagnostic recipes) | Markdown files in `docs/runbooks/` | Human-readable, agent-readable, version-controlled |
+| **Graduated rules** (permanent institutional knowledge) | Markdown files in `data/rules/` | Readable by humans and agents, citable by reference |
+| **Agent memories** (cross-session insights, operational heuristics) | Beads `bd remember` | Already exists, persistent across sessions |
+| **Optional: database index** (fast structured queries over decisions) | Postgres `decision_index` table | Read-optimization layer rebuilt from JSONL; added only when grep is too slow |
+
+**What we are NOT using**: Vector databases, embedding stores, vendor memory services,
+knowledge graphs. If semantic search becomes necessary (unlikely before ~500 decisions),
+we'll add pgvector to the existing Postgres — no new infrastructure.
+
+**Import/export with Postgres**: The decision journal DB index is always rebuildable
+from JSONL files (`server decisions reindex`). JSONL is canonical; Postgres is a cache.
+This means we can always export (JSONL is the export) and import is just `reindex`.
+
+**Two-tier index for cheap agent queries**: Agents should almost never scan the full
+memory corpus. Instead, lightweight JSON index files provide a cheap pre-filter:
+
+- `data/decisions/index.json` — summary of all decisions (id, source, trigger codes,
+  resolution, confidence, path). ~10-50KB. Agents read this every run.
+- `data/rules/index.json` — summary of all graduated rules (id, tags, summary, path).
+- `data/incidents/index.json` — summary of all incidents.
+
+Agent query strategy: (1) check rules index, (2) check decision index, (3) only open
+full documents when needed. This keeps token usage low — most decisions can be made
+from index data alone. Index files are rebuilt automatically when memory changes
+(`scripts/memory-index.sh`).
+
+**Frontmatter convention**: All Markdown memory files (rules, runbooks) use a YAML
+frontmatter header for structured metadata:
+
+```yaml
+---
+tags: [scraper, venue-x, timezone]
+confidence: high
+last_verified: 2026-03-16
+---
+```
+
+This makes grep-based search much more effective and supports future tag-based filtering.
+
+**Federation-readiness**: The filesystem layout is designed so that a future `shared/`
+directory (git repo synced across nodes) can hold distilled rules and runbooks without
+exposing local operational data. This is a design constraint, not an implementation
+target — no second node exists yet, but the memory layout shouldn't paint us into a
+corner.
+
 ### 1. Decision Journal (Institutional Memory)
 
 The most critical new component. Every review decision, scraper fix, and data quality
@@ -116,6 +170,11 @@ similar situations and act without human input.
 - **KISS**: Start with flat files and simple grep-based lookup. Add database indexing
   only when file-based search becomes a bottleneck (likely hundreds of decisions
   before this matters).
+- **Append-only, atomic writes**: One file per decision, never edited in place. Outcome
+  updates are separate files in `data/decisions/updates/`. All writes use atomic
+  temp-file + rename (we already have `internal/fileutil/atomicwrite.go`). This avoids
+  all concurrency issues with parallel agents and ensures crash safety — readers never
+  see partial files, and the worst case of a crash mid-write is an orphan temp file.
 
 #### Storage Format
 
@@ -211,6 +270,34 @@ CREATE TABLE decision_index (
 | `scraper` | `selector_drift`, `site_blocked`, `rate_limited`, `empty_results`, `new_page_structure` | "Fixed: venue Y redesigned, updated `.event-card` to `.event-item`" |
 | `data_quality` | `stale_event`, `orphaned_place`, `missing_geocode`, `broken_url` | "Deleted: recurring event series ended, source confirmed" |
 | `metrics` | `error_spike`, `latency_anomaly`, `queue_backup`, `disk_usage` | "Investigated: spike was deploy-related, resolved by next scrape cycle" |
+
+#### Incident Log (Separate from Decisions)
+
+Not every operational event produces a decision. Transient scraper timeouts, metric
+spikes that resolve themselves, and rate-limit retries are still worth recording for
+pattern detection — but they don't belong in the decision journal.
+
+**Location**: `data/incidents/`, one JSON file per incident.
+
+**Naming**: `2026-03-16T10-20-00Z_scraper_venue-x_selector_drift.json`
+
+```jsonc
+{
+  "id": "inc-xyz123",
+  "created_at": "2026-03-16T10:20:00Z",
+  "category": "scraper_failure",
+  "source": "venue-x",
+  "symptoms": ["0 events returned", "HTML structure changed"],
+  "analysis": ["Selector .event-card missing", "New structure .event-item"],
+  "resolution": {"selector_update": ".event-item"},
+  "resolved_by": "agent:scraper-worker",
+  "related_decisions": []  // links to decisions if one was created
+}
+```
+
+Incidents that lead to a decision get cross-referenced. The incident log provides
+context for the memory curator (Phase 5) to detect patterns across incidents that
+individually didn't warrant decisions.
 
 #### Precedent Lookup
 
@@ -358,14 +445,66 @@ a skill with bundled scripts for metric fetching would be cleanest.
 
 **Trigger**: Scheduled (every few hours) or when review queue depth > threshold.
 
-**Capabilities**:
-- Fetch pending reviews via `review_queue` MCP tool
-- For each review entry:
-  1. Check decision journal for precedent (same source + same warning codes)
-  2. If high-confidence precedent exists: apply same decision autonomously
-  3. If no precedent: analyze the event data, check for obvious issues
-  4. If confident: decide and record reasoning in decision journal
-  5. If uncertain: queue for human review with analysis notes
+**Design principle**: The review agent is a **constrained classifier**, not an
+open-ended problem solver. It has a tiny, fixed action set and must cite memory
+for every non-escalation decision. This is the single most important design choice
+for reliability — it prevents hallucinated actions and makes behavior predictable.
+
+**Action set** (closed — no other actions allowed):
+
+```
+approve | reject | merge | fix | escalate
+```
+
+**Forced reasoning order** (never skip steps):
+
+1. **Hard red-line check** (outside the LLM — policy code, not prompt):
+   - `suspicious_content` → always escalate
+   - `duration > 24h` after correction → always escalate
+   - `missing_startDate` → always escalate
+2. **Check rules index** (`data/rules/index.json`) for matching rule
+3. **Check decision index** (`data/decisions/index.json`) for matching precedent
+4. **Check source notes** (`configs/sources/<source>.yaml`) for source-specific context
+5. If rule/precedent found with sufficient confidence → apply decision
+6. If no match or low confidence → escalate with analysis
+
+**Decision output schema** (structured, not free-form):
+
+```jsonc
+{
+  "classification": "known-safe | known-unsafe | ambiguous | escalate",
+  "action": "approve | reject | merge | fix | escalate",
+  "reason": "matched_rule | matched_precedent | runbook_applied | insufficient_confidence",
+  "confidence": 0.91,
+  "memory_refs": ["data/rules/source_venue-x_timezone.md"],  // required for non-escalation
+  "fields_changed": {},     // only for "fix" action
+  "open_questions": []      // required for escalation — what remains unresolved
+}
+```
+
+**Key constraint**: Every non-escalation decision **must cite at least one memory
+reference** (rule, precedent, or runbook). If `memory_refs` is empty, the action
+is automatically converted to escalation by the policy validation wrapper. This
+prevents the agent from inventing justifications.
+
+**Policy validation wrapper** (code, not prompt — runs after LLM output):
+
+- Action is in allowed set
+- Cited memory references actually exist
+- Required fields present for action type
+- Confidence threshold met (per action type)
+- Red-line conditions absent
+- If validation fails → convert to escalation automatically
+
+**Allowed fixes** (whitelist — anything else escalates):
+
+```yaml
+allowed_fixes:
+  - timezone_normalization
+  - endDate_inference_from_rule
+  - venue_fill_from_source_default
+  - duplicate_merge_with_exact_match
+```
 
 **Autonomous decision rules** (conservative starting point):
 
@@ -506,6 +645,7 @@ maintenance pass, giving it the full context of how to operate.
 | `scripts/metrics-snapshot.sh` | Fetch key Prometheus metrics, output as JSON |
 | `scripts/review-queue-summary.sh` | Count pending reviews by category/source |
 | `scripts/scraper-health.sh` | Summarize recent scrape runs and failure rates |
+| `scripts/memory-index.sh` | Rebuild index.json files from memory files |
 | `scripts/decision-report.sh` | Generate decision journal summary for time period |
 
 These scripts are thin wrappers that agents can call via bash, providing structured
@@ -537,18 +677,30 @@ server decisions record         — Manually record a decision (for human decisi
 **Why first**: The review queue is the most frequent operational task, and the decision
 journal is the foundation everything else builds on.
 
-1. Brief survey of existing agentic memory tools (Mem0, Letta, MCP memory servers) —
-   adopt if one is both KISS and interoperable; default to JSONL otherwise
-2. Decision journal: JSONL file format, `data/decisions/` directory, read/write CLI
-3. MCP tools: `review_queue`, `review_decide`, `decision_log`, `record_decision`
-4. Human decision inference from admin UI audit log entries
-5. Review agent subagent type with conservative auto-decision rules
-6. `/maintain review` command
-7. `server decisions` CLI commands (list, search, record, reindex)
-8. Seed decision journal with existing review patterns from audit logs
+1. ~~Brief survey of existing agentic memory tools~~ — **DONE**: surveyed Mem0,
+   Letta, memsearch, OpenViking, ReMeLight, Basic Memory. All vendor-aligned tools
+   rejected; proceeding with JSONL + Markdown + grep/jq.
+2. Decision journal: JSONL file format, `data/decisions/` directory, read/write Go
+   package, atomic file writes via `internal/fileutil`
+3. Incident log: JSON files in `data/incidents/`, separate from decisions
+4. Two-tier index: `data/decisions/index.json` + `data/rules/index.json`,
+   `scripts/memory-index.sh` to rebuild
+5. MCP tools: `review_queue`, `review_decide`, `decision_log`, `record_decision`
+6. Human decision inference from admin UI audit log entries
+7. Review agent as constrained classifier: fixed action set, forced reasoning order,
+   memory citation requirement, policy validation wrapper, hard-coded red lines
+8. `/maintain review` command
+9. `server decisions` CLI commands (list, search, record, reindex)
+10. Seed decision journal with existing review patterns from audit logs
+11. Scenario tests: `tests/scenarios/` with memory state + incident + expected action,
+    verifiable without LLM calls for rule-based cases. Real production incidents
+    become future test cases.
 
-**Success criteria**: Agent can autonomously handle >50% of review queue entries
-(reversed dates, known-source duplicates) with 0 incorrect decisions over 2 weeks.
+**Success criteria**:
+- Agent can autonomously handle >50% of review queue entries (reversed dates,
+  known-source duplicates) with 0 incorrect decisions over 2 weeks.
+- All rule-based decisions pass deterministic scenario tests.
+- Policy validation wrapper catches and converts invalid agent outputs to escalation.
 
 ### Phase 2: Metrics Watcher + Notifications
 
@@ -766,17 +918,23 @@ We specifically avoid:
    The reasoning-chain preservation directly reduces costs over time — cached
    reasoning is free, re-derived reasoning costs tokens.
 
-7. **Agentic memory ecosystem**: The decision journal is deliberately
-   framework-agnostic (JSONL files), but the space is moving fast. Should we
-   evaluate existing tools before building? Candidates to survey:
-   - [Mem0](https://github.com/mem0ai/mem0) — agent memory with automatic extraction
-   - [Letta/MemGPT](https://github.com/letta-ai/letta) — stateful agent memory
-   - MCP-native memory servers (emerging)
-   - Simple vector stores (pgvector, already in our stack) for semantic precedent search
+7. **Agentic memory ecosystem**: **DECIDED.** Surveyed the landscape (Mem0, Letta,
+   memsearch/Zilliz, OpenViking/Volcengine, ReMeLight, Basic Memory, MCP memory
+   servers). Key finding: most "open source" agentic memory tools are vendor
+   acquisition funnels — memsearch leads to Milvus Cloud (Zilliz), OpenViking
+   requires VLM/embedding providers that map to Doubao API (ByteDance). Both are
+   Apache-2.0/MIT licensed but architecturally coupled to their parent companies'
+   paid services.
 
-   Decision: survey briefly, but default to JSONL unless something is both simple
-   AND interoperable. Most memory frameworks today are tightly coupled to specific
-   agent runtimes. Our JSONL approach is boring but portable.
+   **Decision**: Build with boring technology. JSONL files + Markdown + grep/jq
+   for memory. Add pgvector semantic search only if/when brute-force text search
+   becomes a bottleneck (likely hundreds of decisions before this matters — we
+   already have Postgres). This gives us:
+   - Zero vendor lock-in
+   - Maximally portable (any future system can ingest flat files)
+   - Git-trackable, human-readable
+   - No new runtime dependencies
+   - Trivial to convert if a genuinely good, non-vendor-aligned tool emerges
 
 8. **Human decision capture fidelity**: How much friction is acceptable to capture
    human reasoning? The post-resolution prompt ("what was your reasoning?") is

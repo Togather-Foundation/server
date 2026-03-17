@@ -2261,3 +2261,68 @@ func TestNewAdminService_PanicsOnEmptyBaseURL(t *testing.T) {
 	}()
 	NewAdminService(&mockTransactionalRepo{}, false, "America/Toronto", config.ValidationConfig{}, "")
 }
+
+// ── Malformed warnings JSON → ErrMalformedWarnings (data-integrity fault) ─────
+
+// TestAddOccurrenceFromReview_MalformedWarningsJSON verifies that when the locked
+// review entry's Warnings column contains invalid JSON, AddOccurrenceFromReview
+// returns ErrMalformedWarnings rather than silently routing to the "unsupported"
+// path (which would produce a misleading ErrUnsupportedReviewForOccurrence 422).
+func TestAddOccurrenceFromReview_MalformedWarningsJSON(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{
+			ID:       id,
+			Status:   "pending",
+			Warnings: []byte(`not-valid-json`),
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrMalformedWarnings, got nil")
+	}
+	if !errors.Is(err, ErrMalformedWarnings) {
+		t.Errorf("expected ErrMalformedWarnings, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when warnings JSON is malformed")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_MalformedWarningsJSON verifies that when the
+// locked review entry's Warnings column contains invalid JSON,
+// AddOccurrenceFromReviewNearDup returns ErrMalformedWarnings rather than silently
+// routing to the "unsupported" path.
+func TestAddOccurrenceFromReviewNearDup_MalformedWarningsJSON(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo(
+		"target-uuid", "01HTARGET00000000000000001",
+		"01HSRC00000000000000000001",
+		time.Now(),
+	)
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{
+			ID:       id,
+			Status:   "pending",
+			Warnings: []byte(`not-valid-json`),
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected ErrMalformedWarnings, got nil")
+	}
+	if !errors.Is(err, ErrMalformedWarnings) {
+		t.Errorf("expected ErrMalformedWarnings, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when warnings JSON is malformed")
+	}
+}

@@ -720,18 +720,30 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 		return
 	}
 
-	isNearDupPath := reviewHasNearDupNewEventWarning(review)
-	hasPotDup := reviewHasPotentialDuplicateWarning(review)
-
-	// Reject when the review has BOTH warning types.  The two dispatch paths have
-	// inverted source/target semantics; silently picking one would either absorb the
-	// wrong event or ignore the supplied target_event_ulid.  Require the caller to
-	// resolve which path applies (e.g. by splitting the review or clearing warnings).
-	if isNearDupPath && hasPotDup {
-		problem.Write(w, r, http.StatusUnprocessableEntity,
-			"https://sel.events/problems/ambiguous-occurrence-dispatch",
-			"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
-			events.ErrAmbiguousOccurrenceDispatch, h.Env)
+	// Classify the dispatch path using the shared occurrenceDispatchPath helper so
+	// that handler pre-check and service TX-level check use identical logic.
+	prePath, prePathErr := events.OccurrenceDispatchPath(review.Warnings)
+	if prePathErr != nil {
+		if errors.Is(prePathErr, events.ErrMalformedWarnings) {
+			// Data-integrity fault: the DB row was persisted with invalid JSON.
+			// Surface as 500 — this is diagnosable and not the caller's fault.
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error",
+				"Review entry has malformed warnings data",
+				fmt.Errorf("add-occurrence review: classify dispatch id=%d: %w", id, prePathErr), h.Env)
+			return
+		}
+		if errors.Is(prePathErr, events.ErrAmbiguousOccurrenceDispatch) {
+			// Both warning types present — reject 422 before entering transaction.
+			problem.Write(w, r, http.StatusUnprocessableEntity,
+				"https://sel.events/problems/ambiguous-occurrence-dispatch",
+				"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
+				prePathErr, h.Env)
+			return
+		}
+		// Unexpected error from classifier — fall through to 500 below.
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error",
+			"Failed to classify add-occurrence dispatch path",
+			fmt.Errorf("add-occurrence review: classify dispatch id=%d: %w", id, prePathErr), h.Env)
 		return
 	}
 
@@ -739,7 +751,7 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 	// operation requires either a potential_duplicate (forward path) or a
 	// near_duplicate_of_new_event (near-dup path) warning.  Reviews that carry only
 	// data-quality warnings (e.g. reversed_dates_*) are not eligible.
-	if !isNearDupPath && !hasPotDup {
+	if prePath == "unsupported" {
 		problem.Write(w, r, http.StatusUnprocessableEntity,
 			"https://sel.events/problems/unsupported-review-for-occurrence",
 			"Review entry has no potential_duplicate or near_duplicate_of_new_event warning; add-occurrence requires a supported duplicate warning",
@@ -747,7 +759,7 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 		return
 	}
 
-	if isNearDupPath {
+	if prePath == "neardup" {
 		// Inverted path: absorb the newly-ingested event (DuplicateOfEventULID) into
 		// the existing series (EventULID).  target_event_ulid is not needed.
 		h.addOccurrenceNearDupPath(w, r, id, review, reviewedBy)
@@ -904,44 +916,16 @@ func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter,
 			err, h.Env)
 		return
 	}
+	if errors.Is(err, events.ErrMalformedWarnings) {
+		// Data-integrity fault: the DB row was persisted with invalid JSON.  Surface
+		// as 500 so the problem is visible in logs and alerting rather than silently
+		// turning into a misleading 422 unsupported-review response.
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error",
+			"Review entry has malformed warnings data",
+			fmt.Errorf("add-occurrence review id=%d: %w", id, err), h.Env)
+		return
+	}
 	problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to add occurrence", fmt.Errorf("add-occurrence review id=%d target=%s: %w", id, targetEventULID, err), h.Env)
-}
-
-// reviewHasNearDupNewEventWarning returns true if the review entry has at least one
-// near_duplicate_of_new_event warning. Used to select the inverted add-occurrence path.
-func reviewHasNearDupNewEventWarning(review *events.ReviewQueueEntry) bool {
-	if review == nil || len(review.Warnings) == 0 {
-		return false
-	}
-	var warnings []events.ValidationWarning
-	if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
-		return false
-	}
-	for _, w := range warnings {
-		if w.Code == "near_duplicate_of_new_event" {
-			return true
-		}
-	}
-	return false
-}
-
-// reviewHasPotentialDuplicateWarning returns true if the review entry has at least one
-// potential_duplicate warning. Used together with reviewHasNearDupNewEventWarning to
-// detect the ambiguous "both warnings" case.
-func reviewHasPotentialDuplicateWarning(review *events.ReviewQueueEntry) bool {
-	if review == nil || len(review.Warnings) == 0 {
-		return false
-	}
-	var warnings []events.ValidationWarning
-	if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
-		return false
-	}
-	for _, w := range warnings {
-		if w.Code == "potential_duplicate" {
-			return true
-		}
-	}
-	return false
 }
 
 // Helper functions

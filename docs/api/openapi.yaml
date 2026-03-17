@@ -1170,10 +1170,15 @@ paths:
               source event first, then retry.
             - **`zero-occurrence-source`** — the source event has no occurrences; there is
               nothing to absorb. Ensure the source event has exactly one occurrence first.
-            - **`ambiguous-occurrence-dispatch`** — the review entry carries both
-              `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously;
-              the dispatch path cannot be determined unambiguously. Remove or resolve one warning
-              before retrying.
+            - **`ambiguous-occurrence-dispatch`** — one of two cases, both retryable:
+              1. **Both warnings present (static):** the review entry carries both
+                 `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously;
+                 the dispatch path cannot be determined unambiguously. Remove or resolve one
+                 warning before retrying.
+              2. **Stale-state path mismatch (retryable):** the warning classification changed
+                 between the handler's advisory pre-read and the locked transaction. The server
+                 detected that the locked row's warnings now indicate a different path than the
+                 one requested. Retry the request; the response will reflect the current state.
             - **`unsupported-review-for-occurrence`** — the review entry has neither a
               `potential_duplicate` nor a `near_duplicate_of_new_event` warning (e.g. the entry
               carries only data-quality warnings such as `reversed_dates_*`). Add-as-occurrence

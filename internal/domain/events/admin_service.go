@@ -78,9 +78,14 @@ var (
 	ErrAmbiguousOccurrenceDispatch    = errors.New("review entry has both potential_duplicate and near_duplicate_of_new_event warnings: cannot determine add-occurrence path unambiguously")
 	ErrWrongOccurrencePath            = errors.New("review entry warnings do not match the requested add-occurrence path")
 	ErrUnsupportedReviewForOccurrence = errors.New("review entry has no potential_duplicate or near_duplicate_of_new_event warning: add-occurrence requires a supported duplicate warning")
+	// ErrMalformedWarnings is returned by occurrenceDispatchPath when the persisted
+	// warnings column cannot be parsed as JSON.  This is a data-integrity fault —
+	// the DB row was written with invalid JSON — and must surface as an internal
+	// server error (500) rather than silently degrading to the "unsupported" path.
+	ErrMalformedWarnings = errors.New("review entry warnings column contains malformed JSON: data integrity fault")
 )
 
-// occurrenceDispatchPath classifies a raw warnings JSON blob into one of three
+// OccurrenceDispatchPath classifies a raw warnings JSON blob into one of three
 // outcomes for the add-as-occurrence dispatch:
 //
 //   - "forward"      — the review has at least one potential_duplicate warning and no
@@ -91,14 +96,25 @@ var (
 //     quality/completeness warnings) → reject with ErrUnsupportedReviewForOccurrence.
 //
 // Returns ErrAmbiguousOccurrenceDispatch if BOTH warning types are present.
+// Returns ErrMalformedWarnings if the warnings column cannot be parsed as JSON —
+// this is a data-integrity fault and must surface as an internal server error.
+func OccurrenceDispatchPath(warningsJSON []byte) (string, error) {
+	return occurrenceDispatchPath(warningsJSON)
+}
+
+// occurrenceDispatchPath is the unexported implementation shared between the exported
+// OccurrenceDispatchPath wrapper (handler pre-check) and internal service TX paths.
 func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
 	if len(warningsJSON) == 0 {
 		return "unsupported", nil
 	}
 	var warnings []ValidationWarning
 	if err := json.Unmarshal(warningsJSON, &warnings); err != nil {
-		// Malformed warnings JSON — treat as no warnings; unsupported path.
-		return "unsupported", nil
+		// Malformed warnings JSON is a data-integrity fault: the DB row was written
+		// with invalid JSON.  Do NOT silently degrade to "unsupported" — that would
+		// produce a misleading unsupported-review 422.  Return ErrMalformedWarnings
+		// so callers can surface this as an internal server error (500).
+		return "", fmt.Errorf("parse warnings JSON: %w", ErrMalformedWarnings)
 	}
 	var hasNearDup, hasPotDup bool
 	for _, w := range warnings {
