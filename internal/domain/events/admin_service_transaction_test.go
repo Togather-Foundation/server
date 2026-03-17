@@ -34,8 +34,8 @@ func TestMergeEvents_AtomicRollback(t *testing.T) {
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 	params := MergeEventsParams{
-		PrimaryULID:   "01HZTEST1",
-		DuplicateULID: "01HZTEST2",
+		PrimaryULID:   "01HZTEST000000000000000001",
+		DuplicateULID: "01HZTEST000000000000000002",
 	}
 
 	err := service.MergeEvents(ctx, params)
@@ -80,8 +80,8 @@ func TestMergeEvents_AtomicCommit(t *testing.T) {
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 	params := MergeEventsParams{
-		PrimaryULID:   "01HZTEST1",
-		DuplicateULID: "01HZTEST2",
+		PrimaryULID:   "01HZTEST000000000000000001",
+		DuplicateULID: "01HZTEST000000000000000002",
 	}
 
 	err := service.MergeEvents(ctx, params)
@@ -124,8 +124,8 @@ func TestMergeEvents_RollbackOnMergeError(t *testing.T) {
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 	params := MergeEventsParams{
-		PrimaryULID:   "01HZTEST1",
-		DuplicateULID: "01HZTEST2",
+		PrimaryULID:   "01HZTEST000000000000000001",
+		DuplicateULID: "01HZTEST000000000000000002",
 	}
 
 	err := service.MergeEvents(ctx, params)
@@ -191,7 +191,7 @@ func makeOccurrenceRepo(targetID, targetULID, reviewEventULID string, startTime 
 func TestAddOccurrenceFromReview_CommitOnSuccess(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
@@ -209,7 +209,7 @@ func TestAddOccurrenceFromReview_CommitOnSuccess(t *testing.T) {
 func TestAddOccurrenceFromReview_RollbackOnOverlap(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.checkOccurrenceOverlapFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 		return true, nil // overlap detected
 	}
@@ -239,7 +239,7 @@ func TestAddOccurrenceFromReview_RollbackOnOverlap(t *testing.T) {
 func TestAddOccurrenceFromReview_RollbackOnCreateOccurrenceFailure(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.createOccurrenceFunc = func(_ context.Context, _ OccurrenceCreateParams) error {
 		return errors.New("db write failed")
 	}
@@ -263,7 +263,7 @@ func TestAddOccurrenceFromReview_RollbackOnCreateOccurrenceFailure(t *testing.T)
 func TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.softDeleteEventFunc = func(_ context.Context, _, _ string) error {
 		return errors.New("soft-delete failed")
 	}
@@ -523,7 +523,7 @@ func TestAddOccurrenceFromReview_AllowsNonPublishedTarget(t *testing.T) {
 	for _, state := range []string{"draft", "pending_review", "cancelled", "postponed", "rescheduled"} {
 		state := state
 		t.Run(state, func(t *testing.T) {
-			repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+			repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 			repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 				if ulid == "01HTARGET00000000000000001" {
 					return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: state}, nil
@@ -551,7 +551,7 @@ func TestAddOccurrenceFromReview_RejectsDeletedTarget(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 		if ulid == "01HTARGET00000000000000001" {
 			return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "deleted"}, nil
@@ -584,7 +584,7 @@ func TestAddOccurrenceFromReview_RejectsDeletedSource(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 	targetULID := "01HTARGET00000000000000001"
-	reviewULID := "01HREVIEW000000000000000001"
+	reviewULID := "01HREV00000000000000000001"
 
 	repo := makeOccurrenceRepo("target-uuid", targetULID, reviewULID, startTime)
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
@@ -618,7 +618,7 @@ func TestAddOccurrenceFromReview_ConcurrentReviewLock(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	// Simulate the row already having been processed (status="merged") — as the
 	// second goroutine would see after the first committed.
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
@@ -659,7 +659,7 @@ func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 
 	var capturedParams OccurrenceCreateParams
 
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 		if ulid == "01HTARGET00000000000000001" {
 			targetVenueID := "target-venue-uuid"
@@ -739,7 +739,7 @@ func TestAddOccurrenceFromReview_PreservesAvailability(t *testing.T) {
 
 	t.Run("forwards Availability when set on matched occurrence", func(t *testing.T) {
 		var capturedParams OccurrenceCreateParams
-		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 		repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 			if ulid == "01HTARGET00000000000000001" {
 				return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "published"}, nil
@@ -774,7 +774,7 @@ func TestAddOccurrenceFromReview_PreservesAvailability(t *testing.T) {
 
 	t.Run("Availability is empty string when not set", func(t *testing.T) {
 		var capturedParams OccurrenceCreateParams
-		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 		repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 			if ulid == "01HTARGET00000000000000001" {
 				return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "published"}, nil
@@ -814,7 +814,7 @@ func TestAddOccurrenceFromReview_ZeroOccurrenceSourceRejected(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 		if ulid == "01HTARGET00000000000000001" {
 			return &Event{
@@ -863,7 +863,7 @@ func TestAddOccurrenceFromReview_UsesLockedOccurrenceTimestamps(t *testing.T) {
 
 	var capturedParams OccurrenceCreateParams
 
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", snapshotStart)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", snapshotStart)
 	// The review queue mock returns the snapshot start (snapshotStart) — already wired.
 	// Override the source-event fetch to return a *different* occurrence time.
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
@@ -914,7 +914,7 @@ func TestAddOccurrenceFromReview_MultiOccurrenceSourceRejected(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 		if ulid == "01HTARGET00000000000000001" {
 			return &Event{
@@ -1167,7 +1167,7 @@ func makeNearDupOccurrenceRepo(targetID, targetULID, sourceULID string, startTim
 // near-dup add-occurrence commits the transaction.
 func TestAddOccurrenceFromReviewNearDup_CommitOnSuccess(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	entry, targetULID, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
@@ -1190,7 +1190,7 @@ func TestAddOccurrenceFromReviewNearDup_CommitOnSuccess(t *testing.T) {
 // the review entry has no DuplicateOfEventULID, the method returns ErrInvalidUpdateParams.
 func TestAddOccurrenceFromReviewNearDup_MissingDuplicateULID(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{
 			ID:        id,
@@ -1218,9 +1218,9 @@ func TestAddOccurrenceFromReviewNearDup_MissingDuplicateULID(t *testing.T) {
 // review entry returns ErrConflict without committing.
 func TestAddOccurrenceFromReviewNearDup_AlreadyProcessed(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
-		dup := "01HSOURCE00000000000000001"
+		dup := "01HSRC00000000000000000001"
 		return &ReviewQueueEntry{ID: id, EventULID: "01HTARGET00000000000000001", DuplicateOfEventULID: &dup, Status: "merged"}, nil
 	}
 
@@ -1243,7 +1243,7 @@ func TestAddOccurrenceFromReviewNearDup_AlreadyProcessed(t *testing.T) {
 func TestAddOccurrenceFromReviewNearDup_DeletedTarget(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 		if ulid == targetULID {
@@ -1275,7 +1275,7 @@ func TestAddOccurrenceFromReviewNearDup_DeletedTarget(t *testing.T) {
 func TestAddOccurrenceFromReviewNearDup_RejectsDeletedSource(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
 	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
 		if ulid == targetULID {
@@ -1306,7 +1306,7 @@ func TestAddOccurrenceFromReviewNearDup_RejectsDeletedSource(t *testing.T) {
 // ErrOccurrenceOverlap and rolls back.
 func TestAddOccurrenceFromReviewNearDup_Overlap(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 	repo.checkOccurrenceOverlapFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 		return true, nil
 	}
@@ -1330,7 +1330,7 @@ func TestAddOccurrenceFromReviewNearDup_Overlap(t *testing.T) {
 // still commits and the near-dup review entry is resolved.
 func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T) {
 	ctx := context.Background()
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
 	companionID := 42
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
@@ -1371,7 +1371,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T)
 // for the companion and the transaction still commits successfully.
 func TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed(t *testing.T) {
 	ctx := context.Background()
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	companionID := 55
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
@@ -1428,7 +1428,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed(t *te
 // transaction still commits.
 func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing.T) {
 	ctx := context.Background()
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	companionID := 66
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
@@ -1481,7 +1481,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing
 // surfaces and prevents the transaction from committing.
 func TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError(t *testing.T) {
 	ctx := context.Background()
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", sourceULID, time.Now())
 	dbErr := errors.New("connection reset by peer")
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
@@ -1512,7 +1512,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError(t *testin
 func TestAddOccurrenceFromReviewNearDup_TargetIsKeepNotAbsorbed(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 
 	var softDeletedULID string
 	var mergedWithTargetULID string
@@ -1547,7 +1547,7 @@ func TestAddOccurrenceFromReviewNearDup_TargetIsKeepNotAbsorbed(t *testing.T) {
 func TestAddOccurrenceFromReviewNearDup_MultiOccurrenceSourceRejected(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	now := time.Now()
 
 	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, now)
@@ -1587,7 +1587,7 @@ func TestAddOccurrenceFromReviewNearDup_MultiOccurrenceSourceRejected(t *testing
 // target event lock to prevent lock-order inversion deadlocks.
 func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *testing.T) {
 	ctx := context.Background()
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 	targetULID := "01HTARGET00000000000000001"
 	companionID := 99
 
@@ -1646,7 +1646,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *test
 func TestAddOccurrenceFromReviewNearDup_ZeroOccurrenceSourceRejected(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 
 	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
 	// Override source to return zero occurrences.
@@ -1699,7 +1699,7 @@ func TestAddOccurrenceFromReview_SourceEventLockedBeforeOccurrenceRead(t *testin
 	ctx := context.Background()
 	startTime := time.Now()
 	targetULID := "01HTARGET00000000000000001"
-	reviewEventULID := "01HREVIEW000000000000000001"
+	reviewEventULID := "01HREV00000000000000000001"
 
 	var callOrder []string
 	repo := makeOccurrenceRepo("target-uuid", targetULID, reviewEventULID, startTime)
@@ -1746,7 +1746,7 @@ func TestAddOccurrenceFromReview_SourceEventLockedBeforeOccurrenceRead(t *testin
 func TestAddOccurrenceFromReview_UsesPostLockSourceTimestamps(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	reviewEventULID := "01HREVIEW000000000000000001"
+	reviewEventULID := "01HREV00000000000000000001"
 
 	preLockTime := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
 	postLockTime := time.Date(2025, 3, 15, 18, 0, 0, 0, time.UTC)
@@ -1794,7 +1794,7 @@ func TestAddOccurrenceFromReview_UsesPostLockSourceTimestamps(t *testing.T) {
 func TestAddOccurrenceFromReviewNearDup_SourceEventLockedBeforeOccurrenceRead(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 
 	var callOrder []string
 	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, time.Now())
@@ -1841,7 +1841,7 @@ func TestAddOccurrenceFromReviewNearDup_SourceEventLockedBeforeOccurrenceRead(t 
 func TestAddOccurrenceFromReviewNearDup_UsesPostLockSourceTimestamps(t *testing.T) {
 	ctx := context.Background()
 	targetULID := "01HTARGET00000000000000001"
-	sourceULID := "01HSOURCE00000000000000001"
+	sourceULID := "01HSRC00000000000000000001"
 
 	preLockTime := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
 	postLockTime := time.Date(2025, 3, 15, 18, 0, 0, 0, time.UTC)
@@ -1891,7 +1891,7 @@ func TestAddOccurrenceFromReviewNearDup_UsesPostLockSourceTimestamps(t *testing.
 func TestAddOccurrenceFromReview_WrongPathWhenLockedWarningsIndicateNearDup(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{
 			ID:       id,
@@ -1921,7 +1921,7 @@ func TestAddOccurrenceFromReview_WrongPathWhenLockedWarningsIndicateNearDup(t *t
 func TestAddOccurrenceFromReview_AmbiguousDispatchFromLockedWarnings(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{
 			ID:       id,
@@ -1952,12 +1952,12 @@ func TestAddOccurrenceFromReview_AmbiguousDispatchFromLockedWarnings(t *testing.
 func TestAddOccurrenceFromReview_ForwardPathRejectsNoWarnings(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	// Override the lock to return a review with nil Warnings (no duplicate warning).
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{
 			ID:             id,
-			EventULID:      "01HREVIEW000000000000000001",
+			EventULID:      "01HREV00000000000000000001",
 			Status:         "pending",
 			EventStartTime: startTime,
 			Warnings:       nil,
@@ -1984,7 +1984,7 @@ func TestAddOccurrenceFromReview_ForwardPathRejectsNoWarnings(t *testing.T) {
 func TestAddOccurrenceFromReview_ForwardPathAcceptsPotentialDuplicateWarning(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
-	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{
 			ID:       id,
@@ -2007,9 +2007,9 @@ func TestAddOccurrenceFromReview_ForwardPathAcceptsPotentialDuplicateWarning(t *
 // the warning is completely absent) rather than silently proceeding.
 func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
-		dup := "01HSOURCE00000000000000001"
+		dup := "01HSRC00000000000000000001"
 		return &ReviewQueueEntry{
 			ID:                   id,
 			Status:               "pending",
@@ -2038,9 +2038,9 @@ func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing(t *te
 // AddOccurrenceFromReviewNearDup returns ErrWrongOccurrencePath.
 func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsForwardOnly(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
-		dup := "01HSOURCE00000000000000001"
+		dup := "01HSRC00000000000000000001"
 		return &ReviewQueueEntry{
 			ID:                   id,
 			Status:               "pending",
@@ -2070,9 +2070,9 @@ func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsForwardOnly(t
 // ErrAmbiguousOccurrenceDispatch.
 func TestAddOccurrenceFromReviewNearDup_AmbiguousDispatchFromLockedWarnings(t *testing.T) {
 	ctx := context.Background()
-	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
-		dup := "01HSOURCE00000000000000001"
+		dup := "01HSRC00000000000000000001"
 		return &ReviewQueueEntry{
 			ID:                   id,
 			Status:               "pending",
@@ -2100,15 +2100,15 @@ func TestAddOccurrenceFromReviewNearDup_AmbiguousDispatchFromLockedWarnings(t *t
 // review row is already processed, MergeEventsWithReview returns ErrConflict.
 func TestMergeEventsWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
 	ctx := context.Background()
-	repo := makeReviewLockRepo("01HDUPLICATE000000000000001")
+	repo := makeReviewLockRepo("01HDPCT0000000000000000001")
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
-		PrimaryULID:   "01HPRIMARY000000000000001",
-		DuplicateULID: "01HDUPLICATE000000000000001",
+		PrimaryULID:   "01HPRMARY00000000000000001",
+		DuplicateULID: "01HDPCT0000000000000000001",
 	}, 1, "admin")
 
 	if err == nil {
@@ -2128,7 +2128,7 @@ func TestMergeEventsWithReview_SuccessLockFirst(t *testing.T) {
 	ctx := context.Background()
 	var lockCalledBefore bool
 	var lockCallCount int
-	repo := makeReviewLockRepo("01HDUPLICATE000000000000001")
+	repo := makeReviewLockRepo("01HDPCT0000000000000000001")
 	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 		lockCallCount++
 		lockCalledBefore = true
@@ -2144,8 +2144,8 @@ func TestMergeEventsWithReview_SuccessLockFirst(t *testing.T) {
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
-		PrimaryULID:   "01HPRIMARY000000000000001",
-		DuplicateULID: "01HDUPLICATE000000000000001",
+		PrimaryULID:   "01HPRMARY00000000000000001",
+		DuplicateULID: "01HDPCT0000000000000000001",
 	}, 1, "admin")
 
 	if err != nil {
@@ -2156,5 +2156,88 @@ func TestMergeEventsWithReview_SuccessLockFirst(t *testing.T) {
 	}
 	if !repo.commitCalled {
 		t.Error("commit should be called on success")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests: canonical EventURI / SupersededBy in add-occurrence paths
+// (srv-izykp) — guards against eventURI() silently falling back to a bare ULID.
+// ---------------------------------------------------------------------------
+
+// TestAddOccurrenceFromReview_TombstoneUsesCanonicalURIs verifies that
+// CreateTombstone receives full canonical https:// URIs (not bare ULIDs) for
+// both EventURI and SupersededBy in the forward add-occurrence path.
+func TestAddOccurrenceFromReview_TombstoneUsesCanonicalURIs(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	const baseURL = "https://toronto.togather.foundation"
+	// Use valid 26-char Crockford Base32 ULIDs (no I/L/O/U).
+	const reviewEventULID = "01HREV00000000000000000001"
+	const targetEventULID = "01HTARGET00000000000000001"
+
+	wantEventURI := "https://toronto.togather.foundation/events/" + reviewEventULID
+	wantSupersedesURI := "https://toronto.togather.foundation/events/" + targetEventULID
+
+	var capturedParams TombstoneCreateParams
+	repo := makeOccurrenceRepo("target-uuid", targetEventULID, reviewEventULID, startTime)
+	repo.createTombstoneFunc = func(_ context.Context, p TombstoneCreateParams) error {
+		capturedParams = p
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, baseURL)
+	_, err := service.AddOccurrenceFromReview(ctx, 1, targetEventULID, "admin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedParams.EventURI != wantEventURI {
+		t.Errorf("EventURI: got %q, want %q", capturedParams.EventURI, wantEventURI)
+	}
+	if capturedParams.SupersededBy == nil {
+		t.Fatal("SupersededBy must not be nil for absorbed_as_occurrence tombstone")
+	}
+	if *capturedParams.SupersededBy != wantSupersedesURI {
+		t.Errorf("SupersededBy: got %q, want %q", *capturedParams.SupersededBy, wantSupersedesURI)
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_TombstoneUsesCanonicalURIs verifies that
+// CreateTombstone receives full canonical https:// URIs (not bare ULIDs) for
+// both EventURI and SupersededBy in the near-dup add-occurrence path.
+func TestAddOccurrenceFromReviewNearDup_TombstoneUsesCanonicalURIs(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	const baseURL = "https://toronto.togather.foundation"
+	// Use valid 26-char Crockford Base32 ULIDs (no I/L/O/U).
+	const targetULID = "01HTARGET00000000000000001"
+	const sourceULID = "01HSRC00000000000000000001"
+
+	wantEventURI := "https://toronto.togather.foundation/events/" + sourceULID
+	wantSupersedesURI := "https://toronto.togather.foundation/events/" + targetULID
+
+	var capturedParams TombstoneCreateParams
+	repo := makeNearDupOccurrenceRepo("target-id", targetULID, sourceULID, startTime)
+	repo.createTombstoneFunc = func(_ context.Context, p TombstoneCreateParams) error {
+		capturedParams = p
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, baseURL)
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedParams.EventURI != wantEventURI {
+		t.Errorf("EventURI: got %q, want %q", capturedParams.EventURI, wantEventURI)
+	}
+	if capturedParams.SupersededBy == nil {
+		t.Fatal("SupersededBy must not be nil for absorbed_as_occurrence tombstone")
+	}
+	if *capturedParams.SupersededBy != wantSupersedesURI {
+		t.Errorf("SupersededBy: got %q, want %q", *capturedParams.SupersededBy, wantSupersedesURI)
 	}
 }

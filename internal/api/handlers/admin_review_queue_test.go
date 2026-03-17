@@ -412,11 +412,11 @@ func TestApproveReview_SentinelErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := new(MockRepository)
-			entry := testReviewQueueEntry(1, "01HTEST1")
+			entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 			setupTxMock(mockRepo)
 			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
-				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "approved"},
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST0000000000000000001", Status: "approved"},
 				tt.serviceErr,
 			)
 
@@ -464,11 +464,11 @@ func TestRejectReview_SentinelErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := new(MockRepository)
-			entry := testReviewQueueEntry(1, "01HTEST1")
+			entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 			setupTxMock(mockRepo)
 			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
-				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "rejected"},
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST0000000000000000001", Status: "rejected"},
 				tt.serviceErr,
 			)
 
@@ -516,11 +516,11 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := new(MockRepository)
-			entry := testReviewQueueEntry(1, "01HTEST1")
+			entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 			setupTxMock(mockRepo)
 			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
-				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "approved"},
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST0000000000000000001", Status: "approved"},
 				tt.serviceErr,
 			)
 
@@ -550,7 +550,7 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 // TestMergeReview_SentinelErrors verifies that service-layer sentinel errors
 // from MergeEventsWithReview map to the correct HTTP status codes.
 func TestMergeReview_SentinelErrors(t *testing.T) {
-	primaryULID := "01HPRIMARY0000000000000001"
+	primaryULID := "01HPRMARY00000000000000001"
 
 	tests := []struct {
 		name           string
@@ -572,11 +572,11 @@ func TestMergeReview_SentinelErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := new(MockRepository)
-			entry := testReviewQueueEntry(1, "01HTEST1")
+			entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 			mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 			setupTxMock(mockRepo)
 			mockRepo.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(
-				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST1", Status: "merged"},
+				&events.ReviewQueueEntry{ID: 1, EventULID: "01HTEST0000000000000000001", Status: "merged"},
 				tt.serviceErr,
 			)
 
@@ -604,7 +604,7 @@ func TestMergeReview_SentinelErrors(t *testing.T) {
 // TestMergeReview_EntryNotFound verifies that a missing review ID on the initial fetch
 // returns 404 (not 500). The repo returns events.ErrNotFound for missing rows.
 func TestMergeReview_EntryNotFound(t *testing.T) {
-	primaryULID := "01HPRIMARY0000000000000001"
+	primaryULID := "01HPRMARY00000000000000001"
 	mockRepo := new(MockRepository)
 	mockRepo.On("GetReviewQueueEntry", mock.Anything, 999).Return(
 		(*events.ReviewQueueEntry)(nil),
@@ -649,8 +649,8 @@ func TestListReviewQueue(t *testing.T) {
 					return f.Status != nil && *f.Status == "pending" && f.Limit == 50
 				})).Return(&events.ReviewQueueListResult{
 					Entries: []events.ReviewQueueEntry{
-						*testReviewQueueEntry(1, "01HTEST1"),
-						*testReviewQueueEntry(2, "01HTEST2"),
+						*testReviewQueueEntry(1, "01HTEST0000000000000000001"),
+						*testReviewQueueEntry(2, "01HTEST0000000000000000002"),
 					},
 					NextCursor: nil,
 					TotalCount: 2,
@@ -747,7 +747,7 @@ func TestListReviewQueue(t *testing.T) {
 				nextCursor := 3
 				m.On("ListReviewQueue", mock.Anything, mock.Anything).Return(&events.ReviewQueueListResult{
 					Entries: []events.ReviewQueueEntry{
-						*testReviewQueueEntry(1, "01HTEST1"),
+						*testReviewQueueEntry(1, "01HTEST0000000000000000001"),
 					},
 					NextCursor: &nextCursor,
 					TotalCount: 1,
@@ -816,7 +816,7 @@ func TestGetReviewQueueEntry(t *testing.T) {
 			reviewID: "1",
 			mockSetup: func(m *MockRepository) {
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(
-					testReviewQueueEntry(1, "01HTEST1"),
+					testReviewQueueEntry(1, "01HTEST0000000000000000001"),
 					nil,
 				)
 			},
@@ -894,7 +894,7 @@ func TestGetReviewQueueEntry(t *testing.T) {
 				err := json.NewDecoder(rec.Body).Decode(&resp)
 				assert.NoError(t, err)
 				assert.Equal(t, 1, resp.ID)
-				assert.Equal(t, "01HTEST1", resp.EventID)
+				assert.Equal(t, "01HTEST0000000000000000001", resp.EventID)
 			}
 
 			mockRepo.AssertExpectations(t)
@@ -916,12 +916,12 @@ func TestApproveReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"notes": "Looks good"},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				notes := "Looks good"
 				m.On("ApproveReview", mock.Anything, 1, "admin", &notes).Return(entry, nil)
 			},
@@ -932,12 +932,12 @@ func TestApproveReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(entry, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -973,11 +973,11 @@ func TestApproveReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(
 					(*events.Event)(nil),
 					events.ErrNotFound,
 				)
@@ -989,11 +989,11 @@ func TestApproveReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(
 					(*events.Event)(nil),
 					errors.New("service error"),
 				)
@@ -1005,12 +1005,12 @@ func TestApproveReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(
 					(*events.ReviewQueueEntry)(nil),
 					pgx.ErrNoRows,
@@ -1023,12 +1023,12 @@ func TestApproveReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{LifecycleState: "draft"}, nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{LifecycleState: "draft"}, nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(
 					(*events.ReviewQueueEntry)(nil),
 					errors.New("database error"),
@@ -1080,12 +1080,12 @@ func TestRejectReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"reason": "Invalid data"},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{ULID: "01HTEST1", ID: "test-id", Name: "Test Event"}, nil)
-				m.On("SoftDeleteEvent", mock.Anything, "01HTEST1", "Invalid data").Return(nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{ULID: "01HTEST0000000000000000001", ID: "test-id", Name: "Test Event"}, nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HTEST0000000000000000001", "Invalid data").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("RejectReview", mock.Anything, 1, "admin", "Invalid data").Return(entry, nil)
 			},
@@ -1136,11 +1136,11 @@ func TestRejectReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"reason": "Invalid"},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(
 					(*events.Event)(nil),
 					events.ErrNotFound,
 				)
@@ -1152,11 +1152,11 @@ func TestRejectReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"reason": "Invalid"},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(
 					(*events.Event)(nil),
 					errors.New("service error"),
 				)
@@ -1168,12 +1168,12 @@ func TestRejectReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"reason": "Invalid"},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{ULID: "01HTEST1", ID: "test-id", Name: "Test Event"}, nil)
-				m.On("SoftDeleteEvent", mock.Anything, "01HTEST1", "Invalid").Return(nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{ULID: "01HTEST0000000000000000001", ID: "test-id", Name: "Test Event"}, nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HTEST0000000000000000001", "Invalid").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("RejectReview", mock.Anything, 1, "admin", "Invalid").Return(
 					(*events.ReviewQueueEntry)(nil),
@@ -1187,12 +1187,12 @@ func TestRejectReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"reason": "Invalid"},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(&events.Event{ULID: "01HTEST1", ID: "test-id", Name: "Test Event"}, nil)
-				m.On("SoftDeleteEvent", mock.Anything, "01HTEST1", "Invalid").Return(nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{ULID: "01HTEST0000000000000000001", ID: "test-id", Name: "Test Event"}, nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HTEST0000000000000000001", "Invalid").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("RejectReview", mock.Anything, 1, "admin", "Invalid").Return(
 					(*events.ReviewQueueEntry)(nil),
@@ -1236,7 +1236,7 @@ func TestFixReview(t *testing.T) {
 	// eventWithOccurrence returns a test event with a single occurrence for FixEventOccurrenceDates
 	eventWithOccurrence := func(state string) *events.Event {
 		return &events.Event{
-			ULID:           "01HTEST1",
+			ULID:           "01HTEST0000000000000000001",
 			LifecycleState: state,
 			Occurrences: []events.Occurrence{
 				{
@@ -1265,13 +1265,13 @@ func TestFixReview(t *testing.T) {
 				"notes": "Fixed start date",
 			},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
-				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST0000000000000000001", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(entry, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -1286,13 +1286,13 @@ func TestFixReview(t *testing.T) {
 				"notes": "Fixed end date",
 			},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
-				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST0000000000000000001", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(entry, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -1308,13 +1308,13 @@ func TestFixReview(t *testing.T) {
 				"notes": "Fixed both dates",
 			},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
-				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST0000000000000000001", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(entry, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -1357,11 +1357,11 @@ func TestFixReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]any{"corrections": map[string]string{"startDate": "2024-01-01T10:00:00Z"}},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(
 					(*events.Event)(nil),
 					events.ErrNotFound,
 				)
@@ -1373,14 +1373,14 @@ func TestFixReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]any{"corrections": map[string]string{"startDate": "2024-01-01T10:00:00Z"}},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				// GetByULID succeeds, UpdateOccurrenceDates succeeds, but UpdateEvent fails
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
-				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST0000000000000000001", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(
 					(*events.Event)(nil),
 					errors.New("publish error"),
 				)
@@ -1392,13 +1392,13 @@ func TestFixReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]any{"corrections": map[string]string{"startDate": "2024-01-01T10:00:00Z"}},
 			mockSetup: func(m *MockRepository) {
-				entry := testReviewQueueEntry(1, "01HTEST1")
+				entry := testReviewQueueEntry(1, "01HTEST0000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
-				m.On("GetByULID", mock.Anything, "01HTEST1").Return(eventWithOccurrence("draft"), nil)
-				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST1", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
-				m.On("UpdateEvent", mock.Anything, "01HTEST1", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(eventWithOccurrence("draft"), nil)
+				m.On("UpdateOccurrenceDates", mock.Anything, "01HTEST0000000000000000001", mock.AnythingOfType("time.Time"), mock.Anything).Return(nil)
+				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", mock.AnythingOfType("*string")).Return(
 					(*events.ReviewQueueEntry)(nil),
 					errors.New("approve error"),
@@ -1645,21 +1645,21 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				entry.EventStartTime = now
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(testTargetEvent(), nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
+				m.On("GetByULID", mock.Anything, "01HREV00000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Series Event",
 					Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
-				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HREV00000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
-				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREV00000000000000000001"), nil)
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -1684,7 +1684,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			mockSetup: func(m *MockRepository) {
 				// GetReviewQueueEntry is called to determine dispatch path.
 				// potential_duplicate warning → forward path → target_event_ulid is required.
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -1694,7 +1694,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": "not-a-ulid"},
 			mockSetup: func(m *MockRepository) {
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -1717,7 +1717,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				entry.EventStartTime = now
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
@@ -1726,8 +1726,8 @@ func TestAddOccurrenceReview(t *testing.T) {
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
 				// Forward path: review event is fetched before the overlap check so that
 				// locked occurrence timestamps (not the review-row snapshot) are used.
-				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{
-					ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
+				m.On("GetByULID", mock.Anything, "01HREV00000000000000000001").Return(&events.Event{
+					ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Series Event",
 					Occurrences: []events.Occurrence{{StartTime: now}},
 				}, nil)
 				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
@@ -1740,7 +1740,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(entry, nil)
@@ -1756,7 +1756,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				entry.Status = "approved"
 				setupTxMock(m)
@@ -1769,7 +1769,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			reviewID:    "1",
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
-				entry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				entry := testPotDupEntry(1, "01HREV00000000000000000001")
 				entry.EventStartTime = now
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
 				setupTxMock(m)
@@ -1778,14 +1778,14 @@ func TestAddOccurrenceReview(t *testing.T) {
 				draftTarget.LifecycleState = "draft"
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(draftTarget, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Series Event",
+				m.On("GetByULID", mock.Anything, "01HREV00000000000000000001").Return(&events.Event{ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Series Event",
 					Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
-				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HREV00000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
-				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREVIEW000000000000000001"), nil)
+				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(testMergedReview(1, "01HREV00000000000000000001"), nil)
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -1841,7 +1841,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 	targetEventULID := "01HTARGET00000000000000001"
 	targetEventID := "target-event-uuid"
-	sourceEventULID := "01HSOURCE00000000000000001"
+	sourceEventULID := "01HSRC00000000000000000001"
 	now := time.Now()
 
 	// nearDupEntry returns a review entry with a near_duplicate_of_new_event warning
@@ -1957,23 +1957,23 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 			requestBody: map[string]string{"target_event_ulid": targetEventULID},
 			mockSetup: func(m *MockRepository) {
 				// potential_duplicate warning → forward path (not near-dup).
-				fwdEntry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+				fwdEntry := testPotDupEntry(1, "01HREV00000000000000000001")
 				m.On("GetReviewQueueEntry", mock.Anything, 1).Return(fwdEntry, nil)
 				setupTxMock(m)
 				m.On("LockReviewQueueEntryForUpdate", mock.Anything, 1).Return(fwdEntry, nil)
 				m.On("GetByULID", mock.Anything, targetEventULID).Return(
 					&events.Event{ID: targetEventID, ULID: targetEventULID, Name: "Series", LifecycleState: "published"}, nil)
 				m.On("LockEventForUpdate", mock.Anything, targetEventID).Return(nil)
-				m.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
-					&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
+				m.On("GetByULID", mock.Anything, "01HREV00000000000000000001").Return(
+					&events.Event{ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Instance",
 						Occurrences: []events.Occurrence{{StartTime: now}}}, nil)
 				m.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 				m.On("CheckOccurrenceOverlap", mock.Anything, targetEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 				m.On("CreateOccurrence", mock.Anything, mock.Anything).Return(nil)
-				m.On("SoftDeleteEvent", mock.Anything, "01HREVIEW000000000000000001", "absorbed_as_occurrence").Return(nil)
+				m.On("SoftDeleteEvent", mock.Anything, "01HREV00000000000000000001", "absorbed_as_occurrence").Return(nil)
 				m.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil)
 				m.On("MergeReview", mock.Anything, 1, "admin", targetEventULID).Return(
-					&events.ReviewQueueEntry{ID: 1, EventID: "review-event-id", EventULID: "01HREVIEW000000000000000001",
+					&events.ReviewQueueEntry{ID: 1, EventID: "review-event-id", EventULID: "01HREV00000000000000000001",
 						OriginalPayload: []byte(`{"name":"Series Event"}`), NormalizedPayload: []byte(`{"name":"Series Event"}`),
 						Warnings: []byte(`[]`), Status: "merged", DuplicateOfEventULID: &targetEventULID,
 						EventStartTime: now, CreatedAt: now, UpdatedAt: now}, nil)
@@ -2036,7 +2036,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 // ambiguous and requires manual resolution.
 func TestAddOccurrenceReview_BothWarningsRejected(t *testing.T) {
 	targetEventULID := "01HTARGET00000000000000001"
-	sourceEventULID := "01HSOURCE00000000000000001"
+	sourceEventULID := "01HSRC00000000000000000001"
 	now := time.Now()
 
 	// Build a review entry that carries both warning types.
@@ -2095,7 +2095,7 @@ func TestAddOccurrenceReview_UnsupportedReviewRejected(t *testing.T) {
 	qualityOnlyEntry := &events.ReviewQueueEntry{
 		ID:                1,
 		EventID:           "test-event-id",
-		EventULID:         "01HREVIEW000000000000000001",
+		EventULID:         "01HREV00000000000000000001",
 		OriginalPayload:   []byte(`{"name":"Test Event"}`),
 		NormalizedPayload: []byte(`{"name":"Test Event"}`),
 		Warnings:          qualityWarnings,
@@ -2136,7 +2136,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 	targetEventID := "target-event-uuid"
 	now := time.Now()
 
-	fwdEntry := testPotDupEntry(1, "01HREVIEW000000000000000001")
+	fwdEntry := testPotDupEntry(1, "01HREV00000000000000000001")
 	fwdEntry.EventStartTime = now
 
 	mockRepo := new(MockRepository)
@@ -2149,8 +2149,8 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 	// Source event fetched BEFORE the overlap check (so locked occurrence timestamps are
 	// used, not the review-row snapshot).  Zero occurrences → ErrZeroOccurrenceSource.
 	// CheckOccurrenceOverlap is NOT called because the method returns early.
-	mockRepo.On("GetByULID", mock.Anything, "01HREVIEW000000000000000001").Return(
-		&events.Event{ID: "review-event-id", ULID: "01HREVIEW000000000000000001", Name: "Instance",
+	mockRepo.On("GetByULID", mock.Anything, "01HREV00000000000000000001").Return(
+		&events.Event{ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Instance",
 			Occurrences: []events.Occurrence{}}, nil)
 	mockRepo.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 
@@ -2180,7 +2180,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 func TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath(t *testing.T) {
 	targetEventULID := "01HTARGET00000000000000001"
 	targetEventID := "target-event-uuid"
-	sourceEventULID := "01HSOURCE00000000000000001"
+	sourceEventULID := "01HSRC00000000000000000001"
 	now := time.Now()
 
 	warningJSON, _ := json.Marshal([]events.ValidationWarning{

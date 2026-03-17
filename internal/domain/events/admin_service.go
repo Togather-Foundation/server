@@ -33,17 +33,21 @@ func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string,
 	}
 }
 
-// eventURI returns the canonical URI for an event ULID, falling back to a
-// bare ULID path when baseURL is not configured (e.g. in unit tests).
-func (s *AdminService) eventURI(ulid string) string {
+// eventURI returns the canonical URI for an event ULID.
+// When baseURL is empty (e.g. unit tests without a configured base URL) it
+// returns the bare ULID as a fallback so tests don't need a valid URL.
+// When baseURL is non-empty and URI construction fails, it returns an error
+// rather than silently emitting a bare ULID into a tombstone or superseded_by
+// field — either would be an invalid tombstone URI that violates the SEL spec.
+func (s *AdminService) eventURI(ulid string) (string, error) {
 	if s.baseURL == "" || ulid == "" {
-		return ulid
+		return ulid, nil
 	}
 	uri, err := ids.BuildCanonicalURI(s.baseURL, "events", ulid)
 	if err != nil {
-		return ulid
+		return "", fmt.Errorf("build canonical URI for event %s: %w", ulid, err)
 	}
-	return uri
+	return uri, nil
 }
 
 // UpdateEventParams contains fields that can be updated by admins
@@ -351,14 +355,21 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	}
 
 	// Tombstone for the absorbed event
-	targetURI := s.eventURI(targetEventULID)
-	tombstonePayload, err := buildTombstonePayload(s.eventURI(reviewEvent.ULID), reviewEvent.Name, &targetURI, "absorbed_as_occurrence")
+	targetURI, err := s.eventURI(targetEventULID)
+	if err != nil {
+		return nil, fmt.Errorf("canonical URI for target: %w", err)
+	}
+	reviewEventURI, err := s.eventURI(reviewEvent.ULID)
+	if err != nil {
+		return nil, fmt.Errorf("canonical URI for review event: %w", err)
+	}
+	tombstonePayload, err := buildTombstonePayload(reviewEventURI, reviewEvent.Name, &targetURI, "absorbed_as_occurrence")
 	if err != nil {
 		return nil, fmt.Errorf("build tombstone: %w", err)
 	}
 	err = txRepo.CreateTombstone(ctx, TombstoneCreateParams{
 		EventID:      reviewEvent.ID,
-		EventURI:     s.eventURI(reviewEvent.ULID),
+		EventURI:     reviewEventURI,
 		DeletedAt:    time.Now(),
 		Reason:       "absorbed_as_occurrence",
 		SupersededBy: &targetURI,
@@ -631,14 +642,21 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	}
 
 	// Tombstone for the absorbed source event.
-	targetURI := s.eventURI(targetEventULID)
-	tombstonePayload, err := buildTombstonePayload(s.eventURI(sourceEvent.ULID), sourceEvent.Name, &targetURI, "absorbed_as_occurrence")
+	targetURI, err := s.eventURI(targetEventULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("canonical URI for target: %w", err)
+	}
+	sourceEventURI, err := s.eventURI(sourceEvent.ULID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("canonical URI for source event: %w", err)
+	}
+	tombstonePayload, err := buildTombstonePayload(sourceEventURI, sourceEvent.Name, &targetURI, "absorbed_as_occurrence")
 	if err != nil {
 		return nil, nil, fmt.Errorf("build tombstone: %w", err)
 	}
 	if err = txRepo.CreateTombstone(ctx, TombstoneCreateParams{
 		EventID:      sourceEvent.ID,
-		EventURI:     s.eventURI(sourceEvent.ULID),
+		EventURI:     sourceEventURI,
 		DeletedAt:    time.Now(),
 		Reason:       "absorbed_as_occurrence",
 		SupersededBy: &targetURI,
@@ -953,16 +971,22 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 	}
 
 	// Generate tombstone for the duplicate event
-	primaryURI := s.eventURI(params.PrimaryULID)
-
-	tombstonePayload, err := buildTombstonePayload(s.eventURI(duplicate.ULID), duplicate.Name, &primaryURI, "duplicate_merged")
+	primaryURI, err := s.eventURI(params.PrimaryULID)
+	if err != nil {
+		return fmt.Errorf("canonical URI for primary event: %w", err)
+	}
+	duplicateURI, err := s.eventURI(duplicate.ULID)
+	if err != nil {
+		return fmt.Errorf("canonical URI for duplicate event: %w", err)
+	}
+	tombstonePayload, err := buildTombstonePayload(duplicateURI, duplicate.Name, &primaryURI, "duplicate_merged")
 	if err != nil {
 		return fmt.Errorf("build tombstone: %w", err)
 	}
 
 	tombstoneParams := TombstoneCreateParams{
 		EventID:      duplicate.ID,
-		EventURI:     s.eventURI(duplicate.ULID),
+		EventURI:     duplicateURI,
 		DeletedAt:    time.Now(),
 		Reason:       "duplicate_merged",
 		SupersededBy: &primaryURI,
@@ -1089,14 +1113,18 @@ func (s *AdminService) RejectEventWithReview(ctx context.Context, eventULID stri
 	}
 
 	// Generate tombstone
-	tombstonePayload, err := buildTombstonePayload(s.eventURI(event.ULID), event.Name, nil, reason)
+	eventURI, err := s.eventURI(event.ULID)
+	if err != nil {
+		return nil, fmt.Errorf("canonical URI for event: %w", err)
+	}
+	tombstonePayload, err := buildTombstonePayload(eventURI, event.Name, nil, reason)
 	if err != nil {
 		return nil, fmt.Errorf("build tombstone: %w", err)
 	}
 
 	tombstoneParams := TombstoneCreateParams{
 		EventID:      event.ID,
-		EventURI:     s.eventURI(event.ULID),
+		EventURI:     eventURI,
 		DeletedAt:    time.Now(),
 		Reason:       reason,
 		SupersededBy: nil,
@@ -1266,7 +1294,11 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 	}
 
 	// Generate tombstone JSON-LD payload
-	tombstonePayload, err := buildTombstonePayload(s.eventURI(event.ULID), event.Name, nil, reason)
+	eventURI, err := s.eventURI(event.ULID)
+	if err != nil {
+		return fmt.Errorf("canonical URI for event: %w", err)
+	}
+	tombstonePayload, err := buildTombstonePayload(eventURI, event.Name, nil, reason)
 	if err != nil {
 		return fmt.Errorf("build tombstone: %w", err)
 	}
@@ -1274,7 +1306,7 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 	// Create tombstone record
 	tombstoneParams := TombstoneCreateParams{
 		EventID:      event.ID,
-		EventURI:     s.eventURI(event.ULID),
+		EventURI:     eventURI,
 		DeletedAt:    time.Now(),
 		Reason:       reason,
 		SupersededBy: nil,
