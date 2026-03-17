@@ -17,6 +17,7 @@ Before planning or writing code, search the project docs:
 
 - `docs/` — architecture, API design, interop profile, operations, deployment
 - `specs/` — Spec artifacts (constitution → spec → tasks); source of intent for every feature
+- `@specs/AGENTS.md` — read before writing or reviewing any plan, spec, or task document
 - `@internal/storage/postgres/AGENTS.md`, `@web/AGENTS.md`, `@tests/e2e/AGENTS.md` — read before touching files in those directories
 
 Use Grep/Glob/Read to find relevant docs. Do not assume — the project is well-documented and docs often contain decisions that must be preserved.
