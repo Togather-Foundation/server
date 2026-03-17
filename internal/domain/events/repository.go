@@ -312,6 +312,7 @@ type PlaceCreateParams struct {
 type PlaceRecord struct {
 	ID   string
 	ULID string
+	Name string // canonical stored name; populated by GetPlaceByULID for mismatch detection
 }
 
 type OrganizationCreateParams struct {

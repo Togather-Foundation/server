@@ -576,12 +576,10 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			// Regression: a parent location with only a canonical @id and empty Name must
-			// be treated as "no resolvable venue" when occurrences have no venueId.
-			// The ingest layer resolves venues by Name (UpsertPlace); a @id-only location
-			// cannot be looked up at ingest time, so PrimaryVenueID would remain nil and
-			// the occurrence would violate the occurrence_location_required DB constraint.
-			name: "occurrence without venueId and parent location has @id only (empty name) - invalid",
+			// New contract: a parent location with only a canonical @id is accepted at
+			// validation time. The ingest layer resolves it via GetPlaceByULID; if the
+			// place doesn't exist ingest returns an error. Validation is optimistic.
+			name: "occurrence without venueId and parent location has @id only (empty name) - valid at validation",
 			input: EventInput{
 				Name:      "Canonical Venue Event",
 				StartDate: "2026-06-01T10:00:00Z",
@@ -592,7 +590,7 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
 				},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 
@@ -648,11 +646,11 @@ func TestValidateEventInput_SingleOccurrenceLocation(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			// Regression: single-occurrence event where Location has only a canonical @id
-			// (empty Name) — must be rejected early. The ingest layer cannot resolve a
-			// @id-only location to a PrimaryVenueID, so the occurrence would violate
-			// occurrence_location_required at DB insert time without this guard.
-			name: "single_occurrence_canonical_id_only_location_rejected",
+			// New contract: single-occurrence event where Location has only a canonical @id
+			// (empty Name) is accepted at validation. The ingest layer resolves it via
+			// GetPlaceByULID — if the place doesn't exist, ingest returns a clear error.
+			// Validation is now optimistic; rejection happens at ingest time, not here.
+			name: "single_occurrence_canonical_id_only_location_accepted_at_validation",
 			input: EventInput{
 				Name:      "Event at Canonical Venue",
 				StartDate: "2026-06-01T10:00:00Z",
@@ -663,8 +661,7 @@ func TestValidateEventInput_SingleOccurrenceLocation(t *testing.T) {
 					// Name intentionally omitted — @id only
 				},
 			},
-			wantErr:         true,
-			wantErrContains: "location",
+			wantErr: false,
 		},
 		{
 			// Regression: single-occurrence event with no location at all — must also be

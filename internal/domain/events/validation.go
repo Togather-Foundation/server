@@ -333,16 +333,15 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 	}
 
 	// For single-occurrence events (no Occurrences array, but StartDate provided), the
-	// parent location must be resolvable at ingest time. A Location that supplies only
-	// a canonical @id (empty Name) passes validatePlaceInput but the ingest layer cannot
-	// look up an existing place record by canonical URI — UpsertPlace requires a Name.
-	// This would leave event.PrimaryVenueID nil, causing the occurrence to violate the
-	// occurrence_location_required DB constraint at insert time. Reject early.
+	// parent location must be resolvable at ingest time. A Location must supply either
+	// a canonical @id (resolved via GetPlaceByULID) or a name (resolved via UpsertPlace).
+	// A Location with neither @id nor name would leave PrimaryVenueID nil, causing the
+	// occurrence to violate the occurrence_location_required DB constraint at insert time.
 	if len(input.Occurrences) == 0 && input.StartDate != "" {
 		if !parentEventProvidesInheritableVenue(input) {
 			return nil, ValidationError{
 				Field:   "location",
-				Message: "single-occurrence event has no resolvable location: location.name is required (a canonical @id alone cannot be resolved at ingest time)",
+				Message: "single-occurrence event has no resolvable location: provide location.name or a valid location.@id",
 			}
 		}
 	}
@@ -473,13 +472,7 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 		// Each occurrence must resolve to a location at create time.
 		// An occurrence without its own venueId or virtualUrl inherits from the parent event.
 		// Reject explicitly if the occurrence has no venueId/virtualUrl and the parent cannot
-		// supply a venue at ingest time.
-		//
-		// NOTE: a parent location supplied via canonical `location.@id` alone (empty Name) is
-		// NOT sufficient — the ingest layer resolves venues by name only (via UpsertPlace) and
-		// has no mechanism to look up an existing place record by canonical URI during ingest.
-		// Such a location passes validatePlaceInput but produces a nil PrimaryVenueID, which
-		// would violate the occurrence_location_required DB constraint.
+		// supply a venue at ingest time (no @id, no name, and no virtual URL).
 		if occ.VenueID == "" && strings.TrimSpace(occ.VirtualURL) == "" {
 			if !parentEventProvidesInheritableVenue(input) {
 				return nil, ValidationError{
@@ -496,17 +489,22 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 // parentEventProvidesInheritableVenue reports whether the event input supplies a location
 // that the ingest layer can actually resolve to a PrimaryVenueID for occurrence inheritance.
 //
-// Two paths exist:
-//  1. input.Location with a non-empty Name — resolved via UpsertPlace.
-//  2. input.VirtualLocation with a non-empty URL — passed through as VirtualURL on the event.
+// Three paths exist:
+//  1. input.Location with a non-empty @id — resolved authoritatively via GetPlaceByULID.
+//  2. input.Location with a non-empty Name — resolved via UpsertPlace.
+//  3. input.VirtualLocation with a non-empty URL — passed through as VirtualURL on the event.
 //
-// A Location that supplies only a canonical @id (empty Name) is validated structurally
-// (validatePlaceInput accepts it) but the ingest layer cannot look up an existing place
-// record by canonical URI, so PrimaryVenueID would remain nil and the occurrence would
-// violate the occurrence_location_required DB constraint.
+// All three are considered resolvable at this stage. The ingest layer performs the
+// actual DB lookup for @id-based resolution and will surface a clear error if the
+// referenced place does not exist.
 func parentEventProvidesInheritableVenue(input EventInput) bool {
-	if input.Location != nil && strings.TrimSpace(input.Location.Name) != "" {
-		return true
+	if input.Location != nil {
+		if strings.TrimSpace(input.Location.ID) != "" {
+			return true // canonical @id — resolved by ingest via GetPlaceByULID
+		}
+		if strings.TrimSpace(input.Location.Name) != "" {
+			return true // name — resolved by ingest via UpsertPlace
+		}
 	}
 	if input.VirtualLocation != nil && strings.TrimSpace(input.VirtualLocation.URL) != "" {
 		return true

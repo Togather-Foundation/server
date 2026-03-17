@@ -1054,15 +1054,15 @@ RETURNING id, ulid
 	return &record, nil
 }
 
-// GetPlaceByULID looks up a place by its ULID and returns the (UUID, ULID) pair
-// required to populate OccurrenceCreateParams.VenueID.
+// GetPlaceByULID looks up a place by its ULID and returns the (UUID, ULID, Name) triple.
+// Name is returned so the caller can detect @id+name mismatches at ingest time.
 // Returns events.ErrNotFound when no matching row exists.
 func (r *EventRepository) GetPlaceByULID(ctx context.Context, ulid string) (*events.PlaceRecord, error) {
 	queryer := r.queryer()
 	var record events.PlaceRecord
 	err := queryer.QueryRow(ctx, `
-SELECT id::text, ulid FROM places WHERE ulid = $1 AND deleted_at IS NULL
-`, ulid).Scan(&record.ID, &record.ULID)
+SELECT id::text, ulid, name FROM places WHERE ulid = $1 AND deleted_at IS NULL
+`, ulid).Scan(&record.ID, &record.ULID, &record.Name)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, events.ErrNotFound

@@ -380,145 +380,187 @@ func (s *IngestService) IngestWithIdempotency(ctx context.Context, input EventIn
 		OriginNodeID:        nil,
 	}
 
-	if validated.Location != nil && validated.Location.Name != "" {
-		generatedPlaceULID, err := ids.NewULID()
-		if err != nil {
-			return nil, fmt.Errorf("generate place ulid: %w", err)
-		}
-		place, err := s.repo.UpsertPlace(ctx, PlaceCreateParams{
-			EntityCreateFields: EntityCreateFields{
-				ULID:            generatedPlaceULID,
-				Name:            validated.Location.Name,
-				StreetAddress:   validated.Location.StreetAddress,
-				PostalCode:      validated.Location.PostalCode,
-				AddressLocality: validated.Location.AddressLocality,
-				AddressRegion:   validated.Location.AddressRegion,
-				AddressCountry:  validated.Location.AddressCountry,
-			},
-			Latitude:  float64PtrNonZero(validated.Location.Latitude),
-			Longitude: float64PtrNonZero(validated.Location.Longitude),
-		})
-		if err != nil {
-			return nil, err
-		}
-		params.PrimaryVenueID = &place.ID
-		placeULID = place.ULID
+	if validated.Location != nil {
+		locID := locationID(validated.Location)
 
-		// Layer 3: Fuzzy place dedup. Only check when a NEW place was just created
-		// (returned ULID matches our generated one) — if UpsertPlace returned an
-		// existing record, the names already matched exactly under normalization.
-		if place.ULID == generatedPlaceULID && s.dedupConfig.PlaceReviewThreshold > 0 {
-			placeCandidates, err := s.repo.FindSimilarPlaces(ctx,
-				validated.Location.Name,
-				validated.Location.AddressLocality,
-				validated.Location.AddressRegion,
-				s.dedupConfig.PlaceReviewThreshold,
-			)
-			if err != nil {
-				log.Warn().Err(err).
-					Str("place_name", validated.Location.Name).
-					Msg("Place similarity check failed, continuing ingestion")
-			} else {
-				// Filter out self-match (the place we just created)
-				var filtered []SimilarPlaceCandidate
-				for _, c := range placeCandidates {
-					if c.ID != place.ID {
-						filtered = append(filtered, c)
+		if locID != "" {
+			// --- Canonical @id path ---
+			// location.@id is authoritative: resolve the place by ULID from the URI.
+			// This completely bypasses UpsertPlace and name-based matching.
+			parsed, parseErr := ids.ParseEntityURI(s.nodeDomain, "places", locID, "")
+			if parseErr != nil {
+				return nil, fmt.Errorf("ingest: invalid parent location.@id %q: %w", locID, parseErr)
+			}
+			placeRecord, lookupErr := s.repo.GetPlaceByULID(ctx, parsed.ULID)
+			if lookupErr != nil {
+				if lookupErr == ErrNotFound {
+					return nil, ValidationError{
+						Field:   "location.@id",
+						Message: fmt.Sprintf("canonical place %q not found; ensure the place exists before referencing it by @id", locID),
 					}
 				}
-				if len(filtered) > 0 {
-					best := filtered[0] // highest similarity, sorted DESC
-					if best.Similarity >= s.dedupConfig.PlaceAutoMergeThreshold {
-						// Auto-merge: the new place is almost certainly the same.
-						// Merge new into existing (existing is primary).
-						mergeResult, mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID)
-						if mergeErr != nil {
-							log.Warn().Err(mergeErr).
-								Str("duplicate_place", place.ULID).
-								Str("primary_place", best.ULID).
-								Msg("Place auto-merge failed, continuing with new place")
-						} else {
-							if mergeResult.AlreadyMerged {
-								log.Info().
-									Str("duplicate_place", place.ULID).
-									Str("canonical_place", mergeResult.CanonicalID).
-									Msg("Place already merged by concurrent operation, using canonical")
-							} else {
-								log.Info().
-									Str("duplicate_place", place.ULID).
-									Str("primary_place", best.ULID).
-									Float64("similarity", best.Similarity).
-									Msg("Auto-merged duplicate place")
-							}
-							// Use the canonical place for this event
-							params.PrimaryVenueID = &mergeResult.CanonicalID
-						}
-					} else {
-						// Below auto-merge but above review threshold — flag for review
-						matches := make([]map[string]any, 0, len(filtered))
-						for _, c := range filtered {
-							match := map[string]any{
-								"ulid":       c.ULID,
-								"name":       c.Name,
-								"similarity": c.Similarity,
-							}
-							if c.AddressStreet != nil {
-								match["address_street"] = *c.AddressStreet
-							}
-							if c.AddressLocality != nil {
-								match["address_locality"] = *c.AddressLocality
-							}
-							if c.AddressRegion != nil {
-								match["address_region"] = *c.AddressRegion
-							}
-							if c.PostalCode != nil {
-								match["postal_code"] = *c.PostalCode
-							}
-							if c.URL != nil {
-								match["url"] = *c.URL
-							}
-							if c.Telephone != nil {
-								match["telephone"] = *c.Telephone
-							}
-							if c.Email != nil {
-								match["email"] = *c.Email
-							}
-							matches = append(matches, match)
-						}
-						// NOTE: PlaceInput intentionally does not carry url, telephone, or email.
-						// Venue data attached to event ingest inputs is a location stub (name + address)
-						// not a full place record. Contact info is not captured at ingest time.
-						// The frontend sets url/telephone/email to null for the "new place" diff card,
-						// which prevents false "missing" highlights on fields that were never available.
-						placeDetails := map[string]any{
-							"matches":        matches,
-							"new_place_ulid": place.ULID,
-							"new_place_name": validated.Location.Name,
-						}
-						if validated.Location.StreetAddress != "" {
-							placeDetails["new_place_street"] = validated.Location.StreetAddress
-						}
-						if validated.Location.AddressLocality != "" {
-							placeDetails["new_place_locality"] = validated.Location.AddressLocality
-						}
-						if validated.Location.AddressRegion != "" {
-							placeDetails["new_place_region"] = validated.Location.AddressRegion
-						}
-						if validated.Location.PostalCode != "" {
-							placeDetails["new_place_postal_code"] = validated.Location.PostalCode
-						}
-						warnings = append(warnings, ValidationWarning{
-							Field:   "location.name",
-							Message: fmt.Sprintf("Possible duplicate place: found %d similar place(s) in the same area", len(filtered)),
-							Code:    "place_possible_duplicate",
-							Details: placeDetails,
-						})
-						needsReview = true
+				return nil, fmt.Errorf("ingest: resolve parent location.@id %q: %w", locID, lookupErr)
+			}
+
+			// If name is also supplied, it must match the canonical record to prevent
+			// silent venue misattribution (e.g. typo in @id attaching the wrong place).
+			if locationName := strings.TrimSpace(validated.Location.Name); locationName != "" {
+				if !placeNamesMatch(locationName, placeRecord.Name) {
+					return nil, ValidationError{
+						Field: "location.name",
+						Message: fmt.Sprintf(
+							"location.name %q does not match the canonical place name %q for @id %s; "+
+								"either omit name or correct it to match the referenced place",
+							locationName, placeRecord.Name, locID,
+						),
 					}
 				}
 			}
-		}
-	}
+
+			params.PrimaryVenueID = &placeRecord.ID
+			placeULID = placeRecord.ULID
+		} else if strings.TrimSpace(validated.Location.Name) != "" {
+			// --- Name-based path (no @id) ---
+			// Resolve or create the place by name via UpsertPlace.
+			generatedPlaceULID, err := ids.NewULID()
+			if err != nil {
+				return nil, fmt.Errorf("generate place ulid: %w", err)
+			}
+			place, err := s.repo.UpsertPlace(ctx, PlaceCreateParams{
+				EntityCreateFields: EntityCreateFields{
+					ULID:            generatedPlaceULID,
+					Name:            validated.Location.Name,
+					StreetAddress:   validated.Location.StreetAddress,
+					PostalCode:      validated.Location.PostalCode,
+					AddressLocality: validated.Location.AddressLocality,
+					AddressRegion:   validated.Location.AddressRegion,
+					AddressCountry:  validated.Location.AddressCountry,
+				},
+				Latitude:  float64PtrNonZero(validated.Location.Latitude),
+				Longitude: float64PtrNonZero(validated.Location.Longitude),
+			})
+			if err != nil {
+				return nil, err
+			}
+			params.PrimaryVenueID = &place.ID
+			placeULID = place.ULID
+
+			// Layer 3: Fuzzy place dedup. Only check when a NEW place was just created
+			// (returned ULID matches our generated one) — if UpsertPlace returned an
+			// existing record, the names already matched exactly under normalization.
+			if place.ULID == generatedPlaceULID && s.dedupConfig.PlaceReviewThreshold > 0 {
+				placeCandidates, err := s.repo.FindSimilarPlaces(ctx,
+					validated.Location.Name,
+					validated.Location.AddressLocality,
+					validated.Location.AddressRegion,
+					s.dedupConfig.PlaceReviewThreshold,
+				)
+				if err != nil {
+					log.Warn().Err(err).
+						Str("place_name", validated.Location.Name).
+						Msg("Place similarity check failed, continuing ingestion")
+				} else {
+					// Filter out self-match (the place we just created)
+					var filtered []SimilarPlaceCandidate
+					for _, c := range placeCandidates {
+						if c.ID != place.ID {
+							filtered = append(filtered, c)
+						}
+					}
+					if len(filtered) > 0 {
+						best := filtered[0] // highest similarity, sorted DESC
+						if best.Similarity >= s.dedupConfig.PlaceAutoMergeThreshold {
+							// Auto-merge: the new place is almost certainly the same.
+							// Merge new into existing (existing is primary).
+							mergeResult, mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID)
+							if mergeErr != nil {
+								log.Warn().Err(mergeErr).
+									Str("duplicate_place", place.ULID).
+									Str("primary_place", best.ULID).
+									Msg("Place auto-merge failed, continuing with new place")
+							} else {
+								if mergeResult.AlreadyMerged {
+									log.Info().
+										Str("duplicate_place", place.ULID).
+										Str("canonical_place", mergeResult.CanonicalID).
+										Msg("Place already merged by concurrent operation, using canonical")
+								} else {
+									log.Info().
+										Str("duplicate_place", place.ULID).
+										Str("primary_place", best.ULID).
+										Float64("similarity", best.Similarity).
+										Msg("Auto-merged duplicate place")
+								}
+								// Use the canonical place for this event
+								params.PrimaryVenueID = &mergeResult.CanonicalID
+							}
+						} else {
+							// Below auto-merge but above review threshold — flag for review
+							matches := make([]map[string]any, 0, len(filtered))
+							for _, c := range filtered {
+								match := map[string]any{
+									"ulid":       c.ULID,
+									"name":       c.Name,
+									"similarity": c.Similarity,
+								}
+								if c.AddressStreet != nil {
+									match["address_street"] = *c.AddressStreet
+								}
+								if c.AddressLocality != nil {
+									match["address_locality"] = *c.AddressLocality
+								}
+								if c.AddressRegion != nil {
+									match["address_region"] = *c.AddressRegion
+								}
+								if c.PostalCode != nil {
+									match["postal_code"] = *c.PostalCode
+								}
+								if c.URL != nil {
+									match["url"] = *c.URL
+								}
+								if c.Telephone != nil {
+									match["telephone"] = *c.Telephone
+								}
+								if c.Email != nil {
+									match["email"] = *c.Email
+								}
+								matches = append(matches, match)
+							}
+							// NOTE: PlaceInput intentionally does not carry url, telephone, or email.
+							// Venue data attached to event ingest inputs is a location stub (name + address)
+							// not a full place record. Contact info is not captured at ingest time.
+							// The frontend sets url/telephone/email to null for the "new place" diff card,
+							// which prevents false "missing" highlights on fields that were never available.
+							placeDetails := map[string]any{
+								"matches":        matches,
+								"new_place_ulid": place.ULID,
+								"new_place_name": validated.Location.Name,
+							}
+							if validated.Location.StreetAddress != "" {
+								placeDetails["new_place_street"] = validated.Location.StreetAddress
+							}
+							if validated.Location.AddressLocality != "" {
+								placeDetails["new_place_locality"] = validated.Location.AddressLocality
+							}
+							if validated.Location.AddressRegion != "" {
+								placeDetails["new_place_region"] = validated.Location.AddressRegion
+							}
+							if validated.Location.PostalCode != "" {
+								placeDetails["new_place_postal_code"] = validated.Location.PostalCode
+							}
+							warnings = append(warnings, ValidationWarning{
+								Field:   "location.name",
+								Message: fmt.Sprintf("Possible duplicate place: found %d similar place(s) in the same area", len(filtered)),
+								Code:    "place_possible_duplicate",
+								Details: placeDetails,
+							})
+							needsReview = true
+						}
+					}
+				}
+			} // end fuzzy dedup block
+		} // end else if name != ""
+	} // end if validated.Location != nil
 
 	// Layer 2: Near-duplicate detection via pg_trgm fuzzy name matching.
 	// After place reconciliation, check if a similar-named event already exists
@@ -1199,6 +1241,15 @@ func nullableString(value string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+// placeNamesMatch reports whether the submitted name agrees with the canonical
+// place name.  The comparison is case-insensitive and trims leading/trailing
+// whitespace so minor casing differences don't produce false mismatches.
+// This is intentionally lenient — callers should only reject on a mismatch, not
+// require an exact byte-for-byte match.
+func placeNamesMatch(submitted, canonical string) bool {
+	return strings.EqualFold(strings.TrimSpace(submitted), strings.TrimSpace(canonical))
 }
 
 // parsePrice parses a user-provided price string into a float64.
