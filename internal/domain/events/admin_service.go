@@ -24,6 +24,9 @@ type AdminService struct {
 }
 
 func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig, baseURL string) *AdminService {
+	if baseURL == "" {
+		panic("NewAdminService: baseURL must not be empty — set SERVER_BASE_URL (default: http://localhost:8080)")
+	}
 	return &AdminService{
 		repo:             repo,
 		requireHTTPS:     requireHTTPS,
@@ -34,14 +37,12 @@ func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string,
 }
 
 // eventURI returns the canonical URI for an event ULID.
-// When baseURL is empty (e.g. unit tests without a configured base URL) it
-// returns the bare ULID as a fallback so tests don't need a valid URL.
-// When baseURL is non-empty and URI construction fails, it returns an error
-// rather than silently emitting a bare ULID into a tombstone or superseded_by
-// field — either would be an invalid tombstone URI that violates the SEL spec.
+// baseURL is guaranteed non-empty by NewAdminService; if URI construction
+// fails the error is returned rather than silently emitting a bare ULID into a
+// tombstone or superseded_by field — either would violate the SEL spec.
 func (s *AdminService) eventURI(ulid string) (string, error) {
-	if s.baseURL == "" || ulid == "" {
-		return ulid, nil
+	if ulid == "" {
+		return "", fmt.Errorf("eventURI: ulid must not be empty")
 	}
 	uri, err := ids.BuildCanonicalURI(s.baseURL, "events", ulid)
 	if err != nil {

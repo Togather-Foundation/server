@@ -2241,3 +2241,23 @@ func TestAddOccurrenceFromReviewNearDup_TombstoneUsesCanonicalURIs(t *testing.T)
 		t.Errorf("SupersededBy: got %q, want %q", *capturedParams.SupersededBy, wantSupersedesURI)
 	}
 }
+
+// TestNewAdminService_PanicsOnEmptyBaseURL verifies fail-fast behavior: an
+// empty baseURL is a misconfiguration that must be caught at startup rather
+// than silently producing invalid SEL tombstone URIs at runtime.
+func TestNewAdminService_PanicsOnEmptyBaseURL(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for empty baseURL, but no panic occurred")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected panic value to be a string, got %T: %v", r, r)
+		}
+		if msg == "" {
+			t.Fatal("panic message must not be empty")
+		}
+	}()
+	NewAdminService(&mockTransactionalRepo{}, false, "America/Toronto", config.ValidationConfig{}, "")
+}
