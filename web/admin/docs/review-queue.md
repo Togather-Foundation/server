@@ -14,6 +14,55 @@ This feature is part of the **Event Review Workflow** documented in `docs/archit
 
 ---
 
+## Operator Workflow Rules (Easy to Get Wrong)
+
+These rules encode non-obvious behavior that has caused bugs in practice. Read before touching any add-occurrence, merge, or recompute logic.
+
+### 1. add-occurrence can converge a duplicate cluster in any order
+
+If four events (A, B, C, D) are all near-duplicates of each other representing occurrences of the same series, an admin can resolve them in **any order** using repeated add-occurrence calls:
+
+```
+add-occurrence(reviewB → target=A)  → A gains occurrence from B; B deleted
+add-occurrence(reviewC → target=A)  → A gains occurrence from C; C deleted
+add-occurrence(reviewD → target=A)  → A gains occurrence from D; D deleted
+```
+
+Or in reverse, or starting from any event. The surviving event gets all occurrences and is left as a single event with multiple `event_occurrences` rows. Order does not matter because each call re-evaluates surviving pending reviews on the target before deciding whether to restore `lifecycle_state = 'published'`.
+
+### 2. After add-occurrence: target lifecycle is recomputed, not blindly set
+
+After each add-occurrence action, the target event's lifecycle is recomputed inside the same transaction:
+
+- If the target has **no remaining pending reviews** after this action: `lifecycle_state = 'published'`
+- If the target **still has pending reviews** from other near-dup pairings: lifecycle stays `pending_review`
+
+This means an event being consolidated may remain `pending_review` (invisible to the public API) until all of its companion review rows have been resolved.
+
+### 3. After approve/reject/fix/merge: no recompute runs
+
+Unlike add-occurrence, `approve`, `reject`, `fix`, and `merge` set `lifecycle_state` directly and unconditionally. They do not consult other pending review rows on the same event. This is intentional — those actions are decisive about the specific event's fate.
+
+### 4. Ambiguous duplicate states intentionally hide unsafe one-click actions
+
+When a review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously, the UI hides the "Add as Occurrence" button entirely. The backend also rejects such requests with `422 (ambiguous-occurrence-dispatch)`. This guard prevents silent data loss when the dispatch path cannot be determined unambiguously.
+
+Similarly, "Merge Duplicate" is hidden for `near_duplicate_of_new_event` entries because the source/target sides are ambiguous without explicit admin input.
+
+### 5. Multiple occurrences must be visible in event detail
+
+After add-occurrence consolidation, the surviving event has multiple `event_occurrences` rows. Both the admin event detail page (`/admin/events/:id`) and review queue entries must display all occurrences (using `subEvent` serialization in JSON-LD). A review entry that shows only the first occurrence is a bug — the admin needs to see all dates when deciding whether further consolidation is needed.
+
+### 6. Companion review cleanup is exact, not broad
+
+When an add-occurrence action dismisses a companion review, it targets only the **exact cross-linked row** (`GetPendingReviewByEventUlidAndDuplicateUlid`), not all pending reviews on the companion event. This prevents accidentally clearing unrelated reviews.
+
+### 7. merge does not update the primary event's pending review
+
+The `merge` action soft-deletes the duplicate event but does **not** touch the primary event's lifecycle or companion review rows. If the primary was `pending_review` before the merge, it remains `pending_review` afterward and must be handled separately.
+
+---
+
 ## Architecture
 
 ### High-Level Data Flow

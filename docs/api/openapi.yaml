@@ -768,6 +768,12 @@ paths:
       description: |
         Approve an event in the review queue and publish it. The event's lifecycle
         state will be updated to 'published' and it will appear in public listings.
+
+        Set `record_not_duplicates: true` to implement the "Not a Duplicate" action:
+        the event is published and the duplicate-warning candidates are recorded as a
+        confirmed non-duplicate pair, suppressing re-flagging on future ingest.
+        This differs from a plain approve only in the side-effect on the
+        `not_duplicates` table; the event transition is identical.
       tags: [Admin]
       x-internal: true
       security:
@@ -791,6 +797,16 @@ paths:
                 notes:
                   type: string
                   description: Optional review notes
+                record_not_duplicates:
+                  type: boolean
+                  description: |
+                    When `true`, any `potential_duplicate` warning candidates in this
+                    review entry are recorded as confirmed non-duplicates. Future ingest
+                    of events that match these pairs will not generate duplicate warnings.
+                    Used by the "Not a Duplicate" UI action, which approves/publishes the
+                    event while acknowledging that the duplicate flag was incorrect.
+                    Companion review rows on the matched events are dismissed
+                    best-effort (failures are logged but do not fail the request).
             examples:
               withNotes:
                 summary: Approval with notes
@@ -799,6 +815,11 @@ paths:
               withoutNotes:
                 summary: Simple approval
                 value: {}
+              notADuplicate:
+                summary: Approve as not-a-duplicate (suppresses future duplicate warnings)
+                value:
+                  notes: "Different event, same venue"
+                  record_not_duplicates: true
       responses:
         '200':
           description: Review approved and event published
@@ -1085,6 +1106,14 @@ paths:
         The response includes a `targetEventUlid` field at the top level that always identifies
         the surviving series event, regardless of which path was used. The frontend can use this
         to navigate directly to the series after a successful action.
+
+        **Target lifecycle recompute:** After a successful action, the surviving (target) event's
+        `lifecycle_state` is recomputed inside the same transaction. If the target has no remaining
+        `pending` review rows after this action, it transitions to `published`. If other pending
+        reviews still exist on the target (e.g. a second near-duplicate cluster), the target stays
+        `pending_review`. This makes add-occurrence safe to call repeatedly in any order when
+        consolidating a multi-event near-duplicate cluster — the target's lifecycle only becomes
+        `published` when all reviews have been resolved.
       tags: [Admin]
       x-internal: true
       security:

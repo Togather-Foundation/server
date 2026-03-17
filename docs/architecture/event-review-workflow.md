@@ -290,6 +290,48 @@ multi_session_duration_threshold: "720h"  # 30 days
 
 ---
 
+## Review Action State Machine
+
+This section is the authoritative decision table for all admin review actions. "Companion review" refers to the cross-linked review row created on the other event during near-duplicate ingest (see Near-Duplicate Cross-Linking below).
+
+### Action Decision Table
+
+| Action | Endpoint | Review entry's event | Companion review row | Target lifecycle after action | Review status set to |
+|--------|----------|---------------------|---------------------|-------------------------------|----------------------|
+| **approve** | `POST .../approve` | Event's `lifecycle_state` → `published` (unless already published) | Not touched | Event = `published` | `approved` |
+| **approve** (with `record_not_duplicates: true`) | same | Same as approve | `potential_duplicate` warning companions are dismissed via `dismissCompanionDuplicateWarning` (best-effort) | Event = `published` | `approved` |
+| **reject** | `POST .../reject` | Soft-deleted (`lifecycle_state = 'deleted'`, tombstone inserted) | `potential_duplicate` warning pairs are recorded as not-duplicates; companion dismiss is best-effort | Event = `deleted` | `rejected` |
+| **fix** | `POST .../fix` | Occurrence dates corrected; then published | Not touched | Event = `published` | `approved` |
+| **merge** | `POST .../merge` | Soft-deleted (`lifecycle_state = 'deleted'`, tombstone with `superseded_by` → primary URI, reason `duplicate_merged`) | Not touched — the companion review row (if any) on the primary is **not** automatically cleared | Primary event unchanged | `merged` |
+| **add-occurrence** (forward path — `potential_duplicate`) | `POST .../add-occurrence` | Soft-deleted (`lifecycle_state = 'deleted'`, tombstone reason `absorbed_as_occurrence`, `superseded_by` → target URI); occurrences explicitly deleted | Companion review on target event is located and dismissed atomically (status → `merged`) | Target lifecycle recomputed: if no remaining pending reviews → `published`; if other pending reviews remain → stays `pending_review` | `merged` |
+| **add-occurrence** (near-dup path — `near_duplicate_of_new_event`) | `POST .../add-occurrence` | Event is the **target** (kept); `DuplicateOfEventULID` is the source (soft-deleted); occurrence added to this event | Companion review on the source event is located and dismissed atomically (status → `merged`) | Same recompute as forward path applied to this event | `merged` |
+| **not-a-duplicate** (UI-only name) | `POST .../approve` with `record_not_duplicates: true` | Same as approve | `potential_duplicate` pairs recorded in `not_duplicates` table; companion dismissal attempted best-effort | Event = `published` | `approved` |
+
+### Recompute Logic (add-occurrence only)
+
+After `add-occurrence` completes — regardless of path — the surviving (target) event's lifecycle is recomputed **inside the same transaction**:
+
+```
+if target.lifecycle_state == "pending_review":
+    remaining = GetPendingReviewByEventUlid(targetULID)
+    if remaining == nil:
+        target.lifecycle_state = "published"   // all reviews resolved
+    else:
+        # leave as pending_review — other unresolved reviews exist
+```
+
+**Approve, reject, fix, and merge do NOT run this recompute.** They directly set the event's lifecycle state unconditionally.
+
+### Why merge does not recompute the primary
+
+The `merge` action soft-deletes the duplicate event; the primary event's lifecycle state is **not modified**. If the primary was `pending_review` before the merge, it remains `pending_review` after. The primary's companion review row (if any) is also not automatically dismissed — the admin must handle the primary's review separately.
+
+### Companion review dismissal — exact scope
+
+Companion dismissal in `add-occurrence` targets only the **exact counterpart row**: `GetPendingReviewByEventUlidAndDuplicateUlid(companionEventULID, sourceEventULID)`. This is intentionally narrow — it avoids clearing reviews that reference a *different* near-dup pairing on the same event, which would be incorrect.
+
+---
+
 ## Near-Duplicate Cross-Linking
 
 When Layer 2 (pg_trgm) near-duplicate detection matches a new event against one or more existing published events, both sides of the match enter the review queue:
