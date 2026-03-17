@@ -8,7 +8,7 @@
 #
 # Prerequisites:
 #   - Built server binary (make build)
-#   - For local: server running on localhost:8080, PERF_AGENT_API_KEY in .env
+#   - For local: server running on localhost:8080, API_KEY or PERF_AGENT_API_KEY in .env
 #   - For staging: .deploy.conf.staging with NODE_DOMAIN and PERF_AGENT_API_KEY
 
 set -euo pipefail
@@ -79,13 +79,17 @@ resolve_api() {
         API_URL="http://localhost:8080/api/v1"
         if [ -f "$PROJECT_ROOT/.env" ]; then
             API_KEY=$(grep "^PERF_AGENT_API_KEY=" "$PROJECT_ROOT/.env" | cut -d= -f2- || true)
+            # Fall back to API_KEY for local development
+            if [ -z "$API_KEY" ]; then
+                API_KEY=$(grep "^API_KEY=" "$PROJECT_ROOT/.env" | cut -d= -f2- || true)
+            fi
         fi
         API_KEY="${API_KEY:-}"
     fi
 
     if [ -z "$API_KEY" ]; then
         echo "Error: API key not found."
-        echo "Set PERF_AGENT_API_KEY in .env (local) or .deploy.conf.staging (staging)."
+        echo "Set API_KEY or PERF_AGENT_API_KEY in .env (local) or .deploy.conf.staging (staging)."
         exit 1
     fi
 }
@@ -180,7 +184,7 @@ for i in $(seq 0 $((EVENT_COUNT - 1))); do
         -X POST "${API_URL}/events" \
         -H "Content-Type: application/json" \
         -H "Accept: application/ld+json" \
-        -H "X-API-Key: ${API_KEY}" \
+        -H "Authorization: Bearer ${API_KEY}" \
         -d "$EVENT_JSON" 2>&1)
 
     HTTP_CODE=$(echo "$RESPONSE" | tail -1)
