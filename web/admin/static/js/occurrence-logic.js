@@ -33,8 +33,9 @@
      * @returns {{ venue_id: string|null, virtual_url: string|null }}
      */
     function buildOccurrenceFields(inputs) {
-        const venueId = inputs.venueId || null;
-        const virtualUrlRaw = inputs.virtualUrlRaw || null;
+        // Trim and normalise — whitespace-only strings are treated as absent.
+        const venueId = (inputs.venueId || '').trim() || null;
+        const virtualUrlRaw = (inputs.virtualUrlRaw || '').trim() || null;
         // KEY GUARD: when a venue override is active the virtual-URL section is hidden;
         // any value remaining in that input is stale legacy data — drop it silently so
         // admins can save hybrid occurrences into a valid physical-only state.

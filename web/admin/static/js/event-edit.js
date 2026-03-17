@@ -439,6 +439,14 @@
     };
 
     window.saveOccurrence = function() {
+        // Guard: occurrence-logic.js must have loaded before this is called.
+        // If the script failed to load (network error, asset misconfiguration) we
+        // surface a meaningful error rather than letting a ReferenceError propagate.
+        if (typeof OccurrenceLogic === 'undefined' || typeof OccurrenceLogic.buildOccurrenceFromForm !== 'function') {
+            showToast('Occurrence helper failed to load. Please refresh the page and try again.', 'error');
+            return;
+        }
+
         const indexValue = document.getElementById('occurrence-index').value;
 
         const result = OccurrenceLogic.buildOccurrenceFromForm({

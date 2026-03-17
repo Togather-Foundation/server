@@ -173,6 +173,64 @@ console.log('\n9. buildOccurrenceFields pure guard function');
     assert(bare.virtual_url === null, 'null virtual_url');
 }
 
+// 10. Whitespace-only venue and virtual values are treated as absent.
+console.log('\n10. Whitespace-only venue/virtual values normalised to null');
+{
+    const wsVenue = buildOccurrenceFields({ venueId: '   ', virtualUrlRaw: 'u1' });
+    assert(wsVenue.venue_id === null, 'whitespace-only venueId → null');
+    assert(wsVenue.virtual_url === 'u1', 'virtual_url kept when venueId is blank');
+
+    const wsVirtual = buildOccurrenceFields({ venueId: '', virtualUrlRaw: '   ' });
+    assert(wsVirtual.venue_id === null, 'venueId null');
+    assert(wsVirtual.virtual_url === null, 'whitespace-only virtualUrlRaw → null');
+
+    const wsBoth = buildOccurrenceFields({ venueId: '  ', virtualUrlRaw: '\t' });
+    assert(wsBoth.venue_id === null, 'both whitespace-only → venue_id null');
+    assert(wsBoth.virtual_url === null, 'both whitespace-only → virtual_url null');
+
+    // The form-level function also trims correctly.
+    const formRes = buildOccurrenceFromForm(makeForm({
+        venueId: '   ',
+        virtualUrlRaw: '  ',
+    }), []);
+    assert(formRes.ok, 'save succeeds with whitespace-only inputs');
+    assert(formRes.occurrence.venue_id === null, 'form: venue_id null after trim');
+    assert(formRes.occurrence.virtual_url === null, 'form: virtual_url null after trim');
+}
+
+// 11. Browser / global-export smoke test.
+//     Simulates the browser loading path: window.OccurrenceLogic is set by the UMD
+//     shim, not by require().  We re-load the module with a fake globalThis/root that
+//     has no module system so the else-branch (browser export) is exercised.
+console.log('\n11. Browser global-export (window.OccurrenceLogic) smoke test');
+{
+    // Isolate: load the file source and evaluate it with a fresh fakeRoot (= window).
+    const fs   = require('fs');
+    const vm   = require('vm');
+    const src  = fs.readFileSync(path.join(__dirname, 'occurrence-logic.js'), 'utf8');
+
+    const fakeRoot = {};   // stand-in for window / globalThis
+    const sandbox  = { globalThis: fakeRoot };   // module.exports is absent → browser branch
+
+    vm.runInNewContext(src, sandbox);
+
+    assert(typeof fakeRoot.OccurrenceLogic === 'object' && fakeRoot.OccurrenceLogic !== null,
+        'window.OccurrenceLogic is set by UMD browser branch');
+    assert(typeof fakeRoot.OccurrenceLogic.buildOccurrenceFromForm === 'function',
+        'window.OccurrenceLogic.buildOccurrenceFromForm is a function');
+    assert(typeof fakeRoot.OccurrenceLogic.buildOccurrenceFields === 'function',
+        'window.OccurrenceLogic.buildOccurrenceFields is a function');
+
+    // Quick sanity check that the browser-exported functions actually work.
+    const res = fakeRoot.OccurrenceLogic.buildOccurrenceFromForm({
+        indexValue: '', startTime: '2026-06-01T10:00', endTime: '', timezone: 'UTC',
+        doorTime: '', venueId: '', virtualUrlRaw: '',
+    }, []);
+    assert(res.ok, 'browser-exported buildOccurrenceFromForm returns ok result');
+    assert(res.occurrence.venue_id === null,  'browser path: venue_id null');
+    assert(res.occurrence.virtual_url === null, 'browser path: virtual_url null');
+}
+
 // ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
