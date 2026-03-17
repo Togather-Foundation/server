@@ -457,18 +457,46 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 
 		// Each occurrence must resolve to a location at create time.
 		// An occurrence without its own venueId or virtualUrl inherits from the parent event.
-		// Reject explicitly if neither the occurrence nor the parent event provides a location.
+		// Reject explicitly if the occurrence has no venueId/virtualUrl and the parent cannot
+		// supply a venue at ingest time.
+		//
+		// NOTE: a parent location supplied via canonical `location.@id` alone (empty Name) is
+		// NOT sufficient — the ingest layer resolves venues by name only (via UpsertPlace) and
+		// has no mechanism to look up an existing place record by canonical URI during ingest.
+		// Such a location passes validatePlaceInput but produces a nil PrimaryVenueID, which
+		// would violate the occurrence_location_required DB constraint.
 		if occ.VenueID == "" && strings.TrimSpace(occ.VirtualURL) == "" {
-			if input.Location == nil && input.VirtualLocation == nil {
+			if !parentEventProvidesInheritableVenue(input) {
 				return nil, ValidationError{
 					Field:   fieldPrefix + ".venueId",
-					Message: "occurrence has no venueId or virtualUrl and parent event has no location to inherit",
+					Message: "occurrence has no venueId or virtualUrl and parent event has no resolvable location to inherit",
 				}
 			}
 		}
 	}
 
 	return warnings, nil
+}
+
+// parentEventProvidesInheritableVenue reports whether the event input supplies a location
+// that the ingest layer can actually resolve to a PrimaryVenueID for occurrence inheritance.
+//
+// Two paths exist:
+//  1. input.Location with a non-empty Name — resolved via UpsertPlace.
+//  2. input.VirtualLocation with a non-empty URL — passed through as VirtualURL on the event.
+//
+// A Location that supplies only a canonical @id (empty Name) is validated structurally
+// (validatePlaceInput accepts it) but the ingest layer cannot look up an existing place
+// record by canonical URI, so PrimaryVenueID would remain nil and the occurrence would
+// violate the occurrence_location_required DB constraint.
+func parentEventProvidesInheritableVenue(input EventInput) bool {
+	if input.Location != nil && strings.TrimSpace(input.Location.Name) != "" {
+		return true
+	}
+	if input.VirtualLocation != nil && strings.TrimSpace(input.VirtualLocation.URL) != "" {
+		return true
+	}
+	return false
 }
 
 func validatePlaceInput(place PlaceInput, nodeDomain string) error {

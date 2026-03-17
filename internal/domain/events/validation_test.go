@@ -575,6 +575,25 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			// Regression: a parent location with only a canonical @id and empty Name must
+			// be treated as "no resolvable venue" when occurrences have no venueId.
+			// The ingest layer resolves venues by Name (UpsertPlace); a @id-only location
+			// cannot be looked up at ingest time, so PrimaryVenueID would remain nil and
+			// the occurrence would violate the occurrence_location_required DB constraint.
+			name: "occurrence without venueId and parent location has @id only (empty name) - invalid",
+			input: EventInput{
+				Name:      "Canonical Venue Event",
+				StartDate: "2026-06-01T10:00:00Z",
+				Location: &PlaceInput{
+					ID: "https://example.com/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+				},
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

@@ -1751,25 +1751,24 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		}
 	})
 
-	t.Run("occurrence_without_venue_and_no_parent_location_rejected", func(t *testing.T) {
-		// Validation must reject an occurrence that has no venueId/virtualUrl
-		// when the parent event also provides no location. This is the contract
-		// enforced by the DB occurrence_location_required check constraint.
+	t.Run("multi_occurrence_inherits_parent_virtual_location", func(t *testing.T) {
+		// Regression: bare occurrences (no venueId/virtualUrl) must also work when the
+		// parent event has a virtualLocation instead of a physical location. The occurrence
+		// should inherit the parent's VirtualURL and satisfy occurrence_location_required.
 		repo := NewMockRepository()
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
 			config.ValidationConfig{AllowTestDomains: true})
 
 		input := EventInput{
-			Name:        "Mystery Event",
-			Description: "An event with no location anywhere.",
+			Name:        "Online Yoga Series",
+			Description: "A recurring online yoga class.",
 			License:     "CC0-1.0",
 			VirtualLocation: &VirtualLocationInput{
 				URL: "https://zoom.us/j/meeting123",
 			},
 			StartDate: futureDateFn(7 * 24 * time.Hour),
 			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
-			// Occurrences with no venueId/virtualUrl, but parent HAS virtualLocation —
-			// inheritance from virtualLocation is fine; this should succeed.
+			// Bare occurrences: no venueId/virtualUrl — rely on parent virtualLocation.
 			Occurrences: []OccurrenceInput{
 				{
 					StartDate: futureDateFn(7 * 24 * time.Hour),
@@ -1791,6 +1790,44 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		}
 		if occs[0].VirtualURL == nil {
 			t.Error("occurrence should have inherited virtualURL from parent event")
+		}
+	})
+
+	t.Run("canonical_location_id_only_no_name_rejected", func(t *testing.T) {
+		// Regression: a parent location supplied via canonical @id alone (empty Name)
+		// must be rejected at validation when occurrences have no venueId/virtualUrl.
+		// The ingest layer resolves venues by Name only (UpsertPlace) and cannot look
+		// up an existing place by canonical URI, so PrimaryVenueID would be nil and the
+		// occurrence would violate the occurrence_location_required DB constraint.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Event at Canonical Venue",
+			Description: "An event where the parent location has only a canonical @id.",
+			License:     "CC0-1.0",
+			// Location has only @id, no Name — passes validatePlaceInput but ingest
+			// cannot resolve it to a PrimaryVenueID.
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		_, err := svc.Ingest(ctx, input)
+		if err == nil {
+			t.Fatal("Ingest() expected error for canonical-@id-only location with bare occurrences, got nil")
+		}
+		if !strings.Contains(err.Error(), "venueId") {
+			t.Errorf("Ingest() error = %v; want error mentioning venueId", err)
 		}
 	})
 }
