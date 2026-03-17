@@ -105,7 +105,20 @@ func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
 // as "merged" — all in a single database transaction.
 //
 // The targetEventULID identifies the existing recurring-series event.  The new
-// occurrence is constructed from the review entry's EventStartTime / EventEndTime.
+// occurrence is constructed from the **locked source event's sole occurrence** —
+// not from the review entry's snapshot EventStartTime / EventEndTime, which may be
+// stale if the source event was edited after ingest.  The source event is fetched and
+// re-read under a row-level lock inside the transaction to prevent TOCTOU races.
+//
+// Pre-conditions checked under the transaction lock:
+//   - The review entry must be in "pending" status (else ErrConflict).
+//   - The locked review warnings must indicate the "forward" (potential_duplicate) path
+//     (else ErrWrongOccurrencePath or ErrUnsupportedReviewForOccurrence or
+//     ErrAmbiguousOccurrenceDispatch).
+//   - The source event must have exactly one occurrence (else ErrZeroOccurrenceSource
+//     or ErrAmbiguousOccurrenceSource).
+//   - The target event must not be deleted (else ErrEventDeleted).
+//
 // If the new time range overlaps any existing occurrence on the target event,
 // ErrOccurrenceOverlap is returned and the transaction is rolled back.
 func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int, targetEventULID string, reviewedBy string) (*ReviewQueueEntry, error) {

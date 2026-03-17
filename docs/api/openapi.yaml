@@ -1156,7 +1156,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: |
-            One of three unprocessable conditions:
+            One of four unprocessable conditions:
             - **`ambiguous-occurrence-source`** — the source event has multiple occurrences;
               absorbing one ambiguously would silently delete the rest. Resolve or split the
               source event first, then retry.
@@ -1166,6 +1166,10 @@ paths:
               `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously;
               the dispatch path cannot be determined unambiguously. Remove or resolve one warning
               before retrying.
+            - **`unsupported-review-for-occurrence`** — the review entry has neither a
+              `potential_duplicate` nor a `near_duplicate_of_new_event` warning (e.g. the entry
+              carries only data-quality warnings such as `reversed_dates_*`). Add-as-occurrence
+              requires one of the supported duplicate warning types.
           content:
             application/problem+json:
               schema:

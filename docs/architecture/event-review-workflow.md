@@ -671,7 +671,7 @@ Manually correct the dates.
 
 Merge a near-duplicate event into an existing published event, keeping the target and soft-deleting the reviewed event.
 
-Available when the review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning with a `duplicate_of` candidate ULID in the warning details.
+Available when the review entry has a `potential_duplicate` warning with a `duplicate_of` candidate ULID in the warning details. Reviews carrying only a `near_duplicate_of_new_event` warning are **not** eligible for one-click merge — the admin UI intentionally omits the Merge button for those entries because the source/target sides are ambiguous without explicit input. Use **add-occurrence** or approve/reject the entry instead.
 
 **Request body:** `primary_event_ulid` — the ULID of the existing published event to merge into (typically taken from the `duplicate_of` candidate in the warning details).
 
@@ -700,10 +700,12 @@ The endpoint supports two dispatch paths depending on the warning type on the re
 
 **Source event constraints (both paths):** The source event must have exactly one occurrence.
 
-- **Zero occurrences → `422` (`zero-occurrence-source`):** There is nothing to absorb; the review start/end timestamps come from the review entry itself, not from a real occurrence. Ensure the source event has exactly one occurrence before retrying.
+- **Zero occurrences → `422` (`zero-occurrence-source`):** There is nothing to absorb; the source event has no occurrence row from which to extract timestamps. Ensure the source event has exactly one occurrence before retrying.
 - **Multiple occurrences → `422` (`ambiguous-occurrence-source`):** Only one occurrence can be absorbed, but soft-deleting the entire source event would silently discard the rest (data loss). Resolve or split the source event first, then retry. In practice, the near-duplicate ingest path always creates single-occurrence events, so this guard primarily catches non-standard database states.
 
 **Ambiguous dispatch:** If the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously, the endpoint rejects the request with `422` (`ambiguous-occurrence-dispatch`) — the dispatch path cannot be determined unambiguously. Remove or resolve one of the warnings before retrying.
+
+**Unsupported review type:** If the review entry has **neither** a `potential_duplicate` nor a `near_duplicate_of_new_event` warning (e.g. it carries only data-quality warnings such as `reversed_dates_*`), the request is rejected with `422` (`unsupported-review-for-occurrence`). Add-as-occurrence is only meaningful when the entry was created as part of duplicate detection.
 
 **Request (forward path only):**
 ```json
@@ -730,7 +732,7 @@ All steps run inside a single database transaction.
 - `404 Not Found` — review entry or target event not found
 - `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted
-- `422 Unprocessable Entity` — source event has zero or multiple occurrences, or review carries both warning types (see constraints above)
+- `422 Unprocessable Entity` — source event has zero or multiple occurrences; review carries both warning types; or review has no supported duplicate warning (see constraints above)
 
 ---
 
