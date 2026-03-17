@@ -1066,7 +1066,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// RS-02: Book Club — Near-dup path (companion reviews on both sides)
 	// -----------------------------------------------------------------------
 	rs02Base := g.NewRecurringSeriesBuilder().
-		WithName("RS-02 Book Club — Existing Series").
+		WithName("RS-02 Book Club — Tuesday Evening").
 		WithDescription("Monthly book club for lovers of literary fiction. Light snacks provided.").
 		WithVenue(bookclub).
 		WithOrganizer(bookOrg).
@@ -1077,8 +1077,9 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs02Base.URL = fmt.Sprintf("%s/events/rs02-bookclub-series", mu.BaseURL)
 	rs02Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 
+	// Near-dup: similar name (similarity ~0.63) + same venue + same date → triggers dedup.
 	rs02NearDup := events.EventInput{
-		Name:        "RS-02 Book Club — Near-Dup New Event",
+		Name:        "RS-02 Book Club — Tuesday Night",
 		Description: "Book club gathering at Snakes and Lattes — same evening, different listing source.",
 		StartDate:   rs02Base.Occurrences[0].StartDate,
 		EndDate:     rs02Base.Occurrences[0].EndDate,
@@ -1208,7 +1209,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// RS-07: Dance Class — Not-a-duplicate (approve with record_not_duplicates)
 	// -----------------------------------------------------------------------
 	rs07Base := g.NewRecurringSeriesBuilder().
-		WithName("RS-07 Dance Class — Existing Series").
+		WithName("RS-07 Dance Class — Wednesday Series").
 		WithDescription("Contemporary dance classes for adults. No experience required.").
 		WithVenue(dance).
 		WithOrganizer(danceOrg).
@@ -1219,8 +1220,10 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs07Base.URL = fmt.Sprintf("%s/e/rs07-dance-series", eb.BaseURL)
 	rs07Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 
+	// Not-a-duplicate: similar name (similarity ~0.71) + same venue + same day → triggers dedup,
+	// but admin should approve with record_not_duplicates (it's a social dance, not the class).
 	rs07NotDup := events.EventInput{
-		Name:        "RS-07 Dance Class — Not A Duplicate",
+		Name:        "RS-07 Dance Class — Wednesday Social",
 		Description: "A different dance event at The Baby G — social dancing, not the structured class series.",
 		StartDate:   anchor.Add(2*24*time.Hour + 4*time.Hour).Format(time.RFC3339), // same day, later time
 		EndDate:     anchor.Add(2*24*time.Hour + 6*time.Hour).Format(time.RFC3339),
@@ -1289,8 +1292,6 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// -----------------------------------------------------------------------
 	choirAStart := anchor.Add(3 * 24 * time.Hour) // Wednesday
 	choirAEnd := choirAStart.Add(2 * time.Hour)
-	choirBStart := choirAStart.Add(week) // Week+1
-	choirBEnd := choirBStart.Add(2 * time.Hour)
 	rs10SourceA := events.EventInput{
 		Name:        "RS-10 Choir Rehearsal — Source A",
 		Description: "Weekly choir rehearsal at Bampot Tea House. All voice types welcome.",
@@ -1304,11 +1305,14 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		Keywords:    []string{"choir", "singing", "rehearsal", "toronto"},
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
+	// Source B: same date as Source A (dedup requires same date + same venue + similarity > 0.4).
+	// Similarity between "RS-10 Choir Rehearsal — Source A" and "RS-10 Choir Rehearsal — Source B"
+	// is ~0.875, well above the 0.4 threshold.
 	rs10SourceB := events.EventInput{
 		Name:        "RS-10 Choir Rehearsal — Source B",
 		Description: "Choir rehearsal — same ensemble, listed from a second source.",
-		StartDate:   choirBStart.Format(time.RFC3339),
-		EndDate:     choirBEnd.Format(time.RFC3339),
+		StartDate:   choirAStart.Format(time.RFC3339),
+		EndDate:     choirAEnd.Format(time.RFC3339),
 		Location:    loc(choir),
 		Organizer:   org(choirOrg),
 		Source:      src(luma, "rs10-choir-sourceb"),

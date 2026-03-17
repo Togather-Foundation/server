@@ -32,105 +32,118 @@ scripts/review-regression-test.sh --generate-only
 
 ## Scenario Index
 
-| ID | Name | Events | Workflow | Warning Codes |
-|----|------|--------|----------|---------------|
-| RS-01 | Weekly Yoga | 2 | add-occurrence (forward path) | `potential_duplicate` |
-| RS-02 | Book Club | 2 | add-occurrence (near-dup path) | `near_duplicate_of_new_event` |
-| RS-03 | Tech Meetup | 2 | add-occurrence on pending series | `potential_duplicate` |
-| RS-04 | Art Walk | 2 | add-occurrence on draft target | `potential_duplicate` |
-| RS-05 | Workshop | 2 | add-occurrence conflict (overlap) | `potential_duplicate` |
-| RS-06 | Jazz Night | 1 | reversed dates + duplicate | `reversed_dates_timezone_likely`, `potential_duplicate` |
-| RS-07 | Dance Class | 2 | not-a-duplicate (approve) | `potential_duplicate` |
-| RS-08 | Community Potluck | 2 | exact duplicate (merge) | `potential_duplicate` |
-| RS-09 | Film Screening | 1 | multi-session detection | `multi_session_likely` |
-| RS-10 | Choir Rehearsal | 2 | order-independent consolidation | `near_duplicate_of_new_event` |
-| RS-11 | Pottery Studio | 4 | same-day-different-times cluster | `potential_duplicate` / `near_duplicate_of_new_event` |
+| ID | Name | Events | Workflow | Warning Codes | Auto-dedup? |
+|----|------|--------|----------|---------------|-------------|
+| RS-01 | Weekly Yoga | 2 | multi-session keyword + manual add-occurrence | `multi_session_likely` | No (different dates) |
+| RS-02 | Book Club | 2 | add-occurrence (near-dup path) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.63) |
+| RS-03 | Tech Meetup | 2 | manual add-occurrence on pending series | _(none — publishes directly)_ | No (different dates, low similarity) |
+| RS-04 | Art Walk | 2 | manual add-occurrence on draft target | _(none — publishes directly)_ | No (different dates, low similarity) |
+| RS-05 | Workshop | 2 | add-occurrence conflict (overlap) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.49) |
+| RS-06 | Jazz Night | 1 | reversed dates auto-correction | `reversed_dates_timezone_likely` | N/A (single event) |
+| RS-07 | Dance Class | 2 | not-a-duplicate (approve) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.71) |
+| RS-08 | Community Potluck | 2 | exact duplicate (merge) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.49) |
+| RS-09 | Film Screening | 1 | multi-session detection | `multi_session_likely` | N/A (single event) |
+| RS-10 | Choir Rehearsal | 2 | order-independent consolidation | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.88) |
+| RS-11 | Pottery Studio | 4 | same-day-different-times cluster | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (same-day pairs only) |
 
 ---
 
 ## Test Procedures
 
-### RS-01: Forward-Path Add-Occurrence (Published Series)
+### RS-01: Multi-Session Keyword + Manual Add-Occurrence
 
-**Setup:** Ingest `RS-01 Weekly Yoga — Base Series` (4 weekly occurrences from Eventbrite). Wait for it to be published. Then ingest `RS-01 Weekly Yoga — New Occurrence` (week 5, from Lu.ma).
+**Setup:** Ingest `RS-01 Weekly Yoga — Base Series` (4 weekly occurrences from Eventbrite) and `RS-01 Weekly Yoga — New Occurrence` (week 5, from Lu.ma).
 
 **Expected after ingest:**
-- Base series is `published` with 4 occurrences.
-- New occurrence event is `pending_review` with `potential_duplicate` warning referencing the base series.
-- Review queue shows the new occurrence with a link to the base series.
+- **Both** events land in review with `multi_session_likely` warning — the word "Weekly" in the title matches the multi-session keyword pattern `(?i)\bweekly\b`.
+- Near-duplicate detection does **not** fire between the two events (the name suffixes "Base Series" vs "New Occurrence" are different enough that pg_trgm similarity stays below threshold).
+- Both events are `pending_review`.
 
 **Test steps:**
-1. Open admin review queue. Find the RS-01 new occurrence review entry.
-2. Verify the review shows `potential_duplicate` warning with the base series as the candidate.
-3. Click **Add as Occurrence** and select the base series as target.
+1. Open admin review queue. Find both RS-01 entries.
+2. Verify both show the `multi_session_likely` warning (not `potential_duplicate`).
+3. **Approve** the base series — confirm it's a legitimate recurring event with discrete occurrences, not a multi-session course.
 4. Verify:
+   - [ ] Base series transitions to `published` with 4 occurrences.
+   - [ ] Review status on the base series entry is `approved`.
+5. Now handle the new occurrence. Click **Add as Occurrence** and manually select the base series as target.
+6. Verify:
    - [ ] Source event (new occurrence) is soft-deleted (`lifecycle_state = 'deleted'`).
    - [ ] Target series now has **5** occurrences (was 4).
    - [ ] New occurrence's start/end times match the week-5 dates.
-   - [ ] Review status is `merged`.
+   - [ ] Review status on the new occurrence entry is `merged`.
    - [ ] Target series `lifecycle_state` remains `published`.
+
+**Note:** This scenario exercises two workflows: (a) approving a `multi_session_likely` false positive, and (b) manually adding an occurrence to an existing series when near-duplicate detection doesn't automatically link them. The "Weekly" keyword trigger is by design — it's a useful guardrail for real-world events where "Weekly Yoga" might actually be a multi-session course sold as a single ticket.
 
 ---
 
 ### RS-02: Near-Dup Path Add-Occurrence (Companion Reviews)
 
-**Setup:** Ingest `RS-02 Book Club — Existing Series` (2 Tuesday occurrences from Meetup). After it publishes, ingest `RS-02 Book Club — Near-Dup New Event` (same date, from BlogTO).
+**Setup:** Ingest `RS-02 Book Club — Tuesday Evening` (2 Tuesday occurrences from Meetup) and `RS-02 Book Club — Tuesday Night` (same date, from BlogTO).
 
 **Expected after ingest:**
-- Near-duplicate detection (pg_trgm Layer 2) fires on the similar names/venue.
-- **Two** review entries created:
-  - On the new event: `duplicate_of_event_id` points to existing series.
-  - On the existing series: `duplicate_of_event_id` points to new event (companion review).
+- Near-duplicate detection (pg_trgm Layer 2) fires: similarity ~0.63 + same venue + same date → above 0.4 threshold.
+- **Two** review entries created (companion pair):
+  - On one event: `near_duplicate_of_new_event` pointing to the other.
+  - On the other: `potential_duplicate` pointing back.
 - Both events are `pending_review`.
 
 **Test steps:**
-1. Open review queue. Find both RS-02 entries (they form a pair).
-2. On the **existing series' review entry**, click **Add as Occurrence** (near-dup path -- no target_event_ulid needed).
+1. Open review queue. Find both RS-02 entries (they form a companion pair).
+2. On the **near-duplicate review entry**, click **Add as Occurrence** (near-dup path — no target_event_ulid needed).
 3. Verify:
-   - [ ] Source event (new event) is soft-deleted.
-   - [ ] Existing series now has **3** occurrences (was 2, absorbed the new event's occurrence).
-   - [ ] The companion review entry (on the new event) is also dismissed (`merged`).
-   - [ ] Existing series recomputes lifecycle: if no other pending reviews remain, transitions to `published`.
+   - [ ] Source event (absorbed event) is soft-deleted.
+   - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence).
+   - [ ] The companion review entry is also dismissed (`merged`).
+   - [ ] Target event recomputes lifecycle: if no other pending reviews remain, transitions to `published`.
 
 ---
 
 ### RS-03: Lifecycle-Stays-Pending After Add-Occurrence
 
-**Setup:** Ingest `RS-03 Tech Meetup — Pending Series` (2 occurrences, from Meetup). Separately create another review reason that keeps the series in `pending_review`. Then ingest `RS-03 Tech Meetup — Additional Occurrence`.
+**Setup:** Ingest `RS-03 Tech Meetup — Pending Series` (2 occurrences, from Meetup) and `RS-03 Tech Meetup — Additional Occurrence` (3 weeks later, from Lu.ma).
 
 **Expected after ingest:**
-- Tech Meetup series is `pending_review` (has at least one unresolved review).
-- Additional occurrence is `pending_review` with `potential_duplicate` warning.
+- Both events **publish directly** — near-duplicate detection does not fire because the events are on different dates (3 weeks apart) and the name similarity (~0.33) is below the 0.4 threshold.
+- Neither event has a review queue entry after ingest.
+
+**Pre-test setup (manual):**
+This scenario tests lifecycle preservation during add-occurrence. To exercise it:
+1. Place the Tech Meetup series in `pending_review` state manually (e.g., via SQL: `UPDATE events SET lifecycle_state = 'pending_review' WHERE name LIKE 'RS-03%Pending%'`).
+2. Create a review entry for it (e.g., with a manual `quality_issue` warning).
 
 **Test steps:**
-1. Click **Add as Occurrence** on the additional occurrence's review entry, targeting the tech meetup series.
+1. With the series now in `pending_review`, use the admin UI to click **Add as Occurrence** on the additional occurrence, targeting the tech meetup series.
 2. Verify:
    - [ ] Source event soft-deleted.
    - [ ] Target series now has **3** occurrences (was 2).
-   - [ ] Review status on the additional occurrence is `merged`.
-   - [ ] Target series `lifecycle_state` stays `pending_review` (other unresolved reviews exist).
+   - [ ] Target series `lifecycle_state` stays `pending_review` (the pre-existing review is still unresolved).
 
-**Note:** This scenario requires the series to already have another pending review entry besides the one being resolved. If near-duplicate detection doesn't create the companion review, you may need to manually create one via SQL for the test.
+**Note:** This scenario deliberately does not rely on automatic dedup. It tests that the add-occurrence action preserves a pending lifecycle when other unresolved reviews exist on the target.
 
 ---
 
 ### RS-04: Add-Occurrence on Draft Target
 
-**Setup:** Ingest `RS-04 Art Walk — Draft Series` (2 Saturday occurrences from Eventbrite). Manually set its `lifecycle_state` to `draft` via admin UI or SQL. Then ingest `RS-04 Art Walk — New Occurrence` (week 3 Saturday, from Showpass).
+**Setup:** Ingest `RS-04 Art Walk — Draft Series` (2 Saturday occurrences from Eventbrite) and `RS-04 Art Walk — New Occurrence` (week 3 Saturday, from Showpass).
 
 **Expected after ingest:**
-- Art Walk series is `draft`.
-- New occurrence is `pending_review` with `potential_duplicate` warning.
+- Both events **publish directly** — near-duplicate detection does not fire because the events are on different dates (3 weeks apart) and the name similarity (~0.35) is below the 0.4 threshold.
+- Neither event has a review queue entry after ingest.
+
+**Pre-test setup (manual):**
+This scenario tests add-occurrence behaviour on a draft target. To exercise it:
+1. Set the Art Walk series to `draft` state via SQL: `UPDATE events SET lifecycle_state = 'draft' WHERE name LIKE 'RS-04%Draft%'`.
 
 **Test steps:**
-1. Click **Add as Occurrence** targeting the draft series.
+1. With the series now in `draft`, use the admin UI to click **Add as Occurrence** on the new occurrence, targeting the draft series.
 2. Verify:
    - [ ] Source event soft-deleted.
    - [ ] Target series has **3** occurrences.
-   - [ ] Review status is `merged`.
    - [ ] Target series `lifecycle_state` remains `draft` (not auto-promoted to published by add-occurrence).
 
-**Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision.
+**Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision. This scenario deliberately does not rely on automatic dedup — it tests manual add-occurrence on a draft target.
 
 ---
 
@@ -139,8 +152,10 @@ scripts/review-regression-test.sh --generate-only
 **Setup:** Ingest `RS-05 Workshop — Overlap Target` (2 Wednesday occurrences from Lu.ma). Then ingest `RS-05 Workshop — Overlapping Occurrence` (starts 30 min into the first existing occurrence, from Meetup).
 
 **Expected after ingest:**
-- Workshop series is published.
+- Near-duplicate detection fires: similarity ~0.49 + same venue + same date → above 0.4 threshold.
+- Workshop overlap target is `pending_review` with `near_duplicate_of_new_event` warning.
 - Overlapping occurrence is `pending_review` with `potential_duplicate` warning.
+- They form a companion review pair.
 
 **Test steps:**
 1. Click **Add as Occurrence** targeting the workshop series.
@@ -163,12 +178,11 @@ scripts/review-regression-test.sh --generate-only
 
 **Expected after ingest:**
 - Event is `pending_review`.
-- Review entry has **two** warnings:
-  - `reversed_dates_timezone_likely` (overnight event, high confidence auto-fix)
-  - `potential_duplicate` (if a similar jazz event already exists)
+- Review entry has `reversed_dates_timezone_likely` warning (overnight event: 11pm start, 2am end on same calendar date).
+- No `potential_duplicate` warning unless a similar jazz event already exists in the database (from a previous test run or real data).
 
 **Test steps:**
-1. Open the review entry. Verify both warnings are displayed.
+1. Open the review entry. Verify the `reversed_dates_timezone_likely` warning is displayed.
 2. Verify the auto-corrected end time (should be 2am the **next** day after adding 24h).
 3. Compare original payload vs normalized payload in the review detail view.
 4. **Approve** the event.
@@ -177,26 +191,25 @@ scripts/review-regression-test.sh --generate-only
    - [ ] Occurrence dates use the corrected end time.
    - [ ] Review status is `approved`.
 
-**Note:** If no similar jazz event exists, only the `reversed_dates` warning will appear. The `potential_duplicate` warning depends on whether there's an existing event with similar name/venue in the database.
-
 ---
 
 ### RS-07: Not-a-Duplicate (Approve with record_not_duplicates)
 
-**Setup:** Ingest `RS-07 Dance Class — Existing Series` (3 Wednesday occurrences from Eventbrite). After it publishes, ingest `RS-07 Dance Class — Not A Duplicate` (same venue, same day, later time, from Lu.ma -- a social dance event, not the structured class).
+**Setup:** Ingest `RS-07 Dance Class — Wednesday Series` (3 Wednesday occurrences from Eventbrite) and `RS-07 Dance Class — Wednesday Social` (same venue, same day, later time, from Lu.ma — a social dance event, not the structured class).
 
 **Expected after ingest:**
-- Near-duplicate detection may fire (same venue + "Dance" in name).
-- New event is `pending_review` with `potential_duplicate` warning.
+- Near-duplicate detection fires: similarity ~0.71 + same venue + same date → above 0.4 threshold.
+- Both events are `pending_review` with companion near-duplicate review entries.
+- Despite the similar names, these are genuinely different events (a structured class vs a social dance).
 
 **Test steps:**
-1. Open review queue. Find the RS-07 new event review entry.
+1. Open review queue. Find both RS-07 review entries.
 2. Inspect both events: confirm they are genuinely different events at the same venue.
 3. Click **Approve** with the `record_not_duplicates: true` option checked.
 4. Verify:
-   - [ ] New event transitions to `published`.
+   - [ ] Both events transition to `published`.
    - [ ] A `not_duplicates` record is created pairing the two events (prevents future false positives).
-   - [ ] Companion review on the existing series (if created) is dismissed.
+   - [ ] Companion review entries are dismissed.
    - [ ] Both events remain separately listed.
 
 ---
@@ -206,19 +219,20 @@ scripts/review-regression-test.sh --generate-only
 **Setup:** Ingest `RS-08 Community Potluck — Original` (Sunday, from Meetup). Then ingest `RS-08 Community Potluck — Exact Duplicate` (identical details, from BlogTO).
 
 **Expected after ingest:**
-- Layer 1 exact dedup may auto-merge (same dedup hash). If not:
-- Exact duplicate is `pending_review` with `potential_duplicate` warning.
+- Layer 1 exact dedup does **not** fire (different source URLs → different dedup hashes).
+- Near-duplicate detection fires: similarity ~0.49 + same venue + same date → above 0.4 threshold.
+- Both events are `pending_review` with companion near-duplicate review entries:
+  - Original: `near_duplicate_of_new_event`
+  - Exact duplicate: `potential_duplicate`
 
-**Test steps (if not auto-merged):**
-1. Open review queue. Find the RS-08 duplicate's review entry.
-2. Click **Merge** into the original event.
+**Test steps:**
+1. Open review queue. Find both RS-08 review entries.
+2. Click **Merge** on the duplicate, targeting the original event.
 3. Verify:
    - [ ] Duplicate event is soft-deleted (`lifecycle_state = 'deleted'`).
    - [ ] Tombstone record created with reason `duplicate_merged` and `superseded_by` pointing to the original.
    - [ ] Original event unchanged (same occurrences, same lifecycle state).
-   - [ ] Review status is `merged`.
-
-**Note:** If Layer 1 auto-merges, both events share the same dedup hash and the second ingest returns 409 or updates the existing event. In that case, verify no review entry is created and the original event is unaffected.
+   - [ ] Both review entries are resolved (`merged`).
 
 ---
 
@@ -247,19 +261,19 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-10: Order-Independent Consolidation
 
-**Setup:** Ingest `RS-10 Choir Rehearsal — Source A` (Wednesday, from Google Calendar) and `RS-10 Choir Rehearsal — Source B` (following Wednesday, from Lu.ma) in either order.
+**Setup:** Ingest `RS-10 Choir Rehearsal — Source A` (Wednesday, from Google Calendar) and `RS-10 Choir Rehearsal — Source B` (same Wednesday, from Lu.ma) in either order.
 
 **Expected after ingest:**
-- Near-duplicate detection fires on both (same name + venue, different dates).
-- Both events are `pending_review` with companion reviews.
+- Near-duplicate detection fires: similarity ~0.88 + same venue + same date → well above 0.4 threshold.
+- Both events are `pending_review` with companion near-duplicate review entries.
 - The final state should be the same regardless of which event is ingested first.
 
 **Test steps:**
-1. Verify both events appear in the review queue with `near_duplicate_of_new_event` warnings.
+1. Verify both events appear in the review queue with near-duplicate warnings.
 2. On either event's review entry, click **Add as Occurrence**.
 3. Verify:
    - [ ] Source event soft-deleted.
-   - [ ] Target event now has **2** occurrences.
+   - [ ] Target event keeps its **1** occurrence (both events are single-occurrence; add-occurrence adds the source event's occurrence to the target).
    - [ ] Companion review dismissed.
    - [ ] Target published (if no other pending reviews).
 
@@ -278,8 +292,15 @@ scripts/review-regression-test.sh --generate-only
 All are from Eventbrite, at The Tranzac, with similar names but different times.
 
 **Expected after ingest:**
-- Near-duplicate and/or potential_duplicate detection may fire on some or all pairs.
-- Multiple review entries created, potentially with complex cross-references.
+- Near-duplicate detection fires on **same-day pairs** (similarity ~0.80 + same venue + same date → well above 0.4 threshold):
+  - Mon 10am ↔ Mon 2pm (same Monday)
+  - Mon+7 10am ↔ Mon+7 2pm (same following Monday)
+- Cross-week pairs (Mon 10am ↔ Mon+7 10am) do **not** trigger dedup because they are on different dates.
+- All 4 events are `pending_review`. Each same-day pair has companion near-duplicate review entries:
+  - Mon 10am: `near_duplicate_of_new_event` (paired with Mon 2pm)
+  - Mon 2pm: `potential_duplicate` (paired with Mon 10am)
+  - Mon+7 10am: `near_duplicate_of_new_event` (paired with Mon+7 2pm)
+  - Mon+7 2pm: `potential_duplicate` (paired with Mon+7 10am)
 
 **Test steps:**
 1. Open the review queue. Identify all RS-11 entries.
@@ -305,7 +326,12 @@ After completing all scenarios, verify:
 - [ ] No orphaned events in `pending_review` state from the fixture set (all should be published or deleted).
 - [ ] Tombstone records exist for all soft-deleted events with correct `superseded_by` references.
 - [ ] The `not_duplicates` table has entries from RS-07 (and RS-11 if applicable).
-- [ ] Event occurrence counts match expectations (RS-01: 5, RS-02: 3, RS-03: 3, RS-04: 3, RS-10: 2).
+- [ ] Event occurrence counts match expectations after all add-occurrence actions:
+  - RS-01: 5 (was 4, +1 from manual add-occurrence)
+  - RS-02: 3 (was 2, +1 from near-dup add-occurrence)
+  - RS-03: 3 (was 2, +1 from manual add-occurrence)
+  - RS-04: 3 (was 2, +1 from manual add-occurrence)
+  - RS-10: 2 (1+1 after add-occurrence consolidation)
 
 ### SQL Verification Queries
 

@@ -111,7 +111,11 @@ BEGIN;
 DELETE FROM event_review_queue WHERE event_id IN (SELECT id FROM events WHERE name LIKE 'RS-%');
 DELETE FROM event_tombstones WHERE event_id IN (SELECT id FROM events WHERE name LIKE 'RS-%');
 DELETE FROM event_occurrences WHERE event_id IN (SELECT id FROM events WHERE name LIKE 'RS-%');
-DELETE FROM not_duplicates WHERE event_id_a IN (SELECT id FROM events WHERE name LIKE 'RS-%') OR event_id_b IN (SELECT id FROM events WHERE name LIKE 'RS-%');
+-- not_duplicates may not exist on all branches; delete only if present.
+DO $$ BEGIN
+  DELETE FROM not_duplicates WHERE event_id_a IN (SELECT id FROM events WHERE name LIKE 'RS-%') OR event_id_b IN (SELECT id FROM events WHERE name LIKE 'RS-%');
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
 DELETE FROM events WHERE name LIKE 'RS-%';
 COMMIT;
 SQL
