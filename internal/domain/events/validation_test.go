@@ -533,6 +533,48 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			// Regression: occurrence with no venueId/virtualUrl is valid when parent has location.
+			name: "occurrence without venueId or virtualUrl inherits parent location - valid",
+			input: EventInput{
+				Name:      "Weekly Yoga",
+				StartDate: "2026-06-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Studio 9"},
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:30:00Z", Timezone: "America/Toronto"},
+					{StartDate: "2026-06-08T10:00:00Z", EndDate: "2026-06-08T11:30:00Z", Timezone: "America/Toronto"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// Regression: occurrence with no venueId/virtualUrl and parent only has virtualLocation - valid.
+			name: "occurrence without venueId inherits parent virtualLocation - valid",
+			input: EventInput{
+				Name:            "Online Series",
+				StartDate:       "2026-06-01T10:00:00Z",
+				VirtualLocation: &VirtualLocationInput{URL: "https://zoom.us/j/abc123"},
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
+					{StartDate: "2026-06-08T10:00:00Z", EndDate: "2026-06-08T11:00:00Z"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// Regression: occurrence with no venueId/virtualUrl AND parent has no location - must error.
+			// This is the contract enforced by occurrence_location_required DB constraint.
+			name: "occurrence without venueId and parent has no location - invalid",
+			input: EventInput{
+				Name:      "Nowhere Event",
+				StartDate: "2026-06-01T10:00:00Z",
+				// No Location, no VirtualLocation
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

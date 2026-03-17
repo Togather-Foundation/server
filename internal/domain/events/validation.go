@@ -454,6 +454,18 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 				return nil, ValidationError{Field: fieldPrefix + ".venueId", Message: "invalid canonical URI"}
 			}
 		}
+
+		// Each occurrence must resolve to a location at create time.
+		// An occurrence without its own venueId or virtualUrl inherits from the parent event.
+		// Reject explicitly if neither the occurrence nor the parent event provides a location.
+		if occ.VenueID == "" && strings.TrimSpace(occ.VirtualURL) == "" {
+			if input.Location == nil && input.VirtualLocation == nil {
+				return nil, ValidationError{
+					Field:   fieldPrefix + ".venueId",
+					Message: "occurrence has no venueId or virtualUrl and parent event has no location to inherit",
+				}
+			}
+		}
 	}
 
 	return warnings, nil

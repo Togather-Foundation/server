@@ -964,7 +964,7 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		return repo.CreateOccurrence(ctx, occurrence)
 	}
 
-	for _, occ := range input.Occurrences {
+	for i, occ := range input.Occurrences {
 		start, err := time.Parse(time.RFC3339, strings.TrimSpace(occ.StartDate))
 		if err != nil {
 			return fmt.Errorf("parse occurrence startDate: %w", err)
@@ -1003,6 +1003,12 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		virtual := nullableString(occ.VirtualURL)
 		if virtual == nil && event.VirtualURL != "" {
 			virtual = nullableString(event.VirtualURL)
+		}
+		// Guard: DB requires venue_id OR virtual_url on every occurrence row.
+		// Validation should have caught this already, but defend here so a
+		// programming error or race doesn't produce a cryptic DB constraint failure.
+		if venueID == nil && virtual == nil {
+			return fmt.Errorf("create occurrence[%d]: no venue or virtual URL resolved (occurrence has no venueId/virtualUrl and parent event has no location)", i)
 		}
 		occurrence := OccurrenceCreateParams{
 			EventID:    event.ID,

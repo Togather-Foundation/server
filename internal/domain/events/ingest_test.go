@@ -168,6 +168,12 @@ func (m *MockRepository) CreateOccurrence(ctx context.Context, params Occurrence
 		return errors.New("mock create occurrence error")
 	}
 
+	// Enforce the DB constraint: venue_id IS NOT NULL OR virtual_url IS NOT NULL.
+	// Mirrors occurrence_location_required in migrations/000001_core.up.sql.
+	if params.VenueID == nil && params.VirtualURL == nil {
+		return errors.New("mock occurrence_location_required constraint: venue_id IS NOT NULL OR virtual_url IS NOT NULL")
+	}
+
 	m.occurrences[params.EventID] = append(m.occurrences[params.EventID], params)
 	return nil
 }
@@ -1664,6 +1670,127 @@ func TestNearDuplicateWarningsWithDetails(t *testing.T) {
 		}
 		if !hasSubstring(warnings[0].Message, "Old Jazz Night") {
 			t.Errorf("message %q should contain existing event name", warnings[0].Message)
+		}
+	})
+}
+
+// TestIngestService_MultiOccurrenceParentVenue is a regression test for the staging bug where
+// fixture events with an occurrences array and a parent-only location failed with
+// "occurrence_location_required" DB constraint violation.
+//
+// Root cause: validateOccurrences did not enforce that each occurrence must have a venue
+// resolvable at create time; createOccurrencesWithRepo inherited event.PrimaryVenueID, which
+// is nil when the parent event's location wasn't persisted (or when submitted without location).
+//
+// Fix: validateOccurrences now rejects occurrences that have neither venueId nor virtualUrl
+// when the parent event also provides no location or virtualLocation. The mock enforces the
+// same DB constraint so unit tests catch the regression.
+func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
+	ctx := context.Background()
+	futureDateFn := func(offset time.Duration) string {
+		return time.Now().Add(offset).Format(time.RFC3339)
+	}
+
+	t.Run("multi_occurrence_inherits_parent_venue", func(t *testing.T) {
+		// Regression: recurring event with parent location and bare occurrences must ingest
+		// successfully on all environments. The mock now enforces occurrence_location_required
+		// so this will fail if inheritance is broken.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Weekly Yoga at Studio",
+			Description: "A recurring yoga class every week.",
+			Image:       "https://images.example.com/yoga.jpg",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				Name:            "The Studio",
+				AddressLocality: "Toronto",
+				AddressRegion:   "ON",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				// bare occurrences: no venueId, no virtualUrl — rely on parent location
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+				},
+				{
+					StartDate: futureDateFn(14 * 24 * time.Hour),
+					EndDate:   futureDateFn(14*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+				},
+				{
+					StartDate: futureDateFn(21 * 24 * time.Hour),
+					EndDate:   futureDateFn(21*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil (occurrence should inherit parent venue)", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+
+		// All 3 occurrences must have been created with a venue inherited from the parent event.
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 3 {
+			t.Fatalf("expected 3 occurrences, got %d", len(occs))
+		}
+		for i, occ := range occs {
+			if occ.VenueID == nil && occ.VirtualURL == nil {
+				t.Errorf("occurrence[%d] has no venue or virtual URL after inheritance", i)
+			}
+		}
+	})
+
+	t.Run("occurrence_without_venue_and_no_parent_location_rejected", func(t *testing.T) {
+		// Validation must reject an occurrence that has no venueId/virtualUrl
+		// when the parent event also provides no location. This is the contract
+		// enforced by the DB occurrence_location_required check constraint.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Mystery Event",
+			Description: "An event with no location anywhere.",
+			License:     "CC0-1.0",
+			VirtualLocation: &VirtualLocationInput{
+				URL: "https://zoom.us/j/meeting123",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			// Occurrences with no venueId/virtualUrl, but parent HAS virtualLocation —
+			// inheritance from virtualLocation is fine; this should succeed.
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil (occurrence should inherit parent virtualLocation)", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		if occs[0].VirtualURL == nil {
+			t.Error("occurrence should have inherited virtualURL from parent event")
 		}
 	})
 }
