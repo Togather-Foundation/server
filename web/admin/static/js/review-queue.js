@@ -610,14 +610,35 @@
             </div>
         ` : '';
         
-        // Build cross-link banner for pending items with a known duplicate event
-        const crossLinkHtml = (detail.status === 'pending' && detail.duplicateOfEventUlid) ? `
-            <div class="alert alert-warning mb-3">
-                <strong>Near-duplicate detected:</strong>
-                This event may be a duplicate of
-                <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
-            </div>
-        ` : '';
+        // Build cross-link banner for pending items with a known duplicate event.
+        // Wording depends on the warning type:
+        //   near_duplicate_of_new_event — this review sits on the *existing* series; the linked
+        //     ULID is the newly-ingested candidate that flagged this entry as its near-duplicate.
+        //   potential_duplicate (or no warning present) — standard case where the linked ULID is
+        //     the canonical event this entry may be a duplicate of.
+        let crossLinkHtml = '';
+        if (detail.status === 'pending' && detail.duplicateOfEventUlid) {
+            const linkedUlid = detail.duplicateOfEventUlid;
+            const isNearDupEntry = warnings.some(w => w.code === 'near_duplicate_of_new_event');
+            if (isNearDupEntry) {
+                crossLinkHtml = `
+                    <div class="alert alert-warning mb-3">
+                        <strong>Near-duplicate detected:</strong>
+                        A newly-ingested event
+                        <a href="/admin/events/${encodeURIComponent(linkedUlid)}" class="alert-link">${escapeHtml(linkedUlid)}</a>
+                        may be a near-duplicate of this existing event.
+                    </div>
+                `;
+            } else {
+                crossLinkHtml = `
+                    <div class="alert alert-warning mb-3">
+                        <strong>Near-duplicate detected:</strong>
+                        This event may be a duplicate of
+                        <a href="/admin/events/${encodeURIComponent(linkedUlid)}" class="alert-link">${escapeHtml(linkedUlid)}</a>.
+                    </div>
+                `;
+            }
+        }
 
         // Check if there are any duplicate-related warnings.
         // near_duplicate_of_new_event appears on the *existing* series event's review entry when a

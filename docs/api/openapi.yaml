@@ -1149,7 +1149,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '410':
-          description: The target event has been deleted
+          description: The source event or target event has been deleted
           content:
             application/problem+json:
               schema:

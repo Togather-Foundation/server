@@ -852,7 +852,7 @@ func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter,
 		return
 	}
 	if errors.Is(err, events.ErrEventDeleted) {
-		problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Target event has been deleted", err, h.Env)
+		problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Source or target event has been deleted", err, h.Env)
 		return
 	}
 	if errors.Is(err, events.ErrConflict) {
