@@ -108,6 +108,19 @@ func (q *Queries) CreateEventTombstone(ctx context.Context, arg CreateEventTombs
 	return err
 }
 
+const deleteOccurrencesByEventULID = `-- name: DeleteOccurrencesByEventULID :exec
+DELETE FROM event_occurrences
+ WHERE event_id = (SELECT id FROM events WHERE ulid = $1)
+`
+
+// Remove all occurrence rows for a soft-deleted event.  Called after absorbing an
+// occurrence into a target series so the source event's orphaned rows are cleaned up.
+// Soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so explicit cleanup is needed.
+func (q *Queries) DeleteOccurrencesByEventULID(ctx context.Context, eventUlid string) error {
+	_, err := q.db.Exec(ctx, deleteOccurrencesByEventULID, eventUlid)
+	return err
+}
+
 const getEventByULID = `-- name: GetEventByULID :many
 
 SELECT e.id,

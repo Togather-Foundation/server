@@ -1736,6 +1736,18 @@ func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID s
 	return nil
 }
 
+// DeleteOccurrencesByEventULID removes all occurrence rows for an event identified by ULID.
+// Used after absorbing an occurrence into a target series to clean up orphaned rows
+// on the soft-deleted source event (soft-delete does not trigger ON DELETE CASCADE).
+func (r *EventRepository) DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error {
+	queries := Queries{db: r.queryer()}
+	err := queries.DeleteOccurrencesByEventULID(ctx, eventULID)
+	if err != nil {
+		return fmt.Errorf("delete occurrences by event ULID: %w", err)
+	}
+	return nil
+}
+
 // UpdateEvent updates an event by ULID with the provided parameters
 func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
 	queries := Queries{db: r.queryer()}

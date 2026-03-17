@@ -299,6 +299,7 @@ type mockTransactionalRepo struct {
 	updateOccurrenceDatesFunc         func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
 	lockEventForUpdateFunc            func(ctx context.Context, eventID string) error
 	getPendingReviewByEventUlidFunc   func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
+	deleteOccurrencesByEventULIDFunc  func(ctx context.Context, eventULID string) error
 	commitCalled                      bool
 	rollbackCalled                    bool
 }
@@ -382,6 +383,12 @@ func (m *mockTransactionalRepo) UpdateEvent(ctx context.Context, ulid string, pa
 		return m.updateEventFunc(ctx, ulid, params)
 	}
 	return &Event{ULID: ulid}, nil
+}
+func (m *mockTransactionalRepo) DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error {
+	if m.deleteOccurrencesByEventULIDFunc != nil {
+		return m.deleteOccurrencesByEventULIDFunc(ctx, eventULID)
+	}
+	return nil
 }
 func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
 	if m.updateOccurrenceDatesFunc != nil {
@@ -2324,5 +2331,307 @@ func TestAddOccurrenceFromReviewNearDup_MalformedWarningsJSON(t *testing.T) {
 	}
 	if repo.commitCalled {
 		t.Error("commit must not be called when warnings JSON is malformed")
+	}
+}
+
+// ── Fix: lifecycle restoration after add-occurrence ──────────────────────────
+
+// TestAddOccurrenceFromReview_RestoresTargetLifecycleFromPendingReview verifies
+// that the forward path restores the target event's lifecycle_state from
+// pending_review to published after a successful add-occurrence operation.
+// Bug: target events demoted to pending_review during near-dup ingest were
+// never restored — they remained stuck and invisible to the public API.
+func TestAddOccurrenceFromReview_RestoresTargetLifecycleFromPendingReview(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var lifecycleUpdated bool
+	var capturedLifecycle string
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{ID: "target-uuid", ULID: ulid, Name: "Series", LifecycleState: "pending_review"}, nil
+		}
+		return &Event{ID: "review-event-id", ULID: ulid, Name: "Instance",
+			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
+	}
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if params.LifecycleState != nil {
+			lifecycleUpdated = true
+			capturedLifecycle = *params.LifecycleState
+		}
+		return &Event{ULID: ulid, LifecycleState: "published"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !lifecycleUpdated {
+		t.Error("UpdateEvent must be called to restore target lifecycle from pending_review")
+	}
+	if capturedLifecycle != "published" {
+		t.Errorf("lifecycle should be restored to 'published', got %q", capturedLifecycle)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
+// TestAddOccurrenceFromReview_SkipsLifecycleRestorationWhenNotPendingReview
+// verifies that lifecycle restoration is skipped when the target is already
+// published (no unnecessary UpdateEvent call).
+func TestAddOccurrenceFromReview_SkipsLifecycleRestorationWhenNotPendingReview(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var lifecycleUpdated bool
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	// Default makeOccurrenceRepo sets LifecycleState to "published"
+	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
+		if params.LifecycleState != nil {
+			lifecycleUpdated = true
+		}
+		return &Event{ULID: "01HTARGET00000000000000001"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if lifecycleUpdated {
+		t.Error("UpdateEvent must NOT be called for lifecycle restoration when target is already published")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_RestoresTargetLifecycleFromPendingReview
+// verifies that the near-dup path restores the target event's lifecycle_state
+// from pending_review to published after a successful add-occurrence operation.
+func TestAddOccurrenceFromReviewNearDup_RestoresTargetLifecycleFromPendingReview(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var lifecycleUpdated bool
+	var capturedLifecycle string
+
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", startTime)
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &Event{ID: "target-id", ULID: ulid, Name: "Series", LifecycleState: "pending_review"}, nil
+		}
+		return &Event{ID: "source-event-id", ULID: ulid, Name: "New Instance",
+			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
+	}
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if params.LifecycleState != nil {
+			lifecycleUpdated = true
+			capturedLifecycle = *params.LifecycleState
+		}
+		return &Event{ULID: ulid, LifecycleState: "published"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !lifecycleUpdated {
+		t.Error("UpdateEvent must be called to restore target lifecycle from pending_review")
+	}
+	if capturedLifecycle != "published" {
+		t.Errorf("lifecycle should be restored to 'published', got %q", capturedLifecycle)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
+// ── Fix: forward path companion review dismissal ─────────────────────────────
+
+// TestAddOccurrenceFromReview_DismissesCompanionReview verifies that the forward
+// path finds and dismisses the companion review entry on the target event (the
+// near-dup review created by ingest on the existing event, cross-linked to the
+// source event being absorbed).  Without this fix, the companion review remained
+// orphaned in the queue pointing at the now-deleted source event.
+func TestAddOccurrenceFromReview_DismissesCompanionReview(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var companionDismissed bool
+	companionID := 99
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	// Simulate a companion review entry on the target event
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == "01HTARGET00000000000000001" {
+			return &ReviewQueueEntry{
+				ID:        companionID,
+				EventULID: "01HTARGET00000000000000001",
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("near_duplicate_of_new_event"),
+			}, nil
+		}
+		return nil, ErrNotFound
+	}
+	// The lockReviewQueueEntryForUpdateFunc must handle both the primary review (id=1)
+	// and the companion review (id=99).
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		if id == 1 {
+			return &ReviewQueueEntry{
+				ID:             1,
+				EventID:        "review-event-id",
+				EventULID:      "01HREV00000000000000000001",
+				Status:         "pending",
+				EventStartTime: startTime,
+				Warnings:       makeWarningsJSON("potential_duplicate"),
+			}, nil
+		}
+		if id == companionID {
+			return &ReviewQueueEntry{
+				ID:        companionID,
+				EventULID: "01HTARGET00000000000000001",
+				Status:    "pending",
+				Warnings:  makeWarningsJSON("near_duplicate_of_new_event"),
+			}, nil
+		}
+		return nil, ErrNotFound
+	}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		if id == companionID {
+			companionDismissed = true
+		}
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !companionDismissed {
+		t.Error("companion review on target event must be dismissed via MergeReview")
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
+// TestAddOccurrenceFromReview_NoCompanionReviewIsOK verifies that the forward
+// path succeeds even when no companion review exists on the target event.
+func TestAddOccurrenceFromReview_NoCompanionReviewIsOK(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	// getPendingReviewByEventUlidFunc defaults to nil → returns nil, nil (no companion)
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+}
+
+// ── Fix: source event occurrence cleanup after absorption ────────────────────
+
+// TestAddOccurrenceFromReview_DeletesSourceOccurrences verifies that the forward
+// path calls DeleteOccurrencesByEventULID after soft-deleting the source event.
+// Bug: soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so source
+// event occurrences were left orphaned in the database.
+func TestAddOccurrenceFromReview_DeletesSourceOccurrences(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var occurrencesDeleted bool
+	var deletedForULID string
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	repo.deleteOccurrencesByEventULIDFunc = func(_ context.Context, eventULID string) error {
+		occurrencesDeleted = true
+		deletedForULID = eventULID
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !occurrencesDeleted {
+		t.Error("DeleteOccurrencesByEventULID must be called for the source event")
+	}
+	if deletedForULID != "01HREV00000000000000000001" {
+		t.Errorf("DeleteOccurrencesByEventULID called with wrong ULID: got %q, want %q",
+			deletedForULID, "01HREV00000000000000000001")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_DeletesSourceOccurrences verifies that the
+// near-dup path calls DeleteOccurrencesByEventULID after soft-deleting the
+// source event.
+func TestAddOccurrenceFromReviewNearDup_DeletesSourceOccurrences(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	var occurrencesDeleted bool
+	var deletedForULID string
+
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", startTime)
+	repo.deleteOccurrencesByEventULIDFunc = func(_ context.Context, eventULID string) error {
+		occurrencesDeleted = true
+		deletedForULID = eventULID
+		return nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !occurrencesDeleted {
+		t.Error("DeleteOccurrencesByEventULID must be called for the source event")
+	}
+	if deletedForULID != "01HSRC00000000000000000001" {
+		t.Errorf("DeleteOccurrencesByEventULID called with wrong ULID: got %q, want %q",
+			deletedForULID, "01HSRC00000000000000000001")
+	}
+}
+
+// TestAddOccurrenceFromReview_RollbackOnOccurrenceDeleteError verifies that
+// a DeleteOccurrencesByEventULID failure rolls back the transaction.
+func TestAddOccurrenceFromReview_RollbackOnOccurrenceDeleteError(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+	repo.deleteOccurrencesByEventULIDFunc = func(_ context.Context, _ string) error {
+		return errors.New("occurrence cleanup failed")
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+
+	if err == nil {
+		t.Fatal("expected error from DeleteOccurrencesByEventULID failure, got nil")
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called after occurrence cleanup failure")
+	}
+	if !repo.rollbackCalled {
+		t.Error("rollback must be called via defer on error")
 	}
 }

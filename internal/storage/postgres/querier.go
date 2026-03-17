@@ -74,6 +74,10 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	// Remove all occurrence rows for a soft-deleted event.  Called after absorbing an
+	// occurrence into a target series so the source event's orphaned rows are cleaned up.
+	// Soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so explicit cleanup is needed.
+	DeleteOccurrencesByEventULID(ctx context.Context, eventUlid string) error
 	// Delete processed/rejected submissions older than the given interval.
 	// Used by the daily cleanup job to prevent unbounded table growth (srv-3sac0).
 	DeleteOldScraperSubmissions(ctx context.Context, olderThan pgtype.Interval) (int64, error)

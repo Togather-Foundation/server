@@ -199,6 +199,31 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		// No supported duplicate warning present — forward path requires potential_duplicate.
 		return nil, fmt.Errorf("review entry %d: %w", reviewID, ErrUnsupportedReviewForOccurrence)
 	}
+
+	// Look up the companion review for the target event and lock it BEFORE locking
+	// any event row.  This preserves the review-first lock ordering used by all admin
+	// methods (review → companion review → target event → source event) and prevents
+	// deadlocks.  The companion review is created by near-dup ingest on the target
+	// event and cross-links to the source event (review.EventULID).
+	companionReview, compErr := txRepo.GetPendingReviewByEventUlid(ctx, targetEventULID)
+	if compErr != nil && !errors.Is(compErr, ErrNotFound) {
+		return nil, fmt.Errorf("lookup companion review for target %s: %w", targetEventULID, compErr)
+	}
+	// companionReview == nil when ErrNotFound or no pending entry exists — both are fine.
+
+	var lockedCompanion *ReviewQueueEntry
+	if companionReview != nil {
+		lc, lockErr := txRepo.LockReviewQueueEntryForUpdate(ctx, companionReview.ID)
+		if lockErr != nil {
+			if !errors.Is(lockErr, ErrNotFound) {
+				return nil, fmt.Errorf("lock companion review id=%d: %w", companionReview.ID, lockErr)
+			}
+			// Companion was deleted concurrently — not fatal.
+		} else {
+			lockedCompanion = lc
+		}
+	}
+
 	target, err := txRepo.GetByULID(ctx, targetEventULID)
 	if err != nil {
 		return nil, fmt.Errorf("get target event %s: %w", targetEventULID, err)
@@ -371,6 +396,13 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		return nil, fmt.Errorf("soft-delete review event: %w", err)
 	}
 
+	// Clean up the source event's occurrence rows.  Soft-delete (UPDATE) does not
+	// trigger ON DELETE CASCADE, so orphaned occurrence rows would remain without
+	// explicit cleanup.
+	if err := txRepo.DeleteOccurrencesByEventULID(ctx, review.EventULID); err != nil {
+		return nil, fmt.Errorf("delete source occurrences: %w", err)
+	}
+
 	// Tombstone for the absorbed event
 	targetURI, err := s.eventURI(targetEventULID)
 	if err != nil {
@@ -400,6 +432,35 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, targetEventULID)
 	if err != nil {
 		return nil, fmt.Errorf("update review status: %w", err)
+	}
+
+	// Dismiss the companion review entry on the target event (if present and still
+	// pending).  This mirrors the companion handling in AddOccurrenceFromReviewNearDup.
+	// Without this, the target event retains an orphaned pending review row that
+	// references the now-deleted source event, polluting the review queue and
+	// blocking retry attempts.
+	if lockedCompanion != nil && lockedCompanion.Status == "pending" {
+		if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, targetEventULID); mergeErr != nil {
+			if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
+				// Race outcome: companion was already dismissed by a concurrent request.
+				// Log-worthy but non-fatal — continue so the primary review is resolved.
+				_ = mergeErr
+			} else {
+				return nil, fmt.Errorf("dismiss companion review id=%d: %w", lockedCompanion.ID, mergeErr)
+			}
+		}
+	}
+
+	// Restore the target event's lifecycle state if it was demoted to pending_review
+	// during near-dup ingest.  The add-occurrence action resolves the review, so the
+	// target should return to published visibility.
+	if target.LifecycleState == "pending_review" {
+		publishedState := "published"
+		if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
+			LifecycleState: &publishedState,
+		}); err != nil {
+			return nil, fmt.Errorf("restore target lifecycle to published: %w", err)
+		}
 	}
 
 	if err := txCommitter.Commit(ctx); err != nil {
@@ -658,6 +719,13 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("soft-delete source event: %w", err)
 	}
 
+	// Clean up the source event's occurrence rows.  Soft-delete (UPDATE) does not
+	// trigger ON DELETE CASCADE, so orphaned occurrence rows would remain without
+	// explicit cleanup.
+	if err := txRepo.DeleteOccurrencesByEventULID(ctx, sourceEventULID); err != nil {
+		return nil, nil, fmt.Errorf("delete source occurrences: %w", err)
+	}
+
 	// Tombstone for the absorbed source event.
 	targetURI, err := s.eventURI(targetEventULID)
 	if err != nil {
@@ -702,6 +770,18 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, targetEventULID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("update near-dup review status: %w", err)
+	}
+
+	// Step 11: Restore the target event's lifecycle state if it was demoted to
+	// pending_review during near-dup ingest.  The add-occurrence action resolves
+	// the review, so the target should return to published visibility.
+	if target.LifecycleState == "pending_review" {
+		publishedState := "published"
+		if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
+			LifecycleState: &publishedState,
+		}); err != nil {
+			return nil, nil, fmt.Errorf("restore target lifecycle to published: %w", err)
+		}
 	}
 
 	if err := txCommitter.Commit(ctx); err != nil {

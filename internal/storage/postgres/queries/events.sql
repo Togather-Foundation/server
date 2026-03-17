@@ -59,6 +59,13 @@ UPDATE event_occurrences
        updated_at = now()
  WHERE event_id = (SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid'));
 
+-- name: DeleteOccurrencesByEventULID :exec
+-- Remove all occurrence rows for a soft-deleted event.  Called after absorbing an
+-- occurrence into a target series so the source event's orphaned rows are cleaned up.
+-- Soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so explicit cleanup is needed.
+DELETE FROM event_occurrences
+ WHERE event_id = (SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid'));
+
 -- name: SoftDeleteEvent :exec
 UPDATE events
    SET deleted_at = now(),

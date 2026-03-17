@@ -381,6 +381,9 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	return event, nil
 }
 
+func (m *MockRepository) DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error {
+	return nil
+}
 func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

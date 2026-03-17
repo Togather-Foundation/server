@@ -91,17 +91,98 @@ Each role is a **subagent type or skill** invoked by the orchestrator. They shar
 
 ---
 
+## Design Constraint: Framework vs. Domain Separation
+
+The agentic maintainer pattern — agents that learn from decisions, escalate novelty,
+and get smarter over time — is not specific to event data or SEL. Any service that
+has a review/approval workflow, external data sources that break, metrics to watch,
+and data quality to maintain could use the same architecture.
+
+**Design rule**: Keep the domain-agnostic framework cleanly separated from SEL-specific
+business logic. This enables porting the maintainer to other projects with a different
+domain layer but the same operational machinery.
+
+### What's Generic (the "Agentic Maintainer Framework")
+
+These components have **no knowledge** of events, venues, scrapers, or SEL semantics:
+
+| Component | Description |
+|---|---|
+| **Decision journal** | JSONL storage, append-only writes, two-tier index, precedent lookup, graduation mechanism |
+| **Incident log** | Operational event recording, pattern detection over time |
+| **Graduated rules** | Precedent → confirmed → rule lifecycle, permanent institutional knowledge |
+| **Constrained classifier pattern** | Forced reasoning order, policy validation wrapper, memory citation requirement, confidence gates |
+| **Operator notification system** | Queue table, severity classification, inbox CLI, webhook integration |
+| **Core loop** | CHECK → TRIAGE → ACT → LEARN → REPORT |
+| **Orchestrator dispatch** | Schedule or alert triggers specialist subagents, collects results, reports |
+| **Human decision capture** | Admin UI inference, chat escalation prompts, out-of-band detection |
+| **Outcome tracking** | Retrospective confirmation heuristics, confidence calibration |
+| **Memory architecture** | File layout, frontmatter convention, federation-readiness, index rebuild scripts |
+
+### What's SEL-Specific (the "Domain Layer")
+
+These components encode **business logic** specific to running a SEL node:
+
+| Component | Description |
+|---|---|
+| **Review agent action set** | `approve \| reject \| fix \| merge \| add-occurrence \| escalate` — maps to SEL review queue statuses |
+| **Warning code handling** | 12 specific codes from `validation.go` / `ingest.go` and what each means |
+| **Add-occurrence workflow** | Forward/neardup dual-path, companion review resolution, occurrence metadata preservation |
+| **Hard red-line rules** | `low_confidence` + unknown source → escalate, `duration > 24h` → escalate, etc. |
+| **Autonomous decision rules** | Source trust levels, similarity thresholds, warning-code-specific handling |
+| **Allowed fixes whitelist** | `timezone_normalization`, `endDate_inference_from_rule`, etc. |
+| **Decision categories** | `review`, `scraper`, `data_quality`, `metrics` with SEL-specific subcategories |
+| **Scraper health classification** | Transient vs. selector drift vs. blocked vs. down |
+| **Data quality scans** | Stale events, missing geocodes, broken URLs, orphaned places/orgs |
+| **Metrics watchlist** | `togather_health_status`, `togather_scraper_runs_total`, etc. |
+| **MCP tool schemas** | `review_queue`, `review_decide`, `scraper_status`, etc. |
+
+### Implementation Boundary
+
+In code, the separation should follow the existing project convention:
+
+```
+internal/maintainer/           ← Generic framework
+  journal/                     ← Decision journal read/write, index, graduation
+  incidents/                   ← Incident log
+  rules/                       ← Rule storage, lookup, management
+  notify/                      ← Notification queue, delivery
+  orchestrator/                ← Core loop, subagent dispatch, scheduling
+  classifier/                  ← Constrained classifier infrastructure
+    policy.go                  ← Validation wrapper (action-in-set, refs-exist, confidence-met)
+    reasoning.go               ← Forced reasoning order enforcement
+
+internal/maintainer/sel/       ← SEL domain layer (implements framework interfaces)
+  review.go                    ← Review agent: action set, warning code dispatch, red lines
+  scraper.go                   ← Scraper health: failure classification, fix strategies
+  quality.go                   ← Data quality: scan definitions, remediation actions
+  metrics.go                   ← Metrics: watchlist, baseline definitions, anomaly thresholds
+  rules.go                     ← SEL-specific rule templates and graduation criteria
+```
+
+The generic framework defines interfaces (e.g., `Classifier`, `HealthChecker`,
+`QualityScanner`). The SEL domain layer implements them. A different project would
+write a different domain layer against the same interfaces.
+
+**What this does NOT mean**: We're not building a pluggable framework with Go
+interfaces from day one. That's premature abstraction. Instead, we keep the code
+organized so that extraction is straightforward later — same files, clear imports,
+no SEL business logic buried in the journal or notification code. The separation
+is structural (packages) not mechanical (interface registries).
+
+---
+
 ## Component Design
 
 ### Memory Architecture
 
-Memory lives in four places, chosen for the type of knowledge:
+Memory lives in several places, chosen for the type of knowledge:
 
 | Memory Type | Storage | Why Here |
 |---|---|---|
 | **Decision Journal** (operational decisions, reasoning chains, rules) | JSONL files in `data/decisions/` | Self-contained documents, git-trackable, grep/jq searchable, portable |
 | **Incident Log** (operational events that may not produce decisions) | JSON files in `data/incidents/` | Transient failures, resolved issues, context for future pattern detection |
-| **Scraper source notes** (source-specific quirks, selector history, trust signals) | YAML source config files in `configs/sources/` | Co-located with the config they describe; already versioned |
+| **Scraper source notes** (source-specific quirks, selector history, trust signals) | YAML source config files in `configs/sources/` | Co-located with the config they describe; already versioned. **NOTE**: The `notes` field does not yet exist in the source config schema — adding it is a Phase 1 prerequisite (see `configs/sources/_example.yaml`). |
 | **Runbooks** (common procedures, escalation guides, diagnostic recipes) | Markdown files in `docs/runbooks/` | Human-readable, agent-readable, version-controlled |
 | **Graduated rules** (permanent institutional knowledge) | Markdown files in `data/rules/` | Readable by humans and agents, citable by reference |
 | **Agent memories** (cross-session insights, operational heuristics) | Beads `bd remember` | Already exists, persistent across sessions |
@@ -266,7 +347,7 @@ CREATE TABLE decision_index (
 
 | Category | Subcategories | Example |
 |---|---|---|
-| `review` | `reversed_dates`, `near_duplicate`, `missing_venue`, `suspicious_content`, `low_confidence` | "Approved: source X consistently has timezone-offset dates, auto-fix is correct" |
+| `review` | `reversed_dates`, `potential_duplicate`, `near_duplicate`, `missing_image`, `low_confidence`, `too_far_future`, `multi_session_likely`, `link_check_failed`, `place_possible_duplicate`, `org_possible_duplicate` | "Approved: source X consistently has timezone-offset dates, auto-fix is correct" |
 | `scraper` | `selector_drift`, `site_blocked`, `rate_limited`, `empty_results`, `new_page_structure` | "Fixed: venue Y redesigned, updated `.event-card` to `.event-item`" |
 | `data_quality` | `stale_event`, `orphaned_place`, `missing_geocode`, `broken_url` | "Deleted: recurring event series ended, source confirmed" |
 | `metrics` | `error_spike`, `latency_anomaly`, `queue_backup`, `disk_usage` | "Investigated: spike was deploy-related, resolved by next scrape cycle" |
@@ -398,7 +479,7 @@ New tools the agents need beyond the current 10:
 | Tool | Purpose | Priority |
 |---|---|---|
 | `review_queue` | List/get pending reviews with warnings and payloads | P1 |
-| `review_decide` | Approve/reject/fix/merge a review entry (with reasoning) | P1 |
+| `review_decide` | Approve/reject/fix/merge/add-occurrence a review entry (with reasoning) | P1 |
 | `decision_log` | Query past decisions by category/source/trigger | P1 |
 | `record_decision` | Write a new decision entry | P1 |
 | `scraper_status` | Get recent scrape runs, failures, quality warnings | P1 |
@@ -453,15 +534,28 @@ for reliability — it prevents hallucinated actions and makes behavior predicta
 **Action set** (closed — no other actions allowed):
 
 ```
-approve | reject | merge | fix | escalate
+approve | reject | fix | merge | add-occurrence | escalate
 ```
+
+**Note on DB statuses vs. agent actions**: The review queue has 4 terminal statuses
+(`approved`, `rejected`, `merged`, `pending`). The agent's action set is deliberately
+broader:
+- `approve` → DB status `approved`, event published
+- `reject` → DB status `rejected`, event soft-deleted with tombstone
+- `fix` → DB status `approved`, event corrected then published (fix-and-approve)
+- `merge` → DB status `merged`, duplicate soft-deleted, primary enriched
+- `add-occurrence` → DB status `merged`, source event absorbed into target series
+  (see "Add-Occurrence Dual-Path Use Case" below)
+- `escalate` → no DB change, notification to operator
 
 **Forced reasoning order** (never skip steps):
 
 1. **Hard red-line check** (outside the LLM — policy code, not prompt):
-   - `suspicious_content` → always escalate
+   - `low_confidence` + unknown source (trust_level < 5) → always escalate
    - `duration > 24h` after correction → always escalate
    - `missing_startDate` → always escalate
+   - `near_duplicate_of_new_event` (ambiguous target) → always escalate
+     (see `srv-q3m2w` — no explicit target selection workflow yet)
 2. **Check rules index** (`data/rules/index.json`) for matching rule
 3. **Check decision index** (`data/decisions/index.json`) for matching precedent
 4. **Check source notes** (`configs/sources/<source>.yaml`) for source-specific context
@@ -473,11 +567,12 @@ approve | reject | merge | fix | escalate
 ```jsonc
 {
   "classification": "known-safe | known-unsafe | ambiguous | escalate",
-  "action": "approve | reject | merge | fix | escalate",
+  "action": "approve | reject | merge | add-occurrence | fix | escalate",
   "reason": "matched_rule | matched_precedent | runbook_applied | insufficient_confidence",
   "confidence": 0.91,
   "memory_refs": ["data/rules/source_venue-x_timezone.md"],  // required for non-escalation
   "fields_changed": {},     // only for "fix" action
+  "merge_target": null,     // only for "merge" or "add-occurrence" — target event ULID
   "open_questions": []      // required for escalation — what remains unresolved
 }
 ```
@@ -504,6 +599,7 @@ allowed_fixes:
   - endDate_inference_from_rule
   - venue_fill_from_source_default
   - duplicate_merge_with_exact_match
+  - add_occurrence_from_potential_duplicate  # forward path only; neardup path escalates
 ```
 
 **Autonomous decision rules** (conservative starting point):
@@ -511,7 +607,7 @@ allowed_fixes:
 | Scenario | Auto-Decision | Confidence Threshold |
 |---|---|---|
 | `reversed_dates_timezone_likely` from known source with 3+ prior approvals | Approve | 0.9 |
-| Near-duplicate of already-published event (>0.95 similarity) | Merge | 0.85 |
+| Near-duplicate of already-published event (similarity ≥ NearDuplicateThreshold, default 0.4) with `potential_duplicate` warning | Merge or Add-occurrence | 0.85 |
 | Event from high-trust source (trust_level >= 8) with no warnings | Approve | 0.95 |
 | Missing venue but source consistently uses same venue | Fix (add venue) | 0.8 |
 | Event >1 year in future from source that never posts that far out | Reject | 0.8 |
@@ -521,8 +617,80 @@ These thresholds are starting points. As the decision journal accumulates data, 
 agent can calibrate — if its decisions consistently get `outcome = 'success'`, thresholds
 can be relaxed. If decisions get reverted, they tighten.
 
-**Critical safety rule**: The review agent should NEVER auto-approve events with
-`suspicious_content` warnings. Content moderation always escalates to human.
+**Critical safety rule**: The review agent should NEVER auto-decide events with
+`low_confidence` from unknown sources (trust_level < 5), or events where the
+add-occurrence target is ambiguous (`near_duplicate_of_new_event` with no explicit
+target selection — see open bead `srv-q3m2w`). These always escalate to human.
+
+#### Add-Occurrence Dual-Path Use Case
+
+When multiple events are really different dates of the same recurring series (same
+name, same venue, different date/time), they should be consolidated into a single
+event with multiple occurrences rather than merged (which loses one event's identity).
+This is one of the most complex review actions and the plan must account for it.
+
+**The two paths** (determined by which event entered the review queue first):
+
+**Forward path** (`potential_duplicate` warning):
+- A new event is ingested and flagged as a potential duplicate of an existing event.
+- The review entry sits on the **new** event. The existing event is the target series.
+- Admin action: "Add as Occurrence" — the new event's date/time is added as an
+  occurrence on the existing series event, then the new event is soft-deleted.
+- Backend: `AddOccurrenceFromReview(reviewID, targetEventULID, reviewedBy)` —
+  admin explicitly selects the target from the warning's duplicate candidates.
+- Pre-conditions (checked under transaction lock):
+  - Review must be pending
+  - Locked warnings must indicate `potential_duplicate` (not `near_duplicate_of_new_event`)
+  - Source event must have exactly 1 occurrence (multi-occurrence sources are rejected
+    to prevent silent data loss)
+  - Target event must not be deleted
+  - New occurrence must not overlap existing occurrences on target
+- Occurrence metadata (timezone, venue, door time, ticket URL, pricing, availability)
+  is preserved from the source event's occurrence — not lost during absorption.
+
+**Neardup path** (`near_duplicate_of_new_event` warning):
+- An existing event is flagged because a newly ingested event looks like a near-duplicate.
+- The review entry sits on the **existing** event. The new event (referenced via
+  `DuplicateOfEventULID`) is the source to be absorbed.
+- Admin action: "Add as Occurrence" — the new event's date/time is added as an
+  occurrence on the existing series, then the new event is soft-deleted.
+- Backend: `AddOccurrenceFromReviewNearDup(reviewID, reviewedBy)` — no target
+  selection needed because the target is the review's own event.
+- Additional complexity: the neardup path also resolves the **companion review entry**
+  (the `potential_duplicate` review on the source event, if one exists) by marking
+  it as merged within the same transaction.
+- Lock ordering: review row → companion review row → target event row → source event
+  row (preserves deadlock-free ordering used by all admin methods).
+
+**Why the agent must understand both paths**:
+- The `review_decide` MCP tool must dispatch to the correct backend method based on
+  which warning code is present. Calling the wrong path returns
+  `ErrWrongOccurrencePath`.
+- The forward path requires the agent to select a target from the warning's
+  `details.matches` array. The neardup path is self-contained.
+- **Current limitation** (bead `srv-q3m2w`): For `near_duplicate_of_new_event` reviews,
+  the admin UI currently suppresses one-click add-occurrence because the payload
+  doesn't unambiguously identify the correct counterpart. Until explicit target
+  selection is implemented, neardup add-occurrence should always escalate to human.
+
+**Agent decision flow for duplicate/add-occurrence**:
+
+```
+Review entry has duplicate-related warning?
+  ├─ potential_duplicate
+  │   ├─ Check matches array: how many candidates?
+  │   │   ├─ 1 candidate, same name, same venue, different date
+  │   │   │   → Likely recurring series → "add-occurrence" (forward path)
+  │   │   ├─ 1 candidate, high similarity (≥0.8), overlapping dates
+  │   │   │   → Likely true duplicate → "merge"
+  │   │   └─ Multiple candidates or ambiguous
+  │   │       → "escalate" with analysis
+  │   └─ Check decision journal for prior pattern with this source
+  │
+  └─ near_duplicate_of_new_event
+      └─ Always "escalate" until srv-q3m2w is resolved
+         (no explicit target selection workflow yet)
+```
 
 ### 5. Scraper Health Agent
 
@@ -666,11 +834,18 @@ server inbox resolve <id>       — Mark notification as handled
 server decisions list           — Browse decision journal
 server decisions search <query> — Search decisions by keyword
 server decisions record         — Manually record a decision (for human decisions)
+server decisions reindex        — Rebuild decision_index table from JSONL files
 ```
 
 ---
 
 ## Implementation Phases
+
+**Cross-cutting constraint**: Every phase must maintain the framework/domain separation
+described above. Generic maintainer infrastructure goes in `internal/maintainer/`;
+SEL-specific logic goes in `internal/maintainer/sel/`. Code review should flag any
+SEL business logic (warning codes, review statuses, scraper specifics) that leaks
+into the framework packages.
 
 ### Phase 1: Decision Journal + Review Agent (Foundation)
 
@@ -680,7 +855,9 @@ journal is the foundation everything else builds on.
 1. ~~Brief survey of existing agentic memory tools~~ — **DONE**: surveyed Mem0,
    Letta, memsearch, OpenViking, ReMeLight, Basic Memory. All vendor-aligned tools
    rejected; proceeding with JSONL + Markdown + grep/jq.
-2. Decision journal: JSONL file format, `data/decisions/` directory, read/write Go
+2. Add `notes` field to scraper source YAML config schema (`configs/sources/`)
+   and `internal/scraper/config.go` — prerequisite for source-specific memory
+3. Decision journal: JSONL file format, `data/decisions/` directory, read/write Go
    package, atomic file writes via `internal/fileutil`
 3. Incident log: JSON files in `data/incidents/`, separate from decisions
 4. Two-tier index: `data/decisions/index.json` + `data/rules/index.json`,
@@ -748,10 +925,15 @@ report — with human intervention only for genuinely novel situations.
 
 1. Automatic outcome confirmation heuristics (event stayed published, scraper fix held, etc.)
 2. Graduation pipeline: precedent → confirmed → rule (automated based on outcome count)
-3. Decision journal analytics (most common issues, resolution time trends, cost savings from cached reasoning)
-4. Source quality scoring based on historical decision patterns
-5. Cost tracking: measure token savings from precedent reuse vs. fresh reasoning
-6. Periodic review: surface rules that haven't been exercised recently for human validation
+3. Memory curation: archive stale entries, deduplicate, summarize clusters, detect
+   meta-patterns (e.g., "selector drift accounts for 70% of scraper failures")
+4. Knowledge distillation: compress clusters of similar decisions into rules and
+   semantic summaries. Run monthly or after N decisions accumulate.
+5. Decision journal analytics (most common issues, resolution time trends, cost savings from cached reasoning)
+6. Source quality scoring based on historical decision patterns
+7. Cost tracking: measure token savings from precedent reuse vs. fresh reasoning
+8. Periodic review: surface rules that haven't been exercised recently for human validation
+9. Rule freshness checks: downgrade rules unused for 6+ months back to precedent
 
 **Success criteria**: Agent's autonomous handling rate increases from 50% to 80%+ of
 routine operations over 3 months, with maintained 0% error rate on decisions.
@@ -957,3 +1139,28 @@ We specifically avoid:
   New tools follow the same patterns (list/get unification, JSON-LD context resources).
 - **003-scraper**: The scraper health agent directly manages the scraper pipeline
   defined in this spec. The `/configure-source` workflow is reused for selector fixes.
+
+---
+
+## Appendix: Review Warning Codes Reference
+
+Complete list of warning codes the review agent must handle, as implemented in
+`internal/domain/events/validation.go` and `internal/domain/events/ingest.go`:
+
+| Code | Source | Triggers Review | Agent Handling |
+|---|---|---|---|
+| `reversed_dates_timezone_likely` | validation.go | Yes | Automatable with source history |
+| `reversed_dates_corrected_needs_review` | validation.go | Yes | Automatable with source history |
+| `potential_duplicate` | ingest.go | Yes | Merge, add-occurrence, or escalate (see dual-path) |
+| `near_duplicate_of_new_event` | ingest.go | Yes | Always escalate (until `srv-q3m2w` resolved) |
+| `missing_description` | ingest.go | No (warning only) | Informational — low priority |
+| `missing_image` | ingest.go | No (warning only) | Informational — low priority |
+| `too_far_future` | ingest.go | Yes | Reject if source historically inaccurate |
+| `low_confidence` | ingest.go | Yes | Escalate unless source trust_level >= 8 |
+| `multi_session_likely` | ingest.go | Yes | Escalate — requires human judgment |
+| `link_check_failed` | ingest.go | No (warning only) | Flag for data quality patrol |
+| `place_possible_duplicate` | ingest.go | No (companion) | Handled by place merge workflow |
+| `org_possible_duplicate` | ingest.go | No (companion) | Handled by org merge workflow |
+
+**Note**: There is no `suspicious_content` warning code in the current system. Content
+moderation is a potential future addition — if added, it should always escalate to human.

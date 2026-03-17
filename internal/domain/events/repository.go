@@ -211,6 +211,7 @@ type Repository interface {
 
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
+	DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
 	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error
