@@ -52,7 +52,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-01: Forward-Path Add-Occurrence (Published Series)
 
-**Setup:** Ingest `RS-01 Weekly Yoga -- Base Series` (4 weekly occurrences from Eventbrite). Wait for it to be published. Then ingest `RS-01 Weekly Yoga -- New Occurrence` (week 5, from Lu.ma).
+**Setup:** Ingest `RS-01 Weekly Yoga — Base Series` (4 weekly occurrences from Eventbrite). Wait for it to be published. Then ingest `RS-01 Weekly Yoga — New Occurrence` (week 5, from Lu.ma).
 
 **Expected after ingest:**
 - Base series is `published` with 4 occurrences.
@@ -74,7 +74,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-02: Near-Dup Path Add-Occurrence (Companion Reviews)
 
-**Setup:** Ingest `RS-02 Book Club -- Existing Series` (2 Tuesday occurrences from Meetup). After it publishes, ingest `RS-02 Book Club -- Near-Dup New Event` (same date, from BlogTO).
+**Setup:** Ingest `RS-02 Book Club — Existing Series` (2 Tuesday occurrences from Meetup). After it publishes, ingest `RS-02 Book Club — Near-Dup New Event` (same date, from BlogTO).
 
 **Expected after ingest:**
 - Near-duplicate detection (pg_trgm Layer 2) fires on the similar names/venue.
@@ -96,7 +96,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-03: Lifecycle-Stays-Pending After Add-Occurrence
 
-**Setup:** Ingest `RS-03 Tech Meetup -- Pending Series` (2 occurrences, from Meetup). Separately create another review reason that keeps the series in `pending_review`. Then ingest `RS-03 Tech Meetup -- Additional Occurrence`.
+**Setup:** Ingest `RS-03 Tech Meetup — Pending Series` (2 occurrences, from Meetup). Separately create another review reason that keeps the series in `pending_review`. Then ingest `RS-03 Tech Meetup — Additional Occurrence`.
 
 **Expected after ingest:**
 - Tech Meetup series is `pending_review` (has at least one unresolved review).
@@ -116,7 +116,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-04: Add-Occurrence on Draft Target
 
-**Setup:** Ingest `RS-04 Art Walk -- Draft Series` (2 Saturday occurrences from Eventbrite). Manually set its `lifecycle_state` to `draft` via admin UI or SQL. Then ingest `RS-04 Art Walk -- New Occurrence` (week 3 Saturday, from Showpass).
+**Setup:** Ingest `RS-04 Art Walk — Draft Series` (2 Saturday occurrences from Eventbrite). Manually set its `lifecycle_state` to `draft` via admin UI or SQL. Then ingest `RS-04 Art Walk — New Occurrence` (week 3 Saturday, from Showpass).
 
 **Expected after ingest:**
 - Art Walk series is `draft`.
@@ -136,7 +136,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-05: Overlapping Occurrence Conflict (409)
 
-**Setup:** Ingest `RS-05 Workshop -- Overlap Target` (2 Wednesday occurrences from Lu.ma). Then ingest `RS-05 Workshop -- Overlapping Occurrence` (starts 30 min into the first existing occurrence, from Meetup).
+**Setup:** Ingest `RS-05 Workshop — Overlap Target` (2 Wednesday occurrences from Lu.ma). Then ingest `RS-05 Workshop — Overlapping Occurrence` (starts 30 min into the first existing occurrence, from Meetup).
 
 **Expected after ingest:**
 - Workshop series is published.
@@ -159,7 +159,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-06: Multi-Warning (Reversed Dates + Potential Duplicate)
 
-**Setup:** Ingest `RS-06 Jazz Night -- Reversed Dates Late Show` (11pm start, 2am "end" on same calendar date -- reversed dates).
+**Setup:** Ingest `RS-06 Jazz Night — Reversed Dates Late Show` (11pm start, 2am "end" on same calendar date -- reversed dates).
 
 **Expected after ingest:**
 - Event is `pending_review`.
@@ -183,7 +183,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-07: Not-a-Duplicate (Approve with record_not_duplicates)
 
-**Setup:** Ingest `RS-07 Dance Class -- Existing Series` (3 Wednesday occurrences from Eventbrite). After it publishes, ingest `RS-07 Dance Class -- Not A Duplicate` (same venue, same day, later time, from Lu.ma -- a social dance event, not the structured class).
+**Setup:** Ingest `RS-07 Dance Class — Existing Series` (3 Wednesday occurrences from Eventbrite). After it publishes, ingest `RS-07 Dance Class — Not A Duplicate` (same venue, same day, later time, from Lu.ma -- a social dance event, not the structured class).
 
 **Expected after ingest:**
 - Near-duplicate detection may fire (same venue + "Dance" in name).
@@ -203,7 +203,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-08: Exact Duplicate Merge
 
-**Setup:** Ingest `RS-08 Community Potluck -- Original` (Sunday, from Meetup). Then ingest `RS-08 Community Potluck -- Exact Duplicate` (identical details, from BlogTO).
+**Setup:** Ingest `RS-08 Community Potluck — Original` (Sunday, from Meetup). Then ingest `RS-08 Community Potluck — Exact Duplicate` (identical details, from BlogTO).
 
 **Expected after ingest:**
 - Layer 1 exact dedup may auto-merge (same dedup hash). If not:
@@ -224,7 +224,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-09: Multi-Session Detection
 
-**Setup:** Ingest `RS-09 Film Screening (8 sessions) -- Multi-Session` (6-hour event with "(8 sessions)" in title, from Eventbrite).
+**Setup:** Ingest `RS-09 Film Screening (8 sessions) — Multi-Session` (6-hour event with "(8 sessions)" in title, from Eventbrite).
 
 **Expected after ingest:**
 - Title pattern heuristic fires on "(8 sessions)" substring.
@@ -247,7 +247,7 @@ scripts/review-regression-test.sh --generate-only
 
 ### RS-10: Order-Independent Consolidation
 
-**Setup:** Ingest `RS-10 Choir Rehearsal -- Source A` (Wednesday, from Google Calendar) and `RS-10 Choir Rehearsal -- Source B` (following Wednesday, from Lu.ma) in either order.
+**Setup:** Ingest `RS-10 Choir Rehearsal — Source A` (Wednesday, from Google Calendar) and `RS-10 Choir Rehearsal — Source B` (following Wednesday, from Lu.ma) in either order.
 
 **Expected after ingest:**
 - Near-duplicate detection fires on both (same name + venue, different dates).
@@ -270,10 +270,10 @@ scripts/review-regression-test.sh --generate-only
 ### RS-11: Same-Day-Different-Times Cluster
 
 **Setup:** Ingest all 4 RS-11 events:
-- `RS-11 Pottery Studio -- Mon 10am Session`
-- `RS-11 Pottery Studio -- Mon 2pm Session`
-- `RS-11 Pottery Studio -- Mon+7 10am Session`
-- `RS-11 Pottery Studio -- Mon+7 2pm Session`
+- `RS-11 Pottery Studio — Mon 10am Session`
+- `RS-11 Pottery Studio — Mon 2pm Session`
+- `RS-11 Pottery Studio — Mon+7 10am Session`
+- `RS-11 Pottery Studio — Mon+7 2pm Session`
 
 All are from Eventbrite, at The Tranzac, with similar names but different times.
 

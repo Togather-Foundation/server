@@ -127,13 +127,13 @@ func runGenerate(args []string) error {
 // reviewEventsOutput is the JSON structure for --review-events output.
 type reviewEventsOutput struct {
 	Scenarios []reviewScenarioJSON `json:"scenarios"`
-	Events    []interface{}        `json:"events"`
+	Events    []any                `json:"events"`
 }
 
 type reviewScenarioJSON struct {
-	GroupID     string        `json:"group_id"`
-	Description string        `json:"description"`
-	Events      []interface{} `json:"events"`
+	GroupID     string `json:"group_id"`
+	Description string `json:"description"`
+	Events      []any  `json:"events"`
 }
 
 func runGenerateReviewEvents(gen *testdata.Generator, args []string) error {
@@ -141,17 +141,16 @@ func runGenerateReviewEvents(gen *testdata.Generator, args []string) error {
 
 	out := reviewEventsOutput{
 		Scenarios: make([]reviewScenarioJSON, 0, len(scenarios)),
-		Events:    make([]interface{}, 0, 22),
+		Events:    make([]any, 0, 22),
 	}
 
 	for _, s := range scenarios {
 		js := reviewScenarioJSON{
 			GroupID:     s.GroupID,
 			Description: s.Description,
-			Events:      make([]interface{}, len(s.Events)),
+			Events:      make([]any, len(s.Events)),
 		}
 		for i, ev := range s.Events {
-			ev := ev // capture
 			js.Events[i] = ev
 			out.Events = append(out.Events, ev)
 		}
