@@ -746,3 +746,737 @@ func (g *Generator) BatchReviewQueueInputs(count int) []events.EventInput {
 
 	return inputs
 }
+
+// ---------------------------------------------------------------------------
+// Recurring Series Builder (for add-occurrence workflow testing)
+// ---------------------------------------------------------------------------
+
+// RecurringSeriesBuilder provides a fluent API for constructing recurring-series
+// events with multiple occurrences, useful for testing add-occurrence workflows.
+type RecurringSeriesBuilder struct {
+	gen         *Generator
+	name        string
+	description string
+	venue       *Venue
+	organizer   *Organizer
+	source      *Source
+	occurrences []events.OccurrenceInput
+	timezone    string
+	duration    time.Duration // per occurrence
+	image       string
+	url         string
+	keywords    []string
+	license     string
+}
+
+// NewRecurringSeriesBuilder creates a new builder with sensible defaults.
+func (g *Generator) NewRecurringSeriesBuilder() *RecurringSeriesBuilder {
+	v := g.randomVenue()
+	o := g.randomOrganizer()
+	s := g.randomSource()
+	return &RecurringSeriesBuilder{
+		gen:         g,
+		name:        "Weekly Series",
+		description: "A recurring weekly event series",
+		venue:       &v,
+		organizer:   &o,
+		source:      &s,
+		timezone:    "America/Toronto",
+		duration:    2 * time.Hour,
+		occurrences: []events.OccurrenceInput{},
+		image:       unsplashImage(g.rng.Intn(11)),
+		url:         fmt.Sprintf("%s/events/%d", s.BaseURL, g.rng.Intn(100000)),
+		keywords:    []string{"recurring", "series", "toronto"},
+		license:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+}
+
+// WithName sets the event name.
+func (b *RecurringSeriesBuilder) WithName(name string) *RecurringSeriesBuilder {
+	b.name = name
+	return b
+}
+
+// WithDescription sets the event description.
+func (b *RecurringSeriesBuilder) WithDescription(description string) *RecurringSeriesBuilder {
+	b.description = description
+	return b
+}
+
+// WithVenue sets the venue.
+func (b *RecurringSeriesBuilder) WithVenue(venue Venue) *RecurringSeriesBuilder {
+	b.venue = &venue
+	return b
+}
+
+// WithOrganizer sets the organizer.
+func (b *RecurringSeriesBuilder) WithOrganizer(organizer Organizer) *RecurringSeriesBuilder {
+	b.organizer = &organizer
+	return b
+}
+
+// WithTimezone sets the timezone for occurrences (default: America/Toronto).
+func (b *RecurringSeriesBuilder) WithTimezone(tz string) *RecurringSeriesBuilder {
+	b.timezone = tz
+	return b
+}
+
+// WithDuration sets the duration for each occurrence (default: 2 hours).
+func (b *RecurringSeriesBuilder) WithDuration(d time.Duration) *RecurringSeriesBuilder {
+	b.duration = d
+	return b
+}
+
+// WithKeywords sets the keywords.
+func (b *RecurringSeriesBuilder) WithKeywords(keywords []string) *RecurringSeriesBuilder {
+	b.keywords = keywords
+	return b
+}
+
+// WithWeeklyOccurrences generates `count` weekly occurrences starting from `startTime`.
+func (b *RecurringSeriesBuilder) WithWeeklyOccurrences(startTime time.Time, count int) *RecurringSeriesBuilder {
+	b.occurrences = make([]events.OccurrenceInput, count)
+	for i := 0; i < count; i++ {
+		occStart := startTime.Add(time.Duration(i*7*24) * time.Hour) // Weekly
+		occEnd := occStart.Add(b.duration)
+		b.occurrences[i] = events.OccurrenceInput{
+			StartDate: occStart.Format(time.RFC3339),
+			EndDate:   occEnd.Format(time.RFC3339),
+			Timezone:  b.timezone,
+		}
+	}
+	return b
+}
+
+// WithBiweeklyOccurrences generates `count` biweekly occurrences starting from `startTime`.
+func (b *RecurringSeriesBuilder) WithBiweeklyOccurrences(startTime time.Time, count int) *RecurringSeriesBuilder {
+	b.occurrences = make([]events.OccurrenceInput, count)
+	for i := 0; i < count; i++ {
+		occStart := startTime.Add(time.Duration(i*14*24) * time.Hour) // Biweekly
+		occEnd := occStart.Add(b.duration)
+		b.occurrences[i] = events.OccurrenceInput{
+			StartDate: occStart.Format(time.RFC3339),
+			EndDate:   occEnd.Format(time.RFC3339),
+			Timezone:  b.timezone,
+		}
+	}
+	return b
+}
+
+// WithOccurrences sets explicit occurrences (overrides weekly/biweekly generation).
+func (b *RecurringSeriesBuilder) WithOccurrences(occs []events.OccurrenceInput) *RecurringSeriesBuilder {
+	b.occurrences = occs
+	return b
+}
+
+// Build constructs and returns the final EventInput.
+func (b *RecurringSeriesBuilder) Build() events.EventInput {
+	result := events.EventInput{
+		Name:        b.name,
+		Description: b.description,
+		Location: &events.PlaceInput{
+			Name:            b.venue.Name,
+			StreetAddress:   b.venue.StreetAddress,
+			AddressLocality: b.venue.AddressLocality,
+			AddressRegion:   b.venue.AddressRegion,
+			AddressCountry:  b.venue.AddressCountry,
+			PostalCode:      b.venue.PostalCode,
+			Latitude:        b.venue.Latitude,
+			Longitude:       b.venue.Longitude,
+		},
+		Organizer: &events.OrganizationInput{
+			Name: b.organizer.Name,
+			URL:  b.organizer.URL,
+		},
+		Source: &events.SourceInput{
+			URL:     fmt.Sprintf("%s/events/%d", b.source.BaseURL, b.gen.rng.Intn(100000)),
+			EventID: fmt.Sprintf("evt-series-%d", b.gen.rng.Intn(100000)),
+			Name:    b.source.Name,
+		},
+		Image:       b.image,
+		URL:         b.url,
+		Keywords:    b.keywords,
+		License:     b.license,
+		Occurrences: b.occurrences,
+	}
+
+	// Set top-level startDate/endDate to first occurrence (required by validation)
+	if len(b.occurrences) > 0 {
+		result.StartDate = b.occurrences[0].StartDate
+		result.EndDate = b.occurrences[0].EndDate
+	} else {
+		// If no occurrences specified, use a default future time
+		baseTime := b.gen.randomFutureTime()
+		result.StartDate = baseTime.Format(time.RFC3339)
+		result.EndDate = baseTime.Add(b.duration).Format(time.RFC3339)
+	}
+
+	return result
+}
+
+// ---------------------------------------------------------------------------
+// Review Event Fixtures (RS-XX scenario groups)
+// ---------------------------------------------------------------------------
+
+// ReviewEventScenario groups a set of related EventInputs for exercising review
+// queue workflows. Each scenario has a unique GroupID (e.g. "RS-01") and a
+// human-readable description of the intended test scenario.
+type ReviewEventScenario struct {
+	GroupID     string              // "RS-01", "RS-02", etc.
+	Description string              // Human-readable scenario description
+	Events      []events.EventInput // Events in this scenario group
+}
+
+// reviewSources returns source configs that are safe for staging (no example.com domains).
+// These are separate from SampleSources to guarantee no blocked domains appear.
+var reviewSources = []Source{
+	{Name: "Eventbrite", BaseURL: "https://www.eventbrite.ca", Type: "JSONLD"},
+	{Name: "Meetup", BaseURL: "https://www.meetup.com", Type: "JSONLD"},
+	{Name: "Lu.ma", BaseURL: "https://lu.ma", Type: "ICS"},
+	{Name: "BlogTO", BaseURL: "https://www.blogto.com", Type: "API"},
+	{Name: "Showpass", BaseURL: "https://www.showpass.com", Type: "API"},
+	{Name: "Google Calendar", BaseURL: "https://calendar.google.com", Type: "ICS"},
+}
+
+// unsplashImage returns a deterministic Unsplash placeholder URL for a given slot index.
+func unsplashImage(slot int) string {
+	ids := []string{
+		"1501281668745-f7f57925be31",
+		"1523580846011-d3a5bc25702b",
+		"1551434678-e076c223a692",
+		"1516450360452-9312f5463d52",
+		"1511795409834-ef04bbd61622",
+		"1464366400600-7168b8af9bc3",
+		"1514525253161-7a46d19cd819",
+		"1470229722913-7c0e2dbbafd3",
+		"1533174072545-7a4b6ad7a6c3",
+		"1548199973-03cce0bbc87b",
+		"1580587771525-4e99a40d8d5a",
+	}
+	return "https://images.unsplash.com/photo-" + ids[slot%len(ids)]
+}
+
+// reviewSourceURL builds a stable event URL from a source and a fixture ID string
+// so that different fixtures never share the same EventID.
+func reviewSourceURL(src Source, fixtureID string) (string, string) {
+	url := fmt.Sprintf("%s/e/%s", src.BaseURL, fixtureID)
+	return url, fixtureID
+}
+
+// BatchReviewEventInputs returns a curated, named fixture set for exercising review
+// queue workflows. Each ReviewEventScenario is a "scenario group" — events that belong
+// together (e.g. a base series + its near-duplicate).
+//
+// All URLs use real-looking domains (eventbrite.ca, meetup.com, lu.ma, etc.) and
+// image URLs use images.unsplash.com. No example.com domains are used.
+func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
+	// Fixed anchor time: next Monday at 10:00 AM (deterministic regardless of when tests run).
+	// We compute the upcoming Monday from the generator's baseTime.
+	anchor := g.baseTime.Truncate(24 * time.Hour)
+	for anchor.Weekday() != time.Monday {
+		anchor = anchor.Add(24 * time.Hour)
+	}
+	anchor = anchor.Add(10 * time.Hour) // 10:00 AM
+
+	week := 7 * 24 * time.Hour
+
+	eb := reviewSources[0]     // Eventbrite
+	mu := reviewSources[1]     // Meetup
+	luma := reviewSources[2]   // Lu.ma
+	blogto := reviewSources[3] // BlogTO
+	sp := reviewSources[4]     // Showpass
+	gcal := reviewSources[5]   // Google Calendar
+
+	yoga := TorontoVenues[0]       // The Tranzac
+	bookclub := TorontoVenues[6]   // Snakes and Lattes
+	techMeetup := TorontoVenues[7] // Centre for Social Innovation
+	artWalk := TorontoVenues[3]    // The Garrison
+	workshop := TorontoVenues[4]   // Burdock Music Hall
+	jazz := TorontoVenues[5]       // Dovercourt House
+	dance := TorontoVenues[2]      // The Baby G
+	potluck := TorontoVenues[8]    // InterAccess
+	film := TorontoVenues[9]       // Glad Day Bookshop
+	choir := TorontoVenues[1]      // Bampot Tea House
+	pottery := TorontoVenues[0]    // The Tranzac (reused)
+
+	yogaOrg := SampleOrganizers[0]    // Toronto Arts Foundation
+	bookOrg := SampleOrganizers[6]    // Book Club for Humans
+	techOrg := SampleOrganizers[5]    // Less Wrong Toronto
+	artOrg := SampleOrganizers[7]     // Creative Club Pauza
+	wsOrg := SampleOrganizers[1]      // Trampoline Hall
+	jazzOrg := SampleOrganizers[8]    // Radical Aliveness Toronto
+	danceOrg := SampleOrganizers[2]   // Epic Llama Events
+	potluckOrg := SampleOrganizers[3] // Toronto Society
+	filmOrg := SampleOrganizers[4]    // HTML in the Park
+	choirOrg := SampleOrganizers[9]   // Fuckup Nights Toronto
+	potteryOrg := SampleOrganizers[0] // Toronto Arts Foundation
+
+	loc := func(v Venue) *events.PlaceInput {
+		return &events.PlaceInput{
+			Name:            v.Name,
+			StreetAddress:   v.StreetAddress,
+			AddressLocality: v.AddressLocality,
+			AddressRegion:   v.AddressRegion,
+			AddressCountry:  v.AddressCountry,
+			PostalCode:      v.PostalCode,
+			Latitude:        v.Latitude,
+			Longitude:       v.Longitude,
+		}
+	}
+	org := func(o Organizer) *events.OrganizationInput {
+		return &events.OrganizationInput{Name: o.Name, URL: o.URL}
+	}
+	src := func(s Source, id string) *events.SourceInput {
+		u, eid := reviewSourceURL(s, id)
+		return &events.SourceInput{URL: u, EventID: eid, Name: s.Name}
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-01: Weekly Yoga — Forward-path add-occurrence (published series)
+	// -----------------------------------------------------------------------
+	rs01Base := g.NewRecurringSeriesBuilder().
+		WithName("RS-01 Weekly Yoga — Base Series").
+		WithDescription("Beginner-friendly yoga every Monday morning. Bring your own mat. All levels welcome.").
+		WithVenue(yoga).
+		WithOrganizer(yogaOrg).
+		WithWeeklyOccurrences(anchor, 4).
+		Build()
+	rs01Base.Source = src(eb, "rs01-yoga-series")
+	rs01Base.Image = unsplashImage(0)
+	rs01Base.URL = fmt.Sprintf("%s/e/rs01-yoga-series", eb.BaseURL)
+	rs01Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+	week5Start := anchor.Add(4 * week)
+	week5End := week5Start.Add(90 * time.Minute)
+	rs01NewOcc := events.EventInput{
+		Name:        "RS-01 Weekly Yoga — New Occurrence",
+		Description: "Drop-in yoga session at The Tranzac. Same instructor, same mat space.",
+		StartDate:   week5Start.Format(time.RFC3339),
+		EndDate:     week5End.Format(time.RFC3339),
+		Location:    loc(yoga),
+		Organizer:   org(yogaOrg),
+		Source:      src(luma, "rs01-yoga-occ5"),
+		Image:       unsplashImage(0),
+		URL:         fmt.Sprintf("%s/e/rs01-yoga-occ5", luma.BaseURL),
+		Keywords:    []string{"yoga", "wellness", "monday", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-02: Book Club — Near-dup path (companion reviews on both sides)
+	// -----------------------------------------------------------------------
+	rs02Base := g.NewRecurringSeriesBuilder().
+		WithName("RS-02 Book Club — Existing Series").
+		WithDescription("Monthly book club for lovers of literary fiction. Light snacks provided.").
+		WithVenue(bookclub).
+		WithOrganizer(bookOrg).
+		WithWeeklyOccurrences(anchor.Add(2*24*time.Hour), 2). // Tuesday anchor
+		Build()
+	rs02Base.Source = src(mu, "rs02-bookclub-series")
+	rs02Base.Image = unsplashImage(1)
+	rs02Base.URL = fmt.Sprintf("%s/events/rs02-bookclub-series", mu.BaseURL)
+	rs02Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+	rs02NearDup := events.EventInput{
+		Name:        "RS-02 Book Club — Near-Dup New Event",
+		Description: "Book club gathering at Snakes and Lattes — same evening, different listing source.",
+		StartDate:   rs02Base.Occurrences[0].StartDate,
+		EndDate:     rs02Base.Occurrences[0].EndDate,
+		Location:    loc(bookclub),
+		Organizer:   org(bookOrg),
+		Source:      src(blogto, "rs02-bookclub-neardup"),
+		Image:       unsplashImage(1),
+		URL:         fmt.Sprintf("%s/e/rs02-bookclub-neardup", blogto.BaseURL),
+		Keywords:    []string{"book club", "reading", "social", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-03: Tech Meetup — Pending series lifecycle
+	// -----------------------------------------------------------------------
+	rs03Base := g.NewRecurringSeriesBuilder().
+		WithName("RS-03 Tech Meetup — Pending Series").
+		WithDescription("Bi-weekly tech meetup for Go and Rust developers. Lightning talks + networking.").
+		WithVenue(techMeetup).
+		WithOrganizer(techOrg).
+		WithWeeklyOccurrences(anchor.Add(1*24*time.Hour), 2). // Tuesday anchor
+		Build()
+	rs03Base.Source = src(mu, "rs03-tech-series")
+	rs03Base.Image = unsplashImage(2)
+	rs03Base.URL = fmt.Sprintf("%s/events/rs03-tech-series", mu.BaseURL)
+	rs03Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+	rs03AddlOcc := events.EventInput{
+		Name:        "RS-03 Tech Meetup — Additional Occurrence",
+		Description: "Extra session added mid-cycle. Add-occurrence resolves review; lifecycle stays pending.",
+		StartDate:   anchor.Add(3 * week).Add(1 * 24 * time.Hour).Format(time.RFC3339),
+		EndDate:     anchor.Add(3 * week).Add(1*24*time.Hour + 2*time.Hour).Format(time.RFC3339),
+		Location:    loc(techMeetup),
+		Organizer:   org(techOrg),
+		Source:      src(luma, "rs03-tech-addl"),
+		Image:       unsplashImage(2),
+		URL:         fmt.Sprintf("%s/e/rs03-tech-addl", luma.BaseURL),
+		Keywords:    []string{"tech", "go", "rust", "meetup", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-04: Art Walk — Draft series (add-occurrence on draft target)
+	// -----------------------------------------------------------------------
+	rs04Base := g.NewRecurringSeriesBuilder().
+		WithName("RS-04 Art Walk — Draft Series").
+		WithDescription("Self-guided art walk through the Garrison neighbourhood. Free admission.").
+		WithVenue(artWalk).
+		WithOrganizer(artOrg).
+		WithWeeklyOccurrences(anchor.Add(5*24*time.Hour), 2). // Saturday anchor
+		Build()
+	rs04Base.Source = src(eb, "rs04-artwalk-series")
+	rs04Base.Image = unsplashImage(3)
+	rs04Base.URL = fmt.Sprintf("%s/e/rs04-artwalk-series", eb.BaseURL)
+	rs04Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+	rs04NewOcc := events.EventInput{
+		Name:        "RS-04 Art Walk — New Occurrence",
+		Description: "Additional art walk session added to draft series.",
+		StartDate:   anchor.Add(3 * week).Add(5 * 24 * time.Hour).Format(time.RFC3339),
+		EndDate:     anchor.Add(3 * week).Add(5*24*time.Hour + 3*time.Hour).Format(time.RFC3339),
+		Location:    loc(artWalk),
+		Organizer:   org(artOrg),
+		Source:      src(sp, "rs04-artwalk-newocc"),
+		Image:       unsplashImage(3),
+		URL:         fmt.Sprintf("%s/e/rs04-artwalk-newocc", sp.BaseURL),
+		Keywords:    []string{"art", "walk", "gallery", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-05: Workshop — Overlapping occurrence (add-occurrence → 409 Conflict)
+	// -----------------------------------------------------------------------
+	// Target series: occurrences at anchor+Wednesday, anchor+Wednesday+1week
+	wsAnchor := anchor.Add(3 * 24 * time.Hour) // Wednesday
+	rs05Base := g.NewRecurringSeriesBuilder().
+		WithName("RS-05 Workshop — Overlap Target").
+		WithDescription("Hands-on weekend workshop series. Laptop required. Beginners welcome.").
+		WithVenue(workshop).
+		WithOrganizer(wsOrg).
+		WithWeeklyOccurrences(wsAnchor, 2).
+		Build()
+	rs05Base.Source = src(luma, "rs05-workshop-series")
+	rs05Base.Image = unsplashImage(4)
+	rs05Base.URL = fmt.Sprintf("%s/e/rs05-workshop-series", luma.BaseURL)
+	rs05Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+	// Overlapping occurrence: starts 30 minutes into the first existing occurrence
+	overlapStart := wsAnchor.Add(30 * time.Minute)
+	overlapEnd := overlapStart.Add(2 * time.Hour)
+	rs05Overlap := events.EventInput{
+		Name:        "RS-05 Workshop — Overlapping Occurrence",
+		Description: "A second listing of the same workshop session — overlaps existing occurrence.",
+		StartDate:   overlapStart.Format(time.RFC3339),
+		EndDate:     overlapEnd.Format(time.RFC3339),
+		Location:    loc(workshop),
+		Organizer:   org(wsOrg),
+		Source:      src(mu, "rs05-workshop-overlap"),
+		Image:       unsplashImage(4),
+		URL:         fmt.Sprintf("%s/events/rs05-workshop-overlap", mu.BaseURL),
+		Keywords:    []string{"workshop", "learning", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-06: Jazz Night — Reversed dates + potential duplicate warning
+	// -----------------------------------------------------------------------
+	// 11pm start, 2am "end" on same calendar date → reversed dates
+	jazzDate := anchor.Add(4 * 24 * time.Hour) // Friday
+	jazzStart := time.Date(jazzDate.Year(), jazzDate.Month(), jazzDate.Day(), 23, 0, 0, 0, jazzDate.Location())
+	jazzEnd := time.Date(jazzDate.Year(), jazzDate.Month(), jazzDate.Day(), 2, 0, 0, 0, jazzDate.Location())
+	rs06Jazz := events.EventInput{
+		Name:        "RS-06 Jazz Night — Reversed Dates Late Show",
+		Description: "Late-night jazz at Dovercourt House. Sets from 11pm until 2am. Cash bar. 19+.",
+		StartDate:   jazzStart.Format(time.RFC3339),
+		EndDate:     jazzEnd.Format(time.RFC3339), // reversed: 2am before 11pm
+		Location:    loc(jazz),
+		Organizer:   org(jazzOrg),
+		Source:      src(eb, "rs06-jazz-lateshow"),
+		Image:       unsplashImage(5),
+		URL:         fmt.Sprintf("%s/e/rs06-jazz-lateshow", eb.BaseURL),
+		Keywords:    []string{"jazz", "live music", "late night", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-07: Dance Class — Not-a-duplicate (approve with record_not_duplicates)
+	// -----------------------------------------------------------------------
+	rs07Base := g.NewRecurringSeriesBuilder().
+		WithName("RS-07 Dance Class — Existing Series").
+		WithDescription("Contemporary dance classes for adults. No experience required.").
+		WithVenue(dance).
+		WithOrganizer(danceOrg).
+		WithWeeklyOccurrences(anchor.Add(2*24*time.Hour), 3). // Wednesday anchor
+		Build()
+	rs07Base.Source = src(eb, "rs07-dance-series")
+	rs07Base.Image = unsplashImage(6)
+	rs07Base.URL = fmt.Sprintf("%s/e/rs07-dance-series", eb.BaseURL)
+	rs07Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+	rs07NotDup := events.EventInput{
+		Name:        "RS-07 Dance Class — Not A Duplicate",
+		Description: "A different dance event at The Baby G — social dancing, not the structured class series.",
+		StartDate:   anchor.Add(2*24*time.Hour + 4*time.Hour).Format(time.RFC3339), // same day, later time
+		EndDate:     anchor.Add(2*24*time.Hour + 6*time.Hour).Format(time.RFC3339),
+		Location:    loc(dance),
+		Organizer:   org(danceOrg),
+		Source:      src(luma, "rs07-dance-notdup"),
+		Image:       unsplashImage(6),
+		URL:         fmt.Sprintf("%s/e/rs07-dance-notdup", luma.BaseURL),
+		Keywords:    []string{"dance", "social", "evening", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-08: Community Potluck — Exact duplicate (merge → soft-delete source)
+	// -----------------------------------------------------------------------
+	potluckStart := anchor.Add(6 * 24 * time.Hour) // Sunday
+	potluckEnd := potluckStart.Add(3 * time.Hour)
+	rs08Original := events.EventInput{
+		Name:        "RS-08 Community Potluck — Original",
+		Description: "Bring a dish to share! Community gathering at InterAccess. Family-friendly.",
+		StartDate:   potluckStart.Format(time.RFC3339),
+		EndDate:     potluckEnd.Format(time.RFC3339),
+		Location:    loc(potluck),
+		Organizer:   org(potluckOrg),
+		Source:      src(mu, "rs08-potluck-original"),
+		Image:       unsplashImage(7),
+		URL:         fmt.Sprintf("%s/events/rs08-potluck-original", mu.BaseURL),
+		Keywords:    []string{"potluck", "community", "food", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+	rs08ExactDup := events.EventInput{
+		Name:        "RS-08 Community Potluck — Exact Duplicate",
+		Description: "Bring a dish to share! Community gathering at InterAccess. Family-friendly.",
+		StartDate:   potluckStart.Format(time.RFC3339),
+		EndDate:     potluckEnd.Format(time.RFC3339),
+		Location:    loc(potluck),
+		Organizer:   org(potluckOrg),
+		Source:      src(blogto, "rs08-potluck-exactdup"),
+		Image:       unsplashImage(7),
+		URL:         fmt.Sprintf("%s/e/rs08-potluck-exactdup", blogto.BaseURL),
+		Keywords:    []string{"potluck", "community", "food", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-09: Film Screening — Multi-session warning
+	// -----------------------------------------------------------------------
+	filmStart := anchor.Add(1 * 24 * time.Hour) // Tuesday
+	filmEnd := filmStart.Add(6 * time.Hour)     // Long duration (6h) for 8 sessions
+	rs09Film := events.EventInput{
+		Name:        "RS-09 Film Screening (8 sessions) — Multi-Session",
+		Description: "Eight consecutive short-film screenings with Q&A breaks between each session. Doors at 10am.",
+		StartDate:   filmStart.Format(time.RFC3339),
+		EndDate:     filmEnd.Format(time.RFC3339),
+		Location:    loc(film),
+		Organizer:   org(filmOrg),
+		Source:      src(eb, "rs09-film-multisession"),
+		Image:       unsplashImage(8),
+		URL:         fmt.Sprintf("%s/e/rs09-film-multisession", eb.BaseURL),
+		Keywords:    []string{"film", "screening", "cinema", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-10: Choir Rehearsal — Order-independent consolidation pair
+	// -----------------------------------------------------------------------
+	choirAStart := anchor.Add(3 * 24 * time.Hour) // Wednesday
+	choirAEnd := choirAStart.Add(2 * time.Hour)
+	choirBStart := choirAStart.Add(week) // Week+1
+	choirBEnd := choirBStart.Add(2 * time.Hour)
+	rs10SourceA := events.EventInput{
+		Name:        "RS-10 Choir Rehearsal — Source A",
+		Description: "Weekly choir rehearsal at Bampot Tea House. All voice types welcome.",
+		StartDate:   choirAStart.Format(time.RFC3339),
+		EndDate:     choirAEnd.Format(time.RFC3339),
+		Location:    loc(choir),
+		Organizer:   org(choirOrg),
+		Source:      src(gcal, "rs10-choir-sourcea"),
+		Image:       unsplashImage(9),
+		URL:         fmt.Sprintf("%s/e/rs10-choir-sourcea", gcal.BaseURL),
+		Keywords:    []string{"choir", "singing", "rehearsal", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+	rs10SourceB := events.EventInput{
+		Name:        "RS-10 Choir Rehearsal — Source B",
+		Description: "Choir rehearsal — same ensemble, listed from a second source.",
+		StartDate:   choirBStart.Format(time.RFC3339),
+		EndDate:     choirBEnd.Format(time.RFC3339),
+		Location:    loc(choir),
+		Organizer:   org(choirOrg),
+		Source:      src(luma, "rs10-choir-sourceb"),
+		Image:       unsplashImage(9),
+		URL:         fmt.Sprintf("%s/e/rs10-choir-sourceb", luma.BaseURL),
+		Keywords:    []string{"choir", "singing", "rehearsal", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	// -----------------------------------------------------------------------
+	// RS-11: Pottery Studio — Same-day-different-times cluster (4 events)
+	// -----------------------------------------------------------------------
+	mon10am := anchor                        // Monday 10am
+	mon10amEnd := mon10am.Add(2 * time.Hour) // Monday 12pm
+	mon2pm := anchor.Add(4 * time.Hour)      // Monday 2pm
+	mon2pmEnd := mon2pm.Add(2 * time.Hour)   // Monday 4pm
+	mon7_10am := mon10am.Add(week)           // Next Monday 10am
+	mon7_10amEnd := mon7_10am.Add(2 * time.Hour)
+	mon7_2pm := mon2pm.Add(week) // Next Monday 2pm
+	mon7_2pmEnd := mon7_2pm.Add(2 * time.Hour)
+
+	rs11Mon10am := events.EventInput{
+		Name:        "RS-11 Pottery Studio — Mon 10am Session",
+		Description: "Hand-building pottery session. All clay and tools provided. Beginners welcome.",
+		StartDate:   mon10am.Format(time.RFC3339),
+		EndDate:     mon10amEnd.Format(time.RFC3339),
+		Location:    loc(pottery),
+		Organizer:   org(potteryOrg),
+		Source:      src(eb, "rs11-pottery-mon10am"),
+		Image:       unsplashImage(10),
+		URL:         fmt.Sprintf("%s/e/rs11-pottery-mon10am", eb.BaseURL),
+		Keywords:    []string{"pottery", "ceramic", "workshop", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+	rs11Mon2pm := events.EventInput{
+		Name:        "RS-11 Pottery Studio — Mon 2pm Session",
+		Description: "Afternoon hand-building pottery session. All clay and tools provided.",
+		StartDate:   mon2pm.Format(time.RFC3339),
+		EndDate:     mon2pmEnd.Format(time.RFC3339),
+		Location:    loc(pottery),
+		Organizer:   org(potteryOrg),
+		Source:      src(eb, "rs11-pottery-mon2pm"),
+		Image:       unsplashImage(10),
+		URL:         fmt.Sprintf("%s/e/rs11-pottery-mon2pm", eb.BaseURL),
+		Keywords:    []string{"pottery", "ceramic", "workshop", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+	rs11Mon7_10am := events.EventInput{
+		Name:        "RS-11 Pottery Studio — Mon+7 10am Session",
+		Description: "Hand-building pottery session, next Monday morning. All clay and tools provided.",
+		StartDate:   mon7_10am.Format(time.RFC3339),
+		EndDate:     mon7_10amEnd.Format(time.RFC3339),
+		Location:    loc(pottery),
+		Organizer:   org(potteryOrg),
+		Source:      src(eb, "rs11-pottery-mon7-10am"),
+		Image:       unsplashImage(10),
+		URL:         fmt.Sprintf("%s/e/rs11-pottery-mon7-10am", eb.BaseURL),
+		Keywords:    []string{"pottery", "ceramic", "workshop", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+	rs11Mon7_2pm := events.EventInput{
+		Name:        "RS-11 Pottery Studio — Mon+7 2pm Session",
+		Description: "Afternoon pottery session, next Monday. All clay and tools provided.",
+		StartDate:   mon7_2pm.Format(time.RFC3339),
+		EndDate:     mon7_2pmEnd.Format(time.RFC3339),
+		Location:    loc(pottery),
+		Organizer:   org(potteryOrg),
+		Source:      src(eb, "rs11-pottery-mon7-2pm"),
+		Image:       unsplashImage(10),
+		URL:         fmt.Sprintf("%s/e/rs11-pottery-mon7-2pm", eb.BaseURL),
+		Keywords:    []string{"pottery", "ceramic", "workshop", "toronto"},
+		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
+	}
+
+	return []ReviewEventScenario{
+		{
+			GroupID:     "RS-01",
+			Description: "Forward-path add-occurrence: published series target",
+			Events:      []events.EventInput{rs01Base, rs01NewOcc},
+		},
+		{
+			GroupID:     "RS-02",
+			Description: "Near-dup path: companion reviews on both sides",
+			Events:      []events.EventInput{rs02Base, rs02NearDup},
+		},
+		{
+			GroupID:     "RS-03",
+			Description: "Lifecycle-stays-pending: add-occurrence on pending series",
+			Events:      []events.EventInput{rs03Base, rs03AddlOcc},
+		},
+		{
+			GroupID:     "RS-04",
+			Description: "Draft-state add-occurrence: forward path on draft target",
+			Events:      []events.EventInput{rs04Base, rs04NewOcc},
+		},
+		{
+			GroupID:     "RS-05",
+			Description: "add-occurrence conflict: overlapping occurrence → 409 Conflict",
+			Events:      []events.EventInput{rs05Base, rs05Overlap},
+		},
+		{
+			GroupID:     "RS-06",
+			Description: "Multi-warning: reversed_dates + potential_duplicate",
+			Events:      []events.EventInput{rs06Jazz},
+		},
+		{
+			GroupID:     "RS-07",
+			Description: "Not-a-duplicate: approve with record_not_duplicates",
+			Events:      []events.EventInput{rs07Base, rs07NotDup},
+		},
+		{
+			GroupID:     "RS-08",
+			Description: "Exact duplicate: merge → soft-delete source",
+			Events:      []events.EventInput{rs08Original, rs08ExactDup},
+		},
+		{
+			GroupID:     "RS-09",
+			Description: "Multi-session: multi_session_likely warning",
+			Events:      []events.EventInput{rs09Film},
+		},
+		{
+			GroupID:     "RS-10",
+			Description: "Order-independent consolidation pair",
+			Events:      []events.EventInput{rs10SourceA, rs10SourceB},
+		},
+		{
+			GroupID:     "RS-11",
+			Description: "Same-day-different-times cluster: 4 events",
+			Events:      []events.EventInput{rs11Mon10am, rs11Mon2pm, rs11Mon7_10am, rs11Mon7_2pm},
+		},
+	}
+}
+
+// SingleOccurrenceMatch creates a single-occurrence event that is a duplicate of one
+// occurrence from a recurring series. This is used to test add-occurrence workflows.
+//
+// Parameters:
+//   - series: A recurring-series EventInput (typically built with RecurringSeriesBuilder)
+//   - occIdx: Index of the occurrence to duplicate (0-based)
+//
+// Returns: An EventInput with one occurrence matching the series occurrence at occIdx
+func SingleOccurrenceMatch(series events.EventInput, occIdx int) events.EventInput {
+	if occIdx < 0 || occIdx >= len(series.Occurrences) {
+		// Fallback: use first occurrence if index out of bounds
+		occIdx = 0
+	}
+
+	selectedOcc := series.Occurrences[occIdx]
+
+	return events.EventInput{
+		Name:        series.Name + " (single)",
+		Description: series.Description,
+		StartDate:   selectedOcc.StartDate,
+		EndDate:     selectedOcc.EndDate,
+		Location:    series.Location,
+		Organizer: &events.OrganizationInput{
+			Name: series.Organizer.Name + " (variant)",
+			URL:  series.Organizer.URL,
+		},
+		Source: &events.SourceInput{
+			URL:     series.Source.URL + "/single",
+			EventID: series.Source.EventID + "-single",
+			Name:    series.Source.Name,
+		},
+		Image:    series.Image,
+		URL:      series.URL + "/single",
+		Keywords: series.Keywords,
+		License:  series.License,
+		// No occurrences — single occurrence event
+	}
+}

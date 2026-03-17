@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	generateCount       int
-	generateSeed        int64
-	generateReviewQueue bool
+	generateCount        int
+	generateSeed         int64
+	generateReviewQueue  bool
+	generateReviewEvents bool
 )
 
 // generateCmd provides test event generation
@@ -34,6 +35,9 @@ Examples:
   # Generate with specific seed for reproducibility
   server generate events.json --seed 42
 
+  # Generate curated review event fixture set (11 scenario groups, 22 events)
+  server generate review-fixtures.json --review-events
+
   # Generate and immediately ingest
   server generate events.json && server ingest events.json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,6 +51,7 @@ func init() {
 	generateCmd.Flags().IntVarP(&generateCount, "count", "n", 1, "number of events to generate")
 	generateCmd.Flags().Int64Var(&generateSeed, "seed", 0, "random seed (0 = random)")
 	generateCmd.Flags().BoolVar(&generateReviewQueue, "review-queue", false, "generate events that need review (data quality issues)")
+	generateCmd.Flags().BoolVar(&generateReviewEvents, "review-events", false, "generate curated review event fixture set (11 scenario groups, 22 events)")
 }
 
 func runGenerate(args []string) error {
@@ -56,6 +61,10 @@ func runGenerate(args []string) error {
 		gen = testdata.NewGenerator(generateSeed)
 	} else {
 		gen = testdata.NewGenerator(0) // Will use time-based seed
+	}
+
+	if generateReviewEvents {
+		return runGenerateReviewEvents(gen, args)
 	}
 
 	// Generate events
@@ -109,6 +118,65 @@ func runGenerate(args []string) error {
 		}
 	} else {
 		// Write to stdout
+		fmt.Println(string(output))
+	}
+
+	return nil
+}
+
+// reviewEventsOutput is the JSON structure for --review-events output.
+type reviewEventsOutput struct {
+	Scenarios []reviewScenarioJSON `json:"scenarios"`
+	Events    []interface{}        `json:"events"`
+}
+
+type reviewScenarioJSON struct {
+	GroupID     string        `json:"group_id"`
+	Description string        `json:"description"`
+	Events      []interface{} `json:"events"`
+}
+
+func runGenerateReviewEvents(gen *testdata.Generator, args []string) error {
+	scenarios := gen.BatchReviewEventInputs()
+
+	out := reviewEventsOutput{
+		Scenarios: make([]reviewScenarioJSON, 0, len(scenarios)),
+		Events:    make([]interface{}, 0, 22),
+	}
+
+	for _, s := range scenarios {
+		js := reviewScenarioJSON{
+			GroupID:     s.GroupID,
+			Description: s.Description,
+			Events:      make([]interface{}, len(s.Events)),
+		}
+		for i, ev := range s.Events {
+			ev := ev // capture
+			js.Events[i] = ev
+			out.Events = append(out.Events, ev)
+		}
+		out.Scenarios = append(out.Scenarios, js)
+	}
+
+	// Marshal to JSON
+	output, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal review events: %w", err)
+	}
+
+	if len(args) > 0 {
+		outputFile := args[0]
+		if err := os.WriteFile(outputFile, output, 0644); err != nil {
+			return fmt.Errorf("write file: %w", err)
+		}
+		fmt.Printf("✓ Generated %d review event scenario groups (%d events) to %s\n",
+			len(out.Scenarios), len(out.Events), outputFile)
+		fmt.Println()
+		fmt.Println("Next steps:")
+		fmt.Printf("  # Ingest all events for batch testing:\n")
+		fmt.Printf("  server ingest %s\n", outputFile)
+		fmt.Printf("  # Or use the 'scenarios' key to ingest groups individually.\n")
+	} else {
 		fmt.Println(string(output))
 	}
 
