@@ -158,14 +158,36 @@
         // Load occurrences from subEvent array or occurrences property
         occurrences = [];
         if (Array.isArray(event.subEvent)) {
-            occurrences = event.subEvent.map(occ => ({
-                id: occ['@id'] || null,
-                start_time: occ.startDate || '',
-                end_time: occ.endDate || null,
-                timezone: occ.timezone || 'America/Toronto',
-                door_time: occ.doorTime || null,
-                virtual_url: occ.location?.url || null
-            }));
+            occurrences = event.subEvent.map(occ => {
+                // occ.location can be:
+                //   - a VirtualLocation object  → { "@type": "VirtualLocation", "url": "..." }
+                //   - an embedded Place object   → { "@type": "Place", "@id": "https://.../places/<ULID>", ... }
+                //   - a URI string               → "https://.../places/<ULID>"  (resolver unavailable)
+                //   - absent                     → undefined / null
+                let virtualUrl = null;
+                let venueId = null;
+                const loc = occ.location;
+                if (loc) {
+                    if (typeof loc === 'string') {
+                        // URI string — extract ULID and treat as venue override
+                        venueId = loc;
+                    } else if (loc['@type'] === 'VirtualLocation') {
+                        virtualUrl = loc.url || null;
+                    } else if (loc['@type'] === 'Place') {
+                        // Embedded Place — use the @id URI as the venue reference
+                        venueId = loc['@id'] || null;
+                    }
+                }
+                return {
+                    id: occ['@id'] || null,
+                    start_time: occ.startDate || '',
+                    end_time: occ.endDate || null,
+                    timezone: occ.timezone || 'America/Toronto',
+                    door_time: occ.doorTime || null,
+                    virtual_url: virtualUrl,
+                    venue_id: venueId
+                };
+            });
         } else if (Array.isArray(event.occurrences)) {
             occurrences = event.occurrences;
         } else if (event.startDate) {

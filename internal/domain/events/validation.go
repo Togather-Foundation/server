@@ -469,6 +469,16 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 			}
 		}
 
+		// Reject hybrid occurrences: an occurrence must be either physical (venueId)
+		// or virtual (virtualUrl), not both.  Persisting both violates the location
+		// contract and makes it ambiguous which channel the attendee should use.
+		if occ.VenueID != "" && strings.TrimSpace(occ.VirtualURL) != "" {
+			return nil, ValidationError{
+				Field:   fieldPrefix + ".venueId",
+				Message: "occurrence must specify either venueId or virtualUrl, not both",
+			}
+		}
+
 		// Each occurrence must resolve to a location at create time.
 		// An occurrence without its own venueId or virtualUrl inherits from the parent event.
 		// Reject explicitly if the occurrence has no venueId/virtualUrl and the parent cannot

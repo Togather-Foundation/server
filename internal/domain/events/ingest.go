@@ -983,9 +983,17 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		}
 
 		venueID := event.PrimaryVenueID
-		virtual := nullableString(virtualURL(input))
-		if venueID == nil && virtual == nil && event.VirtualURL != "" {
-			virtual = nullableString(event.VirtualURL)
+		// Only set a virtual URL when the occurrence has no physical venue.
+		// If both a physical location and a virtualLocation were supplied on the
+		// parent event, using the physical venue takes priority — setting virtual
+		// here too would create a hybrid occurrence (venue_id AND virtual_url set),
+		// violating the location contract (an occurrence is either physical or virtual).
+		var virtual *string
+		if venueID == nil {
+			virtual = nullableString(virtualURL(input))
+			if virtual == nil && event.VirtualURL != "" {
+				virtual = nullableString(event.VirtualURL)
+			}
 		}
 		occurrence := OccurrenceCreateParams{
 			EventID:    event.ID,

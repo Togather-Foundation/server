@@ -635,3 +635,65 @@ func TestEventsHandlerListSnakeCaseAliasWarning(t *testing.T) {
 	require.NotEmpty(t, payload.Warnings, "response should include alias warning")
 	require.Contains(t, payload.Warnings[0], "start_date")
 }
+
+// TestEventsHandlerGetSubEventVenueURIFallback verifies that when the place resolver
+// fails for an occurrence venue, the subEvent entry's location falls back to a URI
+// string (rather than being absent or panicking).
+//
+// This is a regression test for the resolveOccurrenceVenueLocation fallback path:
+// an occurrence with a VenueULID whose resolver lookup errors must still emit a
+// non-nil location using the canonical place URI as a stub.
+func TestEventsHandlerGetSubEventVenueURIFallback(t *testing.T) {
+	const venueULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+
+	t0 := time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC)
+
+	venueULIDVal := venueULID
+	repo := stubEventsRepo{
+		getFn: func(_ string) (*events.Event, error) {
+			return &events.Event{
+				Name: "Fallback URI Event",
+				Occurrences: []events.Occurrence{
+					{StartTime: t0, Timezone: "America/Toronto", VenueULID: &venueULIDVal},
+				},
+			}, nil
+		},
+	}
+
+	// Resolver always fails — must trigger URI fallback.
+	resolver := stubPlaceResolver{
+		getByULIDFn: func(_ context.Context, _ string) (*places.Place, error) {
+			return nil, places.ErrNotFound
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h.WithPlaceResolver(resolver)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+	subEvent, ok := payload["subEvent"]
+	require.True(t, ok, "response must contain 'subEvent' key")
+	subEvents, ok := subEvent.([]any)
+	require.True(t, ok, "subEvent must be an array")
+	require.Len(t, subEvents, 1)
+
+	m0, ok := subEvents[0].(map[string]any)
+	require.True(t, ok, "subEvent[0] must be an object")
+
+	// When the resolver fails, location must fall back to the place URI string —
+	// not nil/absent, not a panic.
+	loc := m0["location"]
+	require.NotNil(t, loc, "subEvent[0].location must be a URI string (resolver-fallback), not nil")
+	locStr, ok := loc.(string)
+	require.True(t, ok, "subEvent[0].location must be a string URI when resolver fails, got %T", loc)
+	require.Contains(t, locStr, venueULID, "URI fallback must contain the venue ULID")
+}
