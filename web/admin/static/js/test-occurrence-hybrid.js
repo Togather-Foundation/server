@@ -1,80 +1,21 @@
 #!/usr/bin/env node
 /**
- * Unit tests for occurrence modal hybrid-cleanup logic in event-edit.js.
+ * Unit tests for occurrence modal hybrid-cleanup logic.
  *
- * These tests exercise the saveOccurrence guard (venueId + virtualUrl mutual exclusion)
- * using a minimal DOM stub, without needing a running server or browser.
+ * These tests require() occurrence-logic.js directly — the module that
+ * event-edit.js also loads via OccurrenceLogic.buildOccurrenceFromForm.
+ * Any change to that production module will be reflected here immediately.
  *
  * Run: node web/admin/static/js/test-occurrence-hybrid.js
  */
 'use strict';
 
 // ---------------------------------------------------------------------------
-// Minimal DOM stub (only the elements saveOccurrence touches)
+// Load the real production module
 // ---------------------------------------------------------------------------
-function makeDom(overrides) {
-    const defaults = {
-        'occurrence-index':       { value: '' },
-        'occurrence-start-time':  { value: '2026-04-01T19:00' },
-        'occurrence-end-time':    { value: '' },
-        'occurrence-timezone':    { value: 'America/Toronto' },
-        'occurrence-door-time':   { value: '' },
-        'occurrence-venue-id':    { value: '' },
-        'occurrence-virtual-url': { value: '' },
-    };
-    const elements = { ...defaults };
-    for (const [id, vals] of Object.entries(overrides || {})) {
-        elements[id] = { ...defaults[id], ...vals };
-    }
-    return {
-        getElementById(id) { return elements[id] || null; },
-        elements,
-    };
-}
-
-// ---------------------------------------------------------------------------
-// Extract saveOccurrence logic as a pure function for testing.
-//
-// This mirrors the exact logic in event-edit.js saveOccurrence, so that any
-// future edit to the JS is visible in test failures.
-// ---------------------------------------------------------------------------
-function runSaveOccurrence(dom, occurrences) {
-    const toasts = [];
-    const showToast = (msg, type) => toasts.push({ msg, type });
-
-    const indexValue = dom.getElementById('occurrence-index').value;
-    const startTime = dom.getElementById('occurrence-start-time').value;
-
-    if (!startTime) {
-        showToast('Start time is required', 'error');
-        return { ok: false, toasts, occurrences };
-    }
-
-    const venueId = dom.getElementById('occurrence-venue-id').value || null;
-    // Mirror the fix: when venueId is set, treat virtual URL as cleared (hidden input is stale).
-    const virtualUrlRaw = dom.getElementById('occurrence-virtual-url').value || null;
-    const virtualUrl = venueId ? null : virtualUrlRaw;
-
-    const occurrence = {
-        start_time: startTime,
-        end_time: dom.getElementById('occurrence-end-time').value || null,
-        timezone: dom.getElementById('occurrence-timezone').value || 'America/Toronto',
-        door_time: dom.getElementById('occurrence-door-time').value || null,
-        virtual_url: virtualUrl,
-        venue_id: venueId,
-    };
-
-    const result = [...occurrences];
-    if (indexValue === '') {
-        result.push(occurrence);
-    } else {
-        const index = parseInt(indexValue, 10);
-        occurrence.id = result[index].id || null;
-        result[index] = occurrence;
-    }
-
-    return { ok: true, toasts, occurrences: result, saved: occurrence };
-}
+const path = require('path');
+const { buildOccurrenceFromForm, buildOccurrenceFields } =
+    require(path.join(__dirname, 'occurrence-logic.js'));
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -92,80 +33,144 @@ function assert(cond, desc) {
     }
 }
 
+/** Build a minimal form object with sensible defaults, spread overrides. */
+function makeForm(overrides) {
+    return {
+        indexValue:    '',
+        startTime:     '2026-04-01T19:00',
+        endTime:       '',
+        timezone:      'America/Toronto',
+        doorTime:      '',
+        venueId:       '',
+        virtualUrlRaw: '',
+        ...overrides,
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-console.log('\noccurrence modal hybrid-cleanup logic\n');
+console.log('\noccurrence-logic.js — hybrid-cleanup and form build\n');
 
 // 1. Normal physical-only save (no virtual URL) — must still work.
 console.log('1. Normal physical-only occurrence saves without error');
 {
-    const dom = makeDom({ 'occurrence-venue-id': { value: 'https://example.com/places/01HXX12345678901234567890' } });
-    const { ok, saved } = runSaveOccurrence(dom, []);
-    assert(ok, 'save succeeds');
-    assert(saved.venue_id === 'https://example.com/places/01HXX12345678901234567890', 'venue_id preserved');
-    assert(saved.virtual_url === null, 'virtual_url is null');
+    const res = buildOccurrenceFromForm(makeForm({
+        venueId: 'https://example.com/places/01HXX12345678901234567890',
+    }), []);
+    assert(res.ok, 'save succeeds');
+    assert(res.occurrence.venue_id === 'https://example.com/places/01HXX12345678901234567890', 'venue_id preserved');
+    assert(res.occurrence.virtual_url === null, 'virtual_url is null');
 }
 
 // 2. Normal virtual-only save — must still work.
 console.log('\n2. Normal virtual-only occurrence saves without error');
 {
-    const dom = makeDom({ 'occurrence-virtual-url': { value: 'https://stream.example.com/live' } });
-    const { ok, saved } = runSaveOccurrence(dom, []);
-    assert(ok, 'save succeeds');
-    assert(saved.virtual_url === 'https://stream.example.com/live', 'virtual_url preserved');
-    assert(saved.venue_id === null, 'venue_id is null');
+    const res = buildOccurrenceFromForm(makeForm({
+        virtualUrlRaw: 'https://stream.example.com/live',
+    }), []);
+    assert(res.ok, 'save succeeds');
+    assert(res.occurrence.virtual_url === 'https://stream.example.com/live', 'virtual_url preserved');
+    assert(res.occurrence.venue_id === null, 'venue_id is null');
 }
 
-// 3. KEY REGRESSION: hybrid occurrence (legacy bad data — both venueId AND virtualUrl in DOM).
+// 3. KEY REGRESSION: hybrid occurrence (legacy bad data — both venueId AND virtualUrl set).
 //    Must save as physical-only (venue kept, virtual URL silently cleared).
-console.log('\n3. Hybrid occurrence (both venueId + virtualUrl in DOM) saves as physical-only');
+console.log('\n3. Hybrid occurrence (both venueId + virtualUrlRaw set) saves as physical-only');
 {
-    const dom = makeDom({
-        'occurrence-venue-id':    { value: 'https://example.com/places/01HXX12345678901234567890' },
-        'occurrence-virtual-url': { value: 'https://old-stream.example.com/live' },
-    });
-    const { ok, saved, toasts } = runSaveOccurrence(dom, []);
-    assert(ok, 'save succeeds (no longer blocked)');
-    assert(toasts.length === 0, 'no error toast shown');
-    assert(saved.venue_id === 'https://example.com/places/01HXX12345678901234567890', 'venue_id kept');
-    assert(saved.virtual_url === null, 'stale virtual_url silently cleared');
+    const res = buildOccurrenceFromForm(makeForm({
+        venueId:       'https://example.com/places/01HXX12345678901234567890',
+        virtualUrlRaw: 'https://old-stream.example.com/live',
+    }), []);
+    assert(res.ok, 'save succeeds (no longer blocked)');
+    assert(res.occurrence.venue_id === 'https://example.com/places/01HXX12345678901234567890', 'venue_id kept');
+    assert(res.occurrence.virtual_url === null, 'stale virtual_url silently cleared');
 }
 
-// 4. Hybrid edit at a specific index — existing occurrence updated in place.
-console.log('\n4. Hybrid occurrence edit at index 0 updates in-place correctly');
+// 4. Hybrid edit at a specific index — existing occurrence updated in place, id preserved.
+console.log('\n4. Hybrid occurrence edit at index 0 updates in-place and preserves id');
 {
     const existing = [{ id: 'occ-01', start_time: '2026-04-01T19:00', virtual_url: 'https://old.example.com', venue_id: 'https://example.com/places/01HXX12345678901234567890' }];
-    const dom = makeDom({
-        'occurrence-index':       { value: '0' },
-        'occurrence-venue-id':    { value: 'https://example.com/places/01HXX12345678901234567890' },
-        'occurrence-virtual-url': { value: 'https://old.example.com' }, // stale hidden value
-    });
-    const { ok, occurrences } = runSaveOccurrence(dom, existing);
-    assert(ok, 'save succeeds');
-    assert(occurrences[0].id === 'occ-01', 'existing id preserved');
-    assert(occurrences[0].venue_id !== null, 'venue_id kept');
-    assert(occurrences[0].virtual_url === null, 'stale virtual_url cleared');
+    const res = buildOccurrenceFromForm(makeForm({
+        indexValue:    '0',
+        venueId:       'https://example.com/places/01HXX12345678901234567890',
+        virtualUrlRaw: 'https://old.example.com', // stale hidden value
+    }), existing);
+    assert(res.ok, 'save succeeds');
+    assert(res.occurrence.id === 'occ-01', 'existing id preserved');
+    assert(res.occurrence.venue_id !== null, 'venue_id kept');
+    assert(res.occurrence.virtual_url === null, 'stale virtual_url cleared');
 }
 
 // 5. Missing start time — must still fail.
-console.log('\n5. Missing start time still fails with error toast');
+console.log('\n5. Missing start time still fails with descriptive reason');
 {
-    const dom = makeDom({ 'occurrence-start-time': { value: '' } });
-    const { ok, toasts } = runSaveOccurrence(dom, []);
-    assert(!ok, 'save blocked');
-    assert(toasts.some(t => t.type === 'error'), 'error toast emitted');
+    const res = buildOccurrenceFromForm(makeForm({ startTime: '' }), []);
+    assert(!res.ok, 'save blocked');
+    assert(typeof res.reason === 'string' && res.reason.length > 0, 'reason string provided');
+    assert(res.reason.toLowerCase().includes('start time'), 'reason mentions start time');
 }
 
 // 6. Clean state: no venue, no virtual URL — saves cleanly.
 console.log('\n6. No venue, no virtual URL saves cleanly (minimal occurrence)');
 {
-    const dom = makeDom({});
-    const { ok, saved } = runSaveOccurrence(dom, []);
-    assert(ok, 'save succeeds');
-    assert(saved.venue_id === null, 'venue_id null');
-    assert(saved.virtual_url === null, 'virtual_url null');
+    const res = buildOccurrenceFromForm(makeForm({}), []);
+    assert(res.ok, 'save succeeds');
+    assert(res.occurrence.venue_id === null, 'venue_id null');
+    assert(res.occurrence.virtual_url === null, 'virtual_url null');
+}
+
+// 7. REVERSE PATH: start from hybrid legacy data, clear venue override, save as virtual-only.
+//    The admin clicks "clear venue override" then saves — virtual URL must be preserved.
+console.log('\n7. Reverse path: clear venue override → save preserves virtual URL');
+{
+    // Simulates: hybrid occurrence loaded into modal (venueId + virtualUrlRaw set by editOccurrence),
+    // then admin clicks clearOccurrenceVenue() which blanks occurrence-venue-id but leaves
+    // occurrence-virtual-url intact, then saves.
+    const existing = [{ id: 'occ-02', start_time: '2026-04-01T19:00', virtual_url: 'https://stream.example.com/live', venue_id: 'https://example.com/places/01HXX12345678901234567890' }];
+    const res = buildOccurrenceFromForm(makeForm({
+        indexValue:    '0',
+        venueId:       '',                                    // cleared by clearOccurrenceVenue()
+        virtualUrlRaw: 'https://stream.example.com/live',    // retained from original data
+    }), existing);
+    assert(res.ok, 'save succeeds after venue clear');
+    assert(res.occurrence.id === 'occ-02', 'id preserved');
+    assert(res.occurrence.venue_id === null, 'venue_id cleared');
+    assert(res.occurrence.virtual_url === 'https://stream.example.com/live', 'virtual_url preserved when no venue');
+}
+
+// 8. Reverse path: clear venue override, then also clear virtual URL — saves as bare occurrence.
+console.log('\n8. Reverse path: clear venue and virtual URL → saves as minimal bare occurrence');
+{
+    const existing = [{ id: 'occ-03', start_time: '2026-04-01T19:00', virtual_url: 'https://stream.example.com/live', venue_id: 'https://example.com/places/01HXX12345678901234567890' }];
+    const res = buildOccurrenceFromForm(makeForm({
+        indexValue:    '0',
+        venueId:       '',   // cleared
+        virtualUrlRaw: '',   // admin also cleared the URL
+    }), existing);
+    assert(res.ok, 'save succeeds');
+    assert(res.occurrence.venue_id === null, 'venue_id null');
+    assert(res.occurrence.virtual_url === null, 'virtual_url null (admin explicitly cleared it)');
+}
+
+// 9. buildOccurrenceFields unit — low-level guard function directly.
+console.log('\n9. buildOccurrenceFields pure guard function');
+{
+    // Both set → virtual_url dropped
+    const hybrid = buildOccurrenceFields({ venueId: 'v1', virtualUrlRaw: 'u1' });
+    assert(hybrid.venue_id === 'v1', 'venue_id kept');
+    assert(hybrid.virtual_url === null, 'virtual_url dropped when venueId present');
+
+    // Only virtual → both kept correctly
+    const virtual = buildOccurrenceFields({ venueId: '', virtualUrlRaw: 'u1' });
+    assert(virtual.venue_id === null, 'venueId normalized to null');
+    assert(virtual.virtual_url === 'u1', 'virtual_url kept when no venue');
+
+    // Neither → both null
+    const bare = buildOccurrenceFields({ venueId: '', virtualUrlRaw: '' });
+    assert(bare.venue_id === null, 'null venue_id');
+    assert(bare.virtual_url === null, 'null virtual_url');
 }
 
 // ---------------------------------------------------------------------------

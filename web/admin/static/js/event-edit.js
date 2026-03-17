@@ -440,38 +440,30 @@
 
     window.saveOccurrence = function() {
         const indexValue = document.getElementById('occurrence-index').value;
-        const startTime = document.getElementById('occurrence-start-time').value;
-        
-        if (!startTime) {
-            showToast('Start time is required', 'error');
+
+        const result = OccurrenceLogic.buildOccurrenceFromForm({
+            indexValue,
+            startTime:      document.getElementById('occurrence-start-time').value,
+            endTime:        document.getElementById('occurrence-end-time').value,
+            timezone:       document.getElementById('occurrence-timezone').value,
+            doorTime:       document.getElementById('occurrence-door-time').value,
+            venueId:        document.getElementById('occurrence-venue-id').value,
+            virtualUrlRaw:  document.getElementById('occurrence-virtual-url').value,
+        }, occurrences);
+
+        if (!result.ok) {
+            showToast(result.reason, 'error');
             return;
         }
 
-        const venueId = document.getElementById('occurrence-venue-id').value || null;
-        // When a venue override is active the virtual-URL section is hidden; any pre-existing
-        // value in that hidden input is stale (legacy hybrid data).  Silently drop it so that
-        // admins can save hybrid occurrences into a valid physical-only state without having
-        // to manually blank a field they cannot see.
-        const virtualUrlRaw = document.getElementById('occurrence-virtual-url').value || null;
-        const virtualUrl = venueId ? null : virtualUrlRaw;
-
-        const occurrence = {
-            start_time: startTime,
-            end_time: document.getElementById('occurrence-end-time').value || null,
-            timezone: document.getElementById('occurrence-timezone').value || 'America/Toronto',
-            door_time: document.getElementById('occurrence-door-time').value || null,
-            virtual_url: virtualUrl,
-            venue_id: venueId
-        };
+        const occurrence = result.occurrence;
 
         if (indexValue === '') {
             // Add new occurrence
             occurrences.push(occurrence);
         } else {
-            // Update existing occurrence — preserve the id field that identifies the DB row.
-            const index = parseInt(indexValue, 10);
-            occurrence.id = occurrences[index].id || null;
-            occurrences[index] = occurrence;
+            // Update existing occurrence — id already preserved by buildOccurrenceFromForm.
+            occurrences[parseInt(indexValue, 10)] = occurrence;
         }
 
         renderOccurrences();
