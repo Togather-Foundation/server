@@ -95,8 +95,8 @@ scripts/review-regression-test.sh --generate-only
 3. Verify:
    - [ ] Source event (absorbed event) is soft-deleted.
    - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence).
-   - [ ] The companion review entry is also dismissed (`merged`).
-   - [ ] Target event recomputes lifecycle: if no other pending reviews remain, transitions to `published`.
+   - [ ] The companion review entry is also dismissed (`merged` — no stale pending companion row should remain after successful consolidation).
+   - [ ] Target event recomputes lifecycle: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
 
 ---
 
@@ -272,10 +272,10 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
 1. Verify both events appear in the review queue with near-duplicate warnings.
 2. On either event's review entry, click **Add as Occurrence**.
 3. Verify:
-   - [ ] Source event soft-deleted.
-   - [ ] Target event keeps its **1** occurrence (both events are single-occurrence; add-occurrence adds the source event's occurrence to the target).
-   - [ ] Companion review dismissed.
-   - [ ] Target published (if no other pending reviews).
+    - [ ] Source event soft-deleted.
+    - [ ] Target event now has **2** occurrences (was 1; the source event's sole occurrence is added to the target).
+    - [ ] Companion review dismissed (`merged` status — no stale pending row should remain on the target after successful consolidation).
+    - [ ] Target lifecycle recomputes: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
 
 **Order-independence check:** Reset the database and re-run, ingesting Source B first, then Source A. Verify the same final state.
 
@@ -324,14 +324,14 @@ After completing all scenarios, verify:
 
 - [ ] No orphaned `pending_review` entries remain from the fixture set (all should be resolved).
 - [ ] No orphaned events in `pending_review` state from the fixture set (all should be published or deleted).
-- [ ] Tombstone records exist for all soft-deleted events with correct `superseded_by` references.
+- [ ] Tombstone records exist for all soft-deleted events with correct `superseded_by_uri` references (column is `superseded_by_uri`, not `superseded_by`).
 - [ ] The `not_duplicates` table has entries from RS-07 (and RS-11 if applicable).
-- [ ] Event occurrence counts match expectations after all add-occurrence actions:
+- [ ] Event occurrence counts match expectations after all add-occurrence actions (verify via the SQL query below or via `GET /api/v1/events/{ulid}` — the `subEvent` array is populated for all occurrences and is the authoritative count used by the admin detail page):
   - RS-01: 5 (was 4, +1 from manual add-occurrence)
   - RS-02: 3 (was 2, +1 from near-dup add-occurrence)
   - RS-03: 3 (was 2, +1 from manual add-occurrence)
   - RS-04: 3 (was 2, +1 from manual add-occurrence)
-  - RS-10: 2 (1+1 after add-occurrence consolidation)
+  - RS-10: 2 (1+1 — source's sole occurrence is added to the target, giving 2 total)
 
 ### SQL Verification Queries
 
@@ -351,7 +351,7 @@ WHERE name LIKE 'RS-%'
 ORDER BY name;
 
 -- Check tombstones
-SELECT e.name, t.reason, t.superseded_by
+SELECT e.name, t.deletion_reason, t.superseded_by_uri
 FROM event_tombstones t
 JOIN events e ON t.event_id = e.id
 WHERE e.name LIKE 'RS-%';
