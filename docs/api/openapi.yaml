@@ -1141,7 +1141,15 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: |
+            The review entry, source event, or target event was not found.
+            - **Review entry not found:** no review queue entry exists for the given `id`.
+            - **Target event not found** (forward / `potential_duplicate` path): `target_event_ulid` does not match a known event.
+            - **Source event not found** (inverted / `near_duplicate_of_new_event` path): the source event referenced in the review's `duplicate_of_event_id` no longer exists.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: The new occurrence overlaps an existing occurrence on the target event, or the review is not in pending status
           content:

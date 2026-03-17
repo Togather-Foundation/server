@@ -1704,7 +1704,7 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 		}
 		repo.reviewQueue[1] = review
 
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 		mergeResult, err := adminService.MergeEventsWithReview(context.Background(),
 			MergeEventsParams{PrimaryULID: primaryULID, DuplicateULID: dupULID},
@@ -1757,7 +1757,7 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 			Status:    "pending",
 		}
 
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 		_, err := adminService.MergeEventsWithReview(context.Background(),
 			MergeEventsParams{PrimaryULID: primaryULID, DuplicateULID: dupULID},
@@ -1798,7 +1798,7 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 			Status:    "pending",
 		}
 
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 		_, err := adminService.MergeEventsWithReview(context.Background(),
 			MergeEventsParams{PrimaryULID: primaryULID, DuplicateULID: dupULID},
@@ -1836,7 +1836,7 @@ func TestScenario_S11_MergeIntoDeletedEvent(t *testing.T) {
 			LifecycleState: "deleted",
 		}
 
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 		err := adminService.MergeEvents(context.Background(), MergeEventsParams{
 			PrimaryULID:   bULID,
@@ -1860,7 +1860,7 @@ func TestScenario_S11_MergeIntoDeletedEvent(t *testing.T) {
 			LifecycleState: "published",
 		}
 
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
+		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
 
 		err := adminService.MergeEvents(context.Background(), MergeEventsParams{
 			PrimaryULID:   ulid,

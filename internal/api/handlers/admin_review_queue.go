@@ -852,7 +852,7 @@ type addOccurrenceResponse struct {
 // writeAddOccurrenceError writes the appropriate HTTP error for an add-occurrence failure.
 func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter, r *http.Request, id int, targetEventULID string, err error) {
 	if errors.Is(err, events.ErrNotFound) {
-		problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry or target event not found", fmt.Errorf("add-occurrence review id=%d: %w", id, err), h.Env)
+		problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry, source event, or target event not found", fmt.Errorf("add-occurrence review id=%d: %w", id, err), h.Env)
 		return
 	}
 	if errors.Is(err, events.ErrCannotMergeSameEvent) {

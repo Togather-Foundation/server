@@ -420,7 +420,7 @@ func TestApproveReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -472,7 +472,7 @@ func TestRejectReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -524,7 +524,7 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -580,7 +580,7 @@ func TestMergeReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -611,7 +611,7 @@ func TestMergeReview_EntryNotFound(t *testing.T) {
 		events.ErrNotFound,
 	)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -1043,7 +1043,7 @@ func TestApproveReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1208,7 +1208,7 @@ func TestRejectReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1413,7 +1413,7 @@ func TestFixReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -1439,7 +1439,7 @@ func TestFixReview(t *testing.T) {
 // TestApproveReview_InvalidJSON tests handling of malformed JSON
 func TestApproveReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1461,7 +1461,7 @@ func TestApproveReview_InvalidJSON(t *testing.T) {
 // TestRejectReview_InvalidJSON tests handling of malformed JSON
 func TestRejectReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1483,7 +1483,7 @@ func TestRejectReview_InvalidJSON(t *testing.T) {
 // TestFixReview_InvalidJSON tests handling of malformed JSON
 func TestFixReview_InvalidJSON(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
@@ -1510,7 +1510,7 @@ func TestFixReview_InvalidJSON(t *testing.T) {
 // calls DismissCompanionWarningMatch with the correct ULIDs.
 func TestDismissCompanionDuplicateWarning_MatchFound(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -1532,7 +1532,7 @@ func TestDismissCompanionDuplicateWarning_MatchFound(t *testing.T) {
 // is called correctly when there are multiple matches (the atomic SQL handles the filtering).
 func TestDismissCompanionDuplicateWarning_MultiMatch(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -1554,7 +1554,7 @@ func TestDismissCompanionDuplicateWarning_MultiMatch(t *testing.T) {
 // has no pending review, DismissCompanionWarningMatch is still called (the SQL is a no-op).
 func TestDismissCompanionDuplicateWarning_NotFound(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -1576,7 +1576,7 @@ func TestDismissCompanionDuplicateWarning_NotFound(t *testing.T) {
 // is logged but does not panic.
 func TestDismissCompanionDuplicateWarning_FetchError(t *testing.T) {
 	mockRepo := new(MockRepository)
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -1812,7 +1812,7 @@ func TestAddOccurrenceReview(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -2005,7 +2005,7 @@ func TestAddOccurrenceReviewNearDupPath(t *testing.T) {
 			mockRepo := new(MockRepository)
 			tt.mockSetup(mockRepo)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -2062,7 +2062,7 @@ func TestAddOccurrenceReview_BothWarningsRejected(t *testing.T) {
 	// GetReviewQueueEntry is called by the handler to peek the warnings; no TX needed.
 	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(ambiguousEntry, nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -2109,7 +2109,7 @@ func TestAddOccurrenceReview_UnsupportedReviewRejected(t *testing.T) {
 	// Only GetReviewQueueEntry is called — handler rejects before entering tx.
 	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(qualityOnlyEntry, nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -2154,7 +2154,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceForwardPath(t *testing.T) {
 			Occurrences: []events.Occurrence{}}, nil)
 	mockRepo.On("LockEventForUpdate", mock.Anything, "review-event-id").Return(nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -2214,7 +2214,7 @@ func TestAddOccurrenceReview_ZeroOccurrenceSourceNearDupPath(t *testing.T) {
 			Occurrences: []events.Occurrence{}}, nil)
 	mockRepo.On("LockEventForUpdate", mock.Anything, "source-id").Return(nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{})
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,

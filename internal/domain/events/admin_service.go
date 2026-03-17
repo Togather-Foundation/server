@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/validation"
 	"github.com/rs/zerolog/log"
 )
@@ -19,15 +20,30 @@ type AdminService struct {
 	requireHTTPS     bool
 	defaultTZ        string
 	validationConfig config.ValidationConfig
+	baseURL          string // canonical base URL for tombstone/superseded_by URIs (e.g. "https://toronto.togather.foundation")
 }
 
-func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig) *AdminService {
+func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig, baseURL string) *AdminService {
 	return &AdminService{
 		repo:             repo,
 		requireHTTPS:     requireHTTPS,
 		defaultTZ:        defaultTimezone,
 		validationConfig: validationConfig.WithDefaults(),
+		baseURL:          baseURL,
 	}
+}
+
+// eventURI returns the canonical URI for an event ULID, falling back to a
+// bare ULID path when baseURL is not configured (e.g. in unit tests).
+func (s *AdminService) eventURI(ulid string) string {
+	if s.baseURL == "" || ulid == "" {
+		return ulid
+	}
+	uri, err := ids.BuildCanonicalURI(s.baseURL, "events", ulid)
+	if err != nil {
+		return ulid
+	}
+	return uri
 }
 
 // UpdateEventParams contains fields that can be updated by admins
@@ -335,14 +351,14 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	}
 
 	// Tombstone for the absorbed event
-	targetURI := fmt.Sprintf("https://togather.foundation/events/%s", targetEventULID)
-	tombstonePayload, err := buildTombstonePayload(reviewEvent.ULID, reviewEvent.Name, &targetURI, "absorbed_as_occurrence")
+	targetURI := s.eventURI(targetEventULID)
+	tombstonePayload, err := buildTombstonePayload(s.eventURI(reviewEvent.ULID), reviewEvent.Name, &targetURI, "absorbed_as_occurrence")
 	if err != nil {
 		return nil, fmt.Errorf("build tombstone: %w", err)
 	}
 	err = txRepo.CreateTombstone(ctx, TombstoneCreateParams{
 		EventID:      reviewEvent.ID,
-		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", reviewEvent.ULID),
+		EventURI:     s.eventURI(reviewEvent.ULID),
 		DeletedAt:    time.Now(),
 		Reason:       "absorbed_as_occurrence",
 		SupersededBy: &targetURI,
@@ -615,14 +631,14 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	}
 
 	// Tombstone for the absorbed source event.
-	targetURI := fmt.Sprintf("https://togather.foundation/events/%s", targetEventULID)
-	tombstonePayload, err := buildTombstonePayload(sourceEvent.ULID, sourceEvent.Name, &targetURI, "absorbed_as_occurrence")
+	targetURI := s.eventURI(targetEventULID)
+	tombstonePayload, err := buildTombstonePayload(s.eventURI(sourceEvent.ULID), sourceEvent.Name, &targetURI, "absorbed_as_occurrence")
 	if err != nil {
 		return nil, nil, fmt.Errorf("build tombstone: %w", err)
 	}
 	if err = txRepo.CreateTombstone(ctx, TombstoneCreateParams{
 		EventID:      sourceEvent.ID,
-		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", sourceEvent.ULID),
+		EventURI:     s.eventURI(sourceEvent.ULID),
 		DeletedAt:    time.Now(),
 		Reason:       "absorbed_as_occurrence",
 		SupersededBy: &targetURI,
@@ -937,16 +953,16 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 	}
 
 	// Generate tombstone for the duplicate event
-	primaryURI := fmt.Sprintf("https://togather.foundation/events/%s", params.PrimaryULID)
+	primaryURI := s.eventURI(params.PrimaryULID)
 
-	tombstonePayload, err := buildTombstonePayload(duplicate.ULID, duplicate.Name, &primaryURI, "duplicate_merged")
+	tombstonePayload, err := buildTombstonePayload(s.eventURI(duplicate.ULID), duplicate.Name, &primaryURI, "duplicate_merged")
 	if err != nil {
 		return fmt.Errorf("build tombstone: %w", err)
 	}
 
 	tombstoneParams := TombstoneCreateParams{
 		EventID:      duplicate.ID,
-		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", duplicate.ULID),
+		EventURI:     s.eventURI(duplicate.ULID),
 		DeletedAt:    time.Now(),
 		Reason:       "duplicate_merged",
 		SupersededBy: &primaryURI,
@@ -1073,14 +1089,14 @@ func (s *AdminService) RejectEventWithReview(ctx context.Context, eventULID stri
 	}
 
 	// Generate tombstone
-	tombstonePayload, err := buildTombstonePayload(event.ULID, event.Name, nil, reason)
+	tombstonePayload, err := buildTombstonePayload(s.eventURI(event.ULID), event.Name, nil, reason)
 	if err != nil {
 		return nil, fmt.Errorf("build tombstone: %w", err)
 	}
 
 	tombstoneParams := TombstoneCreateParams{
 		EventID:      event.ID,
-		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", event.ULID),
+		EventURI:     s.eventURI(event.ULID),
 		DeletedAt:    time.Now(),
 		Reason:       reason,
 		SupersededBy: nil,
@@ -1250,7 +1266,7 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 	}
 
 	// Generate tombstone JSON-LD payload
-	tombstonePayload, err := buildTombstonePayload(event.ULID, event.Name, nil, reason)
+	tombstonePayload, err := buildTombstonePayload(s.eventURI(event.ULID), event.Name, nil, reason)
 	if err != nil {
 		return fmt.Errorf("build tombstone: %w", err)
 	}
@@ -1258,7 +1274,7 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 	// Create tombstone record
 	tombstoneParams := TombstoneCreateParams{
 		EventID:      event.ID,
-		EventURI:     fmt.Sprintf("https://togather.foundation/events/%s", event.ULID),
+		EventURI:     s.eventURI(event.ULID),
 		DeletedAt:    time.Now(),
 		Reason:       reason,
 		SupersededBy: nil,
@@ -1379,11 +1395,10 @@ func equalKeywords(a, b []string) bool {
 	return true
 }
 
-// buildTombstonePayload generates a JSON-LD tombstone payload according to SEL spec
+// buildTombstonePayload generates a JSON-LD tombstone payload according to SEL spec.
+// eventURI must be the canonical URI for the deleted event (e.g. from AdminService.eventURI).
 // See: docs/togather_SEL_Interoperability_Profile_v0.1.md section 1.6
-func buildTombstonePayload(ulid, name string, supersededBy *string, reason string) ([]byte, error) {
-	eventURI := fmt.Sprintf("https://togather.foundation/events/%s", ulid)
-
+func buildTombstonePayload(eventURI, name string, supersededBy *string, reason string) ([]byte, error) {
 	tombstone := map[string]interface{}{
 		"@context":           "https://schema.org",
 		"@type":              "Event",
