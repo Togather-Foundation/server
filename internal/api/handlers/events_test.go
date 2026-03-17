@@ -428,6 +428,61 @@ func TestEventsHandlerListDefaultStartDate(t *testing.T) {
 	require.Equal(t, today, *capturedFilters.StartDate)
 }
 
+// TestEventsHandlerGetMultipleOccurrencesSubEvent verifies that when an event
+// has multiple occurrences, the Get handler populates the "subEvent" array in
+// the JSON-LD response with one entry per occurrence — fixing the admin detail
+// UI bug where only a single synthetic occurrence was shown.
+func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
+	t0 := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	t1 := time.Date(2026, 7, 17, 19, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 7, 24, 19, 0, 0, 0, time.UTC)
+
+	repo := stubEventsRepo{
+		getFn: func(_ string) (*events.Event, error) {
+			return &events.Event{
+				Name: "Weekly Jazz",
+				Occurrences: []events.Occurrence{
+					{StartTime: t0, Timezone: "America/Toronto"},
+					{StartTime: t1, Timezone: "America/Toronto"},
+					{StartTime: t2, Timezone: "America/Toronto"},
+				},
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+	subEvent, ok := payload["subEvent"]
+	require.True(t, ok, "response must contain 'subEvent' key")
+
+	subEvents, ok := subEvent.([]any)
+	require.True(t, ok, "subEvent must be an array")
+	require.Len(t, subEvents, 3, "subEvent should contain one entry per occurrence")
+
+	// Verify each entry has the expected startDate and timezone
+	expected := []string{
+		t0.Format(time.RFC3339),
+		t1.Format(time.RFC3339),
+		t2.Format(time.RFC3339),
+	}
+	for i, entry := range subEvents {
+		m, ok := entry.(map[string]any)
+		require.True(t, ok, "subEvent[%d] must be an object", i)
+		require.Equal(t, expected[i], m["startDate"], "subEvent[%d].startDate mismatch", i)
+		require.Equal(t, "America/Toronto", m["timezone"], "subEvent[%d].timezone mismatch", i)
+	}
+}
+
 func TestEventsHandlerListSnakeCaseAliasWarning(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

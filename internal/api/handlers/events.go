@@ -351,6 +351,33 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Populate subEvent array for all occurrences so the admin UI can display
+	// and edit each one (Interop Profile §5.2 — EventSeries serialisation).
+	// Populated even for single-occurrence events so the admin detail page has
+	// a consistent source of truth (it reads subEvent, not startDate).
+	if len(item.Occurrences) > 0 {
+		subEvents := make([]schema.EventSummary, 0, len(item.Occurrences))
+		for _, occ := range item.Occurrences {
+			sub := schema.EventSummary{
+				Type:      "Event",
+				StartDate: occ.StartTime.Format(time.RFC3339),
+				Timezone:  occ.Timezone,
+			}
+			if occ.EndTime != nil {
+				sub.EndDate = occ.EndTime.Format(time.RFC3339)
+			}
+			if occ.DoorTime != nil {
+				sub.DoorTime = occ.DoorTime.Format(time.RFC3339)
+			}
+			// Include virtual URL as VirtualLocation when present
+			if occ.VirtualURL != nil && *occ.VirtualURL != "" {
+				sub.Location = schema.NewVirtualLocation(*occ.VirtualURL)
+			}
+			subEvents = append(subEvents, sub)
+		}
+		event.SubEvents = subEvents
+	}
+
 	// Add location (required per Interop Profile §3.1)
 	// Resolve to embedded Place object when possible for richer consumer experience
 	event.Location = resolveEventLocation(r.Context(), h.BaseURL, item, h.PlaceResolver)
