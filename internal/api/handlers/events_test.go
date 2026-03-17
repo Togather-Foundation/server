@@ -14,6 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/stretchr/testify/require"
 )
 
@@ -510,6 +511,103 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 		require.Empty(t, m["endDate"], "subEvent[%d].endDate should be absent for minimal occurrence", idx)
 		require.Empty(t, m["doorTime"], "subEvent[%d].doorTime should be absent for minimal occurrence", idx)
 		require.Nil(t, m["location"], "subEvent[%d].location should be absent for non-virtual occurrence", idx)
+	}
+}
+
+// stubPlaceResolver is a minimal EventPlaceResolver for handler tests.
+type stubPlaceResolver struct {
+	getByULIDFn func(ctx context.Context, ulid string) (*places.Place, error)
+}
+
+func (s stubPlaceResolver) GetByULID(ctx context.Context, ulid string) (*places.Place, error) {
+	if s.getByULIDFn != nil {
+		return s.getByULIDFn(ctx, ulid)
+	}
+	return nil, places.ErrNotFound
+}
+
+// TestEventsHandlerGetSubEventPhysicalVenueOverride verifies that the Get handler
+// includes per-occurrence physical venue data in the subEvent array.
+//
+// Previously the serialization only checked for VirtualURL and silently omitted
+// occurrence-level venue overrides, so admin detail could hide which specific
+// venue an occurrence was at when it differed from the event's primary venue.
+//
+// This test pins that a subEvent entry's location is an embedded Place object
+// (or at minimum a URI string) when the occurrence carries a VenueULID, and that
+// occurrences without a venue override emit no location.
+func TestEventsHandlerGetSubEventPhysicalVenueOverride(t *testing.T) {
+	const overrideULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	const overrideName = "The Override Venue"
+	const overrideCity = "Toronto"
+
+	t0 := time.Date(2026, 8, 1, 19, 0, 0, 0, time.UTC)
+	t1 := time.Date(2026, 8, 8, 19, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 8, 15, 19, 0, 0, 0, time.UTC)
+
+	repo := stubEventsRepo{
+		getFn: func(_ string) (*events.Event, error) {
+			overrideULIDVal := overrideULID
+			return &events.Event{
+				Name: "Touring Series",
+				Occurrences: []events.Occurrence{
+					// First occurrence: has a venue override (different from primary).
+					{StartTime: t0, Timezone: "America/Toronto", VenueULID: &overrideULIDVal},
+					// Second: no venue override — no location in subEvent.
+					{StartTime: t1, Timezone: "America/Toronto"},
+					// Third: also no venue override.
+					{StartTime: t2, Timezone: "America/Toronto"},
+				},
+			}, nil
+		},
+	}
+
+	resolver := stubPlaceResolver{
+		getByULIDFn: func(_ context.Context, ulid string) (*places.Place, error) {
+			if ulid == overrideULID {
+				return &places.Place{
+					ULID: overrideULID,
+					Name: overrideName,
+					City: overrideCity,
+				}, nil
+			}
+			return nil, places.ErrNotFound
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h.WithPlaceResolver(resolver)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+	subEvent, ok := payload["subEvent"]
+	require.True(t, ok, "response must contain 'subEvent' key")
+	subEvents, ok := subEvent.([]any)
+	require.True(t, ok, "subEvent must be an array")
+	require.Len(t, subEvents, 3, "subEvent should contain one entry per occurrence")
+
+	// --- occurrence 0: has venue override — subEvent[0].location must be a Place ---
+	m0, ok := subEvents[0].(map[string]any)
+	require.True(t, ok, "subEvent[0] must be an object")
+	loc0, ok := m0["location"].(map[string]any)
+	require.True(t, ok, "subEvent[0].location must be an object (Place)")
+	require.Equal(t, "Place", loc0["@type"], "subEvent[0].location.@type must be Place")
+	require.Equal(t, overrideName, loc0["name"], "subEvent[0].location.name must match override venue")
+
+	// --- occurrences 1 & 2: no venue override — location must be absent ---
+	for i, entry := range subEvents[1:] {
+		idx := i + 1
+		m, ok := entry.(map[string]any)
+		require.True(t, ok, "subEvent[%d] must be an object", idx)
+		require.Nil(t, m["location"], "subEvent[%d].location must be absent when no venue override", idx)
 	}
 }
 

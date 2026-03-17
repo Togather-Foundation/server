@@ -1829,6 +1829,64 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		}
 	})
 
+	t.Run("occurrence_with_resolved_venueId_must_not_inherit_parent_virtualLocation", func(t *testing.T) {
+		// Regression: when a multi-occurrence event has a parent virtualLocation AND an
+		// occurrence that resolves its own physical venueId, the occurrence must NOT
+		// inherit the parent's virtualURL. Doing so creates a hybrid occurrence with both
+		// venue_id and virtual_url set, violating the location contract (an occurrence is
+		// either physical or virtual, not both).
+		//
+		// Fix: virtualURL inheritance is skipped when venueID is already resolved.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULID(placeULID, placeUUID)
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Hybrid Series",
+			Description: "Event with a parent virtualLocation but an occurrence that specifies a physical venue.",
+			License:     "CC0-1.0",
+			VirtualLocation: &VirtualLocationInput{
+				URL: "https://stream.example.com/live",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+					// Explicitly references a physical venue — must NOT inherit parent virtualURL.
+					VenueID: "https://test.togather.ca/places/" + placeULID,
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		occ := occs[0]
+		// VenueID must be the resolved UUID.
+		if occ.VenueID == nil || *occ.VenueID != placeUUID {
+			t.Errorf("occurrence VenueID = %v; want %q", occ.VenueID, placeUUID)
+		}
+		// VirtualURL must NOT be set — no hybrid occurrences.
+		if occ.VirtualURL != nil {
+			t.Errorf("occurrence VirtualURL = %q; want nil (physical venue must not inherit parent virtualURL)", *occ.VirtualURL)
+		}
+	})
+
 	t.Run("parent_location_atid_only_not_found_rejected", func(t *testing.T) {
 		// Regression: when parent location supplies only a canonical @id and the place
 		// does not exist in the DB, ingest must return a clear error.

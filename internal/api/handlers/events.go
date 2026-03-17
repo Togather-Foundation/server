@@ -370,8 +370,15 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			if occ.DoorTime != nil {
 				sub.DoorTime = occ.DoorTime.Format(time.RFC3339)
 			}
-			// Include virtual URL as VirtualLocation when present
-			if occ.VirtualURL != nil && *occ.VirtualURL != "" {
+			// Serialize per-occurrence location override:
+			//   1. Physical venue (VenueULID) takes priority — resolve to embedded Place
+			//      when a resolver is available; fall back to URI.
+			//   2. Virtual URL is the fallback for virtual-only occurrences.
+			// This ensures admin detail shows occurrence-specific venue data rather
+			// than silently omitting it when it differs from the parent event location.
+			if occ.VenueULID != nil && *occ.VenueULID != "" {
+				sub.Location = resolveOccurrenceVenueLocation(r.Context(), h.BaseURL, *occ.VenueULID, h.PlaceResolver)
+			} else if occ.VirtualURL != nil && *occ.VirtualURL != "" {
 				sub.Location = schema.NewVirtualLocation(*occ.VirtualURL)
 			}
 			subEvents = append(subEvents, sub)
@@ -512,6 +519,30 @@ func resolveEventLocation(ctx context.Context, baseURL string, event *events.Eve
 	}
 	if event.VirtualURL != "" {
 		return schema.NewVirtualLocation(event.VirtualURL)
+	}
+	return nil
+}
+
+// resolveOccurrenceVenueLocation resolves a single occurrence venue ULID to an
+// embedded Place object (if a resolver is available) or a URI string fallback.
+// It is the per-occurrence analogue of resolveEventLocation and is used when
+// serialising subEvent entries that carry a physical venue override.
+func resolveOccurrenceVenueLocation(ctx context.Context, baseURL string, venueULID string, resolver EventPlaceResolver) any {
+	if resolver != nil {
+		place, err := resolver.GetByULID(ctx, venueULID)
+		if err == nil && place != nil {
+			p := schema.NewPlace(place.Name)
+			p.ID = schema.BuildPlaceURI(baseURL, place.ULID)
+			p.Address = schema.NewPostalAddress(place.StreetAddress, place.City, place.Region, place.PostalCode, place.Country)
+			if place.Latitude != nil && place.Longitude != nil {
+				p.Geo = schema.NewGeoCoordinates(*place.Latitude, *place.Longitude)
+			}
+			return p
+		}
+		log.Warn().Err(err).Str("venue_ulid", venueULID).Msg("failed to resolve occurrence venue, falling back to URI")
+	}
+	if uri := schema.BuildPlaceURI(baseURL, venueULID); uri != "" {
+		return uri
 	}
 	return nil
 }

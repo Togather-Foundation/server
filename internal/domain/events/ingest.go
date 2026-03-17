@@ -1058,7 +1058,13 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 			venueID = event.PrimaryVenueID
 		}
 		virtual := nullableString(occ.VirtualURL)
-		if virtual == nil && event.VirtualURL != "" {
+		// Only inherit the parent's virtualURL when the occurrence has no physical
+		// venue of its own. Inheriting it unconditionally creates hybrid occurrences
+		// that carry both a physical venue_id and a virtual_url, violating the
+		// location contract (an occurrence is either physical or virtual, not both).
+		// This mirrors the single-occurrence path where virtualURL is only set when
+		// venueID is nil.
+		if virtual == nil && venueID == nil && event.VirtualURL != "" {
 			virtual = nullableString(event.VirtualURL)
 		}
 		// Guard: DB requires venue_id OR virtual_url on every occurrence row.
