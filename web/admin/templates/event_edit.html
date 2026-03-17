@@ -251,7 +251,10 @@
                             <input type="text" class="form-control" id="occurrence-venue-display" readonly placeholder="(none)">
                             <button type="button" class="btn btn-outline-danger" data-action="clear-occurrence-venue" title="Remove venue override">Clear</button>
                         </div>
-                        <small class="form-hint">This occurrence uses a different physical venue than the event default. Clear to inherit the event venue.</small>
+                        <small class="form-hint">This occurrence uses a different physical venue than the event default. Clear to remove the venue override (and optionally set a virtual URL instead).</small>
+                        <div class="alert alert-warning mt-2 py-2 px-3 small" id="occurrence-hybrid-warning" style="display: none;">
+                            This occurrence has both a venue override and a virtual URL from older data. Saving will keep the venue and clear the virtual URL. To keep the virtual URL instead, click <strong>Clear</strong> above to remove the venue override first.
+                        </div>
                     </div>
                     <!-- Virtual URL: only applicable when this occurrence has no physical venue override -->
                     <div class="mb-3" id="occurrence-virtual-section">

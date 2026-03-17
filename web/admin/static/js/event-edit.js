@@ -448,13 +448,12 @@
         }
 
         const venueId = document.getElementById('occurrence-venue-id').value || null;
-        const virtualUrl = document.getElementById('occurrence-virtual-url').value || null;
-
-        // Enforce mutual exclusivity: a physical venue override and a virtual URL cannot coexist.
-        if (venueId && virtualUrl) {
-            showToast('An occurrence cannot have both a physical venue override and a virtual URL. Clear one before saving.', 'error');
-            return;
-        }
+        // When a venue override is active the virtual-URL section is hidden; any pre-existing
+        // value in that hidden input is stale (legacy hybrid data).  Silently drop it so that
+        // admins can save hybrid occurrences into a valid physical-only state without having
+        // to manually blank a field they cannot see.
+        const virtualUrlRaw = document.getElementById('occurrence-virtual-url').value || null;
+        const virtualUrl = venueId ? null : virtualUrlRaw;
 
         const occurrence = {
             start_time: startTime,
@@ -498,19 +497,30 @@
         const section = document.getElementById('occurrence-venue-section');
         const display = document.getElementById('occurrence-venue-display');
         const virtualSection = document.getElementById('occurrence-virtual-section');
+        const hybridWarning = document.getElementById('occurrence-hybrid-warning');
         if (venueId) {
             display.value = venueUlidFromId(venueId);
             section.style.display = 'block';
             // Hide virtual URL when a physical venue override is active to prevent hybrids.
             virtualSection.style.display = 'none';
+            // Show hybrid warning if the virtual URL input still has a stale value (legacy bad data).
+            const hasStaleVirtualUrl = !!(document.getElementById('occurrence-virtual-url').value);
+            if (hybridWarning) {
+                hybridWarning.style.display = hasStaleVirtualUrl ? 'block' : 'none';
+            }
         } else {
             display.value = '';
             section.style.display = 'none';
+            if (hybridWarning) {
+                hybridWarning.style.display = 'none';
+            }
             virtualSection.style.display = 'block';
         }
     }
 
     // clearOccurrenceVenue removes the venue override from the modal (user action).
+    // The virtual URL input is shown again, retaining whatever stale value it may have —
+    // the admin can then clear it manually or keep it to save the occurrence as virtual-only.
     function clearOccurrenceVenue() {
         document.getElementById('occurrence-venue-id').value = '';
         setOccurrenceVenueDisplay(null);
