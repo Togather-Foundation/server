@@ -139,8 +139,8 @@ All endpoints in `internal/api/handlers/admin_review_queue.go` (694 lines).
 
 **POST `/api/v1/admin/review-queue/:id/fix`** - Apply manual corrections
 - Body: `{"corrections": {"startDate": "...", "endDate": "..."}, "notes": "optional"}`
-- Action: **NOTE:** Currently incomplete (see Future Work section)
-- Example: [admin_review_queue.go:405](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:405)
+- Action: Applies date corrections, publishes the event, and approves the review atomically
+- Example: [admin_review_queue.go:430](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:430)
 
 #### 4. Frontend UI
 
@@ -320,7 +320,7 @@ Fields displayed: Name, Start Date, End Date, Location
 
 #### 4. Action Buttons (Pending Status Only)
 
-Three action buttons:
+Five action buttons (availability depends on warning type):
 
 **Approve** (Green, `btn-success`)
 - Quick approval with optional notes
@@ -339,7 +339,16 @@ Three action buttons:
 - Deletes event permanently
 - See [review-queue.js:432](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:432)
 
-Implementation: [review-queue.js:248](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:248)
+**Merge Duplicate** (shown for `potential_duplicate` warnings only)
+- Merges the review event into the indicated duplicate target
+- Not shown for `near_duplicate_of_new_event` warnings
+- See [review-queue.js:716](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:716)
+
+**Add as Occurrence** (shown for `potential_duplicate` and `near_duplicate_of_new_event` warnings)
+- Adds the review event's date/time as a new occurrence on the target recurring-series event and soft-deletes the review event
+- For `near_duplicate_of_new_event` entries the target is derived from the review entry itself (no `target_event_ulid` needed)
+- Hidden when the entry carries **both** warning types simultaneously
+- See [review-queue.js:728](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:728)
 
 ### Reject Modal
 

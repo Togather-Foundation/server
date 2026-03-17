@@ -48,35 +48,36 @@ type MergeEventsParams struct {
 }
 
 var (
-	ErrInvalidUpdateParams         = errors.New("invalid update parameters")
-	ErrCannotMergeSameEvent        = errors.New("cannot merge event with itself")
-	ErrEventDeleted                = errors.New("event has been deleted")
-	ErrEventAlreadyMerged          = errors.New("event has already been merged")
-	ErrAmbiguousOccurrenceSource   = errors.New("source event has multiple occurrences: cannot absorb ambiguously")
-	ErrZeroOccurrenceSource        = errors.New("source event has no occurrences: cannot determine which occurrence to absorb")
-	ErrAmbiguousOccurrenceDispatch = errors.New("review entry has both potential_duplicate and near_duplicate_of_new_event warnings: cannot determine add-occurrence path unambiguously")
-	ErrWrongOccurrencePath         = errors.New("review entry warnings do not match the requested add-occurrence path")
+	ErrInvalidUpdateParams            = errors.New("invalid update parameters")
+	ErrCannotMergeSameEvent           = errors.New("cannot merge event with itself")
+	ErrEventDeleted                   = errors.New("event has been deleted")
+	ErrEventAlreadyMerged             = errors.New("event has already been merged")
+	ErrAmbiguousOccurrenceSource      = errors.New("source event has multiple occurrences: cannot absorb ambiguously")
+	ErrZeroOccurrenceSource           = errors.New("source event has no occurrences: cannot determine which occurrence to absorb")
+	ErrAmbiguousOccurrenceDispatch    = errors.New("review entry has both potential_duplicate and near_duplicate_of_new_event warnings: cannot determine add-occurrence path unambiguously")
+	ErrWrongOccurrencePath            = errors.New("review entry warnings do not match the requested add-occurrence path")
+	ErrUnsupportedReviewForOccurrence = errors.New("review entry has no potential_duplicate or near_duplicate_of_new_event warning: add-occurrence requires a supported duplicate warning")
 )
 
 // occurrenceDispatchPath classifies a raw warnings JSON blob into one of three
 // outcomes for the add-as-occurrence dispatch:
 //
-//   - "forward"  — the review has at least one potential_duplicate warning and no
+//   - "forward"      — the review has at least one potential_duplicate warning and no
 //     near_duplicate_of_new_event warning → use AddOccurrenceFromReview.
-//   - "neardup"  — the review has at least one near_duplicate_of_new_event warning
+//   - "neardup"      — the review has at least one near_duplicate_of_new_event warning
 //     and no potential_duplicate warning → use AddOccurrenceFromReviewNearDup.
-//   - ""         — neither warning type is present (e.g. no warnings or only
-//     quality/completeness warnings) → default to forward path.
+//   - "unsupported"  — neither warning type is present (e.g. no warnings or only
+//     quality/completeness warnings) → reject with ErrUnsupportedReviewForOccurrence.
 //
 // Returns ErrAmbiguousOccurrenceDispatch if BOTH warning types are present.
 func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
 	if len(warningsJSON) == 0 {
-		return "forward", nil
+		return "unsupported", nil
 	}
 	var warnings []ValidationWarning
 	if err := json.Unmarshal(warningsJSON, &warnings); err != nil {
-		// Malformed warnings JSON — treat as no warnings, default to forward path.
-		return "forward", nil
+		// Malformed warnings JSON — treat as no warnings; unsupported path.
+		return "unsupported", nil
 	}
 	var hasNearDup, hasPotDup bool
 	for _, w := range warnings {
@@ -93,7 +94,10 @@ func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
 	if hasNearDup {
 		return "neardup", nil
 	}
-	return "forward", nil
+	if hasPotDup {
+		return "forward", nil
+	}
+	return "unsupported", nil
 }
 
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
@@ -140,6 +144,10 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	if lockedPath == "neardup" {
 		// The locked warnings indicate the near-dup path; the caller chose the wrong method.
 		return nil, fmt.Errorf("review entry %d warnings indicate near_duplicate_of_new_event path: %w", reviewID, ErrWrongOccurrencePath)
+	}
+	if lockedPath == "unsupported" {
+		// No supported duplicate warning present — forward path requires potential_duplicate.
+		return nil, fmt.Errorf("review entry %d: %w", reviewID, ErrUnsupportedReviewForOccurrence)
 	}
 	target, err := txRepo.GetByULID(ctx, targetEventULID)
 	if err != nil {
@@ -402,6 +410,10 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	if lockedPath == "forward" {
 		// The locked warnings indicate the forward path; the caller chose the wrong method.
 		return nil, nil, fmt.Errorf("near-dup review entry %d warnings do not indicate near_duplicate_of_new_event path: %w", reviewID, ErrWrongOccurrencePath)
+	}
+	if lockedPath == "unsupported" {
+		// No supported duplicate warning present — near-dup path requires near_duplicate_of_new_event.
+		return nil, nil, fmt.Errorf("near-dup review entry %d: %w", reviewID, ErrUnsupportedReviewForOccurrence)
 	}
 	if review.DuplicateOfEventULID == nil || *review.DuplicateOfEventULID == "" {
 		return nil, nil, fmt.Errorf("near-dup review entry %d has no duplicate event ULID: %w", reviewID, ErrInvalidUpdateParams)

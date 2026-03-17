@@ -182,7 +182,7 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
 3. Mark the review as merged — all atomically.
 
-**Button visibility**: shown alongside "Merge Duplicate" for `potential_duplicate` and `near_duplicate_of_new_event` warnings when neither ambiguity condition applies. Not shown for place/org duplicate warnings. **Hidden** when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`).
+**Button visibility**: "Add as Occurrence" is shown for `potential_duplicate` warnings (alongside "Merge Duplicate") and also for `near_duplicate_of_new_event` warnings (without "Merge Duplicate" — the near-dup path has no merge-duplicate button, only add-occurrence). Not shown for place/org duplicate warnings. **Hidden** when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`). Reviews with no supported duplicate warning (e.g. only data-quality warnings) are also rejected with 422 (`unsupported-review-for-occurrence`).
 
 **Near-dup path**: for `near_duplicate_of_new_event` entries the button uses inverted semantics — the existing series (`review.EventULID`) is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is absorbed. No `target_event_ulid` is sent in the request body; the backend derives the target directly from the review entry.
 
@@ -194,6 +194,7 @@ When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event`
 - The source event has **zero occurrences** (`zero-occurrence-source`) — show message: "Source event has no occurrence data; resolve it before using Add as Occurrence."
 - The source event has **multiple occurrences** (`ambiguous-occurrence-source`) — show message: "Source event has multiple occurrences; resolve or split it before using Add as Occurrence."
 - The review entry has **both warning types** (`ambiguous-occurrence-dispatch`) — show message: "This review has conflicting warnings; resolve one warning before using Add as Occurrence."
+- The review entry has **no supported duplicate warning** (`unsupported-review-for-occurrence`) — the add-occurrence operation requires either a `potential_duplicate` or `near_duplicate_of_new_event` warning; reviews with only data-quality warnings (e.g. `reversed_dates_*`) are not eligible.
 
 **Data flow (forward path)**:
 - Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`

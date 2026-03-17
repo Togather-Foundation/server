@@ -721,16 +721,29 @@ func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *
 	}
 
 	isNearDupPath := reviewHasNearDupNewEventWarning(review)
+	hasPotDup := reviewHasPotentialDuplicateWarning(review)
 
 	// Reject when the review has BOTH warning types.  The two dispatch paths have
 	// inverted source/target semantics; silently picking one would either absorb the
 	// wrong event or ignore the supplied target_event_ulid.  Require the caller to
 	// resolve which path applies (e.g. by splitting the review or clearing warnings).
-	if isNearDupPath && reviewHasPotentialDuplicateWarning(review) {
+	if isNearDupPath && hasPotDup {
 		problem.Write(w, r, http.StatusUnprocessableEntity,
 			"https://sel.events/problems/ambiguous-occurrence-dispatch",
 			"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
 			events.ErrAmbiguousOccurrenceDispatch, h.Env)
+		return
+	}
+
+	// Reject when neither supported duplicate warning is present.  The add-occurrence
+	// operation requires either a potential_duplicate (forward path) or a
+	// near_duplicate_of_new_event (near-dup path) warning.  Reviews that carry only
+	// data-quality warnings (e.g. reversed_dates_*) are not eligible.
+	if !isNearDupPath && !hasPotDup {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/unsupported-review-for-occurrence",
+			"Review entry has no potential_duplicate or near_duplicate_of_new_event warning; add-occurrence requires a supported duplicate warning",
+			events.ErrUnsupportedReviewForOccurrence, h.Env)
 		return
 	}
 
@@ -881,6 +894,13 @@ func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter,
 		problem.Write(w, r, http.StatusUnprocessableEntity,
 			"https://sel.events/problems/ambiguous-occurrence-dispatch",
 			"Review entry warnings changed; add-occurrence path is no longer valid — retry the request",
+			err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrUnsupportedReviewForOccurrence) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/unsupported-review-for-occurrence",
+			"Review entry has no potential_duplicate or near_duplicate_of_new_event warning; add-occurrence requires a supported duplicate warning",
 			err, h.Env)
 		return
 	}

@@ -163,6 +163,8 @@ func makeOccurrenceRepo(targetID, targetULID, reviewEventULID string, startTime 
 				EventULID:      reviewEventULID,
 				Status:         "pending",
 				EventStartTime: startTime,
+				// Forward path requires potential_duplicate warning.
+				Warnings: makeWarningsJSON("potential_duplicate"),
 			}, nil
 		},
 		getByULIDFunc: func(_ context.Context, ulid string) (*Event, error) {
@@ -1942,19 +1944,37 @@ func TestAddOccurrenceFromReview_AmbiguousDispatchFromLockedWarnings(t *testing.
 	}
 }
 
-// TestAddOccurrenceFromReview_ForwardPathAcceptsNoWarnings verifies that a
-// review entry with nil/empty warnings is accepted by AddOccurrenceFromReview.
-func TestAddOccurrenceFromReview_ForwardPathAcceptsNoWarnings(t *testing.T) {
+// TestAddOccurrenceFromReview_ForwardPathRejectsNoWarnings verifies that a
+// review entry with nil/empty warnings is rejected by AddOccurrenceFromReview
+// with ErrUnsupportedReviewForOccurrence.  The forward path requires a
+// potential_duplicate warning; reviews carrying only quality/completeness warnings
+// (or none at all) must not be silently routed through the forward path.
+func TestAddOccurrenceFromReview_ForwardPathRejectsNoWarnings(t *testing.T) {
 	ctx := context.Background()
 	startTime := time.Now()
 	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREVIEW000000000000000001", startTime)
-	// Default lock delegates to getReviewQueueEntryFunc which returns nil Warnings.
+	// Override the lock to return a review with nil Warnings (no duplicate warning).
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{
+			ID:             id,
+			EventULID:      "01HREVIEW000000000000000001",
+			Status:         "pending",
+			EventStartTime: startTime,
+			Warnings:       nil,
+		}, nil
+	}
 
 	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500})
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
-	if err != nil {
-		t.Fatalf("expected success with nil warnings (forward path), got: %v", err)
+	if err == nil {
+		t.Fatal("expected ErrUnsupportedReviewForOccurrence, got nil")
+	}
+	if !errors.Is(err, ErrUnsupportedReviewForOccurrence) {
+		t.Errorf("expected ErrUnsupportedReviewForOccurrence, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when occurrence path is unsupported")
 	}
 }
 
@@ -1983,7 +2003,8 @@ func TestAddOccurrenceFromReview_ForwardPathAcceptsPotentialDuplicateWarning(t *
 
 // TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing verifies
 // that if the locked review entry has no near_duplicate_of_new_event warning,
-// AddOccurrenceFromReviewNearDup returns ErrWrongOccurrencePath.
+// AddOccurrenceFromReviewNearDup returns ErrUnsupportedReviewForOccurrence (when
+// the warning is completely absent) rather than silently proceeding.
 func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing(t *testing.T) {
 	ctx := context.Background()
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
@@ -1995,6 +2016,37 @@ func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing(t *te
 			EventULID:            "01HTARGET00000000000000001",
 			DuplicateOfEventULID: &dup,
 			Warnings:             nil, // no near_duplicate_of_new_event warning
+		}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{})
+	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+
+	if err == nil {
+		t.Fatal("expected error for missing near_duplicate_of_new_event warning, got nil")
+	}
+	if !errors.Is(err, ErrUnsupportedReviewForOccurrence) {
+		t.Errorf("expected ErrUnsupportedReviewForOccurrence, got: %v", err)
+	}
+	if repo.commitCalled {
+		t.Error("commit must not be called when near-dup path is unsupported")
+	}
+}
+
+// TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsForwardOnly verifies
+// that if the locked review entry has only a potential_duplicate warning (forward-path),
+// AddOccurrenceFromReviewNearDup returns ErrWrongOccurrencePath.
+func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsForwardOnly(t *testing.T) {
+	ctx := context.Background()
+	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSOURCE00000000000000001", time.Now())
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		dup := "01HSOURCE00000000000000001"
+		return &ReviewQueueEntry{
+			ID:                   id,
+			Status:               "pending",
+			EventULID:            "01HTARGET00000000000000001",
+			DuplicateOfEventULID: &dup,
+			Warnings:             makeWarningsJSON("potential_duplicate"),
 		}, nil
 	}
 
