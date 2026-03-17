@@ -432,8 +432,13 @@ func TestEventsHandlerListDefaultStartDate(t *testing.T) {
 // has multiple occurrences, the Get handler populates the "subEvent" array in
 // the JSON-LD response with one entry per occurrence — fixing the admin detail
 // UI bug where only a single synthetic occurrence was shown.
+// It also pins the full serialization of name, endDate, doorTime, and
+// virtualLocation so regressions in those fields are caught immediately.
 func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 	t0 := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	t0end := time.Date(2026, 7, 10, 22, 0, 0, 0, time.UTC)
+	t0door := time.Date(2026, 7, 10, 18, 30, 0, 0, time.UTC)
+	virtualURL := "https://stream.example.org/weekly-jazz"
 	t1 := time.Date(2026, 7, 17, 19, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 7, 24, 19, 0, 0, 0, time.UTC)
 
@@ -442,7 +447,15 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 			return &events.Event{
 				Name: "Weekly Jazz",
 				Occurrences: []events.Occurrence{
-					{StartTime: t0, Timezone: "America/Toronto"},
+					// First occurrence: full fields — endDate, doorTime, virtualURL
+					{
+						StartTime:  t0,
+						EndTime:    &t0end,
+						DoorTime:   &t0door,
+						VirtualURL: &virtualURL,
+						Timezone:   "America/Toronto",
+					},
+					// Second and third: minimal occurrences
 					{StartTime: t1, Timezone: "America/Toronto"},
 					{StartTime: t2, Timezone: "America/Toronto"},
 				},
@@ -469,17 +482,30 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 	require.True(t, ok, "subEvent must be an array")
 	require.Len(t, subEvents, 3, "subEvent should contain one entry per occurrence")
 
-	// Verify each entry has the expected startDate and timezone
-	expected := []string{
-		t0.Format(time.RFC3339),
-		t1.Format(time.RFC3339),
-		t2.Format(time.RFC3339),
-	}
-	for i, entry := range subEvents {
+	// --- occurrence 0: full fields ---
+	m0, ok := subEvents[0].(map[string]any)
+	require.True(t, ok, "subEvent[0] must be an object")
+	require.Equal(t, "Weekly Jazz", m0["name"], "subEvent[0].name must equal event name")
+	require.Equal(t, t0.Format(time.RFC3339), m0["startDate"], "subEvent[0].startDate mismatch")
+	require.Equal(t, t0end.Format(time.RFC3339), m0["endDate"], "subEvent[0].endDate mismatch")
+	require.Equal(t, t0door.Format(time.RFC3339), m0["doorTime"], "subEvent[0].doorTime mismatch")
+	require.Equal(t, "America/Toronto", m0["timezone"], "subEvent[0].timezone mismatch")
+	loc0, ok := m0["location"].(map[string]any)
+	require.True(t, ok, "subEvent[0].location must be an object (VirtualLocation)")
+	require.Equal(t, "VirtualLocation", loc0["@type"], "subEvent[0].location.@type mismatch")
+	require.Equal(t, virtualURL, loc0["url"], "subEvent[0].location.url mismatch")
+
+	// --- occurrences 1 & 2: name + startDate present; optional fields absent ---
+	for i, entry := range subEvents[1:] {
+		idx := i + 1
 		m, ok := entry.(map[string]any)
-		require.True(t, ok, "subEvent[%d] must be an object", i)
-		require.Equal(t, expected[i], m["startDate"], "subEvent[%d].startDate mismatch", i)
-		require.Equal(t, "America/Toronto", m["timezone"], "subEvent[%d].timezone mismatch", i)
+		require.True(t, ok, "subEvent[%d] must be an object", idx)
+		require.Equal(t, "Weekly Jazz", m["name"], "subEvent[%d].name must equal event name", idx)
+		require.Equal(t, []time.Time{t1, t2}[i].Format(time.RFC3339), m["startDate"], "subEvent[%d].startDate mismatch", idx)
+		require.Equal(t, "America/Toronto", m["timezone"], "subEvent[%d].timezone mismatch", idx)
+		require.Empty(t, m["endDate"], "subEvent[%d].endDate should be absent for minimal occurrence", idx)
+		require.Empty(t, m["doorTime"], "subEvent[%d].doorTime should be absent for minimal occurrence", idx)
+		require.Nil(t, m["location"], "subEvent[%d].location should be absent for non-virtual occurrence", idx)
 	}
 }
 

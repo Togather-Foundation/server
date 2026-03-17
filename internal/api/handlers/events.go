@@ -360,6 +360,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		for _, occ := range item.Occurrences {
 			sub := schema.EventSummary{
 				Type:      "Event",
+				Name:      item.Name,
 				StartDate: occ.StartTime.Format(time.RFC3339),
 				Timezone:  occ.Timezone,
 			}
