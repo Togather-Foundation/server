@@ -376,6 +376,9 @@ func (m *mockTransactionalRepo) UpdateIdempotencyKeyEvent(ctx context.Context, k
 func (m *mockTransactionalRepo) UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error) {
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error) {
+	return nil, ErrNotFound
+}
 func (m *mockTransactionalRepo) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
 	return nil, errors.New("not implemented")
 }

@@ -183,6 +183,11 @@ type Repository interface {
 	InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyCreateParams) (*IdempotencyKey, error)
 	UpdateIdempotencyKeyEvent(ctx context.Context, key string, eventID string, eventULID string) error
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
+	// GetPlaceByULID looks up a place row by its ULID and returns its UUID and ULID.
+	// Used to resolve occurrence venueId canonical URIs (which carry the ULID) to the
+	// underlying DB UUID required by event_occurrences.venue_id.
+	// Returns ErrNotFound when no matching place row exists.
+	GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error)
 	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
 
 	// Trust level queries for auto-merge

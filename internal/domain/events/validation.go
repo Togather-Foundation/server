@@ -332,6 +332,21 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 		}
 	}
 
+	// For single-occurrence events (no Occurrences array, but StartDate provided), the
+	// parent location must be resolvable at ingest time. A Location that supplies only
+	// a canonical @id (empty Name) passes validatePlaceInput but the ingest layer cannot
+	// look up an existing place record by canonical URI — UpsertPlace requires a Name.
+	// This would leave event.PrimaryVenueID nil, causing the occurrence to violate the
+	// occurrence_location_required DB constraint at insert time. Reject early.
+	if len(input.Occurrences) == 0 && input.StartDate != "" {
+		if !parentEventProvidesInheritableVenue(input) {
+			return nil, ValidationError{
+				Field:   "location",
+				Message: "single-occurrence event has no resolvable location: location.name is required (a canonical @id alone cannot be resolved at ingest time)",
+			}
+		}
+	}
+
 	occurrenceWarnings, err := validateOccurrences(input, nodeDomain, original)
 	if err != nil {
 		return nil, err

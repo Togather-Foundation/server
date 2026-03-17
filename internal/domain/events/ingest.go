@@ -996,7 +996,22 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		}
 		// Inherit venue/virtual from the parent event when the occurrence
 		// doesn't specify its own — mirrors the single-occurrence path above.
-		venueID := nullableString(occ.VenueID)
+		//
+		// occ.VenueID is a canonical place URI (e.g. https://host/places/<ULID>).
+		// The DB column event_occurrences.venue_id is a UUID.
+		// Resolve: parse ULID from URI → look up place row UUID via GetPlaceByULID.
+		var venueID *string
+		if occ.VenueID != "" {
+			parsed, parseErr := ids.ParseEntityURI(s.nodeDomain, "places", occ.VenueID, "")
+			if parseErr != nil {
+				return fmt.Errorf("create occurrence[%d]: invalid venueId canonical URI %q: %w", i, occ.VenueID, parseErr)
+			}
+			placeRecord, lookupErr := repo.GetPlaceByULID(ctx, parsed.ULID)
+			if lookupErr != nil {
+				return fmt.Errorf("create occurrence[%d]: venueId %q not found (place ULID %s): %w", i, occ.VenueID, parsed.ULID, lookupErr)
+			}
+			venueID = &placeRecord.ID
+		}
 		if venueID == nil {
 			venueID = event.PrimaryVenueID
 		}

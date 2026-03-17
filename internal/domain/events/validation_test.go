@@ -608,6 +608,100 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 	}
 }
 
+// TestValidateEventInput_SingleOccurrenceLocation covers the single-occurrence path
+// (no Occurrences array, just StartDate) where the parent location must be resolvable at
+// ingest time. A Location with only a canonical @id (empty Name) passes validatePlaceInput
+// but cannot be resolved by the ingest layer (UpsertPlace requires a Name), so
+// PrimaryVenueID would be nil and the occurrence would hit the occurrence_location_required
+// DB constraint. The fix added an early-rejection check in ValidateEventInputWithWarnings.
+func TestValidateEventInput_SingleOccurrenceLocation(t *testing.T) {
+	nodeDomain := "example.com"
+
+	tests := []struct {
+		name            string
+		input           EventInput
+		wantErr         bool
+		wantErrContains string
+	}{
+		{
+			// Baseline: single-occurrence event with a named location — must pass.
+			name: "single_occurrence_named_location_valid",
+			input: EventInput{
+				Name:      "Yoga at The Studio",
+				StartDate: "2026-06-01T10:00:00Z",
+				EndDate:   "2026-06-01T11:30:00Z",
+				License:   "CC0-1.0",
+				Location:  &PlaceInput{Name: "The Studio", AddressLocality: "Toronto"},
+			},
+			wantErr: false,
+		},
+		{
+			// Baseline: single-occurrence event with a virtualLocation — must pass.
+			name: "single_occurrence_virtual_location_valid",
+			input: EventInput{
+				Name:            "Online Yoga",
+				StartDate:       "2026-06-01T10:00:00Z",
+				EndDate:         "2026-06-01T11:30:00Z",
+				License:         "CC0-1.0",
+				VirtualLocation: &VirtualLocationInput{URL: "https://zoom.us/j/abc123"},
+			},
+			wantErr: false,
+		},
+		{
+			// Regression: single-occurrence event where Location has only a canonical @id
+			// (empty Name) — must be rejected early. The ingest layer cannot resolve a
+			// @id-only location to a PrimaryVenueID, so the occurrence would violate
+			// occurrence_location_required at DB insert time without this guard.
+			name: "single_occurrence_canonical_id_only_location_rejected",
+			input: EventInput{
+				Name:      "Event at Canonical Venue",
+				StartDate: "2026-06-01T10:00:00Z",
+				EndDate:   "2026-06-01T11:30:00Z",
+				License:   "CC0-1.0",
+				Location: &PlaceInput{
+					ID: "https://example.com/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+					// Name intentionally omitted — @id only
+				},
+			},
+			wantErr:         true,
+			wantErrContains: "location",
+		},
+		{
+			// Regression: single-occurrence event with no location at all — must also be
+			// rejected. (This was already covered by the location-required check, but
+			// keep it here to document the single-occurrence-specific error path.)
+			name: "single_occurrence_no_location_rejected",
+			input: EventInput{
+				Name:      "Nowhere Event",
+				StartDate: "2026-06-01T10:00:00Z",
+				EndDate:   "2026-06-01T11:30:00Z",
+				License:   "CC0-1.0",
+				// No Location, no VirtualLocation
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.ValidationConfig{AllowTestDomains: true}
+			_, err := ValidateEventInputWithWarnings(tc.input, nodeDomain, nil, cfg)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("ValidateEventInputWithWarnings() = nil; want an error")
+				}
+				if tc.wantErrContains != "" && !strings.Contains(err.Error(), tc.wantErrContains) {
+					t.Errorf("error = %q; want it to contain %q", err.Error(), tc.wantErrContains)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("ValidateEventInputWithWarnings() error = %v; want nil", err)
+				}
+			}
+		})
+	}
+}
+
 func TestValidatePlaceInput(t *testing.T) {
 	nodeDomain := "example.com"
 

@@ -111,6 +111,14 @@ func (m *MockRepository) UpsertPlace(ctx context.Context, params events.PlaceCre
 	return args.Get(0).(*events.PlaceRecord), args.Error(1)
 }
 
+func (m *MockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*events.PlaceRecord, error) {
+	args := m.Called(ctx, ulid)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.PlaceRecord), args.Error(1)
+}
+
 func (m *MockRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	args := m.Called(ctx, params)
 	if args.Get(0) == nil {

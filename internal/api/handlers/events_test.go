@@ -94,6 +94,10 @@ func (s stubEventsRepo) UpsertPlace(_ context.Context, _ events.PlaceCreateParam
 	return &events.PlaceRecord{ID: "place-id", ULID: "place-ulid"}, nil
 }
 
+func (s stubEventsRepo) GetPlaceByULID(_ context.Context, _ string) (*events.PlaceRecord, error) {
+	return nil, events.ErrNotFound
+}
+
 func (s stubEventsRepo) UpsertOrganization(_ context.Context, _ events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	return &events.OrganizationRecord{ID: "org-id", ULID: "org-ulid"}, nil
 }
