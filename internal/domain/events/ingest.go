@@ -994,14 +994,24 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		if tz == "" {
 			tz = s.defaultTZ
 		}
+		// Inherit venue/virtual from the parent event when the occurrence
+		// doesn't specify its own — mirrors the single-occurrence path above.
+		venueID := nullableString(occ.VenueID)
+		if venueID == nil {
+			venueID = event.PrimaryVenueID
+		}
+		virtual := nullableString(occ.VirtualURL)
+		if virtual == nil && event.VirtualURL != "" {
+			virtual = nullableString(event.VirtualURL)
+		}
 		occurrence := OccurrenceCreateParams{
 			EventID:    event.ID,
 			StartTime:  start,
 			EndTime:    end,
 			Timezone:   tz,
 			DoorTime:   door,
-			VenueID:    nullableString(occ.VenueID),
-			VirtualURL: nullableString(occ.VirtualURL),
+			VenueID:    venueID,
+			VirtualURL: virtual,
 		}
 		// Apply event-level offers to each occurrence as defaults
 		if input.Offers != nil {
