@@ -76,6 +76,7 @@ Use the [Scenario Index](#scenario-index) below to find the relevant events in t
 | List review queue (review IDs, warnings, event ULIDs) | `GET $BASE/admin/review-queue` → `.items[]` |
 | Approve / reject / merge / add-occurrence (review-queue path) | `POST $BASE/admin/review-queue/{review-id}/{action}` |
 | Create/update/delete occurrence manually (not via review queue) | `POST/PUT/DELETE $BASE/admin/events/{event-ulid}/occurrences[/{occ-id}]` |
+| Consolidate events (retire N, keep/create 1) | `POST $BASE/admin/events/consolidate` |
 
 > **Important:** Use `GET $BASE/admin/review-queue` (not `/admin/events/pending`) when you need review IDs and warning codes. The `/admin/events/pending` endpoint returns event summaries only — it does not include review queue IDs or warnings.
 
@@ -107,6 +108,17 @@ curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/js
   "$BASE/admin/events/<event-ulid>/occurrences" \
   -d '{"start_time":"<RFC3339>","end_time":"<RFC3339>","timezone":"America/Toronto","venue_ulid":"<venue-ulid>"}'
 ```
+
+```bash
+# Consolidate: promote existing event as canonical, retire duplicates
+curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  "$BASE/admin/events/consolidate" \
+  -d '{"event_ulid":"<canonical-ulid>","retire":["<dup-ulid-1>","<dup-ulid-2>"]}'
+
+# Consolidate: create new canonical event, retire source events
+curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  "$BASE/admin/events/consolidate" \
+  -d '{"event":{"name":"...","startDate":"...","location":{"name":"..."}},"retire":["<old-ulid>"]}'
 
 ### 6. Verify with SQL
 
@@ -145,6 +157,7 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 | RS-09 | Film Screening | 1 | multi-session detection | `multi_session_likely` | N/A (single event) |
 | RS-10 | Choir Rehearsal | 2 | order-independent consolidation | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.88) |
 | RS-11 | Pottery Studio | 4 | same-day-different-times cluster | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (same-day pairs only) |
+| RS-12 | Consolidation Endpoint | 2+ | consolidate (promote + create paths) | _(varies)_ | N/A (tests consolidation itself) |
 
 ---
 
@@ -247,6 +260,28 @@ FROM events WHERE name LIKE 'RS-03%Pending%';
    - [ ] Target series now has **3** occurrences (was 2).
    - [ ] Target series `lifecycle_state` stays `pending_review` (the pre-existing review is still unresolved).
 
+**Consolidation Alternative (preferred):**
+
+Instead of the manual occurrence API + SQL soft-delete workflow above, use the consolidation endpoint:
+
+1. First add the occurrence manually (same as step 1 above — consolidation doesn't move occurrences, it retires whole events):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/<pending-series-ulid>/occurrences" \
+     -d '{"start_time":"<RFC3339>","end_time":"<RFC3339>","timezone":"America/Toronto","venue_ulid":"<venue-ulid>"}'
+   ```
+2. Then retire the additional occurrence event via consolidation:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<pending-series-ulid>","retire":["<additional-ulid>"]}'
+   ```
+3. Verify:
+   - [ ] Additional event is soft-deleted with tombstone (`superseded_by_uri` pointing to the series, `deletion_reason = 'consolidated'`).
+   - [ ] Any pending reviews on the additional event are dismissed.
+   - [ ] Series `lifecycle_state` stays `pending_review` (the pre-existing quality review is still unresolved).
+   - [ ] Series has 3 occurrences.
+
 **Note:** This scenario deliberately does not rely on automatic dedup. It tests that the add-occurrence action preserves a pending lifecycle when other unresolved reviews exist on the target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the manual occurrence API (`POST /admin/events/{ulid}/occurrences`) — **not** via the review-queue `add-occurrence` action (which requires a pending review row on the source event). The manual API only adds the occurrence; soft-deletion of the source event requires a separate SQL step.
 
 ---
@@ -281,6 +316,28 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
 3. Verify:
    - [ ] Target series has **3** occurrences.
    - [ ] Target series `lifecycle_state` remains `draft` (not auto-promoted to published by add-occurrence).
+
+**Consolidation Alternative (preferred):**
+
+Instead of the manual occurrence API + SQL soft-delete workflow above, use the consolidation endpoint:
+
+1. First add the occurrence manually (same as step 1 above — consolidation doesn't move occurrences, it retires whole events):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/<draft-series-ulid>/occurrences" \
+     -d '{"start_time":"<RFC3339>","end_time":"<RFC3339>","timezone":"America/Toronto","venue_ulid":"<venue-ulid>"}'
+   ```
+2. Then retire the source event via consolidation:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<draft-series-ulid>","retire":["<new-occurrence-ulid>"]}'
+   ```
+3. Verify:
+   - [ ] Source event is soft-deleted with tombstone (`superseded_by_uri` pointing to the draft series, `deletion_reason = 'consolidated'`).
+   - [ ] Any pending reviews on the source event are dismissed.
+   - [ ] Draft series `lifecycle_state` remains `draft` — consolidation does not auto-promote the canonical.
+   - [ ] Draft series has 3 occurrences.
 
 **Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision. This scenario deliberately does not rely on automatic dedup — it tests manual add-occurrence on a draft target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the manual occurrence API (`POST /admin/events/{ulid}/occurrences`) — **not** via the review-queue `add-occurrence` action. The SQL state change is required before the add-occurrence so that the draft-preservation invariant can be verified. Soft-deletion of the source event requires a separate SQL step (the manual API does not absorb/delete the source automatically).
 
@@ -421,6 +478,21 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
     - [ ] Companion review dismissed (`merged` status — no stale pending row should remain on the target after successful consolidation).
     - [ ] Target lifecycle recomputes: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
 
+**Consolidation path (preferred for this scenario):**
+
+1. Choose which event has better data (Source A or Source B) — that becomes the canonical.
+2. Consolidate:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<chosen-canonical-ulid>","retire":["<other-ulid>"]}'
+   ```
+3. Verify:
+   - [ ] Retired event soft-deleted with tombstone (`deletion_reason = 'consolidated'`, `superseded_by_uri` pointing to canonical).
+   - [ ] Both companion review entries dismissed (`review_entries_dismissed` in response).
+   - [ ] Canonical event transitions to `published` (if no other issues) or `pending_review` (if flagged).
+   - [ ] Note: consolidation does NOT move occurrences — the canonical keeps its own occurrence(s). If the admin wants to add the retired event's occurrence to the canonical, they should use the manual occurrence API first, then consolidate.
+
 **Order-independence check:** Reset the database and re-run, ingesting Source B first, then Source A. Verify the same final state.
 
 ---
@@ -458,7 +530,103 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
    - [ ] All review entries are resolved (no orphaned pending reviews).
    - [ ] Surviving events are `published`.
 
+**Consolidation example (2 morning+afternoon series):**
+
+1. Consolidate the morning pair:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<mon-10am-ulid>","retire":["<mon7-10am-ulid>"]}'
+   ```
+   Then manually add the Mon+7 occurrence to the morning series.
+
+2. Consolidate the afternoon pair similarly:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<mon-2pm-ulid>","retire":["<mon7-2pm-ulid>"]}'
+   ```
+   Then manually add the Mon+7 occurrence to the afternoon series.
+
+3. If instead you want all 4 as one series:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<mon-10am-ulid>","retire":["<mon-2pm-ulid>","<mon7-10am-ulid>","<mon7-2pm-ulid>"]}'
+   ```
+   Then manually add 3 occurrences from the retired events to the canonical. Consolidation retires whole events; occurrence migration is a manual step.
+
 **This scenario intentionally has no single "right" answer -- it tests the admin's judgment and the system's ability to support multiple valid consolidation paths.**
+
+---
+
+### RS-12: Consolidation Endpoint (Create + Promote Paths)
+
+**Setup:** This scenario reuses events from earlier scenarios. It should be run AFTER RS-08 (which creates a merged pair) but can also be run independently with fresh fixture data.
+
+**Pre-test: Ingest two similar events for testing:**
+- Use any two events that would normally be near-duplicates (e.g., create two events at the same venue, same date, similar names via the ingest API).
+
+**Test A — Promote Path:**
+
+1. Identify two pending or published events that should be consolidated.
+2. Choose one as canonical (better data, more occurrences, etc.).
+3. Consolidate:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<canonical-ulid>","retire":["<dup-ulid>"]}'
+   ```
+4. Verify:
+   - [ ] Response 200 with `retired` containing the retired ULID.
+   - [ ] `review_entries_dismissed` lists any dismissed review IDs.
+   - [ ] Retired event: `lifecycle_state = 'deleted'`, tombstone with `deletion_reason = 'consolidated'` and `superseded_by_uri` pointing to canonical.
+   - [ ] Canonical event: unchanged (same occurrences, same data), `lifecycle_state` reflects post-consolidation validation.
+
+**Test B — Create Path:**
+
+1. Consolidate by creating a new canonical event and retiring both:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{
+       "event": {
+         "name": "RS-12 Consolidated Event",
+         "startDate": "<RFC3339>",
+         "endDate": "<RFC3339>",
+         "location": {"name": "The Tranzac", "@id": "<tranzac-place-uri>"}
+       },
+       "retire": ["<event-a-ulid>", "<event-b-ulid>"]
+     }'
+   ```
+2. Verify:
+   - [ ] Response 200. New event created with ULID in response.
+   - [ ] Both retired events soft-deleted with tombstones (`deletion_reason = 'consolidated'`).
+   - [ ] New event has correct location, dates, lifecycle.
+   - [ ] If the new event triggers near-dup detection against a non-retired event, `needs_review: true` and `warnings` array is non-empty.
+
+**Test C — Error Cases:**
+
+1. Both event and event_ulid → 400
+2. Neither event nor event_ulid → 400
+3. Empty retire list → 400
+4. Canonical ULID in retire list → 400
+5. Non-existent retire ULID → 404
+6. Already-deleted retire target → 422
+
+```bash
+# Test: both fields
+curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  "$BASE/admin/events/consolidate" \
+  -d '{"event_ulid":"<ulid>","event":{"name":"test"},"retire":["<ulid2>"]}'
+# Expect 400
+
+# Test: empty retire
+curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  "$BASE/admin/events/consolidate" \
+  -d '{"event_ulid":"<ulid>","retire":[]}'
+# Expect 400
+```
 
 ---
 
@@ -469,6 +637,8 @@ After completing all scenarios, verify:
 - [ ] No orphaned `pending_review` entries remain from the fixture set (all should be resolved).
 - [ ] No orphaned events in `pending_review` state from the fixture set (all should be published or deleted).
 - [ ] Tombstone records exist for all soft-deleted events with correct `superseded_by_uri` references (column is `superseded_by_uri`, not `superseded_by`).
+- [ ] Tombstone records from consolidation have `deletion_reason = 'consolidated'` and correct `superseded_by_uri`.
+- [ ] RS-12 consolidated events appear in the events list with correct lifecycle states.
 - [ ] The `event_not_duplicates` table has entries from RS-07 (and RS-11 if applicable).
 - [ ] Event occurrence counts match expectations after all add-occurrence actions (verify via the SQL query below or via `GET /api/v1/events/{ulid}` — the `subEvent` array is populated for all occurrences and is the authoritative count used by the admin detail page):
   - RS-01: 4 (base series) + 1 (new occurrence as standalone event) — add-occurrence not supported via review-queue API for `multi_session_likely`-only reviews
@@ -476,6 +646,7 @@ After completing all scenarios, verify:
   - RS-03: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
   - RS-04: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
   - RS-10: 2 (1+1 — source's sole occurrence is added to the target, giving 2 total)
+  - RS-12: canonical event has its own occurrences (Test A: unchanged from pre-consolidation; Test B: new event with dates from request)
 
 ### SQL Verification Queries
 
