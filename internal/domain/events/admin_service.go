@@ -68,6 +68,29 @@ type MergeEventsParams struct {
 	DuplicateULID string
 }
 
+// ConsolidateParams defines the request for atomic event consolidation.
+// Exactly one of Event or EventULID must be set; Retire must have at least one ULID.
+type ConsolidateParams struct {
+	// Event creates a new canonical event. Mutually exclusive with EventULID.
+	Event *EventInput
+	// EventULID promotes an existing event as canonical. Mutually exclusive with Event.
+	EventULID string
+	// Retire lists event ULIDs to soft-delete with tombstones. Required, min 1.
+	Retire []string
+}
+
+// ConsolidateResult contains the outcome of an atomic consolidation operation.
+type ConsolidateResult struct {
+	Event                  *Event
+	LifecycleState         string
+	IsDuplicate            bool
+	IsMerged               bool
+	NeedsReview            bool
+	Warnings               []ValidationWarning
+	Retired                []string
+	ReviewEntriesDismissed []int
+}
+
 var (
 	ErrInvalidUpdateParams            = errors.New("invalid update parameters")
 	ErrCannotMergeSameEvent           = errors.New("cannot merge event with itself")
@@ -1462,6 +1485,353 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 	}
 
 	return reviewEntry, nil
+}
+
+// Consolidate atomically consolidates multiple events into one canonical event while
+// retiring the others. The canonical event is either an existing event (promoted via
+// EventULID) or a newly created event (supplied via Event). All events in the Retire
+// list are soft-deleted with tombstones pointing to the canonical event, and any
+// pending review queue entries for retired events are dismissed.
+//
+// Lock ordering: retired events are sorted by ULID before locking to prevent deadlocks.
+// The canonical event (promote path) is locked after retired events.
+//
+// Returns ConsolidateResult with the canonical event and summary of side effects.
+func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams) (*ConsolidateResult, error) {
+	// Step 1: Validate params.
+	if params.Event != nil && params.EventULID != "" {
+		return nil, ErrConsolidateBothEventFields
+	}
+	if params.Event == nil && params.EventULID == "" {
+		return nil, ErrConsolidateNoEventField
+	}
+	if len(params.Retire) == 0 {
+		return nil, ErrConsolidateNoRetire
+	}
+	// Check canonical ULID not in retire list (only applicable for promote path).
+	if params.EventULID != "" {
+		for _, r := range params.Retire {
+			if r == params.EventULID {
+				return nil, ErrConsolidateCanonicalInRetire
+			}
+		}
+	}
+
+	// Step 2: Begin transaction.
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	// Step 3: Lock retired events in sorted order (deadlock prevention).
+	sorted := make([]string, len(params.Retire))
+	copy(sorted, params.Retire)
+	sortStrings(sorted)
+
+	retiredEvents := make([]*Event, 0, len(sorted))
+	for _, ulid := range sorted {
+		ev, err := txRepo.GetByULID(ctx, ulid)
+		if err != nil {
+			return nil, fmt.Errorf("get retire target %s: %w", ulid, err)
+		}
+		if ev.LifecycleState == "deleted" {
+			return nil, fmt.Errorf("retire target %s is already deleted: %w", ulid, ErrConsolidateRetiredAlreadyDeleted)
+		}
+		if err := txRepo.LockEventForUpdate(ctx, ev.ID); err != nil {
+			return nil, fmt.Errorf("lock retire target %s: %w", ulid, err)
+		}
+		// Re-read after lock (TOCTOU guard).
+		ev, err = txRepo.GetByULID(ctx, ulid)
+		if err != nil {
+			return nil, fmt.Errorf("re-read retire target %s after lock: %w", ulid, err)
+		}
+		if ev.LifecycleState == "deleted" {
+			return nil, fmt.Errorf("retire target %s was deleted concurrently: %w", ulid, ErrConsolidateRetiredAlreadyDeleted)
+		}
+		retiredEvents = append(retiredEvents, ev)
+	}
+
+	// Step 4: Resolve canonical event.
+	var canonicalEvent *Event
+	var warnings []ValidationWarning
+	needsReview := false
+	isDuplicate := false
+
+	if params.EventULID != "" {
+		// Promote path: fetch and lock existing event.
+		canon, err := txRepo.GetByULID(ctx, params.EventULID)
+		if err != nil {
+			return nil, fmt.Errorf("get canonical event %s: %w", params.EventULID, err)
+		}
+		if canon.LifecycleState == "deleted" {
+			return nil, fmt.Errorf("canonical event %s is deleted: %w", params.EventULID, ErrEventDeleted)
+		}
+		if err := txRepo.LockEventForUpdate(ctx, canon.ID); err != nil {
+			return nil, fmt.Errorf("lock canonical event %s: %w", params.EventULID, err)
+		}
+		// Re-read after lock (TOCTOU).
+		canon, err = txRepo.GetByULID(ctx, params.EventULID)
+		if err != nil {
+			return nil, fmt.Errorf("re-read canonical event %s after lock: %w", params.EventULID, err)
+		}
+		if canon.LifecycleState == "deleted" {
+			return nil, fmt.Errorf("canonical event %s was deleted concurrently: %w", params.EventULID, ErrEventDeleted)
+		}
+		canonicalEvent = canon
+	} else {
+		// Create path: normalize, validate, create.
+		normalized := NormalizeEventInput(*params.Event)
+		validationResult, err := ValidateEventInputWithWarnings(normalized, "", params.Event, s.validationConfig)
+		if err != nil {
+			return nil, fmt.Errorf("validate event input: %w", err)
+		}
+		warnings = validationResult.Warnings
+		validated := validationResult.Input
+
+		// Issue 4: Apply quality warnings (same as ingest pipeline) so admins
+		// are informed of quality issues on the canonical event they are creating.
+		warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig)
+		needsReview = len(warnings) > 0 || eventNeedsReview(validated, nil, s.validationConfig)
+
+		newULID, err := ids.NewULID()
+		if err != nil {
+			return nil, fmt.Errorf("generate ULID: %w", err)
+		}
+
+		createParams := EventCreateParams{
+			ULID:           newULID,
+			Name:           validated.Name,
+			Description:    validated.Description,
+			LifecycleState: "published",
+			EventDomain:    validated.EventDomain,
+			LicenseURL:     licenseURL(sourceLicense(validated)),
+			LicenseStatus:  "open",
+			Keywords:       validated.Keywords,
+			InLanguage:     validated.InLanguage,
+			ImageURL:       validated.Image,
+			PublicURL:      validated.URL,
+		}
+
+		// Resolve place if location provided.
+		if validated.Location != nil && validated.Location.Name != "" {
+			place, err := txRepo.UpsertPlace(ctx, PlaceCreateParams{
+				EntityCreateFields: EntityCreateFields{
+					Name:            validated.Location.Name,
+					StreetAddress:   validated.Location.StreetAddress,
+					PostalCode:      validated.Location.PostalCode,
+					AddressLocality: validated.Location.AddressLocality,
+					AddressRegion:   normalizeRegion(validated.Location.AddressRegion),
+					AddressCountry:  validated.Location.AddressCountry,
+				},
+				Latitude:  float64PtrNonZero(validated.Location.Latitude),
+				Longitude: float64PtrNonZero(validated.Location.Longitude),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("upsert place: %w", err)
+			}
+			createParams.PrimaryVenueID = &place.ID
+		}
+
+		createdEvent, err := txRepo.Create(ctx, createParams)
+		if err != nil {
+			return nil, fmt.Errorf("create canonical event: %w", err)
+		}
+
+		// Create occurrences.
+		for _, occ := range validated.Occurrences {
+			start, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(occ.StartDate))
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse occurrence startDate: %w", parseErr)
+			}
+			end, parseErr := parseRFC3339Optional("endDate", occ.EndDate)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse occurrence endDate: %w", parseErr)
+			}
+			tz := strings.TrimSpace(occ.Timezone)
+			if tz == "" {
+				tz = s.defaultTZ
+			}
+			occParams := OccurrenceCreateParams{
+				EventID:   createdEvent.ID,
+				StartTime: start,
+				EndTime:   end,
+				Timezone:  tz,
+			}
+			if createParams.PrimaryVenueID != nil {
+				occParams.VenueID = createParams.PrimaryVenueID
+			}
+			if occ.VirtualURL != "" {
+				occParams.VirtualURL = &occ.VirtualURL
+			}
+			if err := txRepo.CreateOccurrence(ctx, occParams); err != nil {
+				return nil, fmt.Errorf("create occurrence: %w", err)
+			}
+		}
+
+		// Re-fetch to get canonical event with ID populated.
+		canonicalEvent, err = txRepo.GetByULID(ctx, newULID)
+		if err != nil {
+			return nil, fmt.Errorf("re-read created canonical event: %w", err)
+		}
+
+		// Issue 3: Dedup hash check (Layer 1) for create path.
+		// The ingest pipeline runs FindByDedupHash before creating an event; we
+		// cannot do that here (admin has already chosen to create a replacement),
+		// but we MUST warn if the new canonical matches an existing non-retired event.
+		dedupHash := BuildDedupHash(DedupCandidate{
+			Name:      validated.Name,
+			VenueID:   NormalizeVenueKey(validated),
+			StartDate: validated.StartDate,
+		})
+		if dedupHash != "" {
+			existing, dedupErr := txRepo.FindByDedupHash(ctx, dedupHash)
+			if dedupErr != nil && dedupErr != ErrNotFound {
+				// Non-fatal: log and continue.
+				log.Warn().Err(dedupErr).
+					Str("canonical_ulid", canonicalEvent.ULID).
+					Msg("Consolidate: dedup hash check failed, continuing")
+			} else if existing != nil && existing.ULID != canonicalEvent.ULID {
+				// Check the match is not one of the events we are retiring.
+				retireSet := make(map[string]struct{}, len(params.Retire))
+				for _, r := range params.Retire {
+					retireSet[r] = struct{}{}
+				}
+				if _, retiring := retireSet[existing.ULID]; !retiring {
+					// Flag as needing review — admin can decide what to do.
+					isDuplicate = true
+					needsReview = true
+					warnings = append(warnings, ValidationWarning{
+						Code:    "exact_duplicate",
+						Message: fmt.Sprintf("exact dedup-hash match with existing event %s — review recommended", existing.ULID),
+					})
+				}
+			}
+		}
+	}
+
+	// Step 5: Retire events — soft-delete + tombstone.
+	canonicalURI, err := s.eventURI(canonicalEvent.ULID)
+	if err != nil {
+		return nil, fmt.Errorf("canonical URI for consolidation target: %w", err)
+	}
+
+	retiredULIDs := make([]string, 0, len(retiredEvents))
+	for _, ev := range retiredEvents {
+		if err := txRepo.SoftDeleteEvent(ctx, ev.ULID, "consolidated"); err != nil {
+			return nil, fmt.Errorf("soft-delete retired event %s: %w", ev.ULID, err)
+		}
+		retiredURI, err := s.eventURI(ev.ULID)
+		if err != nil {
+			return nil, fmt.Errorf("canonical URI for retired event %s: %w", ev.ULID, err)
+		}
+		tombstonePayload, err := buildTombstonePayload(retiredURI, ev.Name, &canonicalURI, "consolidated")
+		if err != nil {
+			return nil, fmt.Errorf("build tombstone for %s: %w", ev.ULID, err)
+		}
+		if err := txRepo.CreateTombstone(ctx, TombstoneCreateParams{
+			EventID:      ev.ID,
+			EventURI:     retiredURI,
+			DeletedAt:    time.Now(),
+			Reason:       "consolidated",
+			SupersededBy: &canonicalURI,
+			Payload:      tombstonePayload,
+		}); err != nil {
+			return nil, fmt.Errorf("create tombstone for %s: %w", ev.ULID, err)
+		}
+		retiredULIDs = append(retiredULIDs, ev.ULID)
+	}
+
+	// Step 6: Dismiss pending reviews for retired events.
+	dismissedIDs, err := txRepo.DismissPendingReviewsByEventULIDs(ctx, params.Retire, "system")
+	if err != nil {
+		return nil, fmt.Errorf("dismiss pending reviews for retired events: %w", err)
+	}
+
+	// Step 7: Post-consolidation near-dup check (only if canonical has a venue).
+	// This mirrors the ingest pipeline: a consolidated event is not more valid than
+	// an ingested one and must go through the same dedup checks.
+	if canonicalEvent.PrimaryVenueID != nil && len(canonicalEvent.Occurrences) > 0 {
+		candidates, nearDupErr := txRepo.FindNearDuplicates(ctx,
+			*canonicalEvent.PrimaryVenueID,
+			canonicalEvent.Occurrences[0].StartTime,
+			canonicalEvent.Name,
+			s.validationConfig.NearDuplicateThreshold)
+		if nearDupErr != nil {
+			// Issue 2: Non-fatal — log and continue. The retire+create/promote has
+			// already succeeded; failing the whole transaction for a dedup check
+			// error would be wrong (mirrors ingest.go line 573-576).
+			log.Warn().Err(nearDupErr).
+				Str("canonical_ulid", canonicalEvent.ULID).
+				Msg("Consolidate: near-duplicate check failed, continuing")
+		} else {
+			// Issue 1: Filter self-match — FindNearDuplicates does not exclude the
+			// canonical event itself, so we do it here (mirrors ingest.go 580-593).
+			filtered := make([]NearDuplicateCandidate, 0, len(candidates))
+			for _, c := range candidates {
+				if c.ULID != canonicalEvent.ULID {
+					filtered = append(filtered, c)
+				}
+			}
+			if len(filtered) > 0 {
+				isDuplicate = true
+				needsReview = true
+				// Append near-dup warning.
+				for _, c := range filtered {
+					warnings = append(warnings, ValidationWarning{
+						Code:    "potential_duplicate",
+						Message: fmt.Sprintf("near-duplicate of existing event %s (similarity %.2f)", c.ULID, c.Similarity),
+					})
+				}
+			}
+		}
+	}
+
+	// Step 8: If needs review, set lifecycle to pending_review.
+	if needsReview {
+		pendingReview := "pending_review"
+		if _, err := txRepo.UpdateEvent(ctx, canonicalEvent.ULID, UpdateEventParams{
+			LifecycleState: &pendingReview,
+		}); err != nil {
+			return nil, fmt.Errorf("set canonical event to pending_review: %w", err)
+		}
+		canonicalEvent.LifecycleState = "pending_review"
+
+		// Create review queue entry for canonical event.
+		warningsJSON, _ := json.Marshal(warnings)
+		if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+			EventID:  canonicalEvent.ID,
+			Warnings: warningsJSON,
+		}); err != nil {
+			return nil, fmt.Errorf("create review queue entry for canonical event: %w", err)
+		}
+	}
+
+	// Step 9: Commit transaction.
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return &ConsolidateResult{
+		Event:                  canonicalEvent,
+		LifecycleState:         canonicalEvent.LifecycleState,
+		IsDuplicate:            isDuplicate,
+		IsMerged:               false,
+		NeedsReview:            needsReview,
+		Warnings:               warnings,
+		Retired:                retiredULIDs,
+		ReviewEntriesDismissed: dismissedIDs,
+	}, nil
+}
+
+// sortStrings sorts a string slice in-place (ascending lexicographic order).
+// Used to impose a consistent lock ordering across concurrent Consolidate calls.
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
 }
 
 // DeleteEvent soft-deletes an event and generates a tombstone

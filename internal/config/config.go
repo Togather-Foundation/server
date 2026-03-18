@@ -220,6 +220,12 @@ type ValidationConfig struct {
 	// Environment variable: VALIDATION_MAX_EVENT_NAME_LENGTH (default: 500)
 	MaxEventNameLength int
 
+	// NearDuplicateThreshold is the pg_trgm similarity threshold for
+	// post-consolidation near-duplicate checks on the canonical event.
+	// Range: 0.0–1.0. Lower = more flags, higher = fewer flags.
+	// Environment variable: DEDUP_NEAR_DUPLICATE_THRESHOLD (default: 0.4)
+	NearDuplicateThreshold float64
+
 	// AllowTestDomains disables the example.com / images.example.com blocklist check.
 	// Set to true only in test code. Never set via environment variable.
 	// Zero value (false) activates the blocklist in production.
@@ -239,6 +245,9 @@ func (v ValidationConfig) WithDefaults() ValidationConfig {
 	}
 	if v.MaxEventNameLength == 0 {
 		v.MaxEventNameLength = 500
+	}
+	if v.NearDuplicateThreshold == 0 {
+		v.NearDuplicateThreshold = 0.4
 	}
 	return v
 }

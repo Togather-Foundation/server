@@ -418,6 +418,10 @@ func (m *IngestMockRepository) LockReviewQueueEntryForUpdate(_ context.Context, 
 	return nil, nil
 }
 
+func (m *IngestMockRepository) DismissPendingReviewsByEventULIDs(_ context.Context, _ []string, _ string) ([]int, error) {
+	return nil, nil
+}
+
 type noOpTxCommitter struct{}
 
 func (n *noOpTxCommitter) Commit(ctx context.Context) error   { return nil }

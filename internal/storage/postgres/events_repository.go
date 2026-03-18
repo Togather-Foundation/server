@@ -1315,6 +1315,43 @@ LIMIT 5
 	return candidates, nil
 }
 
+// DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
+// for the given event ULIDs, setting their status to 'dismissed' and reviewer to reviewedBy.
+// Returns the IDs of dismissed entries (may be empty if none were pending).
+func (r *EventRepository) DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error) {
+	queryer := r.queryer()
+
+	rows, err := queryer.Query(ctx, `
+UPDATE event_review_queue q
+   SET status      = 'dismissed',
+       reviewed_by = $2,
+       reviewed_at = NOW()
+  FROM events e
+ WHERE e.id = q.event_id
+   AND e.ulid = ANY($1)
+   AND q.status = 'pending'
+RETURNING q.id
+`, eventULIDs, reviewedBy)
+	if err != nil {
+		return nil, fmt.Errorf("dismiss pending reviews by event ULIDs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan dismissed review ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dismissed review IDs: %w", err)
+	}
+
+	return ids, nil
+}
+
 // FindSimilarPlaces returns places with similar normalized names in the same locality/region.
 // Uses pg_trgm similarity() against the normalized_name column, which has a GIN trgm index.
 // Excludes places that have already been merged into another place.

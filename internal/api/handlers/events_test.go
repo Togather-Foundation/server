@@ -248,6 +248,10 @@ func (s stubEventsRepo) CheckOccurrenceOverlapExcluding(_ context.Context, _ str
 	return false, nil
 }
 
+func (s stubEventsRepo) DismissPendingReviewsByEventULIDs(_ context.Context, _ []string, _ string) ([]int, error) {
+	return nil, nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

@@ -301,6 +301,10 @@ type mockTransactionalRepo struct {
 	getPendingReviewByEventUlidFunc                 func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	getPendingReviewByEventUlidAndDuplicateUlidFunc func(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
 	deleteOccurrencesByEventULIDFunc                func(ctx context.Context, eventULID string) error
+	dismissPendingReviewsByEventULIDsFunc           func(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
+	createReviewQueueEntryFunc                      func(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
+	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
+	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 	commitCalled                                    bool
 	rollbackCalled                                  bool
 }
@@ -359,7 +363,10 @@ func (m *mockTransactionalRepo) FindBySourceExternalID(ctx context.Context, sour
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) FindByDedupHash(ctx context.Context, dedupHash string) (*Event, error) {
-	return nil, errors.New("not implemented")
+	if m.findByDedupHashFunc != nil {
+		return m.findByDedupHashFunc(ctx, dedupHash)
+	}
+	return nil, ErrNotFound
 }
 func (m *mockTransactionalRepo) GetOrCreateSource(ctx context.Context, params SourceLookupParams) (string, error) {
 	return "", errors.New("not implemented")
@@ -412,7 +419,10 @@ func (m *mockTransactionalRepo) FindReviewByDedup(ctx context.Context, sourceID 
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
-	return nil, errors.New("not implemented")
+	if m.createReviewQueueEntryFunc != nil {
+		return m.createReviewQueueEntryFunc(ctx, params)
+	}
+	return &ReviewQueueEntry{}, nil
 }
 func (m *mockTransactionalRepo) UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
 	return nil, errors.New("not implemented")
@@ -464,6 +474,9 @@ func (m *mockTransactionalRepo) GetSourceTrustLevelBySourceID(ctx context.Contex
 	return 5, nil
 }
 func (m *mockTransactionalRepo) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+	if m.findNearDuplicatesFunc != nil {
+		return m.findNearDuplicatesFunc(ctx, venueID, startTime, eventName, threshold)
+	}
 	return nil, nil
 }
 func (m *mockTransactionalRepo) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error) {
@@ -540,6 +553,13 @@ func (m *mockTransactionalRepo) CountOccurrences(ctx context.Context, eventID st
 
 func (m *mockTransactionalRepo) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
 	return false, nil
+}
+
+func (m *mockTransactionalRepo) DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error) {
+	if m.dismissPendingReviewsByEventULIDsFunc != nil {
+		return m.dismissPendingReviewsByEventULIDsFunc(ctx, eventULIDs, reviewedBy)
+	}
+	return nil, nil
 }
 
 // mockTxCommitter implements TxCommitter

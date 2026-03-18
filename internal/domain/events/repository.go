@@ -13,6 +13,13 @@ var ErrConflict = errors.New("event conflict")
 // ErrOccurrenceOverlap is returned when a new occurrence would overlap an existing one.
 var ErrOccurrenceOverlap = errors.New("occurrence overlaps an existing occurrence")
 
+// Consolidation error sentinels
+var ErrConsolidateNoRetire = errors.New("consolidate: retire list is required and must contain at least one event ULID")
+var ErrConsolidateBothEventFields = errors.New("consolidate: event and event_ulid are mutually exclusive — supply one or the other")
+var ErrConsolidateNoEventField = errors.New("consolidate: one of event or event_ulid is required")
+var ErrConsolidateCanonicalInRetire = errors.New("consolidate: canonical event ULID cannot be in the retire list")
+var ErrConsolidateRetiredAlreadyDeleted = errors.New("consolidate: one or more retire targets are already deleted")
+
 // ErrLastOccurrence is returned when an admin attempts to delete the last remaining
 // occurrence on an event; doing so would leave the event in an invalid state.
 var ErrLastOccurrence = errors.New("cannot delete the last occurrence of an event")
@@ -287,6 +294,11 @@ type Repository interface {
 	// Not-duplicate tracking (suppresses re-flagging during near-duplicate detection)
 	InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error
 	IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error)
+
+	// DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
+	// for the given event ULIDs. Returns the IDs of dismissed entries.
+	// Used by consolidation to clean up review entries for retired events.
+	DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
 
 	// Review Queue operations
 	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)

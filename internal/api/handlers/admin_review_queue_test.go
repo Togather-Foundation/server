@@ -369,6 +369,10 @@ func (m *MockRepository) CheckOccurrenceOverlapExcluding(ctx context.Context, ev
 	return false, errors.New("not implemented")
 }
 
+func (m *MockRepository) DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error) {
+	return nil, errors.New("not implemented")
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{

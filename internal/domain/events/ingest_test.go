@@ -828,6 +828,10 @@ func (m *MockRepository) CheckOccurrenceOverlapExcluding(_ context.Context, _ st
 	return false, nil
 }
 
+func (m *MockRepository) DismissPendingReviewsByEventULIDs(_ context.Context, _ []string, _ string) ([]int, error) {
+	return nil, nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil
