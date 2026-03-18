@@ -22,19 +22,33 @@ type AdminService struct {
 	defaultTZ        string
 	validationConfig config.ValidationConfig
 	baseURL          string // canonical base URL for tombstone/superseded_by URIs (e.g. "https://toronto.togather.foundation")
+	ingestService    *IngestService
 }
 
 func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig, baseURL string) *AdminService {
 	if baseURL == "" {
 		panic("NewAdminService: baseURL must not be empty — set SERVER_BASE_URL (default: http://localhost:8080)")
 	}
-	return &AdminService{
+	svc := &AdminService{
 		repo:             repo,
 		requireHTTPS:     requireHTTPS,
 		defaultTZ:        defaultTimezone,
 		validationConfig: validationConfig.WithDefaults(),
 		baseURL:          baseURL,
 	}
+	// Auto-create an internal IngestService so that existing tests that never
+	// call WithIngestService still work.  Router.go will call WithIngestService
+	// after both services are created to share the same configured instance.
+	svc.ingestService = NewIngestService(repo, "", defaultTimezone, validationConfig)
+	return svc
+}
+
+// WithIngestService wires a pre-configured IngestService into AdminService so
+// that the Consolidate create path can share the full ingest pipeline.
+// Returns the receiver for convenience.
+func (s *AdminService) WithIngestService(svc *IngestService) *AdminService {
+	s.ingestService = svc
+	return s
 }
 
 // eventURI returns the canonical URI for an event ULID.
@@ -1581,133 +1595,28 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		}
 		canonicalEvent = canon
 	} else {
-		// Create path: normalize, validate, create.
-		normalized := NormalizeEventInput(*params.Event)
-		validationResult, err := ValidateEventInputWithWarnings(normalized, "", params.Event, s.validationConfig)
-		if err != nil {
-			return nil, fmt.Errorf("validate event input: %w", err)
-		}
-		warnings = validationResult.Warnings
-		validated := validationResult.Input
-
-		// Issue 4: Apply quality warnings (same as ingest pipeline) so admins
-		// are informed of quality issues on the canonical event they are creating.
-		warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig)
-		needsReview = len(warnings) > 0 || eventNeedsReview(validated, nil, s.validationConfig)
-
-		newULID, err := ids.NewULID()
-		if err != nil {
-			return nil, fmt.Errorf("generate ULID: %w", err)
-		}
-
-		createParams := EventCreateParams{
-			ULID:           newULID,
-			Name:           validated.Name,
-			Description:    validated.Description,
-			LifecycleState: "published",
-			EventDomain:    validated.EventDomain,
-			LicenseURL:     licenseURL(sourceLicense(validated)),
-			LicenseStatus:  "open",
-			Keywords:       validated.Keywords,
-			InLanguage:     validated.InLanguage,
-			ImageURL:       validated.Image,
-			PublicURL:      validated.URL,
-		}
-
-		// Resolve place if location provided.
-		if validated.Location != nil && validated.Location.Name != "" {
-			place, err := txRepo.UpsertPlace(ctx, PlaceCreateParams{
-				EntityCreateFields: EntityCreateFields{
-					Name:            validated.Location.Name,
-					StreetAddress:   validated.Location.StreetAddress,
-					PostalCode:      validated.Location.PostalCode,
-					AddressLocality: validated.Location.AddressLocality,
-					AddressRegion:   normalizeRegion(validated.Location.AddressRegion),
-					AddressCountry:  validated.Location.AddressCountry,
-				},
-				Latitude:  float64PtrNonZero(validated.Location.Latitude),
-				Longitude: float64PtrNonZero(validated.Location.Longitude),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("upsert place: %w", err)
-			}
-			createParams.PrimaryVenueID = &place.ID
-		}
-
-		createdEvent, err := txRepo.Create(ctx, createParams)
-		if err != nil {
-			return nil, fmt.Errorf("create canonical event: %w", err)
-		}
-
-		// Create occurrences.
-		for _, occ := range validated.Occurrences {
-			start, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(occ.StartDate))
-			if parseErr != nil {
-				return nil, fmt.Errorf("parse occurrence startDate: %w", parseErr)
-			}
-			end, parseErr := parseRFC3339Optional("endDate", occ.EndDate)
-			if parseErr != nil {
-				return nil, fmt.Errorf("parse occurrence endDate: %w", parseErr)
-			}
-			tz := strings.TrimSpace(occ.Timezone)
-			if tz == "" {
-				tz = s.defaultTZ
-			}
-			occParams := OccurrenceCreateParams{
-				EventID:   createdEvent.ID,
-				StartTime: start,
-				EndTime:   end,
-				Timezone:  tz,
-			}
-			if createParams.PrimaryVenueID != nil {
-				occParams.VenueID = createParams.PrimaryVenueID
-			}
-			if occ.VirtualURL != "" {
-				occParams.VirtualURL = &occ.VirtualURL
-			}
-			if err := txRepo.CreateOccurrence(ctx, occParams); err != nil {
-				return nil, fmt.Errorf("create occurrence: %w", err)
-			}
-		}
-
-		// Re-fetch to get canonical event with ID populated.
-		canonicalEvent, err = txRepo.GetByULID(ctx, newULID)
-		if err != nil {
-			return nil, fmt.Errorf("re-read created canonical event: %w", err)
-		}
-
-		// Issue 3: Dedup hash check (Layer 1) for create path.
-		// The ingest pipeline runs FindByDedupHash before creating an event; we
-		// cannot do that here (admin has already chosen to create a replacement),
-		// but we MUST warn if the new canonical matches an existing non-retired event.
-		dedupHash := BuildDedupHash(DedupCandidate{
-			Name:      validated.Name,
-			VenueID:   NormalizeVenueKey(validated),
-			StartDate: validated.StartDate,
+		// Create path: delegate to the shared ingest pipeline.
+		// SkipDedupAutoMerge=true: warn instead of auto-merging (admin has explicitly
+		// chosen to create a new canonical event).
+		// ExcludeFromNearDup=params.Retire: don't flag the events we are retiring as
+		// near-duplicates of the new canonical.
+		// TxRepo=txRepo: participate in the caller's transaction so that event
+		// creation and retirement are atomic.
+		coreResult, coreErr := s.ingestService.createEventCore(ctx, *params.Event, CreateEventCoreOptions{
+			SkipDedupAutoMerge: true,
+			ExcludeFromNearDup: params.Retire,
+			TxRepo:             txRepo,
 		})
-		if dedupHash != "" {
-			existing, dedupErr := txRepo.FindByDedupHash(ctx, dedupHash)
-			if dedupErr != nil && !errors.Is(dedupErr, ErrNotFound) {
-				// Non-fatal: log and continue.
-				log.Warn().Err(dedupErr).
-					Str("canonical_ulid", canonicalEvent.ULID).
-					Msg("Consolidate: dedup hash check failed, continuing")
-			} else if existing != nil && existing.ULID != canonicalEvent.ULID {
-				// Check the match is not one of the events we are retiring.
-				retireSet := make(map[string]struct{}, len(params.Retire))
-				for _, r := range params.Retire {
-					retireSet[r] = struct{}{}
-				}
-				if _, retiring := retireSet[existing.ULID]; !retiring {
-					// Flag as needing review — admin can decide what to do.
-					isDuplicate = true
-					needsReview = true
-					warnings = append(warnings, ValidationWarning{
-						Code:    "exact_duplicate",
-						Message: fmt.Sprintf("exact dedup-hash match with existing event %s — review recommended", existing.ULID),
-					})
-				}
-			}
+		if coreErr != nil {
+			return nil, fmt.Errorf("create canonical event: %w", coreErr)
+		}
+		canonicalEvent = coreResult.Event
+		warnings = append(warnings, coreResult.Warnings...)
+		if coreResult.IsDuplicate {
+			isDuplicate = true
+		}
+		if coreResult.NeedsReview {
+			needsReview = true
 		}
 	}
 

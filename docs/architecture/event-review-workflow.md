@@ -117,6 +117,21 @@ Rather than rejecting these events (400 error), we want to:
 
 ---
 
+### Why No Auto-Merge for Consolidated Events?
+
+**Decision:** When a consolidated canonical event is flagged as a near-duplicate or exact-hash match of an existing event, it is sent to the review queue rather than auto-merged.
+
+**Rationale:**
+1. **Admin intent preserved:** The admin explicitly chose this event as canonical — auto-merging would silently override that decision.
+2. **Transparency:** The admin should be warned about the match but not have their choice changed without a second review action.
+3. **Equal standing:** A consolidated event is not more valid than an ingested one — the same dedup rules apply.
+4. **Self-correcting:** The admin can resolve the new review entry with another `POST /admin/events/consolidate` if needed.
+
+**Alternative Considered:** Skip dedup checks entirely for consolidated events.
+- **Rejected because:** Would allow the canonical to become a silent duplicate of an unrelated event. Dedup integrity must apply uniformly.
+
+---
+
 ### Why Expire Reviews After Event Passes?
 
 **Decision:** Delete rejected reviews 7 days after event ends. Delete pending reviews when event starts.
@@ -329,6 +344,74 @@ The `merge` action soft-deletes the duplicate event; the primary event's lifecyc
 ### Companion review dismissal — exact scope
 
 Companion dismissal in `add-occurrence` targets only the **exact counterpart row**: `GetPendingReviewByEventUlidAndDuplicateUlid(companionEventULID, sourceEventULID)`. This is intentionally narrow — it avoids clearing reviews that reference a *different* near-dup pairing on the same event, which would be incorrect.
+
+---
+
+### POST /admin/events/consolidate (bead srv-won8q)
+
+Atomically resolve N duplicate events into a single canonical event. This is the preferred resolution path for duplicate detection — it supersedes the per-review-entry `merge` and `add-occurrence` actions for that use case.
+
+**Two dispatch paths:**
+
+| Path | When to use | How to invoke |
+|------|-------------|---------------|
+| **Create** | The duplicates do not have a clear winner; build the canonical from scratch | Supply `event` (full event payload) in the request body; omit `event_ulid` |
+| **Promote** | One of the duplicates is already the best version and should survive | Supply `event_ulid` (ULID of the event to promote); omit `event` |
+
+**`retire` list (required on both paths):** An array of ULIDs to retire. Each retired event is:
+1. Soft-deleted (`lifecycle_state = 'deleted'`, tombstone reason `"consolidated"`, `superseded_by` → canonical event URI).
+2. All its pending review queue entries are dismissed atomically (status set to `"system"` by the dismissal record).
+
+The canonical event is **never** in the retire list (enforced; returns `422` if violated).
+
+**Create path — post-creation pipeline:**
+
+The new canonical goes through the same normalization and validation pipeline as any ingested event:
+- Quality warnings (reversed dates, multi-session, etc.) accumulate.
+- Layer 1 exact dedup-hash check runs against existing non-retired events. A match that is not in the retire list causes `needsReview = true` and adds an `exact_duplicate` warning.
+- Layer 2 near-duplicate check (pg_trgm) runs if the canonical has a venue and at least one occurrence. Matches against non-retired, non-self events add `potential_duplicate` warnings.
+
+If any warnings are generated, the canonical is stored with `lifecycle_state = 'pending_review'` and a review queue entry is created. Otherwise it is `published`.
+
+**Promote path — post-promotion pipeline:**
+
+The promoted event is not re-normalized or re-validated (it already exists). Only the Layer 2 near-duplicate check runs post-promotion (same filtering: skip self, skip retired events). Matches produce `potential_duplicate` warnings and flip the canonical to `pending_review`.
+
+**Transaction scope:**
+
+All steps — locking retired events, resolving/creating the canonical, soft-deleting retired events, creating tombstones, dismissing review entries, and setting the canonical lifecycle state — run inside a single database transaction.
+
+**Response fields (200 OK):**
+
+```json
+{
+  "event": { /* canonical event object */ },
+  "lifecycle_state": "published",   // or "pending_review" if warnings were generated
+  "needs_review": false,
+  "warnings": [],
+  "retired": ["<ulid1>", "<ulid2>"],
+  "review_entries_dismissed": ["<review-id-1>"]
+}
+```
+
+**Error responses:**
+
+- `400 Bad Request` — both or neither of `event`/`event_ulid` supplied; retire list empty; canonical ULID in the retire list
+- `404 Not Found` — canonical or any retire-target not found
+- `409 Conflict` — any retire-target is already deleted; canonical is deleted (promote path)
+- `422 Unprocessable Entity` — payload validation failure on the create path
+
+**When to use consolidate vs. merge / add-occurrence:**
+
+| Scenario | Preferred action |
+|----------|-----------------|
+| Exact duplicates — one is clearly best | `POST /admin/events/consolidate` (promote path) |
+| Exact duplicates — neither is best; want a clean canonical | `POST /admin/events/consolidate` (create path) |
+| Near-duplicates from review queue — want to merge one into the other | `POST /admin/events/consolidate` (promote path) replaces per-entry `merge` |
+| Two events that are legitimately separate occurrences of a series | `POST .../add-occurrence` (still the right tool) |
+| Single review entry with a simple data quality issue (reversed dates) | `POST .../approve`, `POST .../fix`, or `POST .../reject` |
+
+**Deprecation notice:** The per-review-entry `merge` and `add-occurrence` actions are kept for backward compatibility but are no longer the recommended path for duplicate resolution. Use `POST /api/v1/admin/events/consolidate` instead when resolving duplicates detected via the review queue. The `merge` and `add-occurrence` endpoints remain useful for edge cases (e.g. absorbing a single occurrence into a recurring series).
 
 ---
 
@@ -775,6 +858,12 @@ All steps run inside a single database transaction.
 - `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
 - `410 Gone` — target event has been deleted
 - `422 Unprocessable Entity` — source event has zero or multiple occurrences; review carries both warning types; or review has no supported duplicate warning (see constraints above)
+
+---
+
+### POST /admin/events/consolidate
+
+See [POST /admin/events/consolidate (bead srv-won8q)](#post-admineventsconsolidate-bead-srv-won8q) under the Review Action State Machine section. This endpoint operates outside the per-review-entry action model: it resolves N events simultaneously, retiring them with tombstones and promoting or creating a single canonical. Refer to the full description above for request/response shape.
 
 ---
 

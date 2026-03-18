@@ -192,3 +192,22 @@ ALTER TABLE organizations ADD COLUMN merged_into_id UUID REFERENCES organization
 -- Composite PK (event_id_a, event_id_b) with canonical ULID ordering
 -- Prevents re-flagging known non-duplicate pairs on future ingestion
 ```
+
+## Consolidation & the Dedup Pipeline
+
+`POST /api/v1/admin/events/consolidate` (bead srv-won8q) is the primary resolution path for confirmed duplicates. After creating or promoting the canonical event and retiring the others, the consolidation pipeline mirrors ingest exactly:
+
+**Layer 1 — exact dedup-hash check (create path only):**
+The new canonical's dedup hash is computed and checked against existing non-retired events. If a match is found that is not in the retire list, the canonical is flagged with an `exact_duplicate` warning and routed to `pending_review`.
+
+**Layer 2 — near-duplicate check (both paths, venue-gated):**
+`FindNearDuplicates` runs against the canonical's venue and start time. Retired events and the canonical itself are excluded from results. Any remaining matches add `potential_duplicate` warnings and set the canonical to `pending_review`.
+
+**Why no auto-merge for consolidated events:**
+When the canonical is flagged by either layer, it enters the review queue rather than being auto-merged. See the [Why No Auto-Merge for Consolidated Events?](../architecture/event-review-workflow.md#why-no-auto-merge-for-consolidated-events) rationale in the event review workflow doc.
+
+**Retired events and dedup:**
+Retired events are soft-deleted (`lifecycle_state = 'deleted'`) before the post-consolidation dedup checks run. The near-duplicate SQL query filters `lifecycle_state NOT IN ('deleted')`, so retired events are naturally excluded and cannot be matched again.
+
+**Review queue entries:**
+Pending review entries for retired events are dismissed atomically inside the consolidation transaction (before commit). If the canonical itself is flagged, a new review queue entry is created for it in the same transaction. The admin can resolve that new entry with another consolidation if needed.

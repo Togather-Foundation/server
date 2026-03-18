@@ -363,6 +363,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
 	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation, cfg.Server.BaseURL)
+	adminService.WithIngestService(ingestService)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
 	adminHandler.Loc = loc
 
