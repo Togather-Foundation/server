@@ -34,7 +34,7 @@ scripts/review-regression-test.sh --generate-only
 
 | ID | Name | Events | Workflow | Warning Codes | Auto-dedup? |
 |----|------|--------|----------|---------------|-------------|
-| RS-01 | Weekly Yoga | 2 | multi-session keyword + manual add-occurrence | `multi_session_likely` | No (different dates) |
+| RS-01 | Weekly Yoga | 2 | multi-session keyword + approve both (add-occurrence not available via review-queue API) | `multi_session_likely` | No (different dates) |
 | RS-02 | Book Club | 2 | add-occurrence (near-dup path) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.63) |
 | RS-03 | Tech Meetup | 2 | manual add-occurrence on pending series | _(none — publishes directly)_ | No (different dates, low similarity) |
 | RS-04 | Art Walk | 2 | manual add-occurrence on draft target | _(none — publishes directly)_ | No (different dates, low similarity) |
@@ -66,15 +66,14 @@ scripts/review-regression-test.sh --generate-only
 4. Verify:
    - [ ] Base series transitions to `published` with 4 occurrences.
    - [ ] Review status on the base series entry is `approved`.
-5. Now handle the new occurrence. Click **Add as Occurrence** and manually select the base series as target.
+5. **Approve** the new occurrence as well (it is also flagged `multi_session_likely` due to the "Weekly" keyword).
 6. Verify:
-   - [ ] Source event (new occurrence) is soft-deleted (`lifecycle_state = 'deleted'`).
-   - [ ] Target series now has **5** occurrences (was 4).
-   - [ ] New occurrence's start/end times match the week-5 dates.
-   - [ ] Review status on the new occurrence entry is `merged`.
-   - [ ] Target series `lifecycle_state` remains `published`.
+   - [ ] New occurrence transitions to `published` as a standalone event.
+   - [ ] Review status on the new occurrence entry is `approved`.
 
-**Note:** This scenario exercises two workflows: (a) approving a `multi_session_likely` false positive, and (b) manually adding an occurrence to an existing series when near-duplicate detection doesn't automatically link them. The "Weekly" keyword trigger is by design — it's a useful guardrail for real-world events where "Weekly Yoga" might actually be a multi-session course sold as a single ticket.
+**Known limitation — add-occurrence not available from this review entry:** The review-queue **Add as Occurrence** API action requires a `potential_duplicate` or `near_duplicate_of_new_event` warning. Because both RS-01 events carry only `multi_session_likely`, the API returns 422 if that action is attempted. To consolidate the new occurrence into the base series programmatically, an admin would need to use the manual occurrence-management UI (outside the review queue flow) or direct SQL. This scenario therefore tests only the approve path; occurrence consolidation is out of scope here.
+
+**Note:** The "Weekly" keyword trigger is by design — it's a useful guardrail for real-world events where "Weekly Yoga" might actually be a multi-session course sold as a single ticket.
 
 ---
 
@@ -120,7 +119,7 @@ This scenario tests lifecycle preservation during add-occurrence. To exercise it
    - [ ] Target series now has **3** occurrences (was 2).
    - [ ] Target series `lifecycle_state` stays `pending_review` (the pre-existing review is still unresolved).
 
-**Note:** This scenario deliberately does not rely on automatic dedup. It tests that the add-occurrence action preserves a pending lifecycle when other unresolved reviews exist on the target.
+**Note:** This scenario deliberately does not rely on automatic dedup. It tests that the add-occurrence action preserves a pending lifecycle when other unresolved reviews exist on the target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the admin UI's manual occurrence-management form (not via the review-queue add-occurrence API). The manual SQL setup is required to put the series in `pending_review` before the add-occurrence so that the lifecycle-preservation invariant can be verified.
 
 ---
 
@@ -143,7 +142,7 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
    - [ ] Target series has **3** occurrences.
    - [ ] Target series `lifecycle_state` remains `draft` (not auto-promoted to published by add-occurrence).
 
-**Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision. This scenario deliberately does not rely on automatic dedup — it tests manual add-occurrence on a draft target.
+**Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision. This scenario deliberately does not rely on automatic dedup — it tests manual add-occurrence on a draft target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the admin UI's manual occurrence-management form (not via the review-queue add-occurrence API). The SQL state change is required before the add-occurrence so that the draft-preservation invariant can be verified.
 
 ---
 
@@ -327,10 +326,10 @@ After completing all scenarios, verify:
 - [ ] Tombstone records exist for all soft-deleted events with correct `superseded_by_uri` references (column is `superseded_by_uri`, not `superseded_by`).
 - [ ] The `not_duplicates` table has entries from RS-07 (and RS-11 if applicable).
 - [ ] Event occurrence counts match expectations after all add-occurrence actions (verify via the SQL query below or via `GET /api/v1/events/{ulid}` — the `subEvent` array is populated for all occurrences and is the authoritative count used by the admin detail page):
-  - RS-01: 5 (was 4, +1 from manual add-occurrence)
+  - RS-01: 4 (base series) + 1 (new occurrence as standalone event) — add-occurrence not supported via review-queue API for `multi_session_likely`-only reviews
   - RS-02: 3 (was 2, +1 from near-dup add-occurrence)
-  - RS-03: 3 (was 2, +1 from manual add-occurrence)
-  - RS-04: 3 (was 2, +1 from manual add-occurrence)
+  - RS-03: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
+  - RS-04: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
   - RS-10: 2 (1+1 — source's sole occurrence is added to the target, giving 2 total)
 
 ### SQL Verification Queries

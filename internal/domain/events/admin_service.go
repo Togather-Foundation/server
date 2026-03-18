@@ -1026,14 +1026,74 @@ func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEv
 		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
 	}
 
+	// Look up the companion review on the primary event (the near_duplicate_of_new_event
+	// row that points back to the duplicate) and lock it BEFORE any event locks.
+	// This matches the review-first lock ordering used by add-occurrence and prevents
+	// deadlocks when concurrent admin actions touch the same review/event set.
+	companionReview, compErr := txRepo.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, params.PrimaryULID, params.DuplicateULID)
+	if compErr != nil && !errors.Is(compErr, ErrNotFound) {
+		return nil, fmt.Errorf("lookup companion review for primary %s: %w", params.PrimaryULID, compErr)
+	}
+	// companionReview == nil when ErrNotFound or no pending entry — both are fine.
+
+	var lockedCompanion *ReviewQueueEntry
+	if companionReview != nil {
+		lc, lockErr := txRepo.LockReviewQueueEntryForUpdate(ctx, companionReview.ID)
+		if lockErr != nil {
+			if errors.Is(lockErr, ErrNotFound) {
+				// Companion was concurrently deleted — treat as absent.
+				lockedCompanion = nil
+			} else {
+				return nil, fmt.Errorf("lock companion review id=%d: %w", companionReview.ID, lockErr)
+			}
+		} else {
+			lockedCompanion = lc
+		}
+	}
+
 	if err := s.executeMerge(ctx, txRepo, params); err != nil {
 		return nil, err
+	}
+
+	// Dismiss the companion review entry on the primary event (if present and still
+	// pending).  This mirrors the companion handling in AddOccurrenceFromReview.
+	if lockedCompanion != nil && lockedCompanion.Status == "pending" {
+		if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, params.DuplicateULID); mergeErr != nil {
+			if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
+				// Race outcome: companion was already dismissed — non-fatal.
+				_ = mergeErr
+			} else {
+				return nil, fmt.Errorf("dismiss companion review id=%d: %w", lockedCompanion.ID, mergeErr)
+			}
+		}
 	}
 
 	// Update the review queue entry to "merged" status — within the same transaction
 	reviewEntry, err := txRepo.MergeReview(ctx, reviewID, reviewedBy, params.PrimaryULID)
 	if err != nil {
 		return nil, fmt.Errorf("update review status: %w", err)
+	}
+
+	// Recompute whether the primary event should leave pending_review.  The merge
+	// resolved the companion review (if any), but the primary may have OTHER
+	// unresolved review rows.  Only restore lifecycle to "published" if none remain.
+	primary, primaryErr := txRepo.GetByULID(ctx, params.PrimaryULID)
+	if primaryErr != nil {
+		return nil, fmt.Errorf("get primary event post-merge: %w", primaryErr)
+	}
+	if primary.LifecycleState == "pending_review" {
+		remaining, remErr := txRepo.GetPendingReviewByEventUlid(ctx, params.PrimaryULID)
+		if remErr != nil && !errors.Is(remErr, ErrNotFound) {
+			return nil, fmt.Errorf("recheck pending review for primary %s: %w", params.PrimaryULID, remErr)
+		}
+		if remaining == nil {
+			publishedState := "published"
+			if _, err := txRepo.UpdateEvent(ctx, params.PrimaryULID, UpdateEventParams{
+				LifecycleState: &publishedState,
+			}); err != nil {
+				return nil, fmt.Errorf("restore primary lifecycle to published: %w", err)
+			}
+		}
 	}
 
 	// Commit transaction — all operations succeed or none do

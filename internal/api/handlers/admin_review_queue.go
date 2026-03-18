@@ -1067,8 +1067,10 @@ func getUserFromContext(r *http.Request) string {
 	return "admin"
 }
 
-// recordNotDuplicatesFromWarnings extracts potential_duplicate warnings from a review entry
+// recordNotDuplicatesFromWarnings extracts duplicate-related warnings from a review entry
 // and records each matched pair as not-duplicates so future ingestion won't re-flag them.
+// Handles both potential_duplicate and near_duplicate_of_new_event warning codes so that
+// approving either side of a companion pair records the not-duplicate decision correctly.
 // Errors are logged but not propagated — this is a best-effort enhancement.
 func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Context, review *events.ReviewQueueEntry, reviewedBy string) {
 	if review == nil || len(review.Warnings) == 0 {
@@ -1085,36 +1087,54 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 
 	eventULID := review.EventULID
 	for _, w := range warnings {
-		if w.Code != "potential_duplicate" {
-			continue
-		}
-		matchesRaw, ok := w.Details["matches"]
-		if !ok {
-			continue
-		}
-		// matches is []any where each element is map[string]any with "ulid", "name", "similarity"
-		matches, ok := matchesRaw.([]any)
-		if !ok {
-			continue
-		}
-		for _, m := range matches {
-			matchMap, ok := m.(map[string]any)
+		switch w.Code {
+		case "potential_duplicate":
+			matchesRaw, ok := w.Details["matches"]
 			if !ok {
 				continue
 			}
-			candidateULID, ok := matchMap["ulid"].(string)
-			if !ok || candidateULID == "" {
+			// matches is []any where each element is map[string]any with "ulid", "name", "similarity"
+			matches, ok := matchesRaw.([]any)
+			if !ok {
 				continue
 			}
-			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
-				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
+			for _, m := range matches {
+				matchMap, ok := m.(map[string]any)
+				if !ok {
+					continue
+				}
+				candidateULID, ok := matchMap["ulid"].(string)
+				if !ok || candidateULID == "" {
+					continue
+				}
+				if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
+					slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
+						slog.Int("review_id", review.ID),
+						slog.String("event_ulid", eventULID),
+						slog.String("candidate_ulid", candidateULID),
+						slog.String("error", err.Error()))
+				}
+				// Best-effort: dismiss the companion's warning that pointed back at this event.
+				h.dismissCompanionDuplicateWarning(ctx, candidateULID, eventULID)
+			}
+
+		case "near_duplicate_of_new_event":
+			// The companion (new) event ULID is stored in DuplicateOfEventULID on the
+			// review entry — the warning details only contain display fields (name, dates)
+			// and do not embed a ULID.  Use the FK directly.
+			if review.DuplicateOfEventULID == nil || *review.DuplicateOfEventULID == "" {
+				continue
+			}
+			companionULID := *review.DuplicateOfEventULID
+			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, companionULID, reviewedBy); err != nil {
+				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair (near-dup side)",
 					slog.Int("review_id", review.ID),
 					slog.String("event_ulid", eventULID),
-					slog.String("candidate_ulid", candidateULID),
+					slog.String("companion_ulid", companionULID),
 					slog.String("error", err.Error()))
 			}
-			// Best-effort: dismiss the companion's warning that pointed back at this event.
-			h.dismissCompanionDuplicateWarning(ctx, candidateULID, eventULID)
+			// Best-effort: dismiss the companion's warning that points back at this event.
+			h.dismissCompanionDuplicateWarning(ctx, companionULID, eventULID)
 		}
 	}
 }

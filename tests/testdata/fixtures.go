@@ -1078,11 +1078,16 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs02Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 
 	// Near-dup: similar name (similarity ~0.63) + same venue + same date → triggers dedup.
+	// Occurrence is on the same calendar day as Base's first occurrence (Tuesday) but at a
+	// later time (2pm-4pm vs 10am-12pm) so the overlap guard doesn't fire when absorbing
+	// this event into Base via add-occurrence.
+	rs02NearDupStart := anchor.Add(2*24*time.Hour + 4*time.Hour) // Tuesday 2pm
+	rs02NearDupEnd := rs02NearDupStart.Add(2 * time.Hour)        // Tuesday 4pm
 	rs02NearDup := events.EventInput{
 		Name:        "RS-02 Book Club — Tuesday Night",
 		Description: "Book club gathering at Snakes and Lattes — same evening, different listing source.",
-		StartDate:   rs02Base.Occurrences[0].StartDate,
-		EndDate:     rs02Base.Occurrences[0].EndDate,
+		StartDate:   rs02NearDupStart.Format(time.RFC3339),
+		EndDate:     rs02NearDupEnd.Format(time.RFC3339),
 		Location:    loc(bookclub),
 		Organizer:   org(bookOrg),
 		Source:      src(blogto, "rs02-bookclub-neardup"),
@@ -1290,8 +1295,8 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// -----------------------------------------------------------------------
 	// RS-10: Choir Rehearsal — Order-independent consolidation pair
 	// -----------------------------------------------------------------------
-	choirAStart := anchor.Add(3 * 24 * time.Hour) // Wednesday
-	choirAEnd := choirAStart.Add(2 * time.Hour)
+	choirAStart := anchor.Add(3 * 24 * time.Hour) // Wednesday 10am
+	choirAEnd := choirAStart.Add(2 * time.Hour)   // Wednesday 12pm
 	rs10SourceA := events.EventInput{
 		Name:        "RS-10 Choir Rehearsal — Source A",
 		Description: "Weekly choir rehearsal at Bampot Tea House. All voice types welcome.",
@@ -1305,14 +1310,18 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		Keywords:    []string{"choir", "singing", "rehearsal", "toronto"},
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
-	// Source B: same date as Source A (dedup requires same date + same venue + similarity > 0.4).
+	// Source B: same calendar date as Source A (dedup requires same date + same venue + similarity > 0.4).
+	// Occurrence is at 2pm-4pm on the same Wednesday — non-overlapping with Source A's 10am-12pm slot,
+	// so add-occurrence can absorb Source B into Source A without a 409 Conflict.
 	// Similarity between "RS-10 Choir Rehearsal — Source A" and "RS-10 Choir Rehearsal — Source B"
 	// is ~0.875, well above the 0.4 threshold.
+	choirBStart := anchor.Add(3*24*time.Hour + 4*time.Hour) // Wednesday 2pm
+	choirBEnd := choirBStart.Add(2 * time.Hour)             // Wednesday 4pm
 	rs10SourceB := events.EventInput{
 		Name:        "RS-10 Choir Rehearsal — Source B",
 		Description: "Choir rehearsal — same ensemble, listed from a second source.",
-		StartDate:   choirAStart.Format(time.RFC3339),
-		EndDate:     choirAEnd.Format(time.RFC3339),
+		StartDate:   choirBStart.Format(time.RFC3339),
+		EndDate:     choirBEnd.Format(time.RFC3339),
 		Location:    loc(choir),
 		Organizer:   org(choirOrg),
 		Source:      src(luma, "rs10-choir-sourceb"),
