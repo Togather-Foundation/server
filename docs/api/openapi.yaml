@@ -558,6 +558,93 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /admin/events/consolidate:
+    post:
+      operationId: consolidateEvents
+      summary: Atomically consolidate multiple events into one canonical event
+      description: |
+        Consolidate N events into a single canonical event in one atomic operation.
+        Either creates a new canonical event (`event`) or promotes an existing one
+        (`event_ulid`). All events listed in `retire` are soft-deleted with tombstones.
+        Open review queue entries for retired events are dismissed automatically.
+
+        Post-consolidation validation (duplicate detection, quality checks) runs on
+        the canonical event; results are returned in `warnings`, `is_duplicate`, and
+        `needs_review`.
+
+        Exactly one of `event` or `event_ulid` must be provided. `retire` is required
+        and must contain at least one ULID. The canonical event's ULID must not appear
+        in the `retire` list.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - retire
+              properties:
+                event:
+                  description: >
+                    Full event payload to create a new canonical event.
+                    Mutually exclusive with event_ulid.
+                  $ref: '#/components/schemas/EventInput'
+                event_ulid:
+                  type: string
+                  description: >
+                    ULID of an existing event to promote as the canonical event.
+                    Mutually exclusive with event.
+                retire:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  description: >
+                    Event ULIDs to soft-delete with tombstones. All must exist and
+                    not already be deleted. Required, minimum 1 entry.
+      responses:
+        '200':
+          description: Consolidation succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolidateResponse'
+        '400':
+          description: |
+            Invalid request. Possible reasons:
+            - Both `event` and `event_ulid` were provided (mutually exclusive)
+            - Neither `event` nor `event_ulid` was provided
+            - `retire` list is empty or missing
+            - Canonical event's ULID appears in `retire`
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Retire target or canonical event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: |
+            Unprocessable request. Possible reasons:
+            - One or more retire targets are already deleted
+            - The canonical event has been deleted
+            - Validation error in the provided event payload
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /admin/events/merge:
     post:
       operationId: mergeEvents
@@ -568,6 +655,10 @@ paths:
         
         Note: Automatic duplicate detection (/admin/duplicates list endpoint) 
         is not yet implemented. Use this endpoint for manual merges.
+
+        **Deprecated:** Use `POST /api/v1/admin/events/consolidate` instead, which
+        provides N-to-1 consolidation with atomic retire, review dismissal, and
+        post-consolidation validation.
       tags: [Admin]
       x-internal: true
       security:
@@ -1225,6 +1316,14 @@ paths:
       description: |
         When a review entry's event is actually a new occurrence of an existing recurring-series
         event rather than a true duplicate, use this endpoint to atomically:
+
+        **Deprecated (for the merge-duplicate use case):** Use
+        `POST /api/v1/admin/events/consolidate` instead, which provides N-to-1
+        consolidation with atomic retire, review dismissal, and post-consolidation
+        validation. This endpoint remains the correct choice when the admin intent
+        is specifically to absorb a single-occurrence event as a new occurrence on
+        an existing recurring series.
+
         1. Add the absorbed event's start/end time as a new occurrence on the target series.
         2. Soft-delete the absorbed event (tombstone reason `absorbed_as_occurrence`).
         3. Mark the review as merged.
@@ -2590,6 +2689,47 @@ components:
         default: 50
 
   schemas:
+    ConsolidateResponse:
+      type: object
+      description: Result of an atomic event consolidation operation
+      properties:
+        event:
+          description: The canonical event after consolidation
+          $ref: '#/components/schemas/Event'
+        lifecycle_state:
+          type: string
+          enum: [published, pending_review, draft]
+          description: Lifecycle state of the canonical event after consolidation
+        is_duplicate:
+          type: boolean
+          description: >
+            True if the canonical event was flagged as a near-duplicate of another
+            non-retired event during post-consolidation validation.
+        is_merged:
+          type: boolean
+          description: >
+            Always false for consolidation (admin intent is preserved, never auto-merged).
+        needs_review:
+          type: boolean
+          description: >
+            True if the canonical event was sent to the review queue due to duplicate
+            detection or quality issues found during post-consolidation validation.
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationWarning'
+          description: Validation warnings from post-consolidation checks
+        retired:
+          type: array
+          items:
+            type: string
+          description: ULIDs of events that were successfully retired (soft-deleted)
+        review_entries_dismissed:
+          type: array
+          items:
+            type: integer
+          description: IDs of review queue entries that were dismissed for retired events
+
     OccurrenceInput:
       type: object
       description: Input for creating or updating an event occurrence
