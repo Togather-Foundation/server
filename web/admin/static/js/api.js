@@ -190,7 +190,21 @@ const API = {
             body: JSON.stringify({ source_id: sourceId, target_id: targetId })
         }),
         
-        pending: () => API.request('/api/v1/admin/events/pending')
+        pending: () => API.request('/api/v1/admin/events/pending'),
+
+        occurrences: {
+            create: (eventId, data) => API.request(`/api/v1/admin/events/${eventId}/occurrences`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            }),
+            update: (eventId, occurrenceId, data) => API.request(`/api/v1/admin/events/${eventId}/occurrences/${occurrenceId}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            }),
+            delete: (eventId, occurrenceId) => API.request(`/api/v1/admin/events/${eventId}/occurrences/${occurrenceId}`, {
+                method: 'DELETE'
+            })
+        }
     },
     
     // Admin Stats API

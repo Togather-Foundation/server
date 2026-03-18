@@ -438,7 +438,34 @@
         modal.show();
     };
 
-    window.saveOccurrence = function() {
+    // occurrenceUUIDFromId extracts the UUID from an occurrence @id URI like
+    // "https://.../api/v1/admin/events/{ULID}/occurrences/{UUID}".
+    // Returns null if the URI does not match or id is falsy.
+    function occurrenceUUIDFromId(id) {
+        if (!id) return null;
+        const m = id.match(/occurrences\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+        return m ? m[1] : null;
+    }
+
+    // buildOccurrencePayload converts the internal occurrence object to the
+    // shape expected by POST /api/v1/admin/events/{id}/occurrences.
+    function buildOccurrencePayload(occ) {
+        const payload = {
+            start_time: occ.start_time,
+            timezone: occ.timezone || 'America/Toronto',
+        };
+        if (occ.end_time)      payload.end_time     = occ.end_time;
+        if (occ.door_time)     payload.door_time     = occ.door_time;
+        if (occ.virtual_url)   payload.virtual_url   = occ.virtual_url;
+        // venue_id in local state is a venue URI; extract the ULID for the API.
+        if (occ.venue_id) {
+            const m = occ.venue_id.match(/\/([A-Z0-9]{26})$/i);
+            if (m) payload.venue_ulid = m[1];
+        }
+        return payload;
+    }
+
+    window.saveOccurrence = async function() {
         // Guard: occurrence-logic.js must have loaded before this is called.
         // If the script failed to load (network error, asset misconfiguration) we
         // surface a meaningful error rather than letting a ReferenceError propagate.
@@ -465,13 +492,37 @@
         }
 
         const occurrence = result.occurrence;
+        const payload = buildOccurrencePayload(occurrence);
 
-        if (indexValue === '') {
-            // Add new occurrence
-            occurrences.push(occurrence);
-        } else {
-            // Update existing occurrence — id already preserved by buildOccurrenceFromForm.
-            occurrences[parseInt(indexValue, 10)] = occurrence;
+        try {
+            if (indexValue === '') {
+                // POST new occurrence
+                const created = await API.events.occurrences.create(eventId, payload);
+                // Store the server-assigned UUID as the @id URI so future edits/deletes work.
+                occurrence.id = created.id
+                    ? (window.location.origin + '/api/v1/admin/events/' + eventId + '/occurrences/' + created.id)
+                    : null;
+                occurrences.push(occurrence);
+                showToast('Occurrence added', 'success');
+            } else {
+                // PUT existing occurrence
+                const idx = parseInt(indexValue, 10);
+                const existing = occurrences[idx];
+                const uuid = occurrenceUUIDFromId(existing && existing.id);
+                if (!uuid) {
+                    showToast('Cannot update occurrence: missing ID. Please reload and try again.', 'error');
+                    return;
+                }
+                await API.events.occurrences.update(eventId, uuid, payload);
+                // Preserve the @id on the updated record.
+                occurrence.id = existing.id;
+                occurrences[idx] = occurrence;
+                showToast('Occurrence updated', 'success');
+            }
+        } catch (error) {
+            console.error('Failed to save occurrence:', error);
+            showToast(error.message || 'Failed to save occurrence', 'error');
+            return;
         }
 
         renderOccurrences();
@@ -479,15 +530,29 @@
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('occurrence-modal'));
         modal.hide();
-
-        showToast(indexValue === '' ? 'Occurrence added' : 'Occurrence updated', 'success');
     };
 
-    window.removeOccurrence = function(index) {
-        if (confirm('Are you sure you want to remove this occurrence?')) {
+    window.removeOccurrence = async function(index) {
+        if (!confirm('Are you sure you want to remove this occurrence?')) return;
+
+        const occ = occurrences[index];
+        const uuid = occurrenceUUIDFromId(occ && occ.id);
+        if (!uuid) {
+            // Occurrence not yet persisted (added locally but save failed?) — just remove locally.
             occurrences.splice(index, 1);
             renderOccurrences();
             showToast('Occurrence removed', 'success');
+            return;
+        }
+
+        try {
+            await API.events.occurrences.delete(eventId, uuid);
+            occurrences.splice(index, 1);
+            renderOccurrences();
+            showToast('Occurrence removed', 'success');
+        } catch (error) {
+            console.error('Failed to remove occurrence:', error);
+            showToast(error.message || 'Failed to remove occurrence', 'error');
         }
     };
 

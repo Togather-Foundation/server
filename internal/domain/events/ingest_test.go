@@ -808,15 +808,15 @@ func (m *MockRepository) InsertOccurrence(_ context.Context, params OccurrenceCr
 	return &Occurrence{StartTime: params.StartTime}, nil
 }
 
-func (m *MockRepository) GetOccurrenceByID(_ context.Context, _ string) (*Occurrence, error) {
+func (m *MockRepository) GetOccurrenceByID(_ context.Context, _, _ string) (*Occurrence, error) {
 	return nil, ErrNotFound
 }
 
-func (m *MockRepository) UpdateOccurrence(_ context.Context, occurrenceID string, _ OccurrenceUpdateParams) (*Occurrence, error) {
+func (m *MockRepository) UpdateOccurrence(_ context.Context, _, occurrenceID string, _ OccurrenceUpdateParams) (*Occurrence, error) {
 	return &Occurrence{ID: occurrenceID}, nil
 }
 
-func (m *MockRepository) DeleteOccurrenceByID(_ context.Context, _ string) error {
+func (m *MockRepository) DeleteOccurrenceByID(_ context.Context, _, _ string) error {
 	return nil
 }
 

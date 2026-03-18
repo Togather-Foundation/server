@@ -122,15 +122,25 @@ func (q *Queries) CreateEventTombstone(ctx context.Context, arg CreateEventTombs
 	return err
 }
 
-const deleteOccurrenceByID = `-- name: DeleteOccurrenceByID :exec
+const deleteOccurrenceByID = `-- name: DeleteOccurrenceByID :one
 DELETE FROM event_occurrences
  WHERE id = $1::uuid
+   AND event_id = $2::uuid
+RETURNING id
 `
 
-// Delete a single occurrence by its UUID.
-func (q *Queries) DeleteOccurrenceByID(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteOccurrenceByID, id)
-	return err
+type DeleteOccurrenceByIDParams struct {
+	ID      pgtype.UUID `json:"id"`
+	EventID pgtype.UUID `json:"event_id"`
+}
+
+// Delete a single occurrence by its UUID, scoped to the given event. Returns the deleted ID
+// so callers can detect when no row matched (event mismatch or already deleted).
+func (q *Queries) DeleteOccurrenceByID(ctx context.Context, arg DeleteOccurrenceByIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteOccurrenceByID, arg.ID, arg.EventID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteOccurrencesByEventULID = `-- name: DeleteOccurrencesByEventULID :exec
@@ -360,7 +370,13 @@ SELECT o.id,
   FROM event_occurrences o
   LEFT JOIN places p ON p.id = o.venue_id
  WHERE o.id = $1::uuid
+   AND o.event_id = $2::uuid
 `
+
+type GetOccurrenceByIDParams struct {
+	ID      pgtype.UUID `json:"id"`
+	EventID pgtype.UUID `json:"event_id"`
+}
 
 type GetOccurrenceByIDRow struct {
 	ID            pgtype.UUID        `json:"id"`
@@ -381,9 +397,9 @@ type GetOccurrenceByIDRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Fetch a single occurrence row by its UUID. Returns the occurrence with its venue ULID via join.
-func (q *Queries) GetOccurrenceByID(ctx context.Context, id pgtype.UUID) (GetOccurrenceByIDRow, error) {
-	row := q.db.QueryRow(ctx, getOccurrenceByID, id)
+// Fetch a single occurrence row by its UUID, scoped to the given event.
+func (q *Queries) GetOccurrenceByID(ctx context.Context, arg GetOccurrenceByIDParams) (GetOccurrenceByIDRow, error) {
+	row := q.db.QueryRow(ctx, getOccurrenceByID, arg.ID, arg.EventID)
 	var i GetOccurrenceByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -710,13 +726,14 @@ UPDATE event_occurrences
        door_time      = CASE WHEN $5::boolean THEN $6 ELSE door_time END,
        venue_id       = CASE WHEN $7::boolean THEN $8::uuid ELSE venue_id END,
        virtual_url    = CASE WHEN $9::boolean THEN $10 ELSE virtual_url END,
-       ticket_url     = COALESCE($11, ticket_url),
-       price_min      = CASE WHEN $12::boolean THEN $13 ELSE price_min END,
-       price_max      = CASE WHEN $14::boolean THEN $15 ELSE price_max END,
-       price_currency = COALESCE($16, price_currency),
-       availability   = COALESCE($17, availability),
+       ticket_url     = CASE WHEN $11::boolean THEN $12 ELSE ticket_url END,
+       price_min      = CASE WHEN $13::boolean THEN $14 ELSE price_min END,
+       price_max      = CASE WHEN $15::boolean THEN $16 ELSE price_max END,
+       price_currency = COALESCE($17, price_currency),
+       availability   = COALESCE($18, availability),
        updated_at     = now()
- WHERE id = $18::uuid
+ WHERE id = $19::uuid
+   AND event_id = $20::uuid
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
           ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at
 `
@@ -732,6 +749,7 @@ type UpdateOccurrenceByIDParams struct {
 	VenueID       pgtype.UUID        `json:"venue_id"`
 	VirtualUrlSet pgtype.Bool        `json:"virtual_url_set"`
 	VirtualUrl    pgtype.Text        `json:"virtual_url"`
+	TicketUrlSet  pgtype.Bool        `json:"ticket_url_set"`
 	TicketUrl     pgtype.Text        `json:"ticket_url"`
 	PriceMinSet   pgtype.Bool        `json:"price_min_set"`
 	PriceMin      pgtype.Numeric     `json:"price_min"`
@@ -740,6 +758,7 @@ type UpdateOccurrenceByIDParams struct {
 	PriceCurrency pgtype.Text        `json:"price_currency"`
 	Availability  pgtype.Text        `json:"availability"`
 	ID            pgtype.UUID        `json:"id"`
+	EventID       pgtype.UUID        `json:"event_id"`
 }
 
 type UpdateOccurrenceByIDRow struct {
@@ -760,9 +779,9 @@ type UpdateOccurrenceByIDRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Partial-update a single occurrence row. Only non-NULL arguments are applied (COALESCE pattern).
-// venue_id and virtual_url use explicit NULLability: pass the sentinel string 'NULL' to clear them
-// (handled at the repository layer via pgtype.UUID{Valid:false}).
+// Partial-update a single occurrence row, scoped to the given event.
+// Only non-NULL arguments are applied (COALESCE pattern).
+// venue_id, virtual_url, ticket_url use explicit NULLability via CASE WHEN *_set pattern.
 func (q *Queries) UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrenceByIDParams) (UpdateOccurrenceByIDRow, error) {
 	row := q.db.QueryRow(ctx, updateOccurrenceByID,
 		arg.StartTime,
@@ -775,6 +794,7 @@ func (q *Queries) UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrence
 		arg.VenueID,
 		arg.VirtualUrlSet,
 		arg.VirtualUrl,
+		arg.TicketUrlSet,
 		arg.TicketUrl,
 		arg.PriceMinSet,
 		arg.PriceMin,
@@ -783,6 +803,7 @@ func (q *Queries) UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrence
 		arg.PriceCurrency,
 		arg.Availability,
 		arg.ID,
+		arg.EventID,
 	)
 	var i UpdateOccurrenceByIDRow
 	err := row.Scan(

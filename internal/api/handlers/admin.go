@@ -1428,24 +1428,24 @@ func (h *AdminHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 // occurrenceResponse is the JSON body returned by the admin occurrence endpoints.
 type occurrenceResponse struct {
 	ID            string   `json:"id"`
-	StartDate     string   `json:"startDate"`
-	EndDate       string   `json:"endDate,omitempty"`
+	StartTime     string   `json:"start_time"`
+	EndTime       string   `json:"end_time,omitempty"`
 	Timezone      string   `json:"timezone,omitempty"`
-	DoorTime      string   `json:"doorTime,omitempty"`
-	VenueID       *string  `json:"venueId,omitempty"`
-	VenueULID     *string  `json:"venueUlid,omitempty"`
-	VirtualURL    *string  `json:"virtualUrl,omitempty"`
-	TicketURL     string   `json:"ticketUrl,omitempty"`
-	PriceMin      *float64 `json:"priceMin,omitempty"`
-	PriceMax      *float64 `json:"priceMax,omitempty"`
-	PriceCurrency string   `json:"priceCurrency,omitempty"`
+	DoorTime      string   `json:"door_time,omitempty"`
+	VenueID       *string  `json:"venue_id,omitempty"`
+	VenueULID     *string  `json:"venue_ulid,omitempty"`
+	VirtualURL    *string  `json:"virtual_url,omitempty"`
+	TicketURL     string   `json:"ticket_url,omitempty"`
+	PriceMin      *float64 `json:"price_min,omitempty"`
+	PriceMax      *float64 `json:"price_max,omitempty"`
+	PriceCurrency string   `json:"price_currency,omitempty"`
 	Availability  string   `json:"availability,omitempty"`
 }
 
 func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
 	resp := occurrenceResponse{
 		ID:            occ.ID,
-		StartDate:     occ.StartTime.Format(time.RFC3339),
+		StartTime:     occ.StartTime.Format(time.RFC3339),
 		Timezone:      occ.Timezone,
 		VenueID:       occ.VenueID,
 		VenueULID:     occ.VenueULID,
@@ -1457,7 +1457,7 @@ func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
 		Availability:  occ.Availability,
 	}
 	if occ.EndTime != nil {
-		resp.EndDate = occ.EndTime.Format(time.RFC3339)
+		resp.EndTime = occ.EndTime.Format(time.RFC3339)
 	}
 	if occ.DoorTime != nil {
 		resp.DoorTime = occ.DoorTime.Format(time.RFC3339)
@@ -1479,16 +1479,16 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req struct {
-		StartDate     string   `json:"startDate"`
-		EndDate       *string  `json:"endDate"`
+		StartTime     string   `json:"start_time"`
+		EndTime       *string  `json:"end_time"`
 		Timezone      string   `json:"timezone"`
-		DoorTime      *string  `json:"doorTime"`
-		VenueULID     *string  `json:"venueUlid"`
-		VirtualURL    *string  `json:"virtualUrl"`
-		TicketURL     *string  `json:"ticketUrl"`
-		PriceMin      *float64 `json:"priceMin"`
-		PriceMax      *float64 `json:"priceMax"`
-		PriceCurrency string   `json:"priceCurrency"`
+		DoorTime      *string  `json:"door_time"`
+		VenueULID     *string  `json:"venue_ulid"`
+		VirtualURL    *string  `json:"virtual_url"`
+		TicketURL     *string  `json:"ticket_url"`
+		PriceMin      *float64 `json:"price_min"`
+		PriceMax      *float64 `json:"price_max"`
+		PriceCurrency string   `json:"price_currency"`
 		Availability  string   `json:"availability"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1496,8 +1496,8 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.StartDate == "" {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate is required", nil, h.Env)
+	if req.StartTime == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time is required", nil, h.Env)
 		return
 	}
 	if req.Timezone == "" {
@@ -1505,16 +1505,16 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	startTime, err := time.Parse(time.RFC3339, req.StartDate)
+	startTime, err := time.Parse(time.RFC3339, req.StartTime)
 	if err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate must be RFC3339", err, h.Env)
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be RFC3339", err, h.Env)
 		return
 	}
 	var endTime *time.Time
-	if req.EndDate != nil {
-		t, err := time.Parse(time.RFC3339, *req.EndDate)
+	if req.EndTime != nil {
+		t, err := time.Parse(time.RFC3339, *req.EndTime)
 		if err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "endDate must be RFC3339", err, h.Env)
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be RFC3339", err, h.Env)
 			return
 		}
 		endTime = &t
@@ -1523,7 +1523,7 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 	if req.DoorTime != nil {
 		t, err := time.Parse(time.RFC3339, *req.DoorTime)
 		if err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "doorTime must be RFC3339", err, h.Env)
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be RFC3339", err, h.Env)
 			return
 		}
 		doorTime = &t
@@ -1572,6 +1572,10 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "Occurrence overlaps an existing occurrence", err, h.Env)
 			return
 		}
+		if errors.Is(err, events.ErrOccurrenceLocationRequired) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/occurrence-location-required", "Occurrence must have a venue or virtual URL", err, h.Env)
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
@@ -1585,7 +1589,7 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, occurrenceToResponse(occ), contentTypeFromRequest(r))
 }
 
-// UpdateOccurrence handles PATCH /api/v1/admin/events/{id}/occurrences/{occurrenceId}
+// UpdateOccurrence handles PUT /api/v1/admin/events/{id}/occurrences/{occurrenceId}
 // Partially updates an existing occurrence (PATCH semantics — only sent fields are changed).
 func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.AdminService == nil {
@@ -1613,30 +1617,30 @@ func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) 
 
 	params := events.OccurrenceUpdateParams{}
 
-	if v, ok := raw["startDate"]; ok {
+	if v, ok := raw["start_time"]; ok {
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate must be a string", err, h.Env)
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be a string", err, h.Env)
 			return
 		}
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate must be RFC3339", err, h.Env)
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be RFC3339", err, h.Env)
 			return
 		}
 		params.StartTime = &t
 	}
-	if v, ok := raw["endDate"]; ok {
+	if v, ok := raw["end_time"]; ok {
 		params.EndTimeSet = true
 		if string(v) != "null" {
 			var s string
 			if err := json.Unmarshal(v, &s); err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "endDate must be a string or null", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be a string or null", err, h.Env)
 				return
 			}
 			t, err := time.Parse(time.RFC3339, s)
 			if err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "endDate must be RFC3339", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be RFC3339", err, h.Env)
 				return
 			}
 			params.EndTime = &t
@@ -1650,28 +1654,28 @@ func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) 
 		}
 		params.Timezone = &s
 	}
-	if v, ok := raw["doorTime"]; ok {
+	if v, ok := raw["door_time"]; ok {
 		params.DoorTimeSet = true
 		if string(v) != "null" {
 			var s string
 			if err := json.Unmarshal(v, &s); err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "doorTime must be a string or null", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be a string or null", err, h.Env)
 				return
 			}
 			t, err := time.Parse(time.RFC3339, s)
 			if err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "doorTime must be RFC3339", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be RFC3339", err, h.Env)
 				return
 			}
 			params.DoorTime = &t
 		}
 	}
-	if v, ok := raw["venueUlid"]; ok {
+	if v, ok := raw["venue_ulid"]; ok {
 		params.VenueIDSet = true
 		if string(v) != "null" {
 			var ulid string
 			if err := json.Unmarshal(v, &ulid); err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "venueUlid must be a string or null", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "venue_ulid must be a string or null", err, h.Env)
 				return
 			}
 			place, err := h.AdminService.GetPlaceByULID(r.Context(), ulid)
@@ -1686,51 +1690,54 @@ func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) 
 			params.VenueID = &place.ID
 		}
 	}
-	if v, ok := raw["virtualUrl"]; ok {
+	if v, ok := raw["virtual_url"]; ok {
 		params.VirtualURLSet = true
 		if string(v) != "null" {
 			var s string
 			if err := json.Unmarshal(v, &s); err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "virtualUrl must be a string or null", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "virtual_url must be a string or null", err, h.Env)
 				return
 			}
 			params.VirtualURL = &s
 		}
 	}
-	if v, ok := raw["ticketUrl"]; ok {
-		var s string
-		if err := json.Unmarshal(v, &s); err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "ticketUrl must be a string", err, h.Env)
-			return
+	if v, ok := raw["ticket_url"]; ok {
+		params.TicketURLSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "ticket_url must be a string or null", err, h.Env)
+				return
+			}
+			params.TicketURL = &s
 		}
-		params.TicketURL = &s
 	}
-	if v, ok := raw["priceMin"]; ok {
+	if v, ok := raw["price_min"]; ok {
 		params.PriceMinSet = true
 		if string(v) != "null" {
 			var f float64
 			if err := json.Unmarshal(v, &f); err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "priceMin must be a number or null", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "price_min must be a number or null", err, h.Env)
 				return
 			}
 			params.PriceMin = &f
 		}
 	}
-	if v, ok := raw["priceMax"]; ok {
+	if v, ok := raw["price_max"]; ok {
 		params.PriceMaxSet = true
 		if string(v) != "null" {
 			var f float64
 			if err := json.Unmarshal(v, &f); err != nil {
-				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "priceMax must be a number or null", err, h.Env)
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "price_max must be a number or null", err, h.Env)
 				return
 			}
 			params.PriceMax = &f
 		}
 	}
-	if v, ok := raw["priceCurrency"]; ok {
+	if v, ok := raw["price_currency"]; ok {
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "priceCurrency must be a string", err, h.Env)
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "price_currency must be a string", err, h.Env)
 			return
 		}
 		params.PriceCurrency = &s
@@ -1756,6 +1763,10 @@ func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) 
 		}
 		if errors.Is(err, events.ErrOccurrenceOverlap) {
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "Occurrence overlaps an existing occurrence", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceLocationRequired) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/occurrence-location-required", "Occurrence must have a venue or virtual URL", err, h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)

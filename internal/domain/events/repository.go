@@ -17,6 +17,10 @@ var ErrOccurrenceOverlap = errors.New("occurrence overlaps an existing occurrenc
 // occurrence on an event; doing so would leave the event in an invalid state.
 var ErrLastOccurrence = errors.New("cannot delete the last occurrence of an event")
 
+// ErrOccurrenceLocationRequired is returned when an occurrence has neither a venue_id
+// nor a virtual_url, violating the occurrence_location_required DB constraint.
+var ErrOccurrenceLocationRequired = errors.New("occurrence must have a venue or virtual URL")
+
 // ErrAlreadyMerged is returned when attempting to merge an entity that has
 // already been merged into another entity by a concurrent operation.
 var ErrAlreadyMerged = errors.New("entity already merged")
@@ -134,6 +138,7 @@ type OccurrenceUpdateParams struct {
 	VirtualURL    *string
 	VirtualURLSet bool
 	TicketURL     *string
+	TicketURLSet  bool
 	PriceMin      *float64
 	PriceMinSet   bool
 	PriceMax      *float64
@@ -252,17 +257,18 @@ type Repository interface {
 	// the full Occurrence domain object including the generated UUID.
 	InsertOccurrence(ctx context.Context, params OccurrenceCreateParams) (*Occurrence, error)
 
-	// GetOccurrenceByID fetches a single occurrence row by its UUID.
-	// Returns ErrNotFound if no matching row exists.
-	GetOccurrenceByID(ctx context.Context, occurrenceID string) (*Occurrence, error)
+	// GetOccurrenceByID fetches a single occurrence row by its UUID, scoped to the given event.
+	// Returns ErrNotFound if no matching row exists or the occurrence belongs to a different event.
+	GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*Occurrence, error)
 
-	// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence.
+	// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence, scoped to the given event.
 	// Only fields with non-nil (or Set=true) values are written.
-	// Returns the updated Occurrence, or ErrNotFound if the row does not exist.
-	UpdateOccurrence(ctx context.Context, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error)
+	// Returns the updated Occurrence, or ErrNotFound if the row does not exist or belongs to a different event.
+	UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error)
 
-	// DeleteOccurrenceByID deletes a single occurrence row by its UUID.
-	DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error
+	// DeleteOccurrenceByID deletes a single occurrence row by its UUID, scoped to the given event.
+	// Returns ErrNotFound if no matching row exists or the occurrence belongs to a different event.
+	DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error
 
 	// CountOccurrences returns the number of occurrences for the event identified
 	// by eventID (UUID). Used to enforce the last-occurrence guard.

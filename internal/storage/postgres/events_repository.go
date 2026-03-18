@@ -2859,17 +2859,20 @@ func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.Oc
 	), nil
 }
 
-// GetOccurrenceByID fetches a single occurrence by its UUID.
-// Returns ErrNotFound if the row does not exist.
-func (r *EventRepository) GetOccurrenceByID(ctx context.Context, occurrenceID string) (*events.Occurrence, error) {
+// GetOccurrenceByID fetches a single occurrence by its UUID, scoped to the given event.
+// Returns ErrNotFound if the row does not exist or belongs to a different event.
+func (r *EventRepository) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*events.Occurrence, error) {
 	queries := Queries{db: r.queryer()}
 
-	var id pgtype.UUID
-	if err := id.Scan(occurrenceID); err != nil {
+	var p GetOccurrenceByIDParams
+	if err := p.ID.Scan(occurrenceID); err != nil {
 		return nil, fmt.Errorf("invalid occurrence ID: %w", err)
 	}
+	if err := p.EventID.Scan(eventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
 
-	row, err := queries.GetOccurrenceByID(ctx, id)
+	row, err := queries.GetOccurrenceByID(ctx, p)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, events.ErrNotFound
@@ -2888,14 +2891,17 @@ func (r *EventRepository) GetOccurrenceByID(ctx context.Context, occurrenceID st
 	), nil
 }
 
-// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence.
-// Returns ErrNotFound if the row does not exist.
-func (r *EventRepository) UpdateOccurrence(ctx context.Context, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence, scoped to the given event.
+// Returns ErrNotFound if the row does not exist or belongs to a different event.
+func (r *EventRepository) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
 	queries := Queries{db: r.queryer()}
 
 	var p UpdateOccurrenceByIDParams
 	if err := p.ID.Scan(occurrenceID); err != nil {
 		return nil, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+	if err := p.EventID.Scan(eventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
 	}
 
 	if params.StartTime != nil {
@@ -2922,7 +2928,8 @@ func (r *EventRepository) UpdateOccurrence(ctx context.Context, occurrenceID str
 	if params.VirtualURLSet && params.VirtualURL != nil {
 		p.VirtualUrl = pgtype.Text{String: *params.VirtualURL, Valid: true}
 	}
-	if params.TicketURL != nil {
+	p.TicketUrlSet = pgtype.Bool{Bool: params.TicketURLSet, Valid: params.TicketURLSet}
+	if params.TicketURLSet && params.TicketURL != nil {
 		p.TicketUrl = pgtype.Text{String: *params.TicketURL, Valid: true}
 	}
 	p.PriceMinSet = pgtype.Bool{Bool: params.PriceMinSet, Valid: params.PriceMinSet}
@@ -2963,16 +2970,27 @@ func (r *EventRepository) UpdateOccurrence(ctx context.Context, occurrenceID str
 	), nil
 }
 
-// DeleteOccurrenceByID deletes a single occurrence row by its UUID.
-func (r *EventRepository) DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error {
+// DeleteOccurrenceByID deletes a single occurrence row by its UUID, scoped to the given event.
+// Returns ErrNotFound if the row does not exist or belongs to a different event.
+func (r *EventRepository) DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error {
 	queries := Queries{db: r.queryer()}
 
-	var id pgtype.UUID
-	if err := id.Scan(occurrenceID); err != nil {
+	var p DeleteOccurrenceByIDParams
+	if err := p.ID.Scan(occurrenceID); err != nil {
 		return fmt.Errorf("invalid occurrence ID: %w", err)
 	}
+	if err := p.EventID.Scan(eventID); err != nil {
+		return fmt.Errorf("invalid event ID: %w", err)
+	}
 
-	return queries.DeleteOccurrenceByID(ctx, id)
+	_, err := queries.DeleteOccurrenceByID(ctx, p)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return events.ErrNotFound
+		}
+		return fmt.Errorf("delete occurrence: %w", err)
+	}
+	return nil
 }
 
 // CountOccurrences returns the number of occurrences for the event identified by eventID (UUID).

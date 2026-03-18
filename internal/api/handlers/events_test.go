@@ -228,15 +228,15 @@ func (s stubEventsRepo) InsertOccurrence(_ context.Context, params events.Occurr
 	return &events.Occurrence{StartTime: params.StartTime}, nil
 }
 
-func (s stubEventsRepo) GetOccurrenceByID(_ context.Context, _ string) (*events.Occurrence, error) {
+func (s stubEventsRepo) GetOccurrenceByID(_ context.Context, _, _ string) (*events.Occurrence, error) {
 	return nil, events.ErrNotFound
 }
 
-func (s stubEventsRepo) UpdateOccurrence(_ context.Context, occurrenceID string, _ events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+func (s stubEventsRepo) UpdateOccurrence(_ context.Context, _, occurrenceID string, _ events.OccurrenceUpdateParams) (*events.Occurrence, error) {
 	return &events.Occurrence{ID: occurrenceID}, nil
 }
 
-func (s stubEventsRepo) DeleteOccurrenceByID(_ context.Context, _ string) error {
+func (s stubEventsRepo) DeleteOccurrenceByID(_ context.Context, _, _ string) error {
 	return nil
 }
 

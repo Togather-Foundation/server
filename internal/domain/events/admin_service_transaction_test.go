@@ -522,15 +522,15 @@ func (m *mockTransactionalRepo) InsertOccurrence(ctx context.Context, params Occ
 	return &Occurrence{ID: "test-occ-id", StartTime: params.StartTime}, nil
 }
 
-func (m *mockTransactionalRepo) GetOccurrenceByID(ctx context.Context, occurrenceID string) (*Occurrence, error) {
+func (m *mockTransactionalRepo) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*Occurrence, error) {
 	return nil, ErrNotFound
 }
 
-func (m *mockTransactionalRepo) UpdateOccurrence(ctx context.Context, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error) {
+func (m *mockTransactionalRepo) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error) {
 	return &Occurrence{ID: occurrenceID}, nil
 }
 
-func (m *mockTransactionalRepo) DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error {
+func (m *mockTransactionalRepo) DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error {
 	return nil
 }
 

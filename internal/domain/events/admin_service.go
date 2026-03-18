@@ -1709,6 +1709,24 @@ func (s *AdminService) CreateOccurrenceOnEvent(ctx context.Context, eventULID st
 		return nil, fmt.Errorf("lock event %s: %w", eventULID, err)
 	}
 
+	// Re-read lifecycle_state after acquiring the lock to avoid TOCTOU race
+	// with a concurrent delete/state-change between GetByULID and the lock.
+	event, err = txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return nil, fmt.Errorf("re-read event %s after lock: %w", eventULID, err)
+	}
+	if event.LifecycleState == "deleted" {
+		return nil, ErrEventDeleted
+	}
+
+	// Bind the occurrence to this event's internal UUID (required by InsertOccurrence).
+	params.EventID = event.ID
+
+	// Enforce the occurrence_location_required DB constraint before touching the DB.
+	if params.VenueID == nil && params.VirtualURL == nil {
+		return nil, ErrOccurrenceLocationRequired
+	}
+
 	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, event.ID, params.StartTime, params.EndTime)
 	if err != nil {
 		return nil, fmt.Errorf("check overlap: %w", err)
@@ -1760,14 +1778,23 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 		return nil, fmt.Errorf("lock event %s: %w", eventULID, err)
 	}
 
+	// Re-read lifecycle_state after acquiring the lock to avoid TOCTOU race.
+	event, err = txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return nil, fmt.Errorf("re-read event %s after lock: %w", eventULID, err)
+	}
+	if event.LifecycleState == "deleted" {
+		return nil, ErrEventDeleted
+	}
+
+	// Fetch the current occurrence for overlap + location constraint checks.
+	current, err := txRepo.GetOccurrenceByID(ctx, event.ID, occurrenceID)
+	if err != nil {
+		return nil, fmt.Errorf("get occurrence %s: %w", occurrenceID, err)
+	}
+
 	// Only check overlap if time fields are being updated.
 	if params.StartTime != nil || params.EndTimeSet {
-		// Fetch the current occurrence to build the complete proposed window.
-		current, err := txRepo.GetOccurrenceByID(ctx, occurrenceID)
-		if err != nil {
-			return nil, fmt.Errorf("get occurrence %s: %w", occurrenceID, err)
-		}
-
 		proposedStart := current.StartTime
 		if params.StartTime != nil {
 			proposedStart = *params.StartTime
@@ -1788,7 +1815,25 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 		}
 	}
 
-	occ, err := txRepo.UpdateOccurrence(ctx, occurrenceID, params)
+	// Pre-check the occurrence_location_required DB constraint (venue_id OR virtual_url must be non-null).
+	// Simulate the result of the update to catch violations before hitting the DB.
+	var proposedVenueID *string
+	if params.VenueIDSet {
+		proposedVenueID = params.VenueID // may be nil (clearing)
+	} else {
+		proposedVenueID = current.VenueID
+	}
+	var proposedVirtualURL *string
+	if params.VirtualURLSet {
+		proposedVirtualURL = params.VirtualURL // may be nil (clearing)
+	} else {
+		proposedVirtualURL = current.VirtualURL
+	}
+	if proposedVenueID == nil && proposedVirtualURL == nil {
+		return nil, ErrOccurrenceLocationRequired
+	}
+
+	occ, err := txRepo.UpdateOccurrence(ctx, event.ID, occurrenceID, params)
 	if err != nil {
 		return nil, fmt.Errorf("update occurrence: %w", err)
 	}
@@ -1824,6 +1869,15 @@ func (s *AdminService) DeleteOccurrenceOnEvent(ctx context.Context, eventULID st
 		return fmt.Errorf("lock event %s: %w", eventULID, err)
 	}
 
+	// Re-read lifecycle_state after acquiring the lock to avoid TOCTOU race.
+	event, err = txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return fmt.Errorf("re-read event %s after lock: %w", eventULID, err)
+	}
+	if event.LifecycleState == "deleted" {
+		return ErrEventDeleted
+	}
+
 	count, err := txRepo.CountOccurrences(ctx, event.ID)
 	if err != nil {
 		return fmt.Errorf("count occurrences: %w", err)
@@ -1832,7 +1886,7 @@ func (s *AdminService) DeleteOccurrenceOnEvent(ctx context.Context, eventULID st
 		return ErrLastOccurrence
 	}
 
-	if err := txRepo.DeleteOccurrenceByID(ctx, occurrenceID); err != nil {
+	if err := txRepo.DeleteOccurrenceByID(ctx, event.ID, occurrenceID); err != nil {
 		return fmt.Errorf("delete occurrence: %w", err)
 	}
 

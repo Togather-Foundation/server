@@ -76,8 +76,9 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
-	// Delete a single occurrence by its UUID.
-	DeleteOccurrenceByID(ctx context.Context, id pgtype.UUID) error
+	// Delete a single occurrence by its UUID, scoped to the given event. Returns the deleted ID
+	// so callers can detect when no row matched (event mismatch or already deleted).
+	DeleteOccurrenceByID(ctx context.Context, arg DeleteOccurrenceByIDParams) (pgtype.UUID, error)
 	// Remove all occurrence rows for a soft-deleted event.  Called after absorbing an
 	// occurrence into a target series so the source event's orphaned rows are cleaned up.
 	// Soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so explicit cleanup is needed.
@@ -156,8 +157,8 @@ type Querier interface {
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
 	// Get the most recent scraper run for a given source_name.
 	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
-	// Fetch a single occurrence row by its UUID. Returns the occurrence with its venue ULID via join.
-	GetOccurrenceByID(ctx context.Context, id pgtype.UUID) (GetOccurrenceByIDRow, error)
+	// Fetch a single occurrence row by its UUID, scoped to the given event.
+	GetOccurrenceByID(ctx context.Context, arg GetOccurrenceByIDParams) (GetOccurrenceByIDRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	// Get the pending review queue entry for an event by its ULID, if any.
@@ -301,9 +302,9 @@ type Querier interface {
 	// $1 = old target event ULID (intermediate node being re-pointed)
 	// $2 = new canonical target event ULID (final destination)
 	UpdateMergedIntoChain(ctx context.Context, arg UpdateMergedIntoChainParams) error
-	// Partial-update a single occurrence row. Only non-NULL arguments are applied (COALESCE pattern).
-	// venue_id and virtual_url use explicit NULLability: pass the sentinel string 'NULL' to clear them
-	// (handled at the repository layer via pgtype.UUID{Valid:false}).
+	// Partial-update a single occurrence row, scoped to the given event.
+	// Only non-NULL arguments are applied (COALESCE pattern).
+	// venue_id, virtual_url, ticket_url use explicit NULLability via CASE WHEN *_set pattern.
 	UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrenceByIDParams) (UpdateOccurrenceByIDRow, error)
 	// Update the start_time and end_time of all occurrences for an event identified by ULID.
 	// Used by the FixReview workflow to correct occurrence dates during admin review.

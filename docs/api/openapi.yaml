@@ -2616,6 +2616,10 @@ components:
           type: [string, 'null']
           format: uri
           description: URL for virtual/hybrid attendance, or null to clear
+        ticket_url:
+          type: [string, 'null']
+          format: uri
+          description: URL for purchasing tickets, or null to clear
         price_min:
           type: [number, 'null']
           description: Minimum ticket price (inclusive), or null to clear
@@ -2656,6 +2660,9 @@ components:
           type: [string, 'null']
           description: Public ULID of the venue
         virtual_url:
+          type: [string, 'null']
+          format: uri
+        ticket_url:
           type: [string, 'null']
           format: uri
         price_min:

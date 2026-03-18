@@ -349,15 +349,15 @@ func (m *MockRepository) InsertOccurrence(ctx context.Context, params events.Occ
 	return nil, errors.New("not implemented")
 }
 
-func (m *MockRepository) GetOccurrenceByID(ctx context.Context, occurrenceID string) (*events.Occurrence, error) {
+func (m *MockRepository) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*events.Occurrence, error) {
 	return nil, events.ErrNotFound
 }
 
-func (m *MockRepository) UpdateOccurrence(ctx context.Context, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+func (m *MockRepository) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *MockRepository) DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error {
+func (m *MockRepository) DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error {
 	return errors.New("not implemented")
 }
 

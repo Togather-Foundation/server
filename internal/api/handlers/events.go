@@ -364,6 +364,11 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 				StartDate: occ.StartTime.Format(time.RFC3339),
 				Timezone:  occ.Timezone,
 			}
+			// Populate @id so the admin UI can extract the occurrence UUID for
+			// PUT/DELETE /api/v1/admin/events/{id}/occurrences/{occurrenceId}.
+			if occ.ID != "" {
+				sub.ID = h.BaseURL + "/api/v1/admin/events/" + item.ULID + "/occurrences/" + occ.ID
+			}
 			if occ.EndTime != nil {
 				sub.EndDate = occ.EndTime.Format(time.RFC3339)
 			}
