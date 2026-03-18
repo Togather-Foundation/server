@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -1527,7 +1528,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 	// Step 3: Lock retired events in sorted order (deadlock prevention).
 	sorted := make([]string, len(params.Retire))
 	copy(sorted, params.Retire)
-	sortStrings(sorted)
+	slices.Sort(sorted)
 
 	retiredEvents := make([]*Event, 0, len(sorted))
 	for _, ulid := range sorted {
@@ -1686,7 +1687,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		})
 		if dedupHash != "" {
 			existing, dedupErr := txRepo.FindByDedupHash(ctx, dedupHash)
-			if dedupErr != nil && dedupErr != ErrNotFound {
+			if dedupErr != nil && !errors.Is(dedupErr, ErrNotFound) {
 				// Non-fatal: log and continue.
 				log.Warn().Err(dedupErr).
 					Str("canonical_ulid", canonicalEvent.ULID).
@@ -1765,13 +1766,22 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 				Str("canonical_ulid", canonicalEvent.ULID).
 				Msg("Consolidate: near-duplicate check failed, continuing")
 		} else {
-			// Issue 1: Filter self-match — FindNearDuplicates does not exclude the
-			// canonical event itself, so we do it here (mirrors ingest.go 580-593).
+			// Filter self-match and retired events — FindNearDuplicates does not
+			// exclude the canonical event itself or the events being retired in
+			// this consolidation, so we do it here (mirrors ingest.go 580-593).
+			retireSet := make(map[string]struct{}, len(params.Retire))
+			for _, r := range params.Retire {
+				retireSet[r] = struct{}{}
+			}
 			filtered := make([]NearDuplicateCandidate, 0, len(candidates))
 			for _, c := range candidates {
-				if c.ULID != canonicalEvent.ULID {
-					filtered = append(filtered, c)
+				if c.ULID == canonicalEvent.ULID {
+					continue
 				}
+				if _, retiring := retireSet[c.ULID]; retiring {
+					continue
+				}
+				filtered = append(filtered, c)
 			}
 			if len(filtered) > 0 {
 				isDuplicate = true
@@ -1798,7 +1808,10 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		canonicalEvent.LifecycleState = "pending_review"
 
 		// Create review queue entry for canonical event.
-		warningsJSON, _ := json.Marshal(warnings)
+		warningsJSON, err := json.Marshal(warnings)
+		if err != nil {
+			return nil, fmt.Errorf("marshal consolidation warnings: %w", err)
+		}
 		if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:  canonicalEvent.ID,
 			Warnings: warningsJSON,
@@ -1822,16 +1835,6 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		Retired:                retiredULIDs,
 		ReviewEntriesDismissed: dismissedIDs,
 	}, nil
-}
-
-// sortStrings sorts a string slice in-place (ascending lexicographic order).
-// Used to impose a consistent lock ordering across concurrent Consolidate calls.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
 
 // DeleteEvent soft-deletes an event and generates a tombstone

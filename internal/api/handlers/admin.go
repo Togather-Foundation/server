@@ -1904,7 +1904,7 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 
 	if h.AuditLogger != nil {
 		h.AuditLogger.LogFromRequest(r, "admin.event.consolidate", "event", result.Event.ULID, "success", map[string]string{
-			"retired_count": strings.Join(result.Retired, ","),
+			"retired_ulids": strings.Join(result.Retired, ","),
 		})
 	}
 
