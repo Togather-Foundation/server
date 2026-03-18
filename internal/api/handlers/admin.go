@@ -1827,3 +1827,113 @@ func (h *AdminHandler) DeleteOccurrence(w http.ResponseWriter, r *http.Request) 
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ConsolidateEvents handles POST /api/v1/admin/events/consolidate
+// Atomically consolidates multiple events into one canonical event while retiring the others.
+// The canonical event is either created fresh (via event) or promoted from an existing event (via event_ulid).
+func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	type consolidateRequest struct {
+		Event     *events.EventInput `json:"event,omitempty"`
+		EventULID string             `json:"event_ulid,omitempty"`
+		Retire    []string           `json:"retire"`
+	}
+
+	var req consolidateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	params := events.ConsolidateParams{
+		Event:     req.Event,
+		EventULID: req.EventULID,
+		Retire:    req.Retire,
+	}
+
+	result, err := h.AdminService.Consolidate(r.Context(), params)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.event.consolidate", "event", req.EventULID, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
+		if errors.Is(err, events.ErrConsolidateBothEventFields) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Conflicting event fields", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateNoEventField) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing event field",
+				err, h.Env, problem.WithDetail("one of event or event_ulid is required; use POST /admin/events or PATCH /admin/events/{ulid} for single-event operations"))
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateNoRetire) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing retire list",
+				err, h.Env, problem.WithDetail("retire list is required and must contain at least one event ULID; use POST /admin/events or PATCH /admin/events/{ulid} for operations without retiring events"))
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateCanonicalInRetire) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Canonical event in retire list", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateRetiredAlreadyDeleted) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/conflict", "Retire target already deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/conflict", "Event has been deleted", err, h.Env)
+			return
+		}
+		var validationErr events.ValidationError
+		if errors.As(err, &validationErr) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/validation-error", "Validation failed", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.event.consolidate", "event", result.Event.ULID, "success", map[string]string{
+			"retired_count": strings.Join(result.Retired, ","),
+		})
+	}
+
+	type consolidateResponse struct {
+		Event                  any                        `json:"event"`
+		LifecycleState         string                     `json:"lifecycle_state"`
+		IsDuplicate            bool                       `json:"is_duplicate"`
+		IsMerged               bool                       `json:"is_merged"`
+		NeedsReview            bool                       `json:"needs_review"`
+		Warnings               []events.ValidationWarning `json:"warnings"`
+		Retired                []string                   `json:"retired"`
+		ReviewEntriesDismissed []int                      `json:"review_entries_dismissed"`
+	}
+
+	ev := schema.NewEvent(result.Event.Name)
+	ev.Context = loadDefaultContext()
+	ev.ID = buildEventURI(h.BaseURL, result.Event.ULID)
+	ev.Description = result.Event.Description
+
+	resp := consolidateResponse{
+		Event:                  *ev,
+		LifecycleState:         result.LifecycleState,
+		IsDuplicate:            result.IsDuplicate,
+		IsMerged:               result.IsMerged,
+		NeedsReview:            result.NeedsReview,
+		Warnings:               result.Warnings,
+		Retired:                result.Retired,
+		ReviewEntriesDismissed: result.ReviewEntriesDismissed,
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}

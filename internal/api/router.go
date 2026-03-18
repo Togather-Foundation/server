@@ -570,6 +570,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminMergeEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergeEvents))))
 	mux.Handle("POST /api/v1/admin/events/merge", adminMergeEvents)
 
+	adminConsolidate := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ConsolidateEvents))))
+	mux.Handle("POST /api/v1/admin/events/consolidate", adminConsolidate)
+
 	// Admin occurrence management (srv-156gm)
 	adminCreateOccurrence := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.CreateOccurrence))))
 	adminUpdateOccurrence := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UpdateOccurrence))))
