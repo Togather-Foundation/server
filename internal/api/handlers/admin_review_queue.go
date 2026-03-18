@@ -14,7 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/jackc/pgx/v5"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
 // AdminReviewQueueHandler handles admin review queue operations
@@ -81,7 +81,7 @@ type changeDetail struct {
 }
 
 // ListReviewQueue returns a paginated list of events pending review with quality warnings.
-// It handles GET /api/v1/admin/review-queue and supports filtering by status (pending, approved, rejected).
+// It handles GET /api/v1/admin/review-queue and supports filtering by status (pending, approved, rejected, merged).
 // Query parameters: status (default: pending), limit (1-100, default: 50), cursor (pagination).
 func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Repository == nil {
@@ -185,7 +185,7 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	// Fetch review entry
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
@@ -241,7 +241,7 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	// Fetch the review entry to get event ID
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("approve review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
@@ -277,6 +277,14 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to approve review", fmt.Errorf("approve review id=%d event=%s: %w", id, eventULID, err), h.Env)
@@ -351,7 +359,7 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	// Fetch the review entry to get event ID
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("reject review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
@@ -382,6 +390,14 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to reject review", fmt.Errorf("reject review id=%d event=%s: %w", id, eventULID, err), h.Env)
@@ -458,7 +474,7 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	// Fetch the review entry to get event ID
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("fix review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
@@ -501,6 +517,14 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fix and approve review", fmt.Errorf("fix review id=%d event=%s: %w", id, eventULID, err), h.Env)
@@ -567,7 +591,7 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 	// Fetch the review entry to get the duplicate event's ULID
 	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("merge review: get review queue entry id=%d: %w", id, err), h.Env)
 			return
 		}
@@ -606,6 +630,14 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Cannot merge event into itself", err, h.Env)
 			return
 		}
+		if errors.Is(err, events.ErrConflict) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "One or more events have been deleted", fmt.Errorf("merge review id=%d: %w", id, err), h.Env)
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to merge events", fmt.Errorf("merge review id=%d: merge events %s->%s: %w", id, duplicateULID, req.PrimaryEventULID, err), h.Env)
 		return
 	}
@@ -627,6 +659,273 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, detail, "application/json")
+}
+
+// AddOccurrenceReview adds the review entry's event as a new occurrence on a target
+// recurring-series event, soft-deletes the absorbed event, and marks the review
+// as merged — all atomically.
+// It handles POST /api/v1/admin/review-queue/:id/add-occurrence.
+//
+// Two flavours are dispatched automatically based on the warning type in the review:
+//
+//   - potential_duplicate (forward path): the review's own event is the source to be
+//     absorbed into the target series supplied in target_event_ulid.
+//
+//   - near_duplicate_of_new_event (inverted path): the review entry sits on the
+//     existing series event; the newly-ingested counterpart (stored in the review's
+//     duplicate_of_event_id column) is the source to be absorbed into the existing
+//     series.  target_event_ulid is NOT required for this path — the target is
+//     derived from the review entry itself.  Any provided target_event_ulid is ignored.
+func (h *AdminReviewQueueHandler) AddOccurrenceReview(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Repository == nil || h.AdminService == nil {
+		env := ""
+		if h != nil {
+			env = h.Env
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, env)
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing review ID", nil, h.Env)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid review ID", nil, h.Env)
+		return
+	}
+
+	var req struct {
+		TargetEventULID string `json:"target_event_ulid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	reviewedBy := getUserFromContext(r)
+
+	// Peek at the review entry to determine which dispatch path to take.
+	// We need to know whether this is a near_duplicate_of_new_event before
+	// deciding whether target_event_ulid is required.
+	review, err := h.Repository.GetReviewQueueEntry(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry not found", fmt.Errorf("add-occurrence review: get entry id=%d: %w", id, err), h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to fetch review entry", fmt.Errorf("add-occurrence review: get entry id=%d: %w", id, err), h.Env)
+		return
+	}
+
+	// Classify the dispatch path using the shared occurrenceDispatchPath helper so
+	// that handler pre-check and service TX-level check use identical logic.
+	prePath, prePathErr := events.OccurrenceDispatchPath(review.Warnings)
+	if prePathErr != nil {
+		if errors.Is(prePathErr, events.ErrMalformedWarnings) {
+			// Data-integrity fault: the DB row was persisted with invalid JSON.
+			// Surface as 500 — this is diagnosable and not the caller's fault.
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error",
+				"Review entry has malformed warnings data",
+				fmt.Errorf("add-occurrence review: classify dispatch id=%d: %w", id, prePathErr), h.Env)
+			return
+		}
+		if errors.Is(prePathErr, events.ErrAmbiguousOccurrenceDispatch) {
+			// Both warning types present — reject 422 before entering transaction.
+			problem.Write(w, r, http.StatusUnprocessableEntity,
+				"https://sel.events/problems/ambiguous-occurrence-dispatch",
+				"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
+				prePathErr, h.Env)
+			return
+		}
+		// Unexpected error from classifier — fall through to 500 below.
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error",
+			"Failed to classify add-occurrence dispatch path",
+			fmt.Errorf("add-occurrence review: classify dispatch id=%d: %w", id, prePathErr), h.Env)
+		return
+	}
+
+	// Reject when neither supported duplicate warning is present.  The add-occurrence
+	// operation requires either a potential_duplicate (forward path) or a
+	// near_duplicate_of_new_event (near-dup path) warning.  Reviews that carry only
+	// data-quality warnings (e.g. reversed_dates_*) are not eligible.
+	if prePath == "unsupported" {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/unsupported-review-for-occurrence",
+			"Review entry has no potential_duplicate or near_duplicate_of_new_event warning; add-occurrence requires a supported duplicate warning",
+			events.ErrUnsupportedReviewForOccurrence, h.Env)
+		return
+	}
+
+	if prePath == "neardup" {
+		// Inverted path: absorb the newly-ingested event (DuplicateOfEventULID) into
+		// the existing series (EventULID).  target_event_ulid is not needed.
+		h.addOccurrenceNearDupPath(w, r, id, review, reviewedBy)
+		return
+	}
+
+	// Forward path (potential_duplicate): target_event_ulid is required.
+	if req.TargetEventULID == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "target_event_ulid is required", nil, h.Env)
+		return
+	}
+	if err := ids.ValidateULID(req.TargetEventULID); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "target_event_ulid is not a valid ULID", err, h.Env)
+		return
+	}
+
+	h.addOccurrenceForwardPath(w, r, id, req.TargetEventULID, reviewedBy)
+}
+
+// addOccurrenceForwardPath handles the potential_duplicate case:
+// the review's own event is absorbed into the provided target series.
+func (h *AdminReviewQueueHandler) addOccurrenceForwardPath(w http.ResponseWriter, r *http.Request, id int, targetEventULID, reviewedBy string) {
+	updatedReview, err := h.AdminService.AddOccurrenceFromReview(r.Context(), id, targetEventULID, reviewedBy)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":        err.Error(),
+				"target_event": targetEventULID,
+				"path":         "forward",
+			})
+		}
+		h.writeAddOccurrenceError(w, r, id, targetEventULID, err)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "success", map[string]string{
+			"target_event": targetEventULID,
+			"reviewed_by":  reviewedBy,
+			"path":         "forward",
+		})
+	}
+
+	detail, err := buildReviewQueueDetail(*updatedReview)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("add-occurrence review id=%d: build detail: %w", id, err), h.Env)
+		return
+	}
+	writeJSON(w, http.StatusOK, addOccurrenceResponse{reviewQueueDetail: detail, TargetEventULID: targetEventULID}, "application/json")
+}
+
+// addOccurrenceNearDupPath handles the near_duplicate_of_new_event case:
+// the newly-ingested event (DuplicateOfEventULID) is absorbed into the
+// existing series (EventULID).
+func (h *AdminReviewQueueHandler) addOccurrenceNearDupPath(w http.ResponseWriter, r *http.Request, id int, review *events.ReviewQueueEntry, reviewedBy string) {
+	targetEventULID := review.EventULID // existing series is the target (pre-read fallback)
+
+	updatedReview, authoritativeTargetULID, err := h.AdminService.AddOccurrenceFromReviewNearDup(r.Context(), id, reviewedBy)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "failure", map[string]string{
+				"error":        err.Error(),
+				"target_event": targetEventULID,
+				"path":         "near-dup",
+			})
+		}
+		h.writeAddOccurrenceError(w, r, id, targetEventULID, err)
+		return
+	}
+
+	// The service returns the authoritative target ULID from inside the transaction.
+	// Prefer it over the pre-read value to ensure audit logs and response are consistent
+	// with the committed state.
+	if authoritativeTargetULID != nil {
+		targetEventULID = *authoritativeTargetULID
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.review.add-occurrence", "review", strconv.Itoa(id), "success", map[string]string{
+			"target_event": targetEventULID,
+			"reviewed_by":  reviewedBy,
+			"path":         "near-dup",
+		})
+	}
+
+	detail, err := buildReviewQueueDetail(*updatedReview)
+	if err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("add-occurrence near-dup review id=%d: build detail: %w", id, err), h.Env)
+		return
+	}
+	writeJSON(w, http.StatusOK, addOccurrenceResponse{reviewQueueDetail: detail, TargetEventULID: targetEventULID}, "application/json")
+}
+
+// addOccurrenceResponse wraps ReviewQueueDetail with an explicit targetEventUlid
+// field so the frontend can navigate directly to the target series after a
+// successful add-as-occurrence action, regardless of which dispatch path was used.
+type addOccurrenceResponse struct {
+	reviewQueueDetail
+	TargetEventULID string `json:"targetEventUlid"`
+}
+
+// writeAddOccurrenceError writes the appropriate HTTP error for an add-occurrence failure.
+func (h *AdminReviewQueueHandler) writeAddOccurrenceError(w http.ResponseWriter, r *http.Request, id int, targetEventULID string, err error) {
+	if errors.Is(err, events.ErrNotFound) {
+		problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Review entry, source event, or target event not found", fmt.Errorf("add-occurrence review id=%d: %w", id, err), h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrCannotMergeSameEvent) {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Review event and target event are the same", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrOccurrenceOverlap) {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "New occurrence overlaps an existing occurrence on the target event", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrEventDeleted) {
+		problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Source or target event has been deleted", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrConflict) {
+		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry is not in pending status", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrInvalidUpdateParams) {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Review entry is missing required duplicate event reference", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrAmbiguousOccurrenceSource) {
+		problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/ambiguous-occurrence-source", "Source event has multiple occurrences and cannot be absorbed unambiguously; resolve the source event first", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrZeroOccurrenceSource) {
+		problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/zero-occurrence-source", "Source event has no occurrences; cannot determine which occurrence to absorb", err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrAmbiguousOccurrenceDispatch) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/ambiguous-occurrence-dispatch",
+			"Review entry has both potential_duplicate and near_duplicate_of_new_event warnings; add-occurrence path is ambiguous",
+			err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrWrongOccurrencePath) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/ambiguous-occurrence-dispatch",
+			"Review entry warnings changed; add-occurrence path is no longer valid — retry the request",
+			err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrUnsupportedReviewForOccurrence) {
+		problem.Write(w, r, http.StatusUnprocessableEntity,
+			"https://sel.events/problems/unsupported-review-for-occurrence",
+			"Review entry has no potential_duplicate or near_duplicate_of_new_event warning; add-occurrence requires a supported duplicate warning",
+			err, h.Env)
+		return
+	}
+	if errors.Is(err, events.ErrMalformedWarnings) {
+		// Data-integrity fault: the DB row was persisted with invalid JSON.  Surface
+		// as 500 so the problem is visible in logs and alerting rather than silently
+		// turning into a misleading 422 unsupported-review response.
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error",
+			"Review entry has malformed warnings data",
+			fmt.Errorf("add-occurrence review id=%d: %w", id, err), h.Env)
+		return
+	}
+	problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to add occurrence", fmt.Errorf("add-occurrence review id=%d target=%s: %w", id, targetEventULID, err), h.Env)
 }
 
 // Helper functions
@@ -768,8 +1067,10 @@ func getUserFromContext(r *http.Request) string {
 	return "admin"
 }
 
-// recordNotDuplicatesFromWarnings extracts potential_duplicate warnings from a review entry
+// recordNotDuplicatesFromWarnings extracts duplicate-related warnings from a review entry
 // and records each matched pair as not-duplicates so future ingestion won't re-flag them.
+// Handles both potential_duplicate and near_duplicate_of_new_event warning codes so that
+// approving either side of a companion pair records the not-duplicate decision correctly.
 // Errors are logged but not propagated — this is a best-effort enhancement.
 func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Context, review *events.ReviewQueueEntry, reviewedBy string) {
 	if review == nil || len(review.Warnings) == 0 {
@@ -786,51 +1087,197 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 
 	eventULID := review.EventULID
 	for _, w := range warnings {
-		if w.Code != "potential_duplicate" {
-			continue
-		}
-		matchesRaw, ok := w.Details["matches"]
-		if !ok {
-			continue
-		}
-		// matches is []any where each element is map[string]any with "ulid", "name", "similarity"
-		matches, ok := matchesRaw.([]any)
-		if !ok {
-			continue
-		}
-		for _, m := range matches {
-			matchMap, ok := m.(map[string]any)
+		switch w.Code {
+		case "potential_duplicate":
+			matchesRaw, ok := w.Details["matches"]
 			if !ok {
 				continue
 			}
-			candidateULID, ok := matchMap["ulid"].(string)
-			if !ok || candidateULID == "" {
+			// matches is []any where each element is map[string]any with "ulid", "name", "similarity"
+			matches, ok := matchesRaw.([]any)
+			if !ok {
 				continue
 			}
-			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
-				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
+			for _, m := range matches {
+				matchMap, ok := m.(map[string]any)
+				if !ok {
+					continue
+				}
+				candidateULID, ok := matchMap["ulid"].(string)
+				if !ok || candidateULID == "" {
+					continue
+				}
+				if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
+					slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
+						slog.Int("review_id", review.ID),
+						slog.String("event_ulid", eventULID),
+						slog.String("candidate_ulid", candidateULID),
+						slog.String("error", err.Error()))
+				}
+				// Best-effort: refresh the companion review and auto-approve it if no
+				// issues remain after the duplicate pair is removed.
+				h.recheckCompanionNotDuplicateReview(ctx, candidateULID, eventULID, reviewedBy)
+			}
+
+		case "near_duplicate_of_new_event":
+			// The companion (new) event ULID is stored in DuplicateOfEventULID on the
+			// review entry — the warning details only contain display fields (name, dates)
+			// and do not embed a ULID.  Use the FK directly.
+			if review.DuplicateOfEventULID == nil || *review.DuplicateOfEventULID == "" {
+				continue
+			}
+			companionULID := *review.DuplicateOfEventULID
+			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, companionULID, reviewedBy); err != nil {
+				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair (near-dup side)",
 					slog.Int("review_id", review.ID),
 					slog.String("event_ulid", eventULID),
-					slog.String("candidate_ulid", candidateULID),
+					slog.String("companion_ulid", companionULID),
 					slog.String("error", err.Error()))
 			}
-			// Best-effort: dismiss the companion's warning that pointed back at this event.
-			h.dismissCompanionDuplicateWarning(ctx, candidateULID, eventULID)
+			// Best-effort: refresh the companion review and auto-approve it if no
+			// issues remain after the duplicate pair is removed.
+			h.recheckCompanionNotDuplicateReview(ctx, companionULID, eventULID, reviewedBy)
 		}
 	}
 }
 
-// dismissCompanionDuplicateWarning removes any potential_duplicate warning match
-// that references eventULID from the companion event's pending review entry.
-// This prevents the companion's review from showing a stale duplicate alert after
-// the pair has been marked as not-duplicates.
-// Uses a single atomic SQL UPDATE — no read-modify-write race.
-// Errors are logged but not propagated — this is a best-effort cleanup.
-func (h *AdminReviewQueueHandler) dismissCompanionDuplicateWarning(ctx context.Context, companionULID, eventULID string) {
-	if err := h.Repository.DismissCompanionWarningMatch(ctx, companionULID, eventULID); err != nil {
-		slog.WarnContext(ctx, "dismissCompanionWarning: failed to atomically dismiss warning match",
+// recheckCompanionNotDuplicateReview removes duplicate-pair warnings from the exact
+// companion review row and then rechecks that pending event: if no warnings remain,
+// the companion review is auto-approved; otherwise it stays pending with refreshed
+// warnings.
+//
+// Errors are logged but not propagated — this is a best-effort companion cleanup.
+func (h *AdminReviewQueueHandler) recheckCompanionNotDuplicateReview(ctx context.Context, companionULID, eventULID, reviewedBy string) {
+	// Find the exact companion review that is cross-linked to eventULID.
+	companion, err := h.Repository.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, companionULID, eventULID)
+	if err != nil {
+		// ErrNotFound is normal (companion may have been already processed or never
+		// existed).  Any other error is unexpected but still best-effort.
+		if !errors.Is(err, events.ErrNotFound) {
+			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to look up companion review",
+				slog.String("companion_ulid", companionULID),
+				slog.String("event_ulid", eventULID),
+				slog.String("error", err.Error()))
+		}
+		return
+	}
+	if companion == nil {
+		// No pending review for this companion/duplicate pair — nothing to do.
+		return
+	}
+
+	updatedWarnings, err := filteredCompanionWarnings(companion, eventULID)
+	if err != nil {
+		slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to filter companion warnings",
+			slog.Int("review_id", companion.ID),
 			slog.String("companion_ulid", companionULID),
 			slog.String("event_ulid", eventULID),
 			slog.String("error", err.Error()))
+		return
 	}
+
+	if err := h.Repository.UpdateReviewWarnings(ctx, companion.ID, updatedWarnings); err != nil {
+		slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to update companion warnings",
+			slog.Int("review_id", companion.ID),
+			slog.String("companion_ulid", companionULID),
+			slog.String("event_ulid", eventULID),
+			slog.String("error", err.Error()))
+		return
+	}
+
+	if string(updatedWarnings) == "[]" {
+		if h.AdminService == nil {
+			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: admin service unavailable for auto-approval",
+				slog.Int("review_id", companion.ID),
+				slog.String("companion_ulid", companionULID),
+				slog.String("event_ulid", eventULID))
+			return
+		}
+		note := "Auto-approved after companion not-duplicate recheck"
+		if _, err := h.AdminService.ApproveEventWithReview(ctx, companionULID, companion.ID, reviewedBy, &note); err != nil {
+			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to auto-approve companion review",
+				slog.Int("review_id", companion.ID),
+				slog.String("companion_ulid", companionULID),
+				slog.String("event_ulid", eventULID),
+				slog.String("error", err.Error()))
+		}
+		return
+	}
+}
+
+func filteredCompanionWarnings(companion *events.ReviewQueueEntry, eventULID string) ([]byte, error) {
+	if companion == nil || len(companion.Warnings) == 0 {
+		return []byte("[]"), nil
+	}
+
+	var warnings []events.ValidationWarning
+	if err := json.Unmarshal(companion.Warnings, &warnings); err != nil {
+		return nil, fmt.Errorf("parse companion warnings: %w", err)
+	}
+
+	filtered := make([]events.ValidationWarning, 0, len(warnings))
+	for _, warning := range warnings {
+		switch warning.Code {
+		case "potential_duplicate":
+			updatedWarning, keep := filterPotentialDuplicateWarning(warning, eventULID)
+			if keep {
+				filtered = append(filtered, updatedWarning)
+			}
+		case "near_duplicate_of_new_event":
+			if companion.DuplicateOfEventULID != nil && *companion.DuplicateOfEventULID == eventULID {
+				continue
+			}
+			filtered = append(filtered, warning)
+		default:
+			filtered = append(filtered, warning)
+		}
+	}
+
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("marshal companion warnings: %w", err)
+	}
+	return encoded, nil
+}
+
+func filterPotentialDuplicateWarning(warning events.ValidationWarning, eventULID string) (events.ValidationWarning, bool) {
+	matchesRaw, ok := warning.Details["matches"]
+	if !ok {
+		return warning, true
+	}
+	matches, ok := matchesRaw.([]any)
+	if !ok {
+		return warning, true
+	}
+
+	filteredMatches := make([]any, 0, len(matches))
+	removed := false
+	for _, match := range matches {
+		matchMap, ok := match.(map[string]any)
+		if !ok {
+			filteredMatches = append(filteredMatches, match)
+			continue
+		}
+		candidateULID, ok := matchMap["ulid"].(string)
+		if ok && candidateULID == eventULID {
+			removed = true
+			continue
+		}
+		filteredMatches = append(filteredMatches, match)
+	}
+
+	if !removed {
+		return warning, true
+	}
+	if len(filteredMatches) == 0 {
+		return warning, false
+	}
+
+	updatedDetails := make(map[string]any, len(warning.Details))
+	for key, value := range warning.Details {
+		updatedDetails[key] = value
+	}
+	updatedDetails["matches"] = filteredMatches
+	warning.Details = updatedDetails
+	return warning, true
 }

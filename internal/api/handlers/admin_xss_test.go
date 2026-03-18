@@ -156,3 +156,38 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestMapToUpdateParams_OccurrencesNotMutated documents the intentional boundary that
+// occurrence-level fields (including venue_id) are NOT parsed by mapToUpdateParams and
+// therefore cannot be accidentally dropped or overwritten during a standard event PUT.
+//
+// This is a regression guard for the admin event editor workflow:
+// the JS saveOccurrence previously dropped venue_id when rebuilding an in-memory
+// occurrence object; fixing it required confirming that the backend PUT path never
+// touches occurrence venue overrides independently.
+func TestMapToUpdateParams_OccurrencesNotMutated(t *testing.T) {
+	// A PUT payload that includes occurrence-shaped keys must be silently ignored —
+	// those fields are managed through dedicated occurrence endpoints, not the event PUT.
+	updates := map[string]any{
+		"name":        "Test Event",
+		"occurrences": []any{map[string]any{"venue_id": "https://example.org/places/01ARZ3NDEKTSV4RRFFQ69G5FAV"}},
+		"venue_id":    "https://example.org/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+	}
+
+	params := mapToUpdateParams(updates)
+
+	// Name must still be parsed.
+	if params.Name == nil || *params.Name != "Test Event" {
+		t.Errorf("Name = %v, want %q", params.Name, "Test Event")
+	}
+
+	// Occurrence/venue fields must not appear in UpdateEventParams (compile-time guarantee
+	// that the struct has no such fields; runtime guard via reflection would be redundant).
+	// We verify that only the known fields are populated.
+	if params.Description != nil {
+		t.Errorf("Description should be nil when not in payload, got %q", *params.Description)
+	}
+	if params.LifecycleState != nil {
+		t.Errorf("LifecycleState should be nil when not in payload")
+	}
+}

@@ -390,6 +390,37 @@ func (m *IngestMockRepository) InsertNotDuplicate(ctx context.Context, eventIDa 
 func (m *IngestMockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error) {
 	return false, nil
 }
+func (m *IngestMockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+	return false, nil
+}
+func (m *IngestMockRepository) DeleteOccurrencesByEventULID(_ context.Context, _ string) error {
+	return nil
+}
+func (m *IngestMockRepository) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
+	return nil
+}
+func (m *IngestMockRepository) DismissWarningMatchByReviewID(_ context.Context, _ int, _ string) error {
+	return nil
+}
+func (m *IngestMockRepository) GetPendingReviewByEventUlid(_ context.Context, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+func (m *IngestMockRepository) GetPendingReviewByEventUlidAndDuplicateUlid(_ context.Context, _ string, _ string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+func (m *IngestMockRepository) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
+	return nil
+}
+func (m *IngestMockRepository) LockEventForUpdate(_ context.Context, _ string) error {
+	return nil
+}
+func (m *IngestMockRepository) LockReviewQueueEntryForUpdate(_ context.Context, _ int) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) DismissPendingReviewsByEventULIDs(_ context.Context, _ []string, _ string) ([]int, error) {
+	return nil, nil
+}
 
 type noOpTxCommitter struct{}
 

@@ -10,6 +10,24 @@ var ErrNotFound = errors.New("event not found")
 
 var ErrConflict = errors.New("event conflict")
 
+// ErrOccurrenceOverlap is returned when a new occurrence would overlap an existing one.
+var ErrOccurrenceOverlap = errors.New("occurrence overlaps an existing occurrence")
+
+// Consolidation error sentinels
+var ErrConsolidateNoRetire = errors.New("consolidate: retire list is required and must contain at least one event ULID")
+var ErrConsolidateBothEventFields = errors.New("consolidate: event and event_ulid are mutually exclusive — supply one or the other")
+var ErrConsolidateNoEventField = errors.New("consolidate: one of event or event_ulid is required")
+var ErrConsolidateCanonicalInRetire = errors.New("consolidate: canonical event ULID cannot be in the retire list")
+var ErrConsolidateRetiredAlreadyDeleted = errors.New("consolidate: one or more retire targets are already deleted")
+
+// ErrLastOccurrence is returned when an admin attempts to delete the last remaining
+// occurrence on an event; doing so would leave the event in an invalid state.
+var ErrLastOccurrence = errors.New("cannot delete the last occurrence of an event")
+
+// ErrOccurrenceLocationRequired is returned when an occurrence has neither a venue_id
+// nor a virtual_url, violating the occurrence_location_required DB constraint.
+var ErrOccurrenceLocationRequired = errors.New("occurrence must have a venue or virtual URL")
+
 // ErrAlreadyMerged is returned when attempting to merge an entity that has
 // already been merged into another entity by a concurrent operation.
 var ErrAlreadyMerged = errors.New("entity already merged")
@@ -108,6 +126,32 @@ type OccurrenceCreateParams struct {
 	PriceMin      *float64
 	PriceMax      *float64
 	PriceCurrency string
+	Availability  string
+}
+
+// OccurrenceUpdateParams holds PATCH-semantic updates for a single occurrence.
+// Pointer fields that are nil are left unchanged. Fields that can be explicitly
+// cleared (end_time, door_time, venue_id, virtual_url, price_min, price_max)
+// use a Set/Value pair: Set=true, Value=nil means "set to NULL".
+type OccurrenceUpdateParams struct {
+	StartTime     *time.Time
+	EndTime       *time.Time
+	EndTimeSet    bool
+	Timezone      *string
+	DoorTime      *time.Time
+	DoorTimeSet   bool
+	VenueID       *string
+	VenueIDSet    bool
+	VirtualURL    *string
+	VirtualURLSet bool
+	TicketURL     *string
+	TicketURLSet  bool
+	PriceMin      *float64
+	PriceMinSet   bool
+	PriceMax      *float64
+	PriceMaxSet   bool
+	PriceCurrency *string
+	Availability  *string
 }
 
 type EventSourceCreateParams struct {
@@ -179,6 +223,11 @@ type Repository interface {
 	InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyCreateParams) (*IdempotencyKey, error)
 	UpdateIdempotencyKeyEvent(ctx context.Context, key string, eventID string, eventULID string) error
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
+	// GetPlaceByULID looks up a place row by its ULID and returns its UUID and ULID.
+	// Used to resolve occurrence venueId canonical URIs (which carry the ULID) to the
+	// underlying DB UUID required by event_occurrences.venue_id.
+	// Returns ErrNotFound when no matching place row exists.
+	GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error)
 	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
 
 	// Trust level queries for auto-merge
@@ -194,8 +243,47 @@ type Repository interface {
 	MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
 	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
 
+	// Occurrence overlap check: returns true if [startTime, endTime) overlaps any
+	// existing occurrence on the event identified by eventID (UUID).
+	// endTime may be nil, in which case a point-in-time check is used (start < existing_end).
+	CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
+
+	// CheckOccurrenceOverlapExcluding is like CheckOccurrenceOverlap but excludes the
+	// occurrence identified by excludeOccurrenceID (UUID) from the check. Used when
+	// updating an existing occurrence so it doesn't conflict with itself.
+	CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error)
+
+	// LockEventForUpdate acquires a row-level lock on the event row identified by
+	// eventID (UUID) using SELECT ... FOR UPDATE. Must be called inside a transaction.
+	// Use this to serialise concurrent operations that read-then-write the same event
+	// (e.g. add-occurrence overlap check + insert).
+	LockEventForUpdate(ctx context.Context, eventID string) error
+
+	// InsertOccurrence inserts a new occurrence row and returns the created occurrence.
+	// It differs from CreateOccurrence (which returns only an error) in that it returns
+	// the full Occurrence domain object including the generated UUID.
+	InsertOccurrence(ctx context.Context, params OccurrenceCreateParams) (*Occurrence, error)
+
+	// GetOccurrenceByID fetches a single occurrence row by its UUID, scoped to the given event.
+	// Returns ErrNotFound if no matching row exists or the occurrence belongs to a different event.
+	GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*Occurrence, error)
+
+	// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence, scoped to the given event.
+	// Only fields with non-nil (or Set=true) values are written.
+	// Returns the updated Occurrence, or ErrNotFound if the row does not exist or belongs to a different event.
+	UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error)
+
+	// DeleteOccurrenceByID deletes a single occurrence row by its UUID, scoped to the given event.
+	// Returns ErrNotFound if no matching row exists or the occurrence belongs to a different event.
+	DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error
+
+	// CountOccurrences returns the number of occurrences for the event identified
+	// by eventID (UUID). Used to enforce the last-occurrence guard.
+	CountOccurrences(ctx context.Context, eventID string) (int64, error)
+
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
+	DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
 	MergeEvents(ctx context.Context, duplicateULID string, primaryULID string) error
@@ -207,14 +295,37 @@ type Repository interface {
 	InsertNotDuplicate(ctx context.Context, eventIDa string, eventIDb string, createdBy string) error
 	IsNotDuplicate(ctx context.Context, eventIDa string, eventIDb string) (bool, error)
 
+	// DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
+	// for the given event ULIDs. Returns the IDs of dismissed entries.
+	// Used by consolidation to clean up review entries for retired events.
+	DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
+
 	// Review Queue operations
 	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)
 	CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error)
+	// LockReviewQueueEntryForUpdate acquires a row-level lock on the review queue
+	// row identified by id using SELECT ... FOR UPDATE.  Must be called inside a
+	// transaction.  Returns (nil, ErrNotFound) if the row no longer exists.
+	// Use this to serialise concurrent admin actions on the same review entry so
+	// that only the first request proceeds and the second sees the updated status.
+	LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
+	// GetPendingReviewByEventUlidAndDuplicateUlid looks up the pending review for
+	// eventULID that is specifically linked to duplicateULID via duplicate_of_event_id.
+	// This is the precise companion-review lookup needed during add-occurrence
+	// consolidation: when an event has multiple pending reviews, only the one
+	// corresponding to the counterpart of the current consolidation pair is returned.
+	// Returns nil (not ErrNotFound) if no matching pending review exists.
+	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
 	UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error
 	DismissCompanionWarningMatch(ctx context.Context, companionULID string, eventULID string) error
+	// DismissWarningMatchByReviewID removes any potential_duplicate match referencing
+	// eventULID from the specific review row identified by id. Strictly narrower than
+	// DismissCompanionWarningMatch: targets exactly one row to avoid affecting unrelated
+	// pending reviews on the same companion event.
+	DismissWarningMatchByReviewID(ctx context.Context, id int, eventULID string) error
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
@@ -273,6 +384,7 @@ type PlaceCreateParams struct {
 type PlaceRecord struct {
 	ID   string
 	ULID string
+	Name string // canonical stored name; populated by GetPlaceByULID for mismatch detection
 }
 
 type OrganizationCreateParams struct {

@@ -362,7 +362,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
-	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation)
+	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation, cfg.Server.BaseURL)
+	adminService.WithIngestService(ingestService)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
 	adminHandler.Loc = loc
 
@@ -570,6 +571,19 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminMergeEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergeEvents))))
 	mux.Handle("POST /api/v1/admin/events/merge", adminMergeEvents)
 
+	adminConsolidate := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ConsolidateEvents))))
+	mux.Handle("POST /api/v1/admin/events/consolidate", adminConsolidate)
+
+	// Admin occurrence management (srv-156gm)
+	adminCreateOccurrence := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.CreateOccurrence))))
+	adminUpdateOccurrence := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UpdateOccurrence))))
+	adminDeleteOccurrence := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.DeleteOccurrence))))
+	mux.Handle("POST /api/v1/admin/events/{id}/occurrences", adminCreateOccurrence)
+	mux.Handle("/api/v1/admin/events/{id}/occurrences/{occurrenceId}", methodMux(map[string]http.Handler{
+		http.MethodPut:    adminUpdateOccurrence,
+		http.MethodDelete: adminDeleteOccurrence,
+	}))
+
 	adminListDuplicates := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ListDuplicates))))
 	mux.Handle("GET /api/v1/admin/duplicates", adminListDuplicates)
 
@@ -625,6 +639,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminRejectReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.RejectReview))))
 	adminFixReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.FixReview))))
 	adminMergeReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.MergeReview))))
+	adminAddOccurrenceReview := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReviewQueueHandler.AddOccurrenceReview))))
 
 	mux.Handle("GET /api/v1/admin/review-queue", adminListReviews)
 	mux.Handle("GET /api/v1/admin/review-queue/{id}", adminGetReview)
@@ -632,6 +647,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/reject", adminRejectReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/fix", adminFixReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/merge", adminMergeReview)
+	mux.Handle("POST /api/v1/admin/review-queue/{id}/add-occurrence", adminAddOccurrenceReview)
 
 	// Admin geocoding backfill (srv-qq7o1)
 	adminGeocodingBackfill := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminGeocodingHandler.Backfill))))

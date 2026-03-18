@@ -70,6 +70,9 @@
                 case 'remove-occurrence':
                     window.removeOccurrence(parseInt(target.dataset.index, 10));
                     break;
+                case 'clear-occurrence-venue':
+                    clearOccurrenceVenue();
+                    break;
             }
         });
     }
@@ -158,14 +161,36 @@
         // Load occurrences from subEvent array or occurrences property
         occurrences = [];
         if (Array.isArray(event.subEvent)) {
-            occurrences = event.subEvent.map(occ => ({
-                id: occ['@id'] || null,
-                start_time: occ.startDate || '',
-                end_time: occ.endDate || null,
-                timezone: occ.timezone || 'America/Toronto',
-                door_time: occ.doorTime || null,
-                virtual_url: occ.location?.url || null
-            }));
+            occurrences = event.subEvent.map(occ => {
+                // occ.location can be:
+                //   - a VirtualLocation object  → { "@type": "VirtualLocation", "url": "..." }
+                //   - an embedded Place object   → { "@type": "Place", "@id": "https://.../places/<ULID>", ... }
+                //   - a URI string               → "https://.../places/<ULID>"  (resolver unavailable)
+                //   - absent                     → undefined / null
+                let virtualUrl = null;
+                let venueId = null;
+                const loc = occ.location;
+                if (loc) {
+                    if (typeof loc === 'string') {
+                        // URI string — extract ULID and treat as venue override
+                        venueId = loc;
+                    } else if (loc['@type'] === 'VirtualLocation') {
+                        virtualUrl = loc.url || null;
+                    } else if (loc['@type'] === 'Place') {
+                        // Embedded Place — use the @id URI as the venue reference
+                        venueId = loc['@id'] || null;
+                    }
+                }
+                return {
+                    id: occ['@id'] || null,
+                    start_time: occ.startDate || '',
+                    end_time: occ.endDate || null,
+                    timezone: occ.timezone || 'America/Toronto',
+                    door_time: occ.doorTime || null,
+                    virtual_url: virtualUrl,
+                    venue_id: venueId
+                };
+            });
         } else if (Array.isArray(event.occurrences)) {
             occurrences = event.occurrences;
         } else if (event.startDate) {
@@ -286,6 +311,7 @@
                             ${occ.timezone ? `<div class="text-muted small">Timezone: ${escapeHtml(occ.timezone)}</div>` : ''}
                             ${occ.door_time ? `<div class="text-muted small">Doors: ${formatDateTime(occ.door_time)}</div>` : ''}
                             ${occ.virtual_url ? `<div class="text-muted small">Virtual: ${escapeHtml(occ.virtual_url)}</div>` : ''}
+                            ${occ.venue_id ? `<div class="text-muted small"><span class="badge bg-blue-lt">Venue override</span> ${escapeHtml(venueUlidFromId(occ.venue_id))}</div>` : ''}
                         </div>
                         <div class="col-auto">
                             <div class="btn-list">
@@ -378,12 +404,14 @@
     window.addOccurrence = function() {
         // Clear modal fields
         document.getElementById('occurrence-index').value = '';
+        document.getElementById('occurrence-venue-id').value = '';
         document.getElementById('occurrence-start-time').value = '';
         document.getElementById('occurrence-end-time').value = '';
         document.getElementById('occurrence-timezone').value = 'America/Toronto';
         document.getElementById('occurrence-door-time').value = '';
         document.getElementById('occurrence-virtual-url').value = '';
         document.getElementById('occurrence-modal-title').textContent = 'Add Occurrence';
+        setOccurrenceVenueDisplay(null);
 
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('occurrence-modal'));
@@ -396,42 +424,105 @@
 
         // Populate modal with occurrence data
         document.getElementById('occurrence-index').value = index;
+        document.getElementById('occurrence-venue-id').value = occ.venue_id || '';
         document.getElementById('occurrence-start-time').value = formatForDatetimeLocal(occ.start_time);
         document.getElementById('occurrence-end-time').value = occ.end_time ? formatForDatetimeLocal(occ.end_time) : '';
         document.getElementById('occurrence-timezone').value = occ.timezone || 'America/Toronto';
         document.getElementById('occurrence-door-time').value = occ.door_time ? formatForDatetimeLocal(occ.door_time) : '';
         document.getElementById('occurrence-virtual-url').value = occ.virtual_url || '';
         document.getElementById('occurrence-modal-title').textContent = 'Edit Occurrence';
+        setOccurrenceVenueDisplay(occ.venue_id || null);
 
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('occurrence-modal'));
         modal.show();
     };
 
-    window.saveOccurrence = function() {
-        const indexValue = document.getElementById('occurrence-index').value;
-        const startTime = document.getElementById('occurrence-start-time').value;
-        
-        if (!startTime) {
-            showToast('Start time is required', 'error');
+    // occurrenceUUIDFromId extracts the UUID from an occurrence @id URI like
+    // "https://.../api/v1/admin/events/{ULID}/occurrences/{UUID}".
+    // Returns null if the URI does not match or id is falsy.
+    function occurrenceUUIDFromId(id) {
+        if (!id) return null;
+        const m = id.match(/occurrences\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+        return m ? m[1] : null;
+    }
+
+    // buildOccurrencePayload converts the internal occurrence object to the
+    // shape expected by POST /api/v1/admin/events/{id}/occurrences.
+    function buildOccurrencePayload(occ) {
+        const payload = {
+            start_time: occ.start_time,
+            timezone: occ.timezone || 'America/Toronto',
+        };
+        if (occ.end_time)      payload.end_time     = occ.end_time;
+        if (occ.door_time)     payload.door_time     = occ.door_time;
+        if (occ.virtual_url)   payload.virtual_url   = occ.virtual_url;
+        // venue_id in local state is a venue URI; extract the ULID for the API.
+        if (occ.venue_id) {
+            const m = occ.venue_id.match(/\/([A-Z0-9]{26})$/i);
+            if (m) payload.venue_ulid = m[1];
+        }
+        return payload;
+    }
+
+    window.saveOccurrence = async function() {
+        // Guard: occurrence-logic.js must have loaded before this is called.
+        // If the script failed to load (network error, asset misconfiguration) we
+        // surface a meaningful error rather than letting a ReferenceError propagate.
+        if (typeof OccurrenceLogic === 'undefined' || typeof OccurrenceLogic.buildOccurrenceFromForm !== 'function') {
+            showToast('Occurrence helper failed to load. Please refresh the page and try again.', 'error');
             return;
         }
 
-        const occurrence = {
-            start_time: startTime,
-            end_time: document.getElementById('occurrence-end-time').value || null,
-            timezone: document.getElementById('occurrence-timezone').value || 'America/Toronto',
-            door_time: document.getElementById('occurrence-door-time').value || null,
-            virtual_url: document.getElementById('occurrence-virtual-url').value || null
-        };
+        const indexValue = document.getElementById('occurrence-index').value;
 
-        if (indexValue === '') {
-            // Add new occurrence
-            occurrences.push(occurrence);
-        } else {
-            // Update existing occurrence
-            const index = parseInt(indexValue, 10);
-            occurrences[index] = occurrence;
+        const result = OccurrenceLogic.buildOccurrenceFromForm({
+            indexValue,
+            startTime:      document.getElementById('occurrence-start-time').value,
+            endTime:        document.getElementById('occurrence-end-time').value,
+            timezone:       document.getElementById('occurrence-timezone').value,
+            doorTime:       document.getElementById('occurrence-door-time').value,
+            venueId:        document.getElementById('occurrence-venue-id').value,
+            virtualUrlRaw:  document.getElementById('occurrence-virtual-url').value,
+        }, occurrences);
+
+        if (!result.ok) {
+            showToast(result.reason, 'error');
+            return;
+        }
+
+        const occurrence = result.occurrence;
+        const payload = buildOccurrencePayload(occurrence);
+
+        try {
+            if (indexValue === '') {
+                // POST new occurrence
+                const created = await API.events.occurrences.create(eventId, payload);
+                // Store the server-assigned UUID as the @id URI so future edits/deletes work.
+                occurrence.id = created.id
+                    ? (window.location.origin + '/api/v1/admin/events/' + eventId + '/occurrences/' + created.id)
+                    : null;
+                occurrences.push(occurrence);
+                showToast('Occurrence added', 'success');
+            } else {
+                // PUT existing occurrence
+                const idx = parseInt(indexValue, 10);
+                const existing = occurrences[idx];
+                const uuid = occurrenceUUIDFromId(existing && existing.id);
+                if (!uuid) {
+                    showToast('Cannot update occurrence: missing ID. Please reload and try again.', 'error');
+                    return;
+                }
+                await API.events.occurrences.update(eventId, uuid, payload);
+                // Preserve the @id on the updated record.
+                occurrence.id = existing.id;
+                occurrences[idx] = occurrence;
+                showToast('Occurrence updated', 'success');
+            }
+        } catch (error) {
+            console.error('Failed to save occurrence:', error);
+            showToast(error.message || 'Failed to save occurrence', 'error');
+            return;
         }
 
         renderOccurrences();
@@ -439,17 +530,73 @@
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('occurrence-modal'));
         modal.hide();
-
-        showToast(indexValue === '' ? 'Occurrence added' : 'Occurrence updated', 'success');
     };
 
-    window.removeOccurrence = function(index) {
-        if (confirm('Are you sure you want to remove this occurrence?')) {
+    window.removeOccurrence = async function(index) {
+        if (!confirm('Are you sure you want to remove this occurrence?')) return;
+
+        const occ = occurrences[index];
+        const uuid = occurrenceUUIDFromId(occ && occ.id);
+        if (!uuid) {
+            // Occurrence not yet persisted (added locally but save failed?) — just remove locally.
             occurrences.splice(index, 1);
             renderOccurrences();
             showToast('Occurrence removed', 'success');
+            return;
+        }
+
+        try {
+            await API.events.occurrences.delete(eventId, uuid);
+            occurrences.splice(index, 1);
+            renderOccurrences();
+            showToast('Occurrence removed', 'success');
+        } catch (error) {
+            console.error('Failed to remove occurrence:', error);
+            showToast(error.message || 'Failed to remove occurrence', 'error');
         }
     };
+
+    // setOccurrenceVenueDisplay controls the venue-override section visibility in the modal.
+    // venueId is the raw URI string (e.g. "https://.../places/01HXX...") or null.
+    function setOccurrenceVenueDisplay(venueId) {
+        const section = document.getElementById('occurrence-venue-section');
+        const display = document.getElementById('occurrence-venue-display');
+        const virtualSection = document.getElementById('occurrence-virtual-section');
+        const hybridWarning = document.getElementById('occurrence-hybrid-warning');
+        if (venueId) {
+            display.value = venueUlidFromId(venueId);
+            section.style.display = 'block';
+            // Hide virtual URL when a physical venue override is active to prevent hybrids.
+            virtualSection.style.display = 'none';
+            // Show hybrid warning if the virtual URL input still has a stale value (legacy bad data).
+            const hasStaleVirtualUrl = !!(document.getElementById('occurrence-virtual-url').value);
+            if (hybridWarning) {
+                hybridWarning.style.display = hasStaleVirtualUrl ? 'block' : 'none';
+            }
+        } else {
+            display.value = '';
+            section.style.display = 'none';
+            if (hybridWarning) {
+                hybridWarning.style.display = 'none';
+            }
+            virtualSection.style.display = 'block';
+        }
+    }
+
+    // clearOccurrenceVenue removes the venue override from the modal (user action).
+    // The virtual URL input is shown again, retaining whatever stale value it may have —
+    // the admin can then clear it manually or keep it to save the occurrence as virtual-only.
+    function clearOccurrenceVenue() {
+        document.getElementById('occurrence-venue-id').value = '';
+        setOccurrenceVenueDisplay(null);
+    }
+
+    // venueUlidFromId extracts the trailing ULID from a venue URI, or returns the raw value.
+    function venueUlidFromId(venueId) {
+        if (!venueId) return '';
+        const m = venueId.match(/\/([A-Z0-9]{26})$/i);
+        return m ? m[1] : venueId;
+    }
 
     // Utility Functions
     function showLoading(loading) {

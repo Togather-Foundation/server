@@ -190,7 +190,21 @@ const API = {
             body: JSON.stringify({ source_id: sourceId, target_id: targetId })
         }),
         
-        pending: () => API.request('/api/v1/admin/events/pending')
+        pending: () => API.request('/api/v1/admin/events/pending'),
+
+        occurrences: {
+            create: (eventId, data) => API.request(`/api/v1/admin/events/${eventId}/occurrences`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            }),
+            update: (eventId, occurrenceId, data) => API.request(`/api/v1/admin/events/${eventId}/occurrences/${occurrenceId}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            }),
+            delete: (eventId, occurrenceId) => API.request(`/api/v1/admin/events/${eventId}/occurrences/${occurrenceId}`, {
+                method: 'DELETE'
+            })
+        }
     },
     
     // Admin Stats API
@@ -366,7 +380,14 @@ const API = {
         
         merge: (id, primaryEventId) => API.request(`/api/v1/admin/review-queue/${id}/merge`, {
             method: 'POST',
-            body: JSON.stringify({ primary_event_id: primaryEventId })
+            body: JSON.stringify({ primary_event_ulid: primaryEventId })
+        }),
+
+        addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, {
+            method: 'POST',
+            // target_event_ulid is omitted for the near_duplicate_of_new_event path;
+            // the backend derives source and target from the review entry itself.
+            body: JSON.stringify(targetEventUlid ? { target_event_ulid: targetEventUlid } : {})
         })
     },
     

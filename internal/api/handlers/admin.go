@@ -17,6 +17,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/sanitize"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/internal/validation"
+	"github.com/google/uuid"
 )
 
 type AdminHandler struct {
@@ -1366,7 +1367,6 @@ func (h *AdminHandler) GetPlace(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetOrganization handles GET /api/v1/admin/organizations/{id}
-// Returns flat JSON with field names matching the update handler expectations.
 func (h *AdminHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Organizations == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -1420,6 +1420,519 @@ func (h *AdminHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		Lifecycle:       org.Lifecycle,
 		CreatedAt:       org.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       org.UpdatedAt.Format(time.RFC3339),
+	}
+
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}
+
+// occurrenceResponse is the JSON body returned by the admin occurrence endpoints.
+type occurrenceResponse struct {
+	ID            string   `json:"id"`
+	StartTime     string   `json:"start_time"`
+	EndTime       string   `json:"end_time,omitempty"`
+	Timezone      string   `json:"timezone,omitempty"`
+	DoorTime      string   `json:"door_time,omitempty"`
+	VenueID       *string  `json:"venue_id,omitempty"`
+	VenueULID     *string  `json:"venue_ulid,omitempty"`
+	VirtualURL    *string  `json:"virtual_url,omitempty"`
+	TicketURL     string   `json:"ticket_url,omitempty"`
+	PriceMin      *float64 `json:"price_min,omitempty"`
+	PriceMax      *float64 `json:"price_max,omitempty"`
+	PriceCurrency string   `json:"price_currency,omitempty"`
+	Availability  string   `json:"availability,omitempty"`
+}
+
+func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
+	resp := occurrenceResponse{
+		ID:            occ.ID,
+		StartTime:     occ.StartTime.Format(time.RFC3339),
+		Timezone:      occ.Timezone,
+		VenueID:       occ.VenueID,
+		VenueULID:     occ.VenueULID,
+		VirtualURL:    occ.VirtualURL,
+		TicketURL:     occ.TicketURL,
+		PriceMin:      occ.PriceMin,
+		PriceMax:      occ.PriceMax,
+		PriceCurrency: occ.PriceCurrency,
+		Availability:  occ.Availability,
+	}
+	if occ.EndTime != nil {
+		resp.EndTime = occ.EndTime.Format(time.RFC3339)
+	}
+	if occ.DoorTime != nil {
+		resp.DoorTime = occ.DoorTime.Format(time.RFC3339)
+	}
+	return resp
+}
+
+// CreateOccurrence handles POST /api/v1/admin/events/{id}/occurrences
+// Adds a new occurrence to an existing event.
+func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	eventULID, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		StartTime     string   `json:"start_time"`
+		EndTime       *string  `json:"end_time"`
+		Timezone      string   `json:"timezone"`
+		DoorTime      *string  `json:"door_time"`
+		VenueULID     *string  `json:"venue_ulid"`
+		VirtualURL    *string  `json:"virtual_url"`
+		TicketURL     *string  `json:"ticket_url"`
+		PriceMin      *float64 `json:"price_min"`
+		PriceMax      *float64 `json:"price_max"`
+		PriceCurrency string   `json:"price_currency"`
+		Availability  string   `json:"availability"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	if req.StartTime == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time is required", nil, h.Env)
+		return
+	}
+	if req.Timezone == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "timezone is required", nil, h.Env)
+		return
+	}
+
+	startTime, err := time.Parse(time.RFC3339, req.StartTime)
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be RFC3339", err, h.Env)
+		return
+	}
+	var endTime *time.Time
+	if req.EndTime != nil {
+		t, err := time.Parse(time.RFC3339, *req.EndTime)
+		if err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be RFC3339", err, h.Env)
+			return
+		}
+		endTime = &t
+	}
+	var doorTime *time.Time
+	if req.DoorTime != nil {
+		t, err := time.Parse(time.RFC3339, *req.DoorTime)
+		if err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be RFC3339", err, h.Env)
+			return
+		}
+		doorTime = &t
+	}
+
+	// Resolve venueULID → venueID (UUID) if provided
+	var venueID *string
+	if req.VenueULID != nil && *req.VenueULID != "" {
+		place, err := h.AdminService.GetPlaceByULID(r.Context(), *req.VenueULID)
+		if err != nil {
+			if errors.Is(err, events.ErrNotFound) {
+				problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/validation-error", "venue not found", err, h.Env)
+				return
+			}
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+			return
+		}
+		venueID = &place.ID
+	}
+
+	params := events.OccurrenceCreateParams{
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Timezone:      req.Timezone,
+		DoorTime:      doorTime,
+		VenueID:       venueID,
+		VirtualURL:    req.VirtualURL,
+		TicketURL:     req.TicketURL,
+		PriceMin:      req.PriceMin,
+		PriceMax:      req.PriceMax,
+		PriceCurrency: req.PriceCurrency,
+		Availability:  req.Availability,
+	}
+
+	occ, err := h.AdminService.CreateOccurrenceOnEvent(r.Context(), eventULID, params)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceOverlap) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "Occurrence overlaps an existing occurrence", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceLocationRequired) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/occurrence-location-required", "Occurrence must have a venue or virtual URL", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.occurrence.create", "event", eventULID, "success", map[string]string{
+			"occurrence_id": occ.ID,
+		})
+	}
+
+	writeJSON(w, http.StatusCreated, occurrenceToResponse(occ), contentTypeFromRequest(r))
+}
+
+// UpdateOccurrence handles PUT /api/v1/admin/events/{id}/occurrences/{occurrenceId}
+// Partially updates an existing occurrence (PATCH semantics — only sent fields are changed).
+func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	eventULID, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	occIDStr := strings.TrimSpace(pathParam(r, "occurrenceId"))
+	if _, err := uuid.Parse(occIDStr); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "occurrenceId must be a valid UUID", err, h.Env)
+		return
+	}
+
+	// Decode raw JSON to detect which fields were explicitly sent (PATCH semantics).
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	params := events.OccurrenceUpdateParams{}
+
+	if v, ok := raw["start_time"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be a string", err, h.Env)
+			return
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be RFC3339", err, h.Env)
+			return
+		}
+		params.StartTime = &t
+	}
+	if v, ok := raw["end_time"]; ok {
+		params.EndTimeSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be a string or null", err, h.Env)
+				return
+			}
+			t, err := time.Parse(time.RFC3339, s)
+			if err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be RFC3339", err, h.Env)
+				return
+			}
+			params.EndTime = &t
+		}
+	}
+	if v, ok := raw["timezone"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "timezone must be a string", err, h.Env)
+			return
+		}
+		params.Timezone = &s
+	}
+	if v, ok := raw["door_time"]; ok {
+		params.DoorTimeSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be a string or null", err, h.Env)
+				return
+			}
+			t, err := time.Parse(time.RFC3339, s)
+			if err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be RFC3339", err, h.Env)
+				return
+			}
+			params.DoorTime = &t
+		}
+	}
+	if v, ok := raw["venue_ulid"]; ok {
+		params.VenueIDSet = true
+		if string(v) != "null" {
+			var ulid string
+			if err := json.Unmarshal(v, &ulid); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "venue_ulid must be a string or null", err, h.Env)
+				return
+			}
+			place, err := h.AdminService.GetPlaceByULID(r.Context(), ulid)
+			if err != nil {
+				if errors.Is(err, events.ErrNotFound) {
+					problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/validation-error", "venue not found", err, h.Env)
+					return
+				}
+				problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+				return
+			}
+			params.VenueID = &place.ID
+		}
+	}
+	if v, ok := raw["virtual_url"]; ok {
+		params.VirtualURLSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "virtual_url must be a string or null", err, h.Env)
+				return
+			}
+			params.VirtualURL = &s
+		}
+	}
+	if v, ok := raw["ticket_url"]; ok {
+		params.TicketURLSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "ticket_url must be a string or null", err, h.Env)
+				return
+			}
+			params.TicketURL = &s
+		}
+	}
+	if v, ok := raw["price_min"]; ok {
+		params.PriceMinSet = true
+		if string(v) != "null" {
+			var f float64
+			if err := json.Unmarshal(v, &f); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "price_min must be a number or null", err, h.Env)
+				return
+			}
+			params.PriceMin = &f
+		}
+	}
+	if v, ok := raw["price_max"]; ok {
+		params.PriceMaxSet = true
+		if string(v) != "null" {
+			var f float64
+			if err := json.Unmarshal(v, &f); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "price_max must be a number or null", err, h.Env)
+				return
+			}
+			params.PriceMax = &f
+		}
+	}
+	if v, ok := raw["price_currency"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "price_currency must be a string", err, h.Env)
+			return
+		}
+		params.PriceCurrency = &s
+	}
+	if v, ok := raw["availability"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "availability must be a string", err, h.Env)
+			return
+		}
+		params.Availability = &s
+	}
+
+	occ, err := h.AdminService.UpdateOccurrenceOnEvent(r.Context(), eventULID, occIDStr, params)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event or occurrence not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceOverlap) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "Occurrence overlaps an existing occurrence", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceLocationRequired) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/occurrence-location-required", "Occurrence must have a venue or virtual URL", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.occurrence.update", "event", eventULID, "success", map[string]string{
+			"occurrence_id": occIDStr,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, occurrenceToResponse(occ), contentTypeFromRequest(r))
+}
+
+// DeleteOccurrence handles DELETE /api/v1/admin/events/{id}/occurrences/{occurrenceId}
+// Deletes a single occurrence from an event. Returns 422 if it is the last occurrence.
+func (h *AdminHandler) DeleteOccurrence(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	eventULID, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	occIDStr := strings.TrimSpace(pathParam(r, "occurrenceId"))
+	if _, err := uuid.Parse(occIDStr); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "occurrenceId must be a valid UUID", err, h.Env)
+		return
+	}
+
+	err := h.AdminService.DeleteOccurrenceOnEvent(r.Context(), eventULID, occIDStr)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrLastOccurrence) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/last-occurrence", "Cannot delete the last occurrence of an event", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.occurrence.delete", "event", eventULID, "success", map[string]string{
+			"occurrence_id": occIDStr,
+		})
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ConsolidateEvents handles POST /api/v1/admin/events/consolidate
+// Atomically consolidates multiple events into one canonical event while retiring the others.
+// The canonical event is either created fresh (via event) or promoted from an existing event (via event_ulid).
+func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	type consolidateRequest struct {
+		Event     *events.EventInput `json:"event,omitempty"`
+		EventULID string             `json:"event_ulid,omitempty"`
+		Retire    []string           `json:"retire"`
+	}
+
+	var req consolidateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	params := events.ConsolidateParams{
+		Event:     req.Event,
+		EventULID: req.EventULID,
+		Retire:    req.Retire,
+	}
+
+	result, err := h.AdminService.Consolidate(r.Context(), params)
+	if err != nil {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFromRequest(r, "admin.event.consolidate", "event", req.EventULID, "failure", map[string]string{
+				"error": err.Error(),
+			})
+		}
+
+		if errors.Is(err, events.ErrConsolidateBothEventFields) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Conflicting event fields", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateNoEventField) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing event field",
+				err, h.Env, problem.WithDetail("one of event or event_ulid is required; use POST /admin/events or PATCH /admin/events/{ulid} for single-event operations"))
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateNoRetire) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing retire list",
+				err, h.Env, problem.WithDetail("retire list is required and must contain at least one event ULID; use POST /admin/events or PATCH /admin/events/{ulid} for operations without retiring events"))
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateCanonicalInRetire) {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Canonical event in retire list", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrConsolidateRetiredAlreadyDeleted) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/conflict", "Retire target already deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/conflict", "Event has been deleted", err, h.Env)
+			return
+		}
+		var validationErr events.ValidationError
+		if errors.As(err, &validationErr) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/validation-error", "Validation failed", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.event.consolidate", "event", result.Event.ULID, "success", map[string]string{
+			"retired_ulids": strings.Join(result.Retired, ","),
+		})
+	}
+
+	type consolidateResponse struct {
+		Event                  any                        `json:"event"`
+		LifecycleState         string                     `json:"lifecycle_state"`
+		IsDuplicate            bool                       `json:"is_duplicate"`
+		IsMerged               bool                       `json:"is_merged"`
+		NeedsReview            bool                       `json:"needs_review"`
+		Warnings               []events.ValidationWarning `json:"warnings"`
+		Retired                []string                   `json:"retired"`
+		ReviewEntriesDismissed []int                      `json:"review_entries_dismissed"`
+	}
+
+	ev := schema.NewEvent(result.Event.Name)
+	ev.Context = loadDefaultContext()
+	ev.ID = buildEventURI(h.BaseURL, result.Event.ULID)
+	ev.Description = result.Event.Description
+
+	resp := consolidateResponse{
+		Event:                  *ev,
+		LifecycleState:         result.LifecycleState,
+		IsDuplicate:            result.IsDuplicate,
+		IsMerged:               result.IsMerged,
+		NeedsReview:            result.NeedsReview,
+		Warnings:               result.Warnings,
+		Retired:                result.Retired,
+		ReviewEntriesDismissed: result.ReviewEntriesDismissed,
 	}
 
 	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))

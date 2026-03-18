@@ -533,6 +533,65 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			// Regression: occurrence with no venueId/virtualUrl is valid when parent has location.
+			name: "occurrence without venueId or virtualUrl inherits parent location - valid",
+			input: EventInput{
+				Name:      "Weekly Yoga",
+				StartDate: "2026-06-01T10:00:00Z",
+				Location:  &PlaceInput{Name: "Studio 9"},
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:30:00Z", Timezone: "America/Toronto"},
+					{StartDate: "2026-06-08T10:00:00Z", EndDate: "2026-06-08T11:30:00Z", Timezone: "America/Toronto"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// Regression: occurrence with no venueId/virtualUrl and parent only has virtualLocation - valid.
+			name: "occurrence without venueId inherits parent virtualLocation - valid",
+			input: EventInput{
+				Name:            "Online Series",
+				StartDate:       "2026-06-01T10:00:00Z",
+				VirtualLocation: &VirtualLocationInput{URL: "https://zoom.us/j/abc123"},
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
+					{StartDate: "2026-06-08T10:00:00Z", EndDate: "2026-06-08T11:00:00Z"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// Regression: occurrence with no venueId/virtualUrl AND parent has no location - must error.
+			// This is the contract enforced by occurrence_location_required DB constraint.
+			name: "occurrence without venueId and parent has no location - invalid",
+			input: EventInput{
+				Name:      "Nowhere Event",
+				StartDate: "2026-06-01T10:00:00Z",
+				// No Location, no VirtualLocation
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			// New contract: a parent location with only a canonical @id is accepted at
+			// validation time. The ingest layer resolves it via GetPlaceByULID; if the
+			// place doesn't exist ingest returns an error. Validation is optimistic.
+			name: "occurrence without venueId and parent location has @id only (empty name) - valid at validation",
+			input: EventInput{
+				Name:      "Canonical Venue Event",
+				StartDate: "2026-06-01T10:00:00Z",
+				Location: &PlaceInput{
+					ID: "https://example.com/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+				},
+				Occurrences: []OccurrenceInput{
+					{StartDate: "2026-06-01T10:00:00Z", EndDate: "2026-06-01T11:00:00Z"},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -542,6 +601,99 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateEventInput_SingleOccurrenceLocation covers the single-occurrence path
+// (no Occurrences array, just StartDate) where the parent location must be resolvable at
+// ingest time. A Location with only a canonical @id (empty Name) passes validatePlaceInput
+// but cannot be resolved by the ingest layer (UpsertPlace requires a Name), so
+// PrimaryVenueID would be nil and the occurrence would hit the occurrence_location_required
+// DB constraint. The fix added an early-rejection check in ValidateEventInputWithWarnings.
+func TestValidateEventInput_SingleOccurrenceLocation(t *testing.T) {
+	nodeDomain := "example.com"
+
+	tests := []struct {
+		name            string
+		input           EventInput
+		wantErr         bool
+		wantErrContains string
+	}{
+		{
+			// Baseline: single-occurrence event with a named location — must pass.
+			name: "single_occurrence_named_location_valid",
+			input: EventInput{
+				Name:      "Yoga at The Studio",
+				StartDate: "2026-06-01T10:00:00Z",
+				EndDate:   "2026-06-01T11:30:00Z",
+				License:   "CC0-1.0",
+				Location:  &PlaceInput{Name: "The Studio", AddressLocality: "Toronto"},
+			},
+			wantErr: false,
+		},
+		{
+			// Baseline: single-occurrence event with a virtualLocation — must pass.
+			name: "single_occurrence_virtual_location_valid",
+			input: EventInput{
+				Name:            "Online Yoga",
+				StartDate:       "2026-06-01T10:00:00Z",
+				EndDate:         "2026-06-01T11:30:00Z",
+				License:         "CC0-1.0",
+				VirtualLocation: &VirtualLocationInput{URL: "https://zoom.us/j/abc123"},
+			},
+			wantErr: false,
+		},
+		{
+			// New contract: single-occurrence event where Location has only a canonical @id
+			// (empty Name) is accepted at validation. The ingest layer resolves it via
+			// GetPlaceByULID — if the place doesn't exist, ingest returns a clear error.
+			// Validation is now optimistic; rejection happens at ingest time, not here.
+			name: "single_occurrence_canonical_id_only_location_accepted_at_validation",
+			input: EventInput{
+				Name:      "Event at Canonical Venue",
+				StartDate: "2026-06-01T10:00:00Z",
+				EndDate:   "2026-06-01T11:30:00Z",
+				License:   "CC0-1.0",
+				Location: &PlaceInput{
+					ID: "https://example.com/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+					// Name intentionally omitted — @id only
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// Regression: single-occurrence event with no location at all — must also be
+			// rejected. (This was already covered by the location-required check, but
+			// keep it here to document the single-occurrence-specific error path.)
+			name: "single_occurrence_no_location_rejected",
+			input: EventInput{
+				Name:      "Nowhere Event",
+				StartDate: "2026-06-01T10:00:00Z",
+				EndDate:   "2026-06-01T11:30:00Z",
+				License:   "CC0-1.0",
+				// No Location, no VirtualLocation
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.ValidationConfig{AllowTestDomains: true}
+			_, err := ValidateEventInputWithWarnings(tc.input, nodeDomain, nil, cfg)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("ValidateEventInputWithWarnings() = nil; want an error")
+				}
+				if tc.wantErrContains != "" && !strings.Contains(err.Error(), tc.wantErrContains) {
+					t.Errorf("error = %q; want it to contain %q", err.Error(), tc.wantErrContains)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("ValidateEventInputWithWarnings() error = %v; want nil", err)
+				}
 			}
 		})
 	}

@@ -55,6 +55,16 @@ for management, decisions, and coordination.
 When delegating, always include: what to do, reference doc paths from Phase 1,
 what to return, and the bead ID(s).
 
+**CRITICAL — No commits in subagents:** Every prompt you send to a subagent via
+the Task tool **must** include this instruction verbatim:
+
+> **Do NOT commit or push any changes. The orchestrator owns all git commits.
+> Write the code, run the tests, fix failures — then stop. Return a summary of
+> what you changed and any remaining issues.**
+
+This overrides the Session Close Protocol in AGENTS.md for subagents operating
+under orchestration. The orchestrator commits after verifying each step.
+
 ## Input
 
 `$ARGUMENTS` should be one of:
@@ -125,6 +135,11 @@ and to use context7 MCP for external library docs. For migrations: `migrate crea
 -ext sql -dir internal/storage/postgres/migrations -seq <name>`, write up+down,
 update SQLc queries as needed.
 
+**Every subagent prompt must include (copy verbatim):**
+> **Do NOT commit or push any changes. The orchestrator owns all git commits.
+> Write the code, run the tests, fix failures — then stop. Return a summary of
+> what you changed and any remaining issues.**
+
 After each subagent returns:
 1. `scripts/agent-run.sh make test` -- verify tests pass
 2. `make sqlc` if SQL queries changed
@@ -180,6 +195,8 @@ tech debt shortcuts, performance concerns, test coverage gaps.
 If behavior changed, delegate to `@general`: update `docs/`, subdirectory AGENTS.md,
 `contexts/`/`shapes/` if JSON-LD changed, API docs if endpoints changed. Capture
 non-obvious learnings (gotchas, patterns) in relevant AGENTS.md files.
+
+Include the no-commit instruction in the delegation prompt (see Delegation Principle).
 
 After: review changes, `make sqlc` if needed, commit.
 

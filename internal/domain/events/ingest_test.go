@@ -58,6 +58,7 @@ type MockRepository struct {
 	shouldFailFindByDedupHash        bool
 	shouldFailGetOrCreateSource      bool
 	shouldFailUpsertPlace            bool
+	shouldFailGetPlaceByULID         bool
 	shouldFailUpsertOrganization     bool
 	shouldFailCreateOccurrence       bool
 	shouldFailCreateSource           bool
@@ -166,6 +167,12 @@ func (m *MockRepository) CreateOccurrence(ctx context.Context, params Occurrence
 
 	if m.shouldFailCreateOccurrence {
 		return errors.New("mock create occurrence error")
+	}
+
+	// Enforce the DB constraint: venue_id IS NOT NULL OR virtual_url IS NOT NULL.
+	// Mirrors occurrence_location_required in migrations/000001_core.up.sql.
+	if params.VenueID == nil && params.VirtualURL == nil {
+		return errors.New("mock occurrence_location_required constraint: venue_id IS NOT NULL OR virtual_url IS NOT NULL")
 	}
 
 	m.occurrences[params.EventID] = append(m.occurrences[params.EventID], params)
@@ -313,7 +320,22 @@ func (m *MockRepository) UpsertPlace(ctx context.Context, params PlaceCreatePara
 		ULID: params.ULID,
 	}
 	m.places[key] = place
+	// Also index by ULID so GetPlaceByULID can find places created via UpsertPlace.
+	m.places["ulid:"+params.ULID] = place
 	return place, nil
+}
+
+func (m *MockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.shouldFailGetPlaceByULID {
+		return nil, errors.New("mock get place by ulid error")
+	}
+	if place, ok := m.places["ulid:"+ulid]; ok {
+		return place, nil
+	}
+	return nil, ErrNotFound
 }
 
 func (m *MockRepository) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
@@ -381,6 +403,9 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	return event, nil
 }
 
+func (m *MockRepository) DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error {
+	return nil
+}
 func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -518,6 +543,11 @@ func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*Revi
 		return nil, ErrNotFound
 	}
 	return entry, nil
+}
+
+func (m *MockRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error) {
+	// In tests, locking is a no-op — delegate to GetReviewQueueEntry.
+	return m.GetReviewQueueEntry(ctx, id)
 }
 
 // GetReviewQueueByEventID is a test helper that returns all review queue entries for a given event UUID.
@@ -750,12 +780,56 @@ func (m *MockRepository) GetPendingReviewByEventUlid(_ context.Context, _ string
 	return nil, nil
 }
 
+func (m *MockRepository) GetPendingReviewByEventUlidAndDuplicateUlid(_ context.Context, _ string, _ string) (*ReviewQueueEntry, error) {
+	return nil, nil
+}
+
 func (m *MockRepository) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
 	return nil
 }
 
 func (m *MockRepository) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
 	return nil
+}
+
+func (m *MockRepository) DismissWarningMatchByReviewID(_ context.Context, _ int, _ string) error {
+	return nil
+}
+
+func (m *MockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+	return false, nil
+}
+
+func (m *MockRepository) LockEventForUpdate(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *MockRepository) InsertOccurrence(_ context.Context, params OccurrenceCreateParams) (*Occurrence, error) {
+	return &Occurrence{StartTime: params.StartTime}, nil
+}
+
+func (m *MockRepository) GetOccurrenceByID(_ context.Context, _, _ string) (*Occurrence, error) {
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) UpdateOccurrence(_ context.Context, _, occurrenceID string, _ OccurrenceUpdateParams) (*Occurrence, error) {
+	return &Occurrence{ID: occurrenceID}, nil
+}
+
+func (m *MockRepository) DeleteOccurrenceByID(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (m *MockRepository) CountOccurrences(_ context.Context, _ string) (int64, error) {
+	return 2, nil
+}
+
+func (m *MockRepository) CheckOccurrenceOverlapExcluding(_ context.Context, _ string, _ time.Time, _ *time.Time, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *MockRepository) DismissPendingReviewsByEventULIDs(_ context.Context, _ []string, _ string) ([]int, error) {
+	return nil, nil
 }
 
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
@@ -844,6 +918,26 @@ func (m *MockRepository) SetSimilarOrgs(candidates []SimilarOrgCandidate) {
 	defer m.mu.Unlock()
 
 	m.similarOrgs = candidates
+}
+
+// SeedPlaceByULID pre-populates the mock so that GetPlaceByULID will return a
+// PlaceRecord for the given ULID.  Use this in tests that exercise the
+// occurrences[].venueId canonical-URI resolution path.
+func (m *MockRepository) SeedPlaceByULID(ulid, id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.places["ulid:"+ulid] = &PlaceRecord{ID: id, ULID: ulid}
+}
+
+// SeedPlaceByULIDWithName pre-populates the mock with a place ULID, UUID, and Name.
+// Use in tests that exercise the parent location.@id resolution path where name
+// mismatch detection is needed.
+func (m *MockRepository) SeedPlaceByULIDWithName(ulid, id, name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.places["ulid:"+ulid] = &PlaceRecord{ID: id, ULID: ulid, Name: name}
 }
 
 // AddNotDuplicate records a known not-duplicate pair
@@ -1640,6 +1734,540 @@ func TestNearDuplicateWarningsWithDetails(t *testing.T) {
 		}
 		if !hasSubstring(warnings[0].Message, "Old Jazz Night") {
 			t.Errorf("message %q should contain existing event name", warnings[0].Message)
+		}
+	})
+}
+
+// TestIngestService_MultiOccurrenceParentVenue is a regression test for the staging bug where
+// fixture events with an occurrences array and a parent-only location failed with
+// "occurrence_location_required" DB constraint violation.
+//
+// Root cause: validateOccurrences did not enforce that each occurrence must have a venue
+// resolvable at create time; createOccurrencesWithRepo inherited event.PrimaryVenueID, which
+// is nil when the parent event's location wasn't persisted (or when submitted without location).
+//
+// Fix: validateOccurrences now rejects occurrences that have neither venueId nor virtualUrl
+// when the parent event also provides no location or virtualLocation. The mock enforces the
+// same DB constraint so unit tests catch the regression.
+func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
+	ctx := context.Background()
+	futureDateFn := func(offset time.Duration) string {
+		return time.Now().Add(offset).Format(time.RFC3339)
+	}
+
+	t.Run("multi_occurrence_inherits_parent_venue", func(t *testing.T) {
+		// Regression: recurring event with parent location and bare occurrences must ingest
+		// successfully on all environments. The mock now enforces occurrence_location_required
+		// so this will fail if inheritance is broken.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Weekly Yoga at Studio",
+			Description: "A recurring yoga class every week.",
+			Image:       "https://images.example.com/yoga.jpg",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				Name:            "The Studio",
+				AddressLocality: "Toronto",
+				AddressRegion:   "ON",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				// bare occurrences: no venueId, no virtualUrl — rely on parent location
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+				},
+				{
+					StartDate: futureDateFn(14 * 24 * time.Hour),
+					EndDate:   futureDateFn(14*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+				},
+				{
+					StartDate: futureDateFn(21 * 24 * time.Hour),
+					EndDate:   futureDateFn(21*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil (occurrence should inherit parent venue)", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+
+		// All 3 occurrences must have been created with a venue inherited from the parent event.
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 3 {
+			t.Fatalf("expected 3 occurrences, got %d", len(occs))
+		}
+		for i, occ := range occs {
+			if occ.VenueID == nil && occ.VirtualURL == nil {
+				t.Errorf("occurrence[%d] has no venue or virtual URL after inheritance", i)
+			}
+		}
+	})
+
+	t.Run("multi_occurrence_inherits_parent_virtual_location", func(t *testing.T) {
+		// Regression: bare occurrences (no venueId/virtualUrl) must also work when the
+		// parent event has a virtualLocation instead of a physical location. The occurrence
+		// should inherit the parent's VirtualURL and satisfy occurrence_location_required.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Online Yoga Series",
+			Description: "A recurring online yoga class.",
+			License:     "CC0-1.0",
+			VirtualLocation: &VirtualLocationInput{
+				URL: "https://zoom.us/j/meeting123",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			// Bare occurrences: no venueId/virtualUrl — rely on parent virtualLocation.
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil (occurrence should inherit parent virtualLocation)", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		if occs[0].VirtualURL == nil {
+			t.Error("occurrence should have inherited virtualURL from parent event")
+		}
+	})
+
+	t.Run("occurrence_with_resolved_venueId_must_not_inherit_parent_virtualLocation", func(t *testing.T) {
+		// Regression: when a multi-occurrence event has a parent virtualLocation AND an
+		// occurrence that resolves its own physical venueId, the occurrence must NOT
+		// inherit the parent's virtualURL. Doing so creates a hybrid occurrence with both
+		// venue_id and virtual_url set, violating the location contract (an occurrence is
+		// either physical or virtual, not both).
+		//
+		// Fix: virtualURL inheritance is skipped when venueID is already resolved.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULID(placeULID, placeUUID)
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Hybrid Series",
+			Description: "Event with a parent virtualLocation but an occurrence that specifies a physical venue.",
+			License:     "CC0-1.0",
+			VirtualLocation: &VirtualLocationInput{
+				URL: "https://stream.example.com/live",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+					// Explicitly references a physical venue — must NOT inherit parent virtualURL.
+					VenueID: "https://test.togather.ca/places/" + placeULID,
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		occ := occs[0]
+		// VenueID must be the resolved UUID.
+		if occ.VenueID == nil || *occ.VenueID != placeUUID {
+			t.Errorf("occurrence VenueID = %v; want %q", occ.VenueID, placeUUID)
+		}
+		// VirtualURL must NOT be set — no hybrid occurrences.
+		if occ.VirtualURL != nil {
+			t.Errorf("occurrence VirtualURL = %q; want nil (physical venue must not inherit parent virtualURL)", *occ.VirtualURL)
+		}
+	})
+
+	t.Run("parent_location_atid_only_not_found_rejected", func(t *testing.T) {
+		// Regression: when parent location supplies only a canonical @id and the place
+		// does not exist in the DB, ingest must return a clear error.
+		// The mock has no seeded place, so GetPlaceByULID returns ErrNotFound.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Event at Canonical Venue (not found)",
+			Description: "Parent location @id references a non-existent place.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		_, err := svc.Ingest(ctx, input)
+		if err == nil {
+			t.Fatal("Ingest() expected error for @id referencing non-existent place, got nil")
+		}
+		if !strings.Contains(err.Error(), "location.@id") {
+			t.Errorf("Ingest() error = %v; want error mentioning 'location.@id'", err)
+		}
+	})
+
+	t.Run("parent_location_atid_only_valid_resolves_primary_venue", func(t *testing.T) {
+		// Regression: parent location with only canonical @id (no name) must resolve the
+		// place via GetPlaceByULID and set PrimaryVenueID on the event.
+		// Occurrences that omit venueId should inherit this resolved venue.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "The Canonical Hall")
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Event at Canonical Hall",
+			Description: "Parent location uses only canonical @id; no name supplied.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil", err)
+		}
+		if result.Event.PrimaryVenueID == nil {
+			t.Fatal("Event.PrimaryVenueID is nil; want the canonical place UUID")
+		}
+		if *result.Event.PrimaryVenueID != placeUUID {
+			t.Errorf("Event.PrimaryVenueID = %q; want %q", *result.Event.PrimaryVenueID, placeUUID)
+		}
+		// Occurrence must inherit the resolved venue.
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		if occs[0].VenueID == nil || *occs[0].VenueID != placeUUID {
+			t.Errorf("occurrence VenueID = %v; want %q (inherited from parent @id)", occs[0].VenueID, placeUUID)
+		}
+	})
+
+	t.Run("parent_location_atid_plus_matching_name_accepted", func(t *testing.T) {
+		// Regression: parent location with both @id and a name that matches the canonical
+		// place must succeed — @id is authoritative and name check passes.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+		const canonicalName = "The Canonical Hall"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, canonicalName)
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Event at Canonical Hall (with name)",
+			Description: "Parent location uses @id and a matching name.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				ID:   "https://test.togather.ca/places/" + placeULID,
+				Name: canonicalName, // matches canonical — should pass
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil (matching name should be accepted)", err)
+		}
+		if result.Event.PrimaryVenueID == nil || *result.Event.PrimaryVenueID != placeUUID {
+			t.Errorf("Event.PrimaryVenueID = %v; want %q", result.Event.PrimaryVenueID, placeUUID)
+		}
+	})
+
+	t.Run("parent_location_atid_plus_mismatched_name_rejected", func(t *testing.T) {
+		// Regression: parent location with both @id and a name that DOES NOT match the
+		// canonical place name must be rejected with a clear error.
+		// This prevents silent venue misattribution when a submitter has the wrong @id.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "The Canonical Hall")
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Event at Wrong Venue",
+			Description: "Parent location @id and name disagree.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				ID:   "https://test.togather.ca/places/" + placeULID,
+				Name: "Totally Different Venue", // mismatches canonical — must reject
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+				},
+			},
+		}
+
+		_, err := svc.Ingest(ctx, input)
+		if err == nil {
+			t.Fatal("Ingest() expected error when location.@id and location.name disagree, got nil")
+		}
+		if !strings.Contains(err.Error(), "location.name") {
+			t.Errorf("Ingest() error = %v; want error mentioning 'location.name'", err)
+		}
+		if !strings.Contains(err.Error(), "does not match") {
+			t.Errorf("Ingest() error = %v; want error mentioning 'does not match'", err)
+		}
+	})
+
+	t.Run("parent_location_atid_only_single_occurrence_resolves_and_inherits", func(t *testing.T) {
+		// Regression: single-occurrence event (no Occurrences array) whose parent
+		// location uses only canonical @id must resolve the place and inherit venue
+		// into the implicit occurrence.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "The Canonical Hall")
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Single-Occ Event at Canonical Hall",
+			Description: "Single-occurrence with @id-only parent location.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			// No Occurrences array — single-occurrence path.
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil (single-occ @id-only should resolve)", err)
+		}
+		if result.Event.PrimaryVenueID == nil || *result.Event.PrimaryVenueID != placeUUID {
+			t.Errorf("Event.PrimaryVenueID = %v; want %q", result.Event.PrimaryVenueID, placeUUID)
+		}
+		// Implicit single occurrence must also carry the resolved venue.
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 implicit occurrence, got %d", len(occs))
+		}
+		if occs[0].VenueID == nil || *occs[0].VenueID != placeUUID {
+			t.Errorf("implicit occurrence VenueID = %v; want %q", occs[0].VenueID, placeUUID)
+		}
+	})
+
+	t.Run("occurrence_venueId_canonical_uri_resolves_to_uuid", func(t *testing.T) {
+		// Regression (Issue 2 — venueId resolution): an occurrence with venueId set to a
+		// canonical place URI must have the URI resolved to the underlying place UUID before
+		// being persisted.  Previously the raw URI string was passed directly to the UUID
+		// venue_id column, which would cause a DB type mismatch.
+		//
+		// Arrange: seed the mock with a known place ULID → UUID mapping.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULID(placeULID, placeUUID)
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Event with Explicit venueId",
+			Description: "Occurrence references a known place via canonical URI.",
+			License:     "CC0-1.0",
+			// Parent has a named location to satisfy the location-required check, but each
+			// occurrence overrides it with an explicit venueId.
+			Location: &PlaceInput{
+				Name:            "Fallback Venue",
+				AddressLocality: "Toronto",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate: futureDateFn(7 * 24 * time.Hour),
+					EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+					Timezone:  "America/Toronto",
+					// Canonical place URI — must be resolved to placeUUID.
+					VenueID: "https://test.togather.ca/places/" + placeULID,
+				},
+			},
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		occ := occs[0]
+		if occ.VenueID == nil {
+			t.Fatal("occurrence VenueID is nil; want a UUID")
+		}
+		if *occ.VenueID != placeUUID {
+			t.Errorf("occurrence VenueID = %q; want %q (UUID, not canonical URI)", *occ.VenueID, placeUUID)
+		}
+	})
+
+	t.Run("single_occurrence_physical_location_must_not_inherit_parent_virtual_url", func(t *testing.T) {
+		// Regression (Issue 1 — single-occ hybrid): when the parent event has BOTH a
+		// physical location (location.name) AND a virtualLocation, the implicit single
+		// occurrence must receive the physical venue only.  Previously virtualURL(input)
+		// was unconditionally assigned, creating a hybrid occurrence with both venue_id
+		// AND virtual_url set — violating the location contract.
+		repo := NewMockRepository()
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true, RequireImage: false})
+
+		input := EventInput{
+			Name:        "Hybrid-parent single occurrence",
+			Description: "Parent has physical and virtual; occurrence must be physical-only.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				Name:            "Studio 42",
+				AddressLocality: "Toronto",
+			},
+			VirtualLocation: &VirtualLocationInput{
+				URL: "https://stream.example.com/live",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			// No Occurrences slice — single-occurrence path.
+		}
+
+		result, err := svc.Ingest(ctx, input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v; want nil", err)
+		}
+		if result == nil || result.Event == nil {
+			t.Fatal("Ingest() returned nil result or event")
+		}
+
+		occs := repo.occurrences[result.Event.ID]
+		if len(occs) != 1 {
+			t.Fatalf("expected 1 occurrence, got %d", len(occs))
+		}
+		occ := occs[0]
+		// Must have the physical venue.
+		if occ.VenueID == nil {
+			t.Error("occurrence VenueID is nil; want the resolved physical place UUID")
+		}
+		// Must NOT have the virtual URL — no hybrid occurrences.
+		if occ.VirtualURL != nil {
+			t.Errorf("occurrence VirtualURL = %q; want nil (physical location takes priority, no hybrid)", *occ.VirtualURL)
+		}
+	})
+
+	t.Run("explicit_occurrence_with_both_venueId_and_virtualUrl_is_rejected", func(t *testing.T) {
+		// Regression (Issue 2 — explicit hybrid): a caller that supplies both venueId
+		// AND virtualUrl on the same occurrence must be rejected at validation time with
+		// a clear error, not silently persisted as a hybrid occurrence.
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+		repo := NewMockRepository()
+		repo.SeedPlaceByULID(placeULID, placeUUID)
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true})
+
+		input := EventInput{
+			Name:        "Explicit Hybrid Occurrence",
+			Description: "Occurrence supplies both venueId and virtualUrl — must be rejected.",
+			License:     "CC0-1.0",
+			Location: &PlaceInput{
+				Name:            "Fallback Venue",
+				AddressLocality: "Toronto",
+			},
+			StartDate: futureDateFn(7 * 24 * time.Hour),
+			EndDate:   futureDateFn(7*24*time.Hour + 90*time.Minute),
+			Occurrences: []OccurrenceInput{
+				{
+					StartDate:  futureDateFn(7 * 24 * time.Hour),
+					EndDate:    futureDateFn(7*24*time.Hour + 90*time.Minute),
+					Timezone:   "America/Toronto",
+					VenueID:    "https://test.togather.ca/places/" + placeULID,
+					VirtualURL: "https://stream.example.com/live",
+				},
+			},
+		}
+
+		_, err := svc.Ingest(ctx, input)
+		if err == nil {
+			t.Fatal("Ingest() returned nil error; want a validation error for hybrid occurrence")
+		}
+		var ve ValidationError
+		if !errors.As(err, &ve) {
+			t.Errorf("Ingest() error = %T (%v); want ValidationError", err, err)
 		}
 	})
 }

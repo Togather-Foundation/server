@@ -87,7 +87,7 @@ Single-page design: list view with inline detail expansion. No separate detail p
 +------------------------------------------------------------------+
 | Review Queue                                                      |
 |                                                                   |
-| [Pending (3)] [Approved] [Rejected]         [status filter tabs] |
+| [Pending (3)] [Approved] [Rejected] [Merged]  [status filter tabs] |
 +------------------------------------------------------------------+
 | Event Name       | Start Time      | Warning    | Created | Act. |
 |------------------|-----------------|------------|---------|------|
@@ -107,7 +107,9 @@ Single-page design: list view with inline detail expansion. No separate detail p
 
 ### Status Filter Tabs
 
-Three Tabler nav-tabs: **Pending** (default, with count badge), **Approved**, **Rejected**.
+Four Tabler nav-tabs: **Pending** (default, with count badge), **Approved**, **Rejected**, **Merged**.
+
+The **Merged** tab shows entries resolved via either the "Merge Duplicate" or "Add as Occurrence" actions (both set `status = 'merged'` on the review queue entry).
 
 ### List Table Columns
 
@@ -170,7 +172,42 @@ No new CSS file needed. Tabler classes used:
 - All click handlers use `data-action` attributes (CSP compliance)
 - Template files are auto-discovered via Go's `embed.FS` in `web/embed.go`
 - The `_footer.html` template already loads `bootstrap.bundle.min.js`, `tabler.min.js`, `api.js`, and `components.js`
-- The `reviewQueue` API namespace in `api.js` exposes `list`, `get`, `approve`, `reject`, `fix`
+- The `reviewQueue` API namespace in `api.js` exposes `list`, `get`, `approve`, `reject`, `fix`, `merge`, `addOccurrence`
+
+## Add as Occurrence button (srv-izykp)
+
+When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning and the events are actually different occurrences of the same recurring series (same name/venue, different date/time), an admin can use the **Add as Occurrence** button to:
+
+1. Add the review event's date/time as a new occurrence on the target (duplicate) recurring-series event.
+2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
+3. Mark the review as merged — all atomically.
+
+**Target lifecycle recompute:** After each add-occurrence, the surviving target event's lifecycle is re-evaluated inside the transaction. If no other pending reviews remain on the target, it transitions to `published`. If other pending reviews still exist (e.g. a second near-dup cluster), the target stays `pending_review` until all are resolved. This means repeated add-occurrence calls can consolidate an arbitrarily-large near-dup cluster into a single event regardless of operation order.
+
+**Button visibility**: "Add as Occurrence" is shown for `potential_duplicate` warnings (alongside "Merge Duplicate") and also for `near_duplicate_of_new_event` warnings (without "Merge Duplicate" — the near-dup path has no merge-duplicate button, only add-occurrence). Not shown for place/org duplicate warnings. **Hidden** when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`). Reviews with no supported duplicate warning (e.g. only data-quality warnings) are also rejected with 422 (`unsupported-review-for-occurrence`).
+
+**Near-dup path**: for `near_duplicate_of_new_event` entries the button uses inverted semantics — the existing series (`review.EventULID`) is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is absorbed. No `target_event_ulid` is sent in the request body; the backend derives the target directly from the review entry.
+
+**Forward path**: for `potential_duplicate` entries the button sends `target_event_ulid` from the warning match details.
+
+**Overlap guard**: the backend rejects with HTTP 409 if the new occurrence would overlap an existing occurrence on the target event.
+
+**Source event constraints**: the backend rejects with HTTP 422 if:
+- The source event has **zero occurrences** (`zero-occurrence-source`) — show message: "Source event has no occurrence data; resolve it before using Add as Occurrence."
+- The source event has **multiple occurrences** (`ambiguous-occurrence-source`) — show message: "Source event has multiple occurrences; resolve or split it before using Add as Occurrence."
+- The review entry has **both warning types** (`ambiguous-occurrence-dispatch`) — show message: "This review has conflicting warnings; resolve one warning before using Add as Occurrence."
+- The review entry has **no supported duplicate warning** (`unsupported-review-for-occurrence`) — the add-occurrence operation requires either a `potential_duplicate` or `near_duplicate_of_new_event` warning; reviews with only data-quality warnings (e.g. `reversed_dates_*`) are not eligible.
+
+**Data flow (forward path)**:
+- Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`
+- JS: `addOccurrenceDirect(id, targetUlid, false)` → `API.reviewQueue.addOccurrence(id, targetUlid)`
+- Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with body `{ target_event_ulid: "..." }`
+
+**Data flow (near-dup path)**:
+- Button: `data-action="add-occurrence" data-id="{id}" data-near-dup-path="true"`
+- JS: reads `dataset.nearDupPath === 'true'` → calls `addOccurrenceDirect(id, null, true)` → `API.reviewQueue.addOccurrence(id, null)`
+- `addOccurrence(id, null)` sends an empty body `{}`; the backend derives the target from the review entry
+- Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with empty body `{}`
 
 ## Testing
 

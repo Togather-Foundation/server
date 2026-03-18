@@ -143,6 +143,14 @@
                     mergeDirect(id, dupEventId, warningCode, primaryId, duplicateId);
                     break;
                 }
+                case 'add-occurrence': {
+                    e.preventDefault();
+                    const occBtn = target.closest('[data-action="add-occurrence"]');
+                    const targetUlid = occBtn ? occBtn.dataset.targetEventUlid : '';
+                    const isNearDupPath = occBtn ? occBtn.dataset.nearDupPath === 'true' : false;
+                    addOccurrenceDirect(id, targetUlid, isNearDupPath);
+                    break;
+                }
                 case 'show-more':
                     e.preventDefault();
                     showMoreText(target);
@@ -602,26 +610,62 @@
             </div>
         ` : '';
         
-        // Build cross-link banner for pending items with a known duplicate event
-        const crossLinkHtml = (detail.status === 'pending' && detail.duplicateOfEventUlid) ? `
-            <div class="alert alert-warning mb-3">
-                <strong>Near-duplicate detected:</strong>
-                This event may be a duplicate of
-                <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="alert-link">${escapeHtml(detail.duplicateOfEventUlid)}</a>.
-            </div>
-        ` : '';
+        // Build cross-link banner for pending items with a known duplicate event.
+        // Wording depends on the warning type:
+        //   near_duplicate_of_new_event — this review sits on the *existing* series; the linked
+        //     ULID is the newly-ingested candidate that flagged this entry as its near-duplicate.
+        //   potential_duplicate (or no warning present) — standard case where the linked ULID is
+        //     the canonical event this entry may be a duplicate of.
+        let crossLinkHtml = '';
+        if (detail.status === 'pending' && detail.duplicateOfEventUlid) {
+            const linkedUlid = detail.duplicateOfEventUlid;
+            const isNearDupEntry = warnings.some(w => w.code === 'near_duplicate_of_new_event');
+            if (isNearDupEntry) {
+                crossLinkHtml = `
+                    <div class="alert alert-warning mb-3">
+                        <strong>Near-duplicate detected:</strong>
+                        A newly-ingested event
+                        <a href="/admin/events/${encodeURIComponent(linkedUlid)}" class="alert-link">${escapeHtml(linkedUlid)}</a>
+                        may be a near-duplicate of this existing event.
+                    </div>
+                `;
+            } else {
+                crossLinkHtml = `
+                    <div class="alert alert-warning mb-3">
+                        <strong>Near-duplicate detected:</strong>
+                        This event may be a duplicate of
+                        <a href="/admin/events/${encodeURIComponent(linkedUlid)}" class="alert-link">${escapeHtml(linkedUlid)}</a>.
+                    </div>
+                `;
+            }
+        }
 
-        // Check if there are any duplicate-related warnings
+        // Check if there are any duplicate-related warnings.
+        // near_duplicate_of_new_event appears on the *existing* series event's review entry when a
+        // newly-ingested event was flagged as a near-duplicate of it.
+        // For add-occurrence: the existing series (review.eventId) is the target — the backend
+        // derives the source from review.duplicateOfEventUlid, so no target ULID is needed from the UI.
+        const hasNearDupNewEventWarning = warnings.some(w => w.code === 'near_duplicate_of_new_event');
         const hasDuplicateWarnings = warnings.some(w => 
-            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate' || w.code === 'near_duplicate_of_new_event')
+            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
         );
+        // Any duplicate-type warning (used to show the "Not a Duplicate" button)
+        const hasAnyDuplicateWarning = hasDuplicateWarnings || hasNearDupNewEventWarning;
         
-        // Extract duplicate event ID from warnings details if available
+        // Extract duplicate event ID from warnings details if available.
+        // Only potential_duplicate carries a known-correct counterpart ULID in its match details.
+        // near_duplicate_of_new_event is intentionally excluded from one-click merge: its
+        // duplicateOfEventUlid points to the newly-ingested counterpart, so the keep/discard
+        // sides for a full merge are ambiguous without explicit admin input.
+        // Add-as-occurrence IS supported: the backend inverts the semantics automatically —
+        // it absorbs duplicateOfEventUlid (new event) into eventId (existing series).
         const duplicateWarning = warnings.find(w => w.code === 'potential_duplicate' && w.details);
         let duplicateEventId = '';
         if (duplicateWarning && duplicateWarning.details && duplicateWarning.details.matches && Array.isArray(duplicateWarning.details.matches) && duplicateWarning.details.matches.length > 0) {
             duplicateEventId = duplicateWarning.details.matches[0].ulid || '';
-        } else if (detail.duplicateOfEventUlid) {
+        } else if (!hasNearDupNewEventWarning && detail.duplicateOfEventUlid) {
+            // Entry-level fallback: only safe when there is no near_duplicate_of_new_event warning,
+            // because in that case duplicateOfEventUlid points to the wrong event (the new one).
             duplicateEventId = detail.duplicateOfEventUlid;
         }
 
@@ -644,6 +688,18 @@
                 mergeDuplicateId = orgWarn.details.new_org_ulid || '';
             }
         }
+
+        // "Add as Occurrence" — two paths:
+        //   forward path: potential_duplicate warning with a known candidate ULID.
+        //   near-dup path: near_duplicate_of_new_event — backend derives source/target automatically;
+        //                   no target ULID is supplied from the UI (data-near-dup-path="true").
+        //
+        // When BOTH warning types are present the backend rejects the request as ambiguous
+        // (ErrAmbiguousOccurrenceDispatch / HTTP 422).  Hide both buttons in that case so the
+        // UI matches backend behaviour — admins must resolve the warnings manually first.
+        const hasEventDuplicateWarnings = warnings.some(w => w.code === 'potential_duplicate');
+        const addOccurrenceTargetUlid = duplicateEventId;
+        const isAmbiguousOccurrenceDispatch = hasEventDuplicateWarnings && hasNearDupNewEventWarning;
         
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
@@ -656,7 +712,7 @@
                     </svg>
                     Approve
                 </button>
-                ${hasDuplicateWarnings ? `
+                ${hasDuplicateWarnings && !isAmbiguousOccurrenceDispatch ? `
                     <button class="btn btn-purple" data-action="merge" data-id="${id}" data-duplicate-event-id="${escapeHtml(duplicateEventId)}" data-warning-code="${escapeHtml(mergeWarningCode)}" data-primary-id="${escapeHtml(mergePrimaryId)}" data-duplicate-id="${escapeHtml(mergeDuplicateId)}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -665,9 +721,39 @@
                             <circle cx="17" cy="12" r="2"/>
                             <line x1="7" y1="8" x2="7" y2="16"/>
                             <path d="M7 8a4 4 0 0 0 4 4h4"/>
-                        </svg>
-                        Merge Duplicate
+                    </svg>
+                    Merge Duplicate
                     </button>
+                    ${hasEventDuplicateWarnings && addOccurrenceTargetUlid && !isAmbiguousOccurrenceDispatch ? `
+                    <button class="btn btn-outline-purple" data-action="add-occurrence" data-id="${id}" data-target-event-ulid="${escapeHtml(addOccurrenceTargetUlid)}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <rect x="4" y="5" width="16" height="16" rx="2"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="4" y1="11" x2="20" y2="11"/>
+                            <line x1="12" y1="15" x2="12" y2="19"/>
+                            <line x1="10" y1="17" x2="14" y2="17"/>
+                        </svg>
+                        Add as Occurrence
+                    </button>
+                    ` : ''}
+                ` : ''}
+                ${hasNearDupNewEventWarning && !isAmbiguousOccurrenceDispatch ? `
+                    <button class="btn btn-outline-purple" data-action="add-occurrence" data-id="${id}" data-near-dup-path="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <rect x="4" y="5" width="16" height="16" rx="2"/>
+                            <line x1="16" y1="3" x2="16" y2="7"/>
+                            <line x1="8" y1="3" x2="8" y2="7"/>
+                            <line x1="4" y1="11" x2="20" y2="11"/>
+                            <line x1="12" y1="15" x2="12" y2="19"/>
+                            <line x1="10" y1="17" x2="14" y2="17"/>
+                        </svg>
+                        Add as Occurrence
+                    </button>
+                ` : ''}
+                ${hasAnyDuplicateWarning ? `
                     <button class="btn btn-outline-success" data-action="not-a-duplicate" data-id="${id}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -1274,6 +1360,63 @@
         } catch (err) {
             console.error('Failed to merge:', err);
             showToast(err.message || 'Failed to merge', 'error');
+            if (btn) setLoading(btn, false);
+        }
+    }
+
+    /**
+     * Add the review entry's event as a new occurrence on the target recurring-series event.
+     * Soft-deletes the absorbed event and marks the review as merged — all atomically.
+     *
+     * Two paths:
+     *   - Forward path (potential_duplicate): caller supplies targetEventUlid from the button's
+     *     data-target-event-ulid attribute. The review's own event is absorbed into that series.
+     *   - Near-dup path (near_duplicate_of_new_event): isNearDupPath=true, no targetEventUlid
+     *     needed. The backend derives source/target from the review entry itself and returns
+     *     the series ULID in response.targetEventUlid so we can show a navigation link.
+     *
+     * @param {string|number} id - Review queue entry ID
+     * @param {string} targetEventUlid - ULID of the recurring-series event (forward path only)
+     * @param {boolean} isNearDupPath - true if this is a near_duplicate_of_new_event entry
+     */
+    async function addOccurrenceDirect(id, targetEventUlid, isNearDupPath) {
+        if (!isNearDupPath && !targetEventUlid) {
+            showToast('No target event ULID available to add occurrence', 'error');
+            return;
+        }
+        const btn = document.querySelector(`[data-action="add-occurrence"][data-id="${id}"]`);
+        if (btn) setLoading(btn, true);
+        try {
+            const resp = await API.reviewQueue.addOccurrence(id, isNearDupPath ? null : targetEventUlid);
+            const seriesUlid = resp && resp.targetEventUlid ? resp.targetEventUlid : targetEventUlid;
+            if (currentFilter === 'pending') {
+                removeEntryFromList(id);
+                const mergedBadge = document.querySelector(`[data-action="filter-status"][data-status="merged"] .badge`);
+                if (mergedBadge) {
+                    const currentCount = parseInt(mergedBadge.textContent) || 0;
+                    mergedBadge.textContent = currentCount + 1;
+                }
+                // Show a brief success notice with a link to the target series.
+                if (seriesUlid) {
+                    const notice = document.createElement('div');
+                    notice.className = 'alert alert-success alert-dismissible mt-2';
+                    notice.setAttribute('role', 'alert');
+                    notice.innerHTML = `Occurrence added. <a href="/admin/events/${escapeHtml(seriesUlid)}" class="alert-link">View series →</a>` +
+                        `<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+                    const list = document.querySelector('#review-queue-list') || document.querySelector('.review-queue-container');
+                    if (list) list.prepend(notice);
+                } else {
+                    showToast('Occurrence added successfully', 'success');
+                }
+            } else {
+                loadEntries();
+                if (seriesUlid) {
+                    showToast('Occurrence added successfully', 'success');
+                }
+            }
+        } catch (err) {
+            console.error('Failed to add occurrence:', err);
+            showToast(err.message || 'Failed to add occurrence', 'error');
             if (btn) setLoading(btn, false);
         }
     }

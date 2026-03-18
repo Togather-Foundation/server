@@ -558,48 +558,242 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/events/merge:
+  /admin/events/consolidate:
     post:
-      operationId: mergeEvents
-      summary: Merge duplicate events
+      operationId: consolidateEvents
+      summary: Atomically consolidate multiple events into one canonical event
       description: |
-        Merge source event into target event. Source event will return 410 Gone 
-        with sameAs link to canonical event.
-        
-        Note: Automatic duplicate detection (/admin/duplicates list endpoint) 
-        is not yet implemented. Use this endpoint for manual merges.
+        Consolidate N events into a single canonical event in one atomic operation.
+        Either creates a new canonical event (`event`) or promotes an existing one
+        (`event_ulid`). All events listed in `retire` are soft-deleted with tombstones.
+        Open review queue entries for retired events are dismissed automatically.
+
+        Post-consolidation validation (duplicate detection, quality checks) runs on
+        the canonical event; results are returned in `warnings`, `is_duplicate`, and
+        `needs_review`.
+
+        Exactly one of `event` or `event_ulid` must be provided. `retire` is required
+        and must contain at least one ULID. The canonical event's ULID must not appear
+        in the `retire` list.
       tags: [Admin]
       x-internal: true
       security:
         - bearerAuth: []
       requestBody:
-        description: Source and target event IDs for merge operation
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [sourceId, targetId]
+              required:
+                - retire
               properties:
-                sourceId:
+                event:
+                  description: >
+                    Full event payload to create a new canonical event.
+                    Mutually exclusive with event_ulid.
+                  $ref: '#/components/schemas/EventInput'
+                event_ulid:
                   type: string
-                  description: Source event ID (will be merged into target)
-                targetId:
-                  type: string
-                  description: Target event ID (canonical)
+                  description: >
+                    ULID of an existing event to promote as the canonical event.
+                    Mutually exclusive with event.
+                retire:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  description: >
+                    Event ULIDs to soft-delete with tombstones. All must exist and
+                    not already be deleted. Required, minimum 1 entry.
       responses:
         '200':
-          description: Events merged successfully
+          description: Consolidation succeeded
           content:
-            application/ld+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/Event'
+                $ref: '#/components/schemas/ConsolidateResponse'
+        '400':
+          description: |
+            Invalid request. Possible reasons:
+            - Both `event` and `event_ulid` were provided (mutually exclusive)
+            - Neither `event` nor `event_ulid` was provided
+            - `retire` list is empty or missing
+            - Canonical event's ULID appears in `retire`
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Retire target or canonical event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: |
+            Unprocessable request. Possible reasons:
+            - One or more retire targets are already deleted
+            - The canonical event has been deleted
+            - Validation error in the provided event payload
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/events/{id}/occurrences:
+    post:
+      operationId: createOccurrence
+      summary: Add an occurrence to an event
+      description: |
+        Create a new occurrence on an existing event. The event must not be deleted.
+        Returns 409 if the new occurrence overlaps an existing occurrence on the event.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurrenceInput'
+      responses:
+        '201':
+          description: Occurrence created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OccurrenceResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Occurrence overlaps an existing occurrence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/events/{id}/occurrences/{occurrenceId}:
+    put:
+      operationId: updateOccurrence
+      summary: Update an occurrence on an event
+      description: |
+        Update an existing occurrence. Supports partial updates via nullable fields.
+        Returns 409 if the updated occurrence would overlap another occurrence on the event.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+        - name: occurrenceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the occurrence to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurrenceInput'
+      responses:
+        '200':
+          description: Occurrence updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OccurrenceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Occurrence overlaps an existing occurrence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      operationId: deleteOccurrence
+      summary: Delete an occurrence from an event
+      description: |
+        Remove a single occurrence from an event. The last occurrence of an event
+        cannot be deleted (returns 422); delete the event itself instead.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+        - name: occurrenceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the occurrence to delete
+      responses:
+        '204':
+          description: Occurrence deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Cannot delete the last occurrence of an event
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /admin/api-keys:
     get:
@@ -697,7 +891,7 @@ paths:
           description: Filter by review status (defaults to 'pending')
           schema:
             type: string
-            enum: [pending, approved, rejected]
+            enum: [pending, approved, rejected, merged]
             default: pending
         - name: cursor
           in: query
@@ -768,6 +962,12 @@ paths:
       description: |
         Approve an event in the review queue and publish it. The event's lifecycle
         state will be updated to 'published' and it will appear in public listings.
+
+        Set `record_not_duplicates: true` to implement the "Not a Duplicate" action:
+        the event is published and the duplicate-warning candidates are recorded as a
+        confirmed non-duplicate pair, suppressing re-flagging on future ingest.
+        This differs from a plain approve only in the side-effect on the
+        `not_duplicates` table; the event transition is identical.
       tags: [Admin]
       x-internal: true
       security:
@@ -791,6 +991,17 @@ paths:
                 notes:
                   type: string
                   description: Optional review notes
+                record_not_duplicates:
+                  type: boolean
+                  description: |
+                    When `true`, any `potential_duplicate` warning candidates in this
+                    review entry are recorded as confirmed non-duplicates. Future ingest
+                    of events that match these pairs will not generate duplicate warnings.
+                    Used by the "Not a Duplicate" UI action, which approves/publishes the
+                    event while acknowledging that the duplicate flag was incorrect.
+                    Matched companion pending reviews are rechecked best-effort after the
+                    duplicate warnings are removed: if no issues remain they are
+                    auto-approved, otherwise they stay pending with refreshed warnings.
             examples:
               withNotes:
                 summary: Approval with notes
@@ -799,6 +1010,11 @@ paths:
               withoutNotes:
                 summary: Simple approval
                 value: {}
+              notADuplicate:
+                summary: Approve as not-a-duplicate (suppresses future duplicate warnings)
+                value:
+                  notes: "Different event, same venue"
+                  record_not_duplicates: true
       responses:
         '200':
           description: Review approved and event published
@@ -808,6 +1024,18 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -864,6 +1092,18 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has already been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -940,12 +1180,238 @@ paths:
                 $ref: '#/components/schemas/ReviewQueueDetail'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /admin/review-queue/{id}/merge:
+    post:
+      operationId: mergeReviewQueueEntry
+      summary: Merge duplicate event
+      description: |
+        Merge the review entry's event into a primary event, soft-delete the duplicate,
+        and mark the review as merged. All operations are performed atomically.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [primary_event_ulid]
+              properties:
+                primary_event_ulid:
+                  type: string
+                  description: ULID of the primary (canonical) event to merge into
+            examples:
+              mergeDuplicate:
+                summary: Merge duplicate into primary
+                value:
+                  primary_event_ulid: "01HPRIMARY00000000000000001"
+      responses:
+        '200':
+          description: Events merged and review marked as merged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Review entry has already been processed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: One or more events have been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/review-queue/{id}/add-occurrence:
+    post:
+      operationId: addOccurrenceFromReview
+      summary: Add event as occurrence of recurring series
+      description: |
+        When a review entry's event is actually a new occurrence of an existing recurring-series
+        event rather than a true duplicate, use this endpoint to atomically:
+
+        1. Add the absorbed event's start/end time as a new occurrence on the target series.
+        2. Soft-delete the absorbed event (tombstone reason `absorbed_as_occurrence`).
+        3. Mark the review as merged.
+
+        **Two dispatch paths** are selected automatically based on the warning type in the review:
+
+        - **`potential_duplicate` (forward path):** The review's own event is the source to be
+          absorbed. `target_event_ulid` is **required** and identifies the existing recurring-series
+          event to add the occurrence to.
+
+        - **`near_duplicate_of_new_event` (inverted path):** The review entry sits on the
+          *existing* series event; the newly-ingested counterpart (stored in the review's
+          `duplicate_of_event_id` column) is the source to be absorbed into the existing series.
+          `target_event_ulid` is **NOT required** for this path — the target is derived from the
+          review entry itself.  Any provided `target_event_ulid` is ignored.
+
+        **Source event constraints (both paths):** The source event must have exactly one
+        occurrence. A zero-occurrence source is rejected with `422` (`zero-occurrence-source`) —
+        there is no occurrence data to absorb. A multi-occurrence source is rejected with `422`
+        (`ambiguous-occurrence-source`) — absorbing one occurrence while silently deleting the
+        rest would cause data loss.
+
+        **Ambiguous dispatch:** If the review entry carries **both** `potential_duplicate` and
+        `near_duplicate_of_new_event` warnings simultaneously, the request is rejected with `422`
+        (`ambiguous-occurrence-dispatch`). Remove or resolve one of the warnings before retrying.
+
+        Returns HTTP 409 if the new occurrence would overlap an existing occurrence on the target
+        event, or if the review entry is not in `pending` status.
+
+        The response includes a `targetEventUlid` field at the top level that always identifies
+        the surviving series event, regardless of which path was used. The frontend can use this
+        to navigate directly to the series after a successful action.
+
+        **Target lifecycle recompute:** After a successful action, the surviving (target) event's
+        `lifecycle_state` is recomputed inside the same transaction. If the target has no remaining
+        `pending` review rows after this action, it transitions to `published`. If other pending
+        reviews still exist on the target (e.g. a second near-duplicate cluster), the target stays
+        `pending_review`. This makes add-occurrence safe to call repeatedly in any order when
+        consolidating a multi-event near-duplicate cluster — the target's lifecycle only becomes
+        `published` when all reviews have been resolved.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Review queue entry ID
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_event_ulid:
+                  type: string
+                  description: |
+                    ULID of the existing recurring-series event to add the occurrence to.
+                    Required for the `potential_duplicate` path; ignored for the
+                    `near_duplicate_of_new_event` path (backend derives target automatically).
+            examples:
+              addOccurrenceForwardPath:
+                summary: Add as occurrence (potential_duplicate path)
+                value:
+                  target_event_ulid: "01HRECURRING000000000000001"
+              addOccurrenceNearDupPath:
+                summary: Add as occurrence (near_duplicate_of_new_event path — send empty JSON object)
+                value: {}
+      responses:
+        '200':
+          description: |
+            Occurrence added and review marked as merged.
+            The response is the updated `ReviewQueueDetail` with an additional top-level
+            `targetEventUlid` field identifying the surviving series event.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ReviewQueueDetail'
+                  - type: object
+                    properties:
+                      targetEventUlid:
+                        type: string
+                        description: ULID of the surviving recurring-series event
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: |
+            The review entry, source event, or target event was not found.
+            - **Review entry not found:** no review queue entry exists for the given `id`.
+            - **Target event not found** (forward / `potential_duplicate` path): `target_event_ulid` does not match a known event.
+            - **Source event not found** (inverted / `near_duplicate_of_new_event` path): the source event referenced in the review's `duplicate_of_event_id` no longer exists.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The new occurrence overlaps an existing occurrence on the target event, or the review is not in pending status
+          content:
+             application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: The source event or target event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: |
+            One of four unprocessable conditions:
+            - **`ambiguous-occurrence-source`** — the source event has multiple occurrences;
+              absorbing one ambiguously would silently delete the rest. Resolve or split the
+              source event first, then retry.
+            - **`zero-occurrence-source`** — the source event has no occurrences; there is
+              nothing to absorb. Ensure the source event has exactly one occurrence first.
+            - **`ambiguous-occurrence-dispatch`** — one of two cases, both retryable:
+              1. **Both warnings present (static):** the review entry carries both
+                 `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously;
+                 the dispatch path cannot be determined unambiguously. Remove or resolve one
+                 warning before retrying.
+              2. **Stale-state path mismatch (retryable):** the warning classification changed
+                 between the handler's advisory pre-read and the locked transaction. The server
+                 detected that the locked row's warnings now indicate a different path than the
+                 one requested. Retry the request; the response will reflect the current state.
+            - **`unsupported-review-for-occurrence`** — the review entry has neither a
+              `potential_duplicate` nor a `near_duplicate_of_new_event` warning (e.g. the entry
+              carries only data-quality warnings such as `reversed_dates_*`). Add-as-occurrence
+              requires one of the supported duplicate warning types.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /admin/login:
     post:
@@ -2169,6 +2635,131 @@ components:
         default: 50
 
   schemas:
+    ConsolidateResponse:
+      type: object
+      description: Result of an atomic event consolidation operation
+      properties:
+        event:
+          description: The canonical event after consolidation
+          $ref: '#/components/schemas/Event'
+        lifecycle_state:
+          type: string
+          enum: [published, pending_review, draft]
+          description: Lifecycle state of the canonical event after consolidation
+        is_duplicate:
+          type: boolean
+          description: >
+            True if the canonical event was flagged as a near-duplicate of another
+            non-retired event during post-consolidation validation.
+        is_merged:
+          type: boolean
+          description: >
+            Always false for consolidation (admin intent is preserved, never auto-merged).
+        needs_review:
+          type: boolean
+          description: >
+            True if the canonical event was sent to the review queue due to duplicate
+            detection or quality issues found during post-consolidation validation.
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationWarning'
+          description: Validation warnings from post-consolidation checks
+        retired:
+          type: array
+          items:
+            type: string
+          description: ULIDs of events that were successfully retired (soft-deleted)
+        review_entries_dismissed:
+          type: array
+          items:
+            type: integer
+          description: IDs of review queue entries that were dismissed for retired events
+
+    OccurrenceInput:
+      type: object
+      description: Input for creating or updating an event occurrence
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          description: Start time of the occurrence (RFC3339)
+        end_time:
+          type: [string, 'null']
+          format: date-time
+          description: End time of the occurrence (RFC3339), or null to clear
+        door_time:
+          type: [string, 'null']
+          format: date-time
+          description: Door open time (RFC3339), or null to clear
+        timezone:
+          type: string
+          description: IANA timezone identifier (e.g. America/New_York)
+        venue_ulid:
+          type: [string, 'null']
+          description: ULID of the venue for this occurrence, or null to clear
+        virtual_url:
+          type: [string, 'null']
+          format: uri
+          description: URL for virtual/hybrid attendance, or null to clear
+        ticket_url:
+          type: [string, 'null']
+          format: uri
+          description: URL for purchasing tickets, or null to clear
+        price_min:
+          type: [number, 'null']
+          description: Minimum ticket price (inclusive), or null to clear
+        price_max:
+          type: [number, 'null']
+          description: Maximum ticket price, or null to clear
+        price_currency:
+          type: string
+          description: ISO 4217 currency code (e.g. USD)
+        availability:
+          type: string
+          enum: [available, sold_out, limited]
+          description: Ticket availability status
+
+    OccurrenceResponse:
+      type: object
+      description: An event occurrence as returned by the admin occurrence API
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID of the occurrence
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: [string, 'null']
+          format: date-time
+        door_time:
+          type: [string, 'null']
+          format: date-time
+        timezone:
+          type: string
+        venue_id:
+          type: [string, 'null']
+          description: Internal UUID of the venue
+        venue_ulid:
+          type: [string, 'null']
+          description: Public ULID of the venue
+        virtual_url:
+          type: [string, 'null']
+          format: uri
+        ticket_url:
+          type: [string, 'null']
+          format: uri
+        price_min:
+          type: [number, 'null']
+        price_max:
+          type: [number, 'null']
+        price_currency:
+          type: [string, 'null']
+        availability:
+          type: [string, 'null']
+
     Submission:
       type: object
       description: A URL submission record
@@ -2785,8 +3376,11 @@ components:
           description: Validation warnings that triggered review
         status:
           type: string
-          enum: [pending, approved, rejected]
-          description: Current review status
+          enum: [pending, approved, rejected, merged]
+          description: >
+            Current review status. `pending` = awaiting decision; `approved` = event published;
+            `rejected` = event deleted; `merged` = event absorbed into another event
+            (via add-occurrence or consolidation).
         createdAt:
           type: string
           format: date-time
@@ -2798,6 +3392,13 @@ components:
           type: string
           format: date-time
           description: When the review was completed (if reviewed)
+        duplicateOfEventUlid:
+          type: string
+          description: >
+            ULID of the primary event that this review entry was merged into or linked as a
+            near-duplicate of. Set when the review action is add-occurrence or consolidation,
+            and also when near-duplicate cross-linking creates a review entry for an existing
+            published event.
 
     ReviewQueueDetail:
       description: Detailed review queue entry including original payload, normalized payload, and detected changes
@@ -2812,8 +3413,11 @@ components:
           description: Event ULID
         status:
           type: string
-          enum: [pending, approved, rejected]
-          description: Current review status
+          enum: [pending, approved, rejected, merged]
+          description: >
+            Current review status. `pending` = awaiting decision; `approved` = event published;
+            `rejected` = event deleted; `merged` = event absorbed into another event
+            (via add-occurrence or consolidation).
         warnings:
           type: array
           items:
@@ -2847,6 +3451,13 @@ components:
         rejectionReason:
           type: string
           description: Reason for rejection (if rejected)
+        duplicateOfEventUlid:
+          type: string
+          description: >
+            ULID of the primary event that this review entry was merged into or linked as a
+            near-duplicate of. Set when the review action is add-occurrence or consolidation,
+            and also when near-duplicate cross-linking creates a review entry for an existing
+            published event.
 
     ValidationWarning:
       description: Warning message from event validation or normalization process

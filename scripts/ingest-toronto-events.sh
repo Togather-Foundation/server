@@ -23,6 +23,10 @@ elif [ "$ENVIRONMENT" = "local" ]; then
     # For local, read from .env if available
     if [ -f .env ]; then
         API_KEY=$(grep "^PERF_AGENT_API_KEY=" .env | cut -d= -f2-)
+        # Fall back to API_KEY for local development
+        if [ -z "$API_KEY" ]; then
+            API_KEY=$(grep "^API_KEY=" .env | cut -d= -f2-)
+        fi
     fi
     # If not set, user can provide via environment variable
     API_KEY="${API_KEY:-}"
@@ -33,7 +37,7 @@ fi
 
 # Verify we have an API key
 if [ -z "$API_KEY" ]; then
-    echo "Error: API key not found. Set PERF_AGENT_API_KEY in .deploy.conf.$ENVIRONMENT or .env"
+    echo "Error: API key not found. Set API_KEY or PERF_AGENT_API_KEY in .deploy.conf.$ENVIRONMENT or .env"
     exit 1
 fi
 

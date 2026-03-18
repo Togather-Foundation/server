@@ -35,6 +35,8 @@ type Querier interface {
 	CountDevelopers(ctx context.Context) (int64, error)
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
+	// Count occurrences for a given event UUID. Used to enforce last-occurrence guard.
+	CountOccurrencesByEventID(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	CountPastEvents(ctx context.Context) (int64, error)
 	// Count rows currently awaiting async URL validation.
 	CountPendingValidation(ctx context.Context) (int64, error)
@@ -74,6 +76,13 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	// Delete a single occurrence by its UUID, scoped to the given event. Returns the deleted ID
+	// so callers can detect when no row matched (event mismatch or already deleted).
+	DeleteOccurrenceByID(ctx context.Context, arg DeleteOccurrenceByIDParams) (pgtype.UUID, error)
+	// Remove all occurrence rows for a soft-deleted event.  Called after absorbing an
+	// occurrence into a target series so the source event's orphaned rows are cleaned up.
+	// Soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so explicit cleanup is needed.
+	DeleteOccurrencesByEventULID(ctx context.Context, eventUlid string) error
 	// Delete processed/rejected submissions older than the given interval.
 	// Used by the daily cleanup job to prevent unbounded table growth (srv-3sac0).
 	DeleteOldScraperSubmissions(ctx context.Context, olderThan pgtype.Interval) (int64, error)
@@ -84,6 +93,11 @@ type Querier interface {
 	// from the companion's pending review queue entry, identified by the companion's event ULID.
 	// Rebuilds the warnings JSONB in one UPDATE — no read-modify-write race.
 	DismissCompanionWarningMatch(ctx context.Context, arg DismissCompanionWarningMatchParams) error
+	// Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
+	// from a specific review queue entry identified by its primary key id.
+	// Narrower than DismissCompanionWarningMatch: targets exactly one row, preventing
+	// accidental modification of unrelated pending reviews on the same companion event.
+	DismissWarningMatchByReviewID(ctx context.Context, arg DismissWarningMatchByReviewIDParams) error
 	// Expires all pending (non-accepted, non-expired) invitations for a user by
 	// setting accepted_at. This satisfies the unique partial index
 	// idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new
@@ -143,10 +157,17 @@ type Querier interface {
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
 	// Get the most recent scraper run for a given source_name.
 	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
+	// Fetch a single occurrence row by its UUID, scoped to the given event.
+	GetOccurrenceByID(ctx context.Context, arg GetOccurrenceByIDParams) (GetOccurrenceByIDRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	// Get the pending review queue entry for an event by its ULID, if any.
 	GetPendingReviewByEventUlid(ctx context.Context, eventUlid string) (GetPendingReviewByEventUlidRow, error)
+	// Get the pending review queue entry for an event by its ULID, narrowed to the
+	// specific companion whose duplicate_of_event_id points to the counterpart event.
+	// Used by the add-occurrence workflow to avoid picking an unrelated pending review
+	// when the same event has multiple pending review rows.
+	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, arg GetPendingReviewByEventUlidAndDuplicateUlidParams) (GetPendingReviewByEventUlidAndDuplicateUlidRow, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
 	// Check if a url_norm was submitted within the given interval (for dedup).
@@ -182,6 +203,8 @@ type Querier interface {
 	// Uses canonical ordering (smaller ULID first) to prevent storing both (A,B) and (B,A).
 	// ON CONFLICT DO NOTHING handles the case where the pair already exists.
 	InsertNotDuplicate(ctx context.Context, arg InsertNotDuplicateParams) error
+	// Insert a single occurrence and return the created row (including generated UUID).
+	InsertOccurrence(ctx context.Context, arg InsertOccurrenceParams) (InsertOccurrenceRow, error)
 	// SQLc queries for scraper runs tracking.
 	// Insert a new scraper run record and return its id.
 	InsertScraperRun(ctx context.Context, arg InsertScraperRunParams) (int64, error)
@@ -279,6 +302,10 @@ type Querier interface {
 	// $1 = old target event ULID (intermediate node being re-pointed)
 	// $2 = new canonical target event ULID (final destination)
 	UpdateMergedIntoChain(ctx context.Context, arg UpdateMergedIntoChainParams) error
+	// Partial-update a single occurrence row, scoped to the given event.
+	// Only non-NULL arguments are applied (COALESCE pattern).
+	// venue_id, virtual_url, ticket_url use explicit NULLability via CASE WHEN *_set pattern.
+	UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrenceByIDParams) (UpdateOccurrenceByIDRow, error)
 	// Update the start_time and end_time of all occurrences for an event identified by ULID.
 	// Used by the FixReview workflow to correct occurrence dates during admin review.
 	UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error

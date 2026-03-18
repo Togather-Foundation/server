@@ -14,6 +14,55 @@ This feature is part of the **Event Review Workflow** documented in `docs/archit
 
 ---
 
+## Operator Workflow Rules (Easy to Get Wrong)
+
+These rules encode non-obvious behavior that has caused bugs in practice. Read before touching any add-occurrence, merge, or recompute logic.
+
+### 1. add-occurrence can converge a duplicate cluster in any order
+
+If four events (A, B, C, D) are all near-duplicates of each other representing occurrences of the same series, an admin can resolve them in **any order** using repeated add-occurrence calls:
+
+```
+add-occurrence(reviewB → target=A)  → A gains occurrence from B; B deleted
+add-occurrence(reviewC → target=A)  → A gains occurrence from C; C deleted
+add-occurrence(reviewD → target=A)  → A gains occurrence from D; D deleted
+```
+
+Or in reverse, or starting from any event. The surviving event gets all occurrences and is left as a single event with multiple `event_occurrences` rows. Order does not matter because each call re-evaluates surviving pending reviews on the target before deciding whether to restore `lifecycle_state = 'published'`.
+
+### 2. After add-occurrence: target lifecycle is recomputed, not blindly set
+
+After each add-occurrence action, the target event's lifecycle is recomputed inside the same transaction:
+
+- If the target has **no remaining pending reviews** after this action: `lifecycle_state = 'published'`
+- If the target **still has pending reviews** from other near-dup pairings: lifecycle stays `pending_review`
+
+This means an event being consolidated may remain `pending_review` (invisible to the public API) until all of its companion review rows have been resolved.
+
+### 3. After approve/reject/fix/merge: no recompute runs
+
+Unlike add-occurrence, `approve`, `reject`, `fix`, and `merge` set `lifecycle_state` directly and unconditionally. They do not consult other pending review rows on the same event. This is intentional — those actions are decisive about the specific event's fate.
+
+### 4. Ambiguous duplicate states intentionally hide unsafe one-click actions
+
+When a review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously, the UI hides the "Add as Occurrence" button entirely. The backend also rejects such requests with `422 (ambiguous-occurrence-dispatch)`. This guard prevents silent data loss when the dispatch path cannot be determined unambiguously.
+
+Similarly, "Merge Duplicate" is hidden for `near_duplicate_of_new_event` entries because the source/target sides are ambiguous without explicit admin input.
+
+### 5. Multiple occurrences must be visible in event detail
+
+After add-occurrence consolidation, the surviving event has multiple `event_occurrences` rows. Both the admin event detail page (`/admin/events/:id`) and review queue entries must display all occurrences (using `subEvent` serialization in JSON-LD). A review entry that shows only the first occurrence is a bug — the admin needs to see all dates when deciding whether further consolidation is needed.
+
+### 6. Companion review cleanup is exact, not broad
+
+When an add-occurrence action dismisses a companion review, it targets only the **exact cross-linked row** (`GetPendingReviewByEventUlidAndDuplicateUlid`), not all pending reviews on the companion event. This prevents accidentally clearing unrelated reviews.
+
+### 7. merge does not update the primary event's pending review
+
+The `merge` action soft-deletes the duplicate event but does **not** touch the primary event's lifecycle or companion review rows. If the primary was `pending_review` before the merge, it remains `pending_review` afterward and must be handled separately.
+
+---
+
 ## Architecture
 
 ### High-Level Data Flow
@@ -119,7 +168,7 @@ Events requiring review are stored with:
 All endpoints in `internal/api/handlers/admin_review_queue.go` (694 lines).
 
 **GET `/api/v1/admin/review-queue`** - List reviews
-- Query params: `status` (pending/approved/rejected), `limit` (1-100, default 50), `cursor`
+- Query params: `status` (pending/approved/rejected/merged, default: pending), `limit` (1-100, default 50), `cursor`
 - Returns: Paginated list of review entries with warnings and metadata
 - Example: [admin_review_queue.go:75](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:75)
 
@@ -139,18 +188,18 @@ All endpoints in `internal/api/handlers/admin_review_queue.go` (694 lines).
 
 **POST `/api/v1/admin/review-queue/:id/fix`** - Apply manual corrections
 - Body: `{"corrections": {"startDate": "...", "endDate": "..."}, "notes": "optional"}`
-- Action: **NOTE:** Currently incomplete (see Future Work section)
-- Example: [admin_review_queue.go:405](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:405)
+- Action: Applies date corrections, publishes the event, and approves the review atomically
+- Example: [admin_review_queue.go:430](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:430)
 
 #### 4. Frontend UI
 
 **Page:** `/admin/review-queue` ([review_queue.html](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/templates/review_queue.html))
 - Single-page design with list view and inline detail expansion
-- Status filter tabs: Pending / Approved / Rejected
+- Status filter tabs: Pending / Approved / Rejected / Merged
 - Table columns: Event Name, Start Time, Warning Badge, Created, Actions
 - Inline detail card expands below row when clicked
 
-**JavaScript:** `web/admin/static/js/review-queue.js` (845 lines)
+**JavaScript:** `web/admin/static/js/review-queue.js`
 - IIFE pattern, no global variables
 - State management: `entries`, `currentFilter`, `expandedId`, `cursor`
 - Event delegation via `data-action` attributes (CSP-compliant)
@@ -164,7 +213,15 @@ reviewQueue: {
     get: (id) => API.request(`/api/v1/admin/review-queue/${id}`),
     approve: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
     reject: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
-    fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, { method: 'POST', body: JSON.stringify(data) })
+    fix: (id, data) => API.request(`/api/v1/admin/review-queue/${id}/fix`, { method: 'POST', body: JSON.stringify(data) }),
+    merge: (id, primaryEventId) => API.request(`/api/v1/admin/review-queue/${id}/merge`, { method: 'POST', body: JSON.stringify({ primary_event_ulid: primaryEventId }) }),
+    // Forward path (potential_duplicate): supply target_event_ulid; backend absorbs review event into target series.
+    // Near-dup path (near_duplicate_of_new_event): omit target_event_ulid (pass empty body {}); backend derives
+    //   target from the review entry's own event ULID.
+    addOccurrence: (id, targetEventUlid) => API.request(`/api/v1/admin/review-queue/${id}/add-occurrence`, {
+        method: 'POST',
+        body: JSON.stringify(targetEventUlid ? { target_event_ulid: targetEventUlid } : {})
+    })
 }
 ```
 
@@ -265,13 +322,14 @@ Validation generates two machine-readable warning codes to classify correction c
 
 ### Status Filter Tabs
 
-Three tabs styled as Tabler `nav-tabs`:
+Four tabs styled as Tabler `nav-tabs`:
 
 | Tab | Status Filter | Badge | Description |
 |-----|--------------|-------|-------------|
 | **Pending** | `pending` | Count badge (e.g., "3") | Default view, shows unreviewed entries |
 | **Approved** | `approved` | None | Historical approved reviews |
 | **Rejected** | `rejected` | None | Historical rejections |
+| **Merged** | `merged` | None | Reviews resolved via Merge Duplicate or Add as Occurrence |
 
 Implementation: [review_queue.html:33](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/templates/review_queue.html:33)
 
@@ -311,7 +369,7 @@ Fields displayed: Name, Start Date, End Date, Location
 
 #### 4. Action Buttons (Pending Status Only)
 
-Three action buttons:
+Five action buttons (availability depends on warning type):
 
 **Approve** (Green, `btn-success`)
 - Quick approval with optional notes
@@ -330,7 +388,16 @@ Three action buttons:
 - Deletes event permanently
 - See [review-queue.js:432](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:432)
 
-Implementation: [review-queue.js:248](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:248)
+**Merge Duplicate** (shown for `potential_duplicate` warnings only)
+- Merges the review event into the indicated duplicate target
+- Not shown for `near_duplicate_of_new_event` warnings
+- See [review-queue.js:716](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:716)
+
+**Add as Occurrence** (shown for `potential_duplicate` and `near_duplicate_of_new_event` warnings)
+- Adds the review event's date/time as a new occurrence on the target recurring-series event and soft-deletes the review event
+- For `near_duplicate_of_new_event` entries the target is derived from the review entry itself (no `target_event_ulid` needed)
+- Hidden when the entry carries **both** warning types simultaneously
+- See [review-queue.js:728](file:///home/ryankelln/Documents/Projects/Art/togather/server/web/admin/static/js/review-queue.js:728)
 
 ### Reject Modal
 
@@ -456,7 +523,7 @@ Implementation: [review-queue.js:678](file:///home/ryankelln/Documents/Projects/
 4. **Check warnings:** Now empty (fixed!)
 5. **Action:** 
    - Update `events.lifecycle_state = 'published'`
-   - Update `event_review_queue.status = 'superseded'`
+   - Update `event_review_queue.status = 'merged'`
 6. **Response:** HTTP 201 Created (or 409 Conflict depending on dedup strategy)
 
 **Result:** Event auto-published, no admin action needed.

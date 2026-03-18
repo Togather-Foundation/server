@@ -611,8 +611,9 @@ INSERT INTO event_occurrences (
 	ticket_url,
 	price_min,
 	price_max,
-	price_currency
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''))
+	price_currency,
+	availability
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), NULLIF($12, ''))
 `,
 		params.EventID,
 		params.StartTime,
@@ -625,9 +626,70 @@ INSERT INTO event_occurrences (
 		params.PriceMin,
 		params.PriceMax,
 		params.PriceCurrency,
+		params.Availability,
 	)
 	if err != nil {
 		return fmt.Errorf("create occurrence: %w", err)
+	}
+	return nil
+}
+
+// CheckOccurrenceOverlap returns true if [startTime, endTime) overlaps any existing
+// occurrence on the given event. When endTime is nil the new occurrence is treated as
+// a point-in-time event; overlap is detected if that instant falls inside any
+// existing occurrence whose end_time is non-null, or equals the start_time of any
+// occurrence without an end_time.
+func (r *EventRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
+	queryer := r.queryer()
+
+	var overlaps bool
+	var err error
+	if endTime == nil {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND (
+          -- point-in-time: startTime falls within [occ.start, occ.end)
+          (end_time IS NOT NULL AND $2 >= start_time AND $2 < end_time)
+          -- or exactly matches the start of a point-in-time occurrence
+       OR (end_time IS NULL AND start_time = $2)
+      )
+)`, eventID, startTime).Scan(&overlaps)
+	} else {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND (
+          -- new [s,e) overlaps existing [occ.start, occ.end)
+          (end_time IS NOT NULL AND $2 < end_time AND $3 > start_time)
+          -- new range contains a point-in-time occurrence
+       OR (end_time IS NULL AND start_time >= $2 AND start_time < $3)
+      )
+)`, eventID, startTime, *endTime).Scan(&overlaps)
+	}
+	if err != nil {
+		return false, fmt.Errorf("check occurrence overlap: %w", err)
+	}
+	return overlaps, nil
+}
+
+// LockEventForUpdate acquires a row-level FOR UPDATE lock on the given event
+// (identified by UUID). Must be called inside a transaction. This serialises
+// concurrent add-occurrence requests for the same target event so that the
+// overlap check and occurrence insert are atomic from the database's perspective.
+func (r *EventRepository) LockEventForUpdate(ctx context.Context, eventID string) error {
+	queryer := r.queryer()
+	var dummy string
+	err := queryer.QueryRow(ctx, `SELECT id FROM events WHERE id = $1 FOR UPDATE`, eventID).Scan(&dummy)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("lock event %s: %w", eventID, events.ErrNotFound)
+		}
+		return fmt.Errorf("lock event %s for update: %w", eventID, err)
 	}
 	return nil
 }
@@ -992,6 +1054,24 @@ RETURNING id, ulid
 	return &record, nil
 }
 
+// GetPlaceByULID looks up a place by its ULID and returns the (UUID, ULID, Name) triple.
+// Name is returned so the caller can detect @id+name mismatches at ingest time.
+// Returns events.ErrNotFound when no matching row exists.
+func (r *EventRepository) GetPlaceByULID(ctx context.Context, ulid string) (*events.PlaceRecord, error) {
+	queryer := r.queryer()
+	var record events.PlaceRecord
+	err := queryer.QueryRow(ctx, `
+SELECT id::text, ulid, name FROM places WHERE ulid = $1 AND deleted_at IS NULL
+`, ulid).Scan(&record.ID, &record.ULID, &record.Name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get place by ulid %q: %w", ulid, err)
+	}
+	return &record, nil
+}
+
 func (r *EventRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	queryer := r.queryer()
 
@@ -1233,6 +1313,43 @@ LIMIT 5
 	}
 
 	return candidates, nil
+}
+
+// DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
+// for the given event ULIDs, setting their status to 'dismissed' and reviewer to reviewedBy.
+// Returns the IDs of dismissed entries (may be empty if none were pending).
+func (r *EventRepository) DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error) {
+	queryer := r.queryer()
+
+	rows, err := queryer.Query(ctx, `
+UPDATE event_review_queue q
+   SET status      = 'dismissed',
+       reviewed_by = $2,
+       reviewed_at = NOW()
+  FROM events e
+ WHERE e.id = q.event_id
+   AND e.ulid = ANY($1)
+   AND q.status = 'pending'
+RETURNING q.id
+`, eventULIDs, reviewedBy)
+	if err != nil {
+		return nil, fmt.Errorf("dismiss pending reviews by event ULIDs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan dismissed review ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dismissed review IDs: %w", err)
+	}
+
+	return ids, nil
 }
 
 // FindSimilarPlaces returns places with similar normalized names in the same locality/region.
@@ -1674,6 +1791,18 @@ func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID s
 	return nil
 }
 
+// DeleteOccurrencesByEventULID removes all occurrence rows for an event identified by ULID.
+// Used after absorbing an occurrence into a target series to clean up orphaned rows
+// on the soft-deleted source event (soft-delete does not trigger ON DELETE CASCADE).
+func (r *EventRepository) DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error {
+	queries := Queries{db: r.queryer()}
+	err := queries.DeleteOccurrencesByEventULID(ctx, eventULID)
+	if err != nil {
+		return fmt.Errorf("delete occurrences by event ULID: %w", err)
+	}
+	return nil
+}
+
 // UpdateEvent updates an event by ULID with the provided parameters
 func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
 	queries := Queries{db: r.queryer()}
@@ -2090,6 +2219,56 @@ func (r GetPendingReviewByEventUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
 	return r.DuplicateOfEventUlid
 }
 
+// Implement reviewQueueRowFields for GetPendingReviewByEventUlidAndDuplicateUlidRow
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetID() int32            { return r.ID }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventID() pgtype.UUID { return r.EventID }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventUlid() string    { return r.EventUlid }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetOriginalPayload() []byte {
+	return r.OriginalPayload
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetNormalizedPayload() []byte {
+	return r.NormalizedPayload
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetWarnings() []byte      { return r.Warnings }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetSourceID() pgtype.Text { return r.SourceID }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetSourceExternalID() pgtype.Text {
+	return r.SourceExternalID
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetDedupHash() pgtype.Text {
+	return r.DedupHash
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventStartTime() pgtype.Timestamptz {
+	return r.EventStartTime
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventEndTime() pgtype.Timestamptz {
+	return r.EventEndTime
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetStatus() string { return r.Status }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewedBy() pgtype.Text {
+	return r.ReviewedBy
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewedAt() pgtype.Timestamptz {
+	return r.ReviewedAt
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewNotes() pgtype.Text {
+	return r.ReviewNotes
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetRejectionReason() pgtype.Text {
+	return r.RejectionReason
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetCreatedAt() pgtype.Timestamptz {
+	return r.CreatedAt
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetUpdatedAt() pgtype.Timestamptz {
+	return r.UpdatedAt
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetDuplicateOfEventID() pgtype.UUID {
+	return r.DuplicateOfEventID
+}
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
+	return r.DuplicateOfEventUlid
+}
+
 // Note: ApproveReviewRow, RejectReviewRow, CreateReviewQueueEntryRow, and
 // UpdateReviewQueueEntryRow no longer exist as separate types — these queries
 // now use RETURNING * and return EventReviewQueue directly (which already
@@ -2241,6 +2420,34 @@ func (r *EventRepository) GetReviewQueueEntry(ctx context.Context, id int) (*eve
 	return convertGetReviewQueueEntryRow(row), nil
 }
 
+// LockReviewQueueEntryForUpdate acquires a row-level FOR UPDATE lock on the
+// review queue row identified by id and returns the current row state.  Must
+// be called inside a transaction.  This serialises concurrent admin actions
+// (approve, reject, merge, add-occurrence) on the same review entry so that
+// only the first request observes status="pending" and the second sees the
+// already-updated status and returns ErrConflict.
+func (r *EventRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
+	queryer := r.queryer()
+	var dummy int32
+	err := queryer.QueryRow(ctx, `SELECT id FROM event_review_queue WHERE id = $1 FOR UPDATE`, int32(id)).Scan(&dummy)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("lock review queue entry %d: %w", id, events.ErrNotFound)
+		}
+		return nil, fmt.Errorf("lock review queue entry %d for update: %w", id, err)
+	}
+	// Re-read the full row now that we hold the lock.
+	queries := Queries{db: queryer}
+	row, err := queries.GetReviewQueueEntry(ctx, int32(id))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("re-read review queue entry %d after lock: %w", id, events.ErrNotFound)
+		}
+		return nil, fmt.Errorf("re-read review queue entry %d after lock: %w", id, err)
+	}
+	return convertGetReviewQueueEntryRow(row), nil
+}
+
 // GetPendingReviewByEventUlid returns the pending review queue entry for the given event ULID,
 // or (nil, nil) if no pending review exists.
 func (r *EventRepository) GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {
@@ -2257,7 +2464,29 @@ func (r *EventRepository) GetPendingReviewByEventUlid(ctx context.Context, event
 	return convertReviewQueueRowGeneric(row), nil
 }
 
-// UpdateReviewWarnings updates only the warnings JSON on a review queue entry.
+// GetPendingReviewByEventUlidAndDuplicateUlid returns the pending review queue entry
+// for the given event ULID that is specifically linked to duplicateULID via
+// duplicate_of_event_id.  Returns (nil, nil) if no matching pending review exists.
+// This narrows companion-review selection to the exact counterpart in a consolidation
+// pair, preventing the wrong unrelated pending review from being dismissed when an
+// event has multiple pending review rows.
+func (r *EventRepository) GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, GetPendingReviewByEventUlidAndDuplicateUlidParams{
+		EventUlid:     eventULID,
+		DuplicateUlid: duplicateULID,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get pending review by event ulid %s and duplicate ulid %s: %w", eventULID, duplicateULID, err)
+	}
+
+	return convertReviewQueueRowGeneric(row), nil
+}
+
 // Used for best-effort companion warning dismissal after a not-duplicate decision.
 func (r *EventRepository) UpdateReviewWarnings(ctx context.Context, id int, warnings []byte) error {
 	queries := Queries{db: r.queryer()}
@@ -2274,6 +2503,8 @@ func (r *EventRepository) UpdateReviewWarnings(ctx context.Context, id int, warn
 // DismissCompanionWarningMatch atomically removes any potential_duplicate match
 // whose ulid equals eventULID from the companion review's warnings JSONB.
 // This is a single-statement UPDATE with no read-modify-write race.
+// NOTE: This targets any pending row for the companion event; prefer
+// DismissWarningMatchByReviewID when the exact review row ID is known.
 func (r *EventRepository) DismissCompanionWarningMatch(ctx context.Context, companionULID string, eventULID string) error {
 	queries := Queries{db: r.queryer()}
 	err := queries.DismissCompanionWarningMatch(ctx, DismissCompanionWarningMatchParams{
@@ -2282,6 +2513,22 @@ func (r *EventRepository) DismissCompanionWarningMatch(ctx context.Context, comp
 	})
 	if err != nil {
 		return fmt.Errorf("dismiss companion warning match companion=%s event=%s: %w", companionULID, eventULID, err)
+	}
+	return nil
+}
+
+// DismissWarningMatchByReviewID atomically removes any potential_duplicate match
+// whose ulid equals eventULID from the specific review row identified by id.
+// This is strictly narrower than DismissCompanionWarningMatch and should be used
+// whenever the exact companion review row is already known.
+func (r *EventRepository) DismissWarningMatchByReviewID(ctx context.Context, id int, eventULID string) error {
+	queries := Queries{db: r.queryer()}
+	err := queries.DismissWarningMatchByReviewID(ctx, DismissWarningMatchByReviewIDParams{
+		ReviewID:  int32(id),
+		EventUlid: eventULID,
+	})
+	if err != nil {
+		return fmt.Errorf("dismiss warning match review_id=%d event=%s: %w", id, eventULID, err)
 	}
 	return nil
 }
@@ -2441,7 +2688,8 @@ RETURNING id, event_id, original_payload, normalized_payload, warnings,
 	entry.EventStartTime = eventStartTime.Time
 	entry.CreatedAt = createdAt.Time
 	entry.UpdatedAt = updatedAt.Time
-	entry.DuplicateOfEventID = &primaryEventULID
+	primaryEventIDStr := primaryEventID.String()
+	entry.DuplicateOfEventID = &primaryEventIDStr
 	entry.DuplicateOfEventULID = &primaryEventULID
 
 	if sourceID.Valid {
@@ -2521,4 +2769,326 @@ func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry 
 // Used when the query includes a JOIN with events table to get event_ulid
 func convertGetReviewQueueEntryRow(row GetReviewQueueEntryRow) *events.ReviewQueueEntry {
 	return convertReviewQueueRowGeneric(row)
+}
+
+// occurrenceRowToOccurrence maps the common occurrence fields from an occurrence DB row
+// (fields shared by InsertOccurrenceRow, UpdateOccurrenceByIDRow, GetOccurrenceByIDRow)
+// into the domain Occurrence struct.  The venueULID arg comes from a separate column
+// (places.ulid) available in GetOccurrenceByIDRow but not the others — callers pass ""
+// when not available.
+func occurrenceRowToOccurrence(
+	id pgtype.UUID,
+	eventID pgtype.UUID,
+	startTime pgtype.Timestamptz,
+	endTime pgtype.Timestamptz,
+	timezone string,
+	doorTime pgtype.Timestamptz,
+	venueID pgtype.UUID,
+	venueULID pgtype.Text,
+	virtualUrl pgtype.Text,
+	ticketUrl pgtype.Text,
+	priceMin pgtype.Numeric,
+	priceMax pgtype.Numeric,
+	priceCurrency pgtype.Text,
+	availability pgtype.Text,
+) *events.Occurrence {
+	occ := &events.Occurrence{
+		Timezone:      timezone,
+		PriceCurrency: pgtextToString(priceCurrency),
+		Availability:  pgtextToString(availability),
+	}
+	// UUID → string
+	if id.Valid {
+		occ.ID = fmt.Sprintf("%x-%x-%x-%x-%x", id.Bytes[0:4], id.Bytes[4:6], id.Bytes[6:8], id.Bytes[8:10], id.Bytes[10:16])
+	}
+	// VenueID (UUID)
+	if venueID.Valid {
+		venueIDStr := fmt.Sprintf("%x-%x-%x-%x-%x", venueID.Bytes[0:4], venueID.Bytes[4:6], venueID.Bytes[6:8], venueID.Bytes[8:10], venueID.Bytes[10:16])
+		occ.VenueID = &venueIDStr
+	}
+	// VenueULID (from JOIN with places)
+	if venueULID.Valid && venueULID.String != "" {
+		s := venueULID.String
+		occ.VenueULID = &s
+	}
+	// Timestamps
+	if startTime.Valid {
+		occ.StartTime = startTime.Time
+	}
+	if endTime.Valid {
+		t := endTime.Time
+		occ.EndTime = &t
+	}
+	if doorTime.Valid {
+		t := doorTime.Time
+		occ.DoorTime = &t
+	}
+	// Optional text fields
+	if virtualUrl.Valid {
+		s := virtualUrl.String
+		occ.VirtualURL = &s
+	}
+	if ticketUrl.Valid {
+		occ.TicketURL = ticketUrl.String
+	}
+	// Price
+	occ.PriceMin = numericToFloat64Ptr(priceMin)
+	occ.PriceMax = numericToFloat64Ptr(priceMax)
+	_ = eventID // not populated on Occurrence domain struct
+	return occ
+}
+
+// InsertOccurrence inserts a new occurrence for the given event and returns the created
+// domain Occurrence (including the generated UUID).
+func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error) {
+	queries := Queries{db: r.queryer()}
+
+	var p InsertOccurrenceParams
+
+	if err := p.EventID.Scan(params.EventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
+	p.StartTime = pgtype.Timestamptz{Time: params.StartTime, Valid: true}
+	if params.EndTime != nil {
+		p.EndTime = pgtype.Timestamptz{Time: *params.EndTime, Valid: true}
+	}
+	p.Timezone = params.Timezone
+	if params.DoorTime != nil {
+		p.DoorTime = pgtype.Timestamptz{Time: *params.DoorTime, Valid: true}
+	}
+	if params.VenueID != nil {
+		if err := p.VenueID.Scan(*params.VenueID); err != nil {
+			return nil, fmt.Errorf("invalid venue ID: %w", err)
+		}
+	}
+	if params.VirtualURL != nil {
+		p.VirtualUrl = pgtype.Text{String: *params.VirtualURL, Valid: true}
+	}
+	if params.TicketURL != nil {
+		p.TicketUrl = pgtype.Text{String: *params.TicketURL, Valid: true}
+	}
+	if params.PriceMin != nil {
+		if err := p.PriceMin.Scan(*params.PriceMin); err != nil {
+			return nil, fmt.Errorf("invalid price_min: %w", err)
+		}
+	}
+	if params.PriceMax != nil {
+		if err := p.PriceMax.Scan(*params.PriceMax); err != nil {
+			return nil, fmt.Errorf("invalid price_max: %w", err)
+		}
+	}
+	p.PriceCurrency = params.PriceCurrency
+	p.Availability = params.Availability
+
+	row, err := queries.InsertOccurrence(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("insert occurrence: %w", err)
+	}
+
+	return occurrenceRowToOccurrence(
+		row.ID, row.EventID,
+		row.StartTime, row.EndTime,
+		row.Timezone,
+		row.DoorTime,
+		row.VenueID, pgtype.Text{}, // no venue ULID from INSERT — use GetOccurrenceByID if needed
+		row.VirtualUrl, row.TicketUrl,
+		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
+	), nil
+}
+
+// GetOccurrenceByID fetches a single occurrence by its UUID, scoped to the given event.
+// Returns ErrNotFound if the row does not exist or belongs to a different event.
+func (r *EventRepository) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*events.Occurrence, error) {
+	queries := Queries{db: r.queryer()}
+
+	var p GetOccurrenceByIDParams
+	if err := p.ID.Scan(occurrenceID); err != nil {
+		return nil, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+	if err := p.EventID.Scan(eventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	row, err := queries.GetOccurrenceByID(ctx, p)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get occurrence by ID: %w", err)
+	}
+
+	return occurrenceRowToOccurrence(
+		row.ID, row.EventID,
+		row.StartTime, row.EndTime,
+		row.Timezone,
+		row.DoorTime,
+		row.VenueID, row.VenueUlid,
+		row.VirtualUrl, row.TicketUrl,
+		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
+	), nil
+}
+
+// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence, scoped to the given event.
+// Returns ErrNotFound if the row does not exist or belongs to a different event.
+func (r *EventRepository) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+	queries := Queries{db: r.queryer()}
+
+	var p UpdateOccurrenceByIDParams
+	if err := p.ID.Scan(occurrenceID); err != nil {
+		return nil, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+	if err := p.EventID.Scan(eventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	if params.StartTime != nil {
+		p.StartTime = pgtype.Timestamptz{Time: *params.StartTime, Valid: true}
+	}
+	p.EndTimeSet = pgtype.Bool{Bool: params.EndTimeSet, Valid: params.EndTimeSet}
+	if params.EndTimeSet && params.EndTime != nil {
+		p.EndTime = pgtype.Timestamptz{Time: *params.EndTime, Valid: true}
+	}
+	if params.Timezone != nil {
+		p.Timezone = pgtype.Text{String: *params.Timezone, Valid: true}
+	}
+	p.DoorTimeSet = pgtype.Bool{Bool: params.DoorTimeSet, Valid: params.DoorTimeSet}
+	if params.DoorTimeSet && params.DoorTime != nil {
+		p.DoorTime = pgtype.Timestamptz{Time: *params.DoorTime, Valid: true}
+	}
+	p.VenueIDSet = pgtype.Bool{Bool: params.VenueIDSet, Valid: params.VenueIDSet}
+	if params.VenueIDSet && params.VenueID != nil {
+		if err := p.VenueID.Scan(*params.VenueID); err != nil {
+			return nil, fmt.Errorf("invalid venue ID: %w", err)
+		}
+	}
+	p.VirtualUrlSet = pgtype.Bool{Bool: params.VirtualURLSet, Valid: params.VirtualURLSet}
+	if params.VirtualURLSet && params.VirtualURL != nil {
+		p.VirtualUrl = pgtype.Text{String: *params.VirtualURL, Valid: true}
+	}
+	p.TicketUrlSet = pgtype.Bool{Bool: params.TicketURLSet, Valid: params.TicketURLSet}
+	if params.TicketURLSet && params.TicketURL != nil {
+		p.TicketUrl = pgtype.Text{String: *params.TicketURL, Valid: true}
+	}
+	p.PriceMinSet = pgtype.Bool{Bool: params.PriceMinSet, Valid: params.PriceMinSet}
+	if params.PriceMinSet && params.PriceMin != nil {
+		if err := p.PriceMin.Scan(*params.PriceMin); err != nil {
+			return nil, fmt.Errorf("invalid price_min: %w", err)
+		}
+	}
+	p.PriceMaxSet = pgtype.Bool{Bool: params.PriceMaxSet, Valid: params.PriceMaxSet}
+	if params.PriceMaxSet && params.PriceMax != nil {
+		if err := p.PriceMax.Scan(*params.PriceMax); err != nil {
+			return nil, fmt.Errorf("invalid price_max: %w", err)
+		}
+	}
+	if params.PriceCurrency != nil {
+		p.PriceCurrency = pgtype.Text{String: *params.PriceCurrency, Valid: true}
+	}
+	if params.Availability != nil {
+		p.Availability = pgtype.Text{String: *params.Availability, Valid: true}
+	}
+
+	row, err := queries.UpdateOccurrenceByID(ctx, p)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("update occurrence: %w", err)
+	}
+
+	return occurrenceRowToOccurrence(
+		row.ID, row.EventID,
+		row.StartTime, row.EndTime,
+		row.Timezone,
+		row.DoorTime,
+		row.VenueID, pgtype.Text{}, // venue ULID not available from UPDATE; caller may re-fetch if needed
+		row.VirtualUrl, row.TicketUrl,
+		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
+	), nil
+}
+
+// DeleteOccurrenceByID deletes a single occurrence row by its UUID, scoped to the given event.
+// Returns ErrNotFound if the row does not exist or belongs to a different event.
+func (r *EventRepository) DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error {
+	queries := Queries{db: r.queryer()}
+
+	var p DeleteOccurrenceByIDParams
+	if err := p.ID.Scan(occurrenceID); err != nil {
+		return fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+	if err := p.EventID.Scan(eventID); err != nil {
+		return fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	_, err := queries.DeleteOccurrenceByID(ctx, p)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return events.ErrNotFound
+		}
+		return fmt.Errorf("delete occurrence: %w", err)
+	}
+	return nil
+}
+
+// CountOccurrences returns the number of occurrences for the event identified by eventID (UUID).
+func (r *EventRepository) CountOccurrences(ctx context.Context, eventID string) (int64, error) {
+	queries := Queries{db: r.queryer()}
+
+	var id pgtype.UUID
+	if err := id.Scan(eventID); err != nil {
+		return 0, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	count, err := queries.CountOccurrencesByEventID(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("count occurrences: %w", err)
+	}
+	return count, nil
+}
+
+// CheckOccurrenceOverlapExcluding returns true if [startTime, endTime) overlaps any existing
+// occurrence on the given event, excluding the occurrence identified by excludeOccurrenceID.
+func (r *EventRepository) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
+	queryer := r.queryer()
+
+	var eventUUID pgtype.UUID
+	if err := eventUUID.Scan(eventID); err != nil {
+		return false, fmt.Errorf("invalid event ID: %w", err)
+	}
+	var excludeUUID pgtype.UUID
+	if err := excludeUUID.Scan(excludeOccurrenceID); err != nil {
+		return false, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+
+	var overlaps bool
+	var err error
+	if endTime == nil {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND id != $3
+      AND (
+          (end_time IS NOT NULL AND $2 >= start_time AND $2 < end_time)
+       OR (end_time IS NULL AND start_time = $2)
+      )
+)`, eventUUID, startTime, excludeUUID).Scan(&overlaps)
+	} else {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND id != $4
+      AND (
+          (end_time IS NOT NULL AND $2 < end_time AND $3 > start_time)
+       OR (end_time IS NULL AND start_time >= $2 AND start_time < $3)
+      )
+)`, eventUUID, startTime, *endTime, excludeUUID).Scan(&overlaps)
+	}
+	if err != nil {
+		return false, fmt.Errorf("check occurrence overlap excluding: %w", err)
+	}
+	return overlaps, nil
 }

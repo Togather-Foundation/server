@@ -37,6 +37,9 @@ func NewEvent(name string) *Event {
 }
 
 // EventSummary is a compact event representation for lists and sub-events.
+// When used as a subEvent occurrence (i.e. embedded in an EventSeries detail
+// response), DoorTime and Timezone are populated so that the admin UI can
+// display and edit all occurrence details.
 type EventSummary struct {
 	Context   any    `json:"@context,omitempty"`
 	Type      string `json:"@type"`
@@ -44,6 +47,8 @@ type EventSummary struct {
 	Name      string `json:"name"`
 	StartDate string `json:"startDate,omitempty"`
 	EndDate   string `json:"endDate,omitempty"`
+	DoorTime  string `json:"doorTime,omitempty"`
+	Timezone  string `json:"timezone,omitempty"`
 	Location  any    `json:"location,omitempty"`
 }
 

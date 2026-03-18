@@ -271,6 +271,229 @@ func TestGenerator_TitleFormatting_AllCategories(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// BatchReviewEventInputs tests
+// ---------------------------------------------------------------------------
+
+func TestBatchReviewEventInputs_ScenarioCount(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+	require.Len(t, scenarios, 11, "should return 11 scenario groups")
+}
+
+func TestBatchReviewEventInputs_TotalEventCount(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	total := 0
+	for _, s := range scenarios {
+		total += len(s.Events)
+	}
+	// RS-01:2, RS-02:2, RS-03:2, RS-04:2, RS-05:2, RS-06:1,
+	// RS-07:2, RS-08:2, RS-09:1, RS-10:2, RS-11:4 = 22
+	assert.Equal(t, 22, total, "total event count across all scenario groups should be 22")
+}
+
+func TestBatchReviewEventInputs_AllEventsHaveRequiredFields(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	for _, scenario := range scenarios {
+		for i, ev := range scenario.Events {
+			assert.NotEmpty(t, ev.Name, "scenario %s event %d: Name must not be empty", scenario.GroupID, i)
+			assert.NotEmpty(t, ev.StartDate, "scenario %s event %d: StartDate must not be empty", scenario.GroupID, i)
+
+			hasLocation := ev.Location != nil || ev.VirtualLocation != nil
+			assert.True(t, hasLocation, "scenario %s event %d: must have Location or VirtualLocation", scenario.GroupID, i)
+		}
+	}
+}
+
+func TestBatchReviewEventInputs_NoExampleComURLs(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	for _, scenario := range scenarios {
+		for i, ev := range scenario.Events {
+			assert.NotContains(t, ev.URL, "example.com",
+				"scenario %s event %d URL must not contain example.com", scenario.GroupID, i)
+			assert.NotContains(t, ev.Image, "example.com",
+				"scenario %s event %d Image must not contain example.com", scenario.GroupID, i)
+			if ev.Source != nil {
+				assert.NotContains(t, ev.Source.URL, "example.com",
+					"scenario %s event %d Source.URL must not contain example.com", scenario.GroupID, i)
+			}
+		}
+	}
+}
+
+func TestBatchReviewEventInputs_AllRSGroupIDsPresent(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	expected := []string{"RS-01", "RS-02", "RS-03", "RS-04", "RS-05", "RS-06", "RS-07", "RS-08", "RS-09", "RS-10", "RS-11"}
+	groupIDs := make(map[string]bool, len(scenarios))
+	for _, s := range scenarios {
+		groupIDs[s.GroupID] = true
+	}
+	for _, id := range expected {
+		assert.True(t, groupIDs[id], "scenario group %q must be present", id)
+	}
+}
+
+func TestBatchReviewEventInputs_AllEventsHaveUniqueEventIDs(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	seen := make(map[string]string)
+	for _, scenario := range scenarios {
+		for i, ev := range scenario.Events {
+			if ev.Source == nil {
+				continue
+			}
+			eid := ev.Source.EventID
+			if prev, ok := seen[eid]; ok {
+				t.Errorf("duplicate EventID %q found in %s event %d (first seen in %s)", eid, scenario.GroupID, i, prev)
+			}
+			seen[eid] = scenario.GroupID
+		}
+	}
+}
+
+func TestBatchReviewEventInputs_RS01BaseSeriesHas4Occurrences(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	var rs01 *ReviewEventScenario
+	for i := range scenarios {
+		if scenarios[i].GroupID == "RS-01" {
+			rs01 = &scenarios[i]
+			break
+		}
+	}
+	require.NotNil(t, rs01, "RS-01 scenario must exist")
+	require.Len(t, rs01.Events, 2, "RS-01 must have 2 events (base series + new occurrence)")
+
+	baseSeries := rs01.Events[0]
+	assert.Contains(t, baseSeries.Name, "Base Series", "first RS-01 event should be the base series")
+	require.Len(t, baseSeries.Occurrences, 4, "RS-01 base series must have 4 occurrences")
+}
+
+func TestBatchReviewEventInputs_RS05OverlapActuallyOverlaps(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	var rs05 *ReviewEventScenario
+	for i := range scenarios {
+		if scenarios[i].GroupID == "RS-05" {
+			rs05 = &scenarios[i]
+			break
+		}
+	}
+	require.NotNil(t, rs05, "RS-05 scenario must exist")
+	require.Len(t, rs05.Events, 2, "RS-05 must have 2 events")
+
+	target := rs05.Events[0]
+	overlap := rs05.Events[1]
+
+	require.NotEmpty(t, target.Occurrences, "RS-05 target must have occurrences")
+	firstOccStart, err := time.Parse(time.RFC3339, target.Occurrences[0].StartDate)
+	require.NoError(t, err)
+	firstOccEnd, err := time.Parse(time.RFC3339, target.Occurrences[0].EndDate)
+	require.NoError(t, err)
+
+	overlapStart, err := time.Parse(time.RFC3339, overlap.StartDate)
+	require.NoError(t, err)
+	overlapEnd, err := time.Parse(time.RFC3339, overlap.EndDate)
+	require.NoError(t, err)
+
+	// Overlap: overlapStart is within [firstOccStart, firstOccEnd) AND overlapEnd > firstOccStart
+	overlaps := overlapStart.Before(firstOccEnd) && overlapEnd.After(firstOccStart)
+	assert.True(t, overlaps, "RS-05 overlapping occurrence should actually overlap the first target occurrence")
+}
+
+func TestBatchReviewEventInputs_RS06HasReversedDates(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	var rs06 *ReviewEventScenario
+	for i := range scenarios {
+		if scenarios[i].GroupID == "RS-06" {
+			rs06 = &scenarios[i]
+			break
+		}
+	}
+	require.NotNil(t, rs06, "RS-06 scenario must exist")
+	require.Len(t, rs06.Events, 1, "RS-06 should have 1 event")
+
+	ev := rs06.Events[0]
+	startTime, err := time.Parse(time.RFC3339, ev.StartDate)
+	require.NoError(t, err, "RS-06 StartDate must parse")
+	endTime, err := time.Parse(time.RFC3339, ev.EndDate)
+	require.NoError(t, err, "RS-06 EndDate must parse")
+
+	assert.True(t, endTime.Before(startTime), "RS-06 endDate should be before startDate (reversed dates)")
+}
+
+func TestBatchReviewEventInputs_RS09ContainsSessionsInName(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	var rs09 *ReviewEventScenario
+	for i := range scenarios {
+		if scenarios[i].GroupID == "RS-09" {
+			rs09 = &scenarios[i]
+			break
+		}
+	}
+	require.NotNil(t, rs09, "RS-09 scenario must exist")
+	require.Len(t, rs09.Events, 1, "RS-09 should have 1 event")
+
+	assert.Contains(t, rs09.Events[0].Name, "(8 sessions)", "RS-09 name must contain '(8 sessions)'")
+}
+
+func TestBatchReviewEventInputs_RS11Has4Events(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	var rs11 *ReviewEventScenario
+	for i := range scenarios {
+		if scenarios[i].GroupID == "RS-11" {
+			rs11 = &scenarios[i]
+			break
+		}
+	}
+	require.NotNil(t, rs11, "RS-11 scenario must exist")
+	assert.Len(t, rs11.Events, 4, "RS-11 must have 4 events (same-day-different-times cluster)")
+
+	// Verify we have two different days represented
+	days := make(map[string]int)
+	for _, ev := range rs11.Events {
+		t1, err := time.Parse(time.RFC3339, ev.StartDate)
+		require.NoError(t, err)
+		day := t1.Format("2006-01-02")
+		days[day]++
+	}
+	assert.Len(t, days, 2, "RS-11 events should span exactly 2 different days")
+
+	// Each day should have 2 events
+	for day, count := range days {
+		assert.Equal(t, 2, count, "day %s should have exactly 2 RS-11 events", day)
+	}
+}
+
+func TestBatchReviewEventInputs_AllRSNamesContainGroupID(t *testing.T) {
+	g := NewDeterministicGenerator()
+	scenarios := g.BatchReviewEventInputs()
+
+	for _, scenario := range scenarios {
+		for i, ev := range scenario.Events {
+			assert.True(t, strings.HasPrefix(ev.Name, scenario.GroupID),
+				"scenario %s event %d name %q should start with group ID", scenario.GroupID, i, ev.Name)
+		}
+	}
+}
+
 func TestGenerator_TitleFormatting_SpecificTemplates(t *testing.T) {
 	tests := []struct {
 		name     string

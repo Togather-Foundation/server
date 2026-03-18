@@ -226,6 +226,39 @@ SELECT r.id,
    AND r.status = 'pending'
  LIMIT 1;
 
+-- name: GetPendingReviewByEventUlidAndDuplicateUlid :one
+-- Get the pending review queue entry for an event by its ULID, narrowed to the
+-- specific companion whose duplicate_of_event_id points to the counterpart event.
+-- Used by the add-occurrence workflow to avoid picking an unrelated pending review
+-- when the same event has multiple pending review rows.
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at,
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
+ WHERE e.ulid = sqlc.arg('event_ulid')
+   AND r.status = 'pending'
+   AND dup.ulid = sqlc.arg('duplicate_ulid')
+ LIMIT 1;
+
 -- name: UpdateReviewWarnings :exec
 -- Update only the warnings JSON of a review queue entry (used for companion warning dismissal).
 UPDATE event_review_queue
@@ -263,3 +296,32 @@ UPDATE event_review_queue
          SELECT e.id FROM events e WHERE e.ulid = sqlc.arg('companion_ulid')::text LIMIT 1
        )
    AND status = 'pending';
+
+-- name: DismissWarningMatchByReviewID :exec
+-- Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
+-- from a specific review queue entry identified by its primary key id.
+-- Narrower than DismissCompanionWarningMatch: targets exactly one row, preventing
+-- accidental modification of unrelated pending reviews on the same companion event.
+UPDATE event_review_queue
+   SET warnings = (
+         SELECT COALESCE(jsonb_agg(new_w ORDER BY idx), '[]'::jsonb)
+         FROM (
+           SELECT idx,
+                  CASE
+                    WHEN w->>'code' = 'potential_duplicate' THEN
+                      jsonb_set(
+                        w,
+                        '{details,matches}',
+                        COALESCE((
+                          SELECT jsonb_agg(m)
+                          FROM jsonb_array_elements(w->'details'->'matches') m
+                          WHERE m->>'ulid' <> sqlc.arg('event_ulid')::text
+                        ), '[]'::jsonb)
+                      )
+                    ELSE w
+                  END AS new_w
+           FROM jsonb_array_elements(warnings) WITH ORDINALITY AS t(w, idx)
+         ) sub
+       ),
+       updated_at = NOW()
+ WHERE id = sqlc.arg('review_id')::int;

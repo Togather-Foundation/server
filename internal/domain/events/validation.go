@@ -332,6 +332,20 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 		}
 	}
 
+	// For single-occurrence events (no Occurrences array, but StartDate provided), the
+	// parent location must be resolvable at ingest time. A Location must supply either
+	// a canonical @id (resolved via GetPlaceByULID) or a name (resolved via UpsertPlace).
+	// A Location with neither @id nor name would leave PrimaryVenueID nil, causing the
+	// occurrence to violate the occurrence_location_required DB constraint at insert time.
+	if len(input.Occurrences) == 0 && input.StartDate != "" {
+		if !parentEventProvidesInheritableVenue(input) {
+			return nil, ValidationError{
+				Field:   "location",
+				Message: "single-occurrence event has no resolvable location: provide location.name or a valid location.@id",
+			}
+		}
+	}
+
 	occurrenceWarnings, err := validateOccurrences(input, nodeDomain, original)
 	if err != nil {
 		return nil, err
@@ -454,9 +468,58 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 				return nil, ValidationError{Field: fieldPrefix + ".venueId", Message: "invalid canonical URI"}
 			}
 		}
+
+		// Reject hybrid occurrences: an occurrence must be either physical (venueId)
+		// or virtual (virtualUrl), not both.  Persisting both violates the location
+		// contract and makes it ambiguous which channel the attendee should use.
+		if occ.VenueID != "" && strings.TrimSpace(occ.VirtualURL) != "" {
+			return nil, ValidationError{
+				Field:   fieldPrefix + ".venueId",
+				Message: "occurrence must specify either venueId or virtualUrl, not both",
+			}
+		}
+
+		// Each occurrence must resolve to a location at create time.
+		// An occurrence without its own venueId or virtualUrl inherits from the parent event.
+		// Reject explicitly if the occurrence has no venueId/virtualUrl and the parent cannot
+		// supply a venue at ingest time (no @id, no name, and no virtual URL).
+		if occ.VenueID == "" && strings.TrimSpace(occ.VirtualURL) == "" {
+			if !parentEventProvidesInheritableVenue(input) {
+				return nil, ValidationError{
+					Field:   fieldPrefix + ".venueId",
+					Message: "occurrence has no venueId or virtualUrl and parent event has no resolvable location to inherit",
+				}
+			}
+		}
 	}
 
 	return warnings, nil
+}
+
+// parentEventProvidesInheritableVenue reports whether the event input supplies a location
+// that the ingest layer can actually resolve to a PrimaryVenueID for occurrence inheritance.
+//
+// Three paths exist:
+//  1. input.Location with a non-empty @id — resolved authoritatively via GetPlaceByULID.
+//  2. input.Location with a non-empty Name — resolved via UpsertPlace.
+//  3. input.VirtualLocation with a non-empty URL — passed through as VirtualURL on the event.
+//
+// All three are considered resolvable at this stage. The ingest layer performs the
+// actual DB lookup for @id-based resolution and will surface a clear error if the
+// referenced place does not exist.
+func parentEventProvidesInheritableVenue(input EventInput) bool {
+	if input.Location != nil {
+		if strings.TrimSpace(input.Location.ID) != "" {
+			return true // canonical @id — resolved by ingest via GetPlaceByULID
+		}
+		if strings.TrimSpace(input.Location.Name) != "" {
+			return true // name — resolved by ingest via UpsertPlace
+		}
+	}
+	if input.VirtualLocation != nil && strings.TrimSpace(input.VirtualLocation.URL) != "" {
+		return true
+	}
+	return false
 }
 
 func validatePlaceInput(place PlaceInput, nodeDomain string) error {
