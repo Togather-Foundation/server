@@ -645,53 +645,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/events/merge:
-    post:
-      operationId: mergeEvents
-      summary: Merge duplicate events
-      description: |
-        Merge source event into target event. Source event will return 410 Gone 
-        with sameAs link to canonical event.
-        
-        Note: Automatic duplicate detection (/admin/duplicates list endpoint) 
-        is not yet implemented. Use this endpoint for manual merges.
-
-        **Deprecated:** Use `POST /api/v1/admin/events/consolidate` instead, which
-        provides N-to-1 consolidation with atomic retire, review dismissal, and
-        post-consolidation validation.
-      tags: [Admin]
-      x-internal: true
-      security:
-        - bearerAuth: []
-      requestBody:
-        description: Source and target event IDs for merge operation
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [sourceId, targetId]
-              properties:
-                sourceId:
-                  type: string
-                  description: Source event ID (will be merged into target)
-                targetId:
-                  type: string
-                  description: Target event ID (canonical)
-      responses:
-        '200':
-          description: Events merged successfully
-          content:
-            application/ld+json:
-              schema:
-                $ref: '#/components/schemas/Event'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
   /admin/events/{id}/occurrences:
     post:
       operationId: createOccurrence
@@ -1316,13 +1269,6 @@ paths:
       description: |
         When a review entry's event is actually a new occurrence of an existing recurring-series
         event rather than a true duplicate, use this endpoint to atomically:
-
-        **Deprecated (for the merge-duplicate use case):** Use
-        `POST /api/v1/admin/events/consolidate` instead, which provides N-to-1
-        consolidation with atomic retire, review dismissal, and post-consolidation
-        validation. This endpoint remains the correct choice when the admin intent
-        is specifically to absorb a single-occurrence event as a new occurrence on
-        an existing recurring series.
 
         1. Add the absorbed event's start/end time as a new occurrence on the target series.
         2. Soft-delete the absorbed event (tombstone reason `absorbed_as_occurrence`).
@@ -3434,7 +3380,7 @@ components:
           description: >
             Current review status. `pending` = awaiting decision; `approved` = event published;
             `rejected` = event deleted; `merged` = event absorbed into another event
-            (via merge-duplicate or add-occurrence).
+            (via add-occurrence or consolidation).
         createdAt:
           type: string
           format: date-time
@@ -3450,7 +3396,7 @@ components:
           type: string
           description: >
             ULID of the primary event that this review entry was merged into or linked as a
-            near-duplicate of. Set when the review action is merge-duplicate or add-occurrence,
+            near-duplicate of. Set when the review action is add-occurrence or consolidation,
             and also when near-duplicate cross-linking creates a review entry for an existing
             published event.
 
@@ -3471,7 +3417,7 @@ components:
           description: >
             Current review status. `pending` = awaiting decision; `approved` = event published;
             `rejected` = event deleted; `merged` = event absorbed into another event
-            (via merge-duplicate or add-occurrence).
+            (via add-occurrence or consolidation).
         warnings:
           type: array
           items:
@@ -3509,7 +3455,7 @@ components:
           type: string
           description: >
             ULID of the primary event that this review entry was merged into or linked as a
-            near-duplicate of. Set when the review action is merge-duplicate or add-occurrence,
+            near-duplicate of. Set when the review action is add-occurrence or consolidation,
             and also when near-duplicate cross-linking creates a review entry for an existing
             published event.
 
