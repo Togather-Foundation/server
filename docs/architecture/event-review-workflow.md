@@ -299,13 +299,13 @@ This section is the authoritative decision table for all admin review actions. "
 | Action | Endpoint | Review entry's event | Companion review row | Target lifecycle after action | Review status set to |
 |--------|----------|---------------------|---------------------|-------------------------------|----------------------|
 | **approve** | `POST .../approve` | Event's `lifecycle_state` → `published` (unless already published) | Not touched | Event = `published` | `approved` |
-| **approve** (with `record_not_duplicates: true`) | same | Same as approve | `potential_duplicate` warning companions are dismissed via `dismissCompanionDuplicateWarning` (best-effort) | Event = `published` | `approved` |
+| **approve** (with `record_not_duplicates: true`) | same | Same as approve | Companion review is rechecked best-effort after duplicate warnings are removed; if no issues remain it is auto-approved, otherwise it stays pending with refreshed warnings | Event = `published` | `approved` |
 | **reject** | `POST .../reject` | Soft-deleted (`lifecycle_state = 'deleted'`, tombstone inserted) | `potential_duplicate` warning pairs are recorded as not-duplicates; companion dismiss is best-effort | Event = `deleted` | `rejected` |
 | **fix** | `POST .../fix` | Occurrence dates corrected; then published | Not touched | Event = `published` | `approved` |
 | **merge** | `POST .../merge` | Soft-deleted (`lifecycle_state = 'deleted'`, tombstone with `superseded_by` → primary URI, reason `duplicate_merged`) | Not touched — the companion review row (if any) on the primary is **not** automatically cleared | Primary event unchanged | `merged` |
 | **add-occurrence** (forward path — `potential_duplicate`) | `POST .../add-occurrence` | Soft-deleted (`lifecycle_state = 'deleted'`, tombstone reason `absorbed_as_occurrence`, `superseded_by` → target URI); occurrences explicitly deleted | Companion review on target event is located and dismissed atomically (status → `merged`) | Target lifecycle recomputed: if no remaining pending reviews → `published`; if other pending reviews remain → stays `pending_review` | `merged` |
 | **add-occurrence** (near-dup path — `near_duplicate_of_new_event`) | `POST .../add-occurrence` | Event is the **target** (kept); `DuplicateOfEventULID` is the source (soft-deleted); occurrence added to this event | Companion review on the source event is located and dismissed atomically (status → `merged`) | Same recompute as forward path applied to this event | `merged` |
-| **not-a-duplicate** (UI-only name) | `POST .../approve` with `record_not_duplicates: true` | Same as approve | `potential_duplicate` pairs recorded in `not_duplicates` table; companion dismissal attempted best-effort | Event = `published` | `approved` |
+| **not-a-duplicate** (UI-only name) | `POST .../approve` with `record_not_duplicates: true` | Same as approve | `potential_duplicate` pairs recorded in `not_duplicates` table; companion pending review is rechecked best-effort and auto-approved only if no issues remain | Event = `published` | `approved` |
 
 ### Recompute Logic (add-occurrence only)
 

@@ -805,8 +805,9 @@ paths:
                     of events that match these pairs will not generate duplicate warnings.
                     Used by the "Not a Duplicate" UI action, which approves/publishes the
                     event while acknowledging that the duplicate flag was incorrect.
-                    Companion review rows on the matched events are dismissed
-                    best-effort (failures are logged but do not fail the request).
+                    Matched companion pending reviews are rechecked best-effort after the
+                    duplicate warnings are removed: if no issues remain they are
+                    auto-approved, otherwise they stay pending with refreshed warnings.
             examples:
               withNotes:
                 summary: Approval with notes

@@ -1114,8 +1114,9 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 						slog.String("candidate_ulid", candidateULID),
 						slog.String("error", err.Error()))
 				}
-				// Best-effort: dismiss the companion's warning that pointed back at this event.
-				h.dismissCompanionDuplicateWarning(ctx, candidateULID, eventULID)
+				// Best-effort: refresh the companion review and auto-approve it if no
+				// issues remain after the duplicate pair is removed.
+				h.recheckCompanionNotDuplicateReview(ctx, candidateULID, eventULID, reviewedBy)
 			}
 
 		case "near_duplicate_of_new_event":
@@ -1133,32 +1134,27 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 					slog.String("companion_ulid", companionULID),
 					slog.String("error", err.Error()))
 			}
-			// Best-effort: dismiss the companion's warning that points back at this event.
-			h.dismissCompanionDuplicateWarning(ctx, companionULID, eventULID)
+			// Best-effort: refresh the companion review and auto-approve it if no
+			// issues remain after the duplicate pair is removed.
+			h.recheckCompanionNotDuplicateReview(ctx, companionULID, eventULID, reviewedBy)
 		}
 	}
 }
 
-// dismissCompanionDuplicateWarning removes the potential_duplicate warning match
-// that references eventULID from the companion event's pending review entry.
-// This prevents the companion's review from showing a stale duplicate alert after
-// the pair has been marked as not-duplicates.
+// recheckCompanionNotDuplicateReview removes duplicate-pair warnings from the exact
+// companion review row and then rechecks that pending event: if no warnings remain,
+// the companion review is auto-approved; otherwise it stays pending with refreshed
+// warnings.
 //
-// Strategy: look up the exact companion review whose duplicate_of_event_id points
-// back at eventULID (same lookup used by add-occurrence), then update only that
-// specific row by primary key. This is strictly narrower than operating by event ULID
-// alone, which would affect ALL pending reviews on the companion event when multiple
-// such rows exist.
-//
-// Errors are logged but not propagated — this is a best-effort cleanup.
-func (h *AdminReviewQueueHandler) dismissCompanionDuplicateWarning(ctx context.Context, companionULID, eventULID string) {
+// Errors are logged but not propagated — this is a best-effort companion cleanup.
+func (h *AdminReviewQueueHandler) recheckCompanionNotDuplicateReview(ctx context.Context, companionULID, eventULID, reviewedBy string) {
 	// Find the exact companion review that is cross-linked to eventULID.
 	companion, err := h.Repository.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, companionULID, eventULID)
 	if err != nil {
 		// ErrNotFound is normal (companion may have been already processed or never
 		// existed).  Any other error is unexpected but still best-effort.
 		if !errors.Is(err, events.ErrNotFound) {
-			slog.WarnContext(ctx, "dismissCompanionWarning: failed to look up companion review",
+			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to look up companion review",
 				slog.String("companion_ulid", companionULID),
 				slog.String("event_ulid", eventULID),
 				slog.String("error", err.Error()))
@@ -1169,11 +1165,119 @@ func (h *AdminReviewQueueHandler) dismissCompanionDuplicateWarning(ctx context.C
 		// No pending review for this companion/duplicate pair — nothing to do.
 		return
 	}
-	if err := h.Repository.DismissWarningMatchByReviewID(ctx, companion.ID, eventULID); err != nil {
-		slog.WarnContext(ctx, "dismissCompanionWarning: failed to dismiss warning match by review id",
+
+	updatedWarnings, err := filteredCompanionWarnings(companion, eventULID)
+	if err != nil {
+		slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to filter companion warnings",
 			slog.Int("review_id", companion.ID),
 			slog.String("companion_ulid", companionULID),
 			slog.String("event_ulid", eventULID),
 			slog.String("error", err.Error()))
+		return
 	}
+
+	if err := h.Repository.UpdateReviewWarnings(ctx, companion.ID, updatedWarnings); err != nil {
+		slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to update companion warnings",
+			slog.Int("review_id", companion.ID),
+			slog.String("companion_ulid", companionULID),
+			slog.String("event_ulid", eventULID),
+			slog.String("error", err.Error()))
+		return
+	}
+
+	if string(updatedWarnings) == "[]" {
+		if h.AdminService == nil {
+			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: admin service unavailable for auto-approval",
+				slog.Int("review_id", companion.ID),
+				slog.String("companion_ulid", companionULID),
+				slog.String("event_ulid", eventULID))
+			return
+		}
+		note := "Auto-approved after companion not-duplicate recheck"
+		if _, err := h.AdminService.ApproveEventWithReview(ctx, companionULID, companion.ID, reviewedBy, &note); err != nil {
+			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to auto-approve companion review",
+				slog.Int("review_id", companion.ID),
+				slog.String("companion_ulid", companionULID),
+				slog.String("event_ulid", eventULID),
+				slog.String("error", err.Error()))
+		}
+		return
+	}
+}
+
+func filteredCompanionWarnings(companion *events.ReviewQueueEntry, eventULID string) ([]byte, error) {
+	if companion == nil || len(companion.Warnings) == 0 {
+		return []byte("[]"), nil
+	}
+
+	var warnings []events.ValidationWarning
+	if err := json.Unmarshal(companion.Warnings, &warnings); err != nil {
+		return nil, fmt.Errorf("parse companion warnings: %w", err)
+	}
+
+	filtered := make([]events.ValidationWarning, 0, len(warnings))
+	for _, warning := range warnings {
+		switch warning.Code {
+		case "potential_duplicate":
+			updatedWarning, keep := filterPotentialDuplicateWarning(warning, eventULID)
+			if keep {
+				filtered = append(filtered, updatedWarning)
+			}
+		case "near_duplicate_of_new_event":
+			if companion.DuplicateOfEventULID != nil && *companion.DuplicateOfEventULID == eventULID {
+				continue
+			}
+			filtered = append(filtered, warning)
+		default:
+			filtered = append(filtered, warning)
+		}
+	}
+
+	encoded, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("marshal companion warnings: %w", err)
+	}
+	return encoded, nil
+}
+
+func filterPotentialDuplicateWarning(warning events.ValidationWarning, eventULID string) (events.ValidationWarning, bool) {
+	matchesRaw, ok := warning.Details["matches"]
+	if !ok {
+		return warning, true
+	}
+	matches, ok := matchesRaw.([]any)
+	if !ok {
+		return warning, true
+	}
+
+	filteredMatches := make([]any, 0, len(matches))
+	removed := false
+	for _, match := range matches {
+		matchMap, ok := match.(map[string]any)
+		if !ok {
+			filteredMatches = append(filteredMatches, match)
+			continue
+		}
+		candidateULID, ok := matchMap["ulid"].(string)
+		if ok && candidateULID == eventULID {
+			removed = true
+			continue
+		}
+		filteredMatches = append(filteredMatches, match)
+	}
+
+	if !removed {
+		return warning, true
+	}
+	if len(filteredMatches) == 0 {
+		return warning, false
+	}
+
+	updatedDetails := make(map[string]any, len(warning.Details))
+	for key, value := range warning.Details {
+		updatedDetails[key] = value
+	}
+	updatedDetails["matches"] = filteredMatches
+	warning.Details = updatedDetails
+	return warning, true
 }

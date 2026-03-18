@@ -208,12 +208,13 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
 4. Verify:
    - [ ] The approved event transitions to `published`.
    - [ ] A `not_duplicates` record is created pairing the two events (prevents future false positives).
-   - [ ] The companion review entry on the **other** event is dismissed (`merged` status — companion cleanup fires on approve with `record_not_duplicates`).
-   - [ ] The other event's lifecycle recomputes: transitions to `published` if no remaining pending reviews exist.
-5. Open the review queue and confirm the second RS-07 entry is no longer pending (companion was dismissed in step 4).
+   - [ ] The companion review entry on the **other** event is rechecked after duplicate warnings are removed.
+   - [ ] If no issues remain on the companion, it is auto-approved and disappears from the pending review queue.
+   - [ ] If other warnings remain on the companion, it stays `pending` with refreshed warnings that no longer reference the acted-on event.
+5. Open the review queue and confirm the second RS-07 entry matches the expected branch from step 4.
 6. Verify both events remain separately listed.
 
-**Note:** A single approve with `record_not_duplicates: true` approves only the one review entry directly actioned. The companion review is dismissed (not approved) via companion cleanup. Both events should end up `published` as a result of the approve + companion dismissal, but the companion entry's final status is `merged`, not `approved`.
+**Note:** `record_not_duplicates: true` still directly approves only the actioned review entry. The companion pending event is then rechecked: it is auto-approved if no issues remain, otherwise it stays pending with updated warnings.
 
 ---
 
