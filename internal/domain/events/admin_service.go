@@ -1057,8 +1057,11 @@ func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEv
 
 	// Dismiss the companion review entry on the primary event (if present and still
 	// pending).  This mirrors the companion handling in AddOccurrenceFromReview.
+	// IMPORTANT: pass params.PrimaryULID here — the duplicate has already been
+	// soft-deleted by executeMerge, so MergeReview's live-event lookup
+	// (WHERE ulid = $1 AND deleted_at IS NULL) would fail if given DuplicateULID.
 	if lockedCompanion != nil && lockedCompanion.Status == "pending" {
-		if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, params.DuplicateULID); mergeErr != nil {
+		if _, mergeErr := txRepo.MergeReview(ctx, lockedCompanion.ID, reviewedBy, params.PrimaryULID); mergeErr != nil {
 			if errors.Is(mergeErr, ErrNotFound) || errors.Is(mergeErr, ErrConflict) {
 				// Race outcome: companion was already dismissed — non-fatal.
 				_ = mergeErr

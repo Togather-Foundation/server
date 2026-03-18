@@ -204,12 +204,16 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
 **Test steps:**
 1. Open review queue. Find both RS-07 review entries.
 2. Inspect both events: confirm they are genuinely different events at the same venue.
-3. Click **Approve** with the `record_not_duplicates: true` option checked.
+3. On **one** of the review entries, click **Approve** with the `record_not_duplicates: true` option checked.
 4. Verify:
-   - [ ] Both events transition to `published`.
+   - [ ] The approved event transitions to `published`.
    - [ ] A `not_duplicates` record is created pairing the two events (prevents future false positives).
-   - [ ] Companion review entries are dismissed.
-   - [ ] Both events remain separately listed.
+   - [ ] The companion review entry on the **other** event is dismissed (`merged` status — companion cleanup fires on approve with `record_not_duplicates`).
+   - [ ] The other event's lifecycle recomputes: transitions to `published` if no remaining pending reviews exist.
+5. Open the review queue and confirm the second RS-07 entry is no longer pending (companion was dismissed in step 4).
+6. Verify both events remain separately listed.
+
+**Note:** A single approve with `record_not_duplicates: true` approves only the one review entry directly actioned. The companion review is dismissed (not approved) via companion cleanup. Both events should end up `published` as a result of the approve + companion dismissal, but the companion entry's final status is `merged`, not `approved`.
 
 ---
 
@@ -229,7 +233,7 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
 2. Click **Merge** on the duplicate, targeting the original event.
 3. Verify:
    - [ ] Duplicate event is soft-deleted (`lifecycle_state = 'deleted'`).
-   - [ ] Tombstone record created with reason `duplicate_merged` and `superseded_by` pointing to the original.
+   - [ ] Tombstone record created with reason `duplicate_merged` and `superseded_by_uri` pointing to the original.
    - [ ] Original event unchanged (same occurrences, same lifecycle state).
    - [ ] Both review entries are resolved (`merged`).
 

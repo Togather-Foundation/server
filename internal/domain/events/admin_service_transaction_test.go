@@ -2952,3 +2952,165 @@ func TestAddOccurrenceFromReviewNearDup_OnlyTrueCompanionDismissed(t *testing.T)
 		t.Error("commit must be called on success")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests: MergeEventsWithReview companion cleanup uses PrimaryULID
+// (srv-izykp) — guards against the bug where DuplicateULID was passed to
+// MergeReview for the companion review after executeMerge had already
+// soft-deleted the duplicate, causing MergeReview's live-event lookup to fail.
+// ---------------------------------------------------------------------------
+
+// makeMergeWithReviewRepo builds a mockTransactionalRepo pre-wired for the
+// "happy path" of MergeEventsWithReview with a companion review present.
+// Tests override individual func fields to inspect or inject failures.
+func makeMergeWithReviewRepo(primaryULID, duplicateULID string, companionID int) *mockTransactionalRepo {
+	primaryEvent := &Event{ID: "primary-uuid", ULID: primaryULID, Name: "Primary", LifecycleState: "published"}
+	duplicateEvent := &Event{ID: "duplicate-uuid", ULID: duplicateULID, Name: "Duplicate", LifecycleState: "published"}
+
+	return &mockTransactionalRepo{
+		// Lock: review row (id=1) is pending; companion (companionID) is also pending.
+		lockReviewQueueEntryForUpdateFunc: func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+			switch id {
+			case 1:
+				return &ReviewQueueEntry{ID: 1, EventULID: duplicateULID, Status: "pending",
+					Warnings: makeWarningsJSON("potential_duplicate")}, nil
+			case companionID:
+				return &ReviewQueueEntry{ID: companionID, EventULID: primaryULID, Status: "pending",
+					Warnings: makeWarningsJSON("near_duplicate_of_new_event")}, nil
+			}
+			return nil, ErrNotFound
+		},
+		// Companion lookup: primary event has a near-dup companion pointing at duplicate.
+		getPendingReviewByEventUlidAndDuplicateUlidFunc: func(_ context.Context, eventULID, dupULID string) (*ReviewQueueEntry, error) {
+			if eventULID == primaryULID && dupULID == duplicateULID {
+				return &ReviewQueueEntry{ID: companionID, EventULID: primaryULID, Status: "pending"}, nil
+			}
+			return nil, ErrNotFound
+		},
+		getByULIDFunc: func(_ context.Context, ulid string) (*Event, error) {
+			switch ulid {
+			case primaryULID:
+				return primaryEvent, nil
+			case duplicateULID:
+				return duplicateEvent, nil
+			}
+			return nil, ErrNotFound
+		},
+		mergeEventsFunc:     func(_ context.Context, _, _ string) error { return nil },
+		createTombstoneFunc: func(_ context.Context, _ TombstoneCreateParams) error { return nil },
+		mergeReviewFunc: func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+		},
+		// No remaining pending reviews on primary -> lifecycle recomputes to published.
+		getPendingReviewByEventUlidFunc: func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+			return nil, nil
+		},
+		updateEventFunc: func(_ context.Context, _ string, _ UpdateEventParams) (*Event, error) {
+			return primaryEvent, nil
+		},
+	}
+}
+
+// TestMergeEventsWithReview_CompanionCleanupUsesPrimaryULID is the critical regression
+// test for the bug where the companion review's MergeReview call received DuplicateULID
+// instead of PrimaryULID.  After executeMerge the duplicate is soft-deleted, so the
+// live-event lookup inside MergeReview (WHERE ulid = $1 AND deleted_at IS NULL) would
+// fail, causing the transaction to roll back.
+//
+// This test verifies that:
+//  1. The companion review IS dismissed (merged) as part of MergeEventsWithReview.
+//  2. The ULID passed to MergeReview for the companion is params.PrimaryULID — the
+//     surviving event — NOT params.DuplicateULID which has been soft-deleted.
+func TestMergeEventsWithReview_CompanionCleanupUsesPrimaryULID(t *testing.T) {
+	ctx := context.Background()
+	primaryULID := "01HPRMARY00000000000000002"
+	duplicateULID := "01HDPCT0000000000000000002"
+	companionID := 42
+
+	repo := makeMergeWithReviewRepo(primaryULID, duplicateULID, companionID)
+
+	// Capture ULID arguments passed to MergeReview per review-entry id.
+	type mergeCall struct {
+		id   int
+		ulid string
+	}
+	var mergeCalls []mergeCall
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, ulid string) (*ReviewQueueEntry, error) {
+		mergeCalls = append(mergeCalls, mergeCall{id: id, ulid: ulid})
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
+		PrimaryULID:   primaryULID,
+		DuplicateULID: duplicateULID,
+	}, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+
+	// Exactly two MergeReview calls: one for the companion, one for the primary review.
+	if len(mergeCalls) != 2 {
+		t.Fatalf("expected 2 MergeReview calls (companion + primary review), got %d: %v", len(mergeCalls), mergeCalls)
+	}
+
+	// Find the companion call (id=companionID) and verify it was given the primaryULID,
+	// NOT the duplicateULID.  Passing duplicateULID after executeMerge would cause the
+	// real repository to fail with "primary event not found" because the duplicate is
+	// soft-deleted and excluded by the WHERE deleted_at IS NULL condition.
+	foundCompanion := false
+	for _, call := range mergeCalls {
+		if call.id == companionID {
+			foundCompanion = true
+			if call.ulid != primaryULID {
+				t.Errorf("companion MergeReview received ULID %q, want primaryULID %q (must NOT be duplicateULID %q)",
+					call.ulid, primaryULID, duplicateULID)
+			}
+		}
+	}
+	if !foundCompanion {
+		t.Errorf("companion review (id=%d) was never dismissed via MergeReview", companionID)
+	}
+}
+
+// TestMergeEventsWithReview_NoCompanionSucceeds verifies that MergeEventsWithReview
+// succeeds cleanly when there is no companion review entry (e.g. the primary event
+// has no pending near-dup review pairing with the duplicate).
+func TestMergeEventsWithReview_NoCompanionSucceeds(t *testing.T) {
+	ctx := context.Background()
+	primaryULID := "01HPRMARY00000000000000003"
+	duplicateULID := "01HDPCT0000000000000000003"
+
+	repo := makeMergeWithReviewRepo(primaryULID, duplicateULID, 0 /* unused */)
+	// Override companion lookup to return ErrNotFound (no companion).
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, _, _ string) (*ReviewQueueEntry, error) {
+		return nil, ErrNotFound
+	}
+
+	var mergeCallCount int
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergeCallCount++
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
+		PrimaryULID:   primaryULID,
+		DuplicateULID: duplicateULID,
+	}, 1, "admin")
+
+	if err != nil {
+		t.Fatalf("expected success without companion, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("commit must be called on success")
+	}
+	// Only the primary review row should be merged (no companion).
+	if mergeCallCount != 1 {
+		t.Errorf("expected exactly 1 MergeReview call (primary review), got %d", mergeCallCount)
+	}
+}
