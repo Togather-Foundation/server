@@ -345,6 +345,30 @@ func (m *MockRepository) LockEventForUpdate(ctx context.Context, eventID string)
 	return args.Error(0)
 }
 
+func (m *MockRepository) InsertOccurrence(ctx context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockRepository) GetOccurrenceByID(ctx context.Context, occurrenceID string) (*events.Occurrence, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *MockRepository) UpdateOccurrence(ctx context.Context, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *MockRepository) DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error {
+	return errors.New("not implemented")
+}
+
+func (m *MockRepository) CountOccurrences(ctx context.Context, eventID string) (int64, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (m *MockRepository) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
+	return false, errors.New("not implemented")
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{

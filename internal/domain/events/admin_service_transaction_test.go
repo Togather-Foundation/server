@@ -518,6 +518,30 @@ func (m *mockTransactionalRepo) LockEventForUpdate(ctx context.Context, eventID 
 	return nil
 }
 
+func (m *mockTransactionalRepo) InsertOccurrence(ctx context.Context, params OccurrenceCreateParams) (*Occurrence, error) {
+	return &Occurrence{ID: "test-occ-id", StartTime: params.StartTime}, nil
+}
+
+func (m *mockTransactionalRepo) GetOccurrenceByID(ctx context.Context, occurrenceID string) (*Occurrence, error) {
+	return nil, ErrNotFound
+}
+
+func (m *mockTransactionalRepo) UpdateOccurrence(ctx context.Context, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error) {
+	return &Occurrence{ID: occurrenceID}, nil
+}
+
+func (m *mockTransactionalRepo) DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error {
+	return nil
+}
+
+func (m *mockTransactionalRepo) CountOccurrences(ctx context.Context, eventID string) (int64, error) {
+	return 2, nil
+}
+
+func (m *mockTransactionalRepo) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
+	return false, nil
+}
+
 // mockTxCommitter implements TxCommitter
 type mockTxCommitter struct {
 	repo *mockTransactionalRepo

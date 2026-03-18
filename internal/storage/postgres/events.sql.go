@@ -52,6 +52,20 @@ func (q *Queries) CountEventsCreatedSince(ctx context.Context, createdAt pgtype.
 	return count, err
 }
 
+const countOccurrencesByEventID = `-- name: CountOccurrencesByEventID :one
+SELECT COUNT(*)::bigint AS count
+  FROM event_occurrences
+ WHERE event_id = $1::uuid
+`
+
+// Count occurrences for a given event UUID. Used to enforce last-occurrence guard.
+func (q *Queries) CountOccurrencesByEventID(ctx context.Context, eventID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOccurrencesByEventID, eventID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPastEvents = `-- name: CountPastEvents :one
 SELECT COUNT(DISTINCT e.id)::bigint AS count
   FROM events e
@@ -105,6 +119,17 @@ func (q *Queries) CreateEventTombstone(ctx context.Context, arg CreateEventTombs
 		arg.SupersededByUri,
 		arg.Payload,
 	)
+	return err
+}
+
+const deleteOccurrenceByID = `-- name: DeleteOccurrenceByID :exec
+DELETE FROM event_occurrences
+ WHERE id = $1::uuid
+`
+
+// Delete a single occurrence by its UUID.
+func (q *Queries) DeleteOccurrenceByID(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOccurrenceByID, id)
 	return err
 }
 
@@ -315,6 +340,72 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, key string) (GetIdempot
 	return i, err
 }
 
+const getOccurrenceByID = `-- name: GetOccurrenceByID :one
+SELECT o.id,
+       o.event_id,
+       o.start_time,
+       o.end_time,
+       o.timezone,
+       o.door_time,
+       o.venue_id,
+       p.ulid AS venue_ulid,
+       o.virtual_url,
+       o.ticket_url,
+       o.price_min,
+       o.price_max,
+       o.price_currency,
+       o.availability,
+       o.created_at,
+       o.updated_at
+  FROM event_occurrences o
+  LEFT JOIN places p ON p.id = o.venue_id
+ WHERE o.id = $1::uuid
+`
+
+type GetOccurrenceByIDRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	EventID       pgtype.UUID        `json:"event_id"`
+	StartTime     pgtype.Timestamptz `json:"start_time"`
+	EndTime       pgtype.Timestamptz `json:"end_time"`
+	Timezone      string             `json:"timezone"`
+	DoorTime      pgtype.Timestamptz `json:"door_time"`
+	VenueID       pgtype.UUID        `json:"venue_id"`
+	VenueUlid     pgtype.Text        `json:"venue_ulid"`
+	VirtualUrl    pgtype.Text        `json:"virtual_url"`
+	TicketUrl     pgtype.Text        `json:"ticket_url"`
+	PriceMin      pgtype.Numeric     `json:"price_min"`
+	PriceMax      pgtype.Numeric     `json:"price_max"`
+	PriceCurrency pgtype.Text        `json:"price_currency"`
+	Availability  pgtype.Text        `json:"availability"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Fetch a single occurrence row by its UUID. Returns the occurrence with its venue ULID via join.
+func (q *Queries) GetOccurrenceByID(ctx context.Context, id pgtype.UUID) (GetOccurrenceByIDRow, error) {
+	row := q.db.QueryRow(ctx, getOccurrenceByID, id)
+	var i GetOccurrenceByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Timezone,
+		&i.DoorTime,
+		&i.VenueID,
+		&i.VenueUlid,
+		&i.VirtualUrl,
+		&i.TicketUrl,
+		&i.PriceMin,
+		&i.PriceMax,
+		&i.PriceCurrency,
+		&i.Availability,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const insertIdempotencyKey = `-- name: InsertIdempotencyKey :one
 INSERT INTO idempotency_keys (key, request_hash, event_id, event_ulid)
 VALUES ($1, $2, $3, $4)
@@ -348,6 +439,108 @@ func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotenc
 		&i.RequestHash,
 		&i.EventID,
 		&i.EventUlid,
+	)
+	return i, err
+}
+
+const insertOccurrence = `-- name: InsertOccurrence :one
+INSERT INTO event_occurrences (
+    event_id,
+    start_time,
+    end_time,
+    timezone,
+    door_time,
+    venue_id,
+    virtual_url,
+    ticket_url,
+    price_min,
+    price_max,
+    price_currency,
+    availability
+) VALUES (
+    $1::uuid,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6::uuid,
+    $7,
+    $8,
+    $9,
+    $10,
+    NULLIF($11, ''),
+    NULLIF($12, '')
+)
+RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at
+`
+
+type InsertOccurrenceParams struct {
+	EventID       pgtype.UUID        `json:"event_id"`
+	StartTime     pgtype.Timestamptz `json:"start_time"`
+	EndTime       pgtype.Timestamptz `json:"end_time"`
+	Timezone      string             `json:"timezone"`
+	DoorTime      pgtype.Timestamptz `json:"door_time"`
+	VenueID       pgtype.UUID        `json:"venue_id"`
+	VirtualUrl    pgtype.Text        `json:"virtual_url"`
+	TicketUrl     pgtype.Text        `json:"ticket_url"`
+	PriceMin      pgtype.Numeric     `json:"price_min"`
+	PriceMax      pgtype.Numeric     `json:"price_max"`
+	PriceCurrency interface{}        `json:"price_currency"`
+	Availability  interface{}        `json:"availability"`
+}
+
+type InsertOccurrenceRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	EventID       pgtype.UUID        `json:"event_id"`
+	StartTime     pgtype.Timestamptz `json:"start_time"`
+	EndTime       pgtype.Timestamptz `json:"end_time"`
+	Timezone      string             `json:"timezone"`
+	DoorTime      pgtype.Timestamptz `json:"door_time"`
+	VenueID       pgtype.UUID        `json:"venue_id"`
+	VirtualUrl    pgtype.Text        `json:"virtual_url"`
+	TicketUrl     pgtype.Text        `json:"ticket_url"`
+	PriceMin      pgtype.Numeric     `json:"price_min"`
+	PriceMax      pgtype.Numeric     `json:"price_max"`
+	PriceCurrency pgtype.Text        `json:"price_currency"`
+	Availability  pgtype.Text        `json:"availability"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Insert a single occurrence and return the created row (including generated UUID).
+func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrenceParams) (InsertOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, insertOccurrence,
+		arg.EventID,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Timezone,
+		arg.DoorTime,
+		arg.VenueID,
+		arg.VirtualUrl,
+		arg.TicketUrl,
+		arg.PriceMin,
+		arg.PriceMax,
+		arg.PriceCurrency,
+		arg.Availability,
+	)
+	var i InsertOccurrenceRow
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Timezone,
+		&i.DoorTime,
+		&i.VenueID,
+		&i.VirtualUrl,
+		&i.TicketUrl,
+		&i.PriceMin,
+		&i.PriceMax,
+		&i.PriceCurrency,
+		&i.Availability,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -507,6 +700,109 @@ type UpdateMergedIntoChainParams struct {
 func (q *Queries) UpdateMergedIntoChain(ctx context.Context, arg UpdateMergedIntoChainParams) error {
 	_, err := q.db.Exec(ctx, updateMergedIntoChain, arg.Ulid, arg.Ulid_2)
 	return err
+}
+
+const updateOccurrenceByID = `-- name: UpdateOccurrenceByID :one
+UPDATE event_occurrences
+   SET start_time     = COALESCE($1, start_time),
+       end_time       = CASE WHEN $2::boolean THEN $3 ELSE end_time END,
+       timezone       = COALESCE($4, timezone),
+       door_time      = CASE WHEN $5::boolean THEN $6 ELSE door_time END,
+       venue_id       = CASE WHEN $7::boolean THEN $8::uuid ELSE venue_id END,
+       virtual_url    = CASE WHEN $9::boolean THEN $10 ELSE virtual_url END,
+       ticket_url     = COALESCE($11, ticket_url),
+       price_min      = CASE WHEN $12::boolean THEN $13 ELSE price_min END,
+       price_max      = CASE WHEN $14::boolean THEN $15 ELSE price_max END,
+       price_currency = COALESCE($16, price_currency),
+       availability   = COALESCE($17, availability),
+       updated_at     = now()
+ WHERE id = $18::uuid
+RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at
+`
+
+type UpdateOccurrenceByIDParams struct {
+	StartTime     pgtype.Timestamptz `json:"start_time"`
+	EndTimeSet    pgtype.Bool        `json:"end_time_set"`
+	EndTime       pgtype.Timestamptz `json:"end_time"`
+	Timezone      pgtype.Text        `json:"timezone"`
+	DoorTimeSet   pgtype.Bool        `json:"door_time_set"`
+	DoorTime      pgtype.Timestamptz `json:"door_time"`
+	VenueIDSet    pgtype.Bool        `json:"venue_id_set"`
+	VenueID       pgtype.UUID        `json:"venue_id"`
+	VirtualUrlSet pgtype.Bool        `json:"virtual_url_set"`
+	VirtualUrl    pgtype.Text        `json:"virtual_url"`
+	TicketUrl     pgtype.Text        `json:"ticket_url"`
+	PriceMinSet   pgtype.Bool        `json:"price_min_set"`
+	PriceMin      pgtype.Numeric     `json:"price_min"`
+	PriceMaxSet   pgtype.Bool        `json:"price_max_set"`
+	PriceMax      pgtype.Numeric     `json:"price_max"`
+	PriceCurrency pgtype.Text        `json:"price_currency"`
+	Availability  pgtype.Text        `json:"availability"`
+	ID            pgtype.UUID        `json:"id"`
+}
+
+type UpdateOccurrenceByIDRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	EventID       pgtype.UUID        `json:"event_id"`
+	StartTime     pgtype.Timestamptz `json:"start_time"`
+	EndTime       pgtype.Timestamptz `json:"end_time"`
+	Timezone      string             `json:"timezone"`
+	DoorTime      pgtype.Timestamptz `json:"door_time"`
+	VenueID       pgtype.UUID        `json:"venue_id"`
+	VirtualUrl    pgtype.Text        `json:"virtual_url"`
+	TicketUrl     pgtype.Text        `json:"ticket_url"`
+	PriceMin      pgtype.Numeric     `json:"price_min"`
+	PriceMax      pgtype.Numeric     `json:"price_max"`
+	PriceCurrency pgtype.Text        `json:"price_currency"`
+	Availability  pgtype.Text        `json:"availability"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Partial-update a single occurrence row. Only non-NULL arguments are applied (COALESCE pattern).
+// venue_id and virtual_url use explicit NULLability: pass the sentinel string 'NULL' to clear them
+// (handled at the repository layer via pgtype.UUID{Valid:false}).
+func (q *Queries) UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrenceByIDParams) (UpdateOccurrenceByIDRow, error) {
+	row := q.db.QueryRow(ctx, updateOccurrenceByID,
+		arg.StartTime,
+		arg.EndTimeSet,
+		arg.EndTime,
+		arg.Timezone,
+		arg.DoorTimeSet,
+		arg.DoorTime,
+		arg.VenueIDSet,
+		arg.VenueID,
+		arg.VirtualUrlSet,
+		arg.VirtualUrl,
+		arg.TicketUrl,
+		arg.PriceMinSet,
+		arg.PriceMin,
+		arg.PriceMaxSet,
+		arg.PriceMax,
+		arg.PriceCurrency,
+		arg.Availability,
+		arg.ID,
+	)
+	var i UpdateOccurrenceByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Timezone,
+		&i.DoorTime,
+		&i.VenueID,
+		&i.VirtualUrl,
+		&i.TicketUrl,
+		&i.PriceMin,
+		&i.PriceMax,
+		&i.PriceCurrency,
+		&i.Availability,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateOccurrenceDatesByEventULID = `-- name: UpdateOccurrenceDatesByEventULID :exec

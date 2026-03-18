@@ -2733,3 +2733,307 @@ func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry 
 func convertGetReviewQueueEntryRow(row GetReviewQueueEntryRow) *events.ReviewQueueEntry {
 	return convertReviewQueueRowGeneric(row)
 }
+
+// occurrenceRowToOccurrence maps the common occurrence fields from an occurrence DB row
+// (fields shared by InsertOccurrenceRow, UpdateOccurrenceByIDRow, GetOccurrenceByIDRow)
+// into the domain Occurrence struct.  The venueULID arg comes from a separate column
+// (places.ulid) available in GetOccurrenceByIDRow but not the others — callers pass ""
+// when not available.
+func occurrenceRowToOccurrence(
+	id pgtype.UUID,
+	eventID pgtype.UUID,
+	startTime pgtype.Timestamptz,
+	endTime pgtype.Timestamptz,
+	timezone string,
+	doorTime pgtype.Timestamptz,
+	venueID pgtype.UUID,
+	venueULID pgtype.Text,
+	virtualUrl pgtype.Text,
+	ticketUrl pgtype.Text,
+	priceMin pgtype.Numeric,
+	priceMax pgtype.Numeric,
+	priceCurrency pgtype.Text,
+	availability pgtype.Text,
+) *events.Occurrence {
+	occ := &events.Occurrence{
+		Timezone:      timezone,
+		PriceCurrency: pgtextToString(priceCurrency),
+		Availability:  pgtextToString(availability),
+	}
+	// UUID → string
+	if id.Valid {
+		occ.ID = fmt.Sprintf("%x-%x-%x-%x-%x", id.Bytes[0:4], id.Bytes[4:6], id.Bytes[6:8], id.Bytes[8:10], id.Bytes[10:16])
+	}
+	// VenueID (UUID)
+	if venueID.Valid {
+		venueIDStr := fmt.Sprintf("%x-%x-%x-%x-%x", venueID.Bytes[0:4], venueID.Bytes[4:6], venueID.Bytes[6:8], venueID.Bytes[8:10], venueID.Bytes[10:16])
+		occ.VenueID = &venueIDStr
+	}
+	// VenueULID (from JOIN with places)
+	if venueULID.Valid && venueULID.String != "" {
+		s := venueULID.String
+		occ.VenueULID = &s
+	}
+	// Timestamps
+	if startTime.Valid {
+		occ.StartTime = startTime.Time
+	}
+	if endTime.Valid {
+		t := endTime.Time
+		occ.EndTime = &t
+	}
+	if doorTime.Valid {
+		t := doorTime.Time
+		occ.DoorTime = &t
+	}
+	// Optional text fields
+	if virtualUrl.Valid {
+		s := virtualUrl.String
+		occ.VirtualURL = &s
+	}
+	if ticketUrl.Valid {
+		occ.TicketURL = ticketUrl.String
+	}
+	// Price
+	occ.PriceMin = numericToFloat64Ptr(priceMin)
+	occ.PriceMax = numericToFloat64Ptr(priceMax)
+	_ = eventID // not populated on Occurrence domain struct
+	return occ
+}
+
+// InsertOccurrence inserts a new occurrence for the given event and returns the created
+// domain Occurrence (including the generated UUID).
+func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error) {
+	queries := Queries{db: r.queryer()}
+
+	var p InsertOccurrenceParams
+
+	if err := p.EventID.Scan(params.EventID); err != nil {
+		return nil, fmt.Errorf("invalid event ID: %w", err)
+	}
+	p.StartTime = pgtype.Timestamptz{Time: params.StartTime, Valid: true}
+	if params.EndTime != nil {
+		p.EndTime = pgtype.Timestamptz{Time: *params.EndTime, Valid: true}
+	}
+	p.Timezone = params.Timezone
+	if params.DoorTime != nil {
+		p.DoorTime = pgtype.Timestamptz{Time: *params.DoorTime, Valid: true}
+	}
+	if params.VenueID != nil {
+		if err := p.VenueID.Scan(*params.VenueID); err != nil {
+			return nil, fmt.Errorf("invalid venue ID: %w", err)
+		}
+	}
+	if params.VirtualURL != nil {
+		p.VirtualUrl = pgtype.Text{String: *params.VirtualURL, Valid: true}
+	}
+	if params.TicketURL != nil {
+		p.TicketUrl = pgtype.Text{String: *params.TicketURL, Valid: true}
+	}
+	if params.PriceMin != nil {
+		if err := p.PriceMin.Scan(*params.PriceMin); err != nil {
+			return nil, fmt.Errorf("invalid price_min: %w", err)
+		}
+	}
+	if params.PriceMax != nil {
+		if err := p.PriceMax.Scan(*params.PriceMax); err != nil {
+			return nil, fmt.Errorf("invalid price_max: %w", err)
+		}
+	}
+	p.PriceCurrency = params.PriceCurrency
+	p.Availability = params.Availability
+
+	row, err := queries.InsertOccurrence(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("insert occurrence: %w", err)
+	}
+
+	return occurrenceRowToOccurrence(
+		row.ID, row.EventID,
+		row.StartTime, row.EndTime,
+		row.Timezone,
+		row.DoorTime,
+		row.VenueID, pgtype.Text{}, // no venue ULID from INSERT — use GetOccurrenceByID if needed
+		row.VirtualUrl, row.TicketUrl,
+		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
+	), nil
+}
+
+// GetOccurrenceByID fetches a single occurrence by its UUID.
+// Returns ErrNotFound if the row does not exist.
+func (r *EventRepository) GetOccurrenceByID(ctx context.Context, occurrenceID string) (*events.Occurrence, error) {
+	queries := Queries{db: r.queryer()}
+
+	var id pgtype.UUID
+	if err := id.Scan(occurrenceID); err != nil {
+		return nil, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+
+	row, err := queries.GetOccurrenceByID(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get occurrence by ID: %w", err)
+	}
+
+	return occurrenceRowToOccurrence(
+		row.ID, row.EventID,
+		row.StartTime, row.EndTime,
+		row.Timezone,
+		row.DoorTime,
+		row.VenueID, row.VenueUlid,
+		row.VirtualUrl, row.TicketUrl,
+		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
+	), nil
+}
+
+// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence.
+// Returns ErrNotFound if the row does not exist.
+func (r *EventRepository) UpdateOccurrence(ctx context.Context, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+	queries := Queries{db: r.queryer()}
+
+	var p UpdateOccurrenceByIDParams
+	if err := p.ID.Scan(occurrenceID); err != nil {
+		return nil, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+
+	if params.StartTime != nil {
+		p.StartTime = pgtype.Timestamptz{Time: *params.StartTime, Valid: true}
+	}
+	p.EndTimeSet = pgtype.Bool{Bool: params.EndTimeSet, Valid: params.EndTimeSet}
+	if params.EndTimeSet && params.EndTime != nil {
+		p.EndTime = pgtype.Timestamptz{Time: *params.EndTime, Valid: true}
+	}
+	if params.Timezone != nil {
+		p.Timezone = pgtype.Text{String: *params.Timezone, Valid: true}
+	}
+	p.DoorTimeSet = pgtype.Bool{Bool: params.DoorTimeSet, Valid: params.DoorTimeSet}
+	if params.DoorTimeSet && params.DoorTime != nil {
+		p.DoorTime = pgtype.Timestamptz{Time: *params.DoorTime, Valid: true}
+	}
+	p.VenueIDSet = pgtype.Bool{Bool: params.VenueIDSet, Valid: params.VenueIDSet}
+	if params.VenueIDSet && params.VenueID != nil {
+		if err := p.VenueID.Scan(*params.VenueID); err != nil {
+			return nil, fmt.Errorf("invalid venue ID: %w", err)
+		}
+	}
+	p.VirtualUrlSet = pgtype.Bool{Bool: params.VirtualURLSet, Valid: params.VirtualURLSet}
+	if params.VirtualURLSet && params.VirtualURL != nil {
+		p.VirtualUrl = pgtype.Text{String: *params.VirtualURL, Valid: true}
+	}
+	if params.TicketURL != nil {
+		p.TicketUrl = pgtype.Text{String: *params.TicketURL, Valid: true}
+	}
+	p.PriceMinSet = pgtype.Bool{Bool: params.PriceMinSet, Valid: params.PriceMinSet}
+	if params.PriceMinSet && params.PriceMin != nil {
+		if err := p.PriceMin.Scan(*params.PriceMin); err != nil {
+			return nil, fmt.Errorf("invalid price_min: %w", err)
+		}
+	}
+	p.PriceMaxSet = pgtype.Bool{Bool: params.PriceMaxSet, Valid: params.PriceMaxSet}
+	if params.PriceMaxSet && params.PriceMax != nil {
+		if err := p.PriceMax.Scan(*params.PriceMax); err != nil {
+			return nil, fmt.Errorf("invalid price_max: %w", err)
+		}
+	}
+	if params.PriceCurrency != nil {
+		p.PriceCurrency = pgtype.Text{String: *params.PriceCurrency, Valid: true}
+	}
+	if params.Availability != nil {
+		p.Availability = pgtype.Text{String: *params.Availability, Valid: true}
+	}
+
+	row, err := queries.UpdateOccurrenceByID(ctx, p)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("update occurrence: %w", err)
+	}
+
+	return occurrenceRowToOccurrence(
+		row.ID, row.EventID,
+		row.StartTime, row.EndTime,
+		row.Timezone,
+		row.DoorTime,
+		row.VenueID, pgtype.Text{}, // venue ULID not available from UPDATE; caller may re-fetch if needed
+		row.VirtualUrl, row.TicketUrl,
+		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
+	), nil
+}
+
+// DeleteOccurrenceByID deletes a single occurrence row by its UUID.
+func (r *EventRepository) DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error {
+	queries := Queries{db: r.queryer()}
+
+	var id pgtype.UUID
+	if err := id.Scan(occurrenceID); err != nil {
+		return fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+
+	return queries.DeleteOccurrenceByID(ctx, id)
+}
+
+// CountOccurrences returns the number of occurrences for the event identified by eventID (UUID).
+func (r *EventRepository) CountOccurrences(ctx context.Context, eventID string) (int64, error) {
+	queries := Queries{db: r.queryer()}
+
+	var id pgtype.UUID
+	if err := id.Scan(eventID); err != nil {
+		return 0, fmt.Errorf("invalid event ID: %w", err)
+	}
+
+	count, err := queries.CountOccurrencesByEventID(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("count occurrences: %w", err)
+	}
+	return count, nil
+}
+
+// CheckOccurrenceOverlapExcluding returns true if [startTime, endTime) overlaps any existing
+// occurrence on the given event, excluding the occurrence identified by excludeOccurrenceID.
+func (r *EventRepository) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
+	queryer := r.queryer()
+
+	var eventUUID pgtype.UUID
+	if err := eventUUID.Scan(eventID); err != nil {
+		return false, fmt.Errorf("invalid event ID: %w", err)
+	}
+	var excludeUUID pgtype.UUID
+	if err := excludeUUID.Scan(excludeOccurrenceID); err != nil {
+		return false, fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+
+	var overlaps bool
+	var err error
+	if endTime == nil {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND id != $3
+      AND (
+          (end_time IS NOT NULL AND $2 >= start_time AND $2 < end_time)
+       OR (end_time IS NULL AND start_time = $2)
+      )
+)`, eventUUID, startTime, excludeUUID).Scan(&overlaps)
+	} else {
+		err = queryer.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM event_occurrences
+    WHERE event_id = $1
+      AND id != $4
+      AND (
+          (end_time IS NOT NULL AND $2 < end_time AND $3 > start_time)
+       OR (end_time IS NULL AND start_time >= $2 AND start_time < $3)
+      )
+)`, eventUUID, startTime, *endTime, excludeUUID).Scan(&overlaps)
+	}
+	if err != nil {
+		return false, fmt.Errorf("check occurrence overlap excluding: %w", err)
+	}
+	return overlaps, nil
+}

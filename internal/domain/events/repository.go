@@ -13,6 +13,10 @@ var ErrConflict = errors.New("event conflict")
 // ErrOccurrenceOverlap is returned when a new occurrence would overlap an existing one.
 var ErrOccurrenceOverlap = errors.New("occurrence overlaps an existing occurrence")
 
+// ErrLastOccurrence is returned when an admin attempts to delete the last remaining
+// occurrence on an event; doing so would leave the event in an invalid state.
+var ErrLastOccurrence = errors.New("cannot delete the last occurrence of an event")
+
 // ErrAlreadyMerged is returned when attempting to merge an entity that has
 // already been merged into another entity by a concurrent operation.
 var ErrAlreadyMerged = errors.New("entity already merged")
@@ -114,6 +118,30 @@ type OccurrenceCreateParams struct {
 	Availability  string
 }
 
+// OccurrenceUpdateParams holds PATCH-semantic updates for a single occurrence.
+// Pointer fields that are nil are left unchanged. Fields that can be explicitly
+// cleared (end_time, door_time, venue_id, virtual_url, price_min, price_max)
+// use a Set/Value pair: Set=true, Value=nil means "set to NULL".
+type OccurrenceUpdateParams struct {
+	StartTime     *time.Time
+	EndTime       *time.Time
+	EndTimeSet    bool
+	Timezone      *string
+	DoorTime      *time.Time
+	DoorTimeSet   bool
+	VenueID       *string
+	VenueIDSet    bool
+	VirtualURL    *string
+	VirtualURLSet bool
+	TicketURL     *string
+	PriceMin      *float64
+	PriceMinSet   bool
+	PriceMax      *float64
+	PriceMaxSet   bool
+	PriceCurrency *string
+	Availability  *string
+}
+
 type EventSourceCreateParams struct {
 	EventID       string
 	SourceID      string
@@ -208,11 +236,37 @@ type Repository interface {
 	// endTime may be nil, in which case a point-in-time check is used (start < existing_end).
 	CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
 
+	// CheckOccurrenceOverlapExcluding is like CheckOccurrenceOverlap but excludes the
+	// occurrence identified by excludeOccurrenceID (UUID) from the check. Used when
+	// updating an existing occurrence so it doesn't conflict with itself.
+	CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error)
+
 	// LockEventForUpdate acquires a row-level lock on the event row identified by
 	// eventID (UUID) using SELECT ... FOR UPDATE. Must be called inside a transaction.
 	// Use this to serialise concurrent operations that read-then-write the same event
 	// (e.g. add-occurrence overlap check + insert).
 	LockEventForUpdate(ctx context.Context, eventID string) error
+
+	// InsertOccurrence inserts a new occurrence row and returns the created occurrence.
+	// It differs from CreateOccurrence (which returns only an error) in that it returns
+	// the full Occurrence domain object including the generated UUID.
+	InsertOccurrence(ctx context.Context, params OccurrenceCreateParams) (*Occurrence, error)
+
+	// GetOccurrenceByID fetches a single occurrence row by its UUID.
+	// Returns ErrNotFound if no matching row exists.
+	GetOccurrenceByID(ctx context.Context, occurrenceID string) (*Occurrence, error)
+
+	// UpdateOccurrence applies a PATCH-semantic partial update to an occurrence.
+	// Only fields with non-nil (or Set=true) values are written.
+	// Returns the updated Occurrence, or ErrNotFound if the row does not exist.
+	UpdateOccurrence(ctx context.Context, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error)
+
+	// DeleteOccurrenceByID deletes a single occurrence row by its UUID.
+	DeleteOccurrenceByID(ctx context.Context, occurrenceID string) error
+
+	// CountOccurrences returns the number of occurrences for the event identified
+	// by eventID (UUID). Used to enforce the last-occurrence guard.
+	CountOccurrences(ctx context.Context, eventID string) (int64, error)
 
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error

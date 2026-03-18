@@ -804,6 +804,30 @@ func (m *MockRepository) LockEventForUpdate(_ context.Context, _ string) error {
 	return nil
 }
 
+func (m *MockRepository) InsertOccurrence(_ context.Context, params OccurrenceCreateParams) (*Occurrence, error) {
+	return &Occurrence{StartTime: params.StartTime}, nil
+}
+
+func (m *MockRepository) GetOccurrenceByID(_ context.Context, _ string) (*Occurrence, error) {
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) UpdateOccurrence(_ context.Context, occurrenceID string, _ OccurrenceUpdateParams) (*Occurrence, error) {
+	return &Occurrence{ID: occurrenceID}, nil
+}
+
+func (m *MockRepository) DeleteOccurrenceByID(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *MockRepository) CountOccurrences(_ context.Context, _ string) (int64, error) {
+	return 2, nil
+}
+
+func (m *MockRepository) CheckOccurrenceOverlapExcluding(_ context.Context, _ string, _ time.Time, _ *time.Time, _ string) (bool, error) {
+	return false, nil
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

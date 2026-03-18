@@ -224,6 +224,30 @@ func (s stubEventsRepo) LockEventForUpdate(_ context.Context, _ string) error {
 	return nil
 }
 
+func (s stubEventsRepo) InsertOccurrence(_ context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error) {
+	return &events.Occurrence{StartTime: params.StartTime}, nil
+}
+
+func (s stubEventsRepo) GetOccurrenceByID(_ context.Context, _ string) (*events.Occurrence, error) {
+	return nil, events.ErrNotFound
+}
+
+func (s stubEventsRepo) UpdateOccurrence(_ context.Context, occurrenceID string, _ events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+	return &events.Occurrence{ID: occurrenceID}, nil
+}
+
+func (s stubEventsRepo) DeleteOccurrenceByID(_ context.Context, _ string) error {
+	return nil
+}
+
+func (s stubEventsRepo) CountOccurrences(_ context.Context, _ string) (int64, error) {
+	return 2, nil
+}
+
+func (s stubEventsRepo) CheckOccurrenceOverlapExcluding(_ context.Context, _ string, _ time.Time, _ *time.Time, _ string) (bool, error) {
+	return false, nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

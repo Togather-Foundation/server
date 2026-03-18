@@ -601,6 +601,156 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /admin/events/{id}/occurrences:
+    post:
+      operationId: createOccurrence
+      summary: Add an occurrence to an event
+      description: |
+        Create a new occurrence on an existing event. The event must not be deleted.
+        Returns 409 if the new occurrence overlaps an existing occurrence on the event.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurrenceInput'
+      responses:
+        '201':
+          description: Occurrence created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OccurrenceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Occurrence overlaps an existing occurrence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/events/{id}/occurrences/{occurrenceId}:
+    put:
+      operationId: updateOccurrence
+      summary: Update an occurrence on an event
+      description: |
+        Update an existing occurrence. Supports partial updates via nullable fields.
+        Returns 409 if the updated occurrence would overlap another occurrence on the event.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+        - name: occurrenceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the occurrence to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurrenceInput'
+      responses:
+        '200':
+          description: Occurrence updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OccurrenceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Occurrence overlaps an existing occurrence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      operationId: deleteOccurrence
+      summary: Delete an occurrence from an event
+      description: |
+        Remove a single occurrence from an event. The last occurrence of an event
+        cannot be deleted (returns 422); delete the event itself instead.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+        - name: occurrenceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the occurrence to delete
+      responses:
+        '204':
+          description: Occurrence deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Cannot delete the last occurrence of an event
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /admin/api-keys:
     get:
       operationId: listApiKeys
@@ -2440,6 +2590,83 @@ components:
         default: 50
 
   schemas:
+    OccurrenceInput:
+      type: object
+      description: Input for creating or updating an event occurrence
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          description: Start time of the occurrence (RFC3339)
+        end_time:
+          type: [string, 'null']
+          format: date-time
+          description: End time of the occurrence (RFC3339), or null to clear
+        door_time:
+          type: [string, 'null']
+          format: date-time
+          description: Door open time (RFC3339), or null to clear
+        timezone:
+          type: string
+          description: IANA timezone identifier (e.g. America/New_York)
+        venue_ulid:
+          type: [string, 'null']
+          description: ULID of the venue for this occurrence, or null to clear
+        virtual_url:
+          type: [string, 'null']
+          format: uri
+          description: URL for virtual/hybrid attendance, or null to clear
+        price_min:
+          type: [number, 'null']
+          description: Minimum ticket price (inclusive), or null to clear
+        price_max:
+          type: [number, 'null']
+          description: Maximum ticket price, or null to clear
+        price_currency:
+          type: string
+          description: ISO 4217 currency code (e.g. USD)
+        availability:
+          type: string
+          enum: [available, sold_out, limited]
+          description: Ticket availability status
+
+    OccurrenceResponse:
+      type: object
+      description: An event occurrence as returned by the admin occurrence API
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID of the occurrence
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: [string, 'null']
+          format: date-time
+        door_time:
+          type: [string, 'null']
+          format: date-time
+        timezone:
+          type: string
+        venue_id:
+          type: [string, 'null']
+          description: Internal UUID of the venue
+        venue_ulid:
+          type: [string, 'null']
+          description: Public ULID of the venue
+        virtual_url:
+          type: [string, 'null']
+          format: uri
+        price_min:
+          type: [number, 'null']
+        price_max:
+          type: [number, 'null']
+        price_currency:
+          type: [string, 'null']
+        availability:
+          type: [string, 'null']
+
     Submission:
       type: object
       description: A URL submission record

@@ -1649,6 +1649,11 @@ func (s *AdminService) FindSimilarPlaces(ctx context.Context, name string, local
 	return s.repo.FindSimilarPlaces(ctx, name, locality, normalizeRegion(region), threshold)
 }
 
+// GetPlaceByULID looks up a place by its ULID, returning the PlaceRecord (ID + ULID).
+func (s *AdminService) GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error) {
+	return s.repo.GetPlaceByULID(ctx, ulid)
+}
+
 // FindSimilarOrganizations returns organizations with similar names in the same locality/region.
 func (s *AdminService) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
 	return s.repo.FindSimilarOrganizations(ctx, name, locality, normalizeRegion(region), threshold)
@@ -1672,4 +1677,167 @@ func (s *AdminService) MergeOrganizations(ctx context.Context, duplicateID strin
 		return nil, fmt.Errorf("cannot merge organization with itself")
 	}
 	return s.repo.MergeOrganizations(ctx, duplicateID, primaryID)
+}
+
+// CreateOccurrenceOnEvent adds a new occurrence to an existing event.
+// It enforces:
+//   - The event must not be deleted.
+//   - The new occurrence must not overlap any existing occurrence on the event.
+//   - Overlap check and insert are atomic (transaction + lock).
+//
+// Returns the created Occurrence.
+func (s *AdminService) CreateOccurrenceOnEvent(ctx context.Context, eventULID string, params OccurrenceCreateParams) (*Occurrence, error) {
+	if eventULID == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	event, err := txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get event %s: %w", eventULID, err)
+	}
+	if event.LifecycleState == "deleted" {
+		return nil, ErrEventDeleted
+	}
+
+	if err := txRepo.LockEventForUpdate(ctx, event.ID); err != nil {
+		return nil, fmt.Errorf("lock event %s: %w", eventULID, err)
+	}
+
+	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, event.ID, params.StartTime, params.EndTime)
+	if err != nil {
+		return nil, fmt.Errorf("check overlap: %w", err)
+	}
+	if overlaps {
+		return nil, ErrOccurrenceOverlap
+	}
+
+	occ, err := txRepo.InsertOccurrence(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("insert occurrence: %w", err)
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	return occ, nil
+}
+
+// UpdateOccurrenceOnEvent applies a PATCH-semantic partial update to a specific occurrence
+// on an existing event.
+// It enforces:
+//   - The event must not be deleted.
+//   - If start_time/end_time are changed, the updated window must not overlap any other
+//     occurrence on the same event.
+//   - Read-check-write is atomic (transaction + lock).
+//
+// Returns the updated Occurrence.
+func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error) {
+	if eventULID == "" || occurrenceID == "" {
+		return nil, ErrInvalidUpdateParams
+	}
+
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	event, err := txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return nil, fmt.Errorf("get event %s: %w", eventULID, err)
+	}
+	if event.LifecycleState == "deleted" {
+		return nil, ErrEventDeleted
+	}
+
+	if err := txRepo.LockEventForUpdate(ctx, event.ID); err != nil {
+		return nil, fmt.Errorf("lock event %s: %w", eventULID, err)
+	}
+
+	// Only check overlap if time fields are being updated.
+	if params.StartTime != nil || params.EndTimeSet {
+		// Fetch the current occurrence to build the complete proposed window.
+		current, err := txRepo.GetOccurrenceByID(ctx, occurrenceID)
+		if err != nil {
+			return nil, fmt.Errorf("get occurrence %s: %w", occurrenceID, err)
+		}
+
+		proposedStart := current.StartTime
+		if params.StartTime != nil {
+			proposedStart = *params.StartTime
+		}
+		var proposedEnd *time.Time
+		if params.EndTimeSet {
+			proposedEnd = params.EndTime // may be nil (clearing end_time)
+		} else {
+			proposedEnd = current.EndTime
+		}
+
+		overlaps, err := txRepo.CheckOccurrenceOverlapExcluding(ctx, event.ID, proposedStart, proposedEnd, occurrenceID)
+		if err != nil {
+			return nil, fmt.Errorf("check overlap: %w", err)
+		}
+		if overlaps {
+			return nil, ErrOccurrenceOverlap
+		}
+	}
+
+	occ, err := txRepo.UpdateOccurrence(ctx, occurrenceID, params)
+	if err != nil {
+		return nil, fmt.Errorf("update occurrence: %w", err)
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	return occ, nil
+}
+
+// DeleteOccurrenceOnEvent deletes a specific occurrence from an event.
+// Returns ErrLastOccurrence if this is the only occurrence (would leave event in invalid state).
+func (s *AdminService) DeleteOccurrenceOnEvent(ctx context.Context, eventULID string, occurrenceID string) error {
+	if eventULID == "" || occurrenceID == "" {
+		return ErrInvalidUpdateParams
+	}
+
+	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	event, err := txRepo.GetByULID(ctx, eventULID)
+	if err != nil {
+		return fmt.Errorf("get event %s: %w", eventULID, err)
+	}
+	if event.LifecycleState == "deleted" {
+		return ErrEventDeleted
+	}
+
+	if err := txRepo.LockEventForUpdate(ctx, event.ID); err != nil {
+		return fmt.Errorf("lock event %s: %w", eventULID, err)
+	}
+
+	count, err := txRepo.CountOccurrences(ctx, event.ID)
+	if err != nil {
+		return fmt.Errorf("count occurrences: %w", err)
+	}
+	if count <= 1 {
+		return ErrLastOccurrence
+	}
+
+	if err := txRepo.DeleteOccurrenceByID(ctx, occurrenceID); err != nil {
+		return fmt.Errorf("delete occurrence: %w", err)
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }

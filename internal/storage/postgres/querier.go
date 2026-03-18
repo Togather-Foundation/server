@@ -35,6 +35,8 @@ type Querier interface {
 	CountDevelopers(ctx context.Context) (int64, error)
 	CountEventsByLifecycleState(ctx context.Context, lifecycleState string) (int64, error)
 	CountEventsCreatedSince(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
+	// Count occurrences for a given event UUID. Used to enforce last-occurrence guard.
+	CountOccurrencesByEventID(ctx context.Context, eventID pgtype.UUID) (int64, error)
 	CountPastEvents(ctx context.Context) (int64, error)
 	// Count rows currently awaiting async URL validation.
 	CountPendingValidation(ctx context.Context) (int64, error)
@@ -74,6 +76,8 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	// Delete a single occurrence by its UUID.
+	DeleteOccurrenceByID(ctx context.Context, id pgtype.UUID) error
 	// Remove all occurrence rows for a soft-deleted event.  Called after absorbing an
 	// occurrence into a target series so the source event's orphaned rows are cleaned up.
 	// Soft-delete (UPDATE) does not trigger ON DELETE CASCADE, so explicit cleanup is needed.
@@ -152,6 +156,8 @@ type Querier interface {
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
 	// Get the most recent scraper run for a given source_name.
 	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
+	// Fetch a single occurrence row by its UUID. Returns the occurrence with its venue ULID via join.
+	GetOccurrenceByID(ctx context.Context, id pgtype.UUID) (GetOccurrenceByIDRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
 	GetOrganizationTombstoneByULID(ctx context.Context, ulid string) (OrganizationTombstone, error)
 	// Get the pending review queue entry for an event by its ULID, if any.
@@ -196,6 +202,8 @@ type Querier interface {
 	// Uses canonical ordering (smaller ULID first) to prevent storing both (A,B) and (B,A).
 	// ON CONFLICT DO NOTHING handles the case where the pair already exists.
 	InsertNotDuplicate(ctx context.Context, arg InsertNotDuplicateParams) error
+	// Insert a single occurrence and return the created row (including generated UUID).
+	InsertOccurrence(ctx context.Context, arg InsertOccurrenceParams) (InsertOccurrenceRow, error)
 	// SQLc queries for scraper runs tracking.
 	// Insert a new scraper run record and return its id.
 	InsertScraperRun(ctx context.Context, arg InsertScraperRunParams) (int64, error)
@@ -293,6 +301,10 @@ type Querier interface {
 	// $1 = old target event ULID (intermediate node being re-pointed)
 	// $2 = new canonical target event ULID (final destination)
 	UpdateMergedIntoChain(ctx context.Context, arg UpdateMergedIntoChainParams) error
+	// Partial-update a single occurrence row. Only non-NULL arguments are applied (COALESCE pattern).
+	// venue_id and virtual_url use explicit NULLability: pass the sentinel string 'NULL' to clear them
+	// (handled at the repository layer via pgtype.UUID{Valid:false}).
+	UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrenceByIDParams) (UpdateOccurrenceByIDRow, error)
 	// Update the start_time and end_time of all occurrences for an event identified by ULID.
 	// Used by the FixReview workflow to correct occurrence dates during admin review.
 	UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error

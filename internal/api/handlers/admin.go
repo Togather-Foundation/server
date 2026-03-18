@@ -17,6 +17,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/sanitize"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/Togather-Foundation/server/internal/validation"
+	"github.com/google/uuid"
 )
 
 type AdminHandler struct {
@@ -1366,7 +1367,6 @@ func (h *AdminHandler) GetPlace(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetOrganization handles GET /api/v1/admin/organizations/{id}
-// Returns flat JSON with field names matching the update handler expectations.
 func (h *AdminHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Organizations == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -1423,4 +1423,396 @@ func (h *AdminHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+}
+
+// occurrenceResponse is the JSON body returned by the admin occurrence endpoints.
+type occurrenceResponse struct {
+	ID            string   `json:"id"`
+	StartDate     string   `json:"startDate"`
+	EndDate       string   `json:"endDate,omitempty"`
+	Timezone      string   `json:"timezone,omitempty"`
+	DoorTime      string   `json:"doorTime,omitempty"`
+	VenueID       *string  `json:"venueId,omitempty"`
+	VenueULID     *string  `json:"venueUlid,omitempty"`
+	VirtualURL    *string  `json:"virtualUrl,omitempty"`
+	TicketURL     string   `json:"ticketUrl,omitempty"`
+	PriceMin      *float64 `json:"priceMin,omitempty"`
+	PriceMax      *float64 `json:"priceMax,omitempty"`
+	PriceCurrency string   `json:"priceCurrency,omitempty"`
+	Availability  string   `json:"availability,omitempty"`
+}
+
+func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
+	resp := occurrenceResponse{
+		ID:            occ.ID,
+		StartDate:     occ.StartTime.Format(time.RFC3339),
+		Timezone:      occ.Timezone,
+		VenueID:       occ.VenueID,
+		VenueULID:     occ.VenueULID,
+		VirtualURL:    occ.VirtualURL,
+		TicketURL:     occ.TicketURL,
+		PriceMin:      occ.PriceMin,
+		PriceMax:      occ.PriceMax,
+		PriceCurrency: occ.PriceCurrency,
+		Availability:  occ.Availability,
+	}
+	if occ.EndTime != nil {
+		resp.EndDate = occ.EndTime.Format(time.RFC3339)
+	}
+	if occ.DoorTime != nil {
+		resp.DoorTime = occ.DoorTime.Format(time.RFC3339)
+	}
+	return resp
+}
+
+// CreateOccurrence handles POST /api/v1/admin/events/{id}/occurrences
+// Adds a new occurrence to an existing event.
+func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	eventULID, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		StartDate     string   `json:"startDate"`
+		EndDate       *string  `json:"endDate"`
+		Timezone      string   `json:"timezone"`
+		DoorTime      *string  `json:"doorTime"`
+		VenueULID     *string  `json:"venueUlid"`
+		VirtualURL    *string  `json:"virtualUrl"`
+		TicketURL     *string  `json:"ticketUrl"`
+		PriceMin      *float64 `json:"priceMin"`
+		PriceMax      *float64 `json:"priceMax"`
+		PriceCurrency string   `json:"priceCurrency"`
+		Availability  string   `json:"availability"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	if req.StartDate == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate is required", nil, h.Env)
+		return
+	}
+	if req.Timezone == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "timezone is required", nil, h.Env)
+		return
+	}
+
+	startTime, err := time.Parse(time.RFC3339, req.StartDate)
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate must be RFC3339", err, h.Env)
+		return
+	}
+	var endTime *time.Time
+	if req.EndDate != nil {
+		t, err := time.Parse(time.RFC3339, *req.EndDate)
+		if err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "endDate must be RFC3339", err, h.Env)
+			return
+		}
+		endTime = &t
+	}
+	var doorTime *time.Time
+	if req.DoorTime != nil {
+		t, err := time.Parse(time.RFC3339, *req.DoorTime)
+		if err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "doorTime must be RFC3339", err, h.Env)
+			return
+		}
+		doorTime = &t
+	}
+
+	// Resolve venueULID → venueID (UUID) if provided
+	var venueID *string
+	if req.VenueULID != nil && *req.VenueULID != "" {
+		place, err := h.AdminService.GetPlaceByULID(r.Context(), *req.VenueULID)
+		if err != nil {
+			if errors.Is(err, events.ErrNotFound) {
+				problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/validation-error", "venue not found", err, h.Env)
+				return
+			}
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+			return
+		}
+		venueID = &place.ID
+	}
+
+	params := events.OccurrenceCreateParams{
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Timezone:      req.Timezone,
+		DoorTime:      doorTime,
+		VenueID:       venueID,
+		VirtualURL:    req.VirtualURL,
+		TicketURL:     req.TicketURL,
+		PriceMin:      req.PriceMin,
+		PriceMax:      req.PriceMax,
+		PriceCurrency: req.PriceCurrency,
+		Availability:  req.Availability,
+	}
+
+	occ, err := h.AdminService.CreateOccurrenceOnEvent(r.Context(), eventULID, params)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceOverlap) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "Occurrence overlaps an existing occurrence", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.occurrence.create", "event", eventULID, "success", map[string]string{
+			"occurrence_id": occ.ID,
+		})
+	}
+
+	writeJSON(w, http.StatusCreated, occurrenceToResponse(occ), contentTypeFromRequest(r))
+}
+
+// UpdateOccurrence handles PATCH /api/v1/admin/events/{id}/occurrences/{occurrenceId}
+// Partially updates an existing occurrence (PATCH semantics — only sent fields are changed).
+func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	eventULID, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	occIDStr := strings.TrimSpace(pathParam(r, "occurrenceId"))
+	if _, err := uuid.Parse(occIDStr); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "occurrenceId must be a valid UUID", err, h.Env)
+		return
+	}
+
+	// Decode raw JSON to detect which fields were explicitly sent (PATCH semantics).
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	params := events.OccurrenceUpdateParams{}
+
+	if v, ok := raw["startDate"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate must be a string", err, h.Env)
+			return
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "startDate must be RFC3339", err, h.Env)
+			return
+		}
+		params.StartTime = &t
+	}
+	if v, ok := raw["endDate"]; ok {
+		params.EndTimeSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "endDate must be a string or null", err, h.Env)
+				return
+			}
+			t, err := time.Parse(time.RFC3339, s)
+			if err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "endDate must be RFC3339", err, h.Env)
+				return
+			}
+			params.EndTime = &t
+		}
+	}
+	if v, ok := raw["timezone"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "timezone must be a string", err, h.Env)
+			return
+		}
+		params.Timezone = &s
+	}
+	if v, ok := raw["doorTime"]; ok {
+		params.DoorTimeSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "doorTime must be a string or null", err, h.Env)
+				return
+			}
+			t, err := time.Parse(time.RFC3339, s)
+			if err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "doorTime must be RFC3339", err, h.Env)
+				return
+			}
+			params.DoorTime = &t
+		}
+	}
+	if v, ok := raw["venueUlid"]; ok {
+		params.VenueIDSet = true
+		if string(v) != "null" {
+			var ulid string
+			if err := json.Unmarshal(v, &ulid); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "venueUlid must be a string or null", err, h.Env)
+				return
+			}
+			place, err := h.AdminService.GetPlaceByULID(r.Context(), ulid)
+			if err != nil {
+				if errors.Is(err, events.ErrNotFound) {
+					problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/validation-error", "venue not found", err, h.Env)
+					return
+				}
+				problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+				return
+			}
+			params.VenueID = &place.ID
+		}
+	}
+	if v, ok := raw["virtualUrl"]; ok {
+		params.VirtualURLSet = true
+		if string(v) != "null" {
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "virtualUrl must be a string or null", err, h.Env)
+				return
+			}
+			params.VirtualURL = &s
+		}
+	}
+	if v, ok := raw["ticketUrl"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "ticketUrl must be a string", err, h.Env)
+			return
+		}
+		params.TicketURL = &s
+	}
+	if v, ok := raw["priceMin"]; ok {
+		params.PriceMinSet = true
+		if string(v) != "null" {
+			var f float64
+			if err := json.Unmarshal(v, &f); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "priceMin must be a number or null", err, h.Env)
+				return
+			}
+			params.PriceMin = &f
+		}
+	}
+	if v, ok := raw["priceMax"]; ok {
+		params.PriceMaxSet = true
+		if string(v) != "null" {
+			var f float64
+			if err := json.Unmarshal(v, &f); err != nil {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "priceMax must be a number or null", err, h.Env)
+				return
+			}
+			params.PriceMax = &f
+		}
+	}
+	if v, ok := raw["priceCurrency"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "priceCurrency must be a string", err, h.Env)
+			return
+		}
+		params.PriceCurrency = &s
+	}
+	if v, ok := raw["availability"]; ok {
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "availability must be a string", err, h.Env)
+			return
+		}
+		params.Availability = &s
+	}
+
+	occ, err := h.AdminService.UpdateOccurrenceOnEvent(r.Context(), eventULID, occIDStr, params)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event or occurrence not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceOverlap) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/occurrence-overlap", "Occurrence overlaps an existing occurrence", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.occurrence.update", "event", eventULID, "success", map[string]string{
+			"occurrence_id": occIDStr,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, occurrenceToResponse(occ), contentTypeFromRequest(r))
+}
+
+// DeleteOccurrence handles DELETE /api/v1/admin/events/{id}/occurrences/{occurrenceId}
+// Deletes a single occurrence from an event. Returns 422 if it is the last occurrence.
+func (h *AdminHandler) DeleteOccurrence(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.AdminService == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+		return
+	}
+
+	eventULID, ok := ValidateAndExtractULID(w, r, "id", h.Env)
+	if !ok {
+		return
+	}
+
+	occIDStr := strings.TrimSpace(pathParam(r, "occurrenceId"))
+	if _, err := uuid.Parse(occIDStr); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "occurrenceId must be a valid UUID", err, h.Env)
+		return
+	}
+
+	err := h.AdminService.DeleteOccurrenceOnEvent(r.Context(), eventULID, occIDStr)
+	if err != nil {
+		if errors.Is(err, events.ErrNotFound) {
+			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrEventDeleted) {
+			problem.Write(w, r, http.StatusGone, "https://sel.events/problems/event-deleted", "Event has been deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrLastOccurrence) {
+			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/last-occurrence", "Cannot delete the last occurrence of an event", err, h.Env)
+			return
+		}
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
+	if h.AuditLogger != nil {
+		h.AuditLogger.LogFromRequest(r, "admin.occurrence.delete", "event", eventULID, "success", map[string]string{
+			"occurrence_id": occIDStr,
+		})
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

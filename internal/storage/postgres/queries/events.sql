@@ -184,3 +184,89 @@ SELECT MIN(o.start_time) AS oldest_event_date,
   FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
  WHERE e.deleted_at IS NULL;
+
+-- name: InsertOccurrence :one
+-- Insert a single occurrence and return the created row (including generated UUID).
+INSERT INTO event_occurrences (
+    event_id,
+    start_time,
+    end_time,
+    timezone,
+    door_time,
+    venue_id,
+    virtual_url,
+    ticket_url,
+    price_min,
+    price_max,
+    price_currency,
+    availability
+) VALUES (
+    sqlc.arg('event_id')::uuid,
+    sqlc.arg('start_time'),
+    sqlc.narg('end_time'),
+    sqlc.arg('timezone'),
+    sqlc.narg('door_time'),
+    sqlc.narg('venue_id')::uuid,
+    sqlc.narg('virtual_url'),
+    sqlc.narg('ticket_url'),
+    sqlc.narg('price_min'),
+    sqlc.narg('price_max'),
+    NULLIF(sqlc.arg('price_currency'), ''),
+    NULLIF(sqlc.arg('availability'), '')
+)
+RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at;
+
+-- name: GetOccurrenceByID :one
+-- Fetch a single occurrence row by its UUID. Returns the occurrence with its venue ULID via join.
+SELECT o.id,
+       o.event_id,
+       o.start_time,
+       o.end_time,
+       o.timezone,
+       o.door_time,
+       o.venue_id,
+       p.ulid AS venue_ulid,
+       o.virtual_url,
+       o.ticket_url,
+       o.price_min,
+       o.price_max,
+       o.price_currency,
+       o.availability,
+       o.created_at,
+       o.updated_at
+  FROM event_occurrences o
+  LEFT JOIN places p ON p.id = o.venue_id
+ WHERE o.id = sqlc.arg('id')::uuid;
+
+-- name: UpdateOccurrenceByID :one
+-- Partial-update a single occurrence row. Only non-NULL arguments are applied (COALESCE pattern).
+-- venue_id and virtual_url use explicit NULLability: pass the sentinel string 'NULL' to clear them
+-- (handled at the repository layer via pgtype.UUID{Valid:false}).
+UPDATE event_occurrences
+   SET start_time     = COALESCE(sqlc.narg('start_time'), start_time),
+       end_time       = CASE WHEN sqlc.narg('end_time_set')::boolean THEN sqlc.narg('end_time') ELSE end_time END,
+       timezone       = COALESCE(sqlc.narg('timezone'), timezone),
+       door_time      = CASE WHEN sqlc.narg('door_time_set')::boolean THEN sqlc.narg('door_time') ELSE door_time END,
+       venue_id       = CASE WHEN sqlc.narg('venue_id_set')::boolean THEN sqlc.narg('venue_id')::uuid ELSE venue_id END,
+       virtual_url    = CASE WHEN sqlc.narg('virtual_url_set')::boolean THEN sqlc.narg('virtual_url') ELSE virtual_url END,
+       ticket_url     = COALESCE(sqlc.narg('ticket_url'), ticket_url),
+       price_min      = CASE WHEN sqlc.narg('price_min_set')::boolean THEN sqlc.narg('price_min') ELSE price_min END,
+       price_max      = CASE WHEN sqlc.narg('price_max_set')::boolean THEN sqlc.narg('price_max') ELSE price_max END,
+       price_currency = COALESCE(sqlc.narg('price_currency'), price_currency),
+       availability   = COALESCE(sqlc.narg('availability'), availability),
+       updated_at     = now()
+ WHERE id = sqlc.arg('id')::uuid
+RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at;
+
+-- name: DeleteOccurrenceByID :exec
+-- Delete a single occurrence by its UUID.
+DELETE FROM event_occurrences
+ WHERE id = sqlc.arg('id')::uuid;
+
+-- name: CountOccurrencesByEventID :one
+-- Count occurrences for a given event UUID. Used to enforce last-occurrence guard.
+SELECT COUNT(*)::bigint AS count
+  FROM event_occurrences
+ WHERE event_id = sqlc.arg('event_id')::uuid;
