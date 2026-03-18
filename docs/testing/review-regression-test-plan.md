@@ -72,13 +72,16 @@ Use the [Scenario Index](#scenario-index) below to find the relevant events in t
 
 | Action | Route |
 |--------|-------|
-| List pending reviews | `GET $BASE/admin/events/pending` → `.items[]` |
+| List pending events (event ULIDs, names, lifecycle) | `GET $BASE/admin/events/pending` → `.items[]` |
+| List review queue (review IDs, warnings, event ULIDs) | `GET $BASE/admin/review-queue` → `.items[]` |
 | Approve / reject / merge / add-occurrence (review-queue path) | `POST $BASE/admin/review-queue/{review-id}/{action}` |
 | Create/update/delete occurrence manually (not via review queue) | `POST/PUT/DELETE $BASE/admin/events/{event-ulid}/occurrences[/{occ-id}]` |
 
+> **Important:** Use `GET $BASE/admin/review-queue` (not `/admin/events/pending`) when you need review IDs and warning codes. The `/admin/events/pending` endpoint returns event summaries only — it does not include review queue IDs or warnings.
+
 ```bash
 # List review queue — find review IDs and event ULIDs
-curl -s -H "Authorization: Bearer $JWT" "$BASE/admin/events/pending" | jq '.items[]'
+curl -s -H "Authorization: Bearer $JWT" "$BASE/admin/review-queue" | jq '.items[]'
 
 # Approve a review entry  (integer review id, NOT event ulid)
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
@@ -88,10 +91,10 @@ curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/js
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   "$BASE/admin/review-queue/<review-id>/add-occurrence" -d '{}'
 
-# Merge duplicate onto original
+# Merge duplicate onto original  (field is primary_event_ulid, NOT target_event_ulid)
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   "$BASE/admin/review-queue/<review-id>/merge" \
-  -d '{"target_event_ulid":"<original-ulid>"}'
+  -d '{"primary_event_ulid":"<original-ulid>"}'
 
 # Reject
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
@@ -206,17 +209,45 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 
 **Pre-test setup (manual):**
 This scenario tests lifecycle preservation during add-occurrence. To exercise it:
-1. Place the Tech Meetup series in `pending_review` state manually (e.g., via SQL: `UPDATE events SET lifecycle_state = 'pending_review' WHERE name LIKE 'RS-03%Pending%'`).
-2. Create a review entry for it (e.g., with a manual `quality_issue` warning).
+1. Place the Tech Meetup series in `pending_review` state and create a review entry for it:
+
+```sql
+-- Step 1: set lifecycle state
+UPDATE events SET lifecycle_state = 'pending_review' WHERE name LIKE 'RS-03%Pending%';
+
+-- Step 2: insert a review entry (quality_issue warning; all NOT NULL columns required)
+INSERT INTO event_review_queue (event_id, original_payload, normalized_payload, warnings, event_start_time, status)
+SELECT id,
+       '{"name":"RS-03 Tech Meetup — Pending Series"}'::jsonb,
+       '{"name":"RS-03 Tech Meetup — Pending Series"}'::jsonb,
+       '[{"code":"quality_issue","message":"Manual test setup"}]'::jsonb,
+       (SELECT eo.start_time FROM event_occurrences eo WHERE eo.event_id = events.id LIMIT 1),
+       'pending'
+FROM events WHERE name LIKE 'RS-03%Pending%';
+```
 
 **Test steps:**
-1. With the series now in `pending_review`, use the admin UI to click **Add as Occurrence** on the additional occurrence, targeting the tech meetup series.
-2. Verify:
-   - [ ] Source event soft-deleted.
+1. With the series now in `pending_review`, use the manual occurrence API to add the additional occurrence to the tech meetup series:
+   ```bash
+   # Look up the target event ULID and venue ULID
+   psql $DB -c "SELECT ulid, name FROM events WHERE name LIKE 'RS-03%Pending%';"
+   psql $DB -c "SELECT p.ulid FROM places p JOIN events e ON e.primary_venue_id=p.id WHERE e.name LIKE 'RS-03%Pending%';"
+   # Look up the start/end time of the source occurrence to absorb
+   psql $DB -c "SELECT eo.start_time, eo.end_time FROM event_occurrences eo JOIN events e ON eo.event_id=e.id WHERE e.name LIKE 'RS-03%Additional%';"
+
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/<pending-series-ulid>/occurrences" \
+     -d '{"start_time":"<RFC3339>","end_time":"<RFC3339>","timezone":"America/Toronto","venue_ulid":"<venue-ulid>"}'
+   ```
+2. Soft-delete the additional occurrence event (the manual API does not do this automatically — soft-deletion only happens via the review-queue `add-occurrence` action):
+   ```sql
+   UPDATE events SET lifecycle_state = 'deleted' WHERE name LIKE 'RS-03%Additional%';
+   ```
+3. Verify:
    - [ ] Target series now has **3** occurrences (was 2).
    - [ ] Target series `lifecycle_state` stays `pending_review` (the pre-existing review is still unresolved).
 
-**Note:** This scenario deliberately does not rely on automatic dedup. It tests that the add-occurrence action preserves a pending lifecycle when other unresolved reviews exist on the target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the admin UI's manual occurrence-management form (not via the review-queue add-occurrence API). The manual SQL setup is required to put the series in `pending_review` before the add-occurrence so that the lifecycle-preservation invariant can be verified.
+**Note:** This scenario deliberately does not rely on automatic dedup. It tests that the add-occurrence action preserves a pending lifecycle when other unresolved reviews exist on the target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the manual occurrence API (`POST /admin/events/{ulid}/occurrences`) — **not** via the review-queue `add-occurrence` action (which requires a pending review row on the source event). The manual API only adds the occurrence; soft-deletion of the source event requires a separate SQL step.
 
 ---
 
@@ -233,13 +264,25 @@ This scenario tests add-occurrence behaviour on a draft target. To exercise it:
 1. Set the Art Walk series to `draft` state via SQL: `UPDATE events SET lifecycle_state = 'draft' WHERE name LIKE 'RS-04%Draft%'`.
 
 **Test steps:**
-1. With the series now in `draft`, use the admin UI to click **Add as Occurrence** on the new occurrence, targeting the draft series.
-2. Verify:
-   - [ ] Source event soft-deleted.
+1. With the series now in `draft`, use the manual occurrence API to add the new occurrence to the draft series:
+   ```bash
+   psql $DB -c "SELECT ulid FROM events WHERE name LIKE 'RS-04%Draft%';"
+   psql $DB -c "SELECT p.ulid FROM places p JOIN events e ON e.primary_venue_id=p.id WHERE e.name LIKE 'RS-04%Draft%';"
+   psql $DB -c "SELECT eo.start_time, eo.end_time FROM event_occurrences eo JOIN events e ON eo.event_id=e.id WHERE e.name LIKE 'RS-04%New%';"
+
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/<draft-series-ulid>/occurrences" \
+     -d '{"start_time":"<RFC3339>","end_time":"<RFC3339>","timezone":"America/Toronto","venue_ulid":"<venue-ulid>"}'
+   ```
+2. Soft-delete the source event (the manual API does not do this automatically):
+   ```sql
+   UPDATE events SET lifecycle_state = 'deleted' WHERE name LIKE 'RS-04%New%';
+   ```
+3. Verify:
    - [ ] Target series has **3** occurrences.
    - [ ] Target series `lifecycle_state` remains `draft` (not auto-promoted to published by add-occurrence).
 
-**Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision. This scenario deliberately does not rely on automatic dedup — it tests manual add-occurrence on a draft target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the admin UI's manual occurrence-management form (not via the review-queue add-occurrence API). The SQL state change is required before the add-occurrence so that the draft-preservation invariant can be verified.
+**Rationale:** Draft events should remain drafts even when occurrences are added; publication is a separate admin decision. This scenario deliberately does not rely on automatic dedup — it tests manual add-occurrence on a draft target. Because neither event lands in the review queue automatically, the add-occurrence must be performed via the manual occurrence API (`POST /admin/events/{ulid}/occurrences`) — **not** via the review-queue `add-occurrence` action. The SQL state change is required before the add-occurrence so that the draft-preservation invariant can be verified. Soft-deletion of the source event requires a separate SQL step (the manual API does not absorb/delete the source automatically).
 
 ---
 
@@ -460,8 +503,8 @@ WHERE e.name LIKE 'RS-%';
 -- Check not-duplicates table
 SELECT e1.name AS event_a, e2.name AS event_b
 FROM event_not_duplicates nd
-JOIN events e1 ON e1.id::text = nd.event_id_a
-JOIN events e2 ON e2.id::text = nd.event_id_b
+JOIN events e1 ON e1.ulid = nd.event_id_a
+JOIN events e2 ON e2.ulid = nd.event_id_b
 WHERE e1.name LIKE 'RS-%' OR e2.name LIKE 'RS-%';
 ```
 
