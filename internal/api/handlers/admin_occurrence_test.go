@@ -148,6 +148,17 @@ func TestCreateOccurrence(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
+			name:      "400 missing timezone",
+			eventULID: occTestEventULID,
+			body: map[string]any{
+				"start_time":  "2026-06-01T19:00:00Z",
+				"virtual_url": occTestVirtualURL,
+				// timezone absent
+			},
+			setupMock:      func(_ *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
 			name:      "409 occurrence overlap",
 			eventULID: occTestEventULID,
 			body:      validBody,
@@ -156,6 +167,20 @@ func TestCreateOccurrence(t *testing.T) {
 				repo.On("CheckOccurrenceOverlap", mock.Anything, occTestEventID, mock.AnythingOfType("time.Time"), mock.Anything).Return(true, nil)
 			},
 			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:      "422 location required",
+			eventULID: occTestEventULID,
+			body: map[string]any{
+				"start_time": "2026-06-01T19:00:00Z",
+				"timezone":   "America/Toronto",
+				// venue_ulid and virtual_url both absent → service returns ErrOccurrenceLocationRequired
+				// before reaching the overlap check or InsertOccurrence.
+			},
+			setupMock: func(repo *MockRepository) {
+				setupHappyTx(repo, "published")
+			},
+			expectedStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:      "410 event deleted",
@@ -305,6 +330,24 @@ func TestUpdateOccurrence(t *testing.T) {
 				}
 			},
 			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:         "422 location required",
+			eventULID:    occTestEventULID,
+			occurrenceID: occTestOccID,
+			body: map[string]any{
+				"virtual_url": nil, // explicitly clearing virtual_url; current occ has no venue → constraint fires
+			},
+			setupMock: func(repo *MockRepository) {
+				setupHappyTx(repo, "published")
+				// GetOccurrenceByID returns an occurrence with VirtualURL set and no VenueID.
+				// Clearing virtual_url via the patch results in both venue and URL being nil,
+				// so the service returns ErrOccurrenceLocationRequired before calling UpdateOccurrence.
+				repo.GetOccurrenceByIDFn = func(_ context.Context, _, _ string) (*events.Occurrence, error) {
+					return occTestOccurrence(), nil
+				}
+			},
+			expectedStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:         "410 event deleted",
