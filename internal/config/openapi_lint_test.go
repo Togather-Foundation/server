@@ -45,6 +45,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "DEFAULT_TIMEZONE",
 		wantSubstr: "DEFAULT_TIMEZONE",
 	},
+	{
+		envVar:     "DEDUP_NEAR_DUPLICATE_THRESHOLD",
+		wantSubstr: "DEDUP_NEAR_DUPLICATE_THRESHOLD",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

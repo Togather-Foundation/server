@@ -430,6 +430,7 @@ func Load() (Config, error) {
 			ReviewConfidenceThreshold: getEnvFloat("VALIDATION_REVIEW_CONFIDENCE_THRESHOLD", 0.6),
 			MaxFutureDays:             getEnvInt("VALIDATION_MAX_FUTURE_DAYS", 730),
 			MaxEventNameLength:        getEnvInt("VALIDATION_MAX_EVENT_NAME_LENGTH", 500),
+			NearDuplicateThreshold:    getEnvFloat("DEDUP_NEAR_DUPLICATE_THRESHOLD", 0.4),
 		},
 		Tracing: TracingConfig{
 			Enabled:      getEnvBool("TRACING_ENABLED", false),
