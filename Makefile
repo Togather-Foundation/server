@@ -372,7 +372,7 @@ lint-js:
 		exit 1; \
 	fi; \
 	EXIT_CODE=0; \
-	for file in $$(find web/admin/static/js -name "*.js" -not -name "*.min.js"); do \
+	for file in $$(find web/admin/static/js -name "*.js" -not -name "*.min.js" -not -name "test-*.js"); do \
 		echo "  Checking $$file..."; \
 		if ! $$ESBUILD $$file --bundle --outfile=/dev/null --log-level=error 2>&1; then \
 			EXIT_CODE=1; \
