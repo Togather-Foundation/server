@@ -1845,13 +1845,10 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 		ReviewEntriesDismissed []int                      `json:"review_entries_dismissed"`
 	}
 
-	ev := schema.NewEvent(result.Event.Name)
-	ev.Context = loadDefaultContext()
-	ev.ID = buildEventURI(h.BaseURL, result.Event.ULID)
-	ev.Description = result.Event.Description
+	eventPayload := buildEventPayload(result.Event, h.BaseURL)
 
 	resp := consolidateResponse{
-		Event:                  *ev,
+		Event:                  eventPayload,
 		LifecycleState:         result.LifecycleState,
 		IsDuplicate:            result.IsDuplicate,
 		IsMerged:               result.IsMerged,
