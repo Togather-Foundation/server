@@ -190,15 +190,6 @@ const API = {
             body: JSON.stringify({ source_id: sourceId, target_id: targetId })
         }),
         
-        consolidate: (event, eventUlid, retire) => API.request('/api/v1/admin/events/consolidate', {
-            method: 'POST',
-            body: JSON.stringify({
-                event: event,
-                event_ulid: eventUlid,
-                retire: retire
-            })
-        }),
-        
         pending: () => API.request('/api/v1/admin/events/pending'),
 
         occurrences: {
