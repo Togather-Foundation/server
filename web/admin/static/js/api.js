@@ -174,7 +174,7 @@ const API = {
             return API.request(`/api/v1/admin/events?${query}`);
         },
         
-        get: (id) => API.request(`/api/v1/admin/events/${id}`),
+        get: (id) => API.request(`/api/v1/events/${id}`),
         
         update: (id, data) => API.request(`/api/v1/admin/events/${id}`, {
             method: 'PUT',
@@ -188,6 +188,11 @@ const API = {
         merge: (sourceId, targetId) => API.request('/api/v1/admin/events/merge', {
             method: 'POST',
             body: JSON.stringify({ source_id: sourceId, target_id: targetId })
+        }),
+
+        consolidate: (data) => API.request('/api/v1/admin/events/consolidate', {
+            method: 'POST',
+            body: JSON.stringify(data)
         }),
         
         pending: () => API.request('/api/v1/admin/events/pending'),

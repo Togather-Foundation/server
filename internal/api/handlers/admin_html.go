@@ -391,6 +391,31 @@ func (h *AdminHTMLHandler) ServeScraperSources(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// ServeConsolidate renders the event consolidation standalone page.
+func (h *AdminHTMLHandler) ServeConsolidate(w http.ResponseWriter, r *http.Request) {
+	if h.Logger != nil {
+		h.Logger.Info("admin HTML request",
+			slog.String("page", "consolidate"),
+			slog.String("method", r.Method),
+			slog.String("remote_addr", r.RemoteAddr))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	data := map[string]interface{}{
+		"Title":      "Consolidate Events - SEL Admin",
+		"ActivePage": "events",
+	}
+
+	if err := h.Templates.ExecuteTemplate(w, "consolidate.html", data); err != nil {
+		if h.Logger != nil {
+			h.Logger.Error("template error", slog.String("template", "consolidate.html"), slog.Any("error", err))
+		}
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+}
+
 // AdminHTMLPlaceholder returns a basic handler for admin HTML routes.
 // Deprecated: Use AdminHTMLHandler methods instead
 func AdminHTMLPlaceholder(_ string) http.HandlerFunc {

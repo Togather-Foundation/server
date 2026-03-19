@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .Title }}</title>
+    {{ template "_head_meta.html" . }}
+    <link rel="stylesheet" href="/admin/static/css/tabler.min.css?v={{ assetVersion }}">
+    <link rel="stylesheet" href="/admin/static/css/custom.css?v={{ assetVersion }}">
+</head>
+<body>
+    {{ template "_header.html" . }}
+
+    <!-- Page Content -->
+    <div class="page">
+        <div class="page-wrapper">
+            <!-- Page header -->
+            <div class="page-header d-print-none">
+                <div class="container-xl">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <div class="page-pretitle">
+                                <a href="/admin/events">Events</a>
+                            </div>
+                            <h2 class="page-title">Consolidate Events</h2>
+                            <div class="text-muted mt-1">Merge duplicate events into a single canonical record</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page body -->
+            <div class="page-body">
+                <div class="container-xl">
+
+                    <!-- Step 1: Load Events card -->
+                    <div class="card mb-4" id="load-events-card">
+                        <div class="card-header">
+                            <h3 class="card-title">Step 1 — Load Events to Consolidate</h3>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-3">Enter the ULIDs of the events you want to consolidate. At least two are required.</p>
+                            <div id="ulid-inputs">
+                                <!-- JS renders input rows here -->
+                            </div>
+                            <div class="mt-2">
+                                <button class="btn btn-outline-secondary btn-sm" data-action="add-ulid-input">
+                                    + Add another event
+                                </button>
+                            </div>
+                            <div class="mt-3">
+                                <button class="btn btn-primary" data-action="load-events">
+                                    Load Events
+                                </button>
+                            </div>
+                            <div id="load-error" class="alert alert-danger mt-3" style="display:none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Field picker + canonical editor (hidden until events loaded) -->
+                    <div id="consolidate-workspace" style="display:none;">
+
+                        <!-- Source events comparison -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3 class="card-title">Step 2 — Review &amp; Pick Fields</h3>
+                                <small class="text-muted">Click a value chip to populate that field in the editor below</small>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="field-picker-table">
+                                    <!-- JS renders per-field rows with per-source radio chips -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Canonical event editor -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3 class="card-title">Step 3 — Canonical Event</h3>
+                            </div>
+                            <div class="card-body">
+                                <!-- Promote vs create toggle -->
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Canonical source</label>
+                                    <div class="d-flex gap-3">
+                                        <label class="form-check">
+                                            <input class="form-check-input" type="radio" name="canonical-mode" value="create" checked data-action="canonical-mode-change">
+                                            <span class="form-check-label">Create new event</span>
+                                        </label>
+                                        <label class="form-check">
+                                            <input class="form-check-input" type="radio" name="canonical-mode" value="promote" data-action="canonical-mode-change">
+                                            <span class="form-check-label">Promote existing event</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Promote ULID input (hidden in create mode) -->
+                                <div id="promote-ulid-row" class="mb-3" style="display:none;">
+                                    <label class="form-label">Canonical event ULID</label>
+                                    <div class="input-group" style="max-width:420px;">
+                                        <input type="text" class="form-control font-monospace" id="promote-ulid-input" placeholder="01XXXXXXXXXXXXXXXXXXXXXXXXX" maxlength="26">
+                                        <button class="btn btn-outline-secondary" data-action="load-promote-event">Use this event</button>
+                                    </div>
+                                    <small class="text-muted">Fields below will be pre-populated from this event</small>
+                                </div>
+
+                                <!-- Read-only view (Event Information panel) — shown when event loaded in promote mode -->
+                                <div id="event-info-readonly" style="display:none;">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="fw-semibold text-muted small">Event Information — promoting this event as canonical</span>
+                                        <button class="btn btn-sm btn-outline-secondary" data-action="edit-canonical">Edit fields</button>
+                                    </div>
+                                    <div id="event-info-readonly-content">
+                                        <!-- JS renders read-only event info here -->
+                                    </div>
+                                </div>
+
+                                <!-- Editable form -->
+                                <div id="event-info-editable">
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <label class="form-label">Event Name <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="field-name" placeholder="Event name">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Start Date/Time</label>
+                                            <input type="text" class="form-control" id="field-startDate" placeholder="e.g. 2026-04-12T14:00:00">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">End Date/Time</label>
+                                            <input type="text" class="form-control" id="field-endDate" placeholder="e.g. 2026-04-12T15:30:00">
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label">Description</label>
+                                            <textarea class="form-control" id="field-description" rows="4" placeholder="Event description"></textarea>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label">Event URL</label>
+                                            <input type="url" class="form-control" id="field-url" placeholder="https://...">
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label">Image URL</label>
+                                            <input type="url" class="form-control" id="field-image" placeholder="https://...">
+                                        </div>
+                                        <!-- Location subfields -->
+                                        <div class="col-12">
+                                            <label class="form-label fw-semibold">Location</label>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Venue name</label>
+                                            <input type="text" class="form-control" id="field-location-name" placeholder="Venue name">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Street address</label>
+                                            <input type="text" class="form-control" id="field-location-streetAddress" placeholder="123 Main St">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">City</label>
+                                            <input type="text" class="form-control" id="field-location-addressLocality" placeholder="Toronto">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Province/State</label>
+                                            <input type="text" class="form-control" id="field-location-addressRegion" placeholder="ON">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Postal code</label>
+                                            <input type="text" class="form-control" id="field-location-postalCode" placeholder="M5V 2T6">
+                                        </div>
+                                        <!-- Organizer subfields -->
+                                        <div class="col-12">
+                                            <label class="form-label fw-semibold">Organizer</label>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Organizer name</label>
+                                            <input type="text" class="form-control" id="field-organizer-name" placeholder="Organization name">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Organizer URL</label>
+                                            <input type="url" class="form-control" id="field-organizer-url" placeholder="https://...">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Retire events section -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3 class="card-title">Step 4 — Events to Retire</h3>
+                                <small class="text-muted">These events will be soft-deleted. Uncheck any you want to keep.</small>
+                            </div>
+                            <div class="card-body">
+                                <div id="retire-list">
+                                    <!-- JS renders retire checklist here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit -->
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <button class="btn btn-danger btn-lg" data-action="submit-consolidate">
+                                    Consolidate Events
+                                </button>
+                                <span class="text-muted ms-3 small">This action is irreversible. Retired events will be soft-deleted.</span>
+                            </div>
+                        </div>
+
+                        <!-- Result panel (shown after submit) -->
+                        <div id="consolidate-result" style="display:none;">
+                            <!-- JS renders result here -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{ template "_footer.html" . }}
+    <script src="/admin/static/js/consolidate.js?v={{ assetVersion }}"></script>
+</body>
+</html>

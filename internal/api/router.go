@@ -794,6 +794,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Admin HTML routes with CSRF protection and cookie auth
 	mux.Handle("/admin/dashboard", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDashboard))))
 	mux.Handle("/admin/events", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeEventsList))))
+	mux.Handle("/admin/events/consolidate", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeConsolidate))))
 	mux.Handle("/admin/events/{id}", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeEventEdit))))
 	mux.Handle("/admin/duplicates", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeDuplicates))))
 	mux.Handle("/admin/review-queue", csrfMiddleware(adminCookieAuth(http.HandlerFunc(adminHTMLHandler.ServeReviewQueue))))

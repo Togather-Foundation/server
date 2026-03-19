@@ -701,6 +701,11 @@
         const addOccurrenceTargetUlid = duplicateEventId;
         const isAmbiguousOccurrenceDispatch = hasEventDuplicateWarnings && hasNearDupNewEventWarning;
         
+        // Consolidate page URL — pre-fill with both event ULIDs when available
+        const consolidateUrl = detail.duplicateOfEventUlid
+            ? `/admin/events/consolidate?ulids=${encodeURIComponent(detail.eventId)},${encodeURIComponent(detail.duplicateOfEventUlid)}`
+            : `/admin/events/consolidate?ulids=${encodeURIComponent(detail.eventId)}`;
+
         // Build action buttons (only for pending status)
         // Only show Fix Dates if there are date-related warnings
         const actionButtons = detail.status === 'pending' ? `
@@ -761,6 +766,19 @@
                         </svg>
                         Not a Duplicate
                     </button>
+                ` : ''}
+                ${hasAnyDuplicateWarning ? `
+                    <a href="${consolidateUrl}" class="btn btn-outline-purple">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <circle cx="7" cy="18" r="2"/>
+                            <circle cx="7" cy="6" r="2"/>
+                            <circle cx="17" cy="12" r="2"/>
+                            <line x1="7" y1="8" x2="7" y2="16"/>
+                            <path d="M7 8a4 4 0 0 0 4 4h4"/>
+                        </svg>
+                        Consolidate
+                    </a>
                 ` : ''}
                 ${hasDateWarnings ? `
                     <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
