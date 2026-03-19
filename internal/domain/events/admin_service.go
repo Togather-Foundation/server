@@ -989,42 +989,6 @@ func (s *AdminService) UnpublishEvent(ctx context.Context, ulid string) (*Event,
 	return s.UpdateEvent(ctx, ulid, params)
 }
 
-// MergeEvents merges a duplicate event into a primary event
-// The duplicate event is soft-deleted with a sameAs link to the primary
-// This operation is atomic and wrapped in a database transaction
-func (s *AdminService) MergeEvents(ctx context.Context, params MergeEventsParams) error {
-	if params.PrimaryULID == "" || params.DuplicateULID == "" {
-		return ErrInvalidUpdateParams
-	}
-
-	if params.PrimaryULID == params.DuplicateULID {
-		return ErrCannotMergeSameEvent
-	}
-
-	// Begin transaction
-	txRepo, txCommitter, err := s.repo.BeginTx(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-
-	// Ensure rollback on error (no-op after commit)
-	defer func() {
-		_ = txCommitter.Rollback(ctx)
-	}()
-
-	if err := s.executeMerge(ctx, txRepo, params); err != nil {
-		return err
-	}
-
-	// Commit transaction
-	err = txCommitter.Commit(ctx)
-	if err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return nil
-}
-
 // MergeEventsWithReview atomically merges a duplicate event into a primary event AND
 // updates the review queue entry status to "merged" in a single database transaction.
 // This prevents inconsistency where the merge could succeed but the review status update fails.

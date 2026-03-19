@@ -1812,66 +1812,6 @@ func TestScenario_S9_MergeEventsWithReview(t *testing.T) {
 	})
 }
 
-// --- S11: Transitive Chain / Merge into deleted ---
-
-func TestScenario_S11_MergeIntoDeletedEvent(t *testing.T) {
-	t.Run("S11_merge_events_rejects_deleted_primary", func(t *testing.T) {
-		// Given: Event B is deleted.
-		// Action: Admin attempts to merge A into B via MergeEvents.
-		// Expected: Rejected with ErrEventDeleted.
-		repo := NewMockRepository()
-		aULID, _ := ids.NewULID()
-		bULID, _ := ids.NewULID()
-
-		repo.events[aULID] = &Event{
-			ID:             "a-id",
-			ULID:           aULID,
-			Name:           "Event A",
-			LifecycleState: "published",
-		}
-		repo.events[bULID] = &Event{
-			ID:             "b-id",
-			ULID:           bULID,
-			Name:           "Event B (deleted)",
-			LifecycleState: "deleted",
-		}
-
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
-
-		err := adminService.MergeEvents(context.Background(), MergeEventsParams{
-			PrimaryULID:   bULID,
-			DuplicateULID: aULID,
-		})
-		if err == nil {
-			t.Fatal("Expected error when merging into deleted event")
-		}
-		if !errors.Is(err, ErrEventDeleted) {
-			t.Errorf("Expected ErrEventDeleted, got %v", err)
-		}
-	})
-
-	t.Run("S11_merge_events_cannot_merge_same_event", func(t *testing.T) {
-		repo := NewMockRepository()
-		ulid, _ := ids.NewULID()
-		repo.events[ulid] = &Event{
-			ID:             "evt-id",
-			ULID:           ulid,
-			Name:           "Event",
-			LifecycleState: "published",
-		}
-
-		adminService := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
-
-		err := adminService.MergeEvents(context.Background(), MergeEventsParams{
-			PrimaryULID:   ulid,
-			DuplicateULID: ulid,
-		})
-		if !errors.Is(err, ErrCannotMergeSameEvent) {
-			t.Errorf("Expected ErrCannotMergeSameEvent, got %v", err)
-		}
-	})
-}
-
 // --- S10: Trust-Based Field Merge (unit tests for AutoMergeFields) ---
 
 func TestScenario_S10_AutoMergeFields(t *testing.T) {
