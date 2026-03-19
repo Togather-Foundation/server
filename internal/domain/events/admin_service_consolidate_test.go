@@ -19,6 +19,17 @@ const (
 
 const consolidateBaseURL = "https://toronto.togather.foundation"
 
+// newConsolidateSvc returns an AdminService with a NearDuplicateThreshold set
+// via DedupConfig on the embedded IngestService — the single source of truth
+// for the post-consolidation near-dup check.
+func newConsolidateSvc(repo Repository, nearDupThreshold float64) *AdminService {
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{AllowTestDomains: true}, consolidateBaseURL)
+	ingest := NewIngestService(repo, "", "America/Toronto", config.ValidationConfig{AllowTestDomains: true}).
+		WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: nearDupThreshold})
+	svc.WithIngestService(ingest)
+	return svc
+}
+
 // makeConsolidateRepo builds a minimal mockTransactionalRepo for Consolidate tests.
 func makeConsolidateRepo(knownEvents map[string]*Event) *mockTransactionalRepo {
 	return &mockTransactionalRepo{
@@ -393,9 +404,7 @@ func TestConsolidate_PromotePath_SelfExcludedFromNearDup(t *testing.T) {
 		}, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{
-		NearDuplicateThreshold: 0.8,
-	}, consolidateBaseURL)
+	svc := newConsolidateSvc(repo, 0.8)
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -445,9 +454,7 @@ func TestConsolidate_PromotePath_SelfOnlyNearDup(t *testing.T) {
 		}, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{
-		NearDuplicateThreshold: 0.8,
-	}, consolidateBaseURL)
+	svc := newConsolidateSvc(repo, 0.8)
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -481,9 +488,7 @@ func TestConsolidate_NearDupCheckFailure_NonFatal(t *testing.T) {
 		return nil, errors.New("simulated DB failure")
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{
-		NearDuplicateThreshold: 0.8,
-	}, consolidateBaseURL)
+	svc := newConsolidateSvc(repo, 0.8)
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,

@@ -1594,7 +1594,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 	// The error return from consolidatePostValidation is always nil — non-fatal
 	// errors are logged internally and do not propagate to avoid blocking the
 	// consolidation transaction on a best-effort check.
-	dupResult, dupWarnings, _ := s.consolidatePostValidation(ctx, txRepo, canonicalEvent, params.Retire, s.validationConfig.NearDuplicateThreshold)
+	dupResult, dupWarnings, _ := s.consolidatePostValidation(ctx, txRepo, canonicalEvent, params.Retire, s.ingestService.dedupConfig.NearDuplicateThreshold)
 	if dupResult {
 		isDuplicate = true
 		needsReview = true
