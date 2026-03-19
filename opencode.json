@@ -2,20 +2,6 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": ["opencode-beads"],
   "model": "github-copilot/claude-sonnet-4.6",
-  "permission": {
-    "external_directory": {
-      "/tmp/**": "allow"
-    },
-    "read": {
-      "/tmp/**": "allow"
-    },
-    "write": {
-      "/tmp/**": "allow"
-    },
-    "edit": {
-      "/tmp/**": "allow"
-    }
-  },
   "agent": {
     "general": {
       "description": "General-purpose agent implementing code and executing multi-step tasks",
@@ -32,11 +18,6 @@
       "description": "Senior diagnostic expert for hard problems",
       "mode": "subagent",
       "model": "github-copilot/claude-opus-4.6"
-    },
-    "basic": {
-      "description": "Basic agent for simple tasks and code generation",
-      "mode": "subagent",
-      "model": "openrouter/minimax/minimax-m2.5"
     }
   },
   "mcp": {

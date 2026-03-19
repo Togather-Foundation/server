@@ -354,7 +354,6 @@ func TestAdminConsolidate_ValidationErrors(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			status, body := postConsolidate(t, env, adminToken, tc.payload)
 			assert.Equal(t, http.StatusBadRequest, status,

@@ -1591,6 +1591,9 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 	}
 
 	// Step 7: Post-consolidation near-dup check (only if canonical has a venue).
+	// The error return from consolidatePostValidation is always nil — non-fatal
+	// errors are logged internally and do not propagate to avoid blocking the
+	// consolidation transaction on a best-effort check.
 	dupResult, dupWarnings, _ := s.consolidatePostValidation(ctx, txRepo, canonicalEvent, params.Retire, s.validationConfig.NearDuplicateThreshold)
 	if dupResult {
 		isDuplicate = true
