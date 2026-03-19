@@ -568,9 +568,6 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminUnpublishEvent := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.UnpublishEvent))))
 	mux.Handle("POST /api/v1/admin/events/{id}/unpublish", adminUnpublishEvent)
 
-	adminMergeEvents := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.MergeEvents))))
-	mux.Handle("POST /api/v1/admin/events/merge", adminMergeEvents)
-
 	adminConsolidate := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminHandler.ConsolidateEvents))))
 	mux.Handle("POST /api/v1/admin/events/consolidate", adminConsolidate)
 

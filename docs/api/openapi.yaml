@@ -570,7 +570,8 @@ paths:
 
         Post-consolidation validation (duplicate detection, quality checks) runs on
         the canonical event; results are returned in `warnings`, `is_duplicate`, and
-        `needs_review`.
+        `needs_review`. Near-duplicate detection after consolidation uses a similarity
+        threshold configurable via DEDUP_NEAR_DUPLICATE_THRESHOLD (default 0.4).
 
         Exactly one of `event` or `event_ulid` must be provided. `retire` is required
         and must contain at least one ULID. The canonical event's ULID must not appear

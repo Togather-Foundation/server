@@ -31,7 +31,6 @@ func TestAdminAPIRoutesRequireBearerToken(t *testing.T) {
 		{http.MethodGet, "/api/v1/admin/events"},
 		{http.MethodPut, "/api/v1/admin/events/01234567890123456789012345"},
 		{http.MethodDelete, "/api/v1/admin/events/01234567890123456789012345"},
-		{http.MethodPost, "/api/v1/admin/events/merge"},
 		{http.MethodGet, "/api/v1/admin/api-keys"},
 		{http.MethodPost, "/api/v1/admin/api-keys"},
 	}

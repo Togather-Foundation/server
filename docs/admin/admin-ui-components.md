@@ -365,7 +365,7 @@ function renderEventRow(event) {
 
 **Behaviour:**
 - When a review item has a `duplicate_warning`, expanding the fold-down triggers `fetchAndRenderInlineDuplicate(eventUlid, candidateUlid)`, which calls `GET /api/v1/events/{ulid}` for the candidate event and renders a compact field-by-field diff.
-- **Merge** action calls `mergeDirect(sourceId, targetId)` — no modal, fires `POST /api/v1/admin/events/merge` immediately and reloads the queue on success.
+- **Merge** action calls `mergeDirect(sourceId, targetId)` — no modal, fires `POST /api/v1/admin/review-queue/{id}/merge` immediately and reloads the queue on success.
 - **Not a Duplicate** action dismisses the warning on _both_ the reviewed event and its companion via `dismissCompanionDuplicateWarning`, so neither card re-shows the warning after the decision.
 
 > **Known limitation (tracked as `srv-15rwp`):** The inline diff fetches via the public events API, which only returns published events. If the candidate is still in `pending_review` state the diff will silently fail to render. A follow-up will embed candidate data at ingest time to fix this.
@@ -449,9 +449,9 @@ const API = {
             method: 'DELETE'
         }),
         
-        merge: (sourceId, targetId) => API.request('/api/v1/admin/events/merge', {
+        merge: (reviewId, primaryEventUlid) => API.request(`/api/v1/admin/review-queue/${reviewId}/merge`, {
             method: 'POST',
-            body: JSON.stringify({ source_id: sourceId, target_id: targetId })
+            body: JSON.stringify({ primary_event_ulid: primaryEventUlid })
         }),
         
         pending: () => API.request('/api/v1/admin/events/pending')
