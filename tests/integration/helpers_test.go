@@ -131,7 +131,13 @@ func initShared(t *testing.T) {
 			return
 		}
 
-		pool, err := pgxpool.New(ctx, dbURL)
+		poolCfg, err := pgxpool.ParseConfig(dbURL)
+		if err != nil {
+			sharedInitErr = err
+			return
+		}
+		poolCfg.MaxConns = 10 // Explicit limit; default is max(4, NumCPU) which starves CI (2 vCPU).
+		pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 		if err != nil {
 			sharedInitErr = err
 			return
@@ -245,6 +251,9 @@ func testConfig(dbURL string) config.Config {
 		},
 		Validation: config.ValidationConfig{
 			AllowTestDomains: true,
+		},
+		Developer: config.DeveloperConfig{
+			UsageFlushTimeoutSeconds: 2, // Short timeout so CI doesn't hang if pool is busy.
 		},
 		Environment:     "test",
 		DefaultTimezone: "America/Toronto",
