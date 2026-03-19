@@ -28,6 +28,14 @@ const testUserKey contextKey = "user"
 // MockRepository is a mock implementation of events.Repository
 type MockRepository struct {
 	mock.Mock
+
+	// Per-test function overrides for occurrence methods (nil = use hardcoded stub behaviour).
+	InsertOccurrenceFn           func(ctx context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error)
+	GetOccurrenceByIDFn          func(ctx context.Context, eventID string, occurrenceID string) (*events.Occurrence, error)
+	UpdateOccurrenceFn           func(ctx context.Context, eventID string, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error)
+	DeleteOccurrenceByIDFn       func(ctx context.Context, eventID string, occurrenceID string) error
+	CountOccurrencesFn           func(ctx context.Context, eventID string) (int64, error)
+	CheckOccurrenceOverlapExclFn func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeID string) (bool, error)
 }
 
 func (m *MockRepository) List(ctx context.Context, filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
@@ -346,27 +354,45 @@ func (m *MockRepository) LockEventForUpdate(ctx context.Context, eventID string)
 }
 
 func (m *MockRepository) InsertOccurrence(ctx context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error) {
-	return nil, errors.New("not implemented")
+	if m.InsertOccurrenceFn != nil {
+		return m.InsertOccurrenceFn(ctx, params)
+	}
+	return nil, errors.New("InsertOccurrence: not implemented")
 }
 
 func (m *MockRepository) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*events.Occurrence, error) {
+	if m.GetOccurrenceByIDFn != nil {
+		return m.GetOccurrenceByIDFn(ctx, eventID, occurrenceID)
+	}
 	return nil, events.ErrNotFound
 }
 
 func (m *MockRepository) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
-	return nil, errors.New("not implemented")
+	if m.UpdateOccurrenceFn != nil {
+		return m.UpdateOccurrenceFn(ctx, eventID, occurrenceID, params)
+	}
+	return nil, errors.New("UpdateOccurrence: not implemented")
 }
 
 func (m *MockRepository) DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error {
-	return errors.New("not implemented")
+	if m.DeleteOccurrenceByIDFn != nil {
+		return m.DeleteOccurrenceByIDFn(ctx, eventID, occurrenceID)
+	}
+	return errors.New("DeleteOccurrenceByID: not implemented")
 }
 
 func (m *MockRepository) CountOccurrences(ctx context.Context, eventID string) (int64, error) {
-	return 0, errors.New("not implemented")
+	if m.CountOccurrencesFn != nil {
+		return m.CountOccurrencesFn(ctx, eventID)
+	}
+	return 0, errors.New("CountOccurrences: not implemented")
 }
 
 func (m *MockRepository) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
-	return false, errors.New("not implemented")
+	if m.CheckOccurrenceOverlapExclFn != nil {
+		return m.CheckOccurrenceOverlapExclFn(ctx, eventID, startTime, endTime, excludeOccurrenceID)
+	}
+	return false, errors.New("CheckOccurrenceOverlapExcluding: not implemented")
 }
 
 func (m *MockRepository) DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error) {

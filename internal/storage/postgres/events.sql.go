@@ -488,7 +488,8 @@ INSERT INTO event_occurrences (
     NULLIF($12, '')
 )
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at,
+          COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid
 `
 
 type InsertOccurrenceParams struct {
@@ -522,6 +523,7 @@ type InsertOccurrenceRow struct {
 	Availability  pgtype.Text        `json:"availability"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	VenueUlid     string             `json:"venue_ulid"`
 }
 
 // Insert a single occurrence and return the created row (including generated UUID).
@@ -557,6 +559,7 @@ func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrencePara
 		&i.Availability,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VenueUlid,
 	)
 	return i, err
 }
@@ -735,7 +738,8 @@ UPDATE event_occurrences
  WHERE id = $19::uuid
    AND event_id = $20::uuid
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at,
+          COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid
 `
 
 type UpdateOccurrenceByIDParams struct {
@@ -777,6 +781,7 @@ type UpdateOccurrenceByIDRow struct {
 	Availability  pgtype.Text        `json:"availability"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	VenueUlid     string             `json:"venue_ulid"`
 }
 
 // Partial-update a single occurrence row, scoped to the given event.
@@ -822,6 +827,7 @@ func (q *Queries) UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrence
 		&i.Availability,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VenueUlid,
 	)
 	return i, err
 }

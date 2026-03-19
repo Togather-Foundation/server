@@ -2890,7 +2890,7 @@ func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.Oc
 		row.StartTime, row.EndTime,
 		row.Timezone,
 		row.DoorTime,
-		row.VenueID, pgtype.Text{}, // no venue ULID from INSERT — use GetOccurrenceByID if needed
+		row.VenueID, pgtype.Text{String: row.VenueUlid, Valid: row.VenueUlid != ""},
 		row.VirtualUrl, row.TicketUrl,
 		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
 	), nil
@@ -3001,7 +3001,7 @@ func (r *EventRepository) UpdateOccurrence(ctx context.Context, eventID string, 
 		row.StartTime, row.EndTime,
 		row.Timezone,
 		row.DoorTime,
-		row.VenueID, pgtype.Text{}, // venue ULID not available from UPDATE; caller may re-fetch if needed
+		row.VenueID, pgtype.Text{String: row.VenueUlid, Valid: row.VenueUlid != ""},
 		row.VirtualUrl, row.TicketUrl,
 		row.PriceMin, row.PriceMax, row.PriceCurrency, row.Availability,
 	), nil

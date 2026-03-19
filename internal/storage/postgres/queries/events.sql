@@ -215,7 +215,8 @@ INSERT INTO event_occurrences (
     NULLIF(sqlc.arg('availability'), '')
 )
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at;
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at,
+          COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid;
 
 -- name: GetOccurrenceByID :one
 -- Fetch a single occurrence row by its UUID, scoped to the given event.
@@ -260,7 +261,8 @@ UPDATE event_occurrences
  WHERE id = sqlc.arg('id')::uuid
    AND event_id = sqlc.arg('event_id')::uuid
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at;
+          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at,
+          COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid;
 
 -- name: DeleteOccurrenceByID :one
 -- Delete a single occurrence by its UUID, scoped to the given event. Returns the deleted ID
