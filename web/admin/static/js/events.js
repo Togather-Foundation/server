@@ -20,6 +20,7 @@
     
     function init() {
         setupEventListeners();
+        setupConsolidateListeners();
         loadEvents();
     }
     
@@ -406,5 +407,278 @@
         };
         return colors[normalized] || 'secondary';
     }
+
     
+    /**
+     * Setup consolidate modal event listeners
+     */
+    function setupConsolidateListeners() {
+        const consolidateBtn = document.getElementById('consolidate-btn');
+        if (consolidateBtn) {
+            consolidateBtn.addEventListener('click', showConsolidateModal);
+        }
+        
+        const confirmConsolidateBtn = document.getElementById('confirm-consolidate-btn');
+        if (confirmConsolidateBtn) {
+            confirmConsolidateBtn.addEventListener('click', submitConsolidate);
+        }
+        
+        // Event ULID lookup with debounce
+        const eventUlidInput = document.getElementById('consolidate-event-ulid');
+        if (eventUlidInput) {
+            eventUlidInput.addEventListener('input', debounce((e) => {
+                const ulid = e.target.value.trim().toUpperCase();
+                if (ulid && /^[A-Z0-9]{26}$/.test(ulid)) {
+                    lookupExistingEvent(ulid);
+                } else {
+                    hideEventPreview();
+                }
+            }, 500));
+        }
+        
+        // Retire list parsing
+        const retireListInput = document.getElementById('consolidate-retire-list');
+        if (retireListInput) {
+            retireListInput.addEventListener('input', (e) => {
+                parseRetireList(e.target.value);
+            });
+        }
+    }
+    
+    /**
+     * Show consolidate modal
+     */
+    function showConsolidateModal() {
+        // Reset form
+        document.getElementById('consolidate-event-name').value = '';
+        document.getElementById('consolidate-event-start-date').value = '';
+        document.getElementById('consolidate-event-end-date').value = '';
+        document.getElementById('consolidate-event-description').value = '';
+        document.getElementById('consolidate-event-ulid').value = '';
+        document.getElementById('consolidate-retire-list').value = '';
+        
+        // Clear errors
+        clearConsolidateErrors();
+        hideEventPreview();
+        updateRetireCount(0);
+        
+        const modal = document.getElementById('consolidate-modal');
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    }
+    
+    /**
+     * Lookup existing event by ULID and display preview
+     * @param {string} ulid - Event ULID
+     */
+    async function lookupExistingEvent(ulid) {
+        const preview = document.getElementById('consolidate-event-preview');
+        const errorDiv = document.getElementById('consolidate-event-ulid-error');
+        
+        try {
+            const event = await API.events.get(ulid);
+            if (event) {
+                const startDate = event.start_date 
+                    ? formatDate(event.start_date, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : 'No date';
+                
+                document.getElementById('consolidate-preview-name').textContent = event.name || 'Untitled Event';
+                document.getElementById('consolidate-preview-date').textContent = startDate;
+                preview.style.display = 'block';
+                errorDiv.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Failed to lookup event:', error);
+            errorDiv.textContent = `Event not found: ${error.message}`;
+            errorDiv.style.display = 'block';
+            hideEventPreview();
+        }
+    }
+    
+    /**
+     * Hide event preview card
+     */
+    function hideEventPreview() {
+        document.getElementById('consolidate-event-preview').style.display = 'none';
+        document.getElementById('consolidate-event-ulid-error').style.display = 'none';
+    }
+    
+    /**
+     * Parse and validate retire list
+     * @param {string} text - Comma-separated ULIDs
+     */
+    function parseRetireList(text) {
+        const ulids = text
+            .split(',')
+            .map(u => u.trim().toUpperCase())
+            .filter(u => u.length > 0);
+        
+        // Validate ULIDs
+        const validUlids = [];
+        const invalidUlids = [];
+        
+        ulids.forEach(ulid => {
+            if (/^[A-Z0-9]{26}$/.test(ulid)) {
+                validUlids.push(ulid);
+            } else {
+                invalidUlids.push(ulid);
+            }
+        });
+        
+        updateRetireCount(validUlids.length);
+        
+        // Show error if there are invalid ULIDs
+        const errorDiv = document.getElementById('consolidate-retire-list-error');
+        if (invalidUlids.length > 0) {
+            errorDiv.textContent = `Invalid ULIDs: ${invalidUlids.join(', ')}`;
+            errorDiv.style.display = 'block';
+        } else {
+            errorDiv.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Update retire count display
+     * @param {number} count - Number of valid ULIDs
+     */
+    function updateRetireCount(count) {
+        document.getElementById('consolidate-retire-count').textContent = count;
+    }
+    
+    /**
+     * Clear all consolidate form errors
+     */
+    function clearConsolidateErrors() {
+        document.getElementById('consolidate-event-name-error').style.display = 'none';
+        document.getElementById('consolidate-event-start-date-error').style.display = 'none';
+        document.getElementById('consolidate-retire-list-error').style.display = 'none';
+        document.getElementById('consolidate-event-ulid-error').style.display = 'none';
+    }
+    
+    /**
+     * Validate and submit consolidate form
+     */
+    async function submitConsolidate() {
+        clearConsolidateErrors();
+        
+        // Determine which tab is active
+        const createTab = document.getElementById('consolidate-create-tab');
+        const selectTab = document.getElementById('consolidate-select-tab');
+        const createTabLink = document.querySelector('a[href="#consolidate-create-tab"]');
+        const useCreateTab = createTabLink.classList.contains('active');
+        
+        let newEvent = null;
+        let existingUlid = null;
+        let retireUlids = [];
+        let hasErrors = false;
+        
+        // Parse retire list
+        const retireListText = document.getElementById('consolidate-retire-list').value.trim();
+        if (!retireListText) {
+            document.getElementById('consolidate-retire-list-error').textContent = 'At least one event ULID is required';
+            document.getElementById('consolidate-retire-list-error').style.display = 'block';
+            hasErrors = true;
+        } else {
+            retireUlids = retireListText
+                .split(',')
+                .map(u => u.trim().toUpperCase())
+                .filter(u => /^[A-Z0-9]{26}$/.test(u));
+            
+            if (retireUlids.length === 0) {
+                document.getElementById('consolidate-retire-list-error').textContent = 'No valid ULIDs found';
+                document.getElementById('consolidate-retire-list-error').style.display = 'block';
+                hasErrors = true;
+            }
+        }
+        
+        // Validate based on active tab
+        if (useCreateTab) {
+            const name = document.getElementById('consolidate-event-name').value.trim();
+            const startDate = document.getElementById('consolidate-event-start-date').value;
+            
+            if (!name) {
+                document.getElementById('consolidate-event-name-error').textContent = 'Event name is required';
+                document.getElementById('consolidate-event-name-error').style.display = 'block';
+                hasErrors = true;
+            }
+            
+            if (!startDate) {
+                document.getElementById('consolidate-event-start-date-error').textContent = 'Start date is required';
+                document.getElementById('consolidate-event-start-date-error').style.display = 'block';
+                hasErrors = true;
+            }
+            
+            if (name && startDate) {
+                newEvent = {
+                    name: name,
+                    startDate: new Date(startDate).toISOString(),
+                    endDate: document.getElementById('consolidate-event-end-date').value 
+                        ? new Date(document.getElementById('consolidate-event-end-date').value).toISOString()
+                        : null,
+                    description: document.getElementById('consolidate-event-description').value.trim() || null
+                };
+            }
+        } else {
+            const ulid = document.getElementById('consolidate-event-ulid').value.trim().toUpperCase();
+            
+            if (!ulid) {
+                document.getElementById('consolidate-event-ulid-error').textContent = 'Event ULID is required';
+                document.getElementById('consolidate-event-ulid-error').style.display = 'block';
+                hasErrors = true;
+            } else if (!/^[A-Z0-9]{26}$/.test(ulid)) {
+                document.getElementById('consolidate-event-ulid-error').textContent = 'Invalid ULID format';
+                document.getElementById('consolidate-event-ulid-error').style.display = 'block';
+                hasErrors = true;
+            } else if (retireUlids.includes(ulid)) {
+                document.getElementById('consolidate-event-ulid-error').textContent = 'Canonical event cannot be in the retire list';
+                document.getElementById('consolidate-event-ulid-error').style.display = 'block';
+                hasErrors = true;
+            } else {
+                existingUlid = ulid;
+            }
+        }
+        
+        if (hasErrors) {
+            return;
+        }
+        
+        // Submit consolidate request
+        const confirmBtn = document.getElementById('confirm-consolidate-btn');
+        setLoading(confirmBtn, true);
+        
+        try {
+            const result = await API.events.consolidate(newEvent, existingUlid, retireUlids);
+            
+            // Close modal
+            const modal = document.getElementById('consolidate-modal');
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            if (bsModal) {
+                bsModal.hide();
+            }
+            
+            // Show success message with details
+            let successMsg = 'Events consolidated successfully!';
+            if (result.warnings && result.warnings.length > 0) {
+                const warningMsgs = result.warnings.map(w => w.message).join(', ');
+                successMsg += ` Warnings: ${warningMsgs}`;
+            }
+            if (result.is_duplicate) {
+                successMsg += ' [Marked as duplicate]';
+            }
+            if (result.needs_review) {
+                successMsg += ' [Sent to review queue]';
+            }
+            
+            showToast(successMsg, 'success');
+            
+            // Reload events list
+            loadEvents();
+        } catch (error) {
+            console.error('Failed to consolidate events:', error);
+            showToast(error.message || 'Failed to consolidate events', 'error');
+        } finally {
+            setLoading(confirmBtn, false);
+        }
+    }
+
 })();
