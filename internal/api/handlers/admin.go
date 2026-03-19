@@ -1775,6 +1775,21 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Validate ULID formats before calling the service — malformed ULIDs would
+	// otherwise result in ErrNotFound from the DB rather than a clear 400.
+	if req.EventULID != "" {
+		if err := ids.ValidateULID(req.EventULID); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid event_ulid", err, h.Env)
+			return
+		}
+	}
+	for _, u := range req.Retire {
+		if err := ids.ValidateULID(u); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid ULID in retire list", err, h.Env)
+			return
+		}
+	}
+
 	params := events.ConsolidateParams{
 		Event:     req.Event,
 		EventULID: req.EventULID,

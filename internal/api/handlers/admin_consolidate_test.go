@@ -259,3 +259,47 @@ func TestConsolidate_404_RetireTargetNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code, "expected 404")
 	repo.AssertExpectations(t)
 }
+
+// ---------------------------------------------------------------------------
+// 400 – malformed event_ulid
+// ---------------------------------------------------------------------------
+
+func TestConsolidate_400_MalformedEventULID(t *testing.T) {
+	repo := new(MockRepository)
+	h := newTestAdminHandler(repo)
+
+	body := consolidateBody(t, map[string]any{
+		"event_ulid": "not-a-ulid",
+		"retire":     []string{"01HTEST0000000000000000002"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events/consolidate", body)
+	req = withAdminUser(req, "admin@example.com")
+	rec := httptest.NewRecorder()
+
+	h.ConsolidateEvents(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "expected 400 for malformed event_ulid")
+	repo.AssertExpectations(t) // no repo calls expected
+}
+
+// ---------------------------------------------------------------------------
+// 400 – malformed ULID in retire list
+// ---------------------------------------------------------------------------
+
+func TestConsolidate_400_MalformedRetireULID(t *testing.T) {
+	repo := new(MockRepository)
+	h := newTestAdminHandler(repo)
+
+	body := consolidateBody(t, map[string]any{
+		"event_ulid": "01HTEST0000000000000000001",
+		"retire":     []string{"01HTEST0000000000000000002", "not-a-ulid"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events/consolidate", body)
+	req = withAdminUser(req, "admin@example.com")
+	rec := httptest.NewRecorder()
+
+	h.ConsolidateEvents(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "expected 400 for malformed retire ULID")
+	repo.AssertExpectations(t) // no repo calls expected
+}
