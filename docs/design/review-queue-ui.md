@@ -1,220 +1,244 @@
-# Review Queue UI
+# Review Queue UI Design
 
-Admin UI for the event review queue. Admins can review events with data quality issues, compare original vs normalized data, and approve/reject/fix events.
+Admin UI for resolving events flagged for review. The review queue is the **primary admin workspace** — everything an admin needs to resolve a review entry must be accessible inline, without navigating away.
 
-**Architecture doc:** `docs/architecture/event-review-workflow.md`
+**Architecture doc:** `docs/architecture/event-review-workflow.md`  
+**Regression test plan:** `docs/testing/review-regression-test-plan.md` — the RS-01 through RS-12 scenarios are the definitive set of cases this UI must handle.
 
-## API Reference
+---
 
-All endpoints in `internal/api/handlers/admin_review_queue.go`. All wrapped with `jwtAuth(adminRateLimit(middleware.AdminRequestSize(...)))`.
+## Design Principles
 
-### GET /api/v1/admin/review-queue
+1. **No navigation required.** Clicking a review row unfolds it. All resolution actions happen inside the fold-down. Links to external sources are provided so admins can verify, but they do not need to leave the page.
+2. **Show occurrences.** The existing occurrence list of the event under review — and any related events — must be shown. An admin cannot make a good dedup decision without knowing whether Event A already has 4 weekly dates and Event B is week 5.
+3. **Show related events.** When a review entry has a duplicate-type warning, the related event(s) are fetched and shown side by side with field diffs highlighted.
+4. **One action set, all warning types.** The UI offers the full set of resolution actions for every review entry. Availability of specific actions is gated by the backend (it returns 422 with a clear reason when an action is not applicable); the UI does not hide buttons based on warning codes, except where the backend has already rejected a path as ambiguous.
+5. **All mutations go through the consolidate API.** `POST /api/v1/admin/events/consolidate` is the single path for Add as Occurrence and Merge Duplicate. The old `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` endpoints are deprecated and must not be called from new UI code.
 
-List review queue entries with cursor pagination.
-
-**Query params:** `status` (default "pending"), `limit` (1-100, default 50), `cursor` (int)
-
-**Response:**
-```json
-{
-  "items": [{
-    "id": 1,
-    "eventId": "01ABCDEF...",
-    "eventName": "Late Night Jazz",
-    "eventStartTime": "2026-03-31T23:00:00Z",
-    "eventEndTime": "2026-04-01T02:00:00Z",
-    "warnings": [{"field": "endDate", "message": "...", "code": "reversed_dates_timezone_likely"}],
-    "status": "pending",
-    "createdAt": "2026-02-07T14:00:00Z",
-    "reviewedBy": null,
-    "reviewedAt": null
-  }],
-  "next_cursor": "42"
-}
-```
-
-### GET /api/v1/admin/review-queue/{id}
-
-Detail view with original vs corrected data.
-
-**Response:**
-```json
-{
-  "id": 1,
-  "eventId": "01ABCDEF...",
-  "status": "pending",
-  "warnings": [{"field": "endDate", "message": "...", "code": "reversed_dates_timezone_likely"}],
-  "original": {"name": "...", "startDate": "...", "endDate": "...", "location": {}},
-  "normalized": {"name": "...", "startDate": "...", "endDate": "...", "location": {}},
-  "changes": [{"field": "endDate", "original": "2026-03-31T02:00:00Z", "corrected": "2026-04-01T02:00:00Z", "reason": "Added 24 hours to fix reversed dates"}],
-  "createdAt": "...",
-  "reviewedBy": null,
-  "reviewedAt": null,
-  "reviewNotes": null,
-  "rejectionReason": null
-}
-```
-
-### POST /api/v1/admin/review-queue/{id}/approve
-
-**Request:** `{"notes": "optional"}`  
-**Response:** Full review detail object.
-
-### POST /api/v1/admin/review-queue/{id}/reject
-
-**Request:** `{"reason": "required"}`  
-**Response:** Full review detail object.
-
-### POST /api/v1/admin/review-queue/{id}/fix
-
-**Request:** `{"corrections": {"startDate": "...", "endDate": "..."}, "notes": "optional"}`  
-**Response:** Full review detail object.
-
-## Warning Codes
-
-| Code | Confidence | Badge Color | Description |
-|------|-----------|-------------|-------------|
-| `reversed_dates_timezone_likely` | High | `bg-success` (green) | End 0-4 AM, duration < 7h. Likely overnight timezone error. |
-| `reversed_dates_corrected_needs_review` | Low | `bg-warning` (yellow) | Reversed dates but doesn't match high-confidence pattern. |
+---
 
 ## Page Layout
 
-Single-page design: list view with inline detail expansion. No separate detail page. Route: `/admin/review-queue`.
+Route: `/admin/review-queue`
 
 ```
 +------------------------------------------------------------------+
-| [Dashboard] [Events] [Users] [Duplicates] [Review] [API Keys]    |
+| [Pending (18)] [Approved] [Rejected] [Merged]                    |
 +------------------------------------------------------------------+
-| Review Queue                                                      |
-|                                                                   |
-| [Pending (3)] [Approved] [Rejected] [Merged]  [status filter tabs] |
-+------------------------------------------------------------------+
-| Event Name       | Start Time      | Warning    | Created | Act. |
-|------------------|-----------------|------------|---------|------|
-| Late Night Jazz  | Mar 31, 11 PM   | High Conf. | 2h ago  | ...  |
-|   [Expanded detail card when clicked]                            |
-|   +----------------------------------------------------------+   |
-|   | Original               | Corrected                       |   |
-|   | endDate: Mar 31 02:00  | endDate: Apr 1 02:00 (green)    |   |
-|   | Warning: timezone_likely - End at 02:00, duration 3h      |   |
-|   | [Approve] [Fix Dates...] [Reject...]                      |   |
-|   +----------------------------------------------------------+   |
-| Open Mic Night   | Apr 2, 10 PM    | Low Conf.  | 1d ago  | ...  |
-+------------------------------------------------------------------+
-| Showing 3 items                              [< Prev] [Next >]   |
+| EVENT NAME              | START TIME   | WARNING        | CREATED |
+|-------------------------|--------------|----------------|---------|
+| Weekly Yoga Base Series | Apr 5, 10 AM | Multi-session  | 2h ago  |
+|  ▼ [fold-down — see below]                                       |
+| Book Club Tuesday Eve.  | Apr 8, 7 PM  | Possible Dup   | 3h ago  |
+| Jazz Night Late Show    | Apr 9, 11 PM | Reversed Dates | 1d ago  |
 +------------------------------------------------------------------+
 ```
 
-### Status Filter Tabs
+The list table, status tabs, and pagination are unchanged from the current implementation.
 
-Four Tabler nav-tabs: **Pending** (default, with count badge), **Approved**, **Rejected**, **Merged**.
+---
 
-The **Merged** tab shows entries resolved via either the "Merge Duplicate" or "Add as Occurrence" actions (both set `status = 'merged'` on the review queue entry).
+## Fold-Down: Single Event (data quality warnings only)
 
-### List Table Columns
-
-| Column | Content |
-|--------|---------|
-| Event Name | `eventName` with link to `/admin/events/{eventId}`, truncated at ~40 chars |
-| Start Time | `eventStartTime` formatted via `formatDate()` from components.js |
-| Warning | Warning code badge: green for high confidence, yellow for low |
-| Created | `createdAt` relative time, e.g., "2h ago" |
-| Actions | Expand chevron |
-
-### Inline Detail Card
-
-Expands below the clicked row:
-
-1. **Side-by-side comparison**: original (dates red if changed) vs normalized (dates green if changed)
-2. **Changes summary**: field name, original → corrected value, reason
-3. **Warning details**: full message
-4. **Actions**:
-   - **Approve** (`btn-success`): quick approve with optional notes textarea
-   - **Fix Dates** (`btn-primary`): inline datetime-local inputs, pre-filled
-   - **Reject** (`btn-outline-danger`): modal requiring reason text
-
-### Reject Modal
+For entries with no duplicate-type warning (e.g. `multi_session_likely`, `reversed_dates_timezone_likely`, `missing_description`).
 
 ```
-+----------------------------------+
-| Reject Event                     |
-+----------------------------------+
-| Reason (required):               |
-| [textarea                       ]|
-| [Cancel]            [Reject]     |
-+----------------------------------+
++------------------------------------------------------------------+
+| WARNING BANNER                                                    |
+|   ⚠ Multi-session likely: title contains "Weekly"               |
+|   ⚠ Missing description                                          |
++------------------------------------------------------------------+
+| EVENT INFORMATION                          [Edit] [Source ↗]    |
+|   Name:        Weekly Yoga Base Series                           |
+|   Date:        Saturdays Apr 5 – May 3, 2026                    |
+|   Venue:       High Park Forest School [maps ↗]                  |
+|   Organizer:   High Park Nature Centre                           |
+|   URL:         https://eventbrite.com/... [↗]                    |
+|   Description: —                                                 |
+|                                                                  |
+|   OCCURRENCES (4)                                                |
+|   ┌─────────────────────────────────────────┐                   |
+|   │ Apr 5, 10:00 AM – 11:30 AM              │                   |
+|   │ Apr 12, 10:00 AM – 11:30 AM             │                   |
+|   │ Apr 19, 10:00 AM – 11:30 AM             │                   |
+|   │ Apr 26, 10:00 AM – 11:30 AM             │                   |
+|   └─────────────────────────────────────────┘                   |
++------------------------------------------------------------------+
+| NORMALIZED CHANGES (if any)                                      |
+|   endDate: Mar 31 02:00 → Apr 1 02:00 (timezone correction)     |
++------------------------------------------------------------------+
+| ACTIONS                                                          |
+|   [✓ Approve]  [✎ Edit & Approve]  [✕ Reject]                  |
++------------------------------------------------------------------+
 ```
 
-### Fix Dates Form
+**Edit & Approve** opens an inline form (within the fold-down) pre-populated from the normalized payload, allowing the admin to correct any fields before approving. Submits via `PUT /api/v1/admin/events/{ulid}` then `POST /review-queue/{id}/approve`.
+
+---
+
+## Fold-Down: Event with Related Events (duplicate-type warnings)
+
+For entries with `potential_duplicate`, `near_duplicate_of_new_event`, `place_possible_duplicate`, or `org_possible_duplicate` warnings. The related event(s) are fetched via `GET /api/v1/events/{ulid}` (public endpoint) when the fold-down is expanded.
 
 ```
-+-------------------------------------------------------+
-| Correct Dates                                          |
-| Start: [datetime-local input, pre-filled]             |
-| End:   [datetime-local input, pre-filled]             |
-| Notes: [textarea, optional]                           |
-| [Cancel] [Apply Fix]                                  |
-+-------------------------------------------------------+
++------------------------------------------------------------------+
+| WARNING BANNER                                                    |
+|   ⚠ Possible duplicate: found 1 similar event at same venue/date |
+|   Near-duplicate of: [01KKJGG3... ↗]                            |
++------------------------------------------------------------------+
+| THIS EVENT                    | RELATED EVENT                    |
+| Book Club Tuesday Evening     | Book Club Tuesday Night          |
+| Apr 8, 7:00 PM – 9:00 PM     | Apr 8, 7:00 PM – 9:00 PM        |
+| ══════ DIFF: name ════════    | ══════ DIFF: name ════════       |
+| Venue: Bento Sushi ✓ same    | Venue: Bento Sushi ✓ same       |
+| Org:   Meetup                 | Org:   BlogTO                    |
+| URL:   meetup.com/... [↗]    | URL:   blogto.com/... [↗]        |
+| Desc:  Join us for our ...   | Desc:  —                         |
+|                               |                                  |
+| OCCURRENCES (2)               | OCCURRENCES (1)                  |
+| Apr 8,  7:00 PM – 9:00 PM   | Apr 8,  7:00 PM – 9:00 PM       |
+| Apr 15, 7:00 PM – 9:00 PM   |                                  |
++------------------------------------------------------------------+
+| RESOLUTION                                                       |
+|                                                                  |
+| Which event is canonical?                                        |
+|   (●) This event  ( ) Related event                             |
+|                                                                  |
+| Action:                                                          |
+|   [⊕ Add as Occurrence]  — absorb related into this event       |
+|   [⊗ Merge Duplicate]    — retire related, keep this as-is      |
+|   [≠ Not a Duplicate]    — approve both as separate events       |
+|   [✕ Reject This Event]  — delete this event                    |
++------------------------------------------------------------------+
 ```
 
-## CSS
+**Canonical selection radio** controls which ULID goes into `event_ulid` in the consolidate request and which goes into `retire`. The label updates dynamically ("absorb related into **this event**" / "absorb **this event** into related").
 
-No new CSS file needed. Tabler classes used:
-
-- **Diff highlighting**: `.bg-success-lt` (corrected values), `.bg-danger-lt` (original changed values)
-- **Warning badges**: `.badge.bg-success` (high confidence), `.badge.bg-warning` (low confidence)
-- **Status badges**: `.badge.bg-warning` (pending), `.badge.bg-success` (approved), `.badge.bg-danger` (rejected)
-- **Detail card**: `.card` with `.card-body` inside an expanded `<tr>` with full colspan
-- **Comparison columns**: `.row > .col-md-6` for side-by-side on desktop, stacked on mobile
-
-## Implementation Notes
-
-- All click handlers use `data-action` attributes (CSP compliance)
-- Template files are auto-discovered via Go's `embed.FS` in `web/embed.go`
-- The `_footer.html` template already loads `bootstrap.bundle.min.js`, `tabler.min.js`, `api.js`, and `components.js`
-- The `reviewQueue` API namespace in `api.js` exposes `list`, `get`, `approve`, `reject`, `fix`, `merge`, `addOccurrence`
-
-## Add as Occurrence button (srv-izykp)
-
-When a review entry has a `potential_duplicate` or `near_duplicate_of_new_event` warning and the events are actually different occurrences of the same recurring series (same name/venue, different date/time), an admin can use the **Add as Occurrence** button to:
-
-1. Add the review event's date/time as a new occurrence on the target (duplicate) recurring-series event.
-2. Soft-delete the review's own event (tombstone reason: `absorbed_as_occurrence`).
-3. Mark the review as merged — all atomically.
-
-**Target lifecycle recompute:** After each add-occurrence, the surviving target event's lifecycle is re-evaluated inside the transaction. If no other pending reviews remain on the target, it transitions to `published`. If other pending reviews still exist (e.g. a second near-dup cluster), the target stays `pending_review` until all are resolved. This means repeated add-occurrence calls can consolidate an arbitrarily-large near-dup cluster into a single event regardless of operation order.
-
-**Button visibility**: "Add as Occurrence" is shown for `potential_duplicate` warnings (alongside "Merge Duplicate") and also for `near_duplicate_of_new_event` warnings (without "Merge Duplicate" — the near-dup path has no merge-duplicate button, only add-occurrence). Not shown for place/org duplicate warnings. **Hidden** when the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously — the backend will reject such requests with 422 (`ambiguous-occurrence-dispatch`). Reviews with no supported duplicate warning (e.g. only data-quality warnings) are also rejected with 422 (`unsupported-review-for-occurrence`).
-
-**Near-dup path**: for `near_duplicate_of_new_event` entries the button uses inverted semantics — the existing series (`review.EventULID`) is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is absorbed. No `target_event_ulid` is sent in the request body; the backend derives the target directly from the review entry.
-
-**Forward path**: for `potential_duplicate` entries the button sends `target_event_ulid` from the warning match details.
-
-**Overlap guard**: the backend rejects with HTTP 409 if the new occurrence would overlap an existing occurrence on the target event.
-
-**Source event constraints**: the backend rejects with HTTP 422 if:
-- The source event has **zero occurrences** (`zero-occurrence-source`) — show message: "Source event has no occurrence data; resolve it before using Add as Occurrence."
-- The source event has **multiple occurrences** (`ambiguous-occurrence-source`) — show message: "Source event has multiple occurrences; resolve or split it before using Add as Occurrence."
-- The review entry has **both warning types** (`ambiguous-occurrence-dispatch`) — show message: "This review has conflicting warnings; resolve one warning before using Add as Occurrence."
-- The review entry has **no supported duplicate warning** (`unsupported-review-for-occurrence`) — the add-occurrence operation requires either a `potential_duplicate` or `near_duplicate_of_new_event` warning; reviews with only data-quality warnings (e.g. `reversed_dates_*`) are not eligible.
-
-**Data flow (forward path)**:
-- Button: `data-action="add-occurrence" data-id="{id}" data-target-event-ulid="{duplicateEventUlid}"`
-- JS: `addOccurrenceDirect(id, targetUlid, false)` → `API.reviewQueue.addOccurrence(id, targetUlid)`
-- Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with body `{ target_event_ulid: "..." }`
-
-**Data flow (near-dup path)**:
-- Button: `data-action="add-occurrence" data-id="{id}" data-near-dup-path="true"`
-- JS: reads `dataset.nearDupPath === 'true'` → calls `addOccurrenceDirect(id, null, true)` → `API.reviewQueue.addOccurrence(id, null)`
-- `addOccurrence(id, null)` sends an empty body `{}`; the backend derives the target from the review entry
-- Endpoint: `POST /api/v1/admin/review-queue/{id}/add-occurrence` with empty body `{}`
-
-## Testing
-
-```bash
-AGENT=1 make build
-# Start dev server, verify /admin/review-queue renders
-make e2e
+**Add as Occurrence** — calls `POST /api/v1/admin/events/consolidate` with:
+```json
+{ "event_ulid": "<canonical-ulid>", "retire": ["<other-ulid>"] }
 ```
+The consolidate API atomically: retires the non-canonical event (tombstone), adds its occurrence to the canonical, dismisses both companion review entries. On 409 (overlap conflict) the UI shows the conflicting occurrence times and suggests the admin either choose "Merge Duplicate" instead or manually fix the occurrence after approving.
 
-Verify: no console errors, no CSP violations, empty state displays, approve/reject/fix flows work if queue has entries.
+**Merge Duplicate** — same consolidate call. Semantically: the two events represent the same real-world event listed twice (not the same series on different dates). The canonical keeps its data; the retired event's data is only used for gap-filling. On 409 this action is not affected (no occurrence movement).
+
+**Not a Duplicate** — calls `POST /api/v1/admin/review-queue/{id}/approve` with `{ "record_not_duplicates": true }`. Both events are published. A `not_duplicates` record is created to suppress future false positives.
+
+**Reject This Event** — calls `POST /api/v1/admin/review-queue/{id}/reject` with a required reason. Opens an inline reason textarea before confirming.
+
+---
+
+## Key Behaviour Details
+
+### Occurrences are always shown
+
+The fold-down fetches the live event via `GET /api/v1/events/{ulid}` (public endpoint) when expanded. The `subEvent` array contains all occurrences. These are rendered in a compact list (date, start time – end time, venue name if different from the primary). This is the authoritative source — not the `normalized` payload, which is a snapshot from ingest time.
+
+For related events, the same fetch is performed for each related event ULID found in the warning `details.matches` array.
+
+### Canonical selection for multi-event scenarios
+
+The canonical radio applies to all duplicate-resolution actions. Default: "This event" (the one whose review row was expanded). If the admin selects "Related event" as canonical:
+- Add as Occurrence: this event's occurrence is absorbed into the related event
+- Merge Duplicate: this event is retired, related event survives
+
+### multi_session_likely with a companion event
+
+RS-01 scenario: two events with `multi_session_likely`, no `potential_duplicate`. The admin can see both in the queue. When expanded, each fold-down shows only the single-event layout (no related event panel, since no near-dup warning links them). The admin's path:
+- Approve both as separate events if they are genuinely different
+- OR: use the companion's ULID manually via the standalone `/admin/events/consolidate` page to combine them
+
+This is an acceptable limitation. The standalone consolidate page exists precisely for cases not driven by the review queue. When multi-session detection fires on two events that are actually the same recurring series, the admin navigates to `/admin/events/consolidate`, pastes both ULIDs, and consolidates from there.
+
+> **Future improvement:** if the `multi_session_likely` events share the same venue and similar name, surface a "possible companion" banner in the fold-down with a link pre-populating the consolidate page.
+
+### Overlap conflict (RS-05)
+
+When Add as Occurrence returns 409:
+- Show an inline error: "The occurrence at [time] conflicts with an existing occurrence on [canonical event name] at [conflicting time]."
+- Suggest: "Use Merge Duplicate instead (if this is the same session listed twice), or Reject this entry and manually adjust the occurrence times."
+- Do not close the fold-down; keep the resolution panel visible.
+
+### Multi-event clusters (RS-11)
+
+When a review entry's related event is itself paired with a third event (e.g. Pottery Studio same-day cluster), the UI shows only the directly linked pair — it does not recurse into secondary links. The admin resolves pairs one at a time, which is sufficient. The consolidate API handles N-to-1 retirement if needed via the standalone page.
+
+---
+
+## API Usage Summary
+
+| Action | API Call |
+|--------|----------|
+| Load review queue list | `GET /api/v1/admin/review-queue?status=pending` |
+| Expand fold-down (detail) | `GET /api/v1/admin/review-queue/{id}` |
+| Fetch live event data + occurrences | `GET /api/v1/events/{ulid}` (public) |
+| Fetch related event data + occurrences | `GET /api/v1/events/{ulid}` (public, per warning match ULID) |
+| **Add as Occurrence** | `POST /api/v1/admin/events/consolidate` |
+| **Merge Duplicate** | `POST /api/v1/admin/events/consolidate` |
+| Not a Duplicate (approve both) | `POST /api/v1/admin/review-queue/{id}/approve` with `record_not_duplicates: true` |
+| Approve (data quality only) | `POST /api/v1/admin/review-queue/{id}/approve` |
+| Edit & Approve | `PUT /api/v1/admin/events/{ulid}` → `POST /api/v1/admin/review-queue/{id}/approve` |
+| Reject | `POST /api/v1/admin/review-queue/{id}/reject` |
+
+**Deprecated — do not call from new UI code:**
+- `POST /api/v1/admin/review-queue/{id}/add-occurrence` — replaced by consolidate
+- `POST /api/v1/admin/review-queue/{id}/merge` — replaced by consolidate
+
+---
+
+## What Needs to Change in the Current Implementation
+
+### review-queue.js
+
+1. **Show occurrences** in the Event Information panel. After fetching `GET /api/v1/events/{ulid}`, render `event.subEvent` (or `event.occurrences`) as a compact list below the event fields.
+2. **Show related event panel** with its occurrences. Fetch the related event ULID from `warning.details.matches[0].ulid` or `review.duplicateOfEventUlid`.
+3. **Wire "Add as Occurrence" to consolidate API** (`API.events.consolidate`) instead of `API.reviewQueue.addOccurrence`. Build request from canonical radio selection.
+4. **Wire "Merge Duplicate" to consolidate API** instead of `API.reviewQueue.merge`. Same consolidate call, different label/intent.
+5. **Add canonical selection radio** above the action buttons when a related event is present.
+6. **Handle 409 overlap** from consolidate with an inline error message and suggested next steps.
+7. **Show "Add as Occurrence" for multi_session_likely** entries too — the backend will return 422 with `unsupported-review-for-occurrence` if the warning type doesn't support it, and the UI should surface that message. Don't suppress the button on the frontend based on warning code.
+8. **Remove** calls to deprecated endpoints `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge`.
+
+### api.js
+
+- Remove or deprecate `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` method references once review-queue.js is updated.
+
+### review_queue.html
+
+- No structural changes needed. The fold-down content is entirely JS-rendered.
+
+### Backend (admin_review_queue.go)
+
+- The `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` endpoints can remain for backward compatibility (CLI, scripts) but are deprecated for UI use.
+- No new backend work required for the fold-down redesign — all needed data is available via existing endpoints.
+
+---
+
+## What Stays Unchanged
+
+- List table columns, status tabs, pagination, filter behaviour
+- Approve (data quality only) flow
+- Reject flow  
+- Fix Dates flow (for `reversed_dates_*` warnings)
+- The standalone `/admin/events/consolidate` page — kept as a fallback for cases outside the review queue (e.g. events that published cleanly but later discovered to be duplicates)
+
+---
+
+## Warning Code Reference
+
+| Code | Type | Fold-down mode | Available actions |
+|------|------|----------------|-------------------|
+| `reversed_dates_timezone_likely` | data quality | single-event | Approve, Fix Dates, Reject |
+| `reversed_dates_corrected_needs_review` | data quality | single-event | Approve, Fix Dates, Reject |
+| `missing_description` | data quality | single-event | Approve, Edit & Approve, Reject |
+| `missing_image` | data quality | single-event | Approve, Edit & Approve, Reject |
+| `multi_session_likely` | data quality | single-event | Approve, Reject (Add as Occurrence shown but may 422) |
+| `low_confidence` | data quality | single-event | Approve, Edit & Approve, Reject |
+| `potential_duplicate` | duplicate | multi-event | Add as Occurrence, Merge Duplicate, Not a Duplicate, Reject |
+| `near_duplicate_of_new_event` | duplicate | multi-event | Add as Occurrence, Merge Duplicate, Not a Duplicate, Reject |
+| `place_possible_duplicate` | duplicate | multi-event | Not a Duplicate, Reject (Add/Merge not applicable for place dups) |
+| `org_possible_duplicate` | duplicate | multi-event | Not a Duplicate, Reject (Add/Merge not applicable for org dups) |
+
+---
+
+*Last updated: 2026-03-19. Supersedes the previous version of this file which predated the consolidate API.*
