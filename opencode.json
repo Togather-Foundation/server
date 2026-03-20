@@ -11,8 +11,26 @@
     "explore": {
       "description": "Fast agent specialized for exploring codebases",
       "mode": "subagent",
-      "model": "github-copilot/claude-haiku-4.5"
-
+      "model": "github-copilot/claude-haiku-4.5",
+      "permission": {
+        "edit": "deny",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "codesearch": "allow",
+        "bash": {
+          "*": "deny",
+          "ck *": "allow",
+          "grep *": "allow",
+          "rg *": "allow",
+          "git log *": "allow",
+          "git diff *": "allow",
+          "git show *": "allow",
+          "git blame *": "allow",
+          "wc *": "allow",
+          "file *": "allow",
+          "stat *": "allow"
+        }
+      }
     },
     "diagnose": {
       "description": "Senior diagnostic expert for hard problems",
