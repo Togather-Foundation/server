@@ -66,10 +66,34 @@ type reviewQueueItem struct {
 // Embeds reviewQueueBase for shared fields.
 type reviewQueueDetail struct {
 	reviewQueueBase
-	Original    map[string]any `json:"original"`
-	Normalized  map[string]any `json:"normalized"`
-	Changes     []changeDetail `json:"changes"`
-	ReviewNotes *string        `json:"reviewNotes,omitempty"`
+	Original      map[string]any       `json:"original"`
+	Normalized    map[string]any       `json:"normalized"`
+	Changes       []changeDetail       `json:"changes"`
+	ReviewNotes   *string              `json:"reviewNotes,omitempty"`
+	Occurrences   []occurrenceDetail   `json:"occurrences,omitempty"`
+	RelatedEvents []relatedEventDetail `json:"relatedEvents,omitempty"`
+}
+
+
+// occurrenceDetail represents an occurrence in the API response
+type occurrenceDetail struct {
+	ID            string     `json:"id"`
+	StartTime     time.Time  `json:"startTime"`
+	EndTime       *time.Time `json:"endTime,omitempty"`
+	Timezone      string     `json:"timezone"`
+	DoorTime      *time.Time `json:"doorTime,omitempty"`
+	VenueULID     *string    `json:"venueUlid,omitempty"`
+	VirtualURL    *string    `json:"virtualUrl,omitempty"`
+	TicketURL     string     `json:"ticketUrl,omitempty"`
+	PriceMin      *float64   `json:"priceMin,omitempty"`
+	PriceMax      *float64   `json:"priceMax,omitempty"`
+	PriceCurrency string     `json:"priceCurrency,omitempty"`
+	Availability  string     `json:"availability,omitempty"`
+}
+
+// relatedEventDetail represents a related event ULID in the API response
+type relatedEventDetail struct {
+	ULID string `json:"ulid"`
 }
 
 // changeDetail describes a specific change made during normalization
@@ -194,7 +218,7 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	}
 
 	// Build detailed response
-	detail, err := buildReviewQueueDetail(*review)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *review)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("build review queue detail for id=%d: %w", id, err), h.Env)
 		return
@@ -308,7 +332,7 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(*updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("approve review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -418,7 +442,7 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	h.recordNotDuplicatesFromWarnings(r.Context(), review, reviewedBy)
 
 	// Build response
-	detail, err := buildReviewQueueDetail(*updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("reject review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -541,7 +565,7 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(*updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("fix review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -652,7 +676,7 @@ func (h *AdminReviewQueueHandler) MergeReview(w http.ResponseWriter, r *http.Req
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(*updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("merge review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -803,7 +827,7 @@ func (h *AdminReviewQueueHandler) addOccurrenceForwardPath(w http.ResponseWriter
 		})
 	}
 
-	detail, err := buildReviewQueueDetail(*updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("add-occurrence review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -845,7 +869,7 @@ func (h *AdminReviewQueueHandler) addOccurrenceNearDupPath(w http.ResponseWriter
 		})
 	}
 
-	detail, err := buildReviewQueueDetail(*updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("add-occurrence near-dup review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -990,7 +1014,7 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 	return item, nil
 }
 
-func buildReviewQueueDetail(review events.ReviewQueueEntry) (reviewQueueDetail, error) {
+func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review events.ReviewQueueEntry) (reviewQueueDetail, error) {
 	// Parse warnings
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
@@ -1014,11 +1038,52 @@ func buildReviewQueueDetail(review events.ReviewQueueEntry) (reviewQueueDetail, 
 	// Calculate changes
 	changes := calculateChanges(original, normalized)
 
+	// Fetch live event to get occurrences
+	event, err := repo.GetByULID(ctx, review.EventULID)
+	if err != nil {
+		// Log but don't fail — occurrences are optional
+		slog.WarnContext(ctx, "buildReviewQueueDetail: failed to fetch event for occurrences",
+			slog.String("event_ulid", review.EventULID),
+			slog.String("error", err.Error()))
+		event = nil
+	}
+
+	// Extract and convert occurrences
+	var occurrences []occurrenceDetail
+	if event != nil && len(event.Occurrences) > 0 {
+		occurrences = make([]occurrenceDetail, len(event.Occurrences))
+		for i, occ := range event.Occurrences {
+			occurrences[i] = occurrenceDetail{
+				ID:            occ.ID,
+				StartTime:     occ.StartTime,
+				EndTime:       occ.EndTime,
+				Timezone:      occ.Timezone,
+				DoorTime:      occ.DoorTime,
+				VenueULID:     occ.VenueULID,
+				VirtualURL:    occ.VirtualURL,
+				TicketURL:     occ.TicketURL,
+				PriceMin:      occ.PriceMin,
+				PriceMax:      occ.PriceMax,
+				PriceCurrency: occ.PriceCurrency,
+				Availability:  occ.Availability,
+			}
+		}
+	}
+
+	// Extract related event ULIDs from warnings and DuplicateOfEventULID
+	relatedULIDs := extractRelatedEventULIDs(warnings, review.DuplicateOfEventULID)
+	relatedEvents := make([]relatedEventDetail, len(relatedULIDs))
+	for i, ulid := range relatedULIDs {
+		relatedEvents[i] = relatedEventDetail{ULID: ulid}
+	}
+
 	detail := reviewQueueDetail{
 		reviewQueueBase: populateReviewQueueBase(review, warnings),
 		Original:        original,
 		Normalized:      normalized,
 		Changes:         changes,
+		Occurrences:     occurrences,
+		RelatedEvents:   relatedEvents,
 	}
 
 	if review.ReviewNotes != nil {
@@ -1026,6 +1091,67 @@ func buildReviewQueueDetail(review events.ReviewQueueEntry) (reviewQueueDetail, 
 	}
 
 	return detail, nil
+}
+
+
+// extractRelatedEventULIDs collects unique related event ULIDs from:
+// 1. review.DuplicateOfEventULID (companion review ULID)
+// 2. warning.details.matches[].ulid (from potential_duplicate, near_duplicate_of_new_event)
+// Deduplicates ULIDs before returning.
+func extractRelatedEventULIDs(warnings []events.ValidationWarning, duplicateOfEventULID *string) []string {
+	seen := make(map[string]bool)
+	var ulids []string
+
+	// Add companion ULID if present
+	if duplicateOfEventULID != nil && *duplicateOfEventULID != "" {
+		ulids = append(ulids, *duplicateOfEventULID)
+		seen[*duplicateOfEventULID] = true
+	}
+
+	// Extract ULIDs from warning matches
+	for _, w := range warnings {
+		if w.Code != "potential_duplicate" && w.Code != "near_duplicate_of_new_event" {
+			continue
+		}
+		if w.Details == nil {
+			continue
+		}
+
+		matches, ok := w.Details["matches"]
+		if !ok {
+			continue
+		}
+
+		matchesSlice, ok := matches.([]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, m := range matchesSlice {
+			matchMap, ok := m.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			ulidVal, ok := matchMap["ulid"]
+			if !ok {
+				continue
+			}
+
+			ulidStr, ok := ulidVal.(string)
+			if !ok || ulidStr == "" {
+				continue
+			}
+
+			// Deduplicate
+			if !seen[ulidStr] {
+				ulids = append(ulids, ulidStr)
+				seen[ulidStr] = true
+			}
+		}
+	}
+
+	return ulids
 }
 
 func calculateChanges(original, normalized map[string]any) []changeDetail {

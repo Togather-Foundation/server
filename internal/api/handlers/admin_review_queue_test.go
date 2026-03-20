@@ -902,6 +902,14 @@ func TestGetReviewQueueEntry(t *testing.T) {
 					testReviewQueueEntry(1, "01HTEST0000000000000000001"),
 					nil,
 				)
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(
+					&events.Event{
+						ULID:        "01HTEST0000000000000000001",
+						Name:        "Test Event",
+						Occurrences: []events.Occurrence{},
+					},
+					nil,
+				)
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -1007,6 +1015,8 @@ func TestApproveReview(t *testing.T) {
 				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				notes := "Looks good"
 				m.On("ApproveReview", mock.Anything, 1, "admin", &notes).Return(entry, nil)
+				// Additional mock for buildReviewQueueDetail to fetch occurrences
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{ULID: "01HTEST0000000000000000001", Occurrences: []events.Occurrence{}}, nil)
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -1022,6 +1032,8 @@ func TestApproveReview(t *testing.T) {
 				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{LifecycleState: "draft"}, nil)
 				m.On("UpdateEvent", mock.Anything, "01HTEST0000000000000000001", mock.Anything).Return(&events.Event{LifecycleState: "published"}, nil)
 				m.On("ApproveReview", mock.Anything, 1, "admin", (*string)(nil)).Return(entry, nil)
+				// Additional mock for buildReviewQueueDetail to fetch occurrences
+				m.On("GetByULID", mock.Anything, "01HTEST0000000000000000001").Return(&events.Event{ULID: "01HTEST0000000000000000001", Occurrences: []events.Occurrence{}}, nil)
 			},
 			expectedStatus: http.StatusOK,
 		},

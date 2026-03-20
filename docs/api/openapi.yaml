@@ -3404,7 +3404,7 @@ components:
     ReviewQueueDetail:
       description: Detailed review queue entry including original payload, normalized payload, and detected changes
       type: object
-      required: [id, eventId, status, warnings, original, normalized, changes, createdAt]
+      required: [id, eventId, status, warnings, original, normalized, changes, createdAt, occurrences, relatedEvents]
       properties:
         id:
           type: integer
@@ -3460,11 +3460,93 @@ components:
             and also when near-duplicate cross-linking creates a review entry for an existing
             published event.
 
+    EventOccurrence:
+      description: A single occurrence (date/time/venue) of an event
+      type: object
+      required: [id, startTime, timezone]
+      properties:
+        id:
+          type: string
+          description: Occurrence UUID
+        startTime:
+          type: string
+          format: date-time
+          description: Start date and time of the occurrence
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: End date and time of the occurrence (optional)
+        timezone:
+          type: string
+          description: IANA timezone identifier (e.g., America/New_York)
+        doorTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Doors open time (optional)
+        venueUlid:
+          type: string
+          nullable: true
+          description: ULID of the venue (optional)
+        virtualUrl:
+          type: string
+          nullable: true
+          description: Virtual event URL (optional)
+        ticketUrl:
+          type: string
+          description: URL to purchase tickets (optional)
+        priceMin:
+          type: number
+          nullable: true
+          format: float
+          description: Minimum ticket price (optional)
+        priceMax:
+          type: number
+          nullable: true
+          format: float
+          description: Maximum ticket price (optional)
+        priceCurrency:
+          type: string
+          description: ISO 4217 currency code (e.g., USD)
+        availability:
+          type: string
+          description: Availability status (e.g., InStock, OutOfStock)
+
+    RelatedEvent:
+      description: A related event ULID identified from warnings or duplicate link
+      type: object
+      required: [ulid]
+      properties:
+        ulid:
+          type: string
+          description: >
+            ULID of the related event. The UI fetches the full event via
+            GET /api/v1/events/{ulid} to display occurrences and details.
+
     ValidationWarning:
       description: Warning message from event validation or normalization process
       type: object
       required: [code, message]
       properties:
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventOccurrence'
+          description: >
+            List of occurrences for the event under review. These are fetched from the
+            live event data (not from the ingest snapshot) to ensure the UI shows current
+            occurrence information for dedup decision-making. Empty if the event has no
+            occurrences (e.g., single-instance long-duration occurrence).
+        relatedEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelatedEvent'
+          description: >
+            List of related event ULIDs extracted from validation warnings (potential_duplicate,
+            near_duplicate_of_new_event) and from the duplicateOfEventUlid field. Used to
+            determine which case applies (Case 1: empty list, Case 2/3: non-empty list).
+            The UI fetches these events via GET /api/v1/events/{ulid} for display.
         code:
           type: string
           description: Warning code (e.g., "REVERSED_DATES", "MISSING_END_DATE")

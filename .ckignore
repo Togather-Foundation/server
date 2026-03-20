@@ -1,0 +1,81 @@
+# .ckignore
+
+# Build artifacts (not useful for understanding code)
+target/
+dist/
+build/
+*.o
+*.so
+*.dylib
+*_cache/
+
+
+# Dependencies (too large, low signal)
+node_modules/
+vendor/
+venv/
+.venv/
+
+# Media files (not code)
+*.png
+*.jpg
+*.gif
+*.mp4
+*.pdf
+
+# Large data files
+*.csv
+*.json
+*.xml
+*.log
+
+# Test fixtures (unless you search them)
+fixtures/
+__snapshots__/
+*.snap
+
+
+# Generated code (if not relevant)
+*_pb2.py
+*.generated.*
+
+# webdev artifacts
+*.min.js
+*.min.css
+web/*/static/*
+# optionally no css
+css/
+*.css
+
+# secrets
+.env
+.env.staging
+.env.production
+
+# Golang
+go.sum
+go.mod
+
+# config
+.beads/
+.github/
+.openpackage/
+.specify/
+.vscode/
+.gitignore
+.air.toml
+.ci-start-time
+.dockerignore
+.gitattributes
+.release-data.md
+CODE_OF_CONDUCT.md
+LICENSE
+coverage.out
+deployment.test
+integration.test
+failure-reports/
+
+# binary
+server
+bin/
+dist/
