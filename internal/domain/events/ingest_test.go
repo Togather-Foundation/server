@@ -529,6 +529,9 @@ func (m *MockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, par
 	if params.Warnings != nil {
 		entry.Warnings = *params.Warnings
 	}
+	if params.DuplicateOfEventID != nil {
+		entry.DuplicateOfEventID = params.DuplicateOfEventID
+	}
 	entry.UpdatedAt = time.Now()
 
 	return entry, nil
@@ -776,7 +779,15 @@ func (m *MockRepository) IsNotDuplicate(ctx context.Context, eventIDa string, ev
 	return m.notDuplicates[a+"|"+b], nil
 }
 
-func (m *MockRepository) GetPendingReviewByEventUlid(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+func (m *MockRepository) GetPendingReviewByEventUlid(_ context.Context, eventULID string) (*ReviewQueueEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, entry := range m.reviewQueue {
+		if entry.EventULID == eventULID && entry.Status == "pending_review" {
+			return entry, nil
+		}
+	}
 	return nil, nil
 }
 
@@ -2268,6 +2279,122 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		var ve ValidationError
 		if !errors.As(err, &ve) {
 			t.Errorf("Ingest() error = %T (%v); want ValidationError", err, err)
+		}
+	})
+}
+
+func TestAppendWarnings(t *testing.T) {
+	mustMarshal := func(w []ValidationWarning) []byte {
+		b, err := json.Marshal(w)
+		if err != nil {
+			t.Fatalf("failed to marshal warnings: %v", err)
+		}
+		return b
+	}
+
+	t.Run("nil inputs return empty array", func(t *testing.T) {
+		result, err := appendWarnings(nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var out []ValidationWarning
+		if err := json.Unmarshal(result, &out); err != nil {
+			t.Fatalf("unmarshal result: %v", err)
+		}
+		if len(out) != 0 {
+			t.Errorf("want 0 warnings, got %d", len(out))
+		}
+	})
+
+	t.Run("appends new warnings to existing", func(t *testing.T) {
+		existing := mustMarshal([]ValidationWarning{
+			{Field: "multi_session", Code: "multi_session_likely", Message: "may recur"},
+		})
+		toAdd := mustMarshal([]ValidationWarning{
+			{Field: "near_duplicate", Code: "near_duplicate_of_new_event", Message: "may be a near-dup of NEW-1"},
+		})
+		result, err := appendWarnings(existing, toAdd)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var out []ValidationWarning
+		if err := json.Unmarshal(result, &out); err != nil {
+			t.Fatalf("unmarshal result: %v", err)
+		}
+		if len(out) != 2 {
+			t.Errorf("want 2 warnings, got %d", len(out))
+		}
+	})
+
+	t.Run("deduplicates identical warnings by field+code+message", func(t *testing.T) {
+		w := ValidationWarning{Field: "near_duplicate", Code: "near_duplicate_of_new_event", Message: "dup of NEW-1"}
+		existing := mustMarshal([]ValidationWarning{w})
+		toAdd := mustMarshal([]ValidationWarning{w})
+		result, err := appendWarnings(existing, toAdd)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var out []ValidationWarning
+		if err := json.Unmarshal(result, &out); err != nil {
+			t.Fatalf("unmarshal result: %v", err)
+		}
+		if len(out) != 1 {
+			t.Errorf("want 1 warning (deduped), got %d", len(out))
+		}
+	})
+
+	t.Run("same code different message are both retained", func(t *testing.T) {
+		// Two near_duplicate_of_new_event warnings for different new events must both be kept.
+		existing := mustMarshal([]ValidationWarning{
+			{Field: "near_duplicate", Code: "near_duplicate_of_new_event", Message: "dup of NEW-1"},
+		})
+		toAdd := mustMarshal([]ValidationWarning{
+			{Field: "near_duplicate", Code: "near_duplicate_of_new_event", Message: "dup of NEW-2"},
+		})
+		result, err := appendWarnings(existing, toAdd)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var out []ValidationWarning
+		if err := json.Unmarshal(result, &out); err != nil {
+			t.Fatalf("unmarshal result: %v", err)
+		}
+		if len(out) != 2 {
+			t.Errorf("want 2 warnings (distinct near-dup targets), got %d", len(out))
+		}
+	})
+
+	t.Run("invalid JSON in existing returns error", func(t *testing.T) {
+		_, err := appendWarnings([]byte("not-json"), nil)
+		if err == nil {
+			t.Error("expected error for invalid existing JSON, got nil")
+		}
+	})
+
+	t.Run("invalid JSON in toAdd returns error", func(t *testing.T) {
+		existing := mustMarshal([]ValidationWarning{
+			{Field: "f", Code: "c", Message: "m"},
+		})
+		_, err := appendWarnings(existing, []byte("not-json"))
+		if err == nil {
+			t.Error("expected error for invalid toAdd JSON, got nil")
+		}
+	})
+
+	t.Run("empty existing plus new warnings", func(t *testing.T) {
+		toAdd := mustMarshal([]ValidationWarning{
+			{Field: "near_duplicate", Code: "near_duplicate_of_new_event", Message: "dup of NEW-1"},
+		})
+		result, err := appendWarnings([]byte("[]"), toAdd)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var out []ValidationWarning
+		if err := json.Unmarshal(result, &out); err != nil {
+			t.Fatalf("unmarshal result: %v", err)
+		}
+		if len(out) != 1 {
+			t.Errorf("want 1 warning, got %d", len(out))
 		}
 	})
 }

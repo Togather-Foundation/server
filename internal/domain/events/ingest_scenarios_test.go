@@ -1105,6 +1105,166 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("S6.11_near_duplicate_merges_into_existing_pending_review_entry", func(t *testing.T) {
+		// Regression test for srv-m8qt8: when an existing event already has a pending
+		// review entry (e.g. multi_session_likely from its own ingest), crossLinkNearDuplicates
+		// must MERGE the near_duplicate_of_new_event warning into that entry rather than
+		// silently dropping it (which previously happened due to the UNIQUE constraint on event_id).
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-merge-test"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "pending_review",
+		}
+		repo.AddEvent(existingEvent)
+
+		// Pre-seed an existing review entry for the candidate (e.g. multi_session_likely).
+		existingWarning := `[{"field":"multi_session","code":"multi_session_likely","message":"This event may recur"}]`
+		existingEntry := &ReviewQueueEntry{
+			ID:        99,
+			EventID:   existingEventID,
+			EventULID: candidateULID,
+			Warnings:  []byte(existingWarning),
+			Status:    "pending_review",
+		}
+		repo.AddReviewEntry(existingEntry)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.NeedsReview {
+			t.Error("Expected NeedsReview = true")
+		}
+
+		newEventID := result.Event.ID
+
+		// The existing review entry (id=99) should have the near-dup warning merged in.
+		existingEntries := repo.GetReviewQueueByEventID(existingEventID)
+		var mergedEntry *ReviewQueueEntry
+		for _, e := range existingEntries {
+			if e.ID == 99 {
+				mergedEntry = e
+				break
+			}
+		}
+		if mergedEntry == nil {
+			t.Fatal("S6.11: Expected original review entry (id=99) to still exist")
+		}
+
+		// DuplicateOfEventID must now point to the new event.
+		if mergedEntry.DuplicateOfEventID == nil || *mergedEntry.DuplicateOfEventID != newEventID {
+			t.Errorf("S6.11: DuplicateOfEventID = %v, want %q", mergedEntry.DuplicateOfEventID, newEventID)
+		}
+
+		// Both the original warning and the near-dup warning must be present.
+		var warnings []ValidationWarning
+		if err := json.Unmarshal(mergedEntry.Warnings, &warnings); err != nil {
+			t.Fatalf("S6.11: Failed to unmarshal merged warnings: %v", err)
+		}
+		hasMSL := false
+		hasNearDup := false
+		for _, w := range warnings {
+			if w.Code == "multi_session_likely" {
+				hasMSL = true
+			}
+			if w.Code == "near_duplicate_of_new_event" {
+				hasNearDup = true
+			}
+		}
+		if !hasMSL {
+			t.Error("S6.11: Expected multi_session_likely warning to be preserved after merge")
+		}
+		if !hasNearDup {
+			t.Error("S6.11: Expected near_duplicate_of_new_event warning to be added via merge")
+		}
+
+		// No second review entry must have been created for the existing event.
+		if len(existingEntries) > 1 {
+			t.Errorf("S6.11: Expected exactly 1 review entry for existing event, got %d (unique constraint would have dropped extras)", len(existingEntries))
+		}
+	})
+
+	t.Run("S6.12_near_duplicate_merge_deduplicates_same_warning", func(t *testing.T) {
+		// If the same new event triggers crossLinkNearDuplicates twice (e.g., a retry),
+		// the near_duplicate_of_new_event warning should not be duplicated.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-dedup-test"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "pending_review",
+		}
+		repo.AddEvent(existingEvent)
+
+		// Pre-seed a review entry that already has the near_duplicate_of_new_event warning.
+		preExistingNearDupWarning := `[{"field":"near_duplicate","code":"near_duplicate_of_new_event","message":"Existing event \"Jazz at the Rex\" may be a near-duplicate of newly ingested event SOME-ULID"}]`
+		existingEntry := &ReviewQueueEntry{
+			ID:        100,
+			EventID:   existingEventID,
+			EventULID: candidateULID,
+			Warnings:  []byte(preExistingNearDupWarning),
+			Status:    "pending_review",
+		}
+		repo.AddReviewEntry(existingEntry)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		input := completeEventInput("Rex Jazz Night")
+
+		_, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		// Verify we still have id=100 and check warning count.
+		existingEntries := repo.GetReviewQueueByEventID(existingEventID)
+		var mergedEntry *ReviewQueueEntry
+		for _, e := range existingEntries {
+			if e.ID == 100 {
+				mergedEntry = e
+				break
+			}
+		}
+		if mergedEntry == nil {
+			t.Fatal("S6.12: Expected original review entry (id=100) to still exist")
+		}
+
+		// The new ingest produces a different message (different new event ULID), so
+		// there will be 2 warnings — but the original "SOME-ULID" warning must not be
+		// duplicated.
+		var warnings []ValidationWarning
+		if err := json.Unmarshal(mergedEntry.Warnings, &warnings); err != nil {
+			t.Fatalf("S6.12: Failed to unmarshal merged warnings: %v", err)
+		}
+		someULIDCount := 0
+		for _, w := range warnings {
+			if w.Message == `Existing event "Jazz at the Rex" may be a near-duplicate of newly ingested event SOME-ULID` {
+				someULIDCount++
+			}
+		}
+		if someULIDCount != 1 {
+			t.Errorf("S6.12: Expected exactly 1 occurrence of SOME-ULID warning, got %d (dedup by (field,code,message) must not drop distinct warnings)", someULIDCount)
+		}
+	})
 }
 
 func TestScenario_S6_NearDuplicateDetails(t *testing.T) {

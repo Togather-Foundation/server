@@ -788,16 +788,18 @@ UPDATE event_review_queue
    SET original_payload = COALESCE($1, original_payload),
        normalized_payload = COALESCE($2, normalized_payload),
        warnings = COALESCE($3, warnings),
+       duplicate_of_event_id = COALESCE($4, duplicate_of_event_id),
        updated_at = NOW()
- WHERE id = $4
+ WHERE id = $5
 RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
 type UpdateReviewQueueEntryParams struct {
-	OriginalPayload   []byte `json:"original_payload"`
-	NormalizedPayload []byte `json:"normalized_payload"`
-	Warnings          []byte `json:"warnings"`
-	ID                int32  `json:"id"`
+	OriginalPayload    []byte      `json:"original_payload"`
+	NormalizedPayload  []byte      `json:"normalized_payload"`
+	Warnings           []byte      `json:"warnings"`
+	DuplicateOfEventID pgtype.UUID `json:"duplicate_of_event_id"`
+	ID                 int32       `json:"id"`
 }
 
 // Update existing review entry (for resubmissions with same issues)
@@ -806,6 +808,7 @@ func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQu
 		arg.OriginalPayload,
 		arg.NormalizedPayload,
 		arg.Warnings,
+		arg.DuplicateOfEventID,
 		arg.ID,
 	)
 	var i EventReviewQueue

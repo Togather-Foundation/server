@@ -17,6 +17,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -922,6 +923,38 @@ func (s *IngestService) crossLinkNearDuplicates(
 			existingWarnings = []byte("[]")
 		}
 
+		// If the existing event already has a pending review entry (e.g. it got
+		// multi_session_likely on its own ingest), merge the near-duplicate warning
+		// into that entry rather than inserting a second row (which would hit the
+		// UNIQUE constraint on event_id and be silently dropped).
+		existingReview, lookupErr := s.repo.GetPendingReviewByEventUlid(ctx, c.ULID)
+		if lookupErr != nil {
+			log.Warn().Err(lookupErr).
+				Str("candidate_ulid", c.ULID).
+				Msg("Near-duplicate: failed to look up existing review entry, skipping")
+			continue
+		}
+
+		if existingReview != nil {
+			// Merge: append near_duplicate_of_new_event warning and set duplicate_of_event_id.
+			mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, existingWarnings)
+			if mergeErr != nil {
+				log.Warn().Err(mergeErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to merge warnings into existing review entry, skipping")
+				continue
+			}
+			if _, updateErr := s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+				Warnings:           &mergedWarnings,
+				DuplicateOfEventID: &newEventID,
+			}); updateErr != nil {
+				log.Warn().Err(updateErr).
+					Str("candidate_ulid", c.ULID).
+					Msg("Near-duplicate: failed to update existing review entry with near-duplicate warning, skipping")
+			}
+			continue
+		}
+
 		if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:            existingEvent.ID,
 			OriginalPayload:    reconstructedPayload,
@@ -933,7 +966,40 @@ func (s *IngestService) crossLinkNearDuplicates(
 		}); createErr != nil {
 			log.Warn().Err(createErr).
 				Str("candidate_ulid", c.ULID).
-				Msg("Near-duplicate: failed to create review queue entry for existing event (may already exist), skipping")
+				Msg("Near-duplicate: failed to create review queue entry for existing event, skipping")
 		}
 	}
+}
+
+// appendWarnings merges two JSON arrays of ValidationWarning objects, deduplicating
+// by (field, code, message) so that distinct warnings with the same code (e.g. two
+// separate near_duplicate_of_new_event warnings for different new events) are both
+// retained, while truly identical warnings (same event re-ingested) are dropped.
+func appendWarnings(existing []byte, toAdd []byte) ([]byte, error) {
+	var existingList []ValidationWarning
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &existingList); err != nil {
+			return nil, fmt.Errorf("unmarshal existing warnings: %w", err)
+		}
+	}
+	var addList []ValidationWarning
+	if len(toAdd) > 0 {
+		if err := json.Unmarshal(toAdd, &addList); err != nil {
+			return nil, fmt.Errorf("unmarshal warnings to add: %w", err)
+		}
+	}
+	// Dedup by (field, code, message) — message includes the new event ULID for
+	// near_duplicate_of_new_event, so two different near-duplicate pairings produce
+	// distinct entries while re-ingesting the same pair is idempotent.
+	type key struct{ field, code, message string }
+	seen := make(map[key]struct{}, len(existingList))
+	for _, w := range existingList {
+		seen[key{w.Field, w.Code, w.Message}] = struct{}{}
+	}
+	for _, w := range addList {
+		if _, ok := seen[key{w.Field, w.Code, w.Message}]; !ok {
+			existingList = append(existingList, w)
+		}
+	}
+	return json.Marshal(existingList)
 }

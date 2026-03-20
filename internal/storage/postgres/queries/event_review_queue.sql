@@ -72,6 +72,7 @@ UPDATE event_review_queue
    SET original_payload = COALESCE(sqlc.narg('original_payload'), original_payload),
        normalized_payload = COALESCE(sqlc.narg('normalized_payload'), normalized_payload),
        warnings = COALESCE(sqlc.narg('warnings'), warnings),
+       duplicate_of_event_id = COALESCE(sqlc.narg('duplicate_of_event_id'), duplicate_of_event_id),
        updated_at = NOW()
  WHERE id = sqlc.arg('id')
 RETURNING *;

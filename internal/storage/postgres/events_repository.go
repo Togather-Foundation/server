@@ -2393,6 +2393,13 @@ func (r *EventRepository) UpdateReviewQueueEntry(ctx context.Context, id int, pa
 	if params.Warnings != nil {
 		updateParams.Warnings = *params.Warnings
 	}
+	if params.DuplicateOfEventID != nil {
+		var dupUUID pgtype.UUID
+		if err := dupUUID.Scan(*params.DuplicateOfEventID); err != nil {
+			return nil, fmt.Errorf("update review queue entry: invalid duplicate_of_event_id: %w", err)
+		}
+		updateParams.DuplicateOfEventID = dupUUID
+	}
 
 	row, err := queries.UpdateReviewQueueEntry(ctx, updateParams)
 	if err != nil {

@@ -439,9 +439,10 @@ type ReviewQueueCreateParams struct {
 
 // ReviewQueueUpdateParams contains data for updating a review queue entry
 type ReviewQueueUpdateParams struct {
-	OriginalPayload   *[]byte
-	NormalizedPayload *[]byte
-	Warnings          *[]byte
+	OriginalPayload    *[]byte
+	NormalizedPayload  *[]byte
+	Warnings           *[]byte
+	DuplicateOfEventID *string // UUID of the event this is a duplicate of (nil = no change)
 }
 
 // ReviewQueueFilters contains filters for listing review queue entries
