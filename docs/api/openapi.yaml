@@ -3401,6 +3401,12 @@ components:
             and also when near-duplicate cross-linking creates a review entry for an existing
             published event.
 
+        occurrenceCount:
+          type: integer
+          description: >
+            Number of occurrences for the event. Fetched from the live event data
+            to reflect current occurrence information.
+
     ReviewQueueDetail:
       description: Detailed review queue entry including original payload, normalized payload, and detected changes
       type: object

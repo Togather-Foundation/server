@@ -57,9 +57,10 @@ type reviewQueueBase struct {
 // Embeds reviewQueueBase for shared fields.
 type reviewQueueItem struct {
 	reviewQueueBase
-	EventName      string     `json:"eventName,omitempty"`
-	EventStartTime *time.Time `json:"eventStartTime,omitempty"`
-	EventEndTime   *time.Time `json:"eventEndTime,omitempty"`
+	EventName       string     `json:"eventName,omitempty"`
+	EventStartTime  *time.Time `json:"eventStartTime,omitempty"`
+	EventEndTime    *time.Time `json:"eventEndTime,omitempty"`
+	OccurrenceCount int        `json:"occurrenceCount,omitempty"`
 }
 
 // reviewQueueDetail represents detailed review information.
@@ -161,7 +162,7 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	// Build response items
 	items := make([]reviewQueueItem, 0, len(result.Entries))
 	for _, review := range result.Entries {
-		item, err := buildReviewQueueItem(review)
+		item, err := buildReviewQueueItem(r.Context(), h.Repository, review)
 		if err != nil {
 			slog.ErrorContext(r.Context(), "ListReviewQueue: skipping review item due to build error",
 				slog.Int("review_id", review.ID),
@@ -979,7 +980,7 @@ func populateReviewQueueBase(review events.ReviewQueueEntry, warnings []events.V
 	return base
 }
 
-func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, error) {
+func buildReviewQueueItem(ctx context.Context, repo events.Repository, review events.ReviewQueueEntry) (reviewQueueItem, error) {
 	// Parse warnings from JSON
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
@@ -1010,6 +1011,18 @@ func buildReviewQueueItem(review events.ReviewQueueEntry) (reviewQueueItem, erro
 		item.EventEndTime = review.EventEndTime
 	}
 	item.EventStartTime = &review.EventStartTime
+
+	// Fetch occurrence count for the event
+	occCount, err := repo.CountOccurrences(ctx, review.EventID)
+	if err != nil {
+		// Log but don't fail — occurrence count is optional
+		slog.WarnContext(ctx, "buildReviewQueueItem: failed to fetch occurrence count",
+			slog.String("event_id", review.EventID),
+			slog.String("error", err.Error()))
+		item.OccurrenceCount = 0
+	} else {
+		item.OccurrenceCount = int(occCount)
+	}
 
 	return item, nil
 }
