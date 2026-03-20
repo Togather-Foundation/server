@@ -1032,10 +1032,12 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	}
 
 	// -----------------------------------------------------------------------
-	// RS-01: Weekly Yoga — Forward-path add-occurrence (published series)
+	// RS-01: Weekly Yoga — Same session ingested from two scrapers (Eventbrite
+	// + Lu.ma) on the same date → near-dup fires → companion pair → merge
+	// duplicate path.
 	// -----------------------------------------------------------------------
 	rs01Base := g.NewRecurringSeriesBuilder().
-		WithName("RS-01 Weekly Yoga — Base Series").
+		WithName("RS-01 Weekly Yoga at The Tranzac").
 		WithDescription("Beginner-friendly yoga every Monday morning. Bring your own mat. All levels welcome.").
 		WithVenue(yoga).
 		WithOrganizer(yogaOrg).
@@ -1046,13 +1048,14 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs01Base.URL = fmt.Sprintf("%s/e/rs01-yoga-series", eb.BaseURL)
 	rs01Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 
-	week5Start := anchor.Add(4 * week)
-	week5End := week5Start.Add(90 * time.Minute)
+	// New occurrence is on the SAME date as week 1 (anchor), from a different
+	// scraper (Lu.ma). Same venue + same date + name similarity ~0.65 → near-dup
+	// detection fires → companion pair created → merge duplicate path.
 	rs01NewOcc := events.EventInput{
-		Name:        "RS-01 Weekly Yoga — New Occurrence",
-		Description: "Drop-in yoga session at The Tranzac. Same instructor, same mat space.",
-		StartDate:   week5Start.Format(time.RFC3339),
-		EndDate:     week5End.Format(time.RFC3339),
+		Name:        "RS-01 Weekly Yoga",
+		Description: "Weekly yoga session at The Tranzac. Drop-in friendly, all levels welcome.",
+		StartDate:   anchor.Format(time.RFC3339),
+		EndDate:     anchor.Add(90 * time.Minute).Format(time.RFC3339),
 		Location:    loc(yoga),
 		Organizer:   org(yogaOrg),
 		Source:      src(luma, "rs01-yoga-occ5"),
@@ -1399,7 +1402,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	return []ReviewEventScenario{
 		{
 			GroupID:     "RS-01",
-			Description: "Forward-path add-occurrence: published series target",
+			Description: "Near-dup + multi-session: same session from two scrapers, same date → merge duplicate",
 			Events:      []events.EventInput{rs01Base, rs01NewOcc},
 		},
 		{

@@ -136,7 +136,7 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 
 | ID | Name | Events | Workflow | Warning Codes | Auto-dedup? |
 |----|------|--------|----------|---------------|-------------|
-| RS-01 | Weekly Yoga | 2 | multi-session keyword + approve or consolidate via standalone page | `multi_session_likely` | No (different dates) |
+| RS-01 | Weekly Yoga | 2 | `multi_session_likely` + near-dup → merge duplicate or approve separately | `multi_session_likely`, `near_duplicate_of_new_event`, `potential_duplicate` | Yes (same venue + same date, similarity ~0.65) |
 | RS-02 | Book Club | 2 | add-occurrence (near-dup path) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.63) |
 | RS-03 | Tech Meetup | 2 | manual add-occurrence on pending series | _(none — publishes directly)_ | No (different dates, low similarity) |
 | RS-04 | Art Walk | 2 | manual add-occurrence on draft target | _(none — publishes directly)_ | No (different dates, low similarity) |
@@ -153,28 +153,49 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 
 ## Test Procedures
 
-### RS-01: Multi-Session Keyword + Manual Add-Occurrence
+### RS-01: Multi-Session Keyword + Near-Dup Companion Pair → Merge Duplicate
 
-**Setup:** Ingest `RS-01 Weekly Yoga — Base Series` (4 weekly occurrences from Eventbrite) and `RS-01 Weekly Yoga — New Occurrence` (week 5, from Lu.ma).
+**Setup:** Ingest `RS-01 Weekly Yoga at The Tranzac` (4 weekly occurrences from Eventbrite) and `RS-01 Weekly Yoga` (same venue, same date as week 1, from Lu.ma — a different scraper picking up the same session).
 
 **Expected after ingest:**
-- **Both** events land in review with `multi_session_likely` warning — the word "Weekly" in the title matches the multi-session keyword pattern `(?i)\bweekly\b`.
-- Near-duplicate detection does **not** fire between the two events (the name suffixes "Base Series" vs "New Occurrence" are different enough that pg_trgm similarity stays below threshold).
+- Both events land in review:
+  - `multi_session_likely` — the word "Weekly" in the title matches the multi-session keyword pattern `(?i)\bweekly\b` on both events.
+  - Near-duplicate detection fires (same venue + same date + pg_trgm name similarity ~0.65, well above the 0.4 threshold): a companion pair is created.
+  - One entry receives `near_duplicate_of_new_event` pointing at its companion; the other receives `potential_duplicate` pointing back.
 - Both events are `pending_review`.
 
 **Test steps:**
-1. Open admin review queue. Find both RS-01 entries.
-2. Verify both show the `multi_session_likely` warning (not `potential_duplicate`).
-3. **Approve** the base series — confirm it's a legitimate recurring event with discrete occurrences, not a multi-session course.
-4. Verify:
-   - [ ] Base series transitions to `published` with 4 occurrences.
-   - [ ] Review status on the base series entry is `approved`.
-5. **Approve** the new occurrence as well (it is also flagged `multi_session_likely` due to the "Weekly" keyword).
-6. Verify:
-   - [ ] New occurrence transitions to `published` as a standalone event.
-   - [ ] Review status on the new occurrence entry is `approved`.
+1. Open admin review queue. Find both RS-01 entries — they form a companion pair.
+2. Verify both show `multi_session_likely` AND a duplicate warning (`near_duplicate_of_new_event` / `potential_duplicate`).
+3. Expand either entry. Verify the side-by-side panel shows both events with their occurrence lists.
+4. The base series has 4 occurrences; the Lu.ma event has 1 occurrence on the same date as week 1.
 
-**Note — add-occurrence not available from the review-queue for this scenario:** Both RS-01 events carry only `multi_session_likely`; there is no companion near-duplicate pairing. To combine the two events into one series, use the standalone consolidate page at `/admin/events/consolidate` with both ULIDs, or call `POST /api/v1/admin/events/consolidate` directly. This scenario therefore tests only the approve path; occurrence consolidation via the review queue is out of scope here.
+**Path A — Merge Duplicate (same session listed twice, different scraper):**
+
+5. Choose the Eventbrite base series as canonical. Click **Merge Duplicate** (this retires the Lu.ma standalone event and keeps the Eventbrite series with its 4 occurrences intact — the Lu.ma event is the same session, not an additional occurrence).
+6. Verify:
+   - [ ] Lu.ma event soft-deleted (tombstone with `deletion_reason = 'consolidated'` and `superseded_by_uri` pointing to the base series).
+   - [ ] Base series unchanged — still 4 occurrences, same lifecycle.
+   - [ ] Both review entries dismissed (`review_entries_dismissed` in consolidate response).
+   - [ ] Base series transitions to `published` if no other pending review rows remain.
+
+**Path B — Not a Duplicate (approve separately):**
+
+5. On either review entry, click **Not a Duplicate**.
+6. Verify:
+   - [ ] An `event_not_duplicates` record is written for the pair (prevents future near-dup pairings between these two).
+   - [ ] The companion review entry is updated: the duplicate warning is cleared; only `multi_session_likely` remains.
+7. **Approve** each event independently.
+8. Verify:
+   - [ ] Both events transition to `published` as separate listings.
+   - [ ] No stale `pending_review` entries remain for RS-01.
+
+**Path C — Approve both without resolving the duplicate (smoke test):**
+
+5. Approve both events without taking any merge/not-a-dup action.
+6. Verify:
+   - [ ] Both events transition to `published`.
+   - [ ] Companion review entries are resolved as `approved` (not left in a stale `pending_review` state).
 
 **Note:** The "Weekly" keyword trigger is by design — it's a useful guardrail for real-world events where "Weekly Yoga" might actually be a multi-session course sold as a single ticket.
 
@@ -193,12 +214,14 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 
 **Test steps:**
 1. Open review queue. Find both RS-02 entries (they form a companion pair).
-2. On the **near-duplicate review entry**, use `POST /api/v1/admin/events/consolidate` to absorb the duplicate into the canonical event (pending UI implementation — srv-h6gfp; the review-queue Add as Occurrence button is not yet wired to this endpoint):
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
-     "$BASE/admin/events/consolidate" \
-     -d '{"event_ulid":"<canonical-ulid>","retire":["<absorbed-ulid>"]}'
-   ```
+2. In the fold-down for the near-duplicate review entry, both events are shown side-by-side with their occurrence lists. The base series has 2 occurrences; the new event has 1.
+   - Click **Add as Occurrence** to absorb the new event into the base series (the new event's occurrence is added to the series, the new event is retired).
+   - Alternatively, call the consolidate API directly:
+     ```bash
+     curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+       "$BASE/admin/events/consolidate" \
+       -d '{"event_ulid":"<canonical-ulid>","retire":["<absorbed-ulid>"]}'
+     ```
 3. Verify:
     - [ ] Source event (absorbed event) is soft-deleted.
     - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence).
@@ -349,17 +372,22 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
 - They form a companion review pair.
 
 **Test steps:**
-1. Click **Add as Occurrence** targeting the workshop series.
+1. In the fold-down for either RS-05 review entry, click **Add as Occurrence** (or call consolidate directly):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<workshop-series-ulid>","retire":["<overlapping-ulid>"]}'
+   ```
 2. Verify:
-   - [ ] Response is **409 Conflict** (occurrence time overlaps existing).
-   - [ ] No changes made to target series (still has 2 occurrences).
-   - [ ] Source event is NOT deleted.
-   - [ ] Review entry stays `pending` (action failed).
+   - [ ] Response is **409 Conflict** — the consolidate API detects the occurrence overlap and rejects the retirement
+   - [ ] No changes made to either event (both still exist, same occurrences)
+   - [ ] Review entries stay `pending`
+   - [ ] UI shows inline error: "The occurrence at [time] conflicts with an existing occurrence"
 
 **Follow-up:** The admin should either:
-- **Merge** (if it's truly the same session listed twice), or
-- **Reject** the overlapping entry, or
-- **Fix** the occurrence times and retry add-occurrence.
+- Use **Merge Duplicate** instead (if it's truly the same session listed twice — same time, two sources), or
+- **Reject** the overlapping entry and handle it manually, or
+- Edit the occurrence times on one event and retry
 
 ---
 
@@ -423,12 +451,18 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
 
 **Test steps:**
 1. Open review queue. Find both RS-08 review entries.
-2. Click **Merge** on the duplicate, targeting the original event.
-3. Verify:
-   - [ ] Duplicate event is soft-deleted (`lifecycle_state = 'deleted'`).
-   - [ ] Tombstone record created with reason `duplicate_merged` and `superseded_by_uri` pointing to the original.
-   - [ ] Original event unchanged (same occurrences, same lifecycle state).
-   - [ ] Both review entries are resolved (`merged`).
+2. Expand either entry. In the fold-down, both events are shown side-by-side — identical name, venue, date, and organizer, different source URLs.
+3. Click **Merge Duplicate** (the duplicate has no unique occurrences worth preserving — it's the same session listed twice). Or call consolidate directly:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<original-ulid>","retire":["<duplicate-ulid>"]}'
+   ```
+4. Verify:
+   - [ ] Duplicate event is soft-deleted (`lifecycle_state = 'deleted'`)
+   - [ ] Tombstone created with `deletion_reason = 'consolidated'` and `superseded_by_uri` pointing to the original
+   - [ ] Original event unchanged (same 1 occurrence, same lifecycle state)
+   - [ ] Both review entries dismissed (`review_entries_dismissed` in response)
 
 ---
 
@@ -445,7 +479,8 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
 2. Verify the `multi_session_likely` warning is present.
 3. Decide:
    - If this should be published as a single long event: **Approve**.
-   - If this should be split into 8 separate sessions: **Reject** (and manually create separate events).
+   - If this should be split into 8 separate sessions: **Reject** (create session events manually or via the occurrence editor).
+   - If this should be split into sessions: **Reject** (and use the inline occurrence editor — available in the fold-down once bead srv-7h902 lands — to add individual session occurrences, or create them manually via `POST /admin/events/{ulid}/occurrences` after approving the base event).
 4. Test the **Approve** path:
    - [ ] Event transitions to `published`.
    - [ ] Review status is `approved`.
@@ -466,7 +501,12 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
 
 **Test steps:**
 1. Verify both events appear in the review queue with near-duplicate warnings.
-2. On either event's review entry, click **Add as Occurrence**.
+2. Expand either event's review entry. The fold-down shows both Choir Rehearsal events side-by-side — same venue, same date, nearly identical names. Click **Add as Occurrence** to absorb one into the other. Or use the API directly:
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<chosen-canonical-ulid>","retire":["<other-ulid>"]}'
+   ```
 3. Verify:
     - [ ] Source event soft-deleted.
     - [ ] Target event now has **2** occurrences (was 1; the source event's sole occurrence is added to the target).
@@ -516,9 +556,9 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
 **Test steps:**
 1. Open the review queue. Identify all RS-11 entries.
 2. Determine the correct consolidation:
-   - **2 series** (morning series + afternoon series), each with 2 weekly occurrences? Use add-occurrence twice.
-   - **1 series** with 4 occurrences? Use add-occurrence three times.
-   - **4 separate events** (different time slots are genuinely different events)? Approve all with `record_not_duplicates`.
+   - **2 series** (morning series + afternoon series): use **Add as Occurrence** (or consolidate API) twice — once per same-day pair. Then manually add the Mon+7 occurrence to each series via `POST /admin/events/{ulid}/occurrences`.
+   - **1 series** with 4 occurrences: use **Add as Occurrence** / consolidate three times, promoting the earliest event. Then manually add 3 occurrences.
+   - **4 separate events**: click **Not a Duplicate** on each pair (or approve with `record_not_duplicates: true`).
 3. Execute your chosen consolidation strategy.
 4. Verify:
    - [ ] Final state matches your intent (correct number of events, correct occurrences on each).
@@ -636,7 +676,7 @@ After completing all scenarios, verify:
 - [ ] RS-12 consolidated events appear in the events list with correct lifecycle states.
 - [ ] The `event_not_duplicates` table has entries from RS-07 (and RS-11 if applicable).
 - [ ] Event occurrence counts match expectations after all add-occurrence actions (verify via the SQL query below or via `GET /api/v1/events/{ulid}` — the `subEvent` array is populated for all occurrences and is the authoritative count used by the admin detail page):
-  - RS-01: 4 (base series) + 1 (new occurrence as standalone event) — consolidation via review queue not applicable for `multi_session_likely`-only reviews; use the standalone consolidate page instead
+  - RS-01: 4 (base series unchanged after merge; Lu.ma event retired) — Path A (merge duplicate); or 4 + 1 as separate published events for Paths B/C
   - RS-02: 3 (was 2, +1 from near-dup add-occurrence)
   - RS-03: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
   - RS-04: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
