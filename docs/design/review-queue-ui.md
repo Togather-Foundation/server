@@ -142,15 +142,22 @@ The canonical radio applies to all duplicate-resolution actions. Default: "This 
 - Add as Occurrence: this event's occurrence is absorbed into the related event
 - Merge Duplicate: this event is retired, related event survives
 
-### multi_session_likely with a companion event
+### multi_session_likely — three cases
 
-RS-01 scenario: two events with `multi_session_likely`, no `potential_duplicate`. The admin can see both in the queue. When expanded, each fold-down shows only the single-event layout (no related event panel, since no near-dup warning links them). The admin's path:
-- Approve both as separate events if they are genuinely different
-- OR: use the companion's ULID manually via the standalone `/admin/events/consolidate` page to combine them
+`multi_session_likely` is not a different category from `potential_duplicate`. It is a stronger signal that an event is likely a recurring series. Three cases:
 
-This is an acceptable limitation. The standalone consolidate page exists precisely for cases not driven by the review queue. When multi-session detection fires on two events that are actually the same recurring series, the admin navigates to `/admin/events/consolidate`, pastes both ULIDs, and consolidates from there.
+**Case 1 — Standalone** (e.g. RS-09 Film Screening, a single event with "(8 sessions)" in the title): The system detected that *one* event internally describes multiple sessions. There is no companion ULID, no linked duplicate. The fold-down uses the single-event layout and shows the description prominently so the admin can read it and decide:
+- **Approve as-is** — it's legitimately one long event.
+- **Add occurrences inline** — the fold-down exposes an occurrence editor (date/time inputs, add row, remove row) backed by `POST /api/v1/admin/events/{ulid}/occurrences`. Admin reads the description ("every Tuesday for 8 weeks"), adds those dates, then approves. The original single long-duration occurrence may need to be deleted first via `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}` — the UI should offer a "remove" control on existing occurrences.
+- **Reject** — the event should not be published; admin will ingest the individual sessions separately.
 
-> **Future improvement:** if the `multi_session_likely` events share the same venue and similar name, surface a "possible companion" banner in the fold-down with a link pre-populating the consolidate page.
+No Add as Occurrence / Merge buttons — there is no other event to pair with.
+
+**Case 2 — With a companion** (e.g. RS-01 two Weekly Yoga events): Two events are both flagged `multi_session_likely`, and one has a companion ULID set (`DuplicateOfEventULID`), or both a `potential_duplicate` / `near_duplicate_of_new_event` warning co-exists. Treat identically to a `potential_duplicate` pair. Show both events side by side, offer Add as Occurrence / Merge / Not a Duplicate. The `multi_session_likely` is additional signal that they are the same series.
+
+**Case 3 — Both**: `multi_session_likely` + `near_duplicate_of_new_event` on the same entry. Treat as Case 2.
+
+The UI determines which case applies by checking whether a companion ULID exists in the `relatedEvents` array returned by the detail endpoint. If `relatedEvents` is empty → Case 1. If non-empty → Case 2/3.
 
 ### Overlap conflict (RS-05)
 
