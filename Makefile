@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -37,6 +37,7 @@ help:
 	@echo "  make lint-yaml     - Validate YAML files (GitHub workflows, configs)"
 	@echo "  make lint-js       - Validate JavaScript syntax (web/admin/static/js)"
 	@echo "  make lint-docs     - Check local Markdown links in docs/ resolve to real files"
+	@echo "  make lint-shell    - Lint shell scripts with shellcheck"
 	@echo "  make vulncheck     - Run govulncheck vulnerability scan"
 	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
 	@echo "  make test-v        - Run tests with verbose output"
@@ -392,6 +393,21 @@ lint-docs:
 	@echo "Checking Markdown links in docs/..."
 	@scripts/check-doc-links.sh
 
+# Lint shell scripts with shellcheck (errors only in CI; use SHELLCHECK_SEVERITY=warning for full output)
+lint-shell:
+	@echo "Linting shell scripts..."
+	@if command -v shellcheck > /dev/null 2>&1; then \
+		SHELLCHECK=shellcheck; \
+	elif [ -f $(HOME)/.local/bin/shellcheck ]; then \
+		SHELLCHECK=$(HOME)/.local/bin/shellcheck; \
+	else \
+		echo "shellcheck not found. Install from https://github.com/koalaman/shellcheck#installing"; \
+		exit 1; \
+	fi; \
+	SEVERITY=$${SHELLCHECK_SEVERITY:-error}; \
+	$$SHELLCHECK --severity=$$SEVERITY scripts/*.sh deploy/scripts/*.sh && \
+	echo "✓ Shell script lint passed"
+
 
 vulncheck:
 	@echo "Running govulncheck..."
@@ -434,6 +450,9 @@ ci: sqlc-generate lint-ci vulncheck
 	@echo ""
 	@echo "==> Checking Markdown links in docs/..."
 	@$(MAKE) lint-docs
+	@echo ""
+	@echo "==> Linting shell scripts..."
+	@$(MAKE) lint-shell
 	@echo ""
 	@echo "==> Checking code formatting..."
 	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \

@@ -348,7 +348,7 @@ if [ ${#BATCH_IDS[@]} -gt 0 ]; then
         fi
         echo ""
         echo "2. Export failures to JSON for analysis:"
-        echo "   ./scripts/export-failures.sh $ENVIRONMENT \"${BATCH_IDS[@]}\""
+        echo "   ./scripts/export-failures.sh $ENVIRONMENT ${BATCH_IDS[*]}"
         echo ""
     fi
     echo ""
