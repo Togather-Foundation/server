@@ -99,14 +99,10 @@ Both operations use `SELECT ... FOR UPDATE SKIP LOCKED` to handle concurrent ing
 - `place_possible_duplicate` — event's venue may be a duplicate of an existing place
 - `org_possible_duplicate` — event's organizer may be a duplicate of an existing org
 
-### Merge action
+### Merge action (DEPRECATED)
 
-```
-POST /api/v1/admin/review-queue/{id}/merge
-Body: {"merge_into": "<target_event_ulid>"}
-```
-
-Merges the review event's data into the target using the trust-based merge strategy. Soft-deletes the review event, creates tombstone. Marks review entry as resolved with status `merged`. The entire operation (field merge, tombstone creation, review status update) is wrapped in a single database transaction.
+The `/api/v1/admin/review-queue/{id}/merge` endpoint has been removed in v2.0.
+Use `/api/v1/admin/events/consolidate` instead.
 
 ### Keep Separate action
 
@@ -123,7 +119,7 @@ Merges the review event's data into the target using the trust-based merge strat
 
 ### Review Queue API (LLM-ready)
 
-`GET /api/v1/admin/review-queue/{id}` includes both original and normalized payloads, all warnings with details (including duplicate candidate info), and the candidate event's full data when `potential_duplicate` is present. An LLM agent can: list pending reviews → pick one → read details → call approve/reject/merge.
+`GET /api/v1/admin/review-queue/{id}` includes both original and normalized payloads, all warnings with details (including duplicate candidate info), and the candidate event's full data when `potential_duplicate` is present. An LLM agent can: list pending reviews → pick one → read details → call approve/reject/consolidate.
 
 ## Configuration
 

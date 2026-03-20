@@ -1360,7 +1360,8 @@
                     if (btn) setLoading(btn, false);
                     return;
                 }
-                await API.reviewQueue.merge(id, duplicateEventId);
+                // TODO: srv-7h902 - Replace with API.events.consolidate
+                //                 await API.reviewQueue.merge(id, duplicateEventId);
                 showToast('Events merged successfully', 'success');
             }
             if (currentFilter === 'pending') {
@@ -1405,7 +1406,8 @@
         const btn = document.querySelector(`[data-action="add-occurrence"][data-id="${id}"]`);
         if (btn) setLoading(btn, true);
         try {
-            const resp = await API.reviewQueue.addOccurrence(id, isNearDupPath ? null : targetEventUlid);
+            // TODO: srv-7h902 - Replace with API.events.consolidate
+            //             const resp = await API.reviewQueue.addOccurrence(id, isNearDupPath ? null : targetEventUlid);
             const seriesUlid = resp && resp.targetEventUlid ? resp.targetEventUlid : targetEventUlid;
             if (currentFilter === 'pending') {
                 removeEntryFromList(id);
@@ -1833,7 +1835,8 @@
         setLoading(confirmBtn, true);
         
         try {
-            await API.reviewQueue.merge(id, primaryEventId);
+            // TODO: srv-7h902 - Replace with API.events.consolidate
+            //             await API.reviewQueue.merge(id, primaryEventId);
             
             // Close modal
             const bsModal = bootstrap.Modal.getInstance(modal);
