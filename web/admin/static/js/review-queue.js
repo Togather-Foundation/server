@@ -33,6 +33,14 @@
     let pagination = null;
     let cursor = null;
     let currentEntryDetail = null; // Cached detail for the currently expanded entry
+
+    /**
+     * Per-entry field override map for the field picker.
+     * Key: entryId (string), Value: { fieldKey: value, ... }
+     * Populated when the admin clicks a chip in the field picker table.
+     * Cleared when the fold-down is collapsed.
+     */
+    const fieldOverrides = {};
     
     /** Debounce delay for primary event ULID lookup */
     const MERGE_LOOKUP_DEBOUNCE_MS = 400;
@@ -169,6 +177,42 @@
                 case 'canonical-select':
                     // Radio state is read lazily in consolidateEvent; no action needed here.
                     break;
+                case 'pick-field': {
+                    e.preventDefault();
+                    // Resolve entryId by walking up to the detail row (id="detail-{entryId}")
+                    const detailTr = target.closest('tr[id]');
+                    if (!detailTr) break;
+                    const trId = detailTr.id; // "detail-{entryId}"
+                    const pickedEntryId = trId.startsWith('detail-') ? trId.slice('detail-'.length) : null;
+                    if (!pickedEntryId) break;
+
+                    const pickedField = target.dataset.field;
+                    const pickedSubfield = target.dataset.subfield || null;
+                    const pickedValue = target.dataset.value !== undefined ? target.dataset.value : '';
+
+                    if (!pickedField) break;
+
+                    if (!fieldOverrides[pickedEntryId]) fieldOverrides[pickedEntryId] = {};
+                    const overrideKey = pickedSubfield ? pickedField + '.' + pickedSubfield : pickedField;
+                    fieldOverrides[pickedEntryId][overrideKey] = pickedValue;
+
+                    // Show/update the overrides display
+                    updateOverridesDisplay(pickedEntryId);
+
+                    // Visual feedback: deselect all chips in same field row, select this one.
+                    // Scope to the whole <tr> so chips from all event columns for this
+                    // field are cleared (not just the single <td> containing the click).
+                    const tr = target.closest('tr');
+                    if (tr) {
+                        tr.querySelectorAll('[data-action="pick-field"]').forEach(b => {
+                            b.classList.remove('btn-primary');
+                            b.classList.add('btn-outline-secondary');
+                        });
+                    }
+                    target.classList.remove('btn-outline-secondary');
+                    target.classList.add('btn-primary');
+                    break;
+                }
             }
         });
         
@@ -283,7 +327,7 @@
         tbody.innerHTML = entries.map(entry => {
             const eventName = entry.eventName || 'Untitled Event';
             const startTime = entry.eventStartTime ? formatDate(entry.eventStartTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'No date';
-            const warningBadge = getWarningBadge(entry.warnings, entry.status);
+            const warningBadge = WarningBadges.getBadge(entry.warnings, entry.status);
             const createdAgo = getRelativeTime(entry.createdAt);
             
             // Build rejection reason cell (only for rejected events)
@@ -437,7 +481,7 @@
         const warningsHtml = warnings.length > 0 ? `
             <div class="mb-3">
                 ${warnings.map(w => {
-                    const badge = getWarningBadgeForDetail(w.code);
+                    const badge = WarningBadges.getDetailBadge(w.code);
                     const message = w.message || '(no message)';
                     let warningHtml = `<div class="mb-2">${badge} ${escapeHtml(message)}`;
                     
@@ -642,12 +686,16 @@
         const thisOccurrences = detail.occurrences || [];
         const occurrencesHtml = isCase1 ? `
             <div id="occurrence-list-${id}">
-                ${renderOccurrencesList(thisOccurrences, detail.eventId, id, true)}
+                ${OccurrenceRendering.renderList(thisOccurrences, detail.eventId, id, true)}
             </div>
         ` : '';
 
         // Build the Case 2/3 side-by-side related event panel.
         let relatedEventPanelHtml = '';
+        // Build field picker section (Case 2/3 only, when relatedEvents present)
+        let fieldPickerSectionHtml = '';
+        // safeId is used in element IDs — always escape before use in HTML attributes
+        const safeId = escapeHtml(String(id));
         if (isCase2or3 && relatedEvents.length > 0) {
             const relatedEvent = relatedEvents[0];
             const similarity = relatedEvent.similarity != null ? Math.round(relatedEvent.similarity * 100) : null;
@@ -674,7 +722,7 @@
                             </div>
                             <div class="card-body">
                                 ${renderMergeEventSummary(normalized, relatedAsNormalized)}
-                                ${renderOccurrencesList(thisOccurrences, detail.eventId, id, false)}
+                                ${OccurrenceRendering.renderList(thisOccurrences, detail.eventId, id, false)}
                             </div>
                         </div>
                     </div>
@@ -686,9 +734,28 @@
                             </div>
                             <div class="card-body">
                                 ${renderMergeEventSummary(relatedAsNormalized, normalized)}
-                                ${renderOccurrencesList(relatedEvent.occurrences || [], relatedEvent.ulid, id, false)}
+                                ${OccurrenceRendering.renderList(relatedEvent.occurrences || [], relatedEvent.ulid, id, false)}
                             </div>
                         </div>
+                    </div>
+                </div>
+            `;
+
+            // Field picker section — shown between side-by-side cards and action buttons
+            fieldPickerSectionHtml = `
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">Choose canonical field values</h4>
+                        <small class="text-muted">Click a chip to select that value for the merged event</small>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="field-picker-table-${safeId}"></div>
+                    </div>
+                </div>
+                <div id="field-overrides-${safeId}" class="card mt-2" style="display:none">
+                    <div class="card-header"><h4 class="card-title mb-0">Selected field overrides</h4></div>
+                    <div class="card-body">
+                        <div id="field-overrides-list-${safeId}"></div>
                     </div>
                 </div>
             `;
@@ -789,7 +856,7 @@
                         ${crossLinkHtml}
                         ${warningsHtml}
                         ${changesHtml}
-                        ${isCase2or3 ? relatedEventPanelHtml : eventDataHtml + occurrencesHtml}
+                        ${isCase2or3 ? relatedEventPanelHtml + fieldPickerSectionHtml : eventDataHtml + occurrencesHtml}
                         ${comparisonHtml}
                         
                         <div class="mt-3">
@@ -799,6 +866,33 @@
                 </div>
             </td>
         `;
+
+        // If Case 2/3 with related events, initialise the field picker table now that the DOM exists.
+        if (isCase2or3 && relatedEvents.length > 0 && typeof window.FieldPicker !== 'undefined') {
+            const pickerContainer = document.getElementById('field-picker-table-' + safeId);
+            if (pickerContainer) {
+                const relatedEvent = relatedEvents[0];
+                // Build the relatedEvent in the same shape as normalized for the picker.
+                // This mirrors the relatedAsNormalized shape built above.
+                const relatedForPicker = {
+                    name: relatedEvent.name,
+                    description: relatedEvent.description,
+                    startDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                        ? relatedEvent.occurrences[0].startTime
+                        : null,
+                    location: relatedEvent.venueName
+                        ? { name: relatedEvent.venueName }
+                        : (relatedEvent.location || null),
+                    organizer: relatedEvent.organizer || null,
+                    url: relatedEvent.url || null,
+                    image: relatedEvent.image || null,
+                    endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                        ? relatedEvent.occurrences[0].endTime
+                        : null,
+                };
+                window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalized, relatedForPicker]);
+            }
+        }
 
         // Fetch and render inline duplicate diffs for each potential_duplicate match
         // that is NOT already covered by detail.relatedEvents (legacy fast path).
@@ -832,81 +926,6 @@
     }
 
     /**
-     * Render a compact list of occurrences.
-     * When editable=true, each row includes a Remove button and an Add Occurrence form follows.
-     * @param {Array} occurrences - Array of occurrenceDetail objects from the API
-     * @param {string} eventUlid - ULID of the event that owns these occurrences
-     * @param {string|number} entryId - Review queue entry ID (used for input IDs and data attributes)
-     * @param {boolean} editable - Whether to show Remove and Add controls
-     * @returns {string} HTML string
-     */
-    function renderOccurrencesList(occurrences, eventUlid, entryId, editable) {
-        const count = occurrences ? occurrences.length : 0;
-        if (count === 0 && !editable) {
-            return '<p class="text-muted small mb-2">No occurrences</p>';
-        }
-
-        // Escape entryId once — it appears in id= and data-* attributes throughout this function.
-        // entryId is sourced from the DOM (dataset) or API (integer), but escape defensively
-        // since it flows into innerHTML attribute positions.
-        const safeEntryId = escapeHtml(String(entryId));
-
-        const rowsHtml = (occurrences || []).map(occ => {
-            const start = occ.startTime ? formatDate(occ.startTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(no date)';
-            const end = occ.endTime && occ.endTime.trim() ? formatDate(occ.endTime, { hour: 'numeric', minute: '2-digit' }) : '';
-            const timeStr = end ? `${start} \u2013 ${end}` : start;
-
-            const removeBtn = editable && !String(occ.id).startsWith('_pending_')
-                ? `<button class="btn btn-sm btn-ghost-danger ms-auto" data-action="remove-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}" data-occurrence-id="${escapeHtml(occ.id)}" title="Remove occurrence">&#10005; Remove</button>`
-                : '';
-
-            return `<div class="d-flex align-items-center py-1 border-bottom">
-                <span class="text-body-secondary small">${escapeHtml(timeStr)}</span>
-                ${removeBtn}
-            </div>`;
-        }).join('');
-
-        const addFormHtml = editable ? (() => {
-            const defaultTz = (occurrences && occurrences.length > 0 && occurrences[0].timezone)
-                ? occurrences[0].timezone
-                : 'America/Toronto';
-            return `
-                <div class="d-flex gap-2 align-items-center flex-wrap mt-2" id="add-occ-form-${safeEntryId}">
-                    <input type="datetime-local" class="form-control form-control-sm" id="occ-start-${safeEntryId}" style="max-width: 200px;" placeholder="Start (event local time)">
-                    <input type="datetime-local" class="form-control form-control-sm" id="occ-end-${safeEntryId}" style="max-width: 200px;" placeholder="End (optional)">
-                    <input type="text" class="form-control form-control-sm" id="occ-tz-${safeEntryId}" value="${escapeHtml(defaultTz)}" style="max-width: 160px;" placeholder="Timezone">
-                    <button class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}">+ Add</button>
-                </div>
-                <div id="occ-error-${safeEntryId}" class="text-danger small mt-1" style="display:none;"></div>
-            `;
-        })() : '';
-
-        return `
-            <div class="mb-2">
-                <small class="fw-semibold text-muted">OCCURRENCES (${count})</small>
-                <div class="border rounded p-2 mt-1">
-                    ${rowsHtml || '<span class="text-muted small">No occurrences yet</span>'}
-                </div>
-                ${addFormHtml}
-            </div>
-        `;
-    }
-
-    /**
-     * Re-render the occurrence list in-place after an add or remove operation.
-     * @param {string|number} entryId - Review queue entry ID
-     * @param {string} eventUlid - ULID of the event
-     * @param {Array} occurrences - Updated array of occurrenceDetail objects
-     * @param {boolean} editable - Whether to show Remove and Add controls
-     */
-    function refreshOccurrenceList(entryId, eventUlid, occurrences, editable) {
-        const container = document.getElementById(`occurrence-list-${entryId}`);
-        if (container) {
-            container.innerHTML = renderOccurrencesList(occurrences, eventUlid, entryId, editable);
-        }
-    }
-
-    /**
      * Remove an occurrence from an event.
      * Shows a spinner on the button, calls the delete API, then re-renders the occurrence list.
      * @async
@@ -925,7 +944,7 @@
             // Update cached detail
             if (currentEntryDetail) {
                 currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
-                refreshOccurrenceList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+                OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true);
             }
         } catch (err) {
             console.error('Failed to remove occurrence:', err);
@@ -1006,7 +1025,7 @@
                         timezone: body.timezone,
                     }];
                 }
-                refreshOccurrenceList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+                OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true);
             }
 
             // Clear form inputs
@@ -1070,8 +1089,38 @@
         const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
         if (consolidateError) consolidateError.style.display = 'none';
 
+        // Build the API request body.
+        // If the admin selected field overrides via the field picker, use override-based path:
+        //   { event: {...overrides as EventInput}, retire: [retireUlid] }
+        // Otherwise fall back to promote path (canonical event ULID):
+        //   { event_ulid: eventUlid, retire: [retireUlid] }
+        const overrides = fieldOverrides[String(entryId)];
+        let requestBody;
+        if (overrides && Object.keys(overrides).length > 0) {
+            // Build EventInput from overrides.
+            // Top-level keys map directly; nested keys use "parent.subfield" notation.
+            const eventInput = {};
+            Object.entries(overrides).forEach(([key, value]) => {
+                const dotIdx = key.indexOf('.');
+                if (dotIdx === -1) {
+                    // Top-level field
+                    eventInput[key] = value;
+                } else {
+                    // Nested field, e.g. "location.name" or "organizer.url"
+                    const parent = key.substring(0, dotIdx);
+                    const subfield = key.substring(dotIdx + 1);
+                    if (!eventInput[parent]) eventInput[parent] = {};
+                    eventInput[parent][subfield] = value;
+                }
+            });
+            requestBody = { event: eventInput, retire: [retireUlid] };
+        } else {
+            // No overrides selected — promote canonical event
+            requestBody = { event_ulid: eventUlid, retire: [retireUlid] };
+        }
+
         try {
-            await API.events.consolidate({ event_ulid: eventUlid, retire: [retireUlid] });
+            await API.events.consolidate(requestBody);
             showToast('Merged successfully', 'success');
             removeEntryFromList(entryId);
 
@@ -1307,6 +1356,38 @@
     }
     
     /**
+     * Update the field-overrides display panel for a given entryId.
+     * Shows a summary of selected field values the admin has picked.
+     * @param {string} entryId - Review queue entry ID
+     */
+    function updateOverridesDisplay(entryId) {
+        const overridesCard = document.getElementById('field-overrides-' + entryId);
+        const overridesList = document.getElementById('field-overrides-list-' + entryId);
+        if (!overridesList) return;
+
+        const overrides = fieldOverrides[entryId] || {};
+        const keys = Object.keys(overrides);
+
+        if (keys.length === 0) {
+            if (overridesCard) overridesCard.style.display = 'none';
+            overridesList.innerHTML = '';
+            return;
+        }
+
+        if (overridesCard) overridesCard.style.display = '';
+
+        const rows = keys.map(k => {
+            const val = String(overrides[k]);
+            const display = val.length > 80 ? val.substring(0, 77) + '…' : val;
+            return '<div class="mb-1">' +
+                '<small class="text-muted fw-semibold">' + escapeHtml(k) + ':</small> ' +
+                '<span>' + escapeHtml(display) + '</span>' +
+                '</div>';
+        });
+        overridesList.innerHTML = rows.join('');
+    }
+
+    /**
      * Collapse detail view
      * Removes the expanded detail row and resets expandedId state
      */
@@ -1330,6 +1411,11 @@
             }
         }
         
+        // Clean up field overrides for collapsed entry
+        if (fieldOverrides[expandedId]) {
+            delete fieldOverrides[expandedId];
+        }
+
         expandedId = null;
         currentEntryDetail = null;
     }
@@ -2192,148 +2278,6 @@
         document.getElementById('loading-state').style.display = 'none';
         document.getElementById('empty-state').style.display = 'none';
         document.getElementById('review-queue-container').style.display = 'block';
-    }
-    
-    /**
-     * Get warning badge HTML for table display
-     * Shows actual warning messages inline so users know WHY events need review
-     * @param {Array} warnings - Array of warning objects with code, message properties
-     * @param {string} status - Entry status (pending, approved, rejected, merged)
-     * @returns {string} HTML string for warning display with badges and messages
-     */
-    function getWarningBadge(warnings, status) {
-        if (!warnings || warnings.length === 0) {
-            return '<span class="badge bg-success">No Issues</span>';
-        }
-        
-        // For resolved entries (approved/rejected/merged), use muted styling
-        const isResolved = status && status !== 'pending';
-        
-        // Show first warning with descriptive message
-        const firstWarning = warnings[0];
-        
-        // Get badge based on warning type
-        let badge = '';
-        let message = '';
-        
-        if (firstWarning.code === 'missing_image') {
-            badge = isResolved 
-                ? '<span class="badge bg-secondary">Missing Image</span>'
-                : '<span class="badge bg-warning">Missing Image</span>';
-            message = 'No image provided';
-        } else if (firstWarning.code === 'missing_description') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Missing Description</span>'
-                : '<span class="badge bg-warning">Missing Description</span>';
-            message = 'No description provided';
-        } else if (firstWarning.code === 'low_confidence') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Low Quality</span>'
-                : '<span class="badge bg-warning">Low Quality</span>';
-            // Extract percentage from message if present
-            const match = firstWarning.message && firstWarning.message.match(/(\d+)%/);
-            message = match ? `Data quality: ${match[1]}%` : 'Low data quality score';
-        } else if (firstWarning.code === 'too_far_future') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Too Far Future</span>'
-                : '<span class="badge bg-warning">Too Far Future</span>';
-            message = 'Event >2 years away';
-        } else if (firstWarning.code === 'link_check_failed') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Bad Link</span>'
-                : '<span class="badge bg-warning">Bad Link</span>';
-            message = 'Link check failed';
-        } else if (firstWarning.code === 'reversed_dates_timezone_likely') {
-            badge = '<span class="badge bg-info">Date Fixed</span>';
-            message = isResolved ? 'Timezone corrected' : 'Timezone issue auto-corrected';
-        } else if (firstWarning.code === 'reversed_dates_corrected_needs_review') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Date Fixed</span>'
-                : '<span class="badge bg-warning">Date Issue</span>';
-            message = isResolved ? 'Date corrected' : 'Dates corrected, review needed';
-        } else if (firstWarning.code && firstWarning.code.includes('reversed_dates')) {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Date Issue</span>'
-                : '<span class="badge bg-warning">Date Issue</span>';
-            message = 'Date ordering problem';
-        } else if (firstWarning.code === 'near_duplicate_of_new_event') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Near Duplicate</span>'
-                : '<span class="badge bg-purple">Near Duplicate</span>';
-            message = firstWarning.message || 'This existing event may be a near-duplicate of a newly ingested event';
-        } else if (firstWarning.code === 'potential_duplicate') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Possible Duplicate</span>'
-                : '<span class="badge bg-purple">Possible Duplicate</span>';
-            message = firstWarning.message || 'May be a duplicate event';
-        } else if (firstWarning.code === 'place_possible_duplicate') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Place Duplicate</span>'
-                : '<span class="badge bg-purple">Place Duplicate</span>';
-            message = firstWarning.message || 'Similar place already exists';
-        } else if (firstWarning.code === 'org_possible_duplicate') {
-            badge = isResolved
-                ? '<span class="badge bg-secondary">Org Duplicate</span>'
-                : '<span class="badge bg-purple">Org Duplicate</span>';
-            message = firstWarning.message || 'Similar organization already exists';
-        } else {
-            // Fallback: use field name or generic message
-            const label = firstWarning.field || 'issue';
-            badge = isResolved
-                ? `<span class="badge bg-secondary">${escapeHtml(label)}</span>`
-                : `<span class="badge bg-warning">${escapeHtml(label)}</span>`;
-            message = isResolved ? 'Resolved' : (firstWarning.message || 'Needs review');
-        }
-        
-        // If multiple warnings, add count badge
-        const additionalCount = warnings.length > 1 ? ` <span class="badge bg-secondary">+${warnings.length - 1} more</span>` : '';
-        
-        return `
-            <div class="d-flex flex-column gap-1">
-                <div>${badge}</div>
-                <small class="text-muted">${escapeHtml(message)}</small>
-                ${additionalCount}
-            </div>
-        `;
-    }
-    
-    /**
-     * Get warning badge for detail view
-     * Returns color-coded badge based on warning code with human-readable labels
-     * @param {string} code - Warning code identifier
-     * @returns {string} HTML string for badge element
-     */
-    function getWarningBadgeForDetail(code) {
-        // Map warning codes to user-friendly badge labels and colors
-        const badgeMap = {
-            // Date/Time issues
-            'reversed_dates_timezone_likely': { label: 'Date Fixed', color: 'info' },
-            'reversed_dates_corrected_needs_review': { label: 'Date Issue', color: 'warning' },
-            'too_far_future': { label: 'Too Far Future', color: 'warning' },
-            
-            // Missing data
-            'missing_image': { label: 'Missing Image', color: 'warning' },
-            'missing_description': { label: 'Missing Description', color: 'warning' },
-            
-            // Quality issues
-            'low_confidence': { label: 'Low Quality', color: 'warning' },
-            'link_check_failed': { label: 'Bad Link', color: 'warning' },
-            
-            // Duplicate detection
-            'near_duplicate_of_new_event': { label: 'Near Duplicate', color: 'purple' },
-            'potential_duplicate': { label: 'Possible Duplicate', color: 'purple' },
-            'place_possible_duplicate': { label: 'Place Duplicate', color: 'purple' },
-            'org_possible_duplicate': { label: 'Org Duplicate', color: 'purple' },
-        };
-        
-        const badge = badgeMap[code];
-        if (badge) {
-            return `<span class="badge bg-${badge.color}">${badge.label}</span>`;
-        }
-        
-        // Fallback: use code as label with generic color
-        const label = code ? code.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Issue';
-        return `<span class="badge bg-secondary">${escapeHtml(label)}</span>`;
     }
     
     /**

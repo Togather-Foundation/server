@@ -612,49 +612,6 @@
         document.getElementById('event-form').style.display = 'none';
     }
 
-    function showToast(message, type = 'success') {
-        const container = document.getElementById('toast-container');
-        const colors = {
-            success: 'bg-success',
-            error: 'bg-danger',
-            warning: 'bg-warning',
-            info: 'bg-info'
-        };
-
-        const toast = document.createElement('div');
-        toast.className = 'toast show';
-        toast.setAttribute('role', 'alert');
-        toast.innerHTML = `
-            <div class="toast-header">
-                <span class="badge ${colors[type]} me-2"></span>
-                <strong class="me-auto">${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
-                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
-            </div>
-            <div class="toast-body">${escapeHtml(message)}</div>
-        `;
-
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 5000);
-    }
-
-    function setLoading(element, loading) {
-        if (loading) {
-            element.disabled = true;
-            element.dataset.originalText = element.innerHTML;
-            element.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
-        } else {
-            element.disabled = false;
-            element.innerHTML = element.dataset.originalText;
-        }
-    }
-
-    function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     function formatDateTime(dateString) {
         if (!dateString) return '';
         const date = new Date(dateString);

@@ -1,0 +1,107 @@
+<!-- Reject Modal (review_queue.html) -->
+<div class="modal fade" id="reject-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete Event</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Reason (required)</label>
+                    <textarea class="form-control" id="reject-reason" rows="4" placeholder="Explain why this event is being deleted..."></textarea>
+                    <div class="invalid-feedback" id="reject-reason-error"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-reject-btn" data-action="confirm-reject">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Merge Modal (review_queue.html) -->
+<div class="modal fade" id="merge-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Merge Duplicate Event</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">This will merge the duplicate event into the primary event. The duplicate will be soft-deleted and its source provenance preserved.</p>
+                
+                <!-- Side-by-side comparison -->
+                <div class="row mb-3" id="merge-comparison">
+                    <!-- Duplicate Event (this review) -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h4 class="card-title mb-0">This Event <span class="badge bg-danger-lt ms-1">Duplicate</span></h4>
+                            </div>
+                            <div class="card-body" id="merge-duplicate-info">
+                                <p class="text-muted">No event data available</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Primary Event (merge into) -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h4 class="card-title mb-0">Primary Event <span class="badge bg-success-lt ms-1">Keep</span></h4>
+                            </div>
+                            <div class="card-body" id="merge-primary-info">
+                                <p class="text-muted">Enter a ULID below to load the primary event</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Primary Event ID (merge into)</label>
+                    <input type="text" class="form-control" id="merge-primary-event-id" placeholder="Enter the ULID of the event to keep">
+                    <div class="invalid-feedback" id="merge-event-error"></div>
+                    <small class="form-hint">The duplicate event from this review will be merged into the primary event specified above.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-purple" id="confirm-merge-btn" data-action="confirm-merge">Merge</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Event Modal (events_list.html) -->
+<div class="modal modal-blur fade" id="delete-modal" tabindex="-1" style="display: none;">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-status bg-danger"></div>
+            <div class="modal-body text-center py-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon mb-2 text-danger icon-lg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <path d="M12 9v2m0 4v.01"/>
+                    <path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/>
+                </svg>
+                <h3>Delete Event?</h3>
+                <div class="text-muted" id="delete-message">
+                    Are you sure you want to delete "<span id="delete-event-name"></span>"? This action cannot be undone.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="w-100">
+                    <div class="row">
+                        <div class="col">
+                            <button type="button" class="btn w-100" data-bs-dismiss="modal">Cancel</button>
+                        </div>
+                        <div class="col">
+                            <button type="button" class="btn btn-danger w-100" id="confirm-delete">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -97,6 +97,64 @@ setLoading(button, true/false);
 debounce(fn, 300);
 ```
 
+## Shared Frontend Modules
+
+Beyond `components.js`, these modules are loaded globally via `_footer.html`:
+
+- `field-picker.js` — `window.FieldPicker`: chip-based field comparison table for consolidation/review workflows
+- `occurrence-rendering.js` — `window.OccurrenceRendering`: occurrence list HTML rendering (used by review-queue fold-down)
+- `warning-badges.js` — `window.WarningBadges`: warning badge HTML generation (used by review-queue table + detail cards)
+
+These are only functionally used by `review-queue.js` and `consolidate.js` but are loaded on all admin pages via `_footer.html` for simplicity.
+
+## JS Module Design Rules
+
+When writing a new shared module or extracting logic into one:
+
+**Design param-first.** Functions must receive everything they need as explicit parameters — no closing over page-specific DOM IDs, module-level state, or globals beyond the utilities in `components.js`. This keeps modules context-agnostic and reusable across pages.
+
+```javascript
+// BAD: closes over page-specific DOM and module state
+function renderTable() {
+    const container = document.getElementById('my-specific-table');
+    container.innerHTML = buildRows(loadedEvents);   // loadedEvents is a closure var
+}
+
+// GOOD: explicit params — works on any page, testable in isolation
+function renderTable(containerEl, events) {
+    if (!containerEl) return;
+    containerEl.innerHTML = buildRows(events);
+}
+```
+
+**Guard optional globals.** If a shared module is loaded via `_footer.html` but only used by some pages, guard calls with a `typeof` check so a missing or failed load doesn't crash the whole page IIFE:
+
+```javascript
+if (typeof FieldPicker !== 'undefined') {
+    FieldPicker.renderFieldPickerTable(container, events);
+}
+```
+
+**IIFE + `window.*` namespace.** All shared modules follow this structure:
+
+```javascript
+(function () {
+    'use strict';
+    function foo(param) { ... }
+    function bar(param) { ... }
+    window.MyModule = { foo, bar };
+})();
+```
+
+**No internal cross-namespace calls.** Inside the IIFE, call sibling functions by their local name (`foo()`), not by the namespace (`MyModule.foo()`). The namespace is only for external callers.
+
+## Template Partials
+
+- `_footer.html` — shared scripts, toast container, confirm modal; included by all pages
+- `_header.html` — navigation bar; included by all pages
+- `_modals.html` — page-specific modals (reject, merge, delete event); included by `review_queue.html` and `events_list.html`
+- `_user_modal.html` — user management modal; included via `_footer.html`
+
 ## Testing
 
 ```bash
