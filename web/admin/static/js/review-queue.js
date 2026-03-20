@@ -143,6 +143,32 @@
                 case 'confirm-merge':
                     confirmMerge();
                     break;
+                case 'remove-occurrence':
+                    e.preventDefault();
+                    removeOccurrence(
+                        target.dataset.entryId,
+                        target.dataset.eventUlid,
+                        target.dataset.occurrenceId
+                    );
+                    break;
+                case 'add-occurrence':
+                    e.preventDefault();
+                    addOccurrence(
+                        target.dataset.entryId,
+                        target.dataset.eventUlid
+                    );
+                    break;
+                case 'add-as-occurrence':
+                    e.preventDefault();
+                    consolidateEvent(target.dataset.id, 'add-as-occurrence');
+                    break;
+                case 'merge-duplicate':
+                    e.preventDefault();
+                    consolidateEvent(target.dataset.id, 'merge-duplicate');
+                    break;
+                case 'canonical-select':
+                    // Radio state is read lazily in consolidateEvent; no action needed here.
+                    break;
             }
         });
         
@@ -385,6 +411,19 @@
         const changes = detail.changes || [];
         const original = detail.original || {};
         const normalized = detail.normalized || {};
+
+        // Check duplicate warning flags early (used in case detection and button rendering)
+        const hasNearDupNewEventWarning = warnings.some(w => w.code === 'near_duplicate_of_new_event');
+        const hasDuplicateWarnings = warnings.some(w =>
+            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
+        );
+        // Any duplicate-type warning (used to show the "Not a Duplicate" button)
+        const hasAnyDuplicateWarning = hasDuplicateWarnings || hasNearDupNewEventWarning;
+
+        // Determine Case 1 (standalone multi_session_likely / no related events) vs Case 2/3
+        const isCase1 = (!detail.relatedEvents || detail.relatedEvents.length === 0) &&
+                        !detail.duplicateOfEventUlid;
+        const isCase2or3 = !isCase1 && (hasAnyDuplicateWarning || (detail.relatedEvents && detail.relatedEvents.length > 0));
         
         // Check if there are any date-related warnings
         const hasDateWarnings = warnings.some(w => 
@@ -593,13 +632,11 @@
         ` : '';
         
         // Build cross-link banner for pending items with a known duplicate event.
-        // Wording depends on the warning type:
-        //   near_duplicate_of_new_event — this review sits on the *existing* series; the linked
-        //     ULID is the newly-ingested candidate that flagged this entry as its near-duplicate.
-        //   potential_duplicate (or no warning present) — standard case where the linked ULID is
-        //     the canonical event this entry may be a duplicate of.
+        // Only show the raw cross-link alert for Case 2/3 when there are NO embedded relatedEvents
+        // (legacy rows). When relatedEvents is populated, the side-by-side panel replaces the alert.
         let crossLinkHtml = '';
-        if (detail.status === 'pending' && detail.duplicateOfEventUlid) {
+        const relatedEvents = detail.relatedEvents || [];
+        if (detail.status === 'pending' && detail.duplicateOfEventUlid && relatedEvents.length === 0) {
             const linkedUlid = detail.duplicateOfEventUlid;
             const isNearDupEntry = warnings.some(w => w.code === 'near_duplicate_of_new_event');
             if (isNearDupEntry) {
@@ -622,81 +659,141 @@
             }
         }
 
-        // Check if there are any duplicate-related warnings.
-        // near_duplicate_of_new_event appears on the *existing* series event's review entry when a
-        // newly-ingested event was flagged as a near-duplicate of it.
-        // For add-occurrence: the existing series (review.eventId) is the target — the backend
-        // derives the source from review.duplicateOfEventUlid, so no target ULID is needed from the UI.
-        const hasNearDupNewEventWarning = warnings.some(w => w.code === 'near_duplicate_of_new_event');
-        const hasDuplicateWarnings = warnings.some(w => 
-            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
-        );
-        // Any duplicate-type warning (used to show the "Not a Duplicate" button)
-        const hasAnyDuplicateWarning = hasDuplicateWarnings || hasNearDupNewEventWarning;
-        
-        // Consolidate page URL — pre-fill with both event ULIDs when available
-        const consolidateUrl = detail.duplicateOfEventUlid
-            ? `/admin/events/consolidate?ulids=${encodeURIComponent(detail.eventId)},${encodeURIComponent(detail.duplicateOfEventUlid)}`
-            : `/admin/events/consolidate?ulids=${encodeURIComponent(detail.eventId)}`;
+        // Build the occurrences section.
+        // Case 1: editable (add/remove occurrences inline).
+        // Case 2/3: read-only here; related event shows side-by-side panel below.
+        const thisOccurrences = detail.occurrences || [];
+        const occurrencesHtml = `
+            <div id="occurrence-list-${id}">
+                ${renderOccurrencesList(thisOccurrences, detail.eventId, id, isCase1)}
+            </div>
+        `;
+
+        // Build the Case 2/3 side-by-side related event panel.
+        let relatedEventPanelHtml = '';
+        if (isCase2or3 && relatedEvents.length > 0) {
+            const relatedEvent = relatedEvents[0];
+            const similarity = relatedEvent.similarity != null ? Math.round(relatedEvent.similarity * 100) : null;
+            const similarityBadge = similarity != null
+                ? `<span class="badge bg-purple-lt ms-2">${similarity}%</span>`
+                : '';
+
+            // Map relatedEventDetail to the shape extractMergeFields expects
+            const relatedAsNormalized = {
+                name: relatedEvent.name,
+                description: relatedEvent.description,
+                startDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                    ? relatedEvent.occurrences[0].startTime
+                    : null,
+                location: relatedEvent.venueName ? { name: relatedEvent.venueName } : null,
+            };
+
+            relatedEventPanelHtml = `
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <strong>This event</strong>
+                            </div>
+                            <div class="card-body">
+                                ${renderMergeEventSummary(normalized, relatedAsNormalized)}
+                                ${renderOccurrencesList(thisOccurrences, detail.eventId, id, false)}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <strong>${escapeHtml(relatedEvent.name || 'Related event')}</strong>
+                                ${similarityBadge}
+                            </div>
+                            <div class="card-body">
+                                ${renderMergeEventSummary(relatedAsNormalized, normalized)}
+                                ${renderOccurrencesList(relatedEvent.occurrences || [], relatedEvent.ulid, id, false)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
         // Build action buttons (only for pending status)
-        // Only show Fix Dates if there are date-related warnings
-        const actionButtons = detail.status === 'pending' ? `
-            <div class="btn-list" id="action-buttons-${id}">
-                <button class="btn btn-success" data-action="approve" data-id="${id}">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                        <path d="M5 12l5 5l10 -10"/>
-                    </svg>
-                    Approve
-                </button>
-                ${hasAnyDuplicateWarning ? `
-                    <button class="btn btn-outline-success" data-action="not-a-duplicate" data-id="${id}">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <path d="M5 12l5 5l10 -10"/>
-                        </svg>
-                        Not a Duplicate
-                    </button>
-                ` : ''}
-                ${hasAnyDuplicateWarning ? `
-                    <a href="${consolidateUrl}" class="btn btn-outline-purple">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <circle cx="7" cy="18" r="2"/>
-                            <circle cx="7" cy="6" r="2"/>
-                            <circle cx="17" cy="12" r="2"/>
-                            <line x1="7" y1="8" x2="7" y2="16"/>
-                            <path d="M7 8a4 4 0 0 0 4 4h4"/>
-                        </svg>
-                        Consolidate
-                    </a>
-                ` : ''}
-                ${hasDateWarnings ? `
-                    <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <rect x="4" y="5" width="16" height="16" rx="2"/>
-                            <line x1="16" y1="3" x2="16" y2="7"/>
-                            <line x1="8" y1="3" x2="8" y2="7"/>
-                            <line x1="4" y1="11" x2="20" y2="11"/>
-                        </svg>
-                        Fix Dates
-                    </button>
-                ` : ''}
-                <button class="btn btn-outline-danger" data-action="reject" data-id="${id}">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
-                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                    Delete Event
-                </button>
-            </div>
-            <div id="fix-form-${id}" style="display: none;">
-                <!-- Fix form will be inserted here -->
-            </div>
-        ` : `
+        const actionButtons = detail.status === 'pending' ? (() => {
+            if (isCase2or3) {
+                // Case 2/3: show canonical selector + consolidate action buttons
+                return `
+                    <div class="mb-3" id="canonical-selector-${id}">
+                        <label class="form-label fw-semibold">Which event is canonical?</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="canonical-${id}"
+                                   id="canonical-this-${id}" value="this" checked
+                                   data-action="canonical-select" data-entry-id="${id}">
+                            <label class="form-check-label" for="canonical-this-${id}">This event</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="canonical-${id}"
+                                   id="canonical-related-${id}" value="related"
+                                   data-action="canonical-select" data-entry-id="${id}">
+                            <label class="form-check-label" for="canonical-related-${id}">Related event</label>
+                        </div>
+                    </div>
+                    <div class="btn-list" id="action-buttons-${id}">
+                        <button class="btn btn-success" data-action="add-as-occurrence" data-id="${id}">
+                            &#8853; Add as Occurrence
+                        </button>
+                        <button class="btn btn-outline-success" data-action="merge-duplicate" data-id="${id}">
+                            &#8855; Merge Duplicate
+                        </button>
+                        <button class="btn btn-outline-secondary" data-action="not-a-duplicate" data-id="${id}">
+                            &#8800; Not a Duplicate
+                        </button>
+                        <button class="btn btn-outline-danger" data-action="reject" data-id="${id}">
+                            &#10005; Reject
+                        </button>
+                    </div>
+                    <div id="consolidate-error-${id}" class="alert alert-danger mt-2" style="display:none;"></div>
+                    <div id="fix-form-${id}" style="display: none;">
+                        <!-- Fix form will be inserted here -->
+                    </div>
+                `;
+            } else {
+                // Case 1: standalone — approve, fix dates, reject only
+                return `
+                    <div class="btn-list" id="action-buttons-${id}">
+                        <button class="btn btn-success" data-action="approve" data-id="${id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M5 12l5 5l10 -10"/>
+                            </svg>
+                            Approve
+                        </button>
+                        ${hasDateWarnings ? `
+                            <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                    <rect x="4" y="5" width="16" height="16" rx="2"/>
+                                    <line x1="16" y1="3" x2="16" y2="7"/>
+                                    <line x1="8" y1="3" x2="8" y2="7"/>
+                                    <line x1="4" y1="11" x2="20" y2="11"/>
+                                </svg>
+                                Fix Dates
+                            </button>
+                        ` : ''}
+                        <button class="btn btn-outline-danger" data-action="reject" data-id="${id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                            Delete Event
+                        </button>
+                    </div>
+                    <div id="fix-form-${id}" style="display: none;">
+                        <!-- Fix form will be inserted here -->
+                    </div>
+                `;
+            }
+        })() : `
             <div class="text-muted">
                 ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
                 ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
@@ -715,7 +812,7 @@
                         ${crossLinkHtml}
                         ${warningsHtml}
                         ${changesHtml}
-                        ${eventDataHtml}
+                        ${isCase2or3 ? relatedEventPanelHtml : eventDataHtml + occurrencesHtml}
                         ${comparisonHtml}
                         
                         <div class="mt-3">
@@ -727,6 +824,8 @@
         `;
 
         // Fetch and render inline duplicate diffs for each potential_duplicate match
+        // that is NOT already covered by detail.relatedEvents (legacy fast path).
+        const relatedEventUlids = new Set(relatedEvents.map(r => r.ulid));
         const dupContainers = detailRow.querySelectorAll('[data-dup-ulid]');
         if (dupContainers.length > 0) {
             const thisEventData = detail.normalized || null;
@@ -745,11 +844,268 @@
             dupContainers.forEach(container => {
                 const dupUlid = container.dataset.dupUlid;
                 if (!dupUlid) return;
+                // Skip ULIDs already shown in the side-by-side relatedEvents panel
+                if (relatedEventUlids.has(dupUlid)) {
+                    container.style.display = 'none';
+                    return;
+                }
                 fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData, matchDataByUlid[dupUlid] || null);
             });
         }
     }
-    
+
+    /**
+     * Render a compact list of occurrences.
+     * When editable=true, each row includes a Remove button and an Add Occurrence form follows.
+     * @param {Array} occurrences - Array of occurrenceDetail objects from the API
+     * @param {string} eventUlid - ULID of the event that owns these occurrences
+     * @param {string|number} entryId - Review queue entry ID (used for input IDs and data attributes)
+     * @param {boolean} editable - Whether to show Remove and Add controls
+     * @returns {string} HTML string
+     */
+    function renderOccurrencesList(occurrences, eventUlid, entryId, editable) {
+        const count = occurrences ? occurrences.length : 0;
+        if (count === 0 && !editable) {
+            return '<p class="text-muted small mb-2">No occurrences</p>';
+        }
+
+        const rowsHtml = (occurrences || []).map(occ => {
+            const start = occ.startTime ? formatDate(occ.startTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(no date)';
+            const end = occ.endTime ? formatDate(occ.endTime, { hour: 'numeric', minute: '2-digit' }) : '';
+            const timeStr = end ? `${start} \u2013 ${end}` : start;
+
+            const removeBtn = editable
+                ? `<button class="btn btn-sm btn-ghost-danger ms-auto" data-action="remove-occurrence" data-entry-id="${entryId}" data-event-ulid="${escapeHtml(eventUlid)}" data-occurrence-id="${escapeHtml(occ.id)}" title="Remove occurrence">&#10005; Remove</button>`
+                : '';
+
+            return `<div class="d-flex align-items-center py-1 border-bottom">
+                <span class="text-body-secondary small">${escapeHtml(timeStr)}</span>
+                ${removeBtn}
+            </div>`;
+        }).join('');
+
+        const addFormHtml = editable ? (() => {
+            const defaultTz = (occurrences && occurrences.length > 0 && occurrences[0].timezone)
+                ? occurrences[0].timezone
+                : 'America/Toronto';
+            return `
+                <div class="d-flex gap-2 align-items-center flex-wrap mt-2" id="add-occ-form-${entryId}">
+                    <input type="datetime-local" class="form-control form-control-sm" id="occ-start-${entryId}" style="max-width: 200px;" placeholder="Start">
+                    <input type="datetime-local" class="form-control form-control-sm" id="occ-end-${entryId}" style="max-width: 200px;" placeholder="End (optional)">
+                    <input type="text" class="form-control form-control-sm" id="occ-tz-${entryId}" value="${escapeHtml(defaultTz)}" style="max-width: 160px;" placeholder="Timezone">
+                    <button class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="${entryId}" data-event-ulid="${escapeHtml(eventUlid)}">+ Add</button>
+                </div>
+                <div id="occ-error-${entryId}" class="text-danger small mt-1" style="display:none;"></div>
+            `;
+        })() : '';
+
+        return `
+            <div class="mb-2">
+                <small class="fw-semibold text-muted">OCCURRENCES (${count})</small>
+                <div class="border rounded p-2 mt-1">
+                    ${rowsHtml || '<span class="text-muted small">No occurrences yet</span>'}
+                </div>
+                ${addFormHtml}
+            </div>
+        `;
+    }
+
+    /**
+     * Re-render the occurrence list in-place after an add or remove operation.
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} eventUlid - ULID of the event
+     * @param {Array} occurrences - Updated array of occurrenceDetail objects
+     * @param {boolean} editable - Whether to show Remove and Add controls
+     */
+    function refreshOccurrenceList(entryId, eventUlid, occurrences, editable) {
+        const container = document.getElementById(`occurrence-list-${entryId}`);
+        if (container) {
+            container.innerHTML = renderOccurrencesList(occurrences, eventUlid, entryId, editable);
+        }
+    }
+
+    /**
+     * Remove an occurrence from an event.
+     * Shows a spinner on the button, calls the delete API, then re-renders the occurrence list.
+     * @async
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} eventUlid - ULID of the event
+     * @param {string} occurrenceId - UUID of the occurrence to delete
+     */
+    async function removeOccurrence(entryId, eventUlid, occurrenceId) {
+        const btn = document.querySelector(
+            `[data-action="remove-occurrence"][data-entry-id="${entryId}"][data-occurrence-id="${occurrenceId}"]`
+        );
+        if (btn) setLoading(btn, true);
+
+        try {
+            await API.events.occurrences.delete(eventUlid, occurrenceId);
+            // Update cached detail
+            if (currentEntryDetail) {
+                currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
+                refreshOccurrenceList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+            }
+        } catch (err) {
+            console.error('Failed to remove occurrence:', err);
+            const msg = (err && err.detail) || (err && err.message) || 'Failed to remove occurrence';
+            showToast(msg, 'error');
+            if (btn) setLoading(btn, false);
+        }
+    }
+
+    /**
+     * Add a new occurrence to an event.
+     * Reads the occ-start-{entryId}, occ-end-{entryId}, occ-tz-{entryId} inputs,
+     * validates, calls the API, and refreshes the occurrence list on success.
+     * @async
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} eventUlid - ULID of the event
+     */
+    async function addOccurrence(entryId, eventUlid) {
+        const startInput = document.getElementById(`occ-start-${entryId}`);
+        const endInput = document.getElementById(`occ-end-${entryId}`);
+        const tzInput = document.getElementById(`occ-tz-${entryId}`);
+        const errorDiv = document.getElementById(`occ-error-${entryId}`);
+        const addBtn = document.querySelector(`[data-action="add-occurrence"][data-entry-id="${entryId}"]`);
+
+        if (!startInput) return;
+
+        const hideError = () => { if (errorDiv) errorDiv.style.display = 'none'; };
+        const showError = (msg) => {
+            if (errorDiv) {
+                errorDiv.textContent = msg;
+                errorDiv.style.display = 'block';
+            }
+        };
+
+        hideError();
+
+        const startVal = startInput.value;
+        if (!startVal) {
+            showError('Start date/time is required');
+            return;
+        }
+
+        const timezone = tzInput ? tzInput.value.trim() : 'America/Toronto';
+        if (!timezone) {
+            showError('Timezone is required');
+            return;
+        }
+
+        if (addBtn) setLoading(addBtn, true);
+
+        try {
+            const body = {
+                start_time: new Date(startVal).toISOString(),
+                timezone: timezone,
+            };
+            const endVal = endInput ? endInput.value : '';
+            if (endVal) {
+                body.end_time = new Date(endVal).toISOString();
+            }
+
+            const created = await API.events.occurrences.create(eventUlid, body);
+
+            // Update cached detail — append the returned occurrence (or refetch)
+            if (currentEntryDetail) {
+                if (created && created.id) {
+                    currentEntryDetail.occurrences = [...(currentEntryDetail.occurrences || []), created];
+                } else {
+                    // API may return 201 with no body; add a minimal placeholder so list updates
+                    currentEntryDetail.occurrences = [...(currentEntryDetail.occurrences || []), {
+                        id: '_pending_' + Date.now(),
+                        startTime: body.start_time,
+                        endTime: body.end_time || null,
+                        timezone: body.timezone,
+                    }];
+                }
+                refreshOccurrenceList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+            }
+
+            // Clear form inputs
+            if (startInput) startInput.value = '';
+            if (endInput) endInput.value = '';
+
+        } catch (err) {
+            console.error('Failed to add occurrence:', err);
+            const status = err && err.status;
+            if (status === 409) {
+                showError('Overlap: an occurrence already exists at this time');
+            } else {
+                const msg = (err && err.detail) || (err && err.message) || 'Failed to add occurrence';
+                showError(msg);
+            }
+            if (addBtn) setLoading(addBtn, false);
+        }
+    }
+
+    /**
+     * Consolidate (Add as Occurrence or Merge Duplicate) the review entry's event
+     * with its related event. Reads the canonical radio, calls the consolidate API,
+     * and handles 409 overlap errors with an inline message.
+     * @async
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} action - 'add-as-occurrence' or 'merge-duplicate'
+     */
+    async function consolidateEvent(entryId, action) {
+        const detail = currentEntryDetail;
+        if (!detail) return;
+
+        const relatedEvents = detail.relatedEvents || [];
+        if (relatedEvents.length === 0) {
+            showToast('No related event found to consolidate with', 'error');
+            return;
+        }
+
+        const canonicalInput = document.querySelector(`input[name="canonical-${entryId}"]:checked`);
+        const canonical = canonicalInput ? canonicalInput.value : 'this';
+
+        let eventUlid, retireUlid;
+        if (canonical === 'this') {
+            eventUlid = detail.eventId;
+            retireUlid = relatedEvents[0].ulid;
+        } else {
+            eventUlid = relatedEvents[0].ulid;
+            retireUlid = detail.eventId;
+        }
+
+        const btn = document.querySelector(`[data-action="${action}"][data-id="${entryId}"]`);
+        if (btn) setLoading(btn, true);
+
+        // Hide any previous consolidate error
+        const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
+        if (consolidateError) consolidateError.style.display = 'none';
+
+        try {
+            await API.events.consolidate({ event_ulid: eventUlid, retire: [retireUlid] });
+            showToast('Merged successfully', 'success');
+            removeEntryFromList(entryId);
+
+            // Increment merged count badge
+            const mergedBadge = document.querySelector('[data-action="filter-status"][data-status="merged"] .badge');
+            if (mergedBadge) {
+                const currentCount = parseInt(mergedBadge.textContent) || 0;
+                mergedBadge.textContent = currentCount + 1;
+            }
+        } catch (err) {
+            console.error('Failed to consolidate events:', err);
+            const status = err && err.status;
+            if (status === 409 && action === 'add-as-occurrence') {
+                const detailMsg = (err && err.detail) || 'The occurrence conflicts with an existing one.';
+                if (consolidateError) {
+                    consolidateError.textContent = detailMsg + ' Use Merge Duplicate instead (same session listed twice), or Reject and manually adjust.';
+                    consolidateError.style.display = 'block';
+                } else {
+                    showToast(detailMsg, 'error');
+                }
+            } else {
+                const msg = (err && err.detail) || (err && err.message) || 'Failed to consolidate events';
+                showToast(msg, 'error');
+            }
+            if (btn) setLoading(btn, false);
+        }
+    }
+
     /**
      * Render full event data for display
      * Shows all event fields with proper formatting, including pretty-printed JSON for location
