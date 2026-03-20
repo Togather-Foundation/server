@@ -607,6 +607,14 @@ paths:
                   description: >
                     Event ULIDs to soft-delete with tombstones. All must exist and
                     not already be deleted. Required, minimum 1 entry.
+                transfer_occurrences:
+                  type: boolean
+                  default: false
+                  description: >
+                    If true, occurrences are copied from each retired event to the
+                    canonical event before retirement. Returns 409 if any occurrence
+                    would overlap an existing one on the canonical. Default false
+                    (Merge Duplicate path — retire only, no occurrence transfer).
       responses:
         '200':
           description: Consolidation succeeded
@@ -631,6 +639,14 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           description: Retire target or canonical event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: |
+            An occurrence from a retired event overlaps an existing occurrence on
+            the canonical event (only when transfer_occurrences is true).
           content:
             application/problem+json:
               schema:

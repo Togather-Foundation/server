@@ -1764,9 +1764,10 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 	}
 
 	type consolidateRequest struct {
-		Event     *events.EventInput `json:"event,omitempty"`
-		EventULID string             `json:"event_ulid,omitempty"`
-		Retire    []string           `json:"retire"`
+		Event               *events.EventInput `json:"event,omitempty"`
+		EventULID           string             `json:"event_ulid,omitempty"`
+		Retire              []string           `json:"retire"`
+		TransferOccurrences bool               `json:"transfer_occurrences,omitempty"`
 	}
 
 	var req consolidateRequest
@@ -1791,9 +1792,10 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 	}
 
 	params := events.ConsolidateParams{
-		Event:     req.Event,
-		EventULID: req.EventULID,
-		Retire:    req.Retire,
+		Event:               req.Event,
+		EventULID:           req.EventULID,
+		Retire:              req.Retire,
+		TransferOccurrences: req.TransferOccurrences,
 	}
 
 	result, err := h.AdminService.Consolidate(r.Context(), params)
@@ -1824,6 +1826,10 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 		}
 		if errors.Is(err, events.ErrConsolidateRetiredAlreadyDeleted) {
 			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/conflict", "Retire target already deleted", err, h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrOccurrenceOverlap) {
+			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Occurrence overlap", err, h.Env)
 			return
 		}
 		if errors.Is(err, events.ErrNotFound) {

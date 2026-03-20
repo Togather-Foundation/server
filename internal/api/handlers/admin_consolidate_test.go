@@ -165,6 +165,7 @@ func TestConsolidate_200_PromotePath(t *testing.T) {
 
 	// Step 5: soft-delete retired + tombstone.
 	repo.On("SoftDeleteEvent", mock.Anything, retireULID, "consolidated").Return(nil).Once()
+	repo.On("DeleteOccurrencesByEventULID", mock.Anything, retireULID).Return(nil).Once()
 	repo.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil).Once()
 
 	// Step 6: dismiss pending reviews.

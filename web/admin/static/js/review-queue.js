@@ -1113,10 +1113,10 @@
                     eventInput[parent][subfield] = value;
                 }
             });
-            requestBody = { event: eventInput, retire: [retireUlid] };
+            requestBody = { event: eventInput, retire: [retireUlid], transfer_occurrences: action === 'add-as-occurrence' };
         } else {
             // No overrides selected — promote canonical event
-            requestBody = { event_ulid: eventUlid, retire: [retireUlid] };
+            requestBody = { event_ulid: eventUlid, retire: [retireUlid], transfer_occurrences: action === 'add-as-occurrence' };
         }
 
         try {

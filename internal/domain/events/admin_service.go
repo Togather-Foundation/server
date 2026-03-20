@@ -92,6 +92,10 @@ type ConsolidateParams struct {
 	EventULID string
 	// Retire lists event ULIDs to soft-delete with tombstones. Required, min 1.
 	Retire []string
+	// TransferOccurrences copies occurrences from each retired event to the canonical
+	// event before retiring it. Returns ErrOccurrenceOverlap (409) if any occurrence
+	// would overlap an existing occurrence on the canonical. Default false.
+	TransferOccurrences bool
 }
 
 // ConsolidateResult contains the outcome of an atomic consolidation operation.
@@ -1585,7 +1589,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 	}
 
 	// Steps 5–6: Retire events — soft-delete + tombstone, then dismiss pending reviews.
-	retiredULIDs, dismissedIDs, err := s.consolidateRetireEvents(ctx, txRepo, retiredEvents, canonicalEvent.ULID, params.Retire)
+	retiredULIDs, dismissedIDs, err := s.consolidateRetireEvents(ctx, txRepo, retiredEvents, canonicalEvent, params.Retire, params.TransferOccurrences)
 	if err != nil {
 		return nil, err
 	}
@@ -1634,23 +1638,76 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 // consolidateRetireEvents encapsulates steps 5 and 6 of the Consolidate algorithm:
 // soft-delete each retired event with a tombstone pointing to the canonical event,
 // then dismiss any pending review queue entries for those events.
+// If transferOccurrences is true, each retired event's occurrences are copied to
+// the canonical event before retirement. Returns ErrOccurrenceOverlap if any
+// occurrence would overlap an existing occurrence on the canonical.
 func (s *AdminService) consolidateRetireEvents(
 	ctx context.Context,
 	txRepo Repository,
 	retiredEvents []*Event,
-	canonicalULID string,
+	canonicalEvent *Event,
 	retireULIDs []string,
+	transferOccurrences bool,
 ) (retiredULIDs []string, dismissedIDs []int, err error) {
 	// Step 5: Retire events — soft-delete + tombstone.
-	canonicalURI, err := s.eventURI(canonicalULID)
+	canonicalURI, err := s.eventURI(canonicalEvent.ULID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("canonical URI for consolidation target: %w", err)
 	}
 
 	retiredULIDs = make([]string, 0, len(retiredEvents))
 	for _, ev := range retiredEvents {
+		// Optional: transfer occurrences from the retired event to the canonical
+		// before retiring it, so that "Add as Occurrence" moves the occurrence
+		// atomically in the same transaction.
+		if transferOccurrences {
+			for _, occ := range ev.Occurrences {
+				overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, canonicalEvent.ID, occ.StartTime, occ.EndTime)
+				if err != nil {
+					return nil, nil, fmt.Errorf("check overlap for occurrence transfer: %w", err)
+				}
+				if overlaps {
+					return nil, nil, fmt.Errorf("occurrence [%s] from retired event %s overlaps existing occurrence on canonical %s: %w",
+						occ.StartTime.Format(time.RFC3339), ev.ULID, canonicalEvent.ID, ErrOccurrenceOverlap)
+				}
+				occTimezone := occ.Timezone
+				if occTimezone == "" {
+					occTimezone = s.defaultTZ
+				}
+				occVenueID := occ.VenueID
+				if occVenueID == nil {
+					occVenueID = canonicalEvent.PrimaryVenueID
+				}
+				var ticketURL *string
+				if occ.TicketURL != "" {
+					ticketURL = &occ.TicketURL
+				}
+				if err := txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
+					EventID:       canonicalEvent.ID,
+					StartTime:     occ.StartTime,
+					EndTime:       occ.EndTime,
+					Timezone:      occTimezone,
+					DoorTime:      occ.DoorTime,
+					VenueID:       occVenueID,
+					VirtualURL:    occ.VirtualURL,
+					TicketURL:     ticketURL,
+					PriceMin:      occ.PriceMin,
+					PriceMax:      occ.PriceMax,
+					PriceCurrency: occ.PriceCurrency,
+					Availability:  occ.Availability,
+				}); err != nil {
+					return nil, nil, fmt.Errorf("transfer occurrence from %s to canonical: %w", ev.ULID, err)
+				}
+			}
+		}
+
 		if err := txRepo.SoftDeleteEvent(ctx, ev.ULID, "consolidated"); err != nil {
 			return nil, nil, fmt.Errorf("soft-delete retired event %s: %w", ev.ULID, err)
+		}
+		// Clean up orphaned occurrence rows for the retired event unconditionally —
+		// occurrence rows must not remain after the event is soft-deleted.
+		if err := txRepo.DeleteOccurrencesByEventULID(ctx, ev.ULID); err != nil {
+			return nil, nil, fmt.Errorf("delete source occurrences after transfer for %s: %w", ev.ULID, err)
 		}
 		retiredURI, err := s.eventURI(ev.ULID)
 		if err != nil {

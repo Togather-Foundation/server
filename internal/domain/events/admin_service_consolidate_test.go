@@ -1074,3 +1074,202 @@ func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
 		t.Error("canonical lifecycle must not change to pending_review when it had no prior pending review entry")
 	}
 }
+
+// ── TransferOccurrences ───────────────────────────────────────────────────────
+
+// TestConsolidate_TransferOccurrences_CopiesOccurrenceToCanonical verifies that
+// when TransferOccurrences=true, the retired event's occurrence is copied to the
+// canonical and the retired event's occurrences are deleted.
+func TestConsolidate_TransferOccurrences_CopiesOccurrenceToCanonical(t *testing.T) {
+	ctx := context.Background()
+
+	occStart := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+	retiredVenueID := "venue-uuid-retired"
+
+	retiredEvent := &Event{
+		ID:             "uuid-retire",
+		ULID:           consolidateRetireULID,
+		Name:           "Old Event",
+		LifecycleState: "published",
+		Occurrences: []Occurrence{
+			{
+				ID:        "occ-uuid-1",
+				StartTime: occStart,
+				Timezone:  "America/Vancouver",
+				VenueID:   &retiredVenueID,
+			},
+		},
+	}
+	canonEvent := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canon Event")
+
+	known := map[string]*Event{
+		consolidateCanonULID:  canonEvent,
+		consolidateRetireULID: retiredEvent,
+	}
+	repo := makeConsolidateRepo(known)
+
+	// No overlap.
+	repo.checkOccurrenceOverlapFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+		return false, nil
+	}
+
+	var capturedCreateParams OccurrenceCreateParams
+	repo.createOccurrenceFunc = func(_ context.Context, params OccurrenceCreateParams) error {
+		capturedCreateParams = params
+		return nil
+	}
+
+	var deletedEventULID string
+	repo.deleteOccurrencesByEventULIDFunc = func(_ context.Context, ulid string) error {
+		deletedEventULID = ulid
+		return nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID:           consolidateCanonULID,
+		Retire:              []string{consolidateRetireULID},
+		TransferOccurrences: true,
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// Occurrence must have been created on the canonical.
+	if capturedCreateParams.EventID != canonEvent.ID {
+		t.Errorf("CreateOccurrence must target canonical event ID %q, got %q", canonEvent.ID, capturedCreateParams.EventID)
+	}
+	if !capturedCreateParams.StartTime.Equal(occStart) {
+		t.Errorf("CreateOccurrence start time mismatch: got %v, want %v", capturedCreateParams.StartTime, occStart)
+	}
+	if capturedCreateParams.Timezone != "America/Vancouver" {
+		t.Errorf("CreateOccurrence timezone mismatch: got %q, want %q", capturedCreateParams.Timezone, "America/Vancouver")
+	}
+	if capturedCreateParams.VenueID == nil || *capturedCreateParams.VenueID != retiredVenueID {
+		t.Errorf("CreateOccurrence venue ID mismatch: got %v, want %q", capturedCreateParams.VenueID, retiredVenueID)
+	}
+
+	// DeleteOccurrencesByEventULID must be called for the retired event.
+	if deletedEventULID != consolidateRetireULID {
+		t.Errorf("DeleteOccurrencesByEventULID must be called with retired ULID %q, got %q", consolidateRetireULID, deletedEventULID)
+	}
+
+	// Committed.
+	if !repo.commitCalled {
+		t.Error("Commit must be called on success")
+	}
+}
+
+// TestConsolidate_TransferOccurrences_409OnOverlap verifies that when
+// TransferOccurrences=true and a retired event's occurrence overlaps an
+// existing canonical occurrence, ErrOccurrenceOverlap is returned and the
+// transaction is rolled back.
+func TestConsolidate_TransferOccurrences_409OnOverlap(t *testing.T) {
+	ctx := context.Background()
+
+	occStart := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+
+	retiredEvent := &Event{
+		ID:             "uuid-retire",
+		ULID:           consolidateRetireULID,
+		Name:           "Old Event",
+		LifecycleState: "published",
+		Occurrences: []Occurrence{
+			{
+				ID:        "occ-uuid-1",
+				StartTime: occStart,
+				Timezone:  "America/Toronto",
+			},
+		},
+	}
+	canonEvent := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canon Event")
+
+	known := map[string]*Event{
+		consolidateCanonULID:  canonEvent,
+		consolidateRetireULID: retiredEvent,
+	}
+	repo := makeConsolidateRepo(known)
+
+	// Overlap detected.
+	repo.checkOccurrenceOverlapFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
+		return true, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+
+	_, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID:           consolidateCanonULID,
+		Retire:              []string{consolidateRetireULID},
+		TransferOccurrences: true,
+	})
+	if err == nil {
+		t.Fatal("expected ErrOccurrenceOverlap, got nil")
+	}
+	if !errors.Is(err, ErrOccurrenceOverlap) {
+		t.Errorf("expected ErrOccurrenceOverlap, got: %v", err)
+	}
+	// Transaction must not be committed.
+	if repo.commitCalled {
+		t.Error("Commit must not be called when occurrence overlap is detected")
+	}
+}
+
+// TestConsolidate_NoTransfer_DoesNotCopyOccurrences verifies that when
+// TransferOccurrences=false (default), no CreateOccurrence call is made,
+// even if the retired event has occurrences.
+func TestConsolidate_NoTransfer_DoesNotCopyOccurrences(t *testing.T) {
+	ctx := context.Background()
+
+	occStart := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+
+	retiredEvent := &Event{
+		ID:             "uuid-retire",
+		ULID:           consolidateRetireULID,
+		Name:           "Old Event",
+		LifecycleState: "published",
+		Occurrences: []Occurrence{
+			{
+				ID:        "occ-uuid-1",
+				StartTime: occStart,
+				Timezone:  "America/Toronto",
+			},
+		},
+	}
+	canonEvent := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canon Event")
+
+	known := map[string]*Event{
+		consolidateCanonULID:  canonEvent,
+		consolidateRetireULID: retiredEvent,
+	}
+	repo := makeConsolidateRepo(known)
+
+	createCalled := false
+	repo.createOccurrenceFunc = func(_ context.Context, _ OccurrenceCreateParams) error {
+		createCalled = true
+		return nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID:           consolidateCanonULID,
+		Retire:              []string{consolidateRetireULID},
+		TransferOccurrences: false, // default — no occurrence transfer
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if createCalled {
+		t.Error("CreateOccurrence must not be called when TransferOccurrences=false")
+	}
+	if !repo.commitCalled {
+		t.Error("Commit must be called on success")
+	}
+}

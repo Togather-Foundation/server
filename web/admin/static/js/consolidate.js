@@ -457,6 +457,7 @@
 
         if (mode === 'promote') {
             const ulid = (document.getElementById('promote-ulid-input') || {}).value || '';
+            // TODO: expose transfer_occurrences option in standalone consolidate page UI
             return { event_ulid: ulid.trim(), retire: retireUlids };
         }
 
@@ -499,6 +500,7 @@
             if (typeof event[k] === 'string' && event[k] === '') delete event[k];
         });
 
+        // TODO: expose transfer_occurrences option in standalone consolidate page UI
         return { event, retire: retireUlids };
     }
 
