@@ -3251,6 +3251,16 @@ components:
             near-duplicate of. Set when the review action is add-occurrence or consolidation,
             and also when near-duplicate cross-linking creates a review entry for an existing
             published event.
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventOccurrence'
+          description: List of occurrences for the event associated with this review entry
+        relatedEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelatedEvent'
+          description: Related events identified from warnings or duplicate link
 
     EventOccurrence:
       description: A single occurrence (date/time/venue) of an event
@@ -3265,37 +3275,31 @@ components:
           format: date-time
           description: Start date and time of the occurrence
         endTime:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
           description: End date and time of the occurrence (optional)
         timezone:
           type: string
           description: IANA timezone identifier (e.g., America/New_York)
         doorTime:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
           description: Doors open time (optional)
         venueUlid:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: ULID of the venue (optional)
         virtualUrl:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: Virtual event URL (optional)
         ticketUrl:
           type: string
           description: URL to purchase tickets (optional)
         priceMin:
-          type: number
-          nullable: true
+          type: [number, 'null']
           format: float
           description: Minimum ticket price (optional)
         priceMax:
-          type: number
-          nullable: true
+          type: [number, 'null']
           format: float
           description: Maximum ticket price (optional)
         priceCurrency:

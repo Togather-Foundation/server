@@ -458,15 +458,6 @@ func testReviewQueueEntry(id int, eventULID string) *events.ReviewQueueEntry {
 	}
 }
 
-// testPotDupEntry returns a review queue entry with a potential_duplicate warning,
-// required for add-occurrence forward-path tests.
-func testPotDupEntry(id int, eventULID string) *events.ReviewQueueEntry {
-	entry := testReviewQueueEntry(id, eventULID)
-	warningJSON, _ := json.Marshal([]events.ValidationWarning{{Code: "potential_duplicate"}})
-	entry.Warnings = warningJSON
-	return entry
-}
-
 // ---------------------------------------------------------------------------
 // Sentinel error mapping: ApproveReview, RejectReview, FixReview, MergeReview
 // ---------------------------------------------------------------------------
@@ -628,4 +619,3 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 		})
 	}
 }
-

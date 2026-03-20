@@ -74,7 +74,6 @@ type reviewQueueDetail struct {
 	RelatedEvents []relatedEventDetail `json:"relatedEvents,omitempty"`
 }
 
-
 // occurrenceDetail represents an occurrence in the API response
 type occurrenceDetail struct {
 	ID            string     `json:"id"`
@@ -574,7 +573,6 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, detail, "application/json")
 }
 
-
 // Helper functions
 
 // populateReviewQueueBase extracts the shared fields from a ReviewQueueEntry into
@@ -727,7 +725,6 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review 
 
 	return detail, nil
 }
-
 
 // extractRelatedEventULIDs collects unique related event ULIDs from:
 // 1. review.DuplicateOfEventULID (companion review ULID)
