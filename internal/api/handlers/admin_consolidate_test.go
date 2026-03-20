@@ -170,6 +170,9 @@ func TestConsolidate_200_PromotePath(t *testing.T) {
 	// Step 6: dismiss pending reviews.
 	repo.On("DismissPendingReviewsByEventULIDs", mock.Anything, []string{retireULID}, "system").Return([]int{}, nil).Once()
 
+	// Step 6b: strip stale dup warnings from canonical's pending review entry (none here).
+	repo.On("GetPendingReviewByEventUlid", mock.Anything, canonicalULID).Return(nil, nil).Once()
+
 	body := consolidateBody(t, map[string]any{
 		"event_ulid": canonicalULID,
 		"retire":     []string{retireULID},

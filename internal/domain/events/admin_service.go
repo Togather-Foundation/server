@@ -1590,6 +1590,12 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		return nil, err
 	}
 
+	// Step 6b: Strip stale dup warnings from the canonical's existing review entry.
+	dismissedIDs, err = s.consolidateStripRetiredDupWarnings(ctx, txRepo, canonicalEvent, params.Retire, dismissedIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	// Step 7: Post-consolidation near-dup check (only if canonical has a venue).
 	// The error return from consolidatePostValidation is always nil — non-fatal
 	// errors are logged internally and do not propagate to avoid blocking the
@@ -1674,6 +1680,143 @@ func (s *AdminService) consolidateRetireEvents(
 	}
 
 	return retiredULIDs, dismissedIDs, nil
+}
+
+// consolidateStripRetiredDupWarnings is Step 6b of the Consolidate algorithm.
+// It removes stale near-dup and potential-duplicate warnings from the canonical
+// event's pending review entry — warnings that point to events that have just
+// been retired. If stripping leaves zero warnings, the entry is dismissed and
+// the canonical is published.
+//
+// The dismissedIDs slice is extended and returned (canonical entry ID appended
+// if fully dismissed).
+func (s *AdminService) consolidateStripRetiredDupWarnings(
+	ctx context.Context,
+	txRepo Repository,
+	canonicalEvent *Event,
+	retireULIDs []string,
+	dismissedIDs []int,
+) (updatedDismissedIDs []int, err error) {
+	// Look up the canonical event's pending review entry.
+	entry, err := txRepo.GetPendingReviewByEventUlid(ctx, canonicalEvent.ULID)
+	if err != nil {
+		return dismissedIDs, fmt.Errorf("look up canonical pending review: %w", err)
+	}
+	if entry == nil {
+		// No pending review entry — nothing to strip.
+		return dismissedIDs, nil
+	}
+
+	// Build a fast-lookup set of retired ULIDs.
+	retireSet := make(map[string]struct{}, len(retireULIDs))
+	for _, u := range retireULIDs {
+		retireSet[u] = struct{}{}
+	}
+
+	// Parse the warnings JSON from the review entry.
+	var warnings []ValidationWarning
+	if len(entry.Warnings) > 0 {
+		if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
+			// Malformed warnings — log and leave the entry untouched.
+			log.Warn().Err(err).
+				Int("review_id", entry.ID).
+				Str("canonical_ulid", canonicalEvent.ULID).
+				Msg("Consolidate: failed to parse canonical review warnings; skipping strip")
+			return dismissedIDs, nil
+		}
+	}
+
+	// Filter out dup warnings whose matches reference a retired ULID.
+	filtered := warnings[:0]
+	changed := false
+	for _, w := range warnings {
+		if w.Code != "near_duplicate_of_new_event" && w.Code != "potential_duplicate" {
+			filtered = append(filtered, w)
+			continue
+		}
+
+		// Check if the warning's matches reference any retired ULID.
+		// potential_duplicate warnings carry details.matches[].ulid;
+		// near_duplicate_of_new_event carries companion info via
+		// DuplicateOfEventULID (no matches array — strip when DuplicateOfEventULID
+		// points to a retired event, or when there are no matches at all).
+		referencesRetired := false
+
+		if details, ok := w.Details["matches"]; ok {
+			// Marshal + unmarshal to normalise type — Details is map[string]any
+			// so matches may be []any after JSON round-trip.
+			matchesRaw, _ := json.Marshal(details)
+			var matchList []map[string]any
+			if json.Unmarshal(matchesRaw, &matchList) == nil {
+				for _, m := range matchList {
+					if ulid, ok := m["ulid"].(string); ok {
+						if _, retired := retireSet[ulid]; retired {
+							referencesRetired = true
+							break
+						}
+					}
+				}
+			}
+			// If matchList is empty, the warning is a bare companion warning — strip it.
+			if len(matchList) == 0 {
+				referencesRetired = true
+			}
+		} else {
+			// No matches field: bare near_duplicate_of_new_event companion warning.
+			// Strip it — the companion relationship is gone after the retire.
+			referencesRetired = true
+		}
+
+		// Also check DuplicateOfEventULID on the entry itself.
+		if !referencesRetired && entry.DuplicateOfEventULID != nil {
+			if _, retired := retireSet[*entry.DuplicateOfEventULID]; retired {
+				referencesRetired = true
+			}
+		}
+
+		if referencesRetired {
+			changed = true
+			// Do not append — this warning is stripped.
+		} else {
+			filtered = append(filtered, w)
+		}
+	}
+
+	if !changed {
+		// Nothing was stripped — leave the entry as-is.
+		return dismissedIDs, nil
+	}
+
+	if len(filtered) == 0 {
+		// All warnings stripped — dismiss the entry and publish the canonical.
+		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, "system", canonicalEvent.ULID); dismissErr != nil {
+			return dismissedIDs, fmt.Errorf("dismiss canonical review entry %d after stripping dup warnings: %w", entry.ID, dismissErr)
+		}
+		dismissedIDs = append(dismissedIDs, entry.ID)
+
+		published := "published"
+		if _, updateErr := txRepo.UpdateEvent(ctx, canonicalEvent.ULID, UpdateEventParams{
+			LifecycleState: &published,
+		}); updateErr != nil {
+			return dismissedIDs, fmt.Errorf("restore canonical event %s to published after stripping dup warnings: %w", canonicalEvent.ULID, updateErr)
+		}
+		canonicalEvent.LifecycleState = "published"
+		return dismissedIDs, nil
+	}
+
+	// Warnings remain — update the entry with the pruned warnings list.
+	// TODO: also clear DuplicateOfEventID when it points to a retired event;
+	// ReviewQueueUpdateParams does not yet expose DuplicateOfEventID clearing.
+	updatedJSON, err := json.Marshal(filtered)
+	if err != nil {
+		return dismissedIDs, fmt.Errorf("marshal updated warnings for canonical review entry %d: %w", entry.ID, err)
+	}
+	if _, err := txRepo.UpdateReviewQueueEntry(ctx, entry.ID, ReviewQueueUpdateParams{
+		Warnings: &updatedJSON,
+	}); err != nil {
+		return dismissedIDs, fmt.Errorf("update canonical review entry %d with stripped warnings: %w", entry.ID, err)
+	}
+	return dismissedIDs, nil
 }
 
 // consolidatePostValidation encapsulates step 7 of the Consolidate algorithm:

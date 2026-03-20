@@ -1120,15 +1120,32 @@
         }
 
         try {
-            await API.events.consolidate(requestBody);
+            const result = await API.events.consolidate(requestBody);
             showToast('Merged successfully', 'success');
-            removeEntryFromList(entryId);
 
-            // Increment merged count badge
+            // Remove this entry and any companion entries dismissed by the backend.
+            // review_entries_dismissed contains integer review IDs; our list rows use
+            // data-id which is also the integer review ID.
+            const dismissed = new Set(
+                Array.isArray(result && result.review_entries_dismissed)
+                    ? result.review_entries_dismissed.map(String)
+                    : []
+            );
+            dismissed.add(String(entryId));
+            dismissed.forEach(id => removeEntryFromList(id));
+
+            // Increment merged count badge by number of entries actually removed
             const mergedBadge = document.querySelector('[data-action="filter-status"][data-status="merged"] .badge');
             if (mergedBadge) {
                 const currentCount = parseInt(mergedBadge.textContent) || 0;
-                mergedBadge.textContent = currentCount + 1;
+                mergedBadge.textContent = currentCount + dismissed.size;
+            }
+
+            // If the canonical event still has a pending review entry (e.g. multi_session_likely
+            // remains after dup warnings are stripped), reload the list so it reflects the
+            // updated state (stale dup warning replaced with current warnings only).
+            if (result && result.needs_review) {
+                loadEntries();
             }
         } catch (err) {
             console.error('Failed to consolidate events:', err);

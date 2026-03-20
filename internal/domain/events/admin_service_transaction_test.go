@@ -167,6 +167,7 @@ type mockTransactionalRepo struct {
 	deleteOccurrencesByEventULIDFunc                func(ctx context.Context, eventULID string) error
 	dismissPendingReviewsByEventULIDsFunc           func(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
 	createReviewQueueEntryFunc                      func(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
+	updateReviewQueueEntryFunc                      func(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
 	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 	commitCalled                                    bool
@@ -289,6 +290,9 @@ func (m *mockTransactionalRepo) CreateReviewQueueEntry(ctx context.Context, para
 	return &ReviewQueueEntry{}, nil
 }
 func (m *mockTransactionalRepo) UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+	if m.updateReviewQueueEntryFunc != nil {
+		return m.updateReviewQueueEntryFunc(ctx, id, params)
+	}
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {

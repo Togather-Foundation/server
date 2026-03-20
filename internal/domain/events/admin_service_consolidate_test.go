@@ -811,3 +811,259 @@ func TestConsolidate_PromotePath_NearDup_ReviewEntryPayloadsNotNil(t *testing.T)
 		t.Errorf("EventStartTime = %v, want %v", capturedParams.EventStartTime, now)
 	}
 }
+
+// ── Step 6b: consolidateStripRetiredDupWarnings ───────────────────────────────
+
+// TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning verifies that when
+// the canonical event has a pending review entry containing a near_duplicate_of_new_event
+// warning pointing to the retired event, that warning is stripped. If a non-dup warning
+// (multi_session_likely) remains, the entry stays pending with updated warnings.
+func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) {
+	ctx := context.Background()
+
+	retiredULID := consolidateRetireULID
+	canonULID := consolidateCanonULID
+
+	// Canonical pending review entry: near_duplicate_of_new_event (stale) +
+	// multi_session_likely (unrelated, must survive).
+	initialWarnings, _ := json.Marshal([]ValidationWarning{
+		{
+			Field:   "near_duplicate",
+			Code:    "near_duplicate_of_new_event",
+			Message: "stale dup warning pointing to retired event",
+		},
+		{
+			Field:   "multi_session",
+			Code:    "multi_session_likely",
+			Message: "this looks like a multi-session event",
+		},
+	})
+
+	canonReview := &ReviewQueueEntry{
+		ID:        42,
+		Status:    "pending",
+		EventULID: canonULID,
+		// DuplicateOfEventULID points to the retired event (stale).
+		DuplicateOfEventULID: &retiredULID,
+		Warnings:             initialWarnings,
+	}
+
+	known := map[string]*Event{
+		canonULID:   makePublishedEvent("uuid-canon", canonULID, "Canon Event"),
+		retiredULID: makePublishedEvent("uuid-retire", retiredULID, "Old Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	// Return the pending review for the canonical, nil for retired (already dismissed).
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == canonULID {
+			return canonReview, nil
+		}
+		return nil, nil
+	}
+
+	// Capture UpdateReviewQueueEntry call.
+	var updatedWarningsJSON []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id != 42 {
+			t.Errorf("UpdateReviewQueueEntry called with unexpected id=%d, want 42", id)
+		}
+		if params.Warnings != nil {
+			updatedWarningsJSON = *params.Warnings
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: canonULID,
+		Retire:    []string{retiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// UpdateReviewQueueEntry must have been called.
+	if updatedWarningsJSON == nil {
+		t.Fatal("expected UpdateReviewQueueEntry to be called with updated warnings, but it was not")
+	}
+
+	// Remaining warnings must not include near_duplicate_of_new_event.
+	var remaining []ValidationWarning
+	if err := json.Unmarshal(updatedWarningsJSON, &remaining); err != nil {
+		t.Fatalf("updated warnings JSON is invalid: %v", err)
+	}
+	for _, w := range remaining {
+		if w.Code == "near_duplicate_of_new_event" {
+			t.Errorf("near_duplicate_of_new_event warning must be stripped but is still present: %+v", w)
+		}
+	}
+	// multi_session_likely must still be present.
+	found := false
+	for _, w := range remaining {
+		if w.Code == "multi_session_likely" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("multi_session_likely warning must survive stripping; remaining: %+v", remaining)
+	}
+	// The canonical's lifecycle must NOT have been changed — the entry stays pending
+	// because of the surviving multi_session_likely warning, but we do not alter the
+	// canonical's lifecycle state through the strip helper (that is the review queue
+	// entry's job, not ours).
+	// result.Event comes from the promote path — lifecycle starts as "published".
+	// It must remain "published" since the strip helper only touched the warnings.
+	if result.Event != nil && result.Event.LifecycleState == "pending_review" {
+		t.Error("canonical lifecycle must not be set to pending_review by the strip helper when non-dup warnings remain")
+	}
+}
+
+// TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain verifies that
+// when the canonical has a pending review with ONLY a near_duplicate_of_new_event
+// warning, stripping leaves zero warnings → the entry should be dismissed and the
+// canonical restored to "published".
+func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *testing.T) {
+	ctx := context.Background()
+
+	retiredULID := consolidateRetireULID
+	canonULID := consolidateCanonULID
+
+	// Only a single near_duplicate_of_new_event warning — no match details (bare warning).
+	onlyDupWarning, _ := json.Marshal([]ValidationWarning{
+		{
+			Field:   "near_duplicate",
+			Code:    "near_duplicate_of_new_event",
+			Message: "stale bare dup warning",
+		},
+	})
+
+	canonReview := &ReviewQueueEntry{
+		ID:                   99,
+		Status:               "pending",
+		EventULID:            canonULID,
+		DuplicateOfEventULID: &retiredULID,
+		Warnings:             onlyDupWarning,
+	}
+
+	known := map[string]*Event{
+		canonULID:   makePublishedEvent("uuid-canon", canonULID, "Canon Event"),
+		retiredULID: makePublishedEvent("uuid-retire", retiredULID, "Old Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == canonULID {
+			return canonReview, nil
+		}
+		return nil, nil
+	}
+
+	// Track MergeReview calls (used to dismiss the entry).
+	var mergeCallIDs []int
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		mergeCallIDs = append(mergeCallIDs, id)
+		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	}
+
+	// Track UpdateEvent calls.
+	var updatedLifecycleState string
+	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
+		if params.LifecycleState != nil {
+			updatedLifecycleState = *params.LifecycleState
+		}
+		return &Event{}, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: canonULID,
+		Retire:    []string{retiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// MergeReview must have been called with the canonical review entry ID.
+	dismissed := false
+	for _, id := range mergeCallIDs {
+		if id == 99 {
+			dismissed = true
+		}
+	}
+	if !dismissed {
+		t.Errorf("canonical review entry (id=99) must be dismissed via MergeReview; calls: %v", mergeCallIDs)
+	}
+
+	// Canonical must be restored to published.
+	if updatedLifecycleState != "published" {
+		t.Errorf("canonical lifecycle must be set to 'published' after full strip; got %q", updatedLifecycleState)
+	}
+
+	// The dismissed ID must appear in ReviewEntriesDismissed.
+	found := false
+	for _, id := range result.ReviewEntriesDismissed {
+		if id == 99 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("review entry id=99 must appear in ReviewEntriesDismissed; got: %v", result.ReviewEntriesDismissed)
+	}
+}
+
+// TestConsolidate_StripRetiredDupWarnings_NoEntryNoop verifies that when the canonical
+// event has no pending review entry, consolidateStripRetiredDupWarnings is a no-op
+// and returns no error.
+func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
+	ctx := context.Background()
+
+	canonULID := consolidateCanonULID
+	retiredULID := consolidateRetireULID
+
+	known := map[string]*Event{
+		canonULID:   makePublishedEvent("uuid-canon", canonULID, "Canon Event"),
+		retiredULID: makePublishedEvent("uuid-retire", retiredULID, "Old Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	// GetPendingReviewByEventUlid returns nil — canonical has no pending review.
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+
+	// Neither UpdateReviewQueueEntry nor MergeReview should be called.
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, _ ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		t.Errorf("UpdateReviewQueueEntry must not be called when canonical has no pending review; called with id=%d", id)
+		return nil, nil
+	}
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		t.Errorf("MergeReview must not be called when canonical has no pending review; called with id=%d", id)
+		return nil, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: canonULID,
+		Retire:    []string{retiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success (no-op when no pending review), got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	// Canonical lifecycle must be unchanged (published).
+	if result.Event != nil && result.Event.LifecycleState == "pending_review" {
+		t.Error("canonical lifecycle must not change to pending_review when it had no prior pending review entry")
+	}
+}
