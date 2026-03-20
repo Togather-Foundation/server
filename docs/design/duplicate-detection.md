@@ -99,10 +99,9 @@ Both operations use `SELECT ... FOR UPDATE SKIP LOCKED` to handle concurrent ing
 - `place_possible_duplicate` — event's venue may be a duplicate of an existing place
 - `org_possible_duplicate` — event's organizer may be a duplicate of an existing org
 
-### Merge action (DEPRECATED)
+### Merge action (removed)
 
-The `/api/v1/admin/review-queue/{id}/merge` endpoint has been removed in v2.0.
-Use `/api/v1/admin/events/consolidate` instead.
+The `/api/v1/admin/review-queue/{id}/merge` endpoint has been removed; use `POST /api/v1/admin/events/consolidate` instead.
 
 ### Keep Separate action
 

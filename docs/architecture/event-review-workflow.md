@@ -792,72 +792,20 @@ Manually correct the dates.
 
 ---
 
-### POST /admin/review-queue/:id/merge
+### POST /admin/review-queue/:id/merge (removed)
 
-Merge a near-duplicate event into an existing published event, keeping the target and soft-deleting the reviewed event.
-
-Available when the review entry has a `potential_duplicate` warning with a `duplicate_of` candidate ULID in the warning details. Reviews carrying only a `near_duplicate_of_new_event` warning are **not** eligible for one-click merge — the admin UI intentionally omits the Merge button for those entries because the source/target sides are ambiguous without explicit input. Use **add-occurrence** or approve/reject the entry instead.
-
-**Request body:** `primary_event_ulid` — the ULID of the existing published event to merge into (typically taken from the `duplicate_of` candidate in the warning details).
-
-**Action:**
-- Soft-delete the review entry's event (`lifecycle_state = 'deleted'`, tombstone reason `"merged"`, `superseded_by` → target event URI)
-- Mark `event_review_queue.status = 'merged'`
-
-**Responses:**
-- `200 OK` — merged successfully
-- `400 Bad Request` — `primary_event_ulid` missing or review event and target are the same
-- `404 Not Found` — review entry or target event not found
-- `409 Conflict` — review entry no longer pending
-- `410 Gone` — primary or duplicate event has been deleted
+This endpoint has been removed. Use `POST /api/v1/admin/events/consolidate` with `event_ulid` (canonical) + `retire` (list of duplicates) instead. The service-layer method `MergeEventsWithReview` still exists and is invoked by the consolidate handler.
 
 ---
 
-### POST /admin/review-queue/:id/add-occurrence
+### POST /admin/review-queue/:id/add-occurrence (removed)
 
-Add the reviewed event as a new occurrence on an existing recurring-series event instead of merging. Use this when the two events share the same name/venue but have different dates and are legitimately separate occurrences of the same series.
+This endpoint has been removed. Use `POST /api/v1/admin/events/consolidate` with `event_ulid` (canonical) + `retire` (list of events to absorb) instead. The consolidate endpoint handles both the "add as occurrence" and "merge duplicate" semantics: it retires the non-canonical event with a tombstone and dismisses companion review entries atomically.
 
-The endpoint supports two dispatch paths depending on the warning type on the review entry:
-
-**Forward path (`potential_duplicate`):** `target_event_ulid` is required. The review's own event is absorbed into the provided target series.
-
-**Near-dup path (`near_duplicate_of_new_event`):** `target_event_ulid` is not required (and is ignored if supplied). The endpoint uses inverted semantics — the existing series (`review.EventULID`) is the target that is kept; the newly-ingested event (`review.DuplicateOfEventULID`) is the source that is soft-deleted. Any companion pending review for the source event is also dismissed atomically.
-
-**Source event constraints (both paths):** The source event must have exactly one occurrence.
-
-- **Zero occurrences → `422` (`zero-occurrence-source`):** There is nothing to absorb; the source event has no occurrence row from which to extract timestamps. Ensure the source event has exactly one occurrence before retrying.
-- **Multiple occurrences → `422` (`ambiguous-occurrence-source`):** Only one occurrence can be absorbed, but soft-deleting the entire source event would silently discard the rest (data loss). Resolve or split the source event first, then retry. In practice, the near-duplicate ingest path always creates single-occurrence events, so this guard primarily catches non-standard database states.
-
-**Ambiguous dispatch:** If the review entry carries **both** `potential_duplicate` and `near_duplicate_of_new_event` warnings simultaneously, the endpoint rejects the request with `422` (`ambiguous-occurrence-dispatch`) — the dispatch path cannot be determined unambiguously. Remove or resolve one of the warnings before retrying.
-
-**Unsupported review type:** If the review entry has **neither** a `potential_duplicate` nor a `near_duplicate_of_new_event` warning (e.g. it carries only data-quality warnings such as `reversed_dates_*`), the request is rejected with `422` (`unsupported-review-for-occurrence`). Add-as-occurrence is only meaningful when the entry was created as part of duplicate detection.
-
-**Request (forward path only):**
+For reference, the consolidate request shape is:
 ```json
-{
-  "target_event_ulid": "01HQRS7T8G"
-}
+{ "event_ulid": "<canonical-ulid>", "retire": ["<other-ulid>"] }
 ```
-
-`target_event_ulid` must be a ULID for an existing, non-deleted event (any lifecycle state — `draft`, `pending_review`, `published`, `cancelled`, etc. are all acceptable; only `deleted` events are rejected with `410 Gone`).
-
-**Action:**
-1. Validate the target event exists and is not deleted.
-2. Fetch the source event under the transaction lock and extract its sole occurrence's start/end timestamps (the locked occurrence is the source of truth — the review row's `EventStartTime`/`EventEndTime` are a snapshot taken at ingest time and must NOT be used, as they may be stale if the event was edited after ingest).
-3. Check that the source occurrence's time range does **not** overlap any existing occurrence on the target — if it does, return `409 Conflict`.
-4. Write the source occurrence's start/end time (plus all occurrence-level metadata: timezone, venue, door time, ticket URL, pricing) into a new `event_occurrences` row on the target event.
-5. Soft-delete the source event (`lifecycle_state = 'deleted'`, tombstone reason `"absorbed_as_occurrence"`, `superseded_by` → target event URI).
-6. Mark `event_review_queue.status = 'merged'`.
-
-All steps run inside a single database transaction.
-
-**Responses:**
-- `200 OK` — occurrence added and review entry resolved
-- `400 Bad Request` — `target_event_ulid` missing or malformed (forward path), or review event and target are the same
-- `404 Not Found` — review entry or target event not found
-- `409 Conflict` — review entry no longer pending; or new occurrence would overlap an existing one on the target
-- `410 Gone` — target event has been deleted
-- `422 Unprocessable Entity` — source event has zero or multiple occurrences; review carries both warning types; or review has no supported duplicate warning (see constraints above)
 
 ---
 

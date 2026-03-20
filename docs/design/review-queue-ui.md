@@ -204,11 +204,11 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 5. **Add canonical selection radio** above the action buttons when a related event is present.
 6. **Handle 409 overlap** from consolidate with an inline error message and suggested next steps.
 7. **Show "Add as Occurrence" for multi_session_likely** entries too — the backend will return 422 with `unsupported-review-for-occurrence` if the warning type doesn't support it, and the UI should surface that message. Don't suppress the button on the frontend based on warning code.
-8. **Remove** calls to deprecated endpoints `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge`.
+8. Completed: `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` removed (srv-bexw4).
 
 ### api.js
 
-- Remove or deprecate `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` method references once review-queue.js is updated.
+- Completed: `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` method references removed (srv-bexw4).
 
 ### review_queue.html
 
@@ -216,7 +216,7 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 
 ### Backend (admin_review_queue.go)
 
-- The `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` handler methods, routes, tests, OpenAPI entries, and all references in scripts/docs must be **fully removed** (tracked in `srv-bexw4`).
+- The `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` handler methods, routes, tests, OpenAPI entries, and all references in scripts/docs must be **fully removed in srv-bexw4**.
 - No new backend work required for the fold-down redesign — all needed data is available via existing endpoints.
 
 ---

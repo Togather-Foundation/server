@@ -490,12 +490,19 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 
 ### S9.4: Merge — merge duplicate into primary (atomic)
 
-**Code path:** `admin_review_queue.go:567-668`
+**Note:** The `POST /api/v1/admin/review-queue/{id}/merge` endpoint has been **removed**. Use `POST /api/v1/admin/events/consolidate` with `event_ulid` (canonical) + `retire` (list of duplicates) instead:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  "$BASE/admin/events/consolidate" \
+  -d '{"event_ulid":"01J_PRIMARY","retire":["01J_DUP"]}'
+```
+
+**Code path (service layer):** `admin_review_queue.go` (handler removed); service method `AdminService.MergeEventsWithReview` still exists.
 
 - **Given:** Review entry #42 for event E_dup with `potential_duplicate` warning pointing to E_primary.
-- **Action:** `POST /api/v1/admin/review-queue/42/merge` with `{"primary_event_ulid":"01J_PRIMARY"}`.
-- **Expected:**
-  - Guard: Cannot merge event into itself (400).
+- **Expected (via consolidate):**
+  - Guard: Cannot consolidate event into itself (400).
   - `AdminService.MergeEventsWithReview` called — performs ALL of the following in a single database transaction:
     - Both events verified to exist and neither may have `LifecycleState == "deleted"` (returns `ErrEventDeleted` if so).
     - Primary enriched from duplicate via `AutoMergeFields` with trust (0,0) — gap-fills empty fields on primary without overwriting existing data. Uses `EventInputFromEvent` helper to convert the duplicate Event to an EventInput.
@@ -509,7 +516,7 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 
 - **Given:** Events and review status update are performed together.
 - **Expected:** `MergeEventsWithReview` wraps the event merge, tombstone creation, AND review status update in a single database transaction. If any step fails, the entire operation rolls back. No inconsistency is possible — either everything succeeds or nothing does.
-- **Key detail:** The handler calls `MergeEventsWithReview` (single atomic call) instead of separate `MergeEvents` + `MergeReview` calls.
+- **Key detail:** The handler calls `MergeEventsWithReview` (single atomic call) instead of separate `MergeEvents` + `MergeReview` calls. The HTTP entry point for this operation is now `POST /api/v1/admin/events/consolidate` (the old `POST /api/v1/admin/review-queue/{id}/merge` handler has been removed); the service-layer method `MergeEventsWithReview` still exists and is invoked by the consolidate handler.
 
 ### S9.6: Approve already-reviewed entry
 

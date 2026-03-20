@@ -3310,15 +3310,40 @@ components:
           description: Availability status (e.g., InStock, OutOfStock)
 
     RelatedEvent:
-      description: A related event ULID identified from warnings or duplicate link
+      description: A related event identified from warnings or duplicate link, including full event data for side-by-side comparison
       type: object
       required: [ulid]
       properties:
         ulid:
           type: string
-          description: >
-            ULID of the related event. The UI fetches the full event via
-            GET /api/v1/events/{ulid} to display occurrences and details.
+          description: ULID of the related event
+        name:
+          type: string
+          description: Event name
+        description:
+          type: [string, 'null']
+          description: Event description (optional)
+        url:
+          type: [string, 'null']
+          description: Public URL of the event (optional)
+        imageUrl:
+          type: [string, 'null']
+          description: Image URL for the event (optional)
+        venueName:
+          type: [string, 'null']
+          description: Name of the primary venue (optional)
+        venueUlid:
+          type: [string, 'null']
+          description: ULID of the primary venue (optional)
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventOccurrence'
+          description: List of occurrences for the related event
+        similarity:
+          type: [number, 'null']
+          format: float
+          description: Similarity score from duplicate-warning details, if available (0–1)
 
     ValidationWarning:
       description: Warning message from event validation or normalization process
@@ -3339,10 +3364,11 @@ components:
           items:
             $ref: '#/components/schemas/RelatedEvent'
           description: >
-            List of related event ULIDs extracted from validation warnings (potential_duplicate,
-            near_duplicate_of_new_event) and from the duplicateOfEventUlid field. Used to
-            determine which case applies (Case 1: empty list, Case 2/3: non-empty list).
-            The UI fetches these events via GET /api/v1/events/{ulid} for display.
+            List of related events extracted from validation warnings (potential_duplicate,
+            near_duplicate_of_new_event) and from the duplicateOfEventUlid field. Each entry
+            includes full event data (name, description, URL, venue, occurrences, similarity)
+            so the UI can render the side-by-side comparison panel without additional API calls.
+            Used to determine which case applies (Case 1: empty list, Case 2/3: non-empty list).
         code:
           type: string
           description: Warning code (e.g., "REVERSED_DATES", "MISSING_END_DATE")

@@ -3022,3 +3022,58 @@ func TestMergeEventsWithReview_NoCompanionSucceeds(t *testing.T) {
 		t.Errorf("expected exactly 1 MergeReview call (primary review), got %d", mergeCallCount)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests for occurrenceDispatchPath — multi_session_likely handling (srv-y6fad)
+// ---------------------------------------------------------------------------
+//
+// Design: multi_session_likely is not a routing signal. The switch in
+// occurrenceDispatchPath has no case for it, so it is silently ignored.
+// Only potential_duplicate and near_duplicate_of_new_event affect routing.
+//
+// Case A: multi_session_likely alone → "unsupported" (nothing to pair with)
+// Case B: multi_session_likely + potential_duplicate → "forward"
+// Case C: multi_session_likely + near_duplicate_of_new_event → "neardup"
+// Case D: multi_session_likely + both dup warnings → ErrAmbiguousOccurrenceDispatch
+
+func TestOccurrenceDispatchPath(t *testing.T) {
+	t.Run("CaseA_multi_session_only_returns_unsupported", func(t *testing.T) {
+		path, err := OccurrenceDispatchPath(makeWarningsJSON("multi_session_likely"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if path != "unsupported" {
+			t.Errorf("expected 'unsupported', got %q", path)
+		}
+	})
+
+	t.Run("CaseB_multi_session_plus_potential_duplicate_returns_forward", func(t *testing.T) {
+		path, err := OccurrenceDispatchPath(makeWarningsJSON("multi_session_likely", "potential_duplicate"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if path != "forward" {
+			t.Errorf("expected 'forward', got %q", path)
+		}
+	})
+
+	t.Run("CaseC_multi_session_plus_near_dup_returns_neardup", func(t *testing.T) {
+		path, err := OccurrenceDispatchPath(makeWarningsJSON("multi_session_likely", "near_duplicate_of_new_event"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if path != "neardup" {
+			t.Errorf("expected 'neardup', got %q", path)
+		}
+	})
+
+	t.Run("CaseD_multi_session_plus_both_dup_warnings_returns_ambiguous_error", func(t *testing.T) {
+		_, err := OccurrenceDispatchPath(makeWarningsJSON("multi_session_likely", "potential_duplicate", "near_duplicate_of_new_event"))
+		if err == nil {
+			t.Fatal("expected ErrAmbiguousOccurrenceDispatch, got nil")
+		}
+		if !errors.Is(err, ErrAmbiguousOccurrenceDispatch) {
+			t.Errorf("expected ErrAmbiguousOccurrenceDispatch, got: %v", err)
+		}
+	})
+}

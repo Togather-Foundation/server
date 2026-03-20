@@ -323,11 +323,11 @@ function renderEventRow(event) {
 
 ### Duplicates (`duplicates.html`)
 
-**Purpose:** Review and merge duplicate events
+**Purpose:** Review duplicate events and consolidate them
 
 **Components:**
 - Side-by-side event comparison
-- Merge confirmation modal
+- Consolidate confirmation modal
 - Field-level selection (choose which fields to keep)
 
 **Layout:**
@@ -355,7 +355,7 @@ function renderEventRow(event) {
     </div>
 </div>
 <div class="text-center mt-3">
-    <button class="btn btn-primary" onclick="confirmMerge()">Merge Events</button>
+    <button class="btn btn-primary" onclick="confirmConsolidate()">Consolidate Events</button>
 </div>
 ```
 
@@ -365,7 +365,7 @@ function renderEventRow(event) {
 
 **Behaviour:**
 - When a review item has a `duplicate_warning`, expanding the fold-down triggers `fetchAndRenderInlineDuplicate(eventUlid, candidateUlid)`, which calls `GET /api/v1/events/{ulid}` for the candidate event and renders a compact field-by-field diff.
-- **Merge** action — removed in v2.0 (use `/api/v1/admin/events/consolidate` instead).
+- **Merge** action — removed; use `POST /api/v1/admin/events/consolidate` instead.
 - **Not a Duplicate** action dismisses the warning on _both_ the reviewed event and its companion via `dismissCompanionDuplicateWarning`, so neither card re-shows the warning after the decision.
 
 > **Known limitation (tracked as `srv-15rwp`):** The inline diff fetches via the public events API, which only returns published events. If the candidate is still in `pending_review` state the diff will silently fail to render. A follow-up will embed candidate data at ingest time to fix this.
@@ -832,10 +832,9 @@ Each page has its own JS file following this structure:
 
 ### Phase 4: Duplicates Review
 - [ ] Create `duplicates.html` with side-by-side layout
-- [ ] Create `duplicates.js` for comparison/merge
-- [ ] Implement merge confirmation flow
+- [ ] Create `duplicates.js` for comparison (merge is handled via `POST /api/v1/admin/events/consolidate` — no separate merge page)
 - [ ] Add field selection UI (optional)
-- [ ] Test merge operation
+- [ ] Test consolidate operation
 
 ### Phase 5: API Keys Management
 - [ ] Create `api_keys.html` with table

@@ -1,6 +1,6 @@
 # Review Queue Regression Test Plan
 
-Manual regression test plan for the event review queue, covering duplicate detection, add-occurrence, merge, approve, reject, and near-duplicate workflows. Uses the `--review-events` fixture set (11 scenario groups, 22 events).
+Manual regression test plan for the event review queue, covering duplicate detection, consolidate, approve, reject, and near-duplicate workflows. Uses the `--review-events` fixture set (11 scenario groups, 22 events).
 
 **Fixture source:** `tests/testdata/fixtures.go` (`BatchReviewEventInputs`)
 **Generate command:** `server generate review-fixtures.json --review-events`
@@ -74,7 +74,6 @@ Use the [Scenario Index](#scenario-index) below to find the relevant events in t
 |--------|-------|
 | List pending events (event ULIDs, names, lifecycle) | `GET $BASE/admin/events/pending` → `.items[]` |
 | List review queue (review IDs, warnings, event ULIDs) | `GET $BASE/admin/review-queue` → `.items[]` |
-| Approve / reject / merge / add-occurrence (review-queue path) | `POST $BASE/admin/review-queue/{review-id}/{action}` |
 | Create/update/delete occurrence manually (not via review queue) | `POST/PUT/DELETE $BASE/admin/events/{event-ulid}/occurrences[/{occ-id}]` |
 | Consolidate events (retire N, keep/create 1) | `POST $BASE/admin/events/consolidate` |
 
@@ -87,15 +86,6 @@ curl -s -H "Authorization: Bearer $JWT" "$BASE/admin/review-queue" | jq '.items[
 # Approve a review entry  (integer review id, NOT event ulid)
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   "$BASE/admin/review-queue/<review-id>/approve" -d '{}'
-
-# Add as occurrence (near-dup path — no body needed)
-curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
-  "$BASE/admin/review-queue/<review-id>/add-occurrence" -d '{}'
-
-# Merge duplicate onto original  (field is primary_event_ulid, NOT target_event_ulid)
-curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
-  "$BASE/admin/review-queue/<review-id>/merge" \
-  -d '{"primary_event_ulid":"<original-ulid>"}'
 
 # Reject
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
@@ -146,7 +136,7 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 
 | ID | Name | Events | Workflow | Warning Codes | Auto-dedup? |
 |----|------|--------|----------|---------------|-------------|
-| RS-01 | Weekly Yoga | 2 | multi-session keyword + approve both (add-occurrence not available via review-queue API) | `multi_session_likely` | No (different dates) |
+| RS-01 | Weekly Yoga | 2 | multi-session keyword + approve or consolidate via standalone page | `multi_session_likely` | No (different dates) |
 | RS-02 | Book Club | 2 | add-occurrence (near-dup path) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.63) |
 | RS-03 | Tech Meetup | 2 | manual add-occurrence on pending series | _(none — publishes directly)_ | No (different dates, low similarity) |
 | RS-04 | Art Walk | 2 | manual add-occurrence on draft target | _(none — publishes directly)_ | No (different dates, low similarity) |
@@ -184,7 +174,7 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
    - [ ] New occurrence transitions to `published` as a standalone event.
    - [ ] Review status on the new occurrence entry is `approved`.
 
-**Known limitation — add-occurrence not available from this review entry:** The review-queue **Add as Occurrence** API action requires a `potential_duplicate` or `near_duplicate_of_new_event` warning. Because both RS-01 events carry only `multi_session_likely`, the API returns 422 if that action is attempted. To consolidate the new occurrence into the base series programmatically, an admin would need to use the manual occurrence-management UI (outside the review queue flow) or direct SQL. This scenario therefore tests only the approve path; occurrence consolidation is out of scope here.
+**Note — add-occurrence not available from the review-queue for this scenario:** Both RS-01 events carry only `multi_session_likely`; there is no companion near-duplicate pairing. To combine the two events into one series, use the standalone consolidate page at `/admin/events/consolidate` with both ULIDs, or call `POST /api/v1/admin/events/consolidate` directly. This scenario therefore tests only the approve path; occurrence consolidation via the review queue is out of scope here.
 
 **Note:** The "Weekly" keyword trigger is by design — it's a useful guardrail for real-world events where "Weekly Yoga" might actually be a multi-session course sold as a single ticket.
 
@@ -203,12 +193,17 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 
 **Test steps:**
 1. Open review queue. Find both RS-02 entries (they form a companion pair).
-2. On the **near-duplicate review entry**, click **Add as Occurrence** (near-dup path — no target_event_ulid needed).
+2. On the **near-duplicate review entry**, use `POST /api/v1/admin/events/consolidate` to absorb the duplicate into the canonical event (pending UI implementation — srv-h6gfp; the review-queue Add as Occurrence button is not yet wired to this endpoint):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<canonical-ulid>","retire":["<absorbed-ulid>"]}'
+   ```
 3. Verify:
-   - [ ] Source event (absorbed event) is soft-deleted.
-   - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence).
-   - [ ] The companion review entry is also dismissed (`merged` — no stale pending companion row should remain after successful consolidation).
-   - [ ] Target event recomputes lifecycle: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
+    - [ ] Source event (absorbed event) is soft-deleted.
+    - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence).
+    - [ ] The companion review entry is also dismissed (`merged` — no stale pending companion row should remain after successful consolidation).
+    - [ ] Target event recomputes lifecycle: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
 
 ---
 
@@ -641,7 +636,7 @@ After completing all scenarios, verify:
 - [ ] RS-12 consolidated events appear in the events list with correct lifecycle states.
 - [ ] The `event_not_duplicates` table has entries from RS-07 (and RS-11 if applicable).
 - [ ] Event occurrence counts match expectations after all add-occurrence actions (verify via the SQL query below or via `GET /api/v1/events/{ulid}` — the `subEvent` array is populated for all occurrences and is the authoritative count used by the admin detail page):
-  - RS-01: 4 (base series) + 1 (new occurrence as standalone event) — add-occurrence not supported via review-queue API for `multi_session_likely`-only reviews
+  - RS-01: 4 (base series) + 1 (new occurrence as standalone event) — consolidation via review queue not applicable for `multi_session_likely`-only reviews; use the standalone consolidate page instead
   - RS-02: 3 (was 2, +1 from near-dup add-occurrence)
   - RS-03: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)
   - RS-04: 3 (was 2, +1 from manual add-occurrence — requires manual SQL setup)

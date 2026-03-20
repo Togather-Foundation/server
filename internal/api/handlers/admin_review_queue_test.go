@@ -619,3 +619,246 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// GetReviewQueueEntry (detail endpoint): relatedEvents expansion
+// ---------------------------------------------------------------------------
+
+// TestReviewQueueDetail_RelatedEventsExpanded verifies that when a review entry
+// has a potential_duplicate warning with a related ULID, the detail endpoint
+// fetches the full event and populates all fields (name, url, similarity, occurrences).
+func TestReviewQueueDetail_RelatedEventsExpanded(t *testing.T) {
+	const primaryULID = "01HTEST0000000000000000001"
+	const relatedULID = "01HTEST0000000000000000002"
+	sim := 0.92
+
+	warningsJSON := []byte(`[{"code":"potential_duplicate","message":"Potential duplicate","details":{"matches":[{"ulid":"` + relatedULID + `","similarity":0.92}]}}]`)
+	originalPayload := []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`)
+	normalizedPayload := []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`)
+	now := time.Now()
+
+	entry := &events.ReviewQueueEntry{
+		ID:                1,
+		EventID:           "primary-event-id",
+		EventULID:         primaryULID,
+		OriginalPayload:   originalPayload,
+		NormalizedPayload: normalizedPayload,
+		Warnings:          warningsJSON,
+		Status:            "pending",
+		EventStartTime:    now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	primaryEvent := &events.Event{
+		ULID:        primaryULID,
+		Name:        "Test Event",
+		Description: "Primary event description",
+		PublicURL:   "https://example.com/primary",
+	}
+
+	venueName := "The Venue"
+	venueULID := "01HVENUE000000000000000001"
+	relatedEvent := &events.Event{
+		ULID:             relatedULID,
+		Name:             "Related Event",
+		Description:      "Related event description",
+		PublicURL:        "https://example.com/related",
+		ImageURL:         "https://example.com/img.jpg",
+		PrimaryVenueName: &venueName,
+		PrimaryVenueULID: &venueULID,
+		Occurrences: []events.Occurrence{
+			{
+				ID:        "occ-1",
+				StartTime: now,
+				Timezone:  "America/Toronto",
+			},
+		},
+	}
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 1).Return(entry, nil)
+	// Primary event fetch
+	mockRepo.On("GetByULID", mock.Anything, primaryULID).Return(primaryEvent, nil)
+	// Related event fetch
+	mockRepo.On("GetByULID", mock.Anything, relatedULID).Return(relatedEvent, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/1", nil)
+	req.SetPathValue("id", "1")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.GetReviewQueueEntry(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	assert.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+
+	relatedEvents, ok := body["relatedEvents"].([]any)
+	assert.True(t, ok, "relatedEvents should be an array")
+	assert.Len(t, relatedEvents, 1, "should have one related event")
+
+	re := relatedEvents[0].(map[string]any)
+	assert.Equal(t, relatedULID, re["ulid"])
+	assert.Equal(t, "Related Event", re["name"])
+	assert.Equal(t, "https://example.com/related", re["url"])
+	assert.Equal(t, "https://example.com/img.jpg", re["imageUrl"])
+	assert.Equal(t, venueName, re["venueName"])
+	assert.Equal(t, venueULID, re["venueUlid"])
+	assert.InDelta(t, sim, re["similarity"].(float64), 0.001)
+
+	occs, ok := re["occurrences"].([]any)
+	assert.True(t, ok, "occurrences should be an array")
+	assert.Len(t, occs, 1)
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestReviewQueueDetail_RelatedEventFetchFails verifies that when GetByULID fails
+// for a related event, the handler returns a ULID-only fallback entry (graceful degradation).
+func TestReviewQueueDetail_RelatedEventFetchFails(t *testing.T) {
+	const primaryULID = "01HTEST0000000000000000001"
+	const relatedULID = "01HTEST0000000000000000003"
+
+	warningsJSON := []byte(`[{"code":"potential_duplicate","message":"Potential duplicate","details":{"matches":[{"ulid":"` + relatedULID + `","similarity":0.85}]}}]`)
+	originalPayload := []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`)
+	normalizedPayload := []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`)
+	now := time.Now()
+
+	entry := &events.ReviewQueueEntry{
+		ID:                2,
+		EventID:           "primary-event-id",
+		EventULID:         primaryULID,
+		OriginalPayload:   originalPayload,
+		NormalizedPayload: normalizedPayload,
+		Warnings:          warningsJSON,
+		Status:            "pending",
+		EventStartTime:    now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	primaryEvent := &events.Event{
+		ULID: primaryULID,
+		Name: "Test Event",
+	}
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 2).Return(entry, nil)
+	mockRepo.On("GetByULID", mock.Anything, primaryULID).Return(primaryEvent, nil)
+	// Simulate failure fetching the related event
+	mockRepo.On("GetByULID", mock.Anything, relatedULID).Return((*events.Event)(nil), errors.New("db timeout"))
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/2", nil)
+	req.SetPathValue("id", "2")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.GetReviewQueueEntry(rec, req)
+
+	// Handler should still return 200 with a partial entry (ULID + similarity, no name/url)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	assert.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+
+	relatedEvents, ok := body["relatedEvents"].([]any)
+	assert.True(t, ok)
+	assert.Len(t, relatedEvents, 1)
+
+	re := relatedEvents[0].(map[string]any)
+	assert.Equal(t, relatedULID, re["ulid"])
+	// Similarity should still be present from warnings parsing
+	assert.InDelta(t, 0.85, re["similarity"].(float64), 0.001)
+	// Name should be absent (omitempty — key won't exist)
+	_, hasName := re["name"]
+	assert.False(t, hasName, "name should be absent when fetch failed")
+
+	mockRepo.AssertExpectations(t)
+}
+
+// TestReviewQueueDetail_DuplicateOfEventULID verifies that when a review entry
+// has a DuplicateOfEventULID set, it is included as a related event (no similarity).
+func TestReviewQueueDetail_DuplicateOfEventULID(t *testing.T) {
+	const primaryULID = "01HTEST0000000000000000001"
+	const companionULID = "01HTEST0000000000000000004"
+
+	dupULID := companionULID
+	now := time.Now()
+	entry := &events.ReviewQueueEntry{
+		ID:                   3,
+		EventID:              "primary-event-id",
+		EventULID:            primaryULID,
+		OriginalPayload:      []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`),
+		NormalizedPayload:    []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`),
+		Warnings:             []byte(`[]`),
+		Status:               "pending",
+		EventStartTime:       now,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		DuplicateOfEventULID: &dupULID,
+	}
+
+	primaryEvent := &events.Event{ULID: primaryULID, Name: "Test Event"}
+	companionEvent := &events.Event{
+		ULID:      companionULID,
+		Name:      "Companion Event",
+		PublicURL: "https://example.com/companion",
+	}
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 3).Return(entry, nil)
+	mockRepo.On("GetByULID", mock.Anything, primaryULID).Return(primaryEvent, nil)
+	mockRepo.On("GetByULID", mock.Anything, companionULID).Return(companionEvent, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/3", nil)
+	req.SetPathValue("id", "3")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.GetReviewQueueEntry(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	assert.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+
+	relatedEvents, ok := body["relatedEvents"].([]any)
+	assert.True(t, ok)
+	assert.Len(t, relatedEvents, 1)
+
+	re := relatedEvents[0].(map[string]any)
+	assert.Equal(t, companionULID, re["ulid"])
+	assert.Equal(t, "Companion Event", re["name"])
+	assert.Equal(t, "https://example.com/companion", re["url"])
+	// Companion ULIDs have no similarity score
+	_, hasSim := re["similarity"]
+	assert.False(t, hasSim, "companion ULID should have no similarity")
+
+	mockRepo.AssertExpectations(t)
+}

@@ -90,9 +90,24 @@ type occurrenceDetail struct {
 	Availability  string     `json:"availability,omitempty"`
 }
 
-// relatedEventDetail represents a related event ULID in the API response
+// relatedEventDetail represents a related event in the API response, including full event data.
 type relatedEventDetail struct {
-	ULID string `json:"ulid"`
+	ULID        string             `json:"ulid"`
+	Name        string             `json:"name,omitempty"`
+	Description string             `json:"description,omitempty"`
+	URL         string             `json:"url,omitempty"`
+	ImageURL    string             `json:"imageUrl,omitempty"`
+	VenueName   string             `json:"venueName,omitempty"`
+	VenueULID   string             `json:"venueUlid,omitempty"`
+	Occurrences []occurrenceDetail `json:"occurrences,omitempty"`
+	Similarity  *float64           `json:"similarity,omitempty"`
+}
+
+// relatedEventSummary carries a ULID and its associated similarity score (if any)
+// extracted from duplicate-warning details.
+type relatedEventSummary struct {
+	ULID       string
+	Similarity *float64
 }
 
 // changeDetail describes a specific change made during normalization
@@ -703,11 +718,50 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review 
 		}
 	}
 
-	// Extract related event ULIDs from warnings and DuplicateOfEventULID
-	relatedULIDs := extractRelatedEventULIDs(warnings, review.DuplicateOfEventULID)
-	relatedEvents := make([]relatedEventDetail, len(relatedULIDs))
-	for i, ulid := range relatedULIDs {
-		relatedEvents[i] = relatedEventDetail{ULID: ulid}
+	// Extract related event summaries (ULID + similarity) from warnings and DuplicateOfEventULID
+	relatedSummaries := extractRelatedEventSummaries(warnings, review.DuplicateOfEventULID)
+	relatedEvents := make([]relatedEventDetail, 0, len(relatedSummaries))
+	for _, rs := range relatedSummaries {
+		rd := relatedEventDetail{ULID: rs.ULID, Similarity: rs.Similarity}
+		relEvent, err := repo.GetByULID(ctx, rs.ULID)
+		if err != nil {
+			// Log but don't fail — include ULID-only entry as fallback
+			slog.WarnContext(ctx, "buildReviewQueueDetail: failed to fetch related event",
+				slog.String("related_ulid", rs.ULID),
+				slog.String("error", err.Error()))
+		} else {
+			rd.Name = relEvent.Name
+			rd.Description = relEvent.Description
+			rd.URL = relEvent.PublicURL
+			rd.ImageURL = relEvent.ImageURL
+			if relEvent.PrimaryVenueName != nil {
+				rd.VenueName = *relEvent.PrimaryVenueName
+			}
+			if relEvent.PrimaryVenueULID != nil {
+				rd.VenueULID = *relEvent.PrimaryVenueULID
+			}
+			if len(relEvent.Occurrences) > 0 {
+				occs := make([]occurrenceDetail, len(relEvent.Occurrences))
+				for i, occ := range relEvent.Occurrences {
+					occs[i] = occurrenceDetail{
+						ID:            occ.ID,
+						StartTime:     occ.StartTime,
+						EndTime:       occ.EndTime,
+						Timezone:      occ.Timezone,
+						DoorTime:      occ.DoorTime,
+						VenueULID:     occ.VenueULID,
+						VirtualURL:    occ.VirtualURL,
+						TicketURL:     occ.TicketURL,
+						PriceMin:      occ.PriceMin,
+						PriceMax:      occ.PriceMax,
+						PriceCurrency: occ.PriceCurrency,
+						Availability:  occ.Availability,
+					}
+				}
+				rd.Occurrences = occs
+			}
+		}
+		relatedEvents = append(relatedEvents, rd)
 	}
 
 	detail := reviewQueueDetail{
@@ -726,21 +780,23 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review 
 	return detail, nil
 }
 
-// extractRelatedEventULIDs collects unique related event ULIDs from:
-// 1. review.DuplicateOfEventULID (companion review ULID)
-// 2. warning.details.matches[].ulid (from potential_duplicate, near_duplicate_of_new_event)
-// Deduplicates ULIDs before returning.
-func extractRelatedEventULIDs(warnings []events.ValidationWarning, duplicateOfEventULID *string) []string {
+// extractRelatedEventSummaries collects unique related event summaries (ULID + similarity) from:
+//  1. review.DuplicateOfEventULID (companion review ULID, no similarity score)
+//  2. warning.details.matches[].ulid (from potential_duplicate, near_duplicate_of_new_event)
+//     with the associated similarity score when present.
+//
+// Deduplicates by ULID before returning.
+func extractRelatedEventSummaries(warnings []events.ValidationWarning, duplicateOfEventULID *string) []relatedEventSummary {
 	seen := make(map[string]bool)
-	var ulids []string
+	var summaries []relatedEventSummary
 
-	// Add companion ULID if present
+	// Add companion ULID if present (no similarity available here)
 	if duplicateOfEventULID != nil && *duplicateOfEventULID != "" {
-		ulids = append(ulids, *duplicateOfEventULID)
+		summaries = append(summaries, relatedEventSummary{ULID: *duplicateOfEventULID})
 		seen[*duplicateOfEventULID] = true
 	}
 
-	// Extract ULIDs from warning matches
+	// Extract ULIDs and similarity from warning matches
 	for _, w := range warnings {
 		if w.Code != "potential_duplicate" && w.Code != "near_duplicate_of_new_event" {
 			continue
@@ -776,14 +832,24 @@ func extractRelatedEventULIDs(warnings []events.ValidationWarning, duplicateOfEv
 			}
 
 			// Deduplicate
-			if !seen[ulidStr] {
-				ulids = append(ulids, ulidStr)
-				seen[ulidStr] = true
+			if seen[ulidStr] {
+				continue
 			}
+			seen[ulidStr] = true
+
+			// Extract similarity if present
+			var sim *float64
+			if simVal, ok := matchMap["similarity"]; ok {
+				if simFloat, ok := simVal.(float64); ok {
+					sim = &simFloat
+				}
+			}
+
+			summaries = append(summaries, relatedEventSummary{ULID: ulidStr, Similarity: sim})
 		}
 	}
 
-	return ulids
+	return summaries
 }
 
 func calculateChanges(original, normalized map[string]any) []changeDetail {
