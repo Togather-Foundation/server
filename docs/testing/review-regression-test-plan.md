@@ -479,8 +479,7 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
 2. Verify the `multi_session_likely` warning is present.
 3. Decide:
    - If this should be published as a single long event: **Approve**.
-   - If this should be split into 8 separate sessions: **Reject** (create session events manually or via the occurrence editor).
-   - If this should be split into sessions: **Reject** (and use the inline occurrence editor — available in the fold-down once bead srv-7h902 lands — to add individual session occurrences, or create them manually via `POST /admin/events/{ulid}/occurrences` after approving the base event).
+   - If this should be split into sessions: **Reject**, then use the inline occurrence editor in the fold-down to add individual session occurrences, or create them manually via `POST /admin/events/{ulid}/occurrences` after approving the base event.
 4. Test the **Approve** path:
    - [ ] Event transitions to `published`.
    - [ ] Review status is `approved`.
