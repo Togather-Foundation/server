@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -727,5 +728,86 @@ func TestConsolidate_CreatePath_QualityWarnings(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected missing_description warning; got: %+v", result.Warnings)
+	}
+}
+
+// ── Bug srv-4hmsu: OriginalPayload / NormalizedPayload must not be nil ────────
+
+// TestConsolidate_PromotePath_NearDup_ReviewEntryPayloadsNotNil verifies that
+// when a consolidation triggers a near-duplicate re-check and the canonical
+// event is sent to pending_review, CreateReviewQueueEntry is called with
+// non-nil OriginalPayload and NormalizedPayload (NOT NULL columns — null values
+// cause a 23502 DB error → 500).
+func TestConsolidate_PromotePath_NearDup_ReviewEntryPayloadsNotNil(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+
+	venueName := "Test Venue"
+	canon := &Event{
+		ID:               "uuid-canon",
+		ULID:             consolidateCanonULID,
+		Name:             "Canon Event Near Dup",
+		Description:      "A canonical event description.",
+		PublicURL:        "https://toronto.togather.foundation/events/" + consolidateCanonULID,
+		LifecycleState:   "published",
+		PrimaryVenueID:   func() *string { s := "venue-uuid-1"; return &s }(),
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now}},
+	}
+
+	known := map[string]*Event{
+		consolidateCanonULID:  canon,
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	// FindNearDuplicates returns a genuine third-party near-dup (not the canon
+	// itself, not any event in the retire list) above the threshold.
+	repo.findNearDuplicatesFunc = func(_ context.Context, _ string, _ time.Time, _ string, _ float64) ([]NearDuplicateCandidate, error) {
+		return []NearDuplicateCandidate{
+			{ULID: consolidateNearDupULID, Name: "Canon Event Near Dup Copy", Similarity: 0.95},
+		}, nil
+	}
+
+	// Capture the params passed to CreateReviewQueueEntry.
+	var capturedParams ReviewQueueCreateParams
+	repo.createReviewQueueEntryFunc = func(_ context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+		capturedParams = params
+		return &ReviewQueueEntry{ID: 1}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.8)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{consolidateRetireULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !result.NeedsReview {
+		t.Error("expected NeedsReview=true for genuine near-dup")
+	}
+
+	// The core assertion: payloads must be non-nil (NOT NULL columns).
+	if len(capturedParams.OriginalPayload) == 0 {
+		t.Error("CreateReviewQueueEntry called with nil/empty OriginalPayload — will hit DB NOT NULL constraint")
+	}
+	if len(capturedParams.NormalizedPayload) == 0 {
+		t.Error("CreateReviewQueueEntry called with nil/empty NormalizedPayload — will hit DB NOT NULL constraint")
+	}
+
+	// Payload must be valid JSON containing at least the event name.
+	var payload map[string]any
+	if err := json.Unmarshal(capturedParams.OriginalPayload, &payload); err != nil {
+		t.Errorf("OriginalPayload is not valid JSON: %v", err)
+	}
+	if payload["name"] != canon.Name {
+		t.Errorf("OriginalPayload.name = %q, want %q", payload["name"], canon.Name)
+	}
+
+	// EventStartTime must reflect the canonical event's first occurrence.
+	if !capturedParams.EventStartTime.Equal(now) {
+		t.Errorf("EventStartTime = %v, want %v", capturedParams.EventStartTime, now)
 	}
 }

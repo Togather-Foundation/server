@@ -1764,9 +1764,43 @@ func (s *AdminService) consolidateResolvePending(
 	if err != nil {
 		return fmt.Errorf("marshal consolidation warnings: %w", err)
 	}
+
+	// Build a display payload from the canonical event's fields so that
+	// OriginalPayload and NormalizedPayload are never nil (NOT NULL columns).
+	payloadMap := map[string]any{
+		"name": canonical.Name,
+	}
+	if canonical.Description != "" {
+		payloadMap["description"] = canonical.Description
+	}
+	if canonical.PublicURL != "" {
+		payloadMap["url"] = canonical.PublicURL
+	}
+	if len(canonical.Occurrences) > 0 {
+		payloadMap["startDate"] = canonical.Occurrences[0].StartTime.Format(time.RFC3339)
+		if canonical.Occurrences[0].EndTime != nil {
+			payloadMap["endDate"] = canonical.Occurrences[0].EndTime.Format(time.RFC3339)
+		}
+	}
+	if canonical.PrimaryVenueName != nil {
+		payloadMap["location"] = map[string]any{"name": *canonical.PrimaryVenueName}
+	}
+	payloadJSON, err := json.Marshal(payloadMap)
+	if err != nil {
+		return fmt.Errorf("marshal canonical payload for review queue: %w", err)
+	}
+
+	var eventStartTime time.Time
+	if len(canonical.Occurrences) > 0 {
+		eventStartTime = canonical.Occurrences[0].StartTime
+	}
+
 	if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-		EventID:  canonical.ID,
-		Warnings: warningsJSON,
+		EventID:           canonical.ID,
+		OriginalPayload:   payloadJSON,
+		NormalizedPayload: payloadJSON,
+		Warnings:          warningsJSON,
+		EventStartTime:    eventStartTime,
 	}); err != nil {
 		return fmt.Errorf("create review queue entry for canonical event: %w", err)
 	}
