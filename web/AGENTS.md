@@ -97,6 +97,23 @@ setLoading(button, true/false);
 debounce(fn, 300);
 ```
 
+## Shared Frontend Modules
+
+Beyond `components.js`, these modules are loaded globally via `_footer.html`:
+
+- `field-picker.js` — `window.FieldPicker`: chip-based field comparison table for consolidation/review workflows
+- `occurrence-rendering.js` — `window.OccurrenceRendering`: occurrence list HTML rendering (used by review-queue fold-down)
+- `warning-badges.js` — `window.WarningBadges`: warning badge HTML generation (used by review-queue table + detail cards)
+
+These are only functionally used by `review-queue.js` and `consolidate.js` but are loaded on all admin pages via `_footer.html` for simplicity.
+
+## Template Partials
+
+- `_footer.html` — shared scripts, toast container, confirm modal; included by all pages
+- `_header.html` — navigation bar; included by all pages
+- `_modals.html` — page-specific modals (reject, merge, delete event); included by `review_queue.html` and `events_list.html`
+- `_user_modal.html` — user management modal; included via `_footer.html`
+
 ## Testing
 
 ```bash
