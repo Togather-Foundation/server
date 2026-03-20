@@ -443,6 +443,7 @@ type ReviewQueueUpdateParams struct {
 	NormalizedPayload  *[]byte
 	Warnings           *[]byte
 	DuplicateOfEventID *string // UUID of the event this is a duplicate of (nil = no change)
+	ClearDuplicateOf   bool    // if true, set duplicate_of_event_id = NULL (takes precedence over DuplicateOfEventID)
 }
 
 // ReviewQueueFilters contains filters for listing review queue entries

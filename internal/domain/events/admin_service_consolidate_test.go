@@ -864,6 +864,7 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 
 	// Capture UpdateReviewQueueEntry call.
 	var updatedWarningsJSON []byte
+	var capturedClearDuplicateOf bool
 	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
 		if id != 42 {
 			t.Errorf("UpdateReviewQueueEntry called with unexpected id=%d, want 42", id)
@@ -871,6 +872,7 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 		if params.Warnings != nil {
 			updatedWarningsJSON = *params.Warnings
 		}
+		capturedClearDuplicateOf = params.ClearDuplicateOf
 		return &ReviewQueueEntry{ID: id}, nil
 	}
 
@@ -890,6 +892,11 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 	// UpdateReviewQueueEntry must have been called.
 	if updatedWarningsJSON == nil {
 		t.Fatal("expected UpdateReviewQueueEntry to be called with updated warnings, but it was not")
+	}
+
+	// ClearDuplicateOf must be true — DuplicateOfEventULID pointed to the retired event.
+	if !capturedClearDuplicateOf {
+		t.Error("expected ClearDuplicateOf=true when DuplicateOfEventULID points to a retired event")
 	}
 
 	// Remaining warnings must not include near_duplicate_of_new_event.

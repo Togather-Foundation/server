@@ -1804,15 +1804,21 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 		return dismissedIDs, nil
 	}
 
-	// Warnings remain — update the entry with the pruned warnings list.
-	// TODO: also clear DuplicateOfEventID when it points to a retired event;
-	// ReviewQueueUpdateParams does not yet expose DuplicateOfEventID clearing.
+	// Warnings remain — update the entry with the pruned warnings list,
+	// and clear duplicate_of_event_id if it still points to a now-retired event.
 	updatedJSON, err := json.Marshal(filtered)
 	if err != nil {
 		return dismissedIDs, fmt.Errorf("marshal updated warnings for canonical review entry %d: %w", entry.ID, err)
 	}
+	clearDup := entry.DuplicateOfEventULID != nil
+	if clearDup {
+		if _, retired := retireSet[*entry.DuplicateOfEventULID]; !retired {
+			clearDup = false
+		}
+	}
 	if _, err := txRepo.UpdateReviewQueueEntry(ctx, entry.ID, ReviewQueueUpdateParams{
-		Warnings: &updatedJSON,
+		Warnings:         &updatedJSON,
+		ClearDuplicateOf: clearDup,
 	}); err != nil {
 		return dismissedIDs, fmt.Errorf("update canonical review entry %d with stripped warnings: %w", entry.ID, err)
 	}

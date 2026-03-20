@@ -729,6 +729,10 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review 
 			slog.WarnContext(ctx, "buildReviewQueueDetail: failed to fetch related event",
 				slog.String("related_ulid", rs.ULID),
 				slog.String("error", err.Error()))
+		} else if relEvent.LifecycleState == "deleted" {
+			// Related event has been retired — skip it entirely so the UI
+			// does not show a side-by-side panel for a deleted companion.
+			continue
 		} else {
 			rd.Name = relEvent.Name
 			rd.Description = relEvent.Description

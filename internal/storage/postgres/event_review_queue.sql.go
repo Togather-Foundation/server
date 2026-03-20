@@ -788,9 +788,12 @@ UPDATE event_review_queue
    SET original_payload = COALESCE($1, original_payload),
        normalized_payload = COALESCE($2, normalized_payload),
        warnings = COALESCE($3, warnings),
-       duplicate_of_event_id = COALESCE($4, duplicate_of_event_id),
+       duplicate_of_event_id = CASE
+                                 WHEN $4::boolean IS TRUE THEN NULL
+                                 ELSE COALESCE($5, duplicate_of_event_id)
+                               END,
        updated_at = NOW()
- WHERE id = $5
+ WHERE id = $6
 RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
 `
 
@@ -798,16 +801,20 @@ type UpdateReviewQueueEntryParams struct {
 	OriginalPayload    []byte      `json:"original_payload"`
 	NormalizedPayload  []byte      `json:"normalized_payload"`
 	Warnings           []byte      `json:"warnings"`
+	ClearDuplicateOf   pgtype.Bool `json:"clear_duplicate_of"`
 	DuplicateOfEventID pgtype.UUID `json:"duplicate_of_event_id"`
 	ID                 int32       `json:"id"`
 }
 
-// Update existing review entry (for resubmissions with same issues)
+// Update existing review entry (for resubmissions with same issues).
+// Pass clear_duplicate_of=TRUE to set duplicate_of_event_id to NULL;
+// otherwise pass a new UUID via duplicate_of_event_id or leave both NULL to keep the existing value.
 func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error) {
 	row := q.db.QueryRow(ctx, updateReviewQueueEntry,
 		arg.OriginalPayload,
 		arg.NormalizedPayload,
 		arg.Warnings,
+		arg.ClearDuplicateOf,
 		arg.DuplicateOfEventID,
 		arg.ID,
 	)

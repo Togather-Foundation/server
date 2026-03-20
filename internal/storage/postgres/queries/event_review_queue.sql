@@ -67,12 +67,17 @@ INSERT INTO event_review_queue (
 RETURNING *;
 
 -- name: UpdateReviewQueueEntry :one
--- Update existing review entry (for resubmissions with same issues)
+-- Update existing review entry (for resubmissions with same issues).
+-- Pass clear_duplicate_of=TRUE to set duplicate_of_event_id to NULL;
+-- otherwise pass a new UUID via duplicate_of_event_id or leave both NULL to keep the existing value.
 UPDATE event_review_queue
    SET original_payload = COALESCE(sqlc.narg('original_payload'), original_payload),
        normalized_payload = COALESCE(sqlc.narg('normalized_payload'), normalized_payload),
        warnings = COALESCE(sqlc.narg('warnings'), warnings),
-       duplicate_of_event_id = COALESCE(sqlc.narg('duplicate_of_event_id'), duplicate_of_event_id),
+       duplicate_of_event_id = CASE
+                                 WHEN sqlc.narg('clear_duplicate_of')::boolean IS TRUE THEN NULL
+                                 ELSE COALESCE(sqlc.narg('duplicate_of_event_id'), duplicate_of_event_id)
+                               END,
        updated_at = NOW()
  WHERE id = sqlc.arg('id')
 RETURNING *;

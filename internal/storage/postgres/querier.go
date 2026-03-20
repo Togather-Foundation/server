@@ -311,7 +311,9 @@ type Querier interface {
 	UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (UpdateOrganizationRow, error)
 	UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error)
-	// Update existing review entry (for resubmissions with same issues)
+	// Update existing review entry (for resubmissions with same issues).
+	// Pass clear_duplicate_of=TRUE to set duplicate_of_event_id to NULL;
+	// otherwise pass a new UUID via duplicate_of_event_id or leave both NULL to keep the existing value.
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
 	// Update only the warnings JSON of a review queue entry (used for companion warning dismissal).
 	UpdateReviewWarnings(ctx context.Context, arg UpdateReviewWarningsParams) error
