@@ -187,9 +187,9 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 | Edit & Approve | `PUT /api/v1/admin/events/{ulid}` → `POST /api/v1/admin/review-queue/{id}/approve` |
 | Reject | `POST /api/v1/admin/review-queue/{id}/reject` |
 
-**Deprecated — do not call from new UI code:**
-- `POST /api/v1/admin/review-queue/{id}/add-occurrence` — replaced by consolidate
-- `POST /api/v1/admin/review-queue/{id}/merge` — replaced by consolidate
+**Removed — do not use:**
+- `POST /api/v1/admin/review-queue/{id}/add-occurrence` — removed, use consolidate
+- `POST /api/v1/admin/review-queue/{id}/merge` — removed, use consolidate
 
 ---
 
@@ -216,7 +216,7 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 
 ### Backend (admin_review_queue.go)
 
-- The `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` endpoints can remain for backward compatibility (CLI, scripts) but are deprecated for UI use.
+- The `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` handler methods, routes, tests, OpenAPI entries, and all references in scripts/docs must be **fully removed** (tracked in `srv-bexw4`).
 - No new backend work required for the fold-down redesign — all needed data is available via existing endpoints.
 
 ---
