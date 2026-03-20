@@ -839,7 +839,7 @@
             }
         })() : `
             <div class="text-muted">
-                ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
+                ${detail.status === 'merged' ? 'Merged' : detail.status === 'approved' ? 'Approved' : detail.status === 'dismissed' ? 'Dismissed' : 'Rejected'} by ${escapeHtml(detail.reviewedBy || 'system')} on ${formatDate(detail.reviewedAt)}
                 ${detail.duplicateOfEventUlid ? `<br>Merged into: <a href="/admin/events/${encodeURIComponent(detail.duplicateOfEventUlid)}" class="text-reset">${escapeHtml(detail.duplicateOfEventUlid)}</a>` : ''}
                 ${detail.reviewNotes ? `<br>Notes: ${escapeHtml(detail.reviewNotes)}` : ''}
                 ${detail.rejectionReason ? `<br>Reason: ${escapeHtml(detail.rejectionReason)}` : ''}
@@ -1134,19 +1134,10 @@
             dismissed.add(String(entryId));
             dismissed.forEach(id => removeEntryFromList(id));
 
-            // Increment merged count badge by number of entries actually removed
-            const mergedBadge = document.querySelector('[data-action="filter-status"][data-status="merged"] .badge');
-            if (mergedBadge) {
-                const currentCount = parseInt(mergedBadge.textContent) || 0;
-                mergedBadge.textContent = currentCount + dismissed.size;
-            }
-
-            // If the canonical event still has a pending review entry (e.g. multi_session_likely
-            // remains after dup warnings are stripped), reload the list so it reflects the
-            // updated state (stale dup warning replaced with current warnings only).
-            if (result && result.needs_review) {
-                loadEntries();
-            }
+            // Always reload from the server — consolidation can affect multiple entries
+            // (retired event dismissed, canonical entry updated/dismissed) and the badge
+            // counts need to reflect the true server state.
+            loadEntries();
         } catch (err) {
             console.error('Failed to consolidate events:', err);
             const status = err && err.status;
