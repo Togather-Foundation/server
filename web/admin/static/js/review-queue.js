@@ -420,10 +420,13 @@
         // Any duplicate-type warning (used to show the "Not a Duplicate" button)
         const hasAnyDuplicateWarning = hasDuplicateWarnings || hasNearDupNewEventWarning;
 
-        // Determine Case 1 (standalone multi_session_likely / no related events) vs Case 2/3
+        // Determine Case 1 (standalone / no related events) vs Case 2/3.
+        // isCase1 and isCase2or3 are exhaustive — a row with duplicateOfEventUlid set
+        // but no relatedEvents and no dup warnings is still treated as Case 2/3 so it
+        // receives the consolidate buttons rather than the standalone occurrence editor.
         const isCase1 = (!detail.relatedEvents || detail.relatedEvents.length === 0) &&
                         !detail.duplicateOfEventUlid;
-        const isCase2or3 = !isCase1 && (hasAnyDuplicateWarning || (detail.relatedEvents && detail.relatedEvents.length > 0));
+        const isCase2or3 = !isCase1;
         
         // Check if there are any date-related warnings
         const hasDateWarnings = warnings.some(w => 
@@ -661,13 +664,14 @@
 
         // Build the occurrences section.
         // Case 1: editable (add/remove occurrences inline).
-        // Case 2/3: read-only here; related event shows side-by-side panel below.
+        // Case 2/3: occurrences are shown inside the side-by-side panel; this wrapper
+        // is not mounted for Case 2/3 (the panel renders its own occurrence lists).
         const thisOccurrences = detail.occurrences || [];
-        const occurrencesHtml = `
+        const occurrencesHtml = isCase1 ? `
             <div id="occurrence-list-${id}">
-                ${renderOccurrencesList(thisOccurrences, detail.eventId, id, isCase1)}
+                ${renderOccurrencesList(thisOccurrences, detail.eventId, id, true)}
             </div>
-        `;
+        ` : '';
 
         // Build the Case 2/3 side-by-side related event panel.
         let relatedEventPanelHtml = '';
@@ -869,13 +873,18 @@
             return '<p class="text-muted small mb-2">No occurrences</p>';
         }
 
+        // Escape entryId once — it appears in id= and data-* attributes throughout this function.
+        // entryId is sourced from the DOM (dataset) or API (integer), but escape defensively
+        // since it flows into innerHTML attribute positions.
+        const safeEntryId = escapeHtml(String(entryId));
+
         const rowsHtml = (occurrences || []).map(occ => {
             const start = occ.startTime ? formatDate(occ.startTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(no date)';
-            const end = occ.endTime ? formatDate(occ.endTime, { hour: 'numeric', minute: '2-digit' }) : '';
+            const end = occ.endTime && occ.endTime.trim() ? formatDate(occ.endTime, { hour: 'numeric', minute: '2-digit' }) : '';
             const timeStr = end ? `${start} \u2013 ${end}` : start;
 
-            const removeBtn = editable
-                ? `<button class="btn btn-sm btn-ghost-danger ms-auto" data-action="remove-occurrence" data-entry-id="${entryId}" data-event-ulid="${escapeHtml(eventUlid)}" data-occurrence-id="${escapeHtml(occ.id)}" title="Remove occurrence">&#10005; Remove</button>`
+            const removeBtn = editable && !String(occ.id).startsWith('_pending_')
+                ? `<button class="btn btn-sm btn-ghost-danger ms-auto" data-action="remove-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}" data-occurrence-id="${escapeHtml(occ.id)}" title="Remove occurrence">&#10005; Remove</button>`
                 : '';
 
             return `<div class="d-flex align-items-center py-1 border-bottom">
@@ -889,13 +898,13 @@
                 ? occurrences[0].timezone
                 : 'America/Toronto';
             return `
-                <div class="d-flex gap-2 align-items-center flex-wrap mt-2" id="add-occ-form-${entryId}">
-                    <input type="datetime-local" class="form-control form-control-sm" id="occ-start-${entryId}" style="max-width: 200px;" placeholder="Start">
-                    <input type="datetime-local" class="form-control form-control-sm" id="occ-end-${entryId}" style="max-width: 200px;" placeholder="End (optional)">
-                    <input type="text" class="form-control form-control-sm" id="occ-tz-${entryId}" value="${escapeHtml(defaultTz)}" style="max-width: 160px;" placeholder="Timezone">
-                    <button class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="${entryId}" data-event-ulid="${escapeHtml(eventUlid)}">+ Add</button>
+                <div class="d-flex gap-2 align-items-center flex-wrap mt-2" id="add-occ-form-${safeEntryId}">
+                    <input type="datetime-local" class="form-control form-control-sm" id="occ-start-${safeEntryId}" style="max-width: 200px;" placeholder="Start (event local time)">
+                    <input type="datetime-local" class="form-control form-control-sm" id="occ-end-${safeEntryId}" style="max-width: 200px;" placeholder="End (optional)">
+                    <input type="text" class="form-control form-control-sm" id="occ-tz-${safeEntryId}" value="${escapeHtml(defaultTz)}" style="max-width: 160px;" placeholder="Timezone">
+                    <button class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}">+ Add</button>
                 </div>
-                <div id="occ-error-${entryId}" class="text-danger small mt-1" style="display:none;"></div>
+                <div id="occ-error-${safeEntryId}" class="text-danger small mt-1" style="display:none;"></div>
             `;
         })() : '';
 
@@ -995,6 +1004,11 @@
         if (addBtn) setLoading(addBtn, true);
 
         try {
+            // datetime-local inputs yield a timezone-free string like "2026-03-20T19:30".
+            // new Date() interprets this in the browser's local timezone. The server stores
+            // the resulting UTC time; the timezone field is metadata for display purposes.
+            // Admins should enter the time in the event's local timezone with their browser
+            // set accordingly, or set their browser to UTC and enter UTC times.
             const body = {
                 start_time: new Date(startVal).toISOString(),
                 timezone: timezone,
@@ -1035,6 +1049,7 @@
                 const msg = (err && err.detail) || (err && err.message) || 'Failed to add occurrence';
                 showError(msg);
             }
+        } finally {
             if (addBtn) setLoading(addBtn, false);
         }
     }
@@ -1048,6 +1063,12 @@
      * @param {string} action - 'add-as-occurrence' or 'merge-duplicate'
      */
     async function consolidateEvent(entryId, action) {
+        const VALID_CONSOLIDATE_ACTIONS = new Set(['add-as-occurrence', 'merge-duplicate']);
+        if (!VALID_CONSOLIDATE_ACTIONS.has(action)) {
+            console.error('consolidateEvent: invalid action', action);
+            return;
+        }
+
         const detail = currentEntryDetail;
         if (!detail) return;
 
@@ -1090,13 +1111,16 @@
         } catch (err) {
             console.error('Failed to consolidate events:', err);
             const status = err && err.status;
-            if (status === 409 && action === 'add-as-occurrence') {
+            if (status === 409) {
                 const detailMsg = (err && err.detail) || 'The occurrence conflicts with an existing one.';
+                const msg = action === 'add-as-occurrence'
+                    ? detailMsg + ' Use Merge Duplicate instead (same session listed twice), or Reject and manually adjust.'
+                    : detailMsg;
                 if (consolidateError) {
-                    consolidateError.textContent = detailMsg + ' Use Merge Duplicate instead (same session listed twice), or Reject and manually adjust.';
+                    consolidateError.textContent = msg;
                     consolidateError.style.display = 'block';
                 } else {
-                    showToast(detailMsg, 'error');
+                    showToast(msg, 'error');
                 }
             } else {
                 const msg = (err && err.detail) || (err && err.message) || 'Failed to consolidate events';
