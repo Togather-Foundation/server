@@ -175,6 +175,7 @@
     // -------------------------------------------------------------------------
 
     function renderFieldPickerTable() {
+        if (typeof FieldPicker === 'undefined') return;
         FieldPicker.renderFieldPickerTable(
             document.getElementById('field-picker-table'),
             loadedEvents

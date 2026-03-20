@@ -199,10 +199,12 @@
                     // Show/update the overrides display
                     updateOverridesDisplay(pickedEntryId);
 
-                    // Visual feedback: deselect all chips in same field row, select this one
-                    const td = target.closest('td');
-                    if (td) {
-                        td.querySelectorAll('[data-action="pick-field"]').forEach(b => {
+                    // Visual feedback: deselect all chips in same field row, select this one.
+                    // Scope to the whole <tr> so chips from all event columns for this
+                    // field are cleared (not just the single <td> containing the click).
+                    const tr = target.closest('tr');
+                    if (tr) {
+                        tr.querySelectorAll('[data-action="pick-field"]').forEach(b => {
                             b.classList.remove('btn-primary');
                             b.classList.add('btn-outline-secondary');
                         });

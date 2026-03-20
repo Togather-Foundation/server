@@ -15,7 +15,7 @@
 
     /**
      * Top-level fields rendered in the picker table.
-     * Each entry maps to a form input via fieldInputId().
+     * Callers are responsible for wiring picked values to form inputs or override maps.
      */
     const TOP_LEVEL_FIELDS = [
         { label: 'Event Name',   key: 'name' },
