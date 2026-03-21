@@ -352,7 +352,7 @@
             }
             
             return `
-                <tr data-entry-id="${entry.id}">
+                <tr data-entry-id="${escapeHtml(String(entry.id))}">
                     <td>
                         <a href="/admin/events/${entry.eventId}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
                             ${escapeHtml(eventName)}
@@ -703,7 +703,13 @@
                 ? `<span class="badge bg-purple-lt ms-2">${similarity}%</span>`
                 : '';
 
-            // Map relatedEventDetail to the shape extractMergeFields expects
+            // Map relatedEventDetail to the shape extractMergeFields expects.
+            // NOTE: relatedEvent.name and relatedEvent.description come from the API (unescaped).
+            // They flow through renderMergeEventSummary → extractMergeFields → renderMergeFieldRows
+            // → renderMergeField where escapeHtml() is applied at render time. The truncation in
+            // renderMergeFieldRows happens BEFORE escapeHtml, which is safe — do not re-escape
+            // here or you will double-encode. Maintainers: if you add new display paths for these
+            // fields, ensure escapeHtml() is called before innerHTML assignment.
             const relatedAsNormalized = {
                 name: relatedEvent.name,
                 description: relatedEvent.description,
@@ -770,15 +776,15 @@
                         <label class="form-label fw-semibold">Which event is canonical?</label>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="canonical-${id}"
-                                   id="canonical-this-${id}" value="this" checked
-                                   data-action="canonical-select" data-entry-id="${id}">
-                            <label class="form-check-label" for="canonical-this-${id}">This event</label>
+                                   id="canonical-this-${escapeHtml(String(id))}" value="this" checked
+                                   data-action="canonical-select" data-entry-id="${escapeHtml(String(id))}">
+                            <label class="form-check-label" for="canonical-this-${escapeHtml(String(id))}">This event</label>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="canonical-${id}"
-                                   id="canonical-related-${id}" value="related"
-                                   data-action="canonical-select" data-entry-id="${id}">
-                            <label class="form-check-label" for="canonical-related-${id}">Related event</label>
+                                   id="canonical-related-${escapeHtml(String(id))}" value="related"
+                                   data-action="canonical-select" data-entry-id="${escapeHtml(String(id))}">
+                            <label class="form-check-label" for="canonical-related-${escapeHtml(String(id))}">Related event</label>
                         </div>
                     </div>
                     <div class="btn-list" id="action-buttons-${id}">
@@ -873,7 +879,8 @@
             if (pickerContainer) {
                 const relatedEvent = relatedEvents[0];
                 // Build the relatedEvent in the same shape as normalized for the picker.
-                // This mirrors the relatedAsNormalized shape built above.
+                // This mirrors the relatedAsNormalized shape built above. See the NOTE on
+                // relatedAsNormalized above regarding escaping of name/description fields.
                 const relatedForPicker = {
                     name: relatedEvent.name,
                     description: relatedEvent.description,
@@ -935,7 +942,7 @@
      */
     async function removeOccurrence(entryId, eventUlid, occurrenceId) {
         const btn = document.querySelector(
-            `[data-action="remove-occurrence"][data-entry-id="${entryId}"][data-occurrence-id="${occurrenceId}"]`
+            `[data-action="remove-occurrence"][data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
         );
         if (btn) setLoading(btn, true);
 
@@ -946,6 +953,7 @@
                 currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
                 OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true);
             }
+            if (btn) setLoading(btn, false);
         } catch (err) {
             console.error('Failed to remove occurrence:', err);
             const msg = (err && err.detail) || (err && err.message) || 'Failed to remove occurrence';
@@ -997,10 +1005,14 @@
 
         try {
             // datetime-local inputs yield a timezone-free string like "2026-03-20T19:30".
-            // new Date() interprets this in the browser's local timezone. The server stores
-            // the resulting UTC time; the timezone field is metadata for display purposes.
-            // Admins should enter the time in the event's local timezone with their browser
-            // set accordingly, or set their browser to UTC and enter UTC times.
+            // new Date() interprets this in the browser's local timezone, then toISOString()
+            // converts to UTC. The submitted start_time is therefore the UTC equivalent of
+            // whatever local time the admin entered — NOT the wall-clock time shown in the
+            // input. The timezone field is metadata only; it does NOT adjust the stored UTC
+            // value. A Toronto admin entering "19:30" for a Vancouver event submits 19:30 EST
+            // converted to UTC, not 19:30 PST. Admins must set their browser timezone to
+            // match the event's timezone for correct results, or enter UTC times with the
+            // browser set to UTC.
             const body = {
                 start_time: new Date(startVal).toISOString(),
                 timezone: timezone,
@@ -1082,7 +1094,7 @@
             retireUlid = detail.eventId;
         }
 
-        const btn = document.querySelector(`[data-action="${action}"][data-id="${entryId}"]`);
+        const btn = document.querySelector(`[data-action="${escapeHtml(action)}"][data-id="${escapeHtml(String(entryId))}"]`);
         if (btn) setLoading(btn, true);
 
         // Hide any previous consolidate error
@@ -1133,6 +1145,8 @@
             );
             dismissed.add(String(entryId));
             dismissed.forEach(id => removeEntryFromList(id));
+
+            if (btn) setLoading(btn, false);
 
             // Always reload from the server — consolidation can affect multiple entries
             // (retired event dismissed, canonical entry updated/dismissed) and the badge
