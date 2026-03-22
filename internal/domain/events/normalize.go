@@ -14,8 +14,8 @@ import (
 )
 
 // SeriesCompanionRepo is the interface for cross-week series detection.
-// It is satisfied by Repository (from repository.go) via a compile-time check
-// in normalize_test.go.
+// Implemented by Repository (from repository.go). Add compile-time check if needed:
+// var _ SeriesCompanionRepo = (*Repository)(nil)
 type SeriesCompanionRepo interface {
 	FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
 }
