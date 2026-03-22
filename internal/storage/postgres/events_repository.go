@@ -1315,6 +1315,57 @@ LIMIT 5
 	return candidates, nil
 }
 
+func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events.SeriesCompanionQuery) (*events.CrossWeekCompanion, error) {
+	queryer := r.queryer()
+
+	var excludeULID *string
+	if params.ExcludeULID != "" {
+		excludeULID = &params.ExcludeULID
+	}
+
+	var companionULID string
+	var companionName, companionStartDate, companionStartTime, companionVenueName string
+
+	err := queryer.QueryRow(ctx, `
+WITH candidate AS (
+  SELECT DISTINCT ON (e.id)
+         e.ulid,
+         e.name,
+         o.start_time,
+         COALESCE(p.name, '') AS venue_name
+    FROM events e
+    JOIN event_occurrences o ON o.event_id = e.id
+    LEFT JOIN places p ON p.id = e.primary_venue_id
+   WHERE e.deleted_at IS NULL
+     AND e.lifecycle_state IN ('published', 'pending_review')
+     AND e.primary_venue_id = $1
+     AND normalize_name(e.name) = normalize_name($2)
+     AND o.start_time >= $3::timestamptz - INTERVAL '21 days'
+     AND o.start_time <= $3::timestamptz - INTERVAL '7 days'
+     AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
+`, params.VenueID, params.NormalizedName, params.StartTime).Scan(
+		&companionULID, &companionName, &companionStartDate, &companionVenueName,
+	)
+	if err != nil {
+		return nil, nil
+	}
+
+	if companionULID == "" || (excludeULID != nil && companionULID == *excludeULID) {
+		return nil, nil
+	}
+
+	startTime, _ := time.Parse(time.RFC3339, companionStartDate)
+	companionStartTime = startTime.Format("15:04:05")
+
+	return &events.CrossWeekCompanion{
+		ULID:      companionULID,
+		Name:      companionName,
+		StartDate: companionStartDate,
+		StartTime: companionStartTime,
+		VenueName: companionVenueName,
+	}, nil
+}
+
 // DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
 // for the given event ULIDs, setting their status to 'dismissed' and reviewer to reviewedBy.
 // Returns the IDs of dismissed entries (may be empty if none were pending).

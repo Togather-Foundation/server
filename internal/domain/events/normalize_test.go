@@ -846,6 +846,153 @@ func TestIsMultiSessionEvent(t *testing.T) {
 	}
 }
 
+func TestSeriesCompanionQuery(t *testing.T) {
+	t.Run("struct fields populated correctly", func(t *testing.T) {
+		startTime := time.Date(2026, 3, 15, 19, 0, 0, 0, time.UTC)
+		q := SeriesCompanionQuery{
+			NormalizedName: "Pottery Workshop",
+			VenueID:        "venue-uuid-123",
+			StartTime:      startTime,
+			ExcludeULID:    "exclude-ulid-456",
+		}
+		assert.Equal(t, "Pottery Workshop", q.NormalizedName)
+		assert.Equal(t, "venue-uuid-123", q.VenueID)
+		assert.Equal(t, startTime, q.StartTime)
+		assert.Equal(t, "exclude-ulid-456", q.ExcludeULID)
+	})
+}
+
+func TestCrossWeekDateOffset(t *testing.T) {
+	candidateTime := func(daysFromNew, hour, min int) time.Time {
+		return time.Date(2026, 3, 15+daysFromNew, hour, min, 0, 0, time.UTC)
+	}
+	newEventTime := time.Date(2026, 3, 15, 19, 0, 0, 0, time.UTC)
+
+	isWithinDateWindow := func(candidate, newEvent time.Time) bool {
+		offset := candidate.Sub(newEvent).Hours() / 24
+		return offset >= 7 && offset <= 21
+	}
+
+	isWithinTimeWindow := func(candidate, newEvent time.Time) bool {
+		candTOD := candidate.Hour()*3600 + candidate.Minute()*60 + candidate.Second()
+		newTOD := newEvent.Hour()*3600 + newEvent.Minute()*60 + newEvent.Second()
+		diff := candTOD - newTOD
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > 43200 {
+			diff = 86400 - diff
+		}
+		return diff < 1800
+	}
+
+	tests := []struct {
+		name      string
+		candidate time.Time
+		wantDate  bool
+		wantTime  bool
+	}{
+		{
+			name:      "8 days apart same time - both match",
+			candidate: candidateTime(8, 19, 0),
+			wantDate:  true,
+			wantTime:  true,
+		},
+		{
+			name:      "14 days apart same time - both match",
+			candidate: candidateTime(14, 19, 0),
+			wantDate:  true,
+			wantTime:  true,
+		},
+		{
+			name:      "21 days apart same time - both match",
+			candidate: candidateTime(21, 19, 0),
+			wantDate:  true,
+			wantTime:  true,
+		},
+		{
+			name:      "6 days apart same time - date outside window",
+			candidate: candidateTime(6, 19, 0),
+			wantDate:  false,
+			wantTime:  true,
+		},
+		{
+			name:      "22 days apart same time - date outside window",
+			candidate: candidateTime(22, 19, 0),
+			wantDate:  false,
+			wantTime:  true,
+		},
+		{
+			name:      "14 days apart 25 min later - time within window",
+			candidate: candidateTime(14, 19, 25),
+			wantDate:  true,
+			wantTime:  true,
+		},
+		{
+			name:      "14 days apart 29 min later - time within window",
+			candidate: candidateTime(14, 19, 29),
+			wantDate:  true,
+			wantTime:  true,
+		},
+		{
+			name:      "14 days apart 31 min later - time outside window",
+			candidate: candidateTime(14, 19, 31),
+			wantDate:  true,
+			wantTime:  false,
+		},
+		{
+			name:      "14 days apart 15 min earlier - time within window",
+			candidate: candidateTime(14, 18, 45),
+			wantDate:  true,
+			wantTime:  true,
+		},
+		{
+			name:      "14 days apart 45 min earlier - time outside window",
+			candidate: candidateTime(14, 18, 15),
+			wantDate:  true,
+			wantTime:  false,
+		},
+		{
+			name:      "10 days apart 1 hour later - time outside window",
+			candidate: candidateTime(10, 20, 0),
+			wantDate:  true,
+			wantTime:  false,
+		},
+		{
+			name:      "7 days apart same time - both match (boundary)",
+			candidate: candidateTime(7, 19, 0),
+			wantDate:  true,
+			wantTime:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotDate := isWithinDateWindow(tt.candidate, newEventTime)
+			gotTime := isWithinTimeWindow(tt.candidate, newEventTime)
+			assert.Equal(t, tt.wantDate, gotDate, "date window mismatch")
+			assert.Equal(t, tt.wantTime, gotTime, "time window mismatch")
+		})
+	}
+}
+
+func TestCrossWeekCompanion(t *testing.T) {
+	t.Run("struct fields", func(t *testing.T) {
+		c := CrossWeekCompanion{
+			ULID:      "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			Name:      "Weekly Yoga",
+			StartDate: "2026-03-08T19:00:00Z",
+			StartTime: "19:00:00",
+			VenueName: "Community Centre",
+		}
+		assert.Equal(t, "01ARZ3NDEKTSV4RRFFQ69G5FAV", c.ULID)
+		assert.Equal(t, "Weekly Yoga", c.Name)
+		assert.Equal(t, "2026-03-08T19:00:00Z", c.StartDate)
+		assert.Equal(t, "19:00:00", c.StartTime)
+		assert.Equal(t, "Community Centre", c.VenueName)
+	})
+}
+
 func TestNormalizeRegion(t *testing.T) {
 	tests := []struct {
 		input string

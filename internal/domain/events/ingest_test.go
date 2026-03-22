@@ -67,6 +67,8 @@ type MockRepository struct {
 	shouldFailFindSimilarOrgs        bool
 	shouldFailUpdateEvent            bool
 	shouldFailApproveReview          bool
+	shouldFailFindSeriesCompanion    bool
+	seriesCompanion                  *CrossWeekCompanion
 }
 
 // occurrenceDateUpdate stores occurrence date updates for verification
@@ -742,6 +744,15 @@ func (m *MockRepository) FindSimilarOrganizations(ctx context.Context, name stri
 		return nil, errors.New("mock find similar orgs error")
 	}
 	return m.similarOrgs, nil
+}
+func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.shouldFailFindSeriesCompanion {
+		return nil, errors.New("mock find series companion error")
+	}
+	return m.seriesCompanion, nil
 }
 func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
 	m.mu.Lock()
@@ -2395,6 +2406,187 @@ func TestAppendWarnings(t *testing.T) {
 		}
 		if len(out) != 1 {
 			t.Errorf("want 1 warning, got %d", len(out))
+		}
+	})
+}
+
+func TestCrossWeekSeriesCompanion(t *testing.T) {
+	t.Run("flags_event_with_cross_week_series_companion", func(t *testing.T) {
+		repo := NewMockRepository()
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "c3d4e5f6-a7b8-9012-cdef-123456789012"
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "Community Centre")
+
+		companionStartDate := time.Date(2026, 3, 8, 19, 0, 0, 0, time.UTC)
+		repo.seriesCompanion = &CrossWeekCompanion{
+			ULID:      "01ARZ3NDEKTSV4RRFFQ69G5FBV",
+			Name:      "Weekly Pottery",
+			StartDate: companionStartDate.Format(time.RFC3339),
+			StartTime: "19:00:00",
+			VenueName: "Community Centre",
+		}
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+
+		input := EventInput{
+			Name:        "Weekly Pottery",
+			Description: "Test event",
+			License:     "CC0-1.0",
+			StartDate:   "2026-03-15T19:00:00Z",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-03-15T19:00:00Z"},
+			},
+		}
+
+		result, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		if !result.NeedsReview {
+			t.Error("expected NeedsReview = true when cross-week companion found")
+		}
+
+		var crossWeekWarning *ValidationWarning
+		for _, w := range result.Warnings {
+			if w.Code == "cross_week_series_companion" {
+				crossWeekWarning = &w
+				break
+			}
+		}
+		if crossWeekWarning == nil {
+			t.Fatal("cross_week_series_companion warning not found in result.Warnings")
+		}
+		if crossWeekWarning.Field != "name" {
+			t.Errorf("Field = %q, want %q", crossWeekWarning.Field, "name")
+		}
+		if !strings.Contains(crossWeekWarning.Message, "Weekly Pottery") {
+			t.Errorf("Message = %q, want to contain %q", crossWeekWarning.Message, "Weekly Pottery")
+		}
+		if !strings.Contains(crossWeekWarning.Message, "2026-03-08") {
+			t.Errorf("Message = %q, want to contain %q", crossWeekWarning.Message, "2026-03-08")
+		}
+		if crossWeekWarning.Details["companion_ulid"] != "01ARZ3NDEKTSV4RRFFQ69G5FBV" {
+			t.Errorf("companion_ulid = %v, want %q", crossWeekWarning.Details["companion_ulid"], "01ARZ3NDEKTSV4RRFFQ69G5FBV")
+		}
+		if crossWeekWarning.Details["companion_name"] != "Weekly Pottery" {
+			t.Errorf("companion_name = %v, want %q", crossWeekWarning.Details["companion_name"], "Weekly Pottery")
+		}
+		if crossWeekWarning.Details["companion_date"] != "2026-03-08T19:00:00Z" {
+			t.Errorf("companion_date = %v, want %q", crossWeekWarning.Details["companion_date"], "2026-03-08T19:00:00Z")
+		}
+		if crossWeekWarning.Details["companion_time"] != "19:00:00" {
+			t.Errorf("companion_time = %v, want %q", crossWeekWarning.Details["companion_time"], "19:00:00")
+		}
+		if crossWeekWarning.Details["venue_name"] != "Community Centre" {
+			t.Errorf("venue_name = %v, want %q", crossWeekWarning.Details["venue_name"], "Community Centre")
+		}
+	})
+
+	t.Run("no_warning_when_no_series_companion", func(t *testing.T) {
+		repo := NewMockRepository()
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "d4e5f6a7-b8c9-0123-def0-234567890123"
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "Art Gallery")
+		repo.seriesCompanion = nil
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+
+		input := EventInput{
+			Name:        "Unique Art Show",
+			Description: "Test",
+			License:     "CC0-1.0",
+			StartDate:   "2026-03-15T19:00:00Z",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-03-15T19:00:00Z"},
+			},
+		}
+
+		result, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		for _, w := range result.Warnings {
+			if w.Code == "cross_week_series_companion" {
+				t.Error("cross_week_series_companion warning should not be present when no companion found")
+			}
+		}
+	})
+
+	t.Run("error_in_series_companion_check_is_non_fatal", func(t *testing.T) {
+		repo := NewMockRepository()
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "e5f6a7b8-c9d0-1234-ef01-345678901234"
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "Studio")
+		repo.shouldFailFindSeriesCompanion = true
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+
+		input := EventInput{
+			Name:        "Art Workshop",
+			Description: "Test",
+			License:     "CC0-1.0",
+			StartDate:   "2026-03-15T19:00:00Z",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-03-15T19:00:00Z"},
+			},
+		}
+
+		result, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v (expected non-fatal)", err)
+		}
+
+		for _, w := range result.Warnings {
+			if w.Code == "cross_week_series_companion" {
+				t.Error("cross_week_series_companion warning should not be present when check failed")
+			}
+		}
+	})
+
+	t.Run("no_check_when_no_venue", func(t *testing.T) {
+		repo := NewMockRepository()
+		repo.seriesCompanion = &CrossWeekCompanion{ULID: "01ARZ3NDEKTSV4RRFFQ69G5FBV"}
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+
+		input := EventInput{
+			Name:        "Virtual Workshop",
+			Description: "Test",
+			License:     "CC0-1.0",
+			StartDate:   "2026-03-15T19:00:00Z",
+			VirtualLocation: &VirtualLocationInput{
+				URL: "https://zoom.us/j/123456",
+			},
+		}
+
+		result, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		for _, w := range result.Warnings {
+			if w.Code == "cross_week_series_companion" {
+				t.Error("cross_week_series_companion warning should not appear when no venue")
+			}
 		}
 	})
 }

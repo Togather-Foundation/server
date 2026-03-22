@@ -584,6 +584,38 @@ func (s *IngestService) createEventCore(
 		}
 	}
 
+	// ── 8b. Cross-week series detection ──────────────────────────────────────
+	if params.PrimaryVenueID != nil && validated.StartDate != "" {
+		startTime, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(validated.StartDate))
+		if parseErr == nil {
+			companion, err := s.repo.FindSeriesCompanion(ctx, SeriesCompanionQuery{
+				NormalizedName: validated.Name,
+				VenueID:        *params.PrimaryVenueID,
+				StartTime:      startTime,
+				ExcludeULID:    ulidValue,
+			})
+			if err != nil {
+				log.Warn().Err(err).
+					Str("event_name", validated.Name).
+					Msg("Cross-week series check failed, continuing")
+			} else if companion != nil {
+				warnings = append(warnings, ValidationWarning{
+					Field:   "name",
+					Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s", companion.Name, companion.StartDate),
+					Code:    "cross_week_series_companion",
+					Details: map[string]any{
+						"companion_ulid": companion.ULID,
+						"companion_name": companion.Name,
+						"companion_date": companion.StartDate,
+						"companion_time": companion.StartTime,
+						"venue_name":     companion.VenueName,
+					},
+				})
+				needsReview = true
+			}
+		}
+	}
+
 	// ── 9. Organizer resolution (with optional Layer 3 fuzzy dedup) ──────────
 	if validated.Organizer != nil && validated.Organizer.Name != "" {
 		dbRepo := s.repo
