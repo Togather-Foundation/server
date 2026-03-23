@@ -557,7 +557,7 @@ run: build
 		fi; \
 	fi
 	@echo "Running server..."
-	@./server
+	@./server 2>&1 | tee server.log
 
 # Development mode with live reload (requires air - run 'make install-tools' first)
 dev:
