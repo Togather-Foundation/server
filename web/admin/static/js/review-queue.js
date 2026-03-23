@@ -229,6 +229,14 @@
                 expandDetail(entryId);
             }
         });
+
+        // Handle change events for radio buttons (canonical selector)
+        document.addEventListener('change', (e) => {
+            const target = e.target;
+            if (target.dataset.action === 'canonical-select' && target.dataset.entryId) {
+                rebuildPickers(target.dataset.entryId);
+            }
+        });
     }
     
     /**
