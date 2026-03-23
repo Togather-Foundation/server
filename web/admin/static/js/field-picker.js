@@ -85,18 +85,16 @@
             return '<td><span class="text-body">' + displayVal + '</span></td>';
         }
 
-        // Override selection takes precedence over canonical; otherwise use canonical
-        let isSelected = eventIndex === canonicalIndex;
-        if (selectedOverrides && selectedOverrides[fieldKey] !== undefined) {
-            isSelected = selectedOverrides[fieldKey] === eventIndex;
-        }
-
-        // User-selected fields (via selectedOverrides) get green, defaults get blue
+        // Determine chip state:
+        // - If user explicitly selected a value for this field, the matching chip is green,
+        //   the other is outline (regardless of canonical).
+        // - Otherwise, the canonical chip is blue, the other is outline.
         let chipClass;
         if (selectedOverrides && selectedOverrides[fieldKey] !== undefined) {
-            chipClass = 'btn-success';  // Green for user-selected
-        } else if (isSelected) {
-            chipClass = 'btn-primary';   // Blue for default (canonical)
+            // User has explicitly picked a value for this field
+            chipClass = selectedOverrides[fieldKey] === eventIndex ? 'btn-success' : 'btn-outline-secondary';
+        } else if (eventIndex === canonicalIndex) {
+            chipClass = 'btn-primary';   // Blue for canonical default
         } else {
             chipClass = 'btn-outline-secondary';
         }
@@ -148,17 +146,16 @@
 
         // Override selection takes precedence over canonical; otherwise use canonical
         const compositeKey = parent + '.' + subfield;
-        let isSelected = eventIndex === canonicalIndex;
-        if (selectedOverrides && selectedOverrides[compositeKey] !== undefined) {
-            isSelected = selectedOverrides[compositeKey] === eventIndex;
-        }
 
-        // User-selected fields (via selectedOverrides) get green, defaults get blue
+        // Determine chip state:
+        // - If user explicitly selected a value for this field, the matching chip is green,
+        //   the other is outline (regardless of canonical).
+        // - Otherwise, the canonical chip is blue, the other is outline.
         let chipClass;
         if (selectedOverrides && selectedOverrides[compositeKey] !== undefined) {
-            chipClass = 'btn-success';  // Green for user-selected
-        } else if (isSelected) {
-            chipClass = 'btn-primary';   // Blue for default (canonical)
+            chipClass = selectedOverrides[compositeKey] === eventIndex ? 'btn-success' : 'btn-outline-secondary';
+        } else if (eventIndex === canonicalIndex) {
+            chipClass = 'btn-primary';   // Blue for canonical default
         } else {
             chipClass = 'btn-outline-secondary';
         }
@@ -277,25 +274,22 @@
                 onPick(fieldKey, subfieldKey, value, source);
             }
 
-            // Revert sibling chips in this column to outline
-            const table = chip.closest('table');
-            if (table) {
-                const rows = table.querySelectorAll('tbody tr');
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length > eventIndex + 1) { // +1 for label cell
-                        const siblingChip = cells[eventIndex + 1].querySelector('.field-picker-chip');
-                        if (siblingChip && siblingChip !== chip) {
-                            siblingChip.classList.remove('btn-primary');
-                            siblingChip.classList.add('btn-outline-secondary');
-                        }
+            // Find the row containing this chip, then revert all other chips in that row to outline.
+            // A row represents one field; user-picking one event's chip should un-highlight siblings
+            // in the same row.
+            const row = chip.closest('tr');
+            if (row) {
+                row.querySelectorAll('.field-picker-chip').forEach(sibling => {
+                    if (sibling !== chip) {
+                        sibling.classList.remove('btn-primary', 'btn-success');
+                        sibling.classList.add('btn-outline-secondary');
                     }
                 });
             }
 
-            // Highlight this chip
-            chip.classList.remove('btn-outline-secondary');
-            chip.classList.add('btn-primary');
+            // Highlight this chip as user-selected (green = user locked in)
+            chip.classList.remove('btn-outline-secondary', 'btn-primary');
+            chip.classList.add('btn-success');
         });
     }
 

@@ -135,18 +135,23 @@
 
     /**
      * Render a two-column occurrence picker for multi-event consolidation.
-     * Shows canonical (this event) occurrences in one column and related event occurrences in another.
-     * Canonical occurrences are locked (read-only). Related occurrences are toggleable unless they overlap.
+     * Shows "this event" occurrences in left column and related event occurrences in right column.
+     * Each occurrence is rendered as a chip that can be toggled included/excluded.
      *
-     * Design (docs/design/review-queue-ui.md):
-     *   - One row per occurrence per event (no row-merging)
-     *   - Sorted by start time across both events
-     *   - Canonical chip: btn-primary, lock icon, no data-action
-     *   - Related chip (no overlap): btn-primary if included, btn-outline-secondary if excluded; data-action="toggle-occurrence"
-     *   - Related chip (overlap): greyed btn-secondary disabled, no data-action
+     * Chip colours mirror the field picker:
+     *   - Blue  (btn-primary)           — auto-included based on canonical selection, not yet user-touched
+     *   - Green (btn-success)           — user explicitly locked in (included)
+     *   - Outline (btn-outline-secondary) — excluded (auto or user)
      *
-     * @param {Array} pickerEntries - Array of picker entry objects
-     *   Each entry: { source: 'this'|'related', occurrenceId, occurrence: {...}, included: boolean, overlaps: boolean }
+     * Overlap behaviour:
+     *   - An occurrence with active overlapping peers shows a ⚠ warning icon on its chip.
+     *   - Clicking an excluded chip to enable it is blocked if any of its `overlapsWith` peers are
+     *     currently included (the warning icon signals the conflict).
+     *   - Clicking an included chip always excludes it regardless of overlaps.
+     *
+     * @param {Array} pickerEntries - Array of picker entry objects from buildOccurrencePicker:
+     *   { key, source, eventIndex, occurrence, occurrenceId, hasRealId,
+     *     included, userToggled, overlapsWith: string[] }
      * @param {string|number} entryId - Review queue entry ID (for data attributes)
      * @returns {string} HTML string
      */
@@ -164,85 +169,81 @@
 
         const safeEntryId = escapeHtml(String(entryId));
 
-        // Group entries by date for row labels
-        const rowsByDate = {};
-        pickerEntries.forEach(entry => {
+        // Build a quick lookup so we can check peer states at render time
+        const entryByKey = {};
+        pickerEntries.forEach(e => { entryByKey[e.key] = e; });
+
+        const rowsHtml = pickerEntries.map(entry => {
             const occ = entry.occurrence;
-            const dateLabel = occ.startTime
-                ? formatDate(occ.startTime, { month: 'short', day: 'numeric' })
-                : '(no date)';
+            const timeStr = formatOccurrenceTime(occ);
+            const occKey = escapeHtml(String(entry.key));
 
-            if (!rowsByDate[dateLabel]) {
-                rowsByDate[dateLabel] = [];
+            // Determine chip state
+            let chipClass;
+            if (entry.included && !entry.userToggled) {
+                chipClass = 'btn-primary';          // Auto-included (blue)
+            } else if (entry.included && entry.userToggled) {
+                chipClass = 'btn-success';          // User-locked-in (green)
+            } else {
+                chipClass = 'btn-outline-secondary'; // Excluded (outline)
             }
-            rowsByDate[dateLabel].push(entry);
-        });
 
-        // Build rows
-        const rowsHtml = Object.entries(rowsByDate).map(([dateLabel, entries]) => {
-            return entries.map(entry => {
-                const occ = entry.occurrence;
-                const timeStr = formatOccurrenceTime(occ);
+            // Check whether any overlapping peer is currently included (conflict warning)
+            const hasActiveConflict = entry.overlapsWith.some(peerKey => {
+                const peer = entryByKey[peerKey];
+                return peer && peer.included;
+            });
 
-                // Determine chip class and action based on isCanonical flag
-                let chipHtml;
-                if (entry.isCanonical) {
-                    // Canonical occurrence: locked, primary (blue), no action
-                    chipHtml = `
-                        <button class="btn btn-sm btn-primary" disabled style="cursor: not-allowed;">
-                            <span style="margin-right: 0.25rem;">🔒</span>
-                            ${escapeHtml(timeStr)}
-                        </button>
-                    `;
-                } else if (entry.overlaps) {
-                    // Non-canonical chip with overlap: greyed, disabled
-                    chipHtml = `
-                        <button class="btn btn-sm btn-secondary" disabled style="opacity: 0.6; cursor: not-allowed;">
-                            <span style="margin-right: 0.25rem;">⚠</span>
-                            ${escapeHtml(timeStr)}
-                        </button>
-                    `;
-                } else {
-                    // Non-canonical chip without overlap: toggleable
-                    // Blue (btn-primary) if included, outlined if not
-                    const chipClass = entry.included ? 'btn-primary' : 'btn-outline-secondary';
-                    const occKey = escapeHtml(entry.occurrenceId);
-                    chipHtml = `
-                        <button class="btn btn-sm ${chipClass}" data-action="toggle-occurrence"
-                            data-entry-id="${safeEntryId}" data-occ-key="${occKey}">
-                            ${escapeHtml(timeStr)}
-                        </button>
-                    `;
-                }
+            // Warning icon: sits in a fixed-width slot on the inner edge of each column so the
+            // chip text stays visually centred regardless of whether a warning is shown.
+            // Active conflict = yellow; potential-only = muted. Slot is always reserved (visibility:hidden
+            // when no overlap) so the chip width is stable.
+            const hasAnyOverlap = entry.overlapsWith.length > 0;
+            const warnVisible = hasAnyOverlap ? '' : 'visibility:hidden;';
+            const warnColor = hasActiveConflict ? 'text-warning' : 'text-muted';
+            const warnTitle = hasActiveConflict
+                ? 'Conflict: overlapping occurrence is included'
+                : 'This occurrence overlaps with another';
+            const warnSlot = `<span class="${warnColor}" style="font-size:1.25rem;line-height:1;flex:0 0 1.5rem;text-align:center;${warnVisible}" title="${escapeHtml(warnTitle)}">&#9888;&#xFE0F;</span>`;
 
-                // Determine column: left for eventIndex 0 (this event), right for eventIndex 1 (related event)
-                const isLeftColumn = entry.eventIndex === 0;
-                const leftChip = isLeftColumn ? chipHtml : '<span class="text-muted">—</span>';
-                const rightChip = !isLeftColumn ? chipHtml : '<span class="text-muted">—</span>';
+            const chipTitle = entry.included
+                ? 'Included — click to exclude'
+                : (hasActiveConflict ? 'Cannot include — overlapping occurrence is already included' : 'Excluded — click to include');
 
-                return `
-                    <div class="row g-2 align-items-center py-2 border-bottom">
-                        <div class="col-md-6" style="text-align: center;">
-                            ${leftChip}
-                        </div>
-                        <div class="col-md-6" style="text-align: center;">
-                            ${rightChip}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            const chip = `<button class="btn btn-sm ${chipClass} w-100 text-center"
+                data-action="toggle-occurrence"
+                data-entry-id="${safeEntryId}"
+                data-occ-key="${occKey}"
+                title="${escapeHtml(chipTitle)}">${escapeHtml(timeStr)}</button>`;
+
+            // Left column:  [chip — fills remaining width] [warn slot on inner/right edge]
+            // Right column: [warn slot on inner/left edge] [chip — fills remaining width]
+            const isLeft = entry.eventIndex === 0;
+            const leftCell = isLeft
+                ? `<div class="d-flex align-items-center gap-1">${chip}${warnSlot}</div>`
+                : '<span class="text-muted small">—</span>';
+            const rightCell = !isLeft
+                ? `<div class="d-flex align-items-center gap-1">${warnSlot}${chip}</div>`
+                : '<span class="text-muted small">—</span>';
+
+            return `
+                <div class="row g-2 align-items-center py-2 border-bottom">
+                    <div class="col-6">${leftCell}</div>
+                    <div class="col-6">${rightCell}</div>
+                </div>
+            `;
         }).join('');
 
         return `
             <div class="mb-2">
-                <small class="fw-semibold text-muted">OCCURRENCES</small>
                 <div class="border rounded p-2 mt-1">
-                    <div class="row g-2 fw-semibold text-muted small mb-2">
-                        <div class="col-md-6" style="text-align: center;">THIS EVENT</div>
-                        <div class="col-md-6" style="text-align: center;">RELATED EVENT</div>
+                    <div class="row g-2 fw-semibold text-muted small mb-2 border-bottom pb-1">
+                        <div class="col-6">THIS EVENT</div>
+                        <div class="col-6">RELATED EVENT</div>
                     </div>
                     ${rowsHtml}
                 </div>
+                <small class="text-muted mt-1 d-block">Blue = auto-included &nbsp; Green = selected &nbsp; Outline = excluded &nbsp; <span style="font-size:1rem;">&#9888;&#xFE0F;</span> = overlap conflict</small>
             </div>
         `;
     }

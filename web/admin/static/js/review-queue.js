@@ -46,7 +46,7 @@
     /**
      * Per-entry occurrence picker state for multi-event consolidation.
      * Key: entryId (string), Value: array of pickerEntry objects
-     * pickerEntry shape: { key, source, occurrence, occurrenceId, included, overlaps }
+     * pickerEntry shape: { key, source, eventIndex, occurrence, occurrenceId, hasRealId, included, userToggled, overlapsWith: string[] }
      * Cleared when the fold-down is collapsed.
      */
     const occurrencePicker = {};
@@ -1306,21 +1306,25 @@
 
     /**
      * Build occurrence picker entries by merging this event and related event occurrences.
+     * All occurrences (canonical and non-canonical) are toggleable include/exclude.
+     * Canonical occurrences default to included=true; related default to included=false.
+     * Related occurrences that overlap a canonical one cannot be toggled (overlaps=true).
+     *
      * @param {Array} thisEventOccs - Array of occurrences for "this event" (left column, never changes)
      * @param {Array} relatedEventOccs - Array of occurrences for "related event" (right column, never changes)
      * @param {number} canonicalIndex - Which event is canonical: 0 = this event, 1 = related event
      * @returns {Array} Sorted array of pickerEntry objects
      */
     function buildOccurrencePicker(thisEventOccs, relatedEventOccs, canonicalIndex) {
-        const entries = [];
         const canonicalIsThis = canonicalIndex === 0;
+        const entries = [];
 
         // Add "this event" occurrences (left column, never swaps)
         (thisEventOccs || []).forEach((occ, idx) => {
             entries.push({
                 key: 'this-' + idx,
                 source: 'this',
-                eventIndex: 0,  // Absolute index - left column always = 0
+                eventIndex: 0,
                 occurrence: {
                     startTime: occ.startTime,
                     endTime: occ.endTime,
@@ -1328,43 +1332,47 @@
                     venueName: occ.venueName || null,
                     venueUlid: occ.venueUlid || null,
                 },
-                occurrenceId: occ.id || 'this-' + idx,
-                isCanonical: canonicalIsThis,  // This side is canonical if canonicalIndex === 0
-                included: true,  // Canonical side always included (locked)
-                overlaps: false,
+                occurrenceId: occ.id || null,
+                hasRealId: !!occ.id,
+                // Auto-include canonical side; auto-exclude non-canonical side
+                included: canonicalIsThis,
+                userToggled: false,
+                overlapsWith: [],   // Populated in the second pass below
             });
         });
 
         // Add "related event" occurrences (right column, never swaps)
         (relatedEventOccs || []).forEach((occ, idx) => {
-            const occData = {
-                startTime: occ.startTime,
-                endTime: occ.endTime,
-                timezone: occ.timezone,
-                venueName: occ.venueName || null,
-                venueUlid: occ.venueUlid || null,
-            };
-
-            // Check if this related occurrence overlaps any "this event" occurrence
-            let overlaps = false;
-            (thisEventOccs || []).forEach(thisOcc => {
-                if (OccurrenceRendering.occurrencesOverlap(occData, {
-                    startTime: thisOcc.startTime,
-                    endTime: thisOcc.endTime,
-                })) {
-                    overlaps = true;
-                }
-            });
-
             entries.push({
                 key: 'related-' + idx,
                 source: 'related',
-                eventIndex: 1,  // Absolute index - right column always = 1
-                occurrence: occData,
-                occurrenceId: occ.id || 'related-' + idx,
-                isCanonical: !canonicalIsThis,  // Related side is canonical if canonicalIndex === 1
-                included: false,  // Default: not included unless user toggles
-                overlaps: overlaps,
+                eventIndex: 1,
+                occurrence: {
+                    startTime: occ.startTime,
+                    endTime: occ.endTime,
+                    timezone: occ.timezone,
+                    venueName: occ.venueName || null,
+                    venueUlid: occ.venueUlid || null,
+                },
+                occurrenceId: occ.id || null,
+                hasRealId: !!occ.id,
+                // Auto-include canonical side; auto-exclude non-canonical side
+                included: !canonicalIsThis,
+                userToggled: false,
+                overlapsWith: [],   // Populated in the second pass below
+            });
+        });
+
+        // Second pass: compute cross-event overlaps.
+        // Overlaps can only occur between occurrences from different events.
+        const thisEntries = entries.filter(e => e.source === 'this');
+        const relatedEntries = entries.filter(e => e.source === 'related');
+        thisEntries.forEach(te => {
+            relatedEntries.forEach(re => {
+                if (OccurrenceRendering.occurrencesOverlap(te.occurrence, re.occurrence)) {
+                    if (!te.overlapsWith.includes(re.key)) te.overlapsWith.push(re.key);
+                    if (!re.overlapsWith.includes(te.key)) re.overlapsWith.push(te.key);
+                }
             });
         });
 
@@ -1422,6 +1430,14 @@
 
     /**
      * Toggle an occurrence's included status in the occurrence picker.
+     *
+     * Behaviour:
+     *   - included (blue or green) → excluded (outline), userToggled = true
+     *   - excluded → included/green (user-locked), UNLESS an overlapping peer is already included
+     *     (in that case the toggle is silently blocked — the warning icon shows the conflict).
+     *
+     * After toggling, re-renders the picker so warning icons update across all rows.
+     *
      * @param {string|number} entryId - Review queue entry ID
      * @param {string} occKey - The key of the occurrence to toggle
      */
@@ -1430,10 +1446,27 @@
         if (!entries) return;
 
         const entry = entries.find(e => e.key === occKey);
-        if (entry && entry.source === 'related' && !entry.overlaps) {
-            entry.included = !entry.included;
-            renderOccurrencePicker(entryId);
+        if (!entry) return;
+
+        if (entry.included) {
+            // Always allow excluding
+            entry.included = false;
+            entry.userToggled = true;
+        } else {
+            // Check whether any overlapping peer is currently included
+            const blockedByOverlap = entry.overlapsWith.some(peerKey => {
+                const peer = entries.find(e => e.key === peerKey);
+                return peer && peer.included;
+            });
+            if (blockedByOverlap) {
+                // Can't enable — conflict exists. Warning icon is already visible.
+                return;
+            }
+            entry.included = true;
+            entry.userToggled = true;
         }
+
+        renderOccurrencePicker(entryId);
     }
 
     /**
@@ -1501,22 +1534,29 @@
 
         // Rebuild occurrence picker
         // IMPORTANT: Don't swap columns! Left column = entry's own event, right column = related event.
-        // Only the "canonical" designation changes - which one is locked/auto-selected.
+        // Only the "canonical" designation changes - which one defaults to included.
         const thisEventOccs = thisOccurrences;      // "This event" - always stays left column
         const relatedEventOccs = relatedEvent.occurrences || [];  // "Related event" - always stays right column
+
+        // Capture previous user-toggled state BEFORE rebuilding
+        const previousPicker = (occurrencePicker[entryId] || []).map(e => ({
+            eventIndex: e.eventIndex,
+            startTime: e.occurrence.startTime,
+            userToggled: e.userToggled || false,
+            included: e.included,
+        }));
+
         occurrencePicker[entryId] = buildOccurrencePicker(thisEventOccs, relatedEventOccs, canonicalIndex);
 
-        // Preserve user-toggled related occurrence selections (matched by eventIndex + startTime)
-        const oldPicker = occurrencePicker[entryId] || [];
-        oldPicker.forEach(oldEntry => {
-            if (oldEntry.included === true && oldEntry.occurrence.startTime) {
-                // Find matching occurrence in new picker by absolute eventIndex + startTime
-                const newEntry = (occurrencePicker[entryId] || []).find(e =>
-                    e.eventIndex === oldEntry.eventIndex && e.occurrence.startTime === oldEntry.occurrence.startTime
-                );
-                if (newEntry) {
-                    newEntry.included = true;
-                }
+        // Re-apply user-toggled selections (matched by absolute eventIndex + startTime)
+        // If the user explicitly toggled an occurrence, preserve that choice over the new canonical default.
+        (occurrencePicker[entryId] || []).forEach(newEntry => {
+            const prev = previousPicker.find(p =>
+                p.eventIndex === newEntry.eventIndex && p.startTime === newEntry.occurrence.startTime && p.userToggled
+            );
+            if (prev) {
+                newEntry.included = prev.included;
+                newEntry.userToggled = true;
             }
         });
 
@@ -1528,7 +1568,11 @@
 
     /**
      * Consolidate the review entry's event with its related event.
-     * Executes the three-step sequence: patch fields, add occurrences, consolidate.
+     * Executes the sequence:
+     *   1. Patch canonical event fields if overrides from non-canonical were selected
+     *   2. Delete excluded canonical occurrences from the canonical event
+     *   3. Add included non-canonical (related) occurrences to the canonical event
+     *   4. Consolidate (retire the duplicate)
      * @async
      * @param {string|number} entryId - Review queue entry ID
      */
@@ -1545,6 +1589,7 @@
         // Determine canonical and retire ULIDs
         const canonicalInput = document.querySelector(`input[name="canonical-${entryId}"]:checked`);
         const canonicalValue = canonicalInput ? canonicalInput.value : 'this';
+        const canonicalIndex = canonicalValue === 'this' ? 0 : 1;
 
         let canonicalUlid, retireUlid;
         if (canonicalValue === 'this') {
@@ -1562,8 +1607,9 @@
         const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
         if (consolidateError) consolidateError.style.display = 'none';
 
-        // Step 1: Build field patch from fieldOverrides where user edited (edited === true)
-        // If user selected from related event (eventIndex !== canonicalIndex), patch needed
+        // Step 1: Build field patch from fieldOverrides where user selected the non-canonical event's value.
+        // eventIndex 0 = "this event", eventIndex 1 = "related event".
+        // Patch is needed when the selected value comes from the non-canonical event.
         const overrides = fieldOverrides[entryId] || {};
         const patch = {};
 
@@ -1588,7 +1634,7 @@
             }
         });
 
-        // Step 2: Update canonical event with field overrides
+        // Step 2: Update canonical event with field overrides (if any)
         if (Object.keys(patch).length > 0) {
             try {
                 await API.events.update(canonicalUlid, patch);
@@ -1606,11 +1652,31 @@
             }
         }
 
-        // Step 3: Add selected related occurrences to canonical event
+        // Step 3: Delete excluded canonical occurrences from the canonical event.
+        // "Canonical" occurrences are those belonging to the canonical event's side of the picker.
+        // The canonical side's source key: canonicalIndex === 0 → source 'this', canonicalIndex === 1 → source 'related'
         const pickerEntries = occurrencePicker[entryId] || [];
-        const relatedIncludedEntries = pickerEntries.filter(e => e.source === 'related' && e.included && !e.overlaps);
+        const canonicalSource = canonicalIndex === 0 ? 'this' : 'related';
+        const excludedCanonicalEntries = pickerEntries.filter(
+            e => e.source === canonicalSource && !e.included && e.hasRealId
+        );
 
-        for (const entry of relatedIncludedEntries) {
+        for (const entry of excludedCanonicalEntries) {
+            try {
+                await API.events.occurrences.delete(canonicalUlid, entry.occurrenceId);
+            } catch (err) {
+                console.error('Failed to delete excluded occurrence:', err);
+                const msg = (err && err.detail) || (err && err.message) || 'Failed to remove occurrence';
+                showToast(msg, 'error');
+                // Continue with remaining steps even if a delete fails
+            }
+        }
+
+        // Step 4: Add selected non-canonical occurrences to canonical event
+        const nonCanonicalSource = canonicalIndex === 0 ? 'related' : 'this';
+        const includedNonCanonicalEntries = pickerEntries.filter(e => e.source === nonCanonicalSource && e.included);
+
+        for (const entry of includedNonCanonicalEntries) {
             try {
                 const occData = entry.occurrence;
                 const body = {
@@ -1635,7 +1701,7 @@
             }
         }
 
-        // Step 4: Consolidate (retire the duplicate)
+        // Step 5: Consolidate (retire the duplicate)
         try {
             await API.events.consolidate({
                 event_ulid: canonicalUlid,
