@@ -97,7 +97,7 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 ## Beads Workflow
 
 ```bash
-bd ready                              # find unblocked work
+bd ready                             # find unblocked work
 bd update <id> --claim               # atomically claim (assignee + in_progress)
 bd close <id> --reason "..."         # close when done
 ```
@@ -105,12 +105,6 @@ bd close <id> --reason "..."         # close when done
 Beads state is persisted in a local Dolt SQL database (`.beads/dolt/`). Every `bd` write auto-commits to Dolt — no manual sync or flush is needed.
 
 **This project has no Dolt remote configured.** `bd dolt push` / `bd dolt pull` will fail. That's fine — beads state lives locally and doesn't need to be shared via Dolt.
-
-**Commands that do NOT exist (agents: stop hallucinating these):**
-- ~~`bd sync`~~ — removed in v0.56
-- ~~`bd flush`~~ — never existed
-- ~~`bd stats`~~ — use `bd status` instead
-- ~~`bd edit`~~ — opens $EDITOR, blocks agents; use `bd update --notes` instead
 
 **Useful commands beyond the basics:**
 - `bd status` — project health (open/closed/blocked counts)
@@ -133,6 +127,8 @@ git push
 git status                            # must show "up to date with origin"
 scripts/agent-cleanup.sh              # remove agent output files
 ```
+
+Remove your work branch once it is merged to main.
 
 **Commit messages** use Conventional Commits and must include a `Generated-by` trailer:
 

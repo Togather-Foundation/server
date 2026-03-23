@@ -84,7 +84,7 @@ If bead IDs are provided, read them with `bd show <id> --json` to get context.
 2. **Explore** -- Delegate to `@explore`: find related code, patterns, files to change,
    and relevant docs from `specs/`, `docs/`, `contexts/`, `shapes/`. Ask it to return
    a context summary with **file paths** of all relevant docs (you'll pass these to
-   later subagents as "Reference Docs").
+   later subagents as "Reference Docs"). Remind to only explore, not plan or implement.
 3. **Check blockers** -- `bd blocked --json`. If blocked, report to user and STOP.
 
 **Output:** Concise context summary for the user with a "Reference Docs" file list.
