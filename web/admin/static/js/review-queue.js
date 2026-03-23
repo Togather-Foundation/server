@@ -1404,10 +1404,13 @@
             fieldOverrides[entryId] = {};
         }
 
+        // Store the absolute event index (0 or 1) regardless of which is canonical.
+        // This way the selection persists when canonical switches.
+        const eventIndex = source === 'this' ? 0 : 1;
         fieldOverrides[entryId][overrideKey] = {
             value: value,
-            source: source,
-            edited: true,  // User explicitly picked this field
+            eventIndex: eventIndex,  // Absolute index - doesn't change when canonical switches
+            edited: true,
         };
     }
 
@@ -1467,15 +1470,15 @@
         };
 
         // Preserve user-edited field overrides (edited === true)
+        // Use absolute eventIndex - doesn't change when canonical switches
         const oldOverrides = fieldOverrides[entryId] || {};
         const preservedOverrides = {};
         const selectedOverrides = {};
         Object.entries(oldOverrides).forEach(([key, override]) => {
-            if (override.edited === true) {
+            if (override.edited === true && override.eventIndex !== undefined) {
                 preservedOverrides[key] = override;
-                // Convert override to eventIndex for field-picker.js
-                // source='this' -> 0 (canonical), source='related' -> 1
-                selectedOverrides[key] = override.source === 'this' ? 0 : 1;
+                // Use the absolute eventIndex - this is what the user selected regardless of canonical
+                selectedOverrides[key] = override.eventIndex;
             }
         });
 
@@ -1550,24 +1553,28 @@
         const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
         if (consolidateError) consolidateError.style.display = 'none';
 
-        // Step 1: Build field patch from fieldOverrides where source === 'related' OR edited === true
+        // Step 1: Build field patch from fieldOverrides where user edited (edited === true)
+        // If user selected from related event (eventIndex !== canonicalIndex), patch needed
         const overrides = fieldOverrides[entryId] || {};
         const patch = {};
 
         Object.entries(overrides).forEach(([key, override]) => {
-            if (override.source === 'related' || override.edited === true) {
-                // Map field keys to API fields
-                // name→name, description→description, url→public_url, image→image_url
-                // skip location.name, organizer.name — not patchable via PUT
-                const fieldMap = {
-                    'name': 'name',
-                    'description': 'description',
-                    'url': 'public_url',
-                    'image': 'image_url',
-                };
-                const apiKey = fieldMap[key];
-                if (apiKey) {
-                    patch[apiKey] = override.value;
+            if (override.edited === true && override.eventIndex !== undefined) {
+                // Patch if user selected from non-canonical event
+                if (override.eventIndex !== canonicalIndex) {
+                    // Map field keys to API fields
+                    // name→name, description→description, url→public_url, image→image_url
+                    // skip location.name, organizer.name — not patchable via PUT
+                    const fieldMap = {
+                        'name': 'name',
+                        'description': 'description',
+                        'url': 'public_url',
+                        'image': 'image_url',
+                    };
+                    const apiKey = fieldMap[key];
+                    if (apiKey) {
+                        patch[apiKey] = override.value;
+                    }
                 }
             }
         });
