@@ -48,7 +48,7 @@ help:
 	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (no cache, 5m timeout)"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
-	@echo "  make run           - Build and run the server (kills existing first)"
+	@echo "  make run           - Build and run the server (kills existing first), log to temp/server.log"
 	@echo "  make dev           - Run in development mode with live reload (requires air from install-tools)"
 	@echo "  make stop          - Stop running server processes"
 	@echo "  make restart       - Restart the server (stop + run, full rebuild)"
@@ -544,6 +544,7 @@ stop:
 	@echo "✓ Server stopped"
 
 # Build and run the server (kills existing processes first)
+# Log to temp/server.log
 run: build
 	@echo "Checking for existing server processes..."
 	@# Stop any existing server on port 8080
@@ -557,7 +558,7 @@ run: build
 		fi; \
 	fi
 	@echo "Running server..."
-	@./server 2>&1 | tee server.log
+	@./server 2>&1 | tee tmp/server.log
 
 # Development mode with live reload (requires air - run 'make install-tools' first)
 dev:

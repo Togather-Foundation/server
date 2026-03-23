@@ -591,7 +591,7 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
    ```
    Then manually add 3 occurrences from the retired events to the canonical. Consolidation retires whole events; occurrence migration is a manual step.
 
-**This scenario intentionally has no single "right" answer -- it tests the admin's judgment and the system's ability to support multiple valid consolidation paths.**
+**This scenario intentionally has no single "right" answer -- it tests the system's ability to support multiple valid consolidation paths.**
 
 ---
 
