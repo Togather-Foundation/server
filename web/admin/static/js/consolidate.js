@@ -284,7 +284,44 @@
     }
 
     // -------------------------------------------------------------------------
-    // Field picker handler
+    // Field picker handler — uses onPick callback pattern (same as review-queue.js)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Map a field key (+ optional subfield) to the corresponding form input element.
+     * @param {string} field
+     * @param {string|undefined} subfield
+     * @returns {HTMLElement|null}
+     */
+    function fieldInputElement(field, subfield) {
+        if (!subfield) {
+            return document.getElementById('field-' + field);
+        }
+        return document.getElementById('field-' + field + '-' + subfield);
+    }
+
+    /**
+     * Handle field pick from the field picker onPick callback.
+     * Updates the corresponding form input with the picked value.
+     * @param {string} fieldKey - Top-level field key (e.g., 'name', 'startDate')
+     * @param {string|null} subfieldKey - Subfield key for nested objects (e.g., 'name' for location.name)
+     * @param {string} value - The picked value
+     * @param {string} source - 'this' for canonical event, 'related' for other
+     */
+    function handleFieldPick(fieldKey, subfieldKey, value, source) {
+        const input = fieldInputElement(fieldKey, subfieldKey);
+        if (!input) {
+            showToast('Could not find input for field: ' + fieldKey + (subfieldKey ? '.' + subfieldKey : ''), 'warning');
+            return;
+        }
+        input.value = value;
+        // Brief visual feedback
+        input.classList.add('border-primary');
+        setTimeout(() => input.classList.remove('border-primary'), 800);
+    }
+
+    // -------------------------------------------------------------------------
+    // Populate editor from a full event object
     // -------------------------------------------------------------------------
 
     /**
@@ -742,11 +779,6 @@
             case 'edit-canonical':
                 e.preventDefault();
                 handleEditCanonical();
-                break;
-
-            case 'pick-field':
-                e.preventDefault();
-                handlePickField(target);
                 break;
 
             case 'retire-toggle':

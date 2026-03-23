@@ -175,13 +175,6 @@
                         target.dataset.eventUlid
                     );
                     break;
-                case 'add-occurrence':
-                    e.preventDefault();
-                    addOccurrence(
-                        target.dataset.entryId,
-                        target.dataset.eventUlid
-                    );
-                    break;
                 case 'canonical-select':
                     // Rebuild both pickers when canonical selection changes
                     rebuildPickers(id);
