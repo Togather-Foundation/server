@@ -1461,9 +1461,13 @@
         // Preserve user-edited field overrides (edited === true)
         const oldOverrides = fieldOverrides[entryId] || {};
         const preservedOverrides = {};
+        const selectedOverrides = {};
         Object.entries(oldOverrides).forEach(([key, override]) => {
             if (override.edited === true) {
                 preservedOverrides[key] = override;
+                // Convert override to eventIndex for field-picker.js
+                // source='this' -> 0 (canonical), source='related' -> 1
+                selectedOverrides[key] = override.source === 'this' ? 0 : 1;
             }
         });
 
@@ -1473,6 +1477,7 @@
             window.FieldPicker.renderFieldPickerTable(fieldPickerContainer, [normalized, relatedForPicker], {
                 canonicalIndex: canonicalIndex,
                 readOnlyFields: new Set(['location.name', 'organizer.name']),
+                selectedOverrides: selectedOverrides,
                 onPick: (fieldKey, subfieldKey, value, source) => handleFieldPick(entryId, fieldKey, subfieldKey, value, source)
             });
         }

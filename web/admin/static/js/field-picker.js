@@ -70,9 +70,10 @@
      * @param {number} eventIndex - Index of this event in the events array (0 or 1)
      * @param {number} canonicalIndex - Which event index is canonical
      * @param {boolean} isReadOnly - Whether this field is read-only
+     * @param {Object|null} selectedOverrides - Map of fieldKey -> eventIndex for user-selected overrides
      * @returns {string} HTML string
      */
-    function buildTopLevelCell(event, fieldKey, eventIndex, canonicalIndex, isReadOnly) {
+    function buildTopLevelCell(event, fieldKey, eventIndex, canonicalIndex, isReadOnly, selectedOverrides) {
         const raw = event[fieldKey];
         if (raw == null || raw === '') {
             return '<td><span class="text-muted small">—</span></td>';
@@ -84,9 +85,13 @@
             return '<td><span class="text-body">' + displayVal + '</span></td>';
         }
 
-        // Chip behavior: canonical gets btn-primary, other gets btn-outline-secondary
-        const isCanonical = eventIndex === canonicalIndex;
-        const chipClass = isCanonical ? 'btn-primary' : 'btn-outline-secondary';
+        // Override selection takes precedence over canonical; otherwise use canonical
+        let isSelected = eventIndex === canonicalIndex;
+        if (selectedOverrides && selectedOverrides[fieldKey] !== undefined) {
+            isSelected = selectedOverrides[fieldKey] === eventIndex;
+        }
+
+        const chipClass = isSelected ? 'btn-primary' : 'btn-outline-secondary';
         const displayVal = escapeHtml(truncateDisplay(raw));
         const dataVal = escapeHtml(String(raw));
 
@@ -112,9 +117,10 @@
      * @param {number} eventIndex - Index of this event in the events array
      * @param {number} canonicalIndex - Which event index is canonical
      * @param {boolean} isReadOnly - Whether this field is read-only
+     * @param {Object|null} selectedOverrides - Map of compositeKey -> eventIndex for user-selected overrides
      * @returns {string} HTML string
      */
-    function buildNestedCell(event, parent, subfield, eventIndex, canonicalIndex, isReadOnly) {
+    function buildNestedCell(event, parent, subfield, eventIndex, canonicalIndex, isReadOnly, selectedOverrides) {
         const parentObj = event[parent];
         // Public API (JSON-LD) nests location address fields under location.address.*;
         // fall back to parentObj[subfield] for any flat response shape.
@@ -132,12 +138,16 @@
             return '<td><span class="text-body">' + displayVal + '</span></td>';
         }
 
-        // Chip behavior
-        const isCanonical = eventIndex === canonicalIndex;
-        const chipClass = isCanonical ? 'btn-primary' : 'btn-outline-secondary';
+        // Override selection takes precedence over canonical; otherwise use canonical
+        const compositeKey = parent + '.' + subfield;
+        let isSelected = eventIndex === canonicalIndex;
+        if (selectedOverrides && selectedOverrides[compositeKey] !== undefined) {
+            isSelected = selectedOverrides[compositeKey] === eventIndex;
+        }
+
+        const chipClass = isSelected ? 'btn-primary' : 'btn-outline-secondary';
         const displayVal = escapeHtml(truncateDisplay(raw));
         const dataVal = escapeHtml(String(raw));
-        const compositeKey = parent + '.' + subfield;
 
         return (
             '<td>' +
@@ -164,6 +174,7 @@
      *   - canonicalIndex: which event (0 or 1) is canonical; defaults to 0
      *   - readOnlyFields: set of field keys to show as read-only (e.g. { 'location.name', 'organizer.name' })
      *   - onPick: callback fn(fieldKey, subfieldKey, value, source); if not provided, uses data-action delegation
+     *   - selectedOverrides: map of fieldKey -> eventIndex to show as selected (overrides canonicalIndex)
      */
     function renderFieldPickerTable(containerEl, events, options) {
         if (!containerEl) return;
@@ -173,6 +184,7 @@
         const canonicalIndex = opts.canonicalIndex !== undefined ? opts.canonicalIndex : 0;
         const readOnlyFields = opts.readOnlyFields || new Set();
         const hasOnPickCallback = opts.onPick && typeof opts.onPick === 'function';
+        const selectedOverrides = opts.selectedOverrides || null;
 
         // Header row — one column per event
         let headerCells = '<th style="width:140px">Field</th>';
@@ -188,7 +200,7 @@
             const isReadOnly = readOnlyFields.has(f.key);
             let tds = '<td><small class="text-muted">' + escapeHtml(f.label) + '</small></td>';
             events.forEach((ev, eventIdx) => {
-                tds += buildTopLevelCell(ev, f.key, eventIdx, canonicalIndex, isReadOnly);
+                tds += buildTopLevelCell(ev, f.key, eventIdx, canonicalIndex, isReadOnly, selectedOverrides);
             });
             bodyRows += '<tr>' + tds + '</tr>';
         });
@@ -199,7 +211,7 @@
             const isReadOnly = readOnlyFields.has(compositeKey);
             let tds = '<td><small class="text-muted">' + escapeHtml(f.label) + '</small></td>';
             events.forEach((ev, eventIdx) => {
-                tds += buildNestedCell(ev, f.parent, f.subfield, eventIdx, canonicalIndex, isReadOnly);
+                tds += buildNestedCell(ev, f.parent, f.subfield, eventIdx, canonicalIndex, isReadOnly, selectedOverrides);
             });
             bodyRows += '<tr>' + tds + '</tr>';
         });
