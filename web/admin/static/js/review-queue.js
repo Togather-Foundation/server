@@ -36,11 +36,20 @@
 
     /**
      * Per-entry field override map for the field picker.
-     * Key: entryId (string), Value: { fieldKey: value, ... }
-     * Populated when the admin clicks a chip in the field picker table.
+     * Key: entryId (string), Value: { fieldKey: { value, source, edited } }
+     * source: 'this' = canonical, 'related' = other event's value
+     * edited: true = user modified inline after picking
      * Cleared when the fold-down is collapsed.
      */
     const fieldOverrides = {};
+
+    /**
+     * Per-entry occurrence picker state for multi-event consolidation.
+     * Key: entryId (string), Value: array of pickerEntry objects
+     * pickerEntry shape: { key, source, occurrence, occurrenceId, included, overlaps }
+     * Cleared when the fold-down is collapsed.
+     */
+    const occurrencePicker = {};
     
     /** Debounce delay for primary event ULID lookup */
     const MERGE_LOOKUP_DEBOUNCE_MS = 400;
@@ -166,16 +175,16 @@
                         target.dataset.eventUlid
                     );
                     break;
-                case 'add-as-occurrence':
+                case 'add-occurrence':
                     e.preventDefault();
-                    consolidateEvent(target.dataset.id, 'add-as-occurrence');
-                    break;
-                case 'merge-duplicate':
-                    e.preventDefault();
-                    consolidateEvent(target.dataset.id, 'merge-duplicate');
+                    addOccurrence(
+                        target.dataset.entryId,
+                        target.dataset.eventUlid
+                    );
                     break;
                 case 'canonical-select':
-                    // Radio state is read lazily in consolidateEvent; no action needed here.
+                    // Rebuild both pickers when canonical selection changes
+                    rebuildPickers(id);
                     break;
                 case 'pick-field': {
                     e.preventDefault();
@@ -189,30 +198,22 @@
                     const pickedField = target.dataset.field;
                     const pickedSubfield = target.dataset.subfield || null;
                     const pickedValue = target.dataset.value !== undefined ? target.dataset.value : '';
+                    const pickedSource = target.dataset.source || null;
 
                     if (!pickedField) break;
 
-                    if (!fieldOverrides[pickedEntryId]) fieldOverrides[pickedEntryId] = {};
-                    const overrideKey = pickedSubfield ? pickedField + '.' + pickedSubfield : pickedField;
-                    fieldOverrides[pickedEntryId][overrideKey] = pickedValue;
-
-                    // Show/update the overrides display
-                    updateOverridesDisplay(pickedEntryId);
-
-                    // Visual feedback: deselect all chips in same field row, select this one.
-                    // Scope to the whole <tr> so chips from all event columns for this
-                    // field are cleared (not just the single <td> containing the click).
-                    const tr = target.closest('tr');
-                    if (tr) {
-                        tr.querySelectorAll('[data-action="pick-field"]').forEach(b => {
-                            b.classList.remove('btn-primary');
-                            b.classList.add('btn-outline-secondary');
-                        });
-                    }
-                    target.classList.remove('btn-outline-secondary');
-                    target.classList.add('btn-primary');
+                    // Call handleFieldPick which handles the new onPick callback logic
+                    handleFieldPick(pickedEntryId, pickedField, pickedSubfield, pickedValue, pickedSource);
                     break;
                 }
+                case 'consolidate':
+                    e.preventDefault();
+                    consolidate(id);
+                    break;
+                case 'toggle-occurrence':
+                    e.preventDefault();
+                    toggleOccurrence(id, target.dataset.occKey);
+                    break;
             }
         });
         
@@ -746,10 +747,13 @@
                         <div id="field-picker-table-${safeId}"></div>
                     </div>
                 </div>
-                <div id="field-overrides-${safeId}" class="card mt-2" style="display:none">
-                    <div class="card-header"><h4 class="card-title mb-0">Selected field overrides</h4></div>
-                    <div class="card-body">
-                        <div id="field-overrides-list-${safeId}"></div>
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">Which occurrences to include?</h4>
+                        <small class="text-muted">Select related occurrences to add to the canonical event</small>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="occurrence-picker-${safeId}"></div>
                     </div>
                 </div>
             `;
@@ -776,11 +780,8 @@
                         </div>
                     </div>
                     <div class="btn-list" id="action-buttons-${id}">
-                        <button class="btn btn-success" data-action="add-as-occurrence" data-id="${id}">
-                            &#8853; Add as Occurrence
-                        </button>
-                        <button class="btn btn-outline-success" data-action="merge-duplicate" data-id="${id}">
-                            &#8855; Merge Duplicate
+                        <button class="btn btn-success" data-action="consolidate" data-id="${id}">
+                            Consolidate
                         </button>
                         <button class="btn btn-outline-secondary" data-action="not-a-duplicate" data-id="${id}">
                             &#8800; Not a Duplicate
@@ -885,7 +886,25 @@
                         ? relatedEvent.occurrences[0].endTime
                         : null,
                 };
-                window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalized, relatedForPicker]);
+
+                // Determine canonical based on radio selection (default to 'this' which is index 0)
+                const canonicalInput = document.querySelector(`input[name="canonical-${id}"]:checked`);
+                const canonicalValue = canonicalInput ? canonicalInput.value : 'this';
+                const canonicalIndex = canonicalValue === 'this' ? 0 : 1;
+
+                // Build occurrence picker entries
+                const canonicalOccs = canonicalIndex === 0 ? thisOccurrences : (relatedEvent.occurrences || []);
+                const relatedOccs = canonicalIndex === 0 ? (relatedEvent.occurrences || []) : thisOccurrences;
+                occurrencePicker[id] = buildOccurrencePicker(canonicalOccs, relatedOccs);
+
+                window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalized, relatedForPicker], {
+                    canonicalIndex: canonicalIndex,
+                    readOnlyFields: new Set(['location.name', 'organizer.name']),
+                    onPick: (fieldKey, subfieldKey, value, source) => handleFieldPick(id, fieldKey, subfieldKey, value, source)
+                });
+
+                // Render occurrence picker
+                renderOccurrencePicker(id);
             }
         }
 
@@ -1046,124 +1065,6 @@
             }
         } finally {
             if (addBtn) setLoading(addBtn, false);
-        }
-    }
-
-    /**
-     * Consolidate (Add as Occurrence or Merge Duplicate) the review entry's event
-     * with its related event. Reads the canonical radio, calls the consolidate API,
-     * and handles 409 overlap errors with an inline message.
-     * @async
-     * @param {string|number} entryId - Review queue entry ID
-     * @param {string} action - 'add-as-occurrence' or 'merge-duplicate'
-     */
-    async function consolidateEvent(entryId, action) {
-        const VALID_CONSOLIDATE_ACTIONS = new Set(['add-as-occurrence', 'merge-duplicate']);
-        if (!VALID_CONSOLIDATE_ACTIONS.has(action)) {
-            console.error('consolidateEvent: invalid action', action);
-            return;
-        }
-
-        const detail = currentEntryDetail;
-        if (!detail) return;
-
-        const relatedEvents = detail.relatedEvents || [];
-        if (relatedEvents.length === 0) {
-            showToast('No related event found to consolidate with', 'error');
-            return;
-        }
-
-        const canonicalInput = document.querySelector(`input[name="canonical-${entryId}"]:checked`);
-        const canonical = canonicalInput ? canonicalInput.value : 'this';
-
-        let eventUlid, retireUlid;
-        if (canonical === 'this') {
-            eventUlid = detail.eventId;
-            retireUlid = relatedEvents[0].ulid;
-        } else {
-            eventUlid = relatedEvents[0].ulid;
-            retireUlid = detail.eventId;
-        }
-
-        const btn = document.querySelector(`[data-action="${escapeHtml(action)}"][data-id="${escapeHtml(String(entryId))}"]`);
-        if (btn) setLoading(btn, true);
-
-        // Hide any previous consolidate error
-        const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
-        if (consolidateError) consolidateError.style.display = 'none';
-
-        // Build the API request body.
-        // If the admin selected field overrides via the field picker, use override-based path:
-        //   { event: {...overrides as EventInput}, retire: [retireUlid] }
-        // Otherwise fall back to promote path (canonical event ULID):
-        //   { event_ulid: eventUlid, retire: [retireUlid] }
-        const overrides = fieldOverrides[String(entryId)];
-        let requestBody;
-        if (overrides && Object.keys(overrides).length > 0) {
-            // Build EventInput from overrides.
-            // Top-level keys map directly; nested keys use "parent.subfield" notation.
-            const eventInput = {};
-            Object.entries(overrides).forEach(([key, value]) => {
-                const dotIdx = key.indexOf('.');
-                if (dotIdx === -1) {
-                    // Top-level field
-                    eventInput[key] = value;
-                } else {
-                    // Nested field, e.g. "location.name" or "organizer.url"
-                    const parent = key.substring(0, dotIdx);
-                    const subfield = key.substring(dotIdx + 1);
-                    if (!eventInput[parent]) eventInput[parent] = {};
-                    eventInput[parent][subfield] = value;
-                }
-            });
-            requestBody = { event: eventInput, retire: [retireUlid], transfer_occurrences: action === 'add-as-occurrence' };
-        } else {
-            // No overrides selected — promote canonical event
-            requestBody = { event_ulid: eventUlid, retire: [retireUlid], transfer_occurrences: action === 'add-as-occurrence' };
-        }
-
-        try {
-            const result = await API.events.consolidate(requestBody);
-            showToast('Merged successfully', 'success');
-
-            // Remove this entry and any companion entries dismissed by the backend.
-            // review_entries_dismissed contains integer review IDs; our list rows use
-            // data-id which is also the integer review ID.
-            const dismissed = new Set(
-                Array.isArray(result && result.review_entries_dismissed)
-                    ? result.review_entries_dismissed.map(String)
-                    : []
-            );
-            dismissed.add(String(entryId));
-            dismissed.forEach(id => removeEntryFromList(id));
-
-            if (btn) setLoading(btn, false);
-
-            // Always reload from the server — consolidation can affect multiple entries
-            // (retired event dismissed, canonical entry updated/dismissed) and the badge
-            // counts need to reflect the true server state.
-            loadEntries();
-        } catch (err) {
-            console.error('Failed to consolidate events:', err);
-            const status = err && err.status;
-            if (status === 409) {
-                const detailMsg = (err && err.detail) || 'The occurrence conflicts with an existing one.';
-                const msg = action === 'add-as-occurrence'
-                    ? detailMsg + ' Use Merge Duplicate instead (same session listed twice), or Reject and manually adjust.'
-                    : action === 'merge-duplicate'
-                    ? 'Could not merge: event overlap detected. The selected date range conflicts with existing occurrences.'
-                    : detailMsg;
-                if (consolidateError) {
-                    consolidateError.textContent = msg;
-                    consolidateError.style.display = 'block';
-                } else {
-                    showToast(msg, 'error');
-                }
-            } else {
-                const msg = (err && err.detail) || (err && err.message) || 'Failed to consolidate events';
-                showToast(msg, 'error');
-            }
-            if (btn) setLoading(btn, false);
         }
     }
 
@@ -1403,6 +1304,322 @@
     }
 
     /**
+     * Build occurrence picker entries by merging canonical and related occurrences.
+     * @param {Array} canonicalOccs - Array of occurrences for the canonical event
+     * @param {Array} relatedOccs - Array of occurrences for the related event
+     * @returns {Array} Sorted array of pickerEntry objects
+     */
+    function buildOccurrencePicker(canonicalOccs, relatedOccs) {
+        const entries = [];
+
+        // Add canonical occurrences (source='this', included not applicable for canonical)
+        (canonicalOccs || []).forEach((occ, idx) => {
+            entries.push({
+                key: 'canonical-' + idx,
+                source: 'this',
+                occurrence: {
+                    startTime: occ.startTime,
+                    endTime: occ.endTime,
+                    timezone: occ.timezone,
+                    venueName: occ.venueName || null,
+                    venueUlid: occ.venueUlid || null,
+                },
+                occurrenceId: occ.id || 'canonical-' + idx,
+                included: true,
+                overlaps: false,
+            });
+        });
+
+        // Add related occurrences and compute overlaps
+        (relatedOccs || []).forEach((occ, idx) => {
+            const occData = {
+                startTime: occ.startTime,
+                endTime: occ.endTime,
+                timezone: occ.timezone,
+                venueName: occ.venueName || null,
+                venueUlid: occ.venueUlid || null,
+            };
+
+            // Check if this related occurrence overlaps any canonical occurrence
+            let overlaps = false;
+            (canonicalOccs || []).forEach(canonicalOcc => {
+                if (OccurrenceRendering.occurrencesOverlap(occData, {
+                    startTime: canonicalOcc.startTime,
+                    endTime: canonicalOcc.endTime,
+                })) {
+                    overlaps = true;
+                }
+            });
+
+            entries.push({
+                key: 'related-' + idx,
+                source: 'related',
+                occurrence: occData,
+                occurrenceId: occ.id || 'related-' + idx,
+                included: false,
+                overlaps: overlaps,
+            });
+        });
+
+        // Sort by start time
+        entries.sort((a, b) => {
+            const aTime = a.occurrence.startTime ? new Date(a.occurrence.startTime).getTime() : 0;
+            const bTime = b.occurrence.startTime ? new Date(b.occurrence.startTime).getTime() : 0;
+            return aTime - bTime;
+        });
+
+        return entries;
+    }
+
+    /**
+     * Render the occurrence picker for a given entry ID.
+     * @param {string|number} entryId - Review queue entry ID
+     */
+    function renderOccurrencePicker(entryId) {
+        const container = document.getElementById('occurrence-picker-' + entryId);
+        if (!container) return;
+
+        const entries = occurrencePicker[entryId] || [];
+        if (typeof window.OccurrenceRendering !== 'undefined') {
+            container.innerHTML = window.OccurrenceRendering.renderMergedPickerList(entries, entryId);
+        } else {
+            container.innerHTML = '<p class="text-muted">OccurrenceRendering not loaded</p>';
+        }
+    }
+
+    /**
+     * Handle field pick from the field picker onPick callback.
+     * Updates the fieldOverrides store with the picked value, source, and marks as edited.
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} fieldKey - Field key (e.g., 'name', 'description')
+     * @param {string|null} subfieldKey - Subfield key for nested fields (e.g., 'name' for location.name)
+     * @param {string} value - Picked value
+     * @param {string} source - Source of value ('this' = canonical, 'related' = other event)
+     */
+    function handleFieldPick(entryId, fieldKey, subfieldKey, value, source) {
+        const overrideKey = subfieldKey ? fieldKey + '.' + subfieldKey : fieldKey;
+
+        if (!fieldOverrides[entryId]) {
+            fieldOverrides[entryId] = {};
+        }
+
+        fieldOverrides[entryId][overrideKey] = {
+            value: value,
+            source: source,
+            edited: false,
+        };
+    }
+
+    /**
+     * Toggle an occurrence's included status in the occurrence picker.
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} occKey - The key of the occurrence to toggle
+     */
+    function toggleOccurrence(entryId, occKey) {
+        const entries = occurrencePicker[entryId];
+        if (!entries) return;
+
+        const entry = entries.find(e => e.key === occKey);
+        if (entry && entry.source === 'related' && !entry.overlaps) {
+            entry.included = !entry.included;
+            renderOccurrencePicker(entryId);
+        }
+    }
+
+    /**
+     * Rebuild both field picker and occurrence picker when canonical selection changes.
+     * @param {string|number} entryId - Review queue entry ID
+     */
+    function rebuildPickers(entryId) {
+        const detail = currentEntryDetail;
+        if (!detail) return;
+
+        const relatedEvents = detail.relatedEvents || [];
+        if (relatedEvents.length === 0) return;
+
+        const safeId = escapeHtml(String(entryId));
+        const canonicalInput = document.querySelector(`input[name="canonical-${entryId}"]:checked`);
+        const canonicalValue = canonicalInput ? canonicalInput.value : 'this';
+        const canonicalIndex = canonicalValue === 'this' ? 0 : 1;
+
+        const relatedEvent = relatedEvents[0];
+        const normalized = detail.normalized || {};
+        const thisOccurrences = detail.occurrences || [];
+
+        // Build the related event object for field picker
+        const relatedForPicker = {
+            name: relatedEvent.name,
+            description: relatedEvent.description,
+            startDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                ? relatedEvent.occurrences[0].startTime
+                : null,
+            location: relatedEvent.venueName
+                ? { name: relatedEvent.venueName }
+                : (relatedEvent.location || null),
+            organizer: relatedEvent.organizer || null,
+            url: relatedEvent.url || null,
+            image: relatedEvent.image || null,
+            endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                ? relatedEvent.occurrences[0].endTime
+                : null,
+        };
+
+        // Rebuild field picker
+        const fieldPickerContainer = document.getElementById('field-picker-table-' + safeId);
+        if (fieldPickerContainer && typeof window.FieldPicker !== 'undefined') {
+            // Clear existing overrides for this entry when canonical changes
+            delete fieldOverrides[entryId];
+
+            window.FieldPicker.renderFieldPickerTable(fieldPickerContainer, [normalized, relatedForPicker], {
+                canonicalIndex: canonicalIndex,
+                readOnlyFields: new Set(['location.name', 'organizer.name']),
+                onPick: (fieldKey, subfieldKey, value, source) => handleFieldPick(entryId, fieldKey, subfieldKey, value, source)
+            });
+        }
+
+        // Rebuild occurrence picker
+        const canonicalOccs = canonicalIndex === 0 ? thisOccurrences : (relatedEvent.occurrences || []);
+        const relatedOccs = canonicalIndex === 0 ? (relatedEvent.occurrences || []) : thisOccurrences;
+        occurrencePicker[entryId] = buildOccurrencePicker(canonicalOccs, relatedOccs);
+        renderOccurrencePicker(entryId);
+    }
+
+    /**
+     * Consolidate the review entry's event with its related event.
+     * Executes the three-step sequence: patch fields, add occurrences, consolidate.
+     * @async
+     * @param {string|number} entryId - Review queue entry ID
+     */
+    async function consolidate(entryId) {
+        const detail = currentEntryDetail;
+        if (!detail) return;
+
+        const relatedEvents = detail.relatedEvents || [];
+        if (relatedEvents.length === 0) {
+            showToast('No related event found to consolidate with', 'error');
+            return;
+        }
+
+        // Determine canonical and retire ULIDs
+        const canonicalInput = document.querySelector(`input[name="canonical-${entryId}"]:checked`);
+        const canonicalValue = canonicalInput ? canonicalInput.value : 'this';
+
+        let canonicalUlid, retireUlid;
+        if (canonicalValue === 'this') {
+            canonicalUlid = detail.eventId;
+            retireUlid = relatedEvents[0].ulid;
+        } else {
+            canonicalUlid = relatedEvents[0].ulid;
+            retireUlid = detail.eventId;
+        }
+
+        const btn = document.querySelector(`[data-action="consolidate"][data-id="${entryId}"]`);
+        if (btn) setLoading(btn, true);
+
+        // Hide any previous consolidate error
+        const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
+        if (consolidateError) consolidateError.style.display = 'none';
+
+        // Step 1: Build field patch from fieldOverrides where source === 'related' OR edited === true
+        const overrides = fieldOverrides[entryId] || {};
+        const patch = {};
+
+        Object.entries(overrides).forEach(([key, override]) => {
+            if (override.source === 'related' || override.edited === true) {
+                // Map field keys to API fields
+                // name→name, description→description, url→public_url, image→image_url
+                // skip location.name, organizer.name — not patchable via PUT
+                const fieldMap = {
+                    'name': 'name',
+                    'description': 'description',
+                    'url': 'public_url',
+                    'image': 'image_url',
+                };
+                const apiKey = fieldMap[key];
+                if (apiKey) {
+                    patch[apiKey] = override.value;
+                }
+            }
+        });
+
+        // Step 1: Update canonical event with field overrides
+        if (Object.keys(patch).length > 0) {
+            try {
+                await API.events.update(canonicalUlid, patch);
+            } catch (err) {
+                console.error('Failed to update event fields:', err);
+                const msg = (err && err.detail) || (err && err.message) || 'Failed to update event fields';
+                if (consolidateError) {
+                    consolidateError.textContent = msg;
+                    consolidateError.style.display = 'block';
+                } else {
+                    showToast(msg, 'error');
+                }
+                if (btn) setLoading(btn, false);
+                return;
+            }
+        }
+
+        // Step 2: Add selected related occurrences to canonical event
+        const pickerEntries = occurrencePicker[entryId] || [];
+        const relatedIncludedEntries = pickerEntries.filter(e => e.source === 'related' && e.included && !e.overlaps);
+
+        for (const entry of relatedIncludedEntries) {
+            try {
+                const occData = entry.occurrence;
+                const body = {
+                    start_time: occData.startTime,
+                    timezone: occData.timezone || 'America/Toronto',
+                };
+                if (occData.endTime) {
+                    body.end_time = occData.endTime;
+                }
+                await API.events.occurrences.create(canonicalUlid, body);
+            } catch (err) {
+                // On 409 overlap, show inline error but continue with other occurrences
+                if (err && err.status === 409) {
+                    const msg = 'Conflict: overlaps with existing occurrence';
+                    showToast(msg, 'error');
+                    console.warn('Occurrence conflict:', err);
+                } else {
+                    console.error('Failed to add occurrence:', err);
+                    const msg = (err && err.detail) || (err && err.message) || 'Failed to add occurrence';
+                    showToast(msg, 'error');
+                }
+            }
+        }
+
+        // Step 3: Consolidate (retire the duplicate)
+        try {
+            await API.events.consolidate({
+                event_ulid: canonicalUlid,
+                retire: [retireUlid],
+                transfer_occurrences: false,
+            });
+            showToast('Consolidated successfully', 'success');
+
+            // Remove this entry and any companion entries dismissed by the backend.
+            const dismissed = new Set([String(entryId)]);
+            dismissed.forEach(id => removeEntryFromList(id));
+
+            if (btn) setLoading(btn, false);
+
+            // Always reload from the server — consolidation can affect multiple entries
+            loadEntries();
+        } catch (err) {
+            console.error('Failed to consolidate events:', err);
+            const msg = (err && err.detail) || (err && err.message) || 'Failed to consolidate events';
+            if (consolidateError) {
+                consolidateError.textContent = msg;
+                consolidateError.style.display = 'block';
+            } else {
+                showToast(msg, 'error');
+            }
+            if (btn) setLoading(btn, false);
+        }
+    }
+
+    /**
      * Collapse detail view
      * Removes the expanded detail row and resets expandedId state
      */
@@ -1429,6 +1646,11 @@
         // Clean up field overrides for collapsed entry
         if (fieldOverrides[expandedId]) {
             delete fieldOverrides[expandedId];
+        }
+
+        // Clean up occurrence picker for collapsed entry
+        if (occurrencePicker[expandedId]) {
+            delete occurrencePicker[expandedId];
         }
 
         expandedId = null;
