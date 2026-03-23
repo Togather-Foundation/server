@@ -402,6 +402,18 @@ func (m *MockRepository) DismissPendingReviewsByEventULIDs(ctx context.Context, 
 	return args.Get(0).([]int), args.Error(1)
 }
 
+func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params events.SeriesCompanionQuery) (*events.CrossWeekCompanion, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.CrossWeekCompanion), args.Error(1)
+}
+
+func (m *MockRepository) Rollback(ctx context.Context) error {
+	return nil
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{

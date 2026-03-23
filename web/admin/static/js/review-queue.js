@@ -456,18 +456,6 @@
         const original = detail.original || {};
         const normalized = detail.normalized || {};
 
-        // Check duplicate warning flags early (used in case detection and button rendering)
-        const hasNearDupNewEventWarning = warnings.some(w => w.code === 'near_duplicate_of_new_event');
-        const hasDuplicateWarnings = warnings.some(w =>
-            w.code && (w.code === 'potential_duplicate' || w.code === 'place_possible_duplicate' || w.code === 'org_possible_duplicate')
-        );
-        // Any duplicate-type warning (used to show the "Not a Duplicate" button)
-        const hasAnyDuplicateWarning = hasDuplicateWarnings || hasNearDupNewEventWarning;
-
-        // Determine Case 1 (standalone / no related events) vs Case 2/3.
-        // isCase1 and isCase2or3 are exhaustive — a row with duplicateOfEventUlid set
-        // but no relatedEvents and no dup warnings is still treated as Case 2/3 so it
-        // receives the consolidate buttons rather than the standalone occurrence editor.
         const isCase1 = (!detail.relatedEvents || detail.relatedEvents.length === 0) &&
                         !detail.duplicateOfEventUlid;
         const isCase2or3 = !isCase1;
@@ -941,6 +929,11 @@
      * @param {string} occurrenceId - UUID of the occurrence to delete
      */
     async function removeOccurrence(entryId, eventUlid, occurrenceId) {
+        if (String(occurrenceId).startsWith('_pending_')) {
+            showToast('Cannot remove occurrence that hasn\'t been saved yet', 'error');
+            return;
+        }
+
         const btn = document.querySelector(
             `[data-action="remove-occurrence"][data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
         );
@@ -948,10 +941,13 @@
 
         try {
             await API.events.occurrences.delete(eventUlid, occurrenceId);
-            // Update cached detail
             if (currentEntryDetail) {
                 currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
                 OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+            } else {
+                const detail = await API.reviewQueue.get(entryId);
+                currentEntryDetail = detail;
+                renderDetailCard(entryId, detail);
             }
             if (btn) setLoading(btn, false);
         } catch (err) {
@@ -1005,21 +1001,16 @@
 
         try {
             // datetime-local inputs yield a timezone-free string like "2026-03-20T19:30".
-            // new Date() interprets this in the browser's local timezone, then toISOString()
-            // converts to UTC. The submitted start_time is therefore the UTC equivalent of
-            // whatever local time the admin entered — NOT the wall-clock time shown in the
-            // input. The timezone field is metadata only; it does NOT adjust the stored UTC
-            // value. A Toronto admin entering "19:30" for a Vancouver event submits 19:30 EST
-            // converted to UTC, not 19:30 PST. Admins must set their browser timezone to
-            // match the event's timezone for correct results, or enter UTC times with the
-            // browser set to UTC.
+            // Treat the string as UTC by appending 'Z', avoiding browser local-TZ conversion.
+            // The timezone field carries the event's original timezone as metadata.
+            const toUTC = (localStr) => localStr ? localStr + 'Z' : '';
             const body = {
-                start_time: new Date(startVal).toISOString(),
+                start_time: toUTC(startVal),
                 timezone: timezone,
             };
             const endVal = endInput ? endInput.value : '';
             if (endVal) {
-                body.end_time = new Date(endVal).toISOString();
+                body.end_time = toUTC(endVal);
             }
 
             const created = await API.events.occurrences.create(eventUlid, body);
@@ -1159,6 +1150,8 @@
                 const detailMsg = (err && err.detail) || 'The occurrence conflicts with an existing one.';
                 const msg = action === 'add-as-occurrence'
                     ? detailMsg + ' Use Merge Duplicate instead (same session listed twice), or Reject and manually adjust.'
+                    : action === 'merge-duplicate'
+                    ? 'Could not merge: event overlap detected. The selected date range conflicts with existing occurrences.'
                     : detailMsg;
                 if (consolidateError) {
                     consolidateError.textContent = msg;
@@ -2189,10 +2182,11 @@
         setLoading(applyBtn, true);
         
         try {
-            // Convert datetime-local to ISO format
+            // datetime-local inputs are treated as UTC by appending 'Z'.
+            const toUTC = (localStr) => localStr ? localStr + 'Z' : '';
             const corrections = {
-                startDate: new Date(startValue).toISOString(),
-                endDate: new Date(endValue).toISOString()
+                startDate: toUTC(startValue),
+                endDate: toUTC(endValue)
             };
             
             const payload = { corrections };

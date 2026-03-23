@@ -170,6 +170,7 @@ type mockTransactionalRepo struct {
 	updateReviewQueueEntryFunc                      func(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
 	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
+	findSeriesCompanionFunc                         func(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
 	commitCalled                                    bool
 	rollbackCalled                                  bool
 }
@@ -352,6 +353,15 @@ func (m *mockTransactionalRepo) FindSimilarPlaces(ctx context.Context, name stri
 }
 func (m *mockTransactionalRepo) FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error) {
 	return nil, nil
+}
+func (m *mockTransactionalRepo) FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+	if m.findSeriesCompanionFunc != nil {
+		return m.findSeriesCompanionFunc(ctx, params)
+	}
+	return nil, nil
+}
+func (m *mockTransactionalRepo) Rollback(ctx context.Context) error {
+	return nil
 }
 func (m *mockTransactionalRepo) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
 	return &MergeResult{CanonicalID: primaryID}, nil

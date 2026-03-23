@@ -421,12 +421,23 @@ func TestConsolidate_PromotePath_SelfExcludedFromNearDup(t *testing.T) {
 		t.Error("expected NeedsReview=true for genuine near-dup")
 	}
 	// Exactly one warning: the genuine near-dup. Self-match must not appear.
+	// Warning format matches createEventCore (shared via runDedupWarningChecks).
 	dupWarnings := 0
 	for _, w := range result.Warnings {
 		if w.Code == "potential_duplicate" {
 			dupWarnings++
-			if w.Message != fmt.Sprintf("near-duplicate of existing event %s (similarity %.2f)", consolidateNearDupULID, 0.9) {
+			if w.Message != "Potential duplicate: found 1 similar event(s) at the same venue on the same date" {
 				t.Errorf("unexpected warning message: %s", w.Message)
+			}
+			matches, ok := w.Details["matches"].([]map[string]any)
+			if !ok {
+				t.Error("potential_duplicate warning missing matches array in Details")
+				continue
+			}
+			if len(matches) != 1 {
+				t.Errorf("expected 1 match, got %d: %+v", len(matches), matches)
+			} else if matches[0]["ulid"] != consolidateNearDupULID {
+				t.Errorf("match[0].ulid = %v, want %s", matches[0]["ulid"], consolidateNearDupULID)
 			}
 		}
 	}
@@ -508,6 +519,120 @@ func TestConsolidate_NearDupCheckFailure_NonFatal(t *testing.T) {
 	}
 	if !repo.commitCalled {
 		t.Error("Commit must be called on success")
+	}
+}
+
+// consolidateCompanionULID is a ULID for an existing companion event used in
+// cross-week series tests.
+const consolidateCompanionULID = "01KM1B4HXHW4ZQVP3RT9DMSX82"
+
+// TestConsolidate_PromotePath_CrossWeekSeriesCompanion verifies that when a
+// consolidated event (promote path) has a cross-week series companion, the
+// result is flagged for review with a cross_week_series_companion warning.
+// This mirrors Step 8b in createEventCore.
+func TestConsolidate_PromotePath_CrossWeekSeriesCompanion(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+
+	canon := makeVenueCanonEvent("uuid-canon", consolidateCanonULID, "Weekly Yoga", now)
+	known := map[string]*Event{
+		consolidateCanonULID:  canon,
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	repo.findSeriesCompanionFunc = func(_ context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		return &CrossWeekCompanion{
+			ULID:      consolidateCompanionULID,
+			Name:      "Weekly Yoga",
+			StartDate: now.Add(14 * 24 * time.Hour).Format(time.RFC3339),
+			StartTime: "10:00:00",
+			VenueName: "Community Centre",
+		}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.8)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{consolidateRetireULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if !result.IsDuplicate {
+		t.Error("expected IsDuplicate=true when cross-week companion found")
+	}
+	if !result.NeedsReview {
+		t.Error("expected NeedsReview=true when cross-week companion found")
+	}
+
+	found := false
+	for _, w := range result.Warnings {
+		if w.Code == "cross_week_series_companion" {
+			found = true
+			if w.Message == "" {
+				t.Error("cross_week_series_companion warning must have a non-empty message")
+			}
+			if w.Details == nil {
+				t.Error("cross_week_series_companion warning must have details")
+			}
+			if w.Details["companion_ulid"] != consolidateCompanionULID {
+				t.Errorf("companion_ulid detail = %v, want %s", w.Details["companion_ulid"], consolidateCompanionULID)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected cross_week_series_companion warning in result.Warnings")
+	}
+}
+
+// TestConsolidate_PromotePath_CrossWeekCompanionInRetireList_NotFlagged verifies
+// that a companion event that is also being retired in this consolidation does
+// NOT trigger a cross_week_series_companion warning.
+func TestConsolidate_PromotePath_CrossWeekCompanionInRetireList_NotFlagged(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+
+	canon := makeVenueCanonEvent("uuid-canon", consolidateCanonULID, "Weekly Yoga", now)
+	known := map[string]*Event{
+		consolidateCanonULID:  canon,
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	repo.findSeriesCompanionFunc = func(_ context.Context, _ SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		return &CrossWeekCompanion{
+			ULID: consolidateRetireULID, // companion is in the retire list
+		}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.8)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{consolidateRetireULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.IsDuplicate {
+		t.Error("expected IsDuplicate=false when companion is in retire list")
+	}
+	if result.NeedsReview {
+		t.Error("expected NeedsReview=false when companion is in retire list")
+	}
+
+	for _, w := range result.Warnings {
+		if w.Code == "cross_week_series_companion" {
+			t.Error("cross_week_series_companion warning must not appear for companion in retire list")
+		}
 	}
 }
 

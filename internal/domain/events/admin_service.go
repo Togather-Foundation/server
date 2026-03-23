@@ -1562,6 +1562,27 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 			return nil, fmt.Errorf("canonical event %s was deleted concurrently: %w", params.EventULID, ErrEventDeleted)
 		}
 		canonicalEvent = canon
+
+		if canonicalEvent.PrimaryVenueID != nil && len(canonicalEvent.Occurrences) > 0 {
+			dedupWarnings, _, dedupErr := s.ingestService.runDedupWarningChecks(
+				ctx, txRepo,
+				canonicalEvent.Name,
+				*canonicalEvent.PrimaryVenueID,
+				canonicalEvent.Occurrences[0].StartTime,
+				canonicalEvent.ULID,
+				params.Retire,
+				s.ingestService.dedupConfig.NearDuplicateThreshold,
+			)
+			if dedupErr != nil {
+				log.Warn().Err(dedupErr).
+					Str("canonical_ulid", canonicalEvent.ULID).
+					Msg("Consolidate: dedup warning checks failed, continuing")
+			} else if len(dedupWarnings) > 0 {
+				needsReview = true
+				isDuplicate = true
+				warnings = append(warnings, dedupWarnings...)
+			}
+		}
 	} else {
 		// Create path: delegate to the shared ingest pipeline.
 		// SkipDedupAutoMerge=true: warn instead of auto-merging (admin has explicitly
@@ -1600,18 +1621,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		return nil, err
 	}
 
-	// Step 7: Post-consolidation near-dup check (only if canonical has a venue).
-	// The error return from consolidatePostValidation is always nil — non-fatal
-	// errors are logged internally and do not propagate to avoid blocking the
-	// consolidation transaction on a best-effort check.
-	dupResult, dupWarnings, _ := s.consolidatePostValidation(ctx, txRepo, canonicalEvent, params.Retire, s.ingestService.dedupConfig.NearDuplicateThreshold)
-	if dupResult {
-		isDuplicate = true
-		needsReview = true
-	}
-	warnings = append(warnings, dupWarnings...)
-
-	// Step 8: If needs review, set lifecycle to pending_review.
+	// Step 7: If needs review, set lifecycle to pending_review.
 	if needsReview {
 		if err := s.consolidateResolvePending(ctx, txRepo, canonicalEvent, warnings); err != nil {
 			return nil, err
@@ -1787,19 +1797,22 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	filtered := warnings[:0]
 	changed := false
 	for _, w := range warnings {
-		if w.Code != "near_duplicate_of_new_event" && w.Code != "potential_duplicate" {
+		if w.Code != "near_duplicate_of_new_event" && w.Code != "potential_duplicate" && w.Code != "cross_week_series_companion" {
 			filtered = append(filtered, w)
 			continue
 		}
 
-		// Check if the warning's matches reference any retired ULID.
-		// potential_duplicate warnings carry details.matches[].ulid;
-		// near_duplicate_of_new_event carries companion info via
-		// DuplicateOfEventULID (no matches array — strip when DuplicateOfEventULID
-		// points to a retired event, or when there are no matches at all).
+		// Check if the warning references a retired ULID.
 		referencesRetired := false
 
-		if details, ok := w.Details["matches"]; ok {
+		if w.Code == "cross_week_series_companion" {
+			// cross_week_series_companion carries companion_ulid in Details.
+			if companionULID, ok := w.Details["companion_ulid"].(string); ok {
+				if _, retired := retireSet[companionULID]; retired {
+					referencesRetired = true
+				}
+			}
+		} else if details, ok := w.Details["matches"]; ok {
 			// Marshal + unmarshal to normalise type — Details is map[string]any
 			// so matches may be []any after JSON round-trip.
 			matchesRaw, _ := json.Marshal(details)
@@ -1882,73 +1895,7 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	return dismissedIDs, nil
 }
 
-// consolidatePostValidation encapsulates step 7 of the Consolidate algorithm:
-// post-consolidation near-duplicate check. Only runs if the canonical event has a venue
-// and occurrences. Non-fatal — errors are logged and not returned. Filters out
-// self-match and events being retired.
-func (s *AdminService) consolidatePostValidation(
-	ctx context.Context,
-	txRepo Repository,
-	canonical *Event,
-	retireULIDs []string,
-	threshold float64,
-) (isDuplicate bool, warnings []ValidationWarning, err error) {
-	// Step 7: Post-consolidation near-dup check (only if canonical has a venue).
-	// This mirrors the ingest pipeline: a consolidated event is not more valid than
-	// an ingested one and must go through the same dedup checks.
-	if canonical.PrimaryVenueID == nil || len(canonical.Occurrences) == 0 {
-		return false, nil, nil
-	}
-
-	candidates, nearDupErr := txRepo.FindNearDuplicates(ctx,
-		*canonical.PrimaryVenueID,
-		canonical.Occurrences[0].StartTime,
-		canonical.Name,
-		threshold)
-	if nearDupErr != nil {
-		// Non-fatal — log and continue. The retire+create/promote has already
-		// succeeded; failing the whole transaction for a dedup check error would
-		// be wrong (mirrors ingest.go line 573-576).
-		log.Warn().Err(nearDupErr).
-			Str("canonical_ulid", canonical.ULID).
-			Msg("Consolidate: near-duplicate check failed, continuing")
-		return false, nil, nil
-	}
-
-	// Filter self-match and retired events — FindNearDuplicates does not
-	// exclude the canonical event itself or the events being retired in
-	// this consolidation, so we do it here (mirrors ingest.go 580-593).
-	retireSet := make(map[string]struct{}, len(retireULIDs))
-	for _, r := range retireULIDs {
-		retireSet[r] = struct{}{}
-	}
-	filtered := make([]NearDuplicateCandidate, 0, len(candidates))
-	for _, c := range candidates {
-		if c.ULID == canonical.ULID {
-			continue
-		}
-		if _, retiring := retireSet[c.ULID]; retiring {
-			continue
-		}
-		filtered = append(filtered, c)
-	}
-
-	if len(filtered) == 0 {
-		return false, nil, nil
-	}
-
-	// Append near-dup warnings.
-	dupWarnings := make([]ValidationWarning, 0, len(filtered))
-	for _, c := range filtered {
-		dupWarnings = append(dupWarnings, ValidationWarning{
-			Code:    "potential_duplicate",
-			Message: fmt.Sprintf("near-duplicate of existing event %s (similarity %.2f)", c.ULID, c.Similarity),
-		})
-	}
-	return true, dupWarnings, nil
-}
-
-// consolidateResolvePending encapsulates step 8 of the Consolidate algorithm:
+// consolidateResolvePending encapsulates step 7 of the Consolidate algorithm:
 // if the canonical event needs review, update its lifecycle to pending_review and
 // create a review queue entry with the supplied warnings.
 func (s *AdminService) consolidateResolvePending(
@@ -2001,14 +1948,34 @@ func (s *AdminService) consolidateResolvePending(
 		eventStartTime = canonical.Occurrences[0].StartTime
 	}
 
-	if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-		EventID:           canonical.ID,
-		OriginalPayload:   payloadJSON,
-		NormalizedPayload: payloadJSON,
-		Warnings:          warningsJSON,
-		EventStartTime:    eventStartTime,
-	}); err != nil {
-		return fmt.Errorf("create review queue entry for canonical event: %w", err)
+	// Check if a pending review already exists for this canonical event
+	// (e.g., from promote path where the event was already in pending_review).
+	// If exists, update it; if not, create a new one.
+	existingReview, err := txRepo.GetPendingReviewByEventUlid(ctx, canonical.ULID)
+	if err != nil && err != ErrNotFound {
+		return fmt.Errorf("check existing review for canonical event: %w", err)
+	}
+
+	if existingReview != nil {
+		// Update existing review entry with new warnings
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+			OriginalPayload:   &payloadJSON,
+			NormalizedPayload: &payloadJSON,
+			Warnings:          &warningsJSON,
+		}); err != nil {
+			return fmt.Errorf("update review queue entry for canonical event: %w", err)
+		}
+	} else {
+		// Create new review entry
+		if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+			EventID:           canonical.ID,
+			OriginalPayload:   payloadJSON,
+			NormalizedPayload: payloadJSON,
+			Warnings:          warningsJSON,
+			EventStartTime:    eventStartTime,
+		}); err != nil {
+			return fmt.Errorf("create review queue entry for canonical event: %w", err)
+		}
 	}
 	return nil
 }

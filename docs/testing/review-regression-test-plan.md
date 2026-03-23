@@ -146,7 +146,7 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 | RS-08 | Community Potluck | 2 | exact duplicate (merge) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.49) |
 | RS-09 | Film Screening | 1 | multi-session detection | `multi_session_likely` | N/A (single event) |
 | RS-10 | Choir Rehearsal | 2 | order-independent consolidation | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.88) |
-| RS-11 | Pottery Studio | 4 | same-day-different-times cluster | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (same-day pairs only) |
+| RS-11 | Pottery Studio | 4 | same-day-different-times cluster + cross-week series | `near_duplicate_of_new_event`, `potential_duplicate`, `multi_session_likely` (cross-week companion) | Yes (same-day pairs + cross-week series companion via `multi_session_likely`) |
 | RS-12 | Consolidation Endpoint | 2+ | consolidate (promote + create paths) | _(varies)_ | N/A (tests consolidation itself) |
 
 ---
@@ -545,19 +545,20 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
 - Near-duplicate detection fires on **same-day pairs** (similarity ~0.80 + same venue + same date → well above 0.4 threshold):
   - Mon 10am ↔ Mon 2pm (same Monday)
   - Mon+7 10am ↔ Mon+7 2pm (same following Monday)
-- Cross-week pairs (Mon 10am ↔ Mon+7 10am) do **not** trigger dedup because they are on different dates.
+- Cross-week series detection fires on **cross-week pairs** (Mon 10am ↔ Mon+7 10am and Mon 2pm ↔ Mon+7 2pm): same venue + same time-of-day ±30min + date offset 7-14 days → adds `multi_session_likely` warning with `cross_week_series_companion` detail on each cross-week pair member.
 - All 4 events are `pending_review`. Each same-day pair has companion near-duplicate review entries:
-  - Mon 10am: `near_duplicate_of_new_event` (paired with Mon 2pm)
-  - Mon 2pm: `potential_duplicate` (paired with Mon 10am)
-  - Mon+7 10am: `near_duplicate_of_new_event` (paired with Mon+7 2pm)
-  - Mon+7 2pm: `potential_duplicate` (paired with Mon+7 10am)
+  - Mon 10am: `near_duplicate_of_new_event` (paired with Mon 2pm) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon+7 10am)
+  - Mon 2pm: `potential_duplicate` (paired with Mon 10am) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon+7 2pm)
+  - Mon+7 10am: `near_duplicate_of_new_event` (paired with Mon+7 2pm) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon 10am)
+  - Mon+7 2pm: `potential_duplicate` (paired with Mon+7 10am) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon 2pm)
 
 **Test steps:**
 1. Open the review queue. Identify all RS-11 entries.
 2. Determine the correct consolidation:
-   - **2 series** (morning series + afternoon series): use **Add as Occurrence** (or consolidate API) twice — once per same-day pair. Then manually add the Mon+7 occurrence to each series via `POST /admin/events/{ulid}/occurrences`.
-   - **1 series** with 4 occurrences: use **Add as Occurrence** / consolidate three times, promoting the earliest event. Then manually add 3 occurrences.
-   - **4 separate events**: click **Not a Duplicate** on each pair (or approve with `record_not_duplicates: true`).
+   - **2 series** (morning series + afternoon series): use **Add as Occurrence** (or consolidate API) twice — once per same-day pair. The `multi_session_likely` warning on each event flags it as part of a cross-week series, so the admin can decide whether to treat the Mon 10am + Mon+7 10am pair as one 2-session series.
+   - **1 series** with 4 occurrences: use **Add as Occurrence** / consolidate three times, promoting the earliest event. The `multi_session_likely` warning provides a signal that all 4 sessions belong together.
+   - **4 separate events**: click **Not a Duplicate** on each pair (or approve with `record_not_duplicates: true`). The `multi_session_likely` warning will be cleared after recording not-duplicates.
+   - **Cross-week series consolidation**: use the `multi_session_likely` warning details (`cross_week_series_companion` with companion event name/date/time/venue) to identify the cross-week pairs. Consolidate each pair via **Add as Occurrence** or the API, then optionally approve as a series.
 3. Execute your chosen consolidation strategy.
 4. Verify:
    - [ ] Final state matches your intent (correct number of events, correct occurrences on each).
@@ -590,7 +591,7 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
    ```
    Then manually add 3 occurrences from the retired events to the canonical. Consolidation retires whole events; occurrence migration is a manual step.
 
-**This scenario intentionally has no single "right" answer -- it tests the admin's judgment and the system's ability to support multiple valid consolidation paths.**
+**This scenario intentionally has no single "right" answer -- it tests the system's ability to support multiple valid consolidation paths.**
 
 ---
 

@@ -252,6 +252,14 @@ func (s stubEventsRepo) DismissPendingReviewsByEventULIDs(_ context.Context, _ [
 	return nil, nil
 }
 
+func (s stubEventsRepo) FindSeriesCompanion(_ context.Context, _ events.SeriesCompanionQuery) (*events.CrossWeekCompanion, error) {
+	return nil, nil
+}
+
+func (s stubEventsRepo) Rollback(ctx context.Context) error {
+	return nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

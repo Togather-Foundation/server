@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"net/url"
@@ -11,6 +12,31 @@ import (
 
 	"github.com/microcosm-cc/bluemonday"
 )
+
+// SeriesCompanionRepo is the interface for cross-week series detection.
+// Implemented by Repository (from repository.go). Add compile-time check if needed:
+// var _ SeriesCompanionRepo = (*Repository)(nil)
+type SeriesCompanionRepo interface {
+	FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
+}
+
+// SeriesCompanionQuery contains the input parameters for cross-week series detection.
+type SeriesCompanionQuery struct {
+	NormalizedName string
+	VenueID        string
+	StartTime      time.Time
+	ExcludeULID    string
+}
+
+// CrossWeekCompanion describes an existing published/pending event that is likely
+// a companion occurrence of the same recurring series as the event being ingested.
+type CrossWeekCompanion struct {
+	ULID      string
+	Name      string
+	StartDate string
+	StartTime string
+	VenueName string
+}
 
 // multiSessionPatterns are compiled once at package level for efficiency.
 // They match title patterns indicating a multi-session course or recurring series.

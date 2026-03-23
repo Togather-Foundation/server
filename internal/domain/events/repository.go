@@ -237,6 +237,17 @@ type Repository interface {
 	// Near-duplicate detection (Layer 2)
 	FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 
+	// Cross-week series detection: checks for an existing published/pending event
+	// at the same venue with the same normalized name and a start date 7–21 days
+	// away and the same time-of-day (±30 min).
+	FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
+
+	// Rollback aborts the current transaction. Idempotent — safe to call even if
+	// no transaction is active. Used by callers that run read-only queries inside a
+	// transaction and need to recover from query errors without corrupting the
+	// transaction state.
+	Rollback(ctx context.Context) error
+
 	// Place/Organization fuzzy dedup (Layer 3)
 	FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarPlaceCandidate, error)
 	FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error)
