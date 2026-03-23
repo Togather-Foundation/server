@@ -256,6 +256,10 @@ func (s stubEventsRepo) FindSeriesCompanion(_ context.Context, _ events.SeriesCo
 	return nil, nil
 }
 
+func (s stubEventsRepo) Rollback(ctx context.Context) error {
+	return nil
+}
+
 func TestEventsHandlerListSuccess(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

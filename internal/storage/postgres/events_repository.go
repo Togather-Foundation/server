@@ -1199,12 +1199,19 @@ type txCommitter struct {
 	tx pgx.Tx
 }
 
-func (tc *txCommitter) Commit(ctx context.Context) error {
-	return tc.tx.Commit(ctx)
-}
-
 func (tc *txCommitter) Rollback(ctx context.Context) error {
 	return tc.tx.Rollback(ctx)
+}
+
+func (r *EventRepository) Rollback(ctx context.Context) error {
+	if r.tx == nil {
+		return nil
+	}
+	return r.tx.Rollback(ctx)
+}
+
+func (tc *txCommitter) Commit(ctx context.Context) error {
+	return tc.tx.Commit(ctx)
 }
 
 func intPtr(value *int32) *int {

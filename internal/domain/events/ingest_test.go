@@ -754,6 +754,9 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params SeriesC
 	}
 	return m.seriesCompanion, nil
 }
+func (m *MockRepository) Rollback(ctx context.Context) error {
+	return nil
+}
 func (m *MockRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

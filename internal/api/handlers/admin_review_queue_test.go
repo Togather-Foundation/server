@@ -410,6 +410,10 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params events.
 	return args.Get(0).(*events.CrossWeekCompanion), args.Error(1)
 }
 
+func (m *MockRepository) Rollback(ctx context.Context) error {
+	return nil
+}
+
 // Helper to add admin user to request context
 func withAdminUser(r *http.Request, userEmail string) *http.Request {
 	claims := &auth.Claims{

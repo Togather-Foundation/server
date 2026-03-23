@@ -519,98 +519,21 @@ func (s *IngestService) createEventCore(
 		}
 	}
 
-	// ── 8. Layer 2: Near-duplicate detection ─────────────────────────────────
-	if params.PrimaryVenueID != nil && s.dedupConfig.NearDuplicateThreshold > 0 {
-		startTime, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(validated.StartDate))
-		if parseErr == nil {
-			candidates, err := s.repo.FindNearDuplicates(ctx, *params.PrimaryVenueID, startTime, validated.Name, s.dedupConfig.NearDuplicateThreshold)
-			if err != nil {
-				log.Warn().Err(err).
-					Str("event_name", validated.Name).
-					Msg("Near-duplicate check failed, continuing")
-			} else if len(candidates) > 0 {
-				// Filter excluded ULIDs (retired events in consolidation path, and not-duplicate pairs)
-				excludeSet := make(map[string]struct{}, len(opts.ExcludeFromNearDup))
-				for _, u := range opts.ExcludeFromNearDup {
-					excludeSet[u] = struct{}{}
-				}
-				filtered := make([]NearDuplicateCandidate, 0, len(candidates))
-				for _, c := range candidates {
-					if _, excl := excludeSet[c.ULID]; excl {
-						continue
-					}
-					notDup, err := s.repo.IsNotDuplicate(ctx, ulidValue, c.ULID)
-					if err != nil {
-						log.Warn().Err(err).
-							Str("event_ulid", ulidValue).
-							Str("candidate_ulid", c.ULID).
-							Msg("Not-duplicate check failed, keeping candidate")
-						filtered = append(filtered, c)
-					} else if !notDup {
-						filtered = append(filtered, c)
-					}
-				}
-				candidates = filtered
-
-				if len(candidates) > 0 {
-					matches := make([]map[string]any, 0, len(candidates))
-					for _, c := range candidates {
-						match := map[string]any{
-							"ulid":       c.ULID,
-							"name":       c.Name,
-							"similarity": c.Similarity,
-						}
-						if c.StartDate != "" {
-							match["startDate"] = c.StartDate
-						}
-						if c.EndDate != "" {
-							match["endDate"] = c.EndDate
-						}
-						if c.VenueName != "" {
-							match["location"] = map[string]any{"name": c.VenueName}
-						}
-						matches = append(matches, match)
-					}
-					warnings = append(warnings, ValidationWarning{
-						Field:   "name",
-						Message: fmt.Sprintf("Potential duplicate: found %d similar event(s) at the same venue on the same date", len(candidates)),
-						Code:    "potential_duplicate",
-						Details: map[string]any{"matches": matches},
-					})
-					needsReview = true
-					nearDuplicateCandidates = candidates
-				}
-			}
-		}
-	}
-
-	// ── 8b. Cross-week series detection ──────────────────────────────────────
+	// ── 8. Dedup warning checks (near-dup + cross-week series) ─────────────────
+	var dedupWarnings []ValidationWarning
 	if params.PrimaryVenueID != nil && validated.StartDate != "" {
+		dbRepo := s.repo
+		if opts.TxRepo != nil {
+			dbRepo = opts.TxRepo
+		}
 		startTime, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(validated.StartDate))
 		if parseErr == nil {
-			companion, err := s.repo.FindSeriesCompanion(ctx, SeriesCompanionQuery{
-				NormalizedName: validated.Name,
-				VenueID:        *params.PrimaryVenueID,
-				StartTime:      startTime,
-				ExcludeULID:    ulidValue,
-			})
-			if err != nil {
-				log.Warn().Err(err).
-					Str("event_name", validated.Name).
-					Msg("Cross-week series check failed, continuing")
-			} else if companion != nil {
-				warnings = append(warnings, ValidationWarning{
-					Field:   "name",
-					Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s", companion.Name, companion.StartDate),
-					Code:    "cross_week_series_companion",
-					Details: map[string]any{
-						"companion_ulid": companion.ULID,
-						"companion_name": companion.Name,
-						"companion_date": companion.StartDate,
-						"companion_time": companion.StartTime,
-						"venue_name":     companion.VenueName,
-					},
-				})
+			dedupWarnings, nearDuplicateCandidates, _ = s.runDedupWarningChecks(
+				ctx, dbRepo, validated.Name, *params.PrimaryVenueID, startTime,
+				ulidValue, opts.ExcludeFromNearDup, s.dedupConfig.NearDuplicateThreshold,
+			)
+			warnings = append(warnings, dedupWarnings...)
+			if len(dedupWarnings) > 0 {
 				needsReview = true
 			}
 		}
@@ -891,6 +814,126 @@ func (s *IngestService) createEventCore(
 		NearDuplicateCandidates: nearDuplicateCandidates,
 		DedupHash:               dedupHash,
 	}, nil
+}
+
+// runDedupWarningChecks runs all dedup-related warning checks and returns
+// the accumulated warnings plus near-duplicate candidates. It is called by
+// both createEventCore (new event) and the promote path of Consolidate
+// (existing canonical event).
+//
+// Parameters:
+//   - ctx, txRepo: repo for DB queries (may be the caller's transaction)
+//   - name: the normalized event name
+//   - venueID: resolved primary venue ID (empty means no venue)
+//   - startTime: first occurrence start time
+//   - ulid: this event's ULID (excluded from candidates)
+//   - excludeULIDs: additional ULIDs to exclude (e.g., retired events in consolidation)
+//   - nearDupThreshold: similarity threshold for near-duplicate detection
+//
+// Returns warnings (may be empty) and near-duplicate candidates (for cross-linking).
+func (s *IngestService) runDedupWarningChecks(
+	ctx context.Context,
+	txRepo Repository,
+	name string,
+	venueID string,
+	startTime time.Time,
+	ulid string,
+	excludeULIDs []string,
+	nearDupThreshold float64,
+) (warnings []ValidationWarning, candidates []NearDuplicateCandidate, err error) {
+	if venueID == "" || nearDupThreshold <= 0 {
+		return nil, nil, nil
+	}
+
+	excludeSet := make(map[string]struct{}, len(excludeULIDs)+1)
+	excludeSet[ulid] = struct{}{}
+	for _, u := range excludeULIDs {
+		excludeSet[u] = struct{}{}
+	}
+
+	candidates, err = txRepo.FindNearDuplicates(ctx, venueID, startTime, name, nearDupThreshold)
+	if err != nil {
+		log.Warn().Err(err).
+			Str("event_name", name).
+			Msg("Near-duplicate check failed, continuing")
+		return nil, nil, nil
+	}
+
+	filtered := make([]NearDuplicateCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		if _, excl := excludeSet[c.ULID]; excl {
+			continue
+		}
+		notDup, err := txRepo.IsNotDuplicate(ctx, ulid, c.ULID)
+		if err != nil {
+			log.Warn().Err(err).
+				Str("event_ulid", ulid).
+				Str("candidate_ulid", c.ULID).
+				Msg("Not-duplicate check failed, keeping candidate")
+			filtered = append(filtered, c)
+		} else if !notDup {
+			filtered = append(filtered, c)
+		}
+	}
+	candidates = filtered
+
+	if len(candidates) > 0 {
+		matches := make([]map[string]any, 0, len(candidates))
+		for _, c := range candidates {
+			match := map[string]any{
+				"ulid":       c.ULID,
+				"name":       c.Name,
+				"similarity": c.Similarity,
+			}
+			if c.StartDate != "" {
+				match["startDate"] = c.StartDate
+			}
+			if c.EndDate != "" {
+				match["endDate"] = c.EndDate
+			}
+			if c.VenueName != "" {
+				match["location"] = map[string]any{"name": c.VenueName}
+			}
+			matches = append(matches, match)
+		}
+		warnings = append(warnings, ValidationWarning{
+			Field:   "name",
+			Message: fmt.Sprintf("Potential duplicate: found %d similar event(s) at the same venue on the same date", len(candidates)),
+			Code:    "potential_duplicate",
+			Details: map[string]any{"matches": matches},
+		})
+	}
+
+	companion, err := txRepo.FindSeriesCompanion(ctx, SeriesCompanionQuery{
+		NormalizedName: name,
+		VenueID:        venueID,
+		StartTime:      startTime,
+		ExcludeULID:    ulid,
+	})
+	if err != nil {
+		log.Warn().Err(err).
+			Str("event_name", name).
+			Msg("Cross-week series check failed, continuing")
+		return warnings, candidates, nil
+	}
+	if companion != nil {
+		if _, retired := excludeSet[companion.ULID]; !retired {
+			warnings = append(warnings, ValidationWarning{
+				Field:   "name",
+				Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s", companion.Name, companion.StartDate),
+				Code:    "cross_week_series_companion",
+				Details: map[string]any{
+					"companion_ulid": companion.ULID,
+					"companion_name": companion.Name,
+					"companion_date": companion.StartDate,
+					"companion_time": companion.StartTime,
+					"venue_name":     companion.VenueName,
+				},
+			})
+		}
+	}
+
+	return warnings, candidates, nil
 }
 
 // crossLinkNearDuplicates flags existing near-duplicate events for review after
