@@ -1382,7 +1382,7 @@
 
     /**
      * Handle field pick from the field picker onPick callback.
-     * Updates the fieldOverrides store with the picked value, source, and marks as edited.
+     * Updates the fieldOverrides store with the picked value, source, and marks as user-edited.
      * @param {string|number} entryId - Review queue entry ID
      * @param {string} fieldKey - Field key (e.g., 'name', 'description')
      * @param {string|null} subfieldKey - Subfield key for nested fields (e.g., 'name' for location.name)
@@ -1399,7 +1399,7 @@
         fieldOverrides[entryId][overrideKey] = {
             value: value,
             source: source,
-            edited: false,
+            edited: true,  // User explicitly picked this field
         };
     }
 
@@ -1421,6 +1421,7 @@
 
     /**
      * Rebuild both field picker and occurrence picker when canonical selection changes.
+     * Preserves user-edited field overrides and user-toggled occurrence selections.
      * @param {string|number} entryId - Review queue entry ID
      */
     function rebuildPickers(entryId) {
@@ -1457,12 +1458,18 @@
                 : null,
         };
 
-        // Rebuild field picker
+        // Preserve user-edited field overrides (edited === true)
+        const oldOverrides = fieldOverrides[entryId] || {};
+        const preservedOverrides = {};
+        Object.entries(oldOverrides).forEach(([key, override]) => {
+            if (override.edited === true) {
+                preservedOverrides[key] = override;
+            }
+        });
+
+        // Rebuild field picker (field-picker.js handles canonical highlighting automatically)
         const fieldPickerContainer = document.getElementById('field-picker-table-' + safeId);
         if (fieldPickerContainer && typeof window.FieldPicker !== 'undefined') {
-            // Clear existing overrides for this entry when canonical changes
-            delete fieldOverrides[entryId];
-
             window.FieldPicker.renderFieldPickerTable(fieldPickerContainer, [normalized, relatedForPicker], {
                 canonicalIndex: canonicalIndex,
                 readOnlyFields: new Set(['location.name', 'organizer.name']),
@@ -1470,10 +1477,27 @@
             });
         }
 
-        // Rebuild occurrence picker
+        // Rebuild occurrence picker with preserved selections
         const canonicalOccs = canonicalIndex === 0 ? thisOccurrences : (relatedEvent.occurrences || []);
         const relatedOccs = canonicalIndex === 0 ? (relatedEvent.occurrences || []) : thisOccurrences;
         occurrencePicker[entryId] = buildOccurrencePicker(canonicalOccs, relatedOccs);
+
+        // Preserve user-toggled related occurrence selections (matched by startTime)
+        const oldPicker = occurrencePicker[entryId] || [];
+        oldPicker.forEach(oldEntry => {
+            if (oldEntry.source === 'related' && oldEntry.included === true && oldEntry.occurrence.startTime) {
+                const newEntry = (occurrencePicker[entryId] || []).find(e =>
+                    e.source === 'related' && e.occurrence.startTime === oldEntry.occurrence.startTime
+                );
+                if (newEntry) {
+                    newEntry.included = true;
+                }
+            }
+        });
+
+        // Clear fieldOverrides and restore preserved user edits
+        fieldOverrides[entryId] = preservedOverrides;
+
         renderOccurrencePicker(entryId);
     }
 
@@ -1535,7 +1559,7 @@
             }
         });
 
-        // Step 1: Update canonical event with field overrides
+        // Step 2: Update canonical event with field overrides
         if (Object.keys(patch).length > 0) {
             try {
                 await API.events.update(canonicalUlid, patch);
@@ -1553,7 +1577,7 @@
             }
         }
 
-        // Step 2: Add selected related occurrences to canonical event
+        // Step 3: Add selected related occurrences to canonical event
         const pickerEntries = occurrencePicker[entryId] || [];
         const relatedIncludedEntries = pickerEntries.filter(e => e.source === 'related' && e.included && !e.overlaps);
 
@@ -1582,7 +1606,7 @@
             }
         }
 
-        // Step 3: Consolidate (retire the duplicate)
+        // Step 4: Consolidate (retire the duplicate)
         try {
             await API.events.consolidate({
                 event_ulid: canonicalUlid,

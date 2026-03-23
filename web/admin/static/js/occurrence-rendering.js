@@ -187,7 +187,7 @@
                 // Determine chip class and action
                 let chipHtml;
                 if (entry.source === 'this') {
-                    // Canonical chip: locked, primary, no action
+                    // Canonical chip: locked, primary (blue), no action
                     chipHtml = `
                         <button class="btn btn-sm btn-primary" disabled style="cursor: not-allowed;">
                             <span style="margin-right: 0.25rem;">🔒</span>
