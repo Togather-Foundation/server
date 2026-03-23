@@ -184,10 +184,10 @@
                 const occ = entry.occurrence;
                 const timeStr = formatOccurrenceTime(occ);
 
-                // Determine chip class and action
+                // Determine chip class and action based on isCanonical flag
                 let chipHtml;
-                if (entry.source === 'this') {
-                    // Canonical chip: locked, primary (blue), no action
+                if (entry.isCanonical) {
+                    // Canonical occurrence: locked, primary (blue), no action
                     chipHtml = `
                         <button class="btn btn-sm btn-primary" disabled style="cursor: not-allowed;">
                             <span style="margin-right: 0.25rem;">🔒</span>
@@ -195,7 +195,7 @@
                         </button>
                     `;
                 } else if (entry.overlaps) {
-                    // Related chip with overlap: greyed, disabled
+                    // Non-canonical chip with overlap: greyed, disabled
                     chipHtml = `
                         <button class="btn btn-sm btn-secondary" disabled style="opacity: 0.6; cursor: not-allowed;">
                             <span style="margin-right: 0.25rem;">⚠</span>
@@ -203,7 +203,8 @@
                         </button>
                     `;
                 } else {
-                    // Related chip without overlap: toggleable
+                    // Non-canonical chip without overlap: toggleable
+                    // Blue (btn-primary) if included, outlined if not
                     const chipClass = entry.included ? 'btn-primary' : 'btn-outline-secondary';
                     const occKey = escapeHtml(entry.occurrenceId);
                     chipHtml = `
@@ -214,10 +215,10 @@
                     `;
                 }
 
-                // Determine column: left for 'this', right for 'related'
-                const isThisEvent = entry.source === 'this';
-                const leftChip = isThisEvent ? chipHtml : '<span class="text-muted">—</span>';
-                const rightChip = !isThisEvent ? chipHtml : '<span class="text-muted">—</span>';
+                // Determine column: left for eventIndex 0 (this event), right for eventIndex 1 (related event)
+                const isLeftColumn = entry.eventIndex === 0;
+                const leftChip = isLeftColumn ? chipHtml : '<span class="text-muted">—</span>';
+                const rightChip = !isLeftColumn ? chipHtml : '<span class="text-muted">—</span>';
 
                 return `
                     <div class="row g-2 align-items-center py-2 border-bottom">

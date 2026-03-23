@@ -91,7 +91,15 @@
             isSelected = selectedOverrides[fieldKey] === eventIndex;
         }
 
-        const chipClass = isSelected ? 'btn-primary' : 'btn-outline-secondary';
+        // User-selected fields (via selectedOverrides) get green, defaults get blue
+        let chipClass;
+        if (selectedOverrides && selectedOverrides[fieldKey] !== undefined) {
+            chipClass = 'btn-success';  // Green for user-selected
+        } else if (isSelected) {
+            chipClass = 'btn-primary';   // Blue for default (canonical)
+        } else {
+            chipClass = 'btn-outline-secondary';
+        }
         const displayVal = escapeHtml(truncateDisplay(raw));
         const dataVal = escapeHtml(String(raw));
 
@@ -145,7 +153,15 @@
             isSelected = selectedOverrides[compositeKey] === eventIndex;
         }
 
-        const chipClass = isSelected ? 'btn-primary' : 'btn-outline-secondary';
+        // User-selected fields (via selectedOverrides) get green, defaults get blue
+        let chipClass;
+        if (selectedOverrides && selectedOverrides[compositeKey] !== undefined) {
+            chipClass = 'btn-success';  // Green for user-selected
+        } else if (isSelected) {
+            chipClass = 'btn-primary';   // Blue for default (canonical)
+        } else {
+            chipClass = 'btn-outline-secondary';
+        }
         const displayVal = escapeHtml(truncateDisplay(raw));
         const dataVal = escapeHtml(String(raw));
 

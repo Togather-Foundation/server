@@ -894,9 +894,9 @@
                 const canonicalIndex = canonicalValue === 'this' ? 0 : 1;
 
                 // Build occurrence picker entries
-                const canonicalOccs = canonicalIndex === 0 ? thisOccurrences : (relatedEvent.occurrences || []);
-                const relatedOccs = canonicalIndex === 0 ? (relatedEvent.occurrences || []) : thisOccurrences;
-                occurrencePicker[id] = buildOccurrencePicker(canonicalOccs, relatedOccs);
+                // Columns are fixed: left = this event, right = related event
+                // canonicalIndex just determines which side is locked/auto-selected
+                occurrencePicker[id] = buildOccurrencePicker(thisOccurrences, relatedEvent.occurrences || [], canonicalIndex);
 
                 window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalized, relatedForPicker], {
                     canonicalIndex: canonicalIndex,
@@ -1305,19 +1305,22 @@
     }
 
     /**
-     * Build occurrence picker entries by merging canonical and related occurrences.
-     * @param {Array} canonicalOccs - Array of occurrences for the canonical event
-     * @param {Array} relatedOccs - Array of occurrences for the related event
+     * Build occurrence picker entries by merging this event and related event occurrences.
+     * @param {Array} thisEventOccs - Array of occurrences for "this event" (left column, never changes)
+     * @param {Array} relatedEventOccs - Array of occurrences for "related event" (right column, never changes)
+     * @param {number} canonicalIndex - Which event is canonical: 0 = this event, 1 = related event
      * @returns {Array} Sorted array of pickerEntry objects
      */
-    function buildOccurrencePicker(canonicalOccs, relatedOccs) {
+    function buildOccurrencePicker(thisEventOccs, relatedEventOccs, canonicalIndex) {
         const entries = [];
+        const canonicalIsThis = canonicalIndex === 0;
 
-        // Add canonical occurrences (source='this', included not applicable for canonical)
-        (canonicalOccs || []).forEach((occ, idx) => {
+        // Add "this event" occurrences (left column, never swaps)
+        (thisEventOccs || []).forEach((occ, idx) => {
             entries.push({
-                key: 'canonical-' + idx,
+                key: 'this-' + idx,
                 source: 'this',
+                eventIndex: 0,  // Absolute index - left column always = 0
                 occurrence: {
                     startTime: occ.startTime,
                     endTime: occ.endTime,
@@ -1325,14 +1328,15 @@
                     venueName: occ.venueName || null,
                     venueUlid: occ.venueUlid || null,
                 },
-                occurrenceId: occ.id || 'canonical-' + idx,
-                included: true,
+                occurrenceId: occ.id || 'this-' + idx,
+                isCanonical: canonicalIsThis,  // This side is canonical if canonicalIndex === 0
+                included: true,  // Canonical side always included (locked)
                 overlaps: false,
             });
         });
 
-        // Add related occurrences and compute overlaps
-        (relatedOccs || []).forEach((occ, idx) => {
+        // Add "related event" occurrences (right column, never swaps)
+        (relatedEventOccs || []).forEach((occ, idx) => {
             const occData = {
                 startTime: occ.startTime,
                 endTime: occ.endTime,
@@ -1341,12 +1345,12 @@
                 venueUlid: occ.venueUlid || null,
             };
 
-            // Check if this related occurrence overlaps any canonical occurrence
+            // Check if this related occurrence overlaps any "this event" occurrence
             let overlaps = false;
-            (canonicalOccs || []).forEach(canonicalOcc => {
+            (thisEventOccs || []).forEach(thisOcc => {
                 if (OccurrenceRendering.occurrencesOverlap(occData, {
-                    startTime: canonicalOcc.startTime,
-                    endTime: canonicalOcc.endTime,
+                    startTime: thisOcc.startTime,
+                    endTime: thisOcc.endTime,
                 })) {
                     overlaps = true;
                 }
@@ -1355,9 +1359,11 @@
             entries.push({
                 key: 'related-' + idx,
                 source: 'related',
+                eventIndex: 1,  // Absolute index - right column always = 1
                 occurrence: occData,
                 occurrenceId: occ.id || 'related-' + idx,
-                included: false,
+                isCanonical: !canonicalIsThis,  // Related side is canonical if canonicalIndex === 1
+                included: false,  // Default: not included unless user toggles
                 overlaps: overlaps,
             });
         });
@@ -1493,17 +1499,20 @@
             });
         }
 
-        // Rebuild occurrence picker with preserved selections
-        const canonicalOccs = canonicalIndex === 0 ? thisOccurrences : (relatedEvent.occurrences || []);
-        const relatedOccs = canonicalIndex === 0 ? (relatedEvent.occurrences || []) : thisOccurrences;
-        occurrencePicker[entryId] = buildOccurrencePicker(canonicalOccs, relatedOccs);
+        // Rebuild occurrence picker
+        // IMPORTANT: Don't swap columns! Left column = entry's own event, right column = related event.
+        // Only the "canonical" designation changes - which one is locked/auto-selected.
+        const thisEventOccs = thisOccurrences;      // "This event" - always stays left column
+        const relatedEventOccs = relatedEvent.occurrences || [];  // "Related event" - always stays right column
+        occurrencePicker[entryId] = buildOccurrencePicker(thisEventOccs, relatedEventOccs, canonicalIndex);
 
-        // Preserve user-toggled related occurrence selections (matched by startTime)
+        // Preserve user-toggled related occurrence selections (matched by eventIndex + startTime)
         const oldPicker = occurrencePicker[entryId] || [];
         oldPicker.forEach(oldEntry => {
-            if (oldEntry.source === 'related' && oldEntry.included === true && oldEntry.occurrence.startTime) {
+            if (oldEntry.included === true && oldEntry.occurrence.startTime) {
+                // Find matching occurrence in new picker by absolute eventIndex + startTime
                 const newEntry = (occurrencePicker[entryId] || []).find(e =>
-                    e.source === 'related' && e.occurrence.startTime === oldEntry.occurrence.startTime
+                    e.eventIndex === oldEntry.eventIndex && e.occurrence.startTime === oldEntry.occurrence.startTime
                 );
                 if (newEntry) {
                     newEntry.included = true;
