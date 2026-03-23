@@ -1347,7 +1347,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	mon7_2pmEnd := mon7_2pm.Add(2 * time.Hour)
 
 	rs11Mon10am := events.EventInput{
-		Name:        "RS-11 Pottery Studio — Mon 10am Session",
+		Name:        "RS-11 Pottery Studio — Morning Session",
 		Description: "Hand-building pottery session. All clay and tools provided. Beginners welcome.",
 		StartDate:   mon10am.Format(time.RFC3339),
 		EndDate:     mon10amEnd.Format(time.RFC3339),
@@ -1360,7 +1360,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs11Mon2pm := events.EventInput{
-		Name:        "RS-11 Pottery Studio — Mon 2pm Session",
+		Name:        "RS-11 Pottery Studio — Afternoon Session",
 		Description: "Afternoon hand-building pottery session. All clay and tools provided.",
 		StartDate:   mon2pm.Format(time.RFC3339),
 		EndDate:     mon2pmEnd.Format(time.RFC3339),
@@ -1373,7 +1373,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs11Mon7_10am := events.EventInput{
-		Name:        "RS-11 Pottery Studio — Mon+7 10am Session",
+		Name:        "RS-11 Pottery Studio — Morning Session",
 		Description: "Hand-building pottery session, next Monday morning. All clay and tools provided.",
 		StartDate:   mon7_10am.Format(time.RFC3339),
 		EndDate:     mon7_10amEnd.Format(time.RFC3339),
@@ -1386,7 +1386,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs11Mon7_2pm := events.EventInput{
-		Name:        "RS-11 Pottery Studio — Mon+7 2pm Session",
+		Name:        "RS-11 Pottery Studio — Afternoon Session",
 		Description: "Afternoon pottery session, next Monday. All clay and tools provided.",
 		StartDate:   mon7_2pm.Format(time.RFC3339),
 		EndDate:     mon7_2pmEnd.Format(time.RFC3339),
