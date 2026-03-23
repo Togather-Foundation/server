@@ -1948,14 +1948,34 @@ func (s *AdminService) consolidateResolvePending(
 		eventStartTime = canonical.Occurrences[0].StartTime
 	}
 
-	if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-		EventID:           canonical.ID,
-		OriginalPayload:   payloadJSON,
-		NormalizedPayload: payloadJSON,
-		Warnings:          warningsJSON,
-		EventStartTime:    eventStartTime,
-	}); err != nil {
-		return fmt.Errorf("create review queue entry for canonical event: %w", err)
+	// Check if a pending review already exists for this canonical event
+	// (e.g., from promote path where the event was already in pending_review).
+	// If exists, update it; if not, create a new one.
+	existingReview, err := txRepo.GetPendingReviewByEventUlid(ctx, canonical.ULID)
+	if err != nil && err != ErrNotFound {
+		return fmt.Errorf("check existing review for canonical event: %w", err)
+	}
+
+	if existingReview != nil {
+		// Update existing review entry with new warnings
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+			OriginalPayload:   &payloadJSON,
+			NormalizedPayload: &payloadJSON,
+			Warnings:          &warningsJSON,
+		}); err != nil {
+			return fmt.Errorf("update review queue entry for canonical event: %w", err)
+		}
+	} else {
+		// Create new review entry
+		if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+			EventID:           canonical.ID,
+			OriginalPayload:   payloadJSON,
+			NormalizedPayload: payloadJSON,
+			Warnings:          warningsJSON,
+			EventStartTime:    eventStartTime,
+		}); err != nil {
+			return fmt.Errorf("create review queue entry for canonical event: %w", err)
+		}
 	}
 	return nil
 }
