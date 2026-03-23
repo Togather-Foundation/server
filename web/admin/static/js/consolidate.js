@@ -172,13 +172,55 @@
 
     // -------------------------------------------------------------------------
     // Field picker table — delegates to shared FieldPicker module (field-picker.js)
+    // Uses new onPick callback pattern for DRY code (same as review-queue.js)
     // -------------------------------------------------------------------------
+
+    /**
+     * Map a field key (+ optional subfield) to the corresponding form input element.
+     * @param {string} field
+     * @param {string|undefined} subfield
+     * @returns {HTMLElement|null}
+     */
+    function fieldInputElement(field, subfield) {
+        if (!subfield) {
+            return document.getElementById('field-' + field);
+        }
+        return document.getElementById('field-' + field + '-' + subfield);
+    }
+
+    /**
+     * Handle field pick from the field picker onPick callback.
+     * Updates the corresponding form input with the picked value.
+     * @param {string} fieldKey - Top-level field key (e.g., 'name', 'startDate')
+     * @param {string|null} subfieldKey - Subfield key for nested objects (e.g., 'name' for location.name)
+     * @param {string} value - The picked value
+     * @param {string} source - 'this' for canonical event, 'related' for other
+     */
+    function handleFieldPick(fieldKey, subfieldKey, value, source) {
+        const input = fieldInputElement(fieldKey, subfieldKey);
+        if (!input) {
+            showToast('Could not find input for field: ' + fieldKey + (subfieldKey ? '.' + subfieldKey : ''), 'warning');
+            return;
+        }
+        input.value = value;
+        // Brief visual feedback
+        input.classList.add('border-primary');
+        setTimeout(() => input.classList.remove('border-primary'), 800);
+    }
 
     function renderFieldPickerTable() {
         if (typeof FieldPicker === 'undefined') return;
+        const container = document.getElementById('field-picker-table');
+        if (!container) return;
+
+        // Use new onPick callback pattern for consistency with review-queue.js
         FieldPicker.renderFieldPickerTable(
-            document.getElementById('field-picker-table'),
-            loadedEvents
+            container,
+            loadedEvents,
+            {
+                canonicalIndex: 0,
+                onPick: handleFieldPick
+            }
         );
     }
 
