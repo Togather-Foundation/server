@@ -1334,26 +1334,29 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	var companionName, companionStartDate, companionStartTime, companionVenueName string
 
 	err := queryer.QueryRow(ctx, `
-WITH candidate AS (
-  SELECT DISTINCT ON (e.id)
-         e.ulid,
-         e.name,
-         o.start_time,
-         COALESCE(p.name, '') AS venue_name
-    FROM events e
-    JOIN event_occurrences o ON o.event_id = e.id
-    LEFT JOIN places p ON p.id = e.primary_venue_id
-   WHERE e.deleted_at IS NULL
-     AND e.lifecycle_state IN ('published', 'pending_review')
-     AND e.primary_venue_id = $1
-     AND normalize_name(e.name) = normalize_name($2)
-     AND o.start_time >= $3::timestamptz - INTERVAL '21 days'
-     AND o.start_time <= $3::timestamptz - INTERVAL '7 days'
-     AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
-`, params.VenueID, params.NormalizedName, params.StartTime).Scan(
+	SELECT e.ulid,
+	       e.name,
+	       o.start_time,
+	       COALESCE(p.name, '') AS venue_name
+	  FROM events e
+	  JOIN event_occurrences o ON o.event_id = e.id
+	  LEFT JOIN places p ON p.id = e.primary_venue_id
+	 WHERE e.deleted_at IS NULL
+	   AND e.lifecycle_state IN ('published', 'pending_review')
+	   AND e.primary_venue_id = $1
+	   AND normalize_name(e.name) = normalize_name($2)
+	   AND o.start_time >= $3::timestamptz - INTERVAL '21 days'
+	   AND o.start_time <= $3::timestamptz - INTERVAL '7 days'
+	   AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
+	LIMIT 1
+	`, params.VenueID, params.NormalizedName, params.StartTime).Scan(
 		&companionULID, &companionName, &companionStartDate, &companionVenueName,
 	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
+		_ = r.Rollback(ctx)
 		return nil, nil
 	}
 
