@@ -205,7 +205,7 @@
                     break;
                 case 'toggle-occurrence':
                     e.preventDefault();
-                    toggleOccurrence(id, target.dataset.occKey);
+                    toggleOccurrence(target.dataset.entryId, target.dataset.occKey);
                     break;
             }
         });
