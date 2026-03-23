@@ -132,22 +132,31 @@ For entries with `potential_duplicate`, `near_duplicate_of_new_event`, `place_po
 
 **Canonical selection radio** controls which ULID goes into `event_ulid` in the consolidate request and which goes into `retire`. Changing the selection rebuilds both the field picker (swapping the "pre-selected" chip) and the occurrence picker (swapping which occurrences are locked vs. toggleable).
 
-**Field picker** — a 3-state chip table for each differing pickable field (`name`, `description`, `url`, `image`). The canonical event's chip is pre-highlighted (`btn-primary`); the other event's chip is outlined. Clicking either chip:
-- Makes that chip's value the selected override (calls `onPick` callback)
-- Converts the chip in-place to an inline `<input>` or `<textarea>` so the admin can edit the value
-- Reverts the sibling chip to outline
+**Field picker** — a 3-state chip table for each differing pickable field (`name`, `description`, `url`, `image`). The canonical event's chip is pre-highlighted (`btn-primary`); the other event's chip is outlined. Clicking a chip:
+- Turns the clicked chip green (`btn-success`) — user's explicit selection
+- Reverts the sibling chip to outline (`btn-outline-secondary`)
+- Calls the `onPick` callback with `edited: false` (value unchanged, just selected)
+
+Each blue or green chip shows a ✎ pencil icon on its right edge. Clicking the pencil:
+- If the chip is **blue** (auto-canonical, not yet touched): atomically selects it (→ green) and opens the inline editor in one step.
+- If the chip is **green** (already selected): opens the inline editor directly.
+- The inline editor replaces the chip `<td>` with an `<input>` (single-line fields) or `<textarea>` (description), plus **Save** and **Cancel** buttons.
+- **Save** commits the custom text, restores a green chip with the new value, and calls `onPick` with `edited: true`. **Cancel** restores the previous chip state.
+- Pencil icons are `visibility:hidden` (not `display:none`) on outline chips so layout stays stable.
+
 `location.name` and `organizer.name` are shown as read-only reference rows (no chips); their value is determined solely by the canonical selection.
 
 **Occurrence picker** — two columns (This Event | Related Event), with one row per occurrence per event, strictly ordered by start time across both events. The date is the row label. There is no row-merging — if two occurrences share the same date, they each get their own row with their chip in their own column. If two related occurrences both overlap a single canonical one, they each still get their own row.
 
-- **Canonical chip**: `btn-primary`, lock icon, full date+time label, no toggle.
-- **Related chip (no overlap)**: full date+time label; `btn-primary` if included, `btn-outline-secondary` if excluded; `data-action="toggle-occurrence"`.
-- **Related chip (overlap)**: greyed ⚠ chip, full date+time label, not toggleable. One chip per overlapping occurrence — never merged.
+- **All chips** (canonical and related) are toggleable via `data-action="toggle-occurrence"`. Canonical occurrences can be excluded so they are deleted from the canonical event during consolidation.
+- **Chip colour states:** Blue (`btn-primary`) = auto-included (not yet user-touched), Green (`btn-success`) = user explicitly locked in, Outline (`btn-outline-secondary`) = excluded.
+- **Overlap conflict:** A ⚠ icon in a fixed 1.5rem slot on the inner edge (using `visibility:hidden` when no overlap so chip text stays centred) shows when `overlapsWith` is non-empty. Enabling an excluded chip is silently blocked client-side if any peer in its `overlapsWith` list is currently included. One chip per occurrence — never merged.
 
-**Consolidate** — executes a three-step sequence:
-1. If any field override has `source === 'related'` or `edited === true`: `PUT /api/v1/admin/events/{ulid}` with the patched fields (`name`, `description`, `public_url`, `image_url` — venue and organizer are not patchable via this endpoint)
-2. For each related occurrence the admin included: `POST /api/v1/admin/events/{ulid}/occurrences` — on 409 (overlap) shows an inline error on that occurrence row, does not abort the full operation
-3. `POST /api/v1/admin/events/consolidate` with `{ "event_ulid": "<canonical-ulid>", "retire": ["<other-ulid>"], "transfer_occurrences": false }` — on success dismisses both entries and reloads the queue
+**Consolidate** — executes a four-step sequence:
+1. **Patch fields** (conditional): if the admin selected any field value from the non-canonical event, `PUT /api/v1/admin/events/{ulid}` with the patched fields (`name`, `description`, `public_url`, `image_url` — venue and organizer are not patchable). Aborts on failure.
+2. **Delete excluded canonical occurrences**: for each canonical-side occurrence the admin excluded, `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}`. Shows a toast on failure but continues.
+3. **Add included non-canonical occurrences**: for each non-canonical occurrence marked included, `POST /api/v1/admin/events/{ulid}/occurrences`. On 409 (overlap) shows a toast error and continues; does not abort the overall operation.
+4. **Retire the duplicate**: `POST /api/v1/admin/events/consolidate` with `{ "event_ulid": "<canonical-ulid>", "retire": ["<other-ulid>"], "transfer_occurrences": false }` — on success dismisses both review entries and reloads the queue.
 
 **Not a Duplicate** — calls `POST /api/v1/admin/review-queue/{id}/approve` with `{ "record_not_duplicates": true }`. Both events are published. A `not_duplicates` record is created to suppress future false positives.
 
@@ -189,9 +198,8 @@ The UI determines which case applies by checking whether a companion ULID exists
 ### Overlap conflict (RS-05)
 
 When a related occurrence overlaps a canonical occurrence:
-- The occurrence picker replaces the related chip with a greyed ⚠ badge showing "overlaps [conflicting time]" — computed client-side before any API call. The row is still visible; only the chip is replaced.
-- If a `POST /api/v1/admin/events/{ulid}/occurrences` still returns 409 (e.g. due to a race), show an inline error on that row: "Conflict: overlaps [time] on canonical event."
-- The overall Consolidate operation continues for non-conflicting occurrences; only the conflicting row is marked failed inline.
+- The ⚠ icon appears on the overlapping chip. The chip is still visible and included/excluded states still render, but enabling an excluded chip is silently blocked client-side if any peer in its `overlapsWith` list is currently included — the toggle is a no-op.
+- If a `POST /api/v1/admin/events/{ulid}/occurrences` still returns 409 (e.g. due to a race), show a toast error: "Conflict: overlaps with existing occurrence." The overall Consolidate operation continues for non-conflicting occurrences.
 - The admin does not need to "use Merge Duplicate instead" — there is no Merge Duplicate button. The occurrence picker is the mechanism for handling overlap.
 
 ### Multi-event clusters (RS-11)
@@ -209,8 +217,9 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 | Fetch live event data + occurrences | `GET /api/v1/events/{ulid}` (public) |
 | Fetch related event data + occurrences | `GET /api/v1/events/{ulid}` (public, per warning match ULID) |
 | **Consolidate: patch field overrides** (conditional, step 1) | `PUT /api/v1/admin/events/{ulid}` |
-| **Consolidate: add selected related occurrences** (per occurrence, step 2) | `POST /api/v1/admin/events/{ulid}/occurrences` |
-| **Consolidate: retire duplicate** (step 3) | `POST /api/v1/admin/events/consolidate` with `event_ulid`, `transfer_occurrences: false` |
+| **Consolidate: delete excluded canonical occurrences** (per occurrence, step 2) | `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}` |
+| **Consolidate: add selected non-canonical occurrences** (per occurrence, step 3) | `POST /api/v1/admin/events/{ulid}/occurrences` |
+| **Consolidate: retire duplicate** (step 4) | `POST /api/v1/admin/events/consolidate` with `event_ulid`, `transfer_occurrences: false` |
 | Not a Duplicate (approve both) | `POST /api/v1/admin/review-queue/{id}/approve` with `record_not_duplicates: true` |
 | Approve (data quality only) | `POST /api/v1/admin/review-queue/{id}/approve` |
 | Edit & Approve | `PUT /api/v1/admin/events/{ulid}` → `POST /api/v1/admin/review-queue/{id}/approve` |
@@ -223,22 +232,55 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 
 ---
 
+## Implementation Status
+
+This section tracks what has been built vs. what remains. The "What Needs to Change" section below is the original plan — check this section first.
+
+### Completed (srv-7roii)
+
+**field-picker.js:**
+- `onPick(fieldKey, subfieldKey, value, source, edited)` callback wired; `canonicalIndex` and `readOnlyFields` options implemented.
+- 3-state chip colour: Blue (`btn-primary`) = canonical default, Green (`btn-success`) = user-selected, Outline = sibling/unselected. Sibling revert logic is row-scoped.
+- Pencil icon (✎) inside blue and green chips. Clicking pencil on blue: atomically selects (→ green) + opens inline editor. Clicking pencil on green: opens inline editor directly.
+- Inline editor: `<input>` for single-line fields, `<textarea>` for `description`. Enter to save (single-line), Escape to cancel. Save calls `onPick` with `edited: true`; plain chip click calls `onPick` with `edited: false`.
+- `selectedOverrides` snapshot restored correctly when canonical radio changes; all user selections (not just `edited`) are preserved.
+
+**occurrence-rendering.js:**
+- `renderMergedPickerList(pickerEntries, entryId)` implemented. Both canonical and related chips use `data-action="toggle-occurrence"`. ⚠ icon uses fixed 1.5rem slot with `visibility:hidden` when no overlap. `w-100 text-center` on chips.
+
+**review-queue.js:**
+- `occurrencePicker` module-level state map; `buildOccurrencePicker` with symmetric `overlapsWith` cross-event annotation; `toggleOccurrence` with silent block on overlap conflict; `rebuildPickers` preserving `userToggled` across canonical radio changes.
+- `consolidate()` four-step sequence: (1) field patch, (2) delete excluded canonical occs, (3) add included non-canonical occs, (4) POST consolidate.
+- `imageUrl` bug fixed: `relatedEvent.image` → `relatedEvent.imageUrl` in both initial render and `rebuildPickers`.
+- Old `Add as Occurrence` / `Merge Duplicate` buttons and associated API methods removed.
+
+**api.js:** `API.events.occurrences.delete` available; no other changes needed.
+
+### Deferred
+
+- *(Nothing currently deferred — inline chip editing is implemented.)*
+
+### Known Issues
+
+- **`tx is closed` on third RS-11 consolidation** — backend bug in `internal/domain/events/admin_service.go` `consolidateRetireEvents` (~line 1714): soft-deleting the retired event fails with "tx is closed" when a third event pair is consolidated in the same session. Root cause not yet identified. Not a blocker for the UI redesign.
+
+---
+
 ## What Needs to Change in the Current Implementation
+
+> **Note:** Most items in this section are now **done**. See [Implementation Status](#implementation-status) above. Items remain here for traceability.
 
 ### field-picker.js
 
-1. **Add `onPick` callback** — new option `options.onPick(fieldKey, subfieldKey, value, source)` replaces the `data-action="pick-field"` delegation approach, keeping the module self-contained.
-2. **3-state chip behaviour** — clicking any chip converts it in-place to an `<input>` or `<textarea>` (inline editable); sibling chip reverts to outline. Canonical chip is pre-selected (`btn-primary`).
-3. **`canonicalIndex` option** — which event index (0 or 1) is canonical; controls which chips are pre-highlighted. Defaults to 0 for backward compatibility.
-4. **`readOnlyFields` option** — fields in this set (e.g. `location.name`, `organizer.name`) are rendered as plain text rows (no chips).
-5. **New signature**: `renderFieldPickerTable(containerEl, events, options)` where `options = { canonicalIndex, overrides, onPick, readOnlyFields }`. Must remain backward-compatible: `consolidate.js` calls without `options` → defaults to old behaviour.
+1. ✅ **Add `onPick` callback** — `options.onPick(fieldKey, subfieldKey, value, source, edited)`.
+2. ✅ **3-state chip behaviour + inline editing** — clicking a chip selects it (green); pencil icon on blue/green chips opens an inline `<input>` or `<textarea>`. Clicking pencil on blue atomically selects + opens editor. Save calls `onPick` with `edited: true`; plain chip click calls `onPick` with `edited: false`.
+3. ✅ **`canonicalIndex` option** — which event index (0 or 1) is canonical.
+4. ✅ **`readOnlyFields` option** — fields rendered as plain text rows (no chips).
+5. ✅ **New signature**: `renderFieldPickerTable(containerEl, events, options)` where `options = { canonicalIndex, overrides, onPick, readOnlyFields }`.
 
 ### occurrence-rendering.js
 
-1. **New `renderMergedPickerList(pickerEntries, entryId)` function** — two columns (canonical | related), one row per occurrence per event, ordered by start time. No row-merging. The date is the row label; the chip contains the full date+time.
-   - **Canonical chip**: `btn-primary`, lock icon, full date+time label, no `data-action`.
-   - **Related chip (no overlap)**: `btn-primary` if included, `btn-outline-secondary` if excluded; full date+time label; `data-action="toggle-occurrence"` + `data-entry-id` + `data-occ-key`.
-   - **Related chip (overlap)**: greyed ⚠ `btn-secondary disabled`, full date+time label, no `data-action`. One chip per occurrence — never merged even if multiple related occurrences overlap the same canonical one.
+1. **New `renderMergedPickerList(pickerEntries, entryId)` function** — ✅ implemented. Two columns, one row per occurrence per event, ordered by start time. Chip colour: blue = auto-included, green = user-locked, outline = excluded. Both canonical and related chips have `data-action="toggle-occurrence"` (canonical chips are toggleable — excluding one causes it to be deleted from the canonical event during consolidation). ⚠ icon in fixed 1.5rem slot. The original spec said canonical chips had no toggle — this was revised during implementation.
 
 ### review-queue.js
 
@@ -248,22 +290,21 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 - The separate "Selected field overrides" card (`field-overrides-${id}`)
 
 **Add:**
-- Module-level state: `const occurrencePicker = {}` (entryId → sorted picker entries)
-- `fieldOverrides` shape: `{ [entryId]: { [fieldKey]: { value, source, edited } } }` where `source: 'this'` = canonical, `source: 'related'` = other event's value; `edited: true` = user modified inline
-- Field picker card wired via `onPick` callback → `handleFieldPick(entryId, fieldKey, subfieldKey, value, source)`
-- Occurrence picker card (`id="occurrence-picker-${safeId}"`) rendered via `OccurrenceRendering.renderMergedPickerList`
-- Single `[Consolidate]` button (`data-action="consolidate"`), keeping `[Not a Duplicate]` and `[Reject]`
-- Side-by-side event cards continue to show occurrences read-only (context only) via existing `OccurrenceRendering.renderList(..., false)`
-- New event delegation cases: `'consolidate'`, `'toggle-occurrence'`, `'canonical-select'`
-- New `consolidate(entryId)` async function:
-  1. Determine `canonicalUlid` / `retireUlid` from canonical radio + `currentEntryDetail`
-  2. Build field patch from `fieldOverrides` where `source === 'related'` OR `edited === true` — map `name→name`, `description→description`, `url→public_url`, `image→image_url`; skip `location.name`, `organizer.name`
-  3. If patch non-empty: `PUT /api/v1/admin/events/{canonicalUlid}` — inline error on fail
-  4. For each `occurrencePicker` entry where `source === 'related'` AND `included === true`: `POST /api/v1/admin/events/{canonicalUlid}/occurrences` — inline error on 409, continue
-  5. `POST /api/v1/admin/events/consolidate` with `{ event_ulid: canonicalUlid, retire: [retireUlid], transfer_occurrences: false }` — inline error on failure; on success: dismiss entries, `loadEntries()`
-- Helper `buildOccurrencePicker(canonicalOccs, relatedOccs)` — merges, annotates source, computes overlaps via interval intersection, sorts by `startTime`
-- `collapseDetail` update: `delete occurrencePicker[expandedId]`
-- Completed: `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` removed (srv-bexw4).
+- ✅ Module-level state: `const occurrencePicker = {}` (entryId → sorted picker entries)
+- ✅ `fieldOverrides` shape: `{ [entryId]: { [fieldKey]: { value, eventIndex, edited } } }` where `eventIndex` is the absolute event index (0 = this event, 1 = related event); patch is sent when `override.eventIndex !== canonicalIndex` (i.e. user chose the non-canonical event's value)
+- ✅ Field picker card wired via `onPick` callback → `handleFieldPick(entryId, fieldKey, subfieldKey, value, source)`
+- ✅ Occurrence picker card (`id="occurrence-picker-${safeId}"`) rendered via `OccurrenceRendering.renderMergedPickerList`
+- ✅ Single `[Consolidate]` button (`data-action="consolidate"`), keeping `[Not a Duplicate]` and `[Reject]`
+- ✅ Side-by-side event cards continue to show occurrences read-only (context only) via existing `OccurrenceRendering.renderList(..., false)`
+- ✅ New event delegation cases: `'consolidate'`, `'toggle-occurrence'`, `'canonical-select'`
+- ✅ New `consolidate(entryId)` async function — four steps:
+  1. Build field patch from `fieldOverrides` where `override.eventIndex !== canonicalIndex` — map `name→name`, `description→description`, `url→public_url`, `image→image_url`; skip `location.name`, `organizer.name`. If patch non-empty: `PUT /api/v1/admin/events/{canonicalUlid}` — show inline error and abort on fail.
+  2. For each canonical-side occurrence that was excluded: `DELETE /api/v1/admin/events/{canonicalUlid}/occurrences/{id}` — toast on error, continue.
+  3. For each non-canonical occurrence with `included === true`: `POST /api/v1/admin/events/{canonicalUlid}/occurrences` — toast on 409, continue.
+  4. `POST /api/v1/admin/events/consolidate` with `{ event_ulid: canonicalUlid, retire: [retireUlid], transfer_occurrences: false }` — inline error on failure; on success: dismiss entries, `loadEntries()`
+- ✅ Helper `buildOccurrencePicker(thisEventOccs, relatedEventOccs, canonicalIndex)` — merges, annotates source, computes symmetric `overlapsWith` via interval intersection, sorts by `startTime`; both sides default-included based on `canonicalIndex`
+- ✅ `collapseDetail` update: `delete occurrencePicker[expandedId]`
+- ✅ `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` removed (srv-bexw4).
 
 ### api.js
 
@@ -308,4 +349,4 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 
 ---
 
-*Last updated: 2026-03-23. Redesigned duplicate fold-down: replaced Add as Occurrence + Merge Duplicate with 3-state field picker, unified occurrence picker, and single Consolidate action (srv-7roii). Supersedes the 2026-03-19 version.*
+*Last updated: 2026-03-23. Inline chip editing implemented: pencil icon on blue/green chips; blue pencil atomically selects+opens editor; textarea for description field; edited flag threaded through onPick and consolidate patch logic. See srv-7roii.*

@@ -36,9 +36,9 @@
 
     /**
      * Per-entry field override map for the field picker.
-     * Key: entryId (string), Value: { fieldKey: { value, source, edited } }
-     * source: 'this' = canonical, 'related' = other event's value
-     * edited: true = user modified inline after picking
+     * Key: entryId (string), Value: { fieldKey: { value, eventIndex, edited } }
+     * eventIndex: absolute event index (0 = this event, 1 = related event)
+     * edited: true = admin typed a custom value; false = admin picked one of the two existing chip values
      * Cleared when the fold-down is collapsed.
      */
     const fieldOverrides = {};
@@ -882,7 +882,7 @@
                         : (relatedEvent.location || null),
                     organizer: relatedEvent.organizer || null,
                     url: relatedEvent.url || null,
-                    image: relatedEvent.image || null,
+                    image: relatedEvent.imageUrl || null,
                     endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
                         ? relatedEvent.occurrences[0].endTime
                         : null,
@@ -901,7 +901,7 @@
                 window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalized, relatedForPicker], {
                     canonicalIndex: canonicalIndex,
                     readOnlyFields: new Set(['location.name', 'organizer.name']),
-                    onPick: (fieldKey, subfieldKey, value, source) => handleFieldPick(id, fieldKey, subfieldKey, value, source)
+                     onPick: (fieldKey, subfieldKey, value, source, edited) => handleFieldPick(id, fieldKey, subfieldKey, value, source, edited)
                 });
 
                 // Render occurrence picker
@@ -1404,14 +1404,15 @@
 
     /**
      * Handle field pick from the field picker onPick callback.
-     * Updates the fieldOverrides store with the picked value, source, and marks as user-edited.
+     * Updates the fieldOverrides store with the picked value, source, and edited flag.
      * @param {string|number} entryId - Review queue entry ID
      * @param {string} fieldKey - Field key (e.g., 'name', 'description')
      * @param {string|null} subfieldKey - Subfield key for nested fields (e.g., 'name' for location.name)
-     * @param {string} value - Picked value
+     * @param {string} value - Picked (or edited) value
      * @param {string} source - Source of value ('this' = canonical, 'related' = other event)
+     * @param {boolean} edited - true when the admin typed a custom value; false when just selecting
      */
-    function handleFieldPick(entryId, fieldKey, subfieldKey, value, source) {
+    function handleFieldPick(entryId, fieldKey, subfieldKey, value, source, edited) {
         const overrideKey = subfieldKey ? fieldKey + '.' + subfieldKey : fieldKey;
 
         if (!fieldOverrides[entryId]) {
@@ -1424,7 +1425,7 @@
         fieldOverrides[entryId][overrideKey] = {
             value: value,
             eventIndex: eventIndex,  // Absolute index - doesn't change when canonical switches
-            edited: true,
+            edited: edited === true,
         };
     }
 
@@ -1502,21 +1503,22 @@
                 : (relatedEvent.location || null),
             organizer: relatedEvent.organizer || null,
             url: relatedEvent.url || null,
-            image: relatedEvent.image || null,
+            image: relatedEvent.imageUrl || null,
             endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
                 ? relatedEvent.occurrences[0].endTime
                 : null,
         };
 
-        // Preserve user-edited field overrides (edited === true)
-        // Use absolute eventIndex - doesn't change when canonical switches
+        // Preserve all user-selected field overrides across canonical radio changes.
+        // Any entry in fieldOverrides represents a deliberate user action (chip pick or custom edit).
+        // Use absolute eventIndex so selections survive canonical switching.
         const oldOverrides = fieldOverrides[entryId] || {};
         const preservedOverrides = {};
         const selectedOverrides = {};
         Object.entries(oldOverrides).forEach(([key, override]) => {
-            if (override.edited === true && override.eventIndex !== undefined) {
+            if (override.eventIndex !== undefined) {
                 preservedOverrides[key] = override;
-                // Use the absolute eventIndex - this is what the user selected regardless of canonical
+                // selectedOverrides maps fieldKey -> eventIndex for the field-picker chip highlight
                 selectedOverrides[key] = override.eventIndex;
             }
         });
@@ -1528,7 +1530,7 @@
                 canonicalIndex: canonicalIndex,
                 readOnlyFields: new Set(['location.name', 'organizer.name']),
                 selectedOverrides: selectedOverrides,
-                onPick: (fieldKey, subfieldKey, value, source) => handleFieldPick(entryId, fieldKey, subfieldKey, value, source)
+                onPick: (fieldKey, subfieldKey, value, source, edited) => handleFieldPick(entryId, fieldKey, subfieldKey, value, source, edited)
             });
         }
 
@@ -1607,16 +1609,17 @@
         const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
         if (consolidateError) consolidateError.style.display = 'none';
 
-        // Step 1: Build field patch from fieldOverrides where user selected the non-canonical event's value.
-        // eventIndex 0 = "this event", eventIndex 1 = "related event".
-        // Patch is needed when the selected value comes from the non-canonical event.
+        // Step 1: Build field patch from fieldOverrides.
+        // Patch when either:
+        //   (a) user typed a custom value (edited === true), OR
+        //   (b) user selected the non-canonical event's value (eventIndex !== canonicalIndex)
+        // In both cases the canonical event needs to be updated before retiring the duplicate.
         const overrides = fieldOverrides[entryId] || {};
         const patch = {};
 
         Object.entries(overrides).forEach(([key, override]) => {
-            if (override.edited === true && override.eventIndex !== undefined) {
-                // Patch if user selected from non-canonical event
-                if (override.eventIndex !== canonicalIndex) {
+            const needsPatch = override.edited === true || override.eventIndex !== canonicalIndex;
+            if (needsPatch) {
                     // Map field keys to API fields
                     // name→name, description→description, url→public_url, image→image_url
                     // skip location.name, organizer.name — not patchable via PUT
@@ -1630,7 +1633,6 @@
                     if (apiKey) {
                         patch[apiKey] = override.value;
                     }
-                }
             }
         });
 
