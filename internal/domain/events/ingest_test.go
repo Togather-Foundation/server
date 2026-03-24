@@ -2681,6 +2681,15 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 				if w.Details["companion_ulid"] == nil {
 					t.Error("companion_ulid missing from cross_week_series_companion details")
 				}
+				// companion_date must reflect Week 2's actual start date (2026-03-15),
+				// not time.Now() — this guards against the parseEventTimesFromEvent
+				// bug where a missing-occurrences event returned time.Now().
+				companionDate, ok := w.Details["companion_date"].(string)
+				if !ok || companionDate == "" {
+					t.Error("companion_date missing from cross_week_series_companion details")
+				} else if companionDate != "2026-03-15" {
+					t.Errorf("companion_date = %q, want 2026-03-15 (Week 2 start date)", companionDate)
+				}
 			}
 		}
 		if !found {
