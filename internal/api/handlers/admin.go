@@ -1806,10 +1806,6 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 			})
 		}
 
-		if errors.Is(err, events.ErrConsolidateBothEventFields) {
-			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Conflicting event fields", err, h.Env)
-			return
-		}
 		if errors.Is(err, events.ErrConsolidateNoEventField) {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing event field",
 				err, h.Env, problem.WithDetail("one of event or event_ulid is required; use POST /admin/events or PATCH /admin/events/{ulid} for single-event operations"))

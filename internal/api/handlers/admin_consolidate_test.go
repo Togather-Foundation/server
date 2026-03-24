@@ -43,25 +43,81 @@ func consolidateBody(t *testing.T, payload any) *bytes.Reader {
 }
 
 // ---------------------------------------------------------------------------
-// 400 – both event and event_ulid supplied
+// 200 – promote+patch path: event_ulid + event (patch) → success
 // ---------------------------------------------------------------------------
 
-func TestConsolidate_400_BothEventFields(t *testing.T) {
+func TestConsolidate_200_PromotePatchPath(t *testing.T) {
+	const canonicalULID = "01HTEST0000000000000000001"
+	const retireULID = "01HTEST0000000000000000002"
+	const patchedName = "RS-11 Pottery Studio"
+
 	repo := new(MockRepository)
-	h := newTestAdminHandler(repo)
+	setupTxMock(repo)
+
+	// Step 3: lock retired event.
+	retiredEvent := &events.Event{
+		ID:             "uuid-retire",
+		ULID:           retireULID,
+		Name:           "RS-11 Pottery Studio — Afternoon Session",
+		LifecycleState: "published",
+	}
+	repo.On("GetByULID", mock.Anything, retireULID).Return(retiredEvent, nil).Times(2)
+	repo.On("LockEventForUpdate", mock.Anything, "uuid-retire").Return(nil).Once()
+
+	// Step 4: promote path — get & lock canonical.
+	canonicalEvent := &events.Event{
+		ID:             "uuid-canon",
+		ULID:           canonicalULID,
+		Name:           "RS-11 Pottery Studio — Morning Session",
+		LifecycleState: "published",
+	}
+	patchedEvent := &events.Event{
+		ID:             "uuid-canon",
+		ULID:           canonicalULID,
+		Name:           patchedName,
+		LifecycleState: "published",
+	}
+	repo.On("GetByULID", mock.Anything, canonicalULID).Return(canonicalEvent, nil).Times(2)
+	repo.On("LockEventForUpdate", mock.Anything, "uuid-canon").Return(nil).Once()
+
+	// Step 4b: apply event patch atomically inside transaction.
+	repo.On("UpdateEvent", mock.Anything, canonicalULID, mock.MatchedBy(func(p events.UpdateEventParams) bool {
+		return p.Name != nil && *p.Name == patchedName
+	})).Return(patchedEvent, nil).Once()
+
+	// Step 5: soft-delete retired + tombstone.
+	repo.On("SoftDeleteEvent", mock.Anything, retireULID, "consolidated").Return(nil).Once()
+	repo.On("DeleteOccurrencesByEventULID", mock.Anything, retireULID).Return(nil).Once()
+	repo.On("CreateTombstone", mock.Anything, mock.Anything).Return(nil).Once()
+
+	// Step 6: dismiss pending reviews.
+	repo.On("DismissPendingReviewsByEventULIDs", mock.Anything, []string{retireULID}, "system").Return([]int{}, nil).Once()
+
+	// Step 6b: strip stale dup warnings (none here) + refresh payload check (no pending review).
+	repo.On("GetPendingReviewByEventUlid", mock.Anything, canonicalULID).Return(nil, nil).Times(2)
 
 	body := consolidateBody(t, map[string]any{
-		"event":      map[string]any{"name": "My Event"},
-		"event_ulid": "01HTEST0000000000000000001",
-		"retire":     []string{"01HTEST0000000000000000002"},
+		"event_ulid": canonicalULID,
+		"event":      map[string]any{"name": patchedName},
+		"retire":     []string{retireULID},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events/consolidate", body)
 	req = withAdminUser(req, "admin@example.com")
 	rec := httptest.NewRecorder()
 
+	h := newTestAdminHandler(repo)
 	h.ConsolidateEvents(rec, req)
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code, "expected 400")
+	assert.Equal(t, http.StatusOK, rec.Code, "expected 200")
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	eventField, ok := resp["event"].(map[string]any)
+	assert.True(t, ok, "event field should be present")
+	assert.Equal(t, patchedName, eventField["name"], "event name should reflect the patch")
+
 	repo.AssertExpectations(t)
 }
 

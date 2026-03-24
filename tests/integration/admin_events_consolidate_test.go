@@ -324,14 +324,6 @@ func TestAdminConsolidate_ValidationErrors(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "both_event_and_event_ulid",
-			payload: map[string]any{
-				"event":      map[string]any{"name": "My Event"},
-				"event_ulid": "01HTEST0000000000000000001",
-				"retire":     []string{"01HTEST0000000000000000002"},
-			},
-		},
-		{
 			name: "neither_event_nor_event_ulid",
 			payload: map[string]any{
 				"retire": []string{"01HTEST0000000000000000002"},

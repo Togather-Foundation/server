@@ -84,11 +84,24 @@ type MergeEventsParams struct {
 }
 
 // ConsolidateParams defines the request for atomic event consolidation.
-// Exactly one of Event or EventULID must be set; Retire must have at least one ULID.
+//
+// Exactly one of the following must hold:
+//   - EventULID only: promote an existing event as canonical with no field changes.
+//   - EventULID + Event: promote an existing event as canonical AND apply field edits
+//     atomically inside the same transaction. Patchable fields: name, description, url,
+//     image, eventDomain, keywords, inLanguage, isAccessibleForFree, offers, organizer,
+//     virtualLocation, sameAs, license. Ignored on the patch path: startDate, endDate,
+//     doorTime, occurrences, source, lifecycle_state, and scraper-only hints.
+//   - Event only: create a new canonical event (full ingest pipeline).
+//
+// Retire must have at least one ULID in all cases.
 type ConsolidateParams struct {
-	// Event creates a new canonical event. Mutually exclusive with EventULID.
+	// Event creates a new canonical event (EventULID absent), or patches the fields
+	// of the promoted canonical event (EventULID present). See doc above for which
+	// fields are applied vs ignored on the patch path.
 	Event *EventInput
-	// EventULID promotes an existing event as canonical. Mutually exclusive with Event.
+	// EventULID promotes an existing event as canonical. When Event is also set,
+	// its patchable fields are applied to the canonical event inside the transaction.
 	EventULID string
 	// Retire lists event ULIDs to soft-delete with tombstones. Required, min 1.
 	Retire []string
@@ -1626,9 +1639,6 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 // Returns ConsolidateResult with the canonical event and summary of side effects.
 func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams) (*ConsolidateResult, error) {
 	// Step 1: Validate params.
-	if params.Event != nil && params.EventULID != "" {
-		return nil, ErrConsolidateBothEventFields
-	}
 	if params.Event == nil && params.EventULID == "" {
 		return nil, ErrConsolidateNoEventField
 	}
@@ -1707,6 +1717,23 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		}
 		canonicalEvent = canon
 
+		// Apply field patch atomically inside the transaction (promote path only).
+		// When Event is supplied alongside EventULID, its patchable fields are mapped
+		// to UpdateEventParams and applied before retiring events — ensuring the dedup
+		// check and review queue payload both reflect the post-patch state, and the
+		// patch is rolled back automatically if the overall consolidation fails.
+		if params.Event != nil {
+			patch := eventInputToUpdateParams(params.Event)
+			if err := s.validateUpdateParams(patch); err != nil {
+				return nil, fmt.Errorf("validate event patch: %w", err)
+			}
+			patched, err := txRepo.UpdateEvent(ctx, canonicalEvent.ULID, patch)
+			if err != nil {
+				return nil, fmt.Errorf("apply event patch to canonical event %s: %w", canonicalEvent.ULID, err)
+			}
+			canonicalEvent = patched
+		}
+
 		if canonicalEvent.PrimaryVenueID != nil && len(canonicalEvent.Occurrences) > 0 {
 			dedupWarnings, _, _, dedupErr := s.ingestService.runDedupWarningChecks(
 				ctx, txRepo,
@@ -1765,9 +1792,17 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		return nil, err
 	}
 
-	// Step 7: If needs review, set lifecycle to pending_review.
+	// Step 7: If needs review, set lifecycle to pending_review and update review entry.
+	// Also refresh the review queue payload when a patch was applied on the promote
+	// path — even if needsReview is false the existing entry may have a stale payload.
 	if needsReview {
 		if err := s.consolidateResolvePending(ctx, txRepo, canonicalEvent, warnings); err != nil {
+			return nil, err
+		}
+	} else if params.Event != nil && params.EventULID != "" {
+		// Patch applied but no new warnings: refresh the existing review queue entry's
+		// payload so it reflects the post-patch canonical state.
+		if err := s.consolidateRefreshReviewPayload(ctx, txRepo, canonicalEvent); err != nil {
 			return nil, err
 		}
 	}
@@ -2127,6 +2162,57 @@ func (s *AdminService) consolidateResolvePending(
 	return nil
 }
 
+// consolidateRefreshReviewPayload refreshes the normalized_payload and original_payload
+// of an existing pending review queue entry for the canonical event after a patch has
+// been applied, without changing the lifecycle state or warnings. If no pending review
+// entry exists for the canonical event, this is a no-op (the patched state is already
+// reflected in the events table and will be picked up when the entry is next loaded).
+func (s *AdminService) consolidateRefreshReviewPayload(
+	ctx context.Context,
+	txRepo Repository,
+	canonical *Event,
+) error {
+	existingReview, err := txRepo.GetPendingReviewByEventUlid(ctx, canonical.ULID)
+	if err != nil && err != ErrNotFound {
+		return fmt.Errorf("check existing review for canonical event: %w", err)
+	}
+	if existingReview == nil {
+		// No pending review entry — nothing to refresh.
+		return nil
+	}
+
+	payloadMap := map[string]any{
+		"name": canonical.Name,
+	}
+	if canonical.Description != "" {
+		payloadMap["description"] = canonical.Description
+	}
+	if canonical.PublicURL != "" {
+		payloadMap["url"] = canonical.PublicURL
+	}
+	if len(canonical.Occurrences) > 0 {
+		payloadMap["startDate"] = canonical.Occurrences[0].StartTime.Format(time.RFC3339)
+		if canonical.Occurrences[0].EndTime != nil {
+			payloadMap["endDate"] = canonical.Occurrences[0].EndTime.Format(time.RFC3339)
+		}
+	}
+	if canonical.PrimaryVenueName != nil {
+		payloadMap["location"] = map[string]any{"name": *canonical.PrimaryVenueName}
+	}
+	payloadJSON, err := json.Marshal(payloadMap)
+	if err != nil {
+		return fmt.Errorf("marshal canonical payload for review queue refresh: %w", err)
+	}
+
+	if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+		OriginalPayload:   &payloadJSON,
+		NormalizedPayload: &payloadJSON,
+	}); err != nil {
+		return fmt.Errorf("refresh review queue entry payload for canonical event: %w", err)
+	}
+	return nil
+}
+
 // DeleteEvent soft-deletes an event and generates a tombstone
 // Returns the deleted event for tombstone generation
 func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason string) error {
@@ -2172,6 +2258,34 @@ func (s *AdminService) DeleteEvent(ctx context.Context, ulid string, reason stri
 	}
 
 	return nil
+}
+
+// eventInputToUpdateParams maps the patchable fields of an EventInput to an
+// UpdateEventParams. Fields that are ingest-only or occurrence-derived are
+// intentionally omitted: startDate, endDate, doorTime, occurrences, source,
+// lifecycle_state, SkipMultiSessionCheck, MultiSessionDurationThreshold,
+// @context, @id, @type.
+func eventInputToUpdateParams(e *EventInput) UpdateEventParams {
+	var p UpdateEventParams
+	if e.Name != "" {
+		p.Name = &e.Name
+	}
+	if e.Description != "" {
+		p.Description = &e.Description
+	}
+	if e.URL != "" {
+		p.PublicURL = &e.URL
+	}
+	if e.Image != "" {
+		p.ImageURL = &e.Image
+	}
+	if e.EventDomain != "" {
+		p.EventDomain = &e.EventDomain
+	}
+	if len(e.Keywords) > 0 {
+		p.Keywords = e.Keywords
+	}
+	return p
 }
 
 // validateUpdateParams validates update parameters

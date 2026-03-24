@@ -1660,52 +1660,34 @@
         const consolidateError = document.getElementById(`consolidate-error-${entryId}`);
         if (consolidateError) consolidateError.style.display = 'none';
 
-        // Step 1: Build field patch from fieldOverrides.
+        // Step 1: Build event patch from fieldOverrides.
+        // Sent inline in the consolidate body — applied atomically in the transaction.
         // Patch when either:
         //   (a) user typed a custom value (edited === true), OR
         //   (b) user selected the non-canonical event's value (eventIndex !== canonicalIndex)
-        // In both cases the canonical event needs to be updated before retiring the duplicate.
         const overrides = fieldOverrides[entryId] || {};
-        const patch = {};
+        const eventPatch = {};
 
         Object.entries(overrides).forEach(([key, override]) => {
             const needsPatch = override.edited === true || override.eventIndex !== canonicalIndex;
             if (needsPatch) {
-                    // Map field keys to API fields
-                    // name→name, description→description, url→public_url, image→image_url
-                    // skip location.name, organizer.name — not patchable via PUT
-                    const fieldMap = {
-                        'name': 'name',
-                        'description': 'description',
-                        'url': 'public_url',
-                        'image': 'image_url',
-                    };
-                    const apiKey = fieldMap[key];
-                    if (apiKey) {
-                        patch[apiKey] = override.value;
-                    }
+                // Map field keys to EventInput JSON field names
+                const fieldMap = {
+                    'name': 'name',
+                    'description': 'description',
+                    'url': 'url',
+                    'image': 'image',
+                    'keywords': 'keywords',
+                    'eventDomain': 'eventDomain',
+                };
+                const apiKey = fieldMap[key];
+                if (apiKey) {
+                    eventPatch[apiKey] = override.value;
+                }
             }
         });
 
-        // Step 2: Update canonical event with field overrides (if any)
-        if (Object.keys(patch).length > 0) {
-            try {
-                await API.events.update(canonicalUlid, patch);
-            } catch (err) {
-                console.error('Failed to update event fields:', err);
-                const msg = (err && err.detail) || (err && err.message) || 'Failed to update event fields';
-                if (consolidateError) {
-                    consolidateError.textContent = msg;
-                    consolidateError.style.display = 'block';
-                } else {
-                    showToast(msg, 'error');
-                }
-                if (btn) setLoading(btn, false);
-                return;
-            }
-        }
-
-        // Step 3: Delete excluded canonical occurrences from the canonical event.
+        // Step 2: Delete excluded canonical occurrences from the canonical event.
         // "Canonical" occurrences are those belonging to the canonical event's side of the picker.
         // The canonical side's source key: canonicalIndex === 0 → source 'this', canonicalIndex === 1 → source 'related'
         const pickerEntries = occurrencePicker[entryId] || [];
@@ -1757,13 +1739,17 @@
             }
         }
 
-        // Step 5: Consolidate (retire the duplicate)
+        // Step 5: Consolidate (retire the duplicate, applying any field edits atomically)
         try {
-            await API.events.consolidate({
+            const consolidateBody = {
                 event_ulid: canonicalUlid,
                 retire: [retireUlid],
                 transfer_occurrences: false,
-            });
+            };
+            if (Object.keys(eventPatch).length > 0) {
+                consolidateBody.event = eventPatch;
+            }
+            await API.events.consolidate(consolidateBody);
             showToast('Consolidated successfully', 'success');
 
             // Remove this entry and any companion entries dismissed by the backend.

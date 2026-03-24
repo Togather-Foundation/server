@@ -67,21 +67,8 @@ func makePublishedEvent(id, ulid, name string) *Event {
 
 // ── Validation error tests ────────────────────────────────────────────────────
 
-func TestConsolidate_BothEventFields_Error(t *testing.T) {
-	ctx := context.Background()
-	repo := makeConsolidateRepo(nil)
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
-
-	_, err := svc.Consolidate(ctx, ConsolidateParams{
-		Event:     &EventInput{Name: "some event"},
-		EventULID: consolidateCanonULID,
-		Retire:    []string{consolidateRetireULID},
-	})
-	if !errors.Is(err, ErrConsolidateBothEventFields) {
-		t.Errorf("expected ErrConsolidateBothEventFields, got: %v", err)
-	}
-}
-
+// TestConsolidate_NeitherEventField_Error verifies that omitting both event and
+// event_ulid returns ErrConsolidateNoEventField.
 func TestConsolidate_NeitherEventField_Error(t *testing.T) {
 	ctx := context.Background()
 	repo := makeConsolidateRepo(nil)
@@ -1580,4 +1567,139 @@ func TestConsolidate_FindSeriesCompanionErrorDoesNotPoisonTx(t *testing.T) {
 	if !repo.commitCalled {
 		t.Error("Commit must be called on overall success")
 	}
+}
+
+// ── EventPatch atomicity tests ────────────────────────────────────────────────
+
+// TestConsolidate_PromotePath_WithEventPatch_AppliedInTransaction verifies that
+// when event is supplied alongside event_ulid, UpdateEvent is called inside the
+// transaction and the result reflects the patched name.
+func TestConsolidate_PromotePath_WithEventPatch_AppliedInTransaction(t *testing.T) {
+	ctx := context.Background()
+
+	patchedName := "RS-11 Pottery Studio"
+	known := map[string]*Event{
+		consolidateCanonULID:  makePublishedEvent("uuid-canon", consolidateCanonULID, "RS-11 Pottery Studio — Morning Session"),
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "RS-11 Pottery Studio — Afternoon Session"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	updateEventCalled := false
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if ulid != consolidateCanonULID {
+			t.Errorf("UpdateEvent called with wrong ULID: got %s, want %s", ulid, consolidateCanonULID)
+		}
+		if params.Name == nil || *params.Name != patchedName {
+			t.Errorf("UpdateEvent called with wrong Name: got %v, want %q", params.Name, patchedName)
+		}
+		updateEventCalled = true
+		// Return canonical event with the patched name.
+		patched := *known[consolidateCanonULID]
+		patched.Name = patchedName
+		return &patched, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Event:     &EventInput{Name: patchedName},
+		Retire:    []string{consolidateRetireULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !updateEventCalled {
+		t.Error("expected UpdateEvent to be called for the event patch, but it was not")
+	}
+	if result.Event == nil || result.Event.Name != patchedName {
+		t.Errorf("expected result.Event.Name=%q, got: %+v", patchedName, result.Event)
+	}
+	if !repo.commitCalled {
+		t.Error("Commit must be called on success")
+	}
+}
+
+// TestConsolidate_PromotePath_WithEventPatch_RefreshesReviewPayload verifies that
+// when event is supplied alongside event_ulid and the canonical already has a pending
+// review queue entry, UpdateReviewQueueEntry is called with a payload that contains
+// the post-patch name (not the original stale name).
+func TestConsolidate_PromotePath_WithEventPatch_RefreshesReviewPayload(t *testing.T) {
+	ctx := context.Background()
+
+	patchedName := "RS-11 Pottery Studio"
+	originalName := "RS-11 Pottery Studio — Morning Session"
+
+	known := map[string]*Event{
+		consolidateCanonULID:  makePublishedEvent("uuid-canon", consolidateCanonULID, originalName),
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "RS-11 Pottery Studio — Afternoon Session"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	// UpdateEvent applies the patch and returns the updated event.
+	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
+		patched := *known[consolidateCanonULID]
+		if params.Name != nil {
+			patched.Name = *params.Name
+		}
+		return &patched, nil
+	}
+
+	// Canonical already has a pending review entry (the RS-11 morning session scenario).
+	existingReviewID := 77
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == consolidateCanonULID {
+			return &ReviewQueueEntry{ID: existingReviewID, EventULID: consolidateCanonULID}, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	updateReviewCalled := false
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id != existingReviewID {
+			t.Errorf("UpdateReviewQueueEntry called with wrong id: got %d, want %d", id, existingReviewID)
+		}
+		// The payload must contain the post-patch name, not the original.
+		if params.NormalizedPayload != nil {
+			payload := string(*params.NormalizedPayload)
+			if !containsString(payload, patchedName) {
+				t.Errorf("NormalizedPayload does not contain patched name %q; got: %s", patchedName, payload)
+			}
+			if containsString(payload, originalName) {
+				t.Errorf("NormalizedPayload still contains stale original name %q; got: %s", originalName, payload)
+			}
+		}
+		updateReviewCalled = true
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	_, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Event:     &EventInput{Name: patchedName},
+		Retire:    []string{consolidateRetireULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !updateReviewCalled {
+		t.Error("expected UpdateReviewQueueEntry to be called to refresh stale payload, but it was not")
+	}
+	if !repo.commitCalled {
+		t.Error("Commit must be called on success")
+	}
+}
+
+// containsString is a trivial substring helper used in test assertions.
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		func() bool {
+			for i := 0; i <= len(s)-len(substr); i++ {
+				if s[i:i+len(substr)] == substr {
+					return true
+				}
+			}
+			return false
+		}())
 }

@@ -573,9 +573,17 @@ paths:
         `needs_review`. Near-duplicate detection after consolidation uses a similarity
         threshold configurable via DEDUP_NEAR_DUPLICATE_THRESHOLD (default 0.4).
 
-        Exactly one of `event` or `event_ulid` must be provided. `retire` is required
-        and must contain at least one ULID. The canonical event's ULID must not appear
-        in the `retire` list.
+        Exactly one of the following must hold:
+        - `event_ulid` only: promote an existing event as canonical with no field changes.
+        - `event_ulid` + `event`: promote an existing event as canonical AND apply field
+          edits atomically inside the same transaction. Patchable fields: `name`,
+          `description`, `url`, `image`, `keywords`, `eventDomain`. Fields ignored on the
+          patch path: `startDate`, `endDate`, `doorTime`, `occurrences`, `source`,
+          `lifecycle_state`, and scraper-only hints.
+        - `event` only: create a new canonical event (full ingest pipeline).
+
+        `retire` is required and must contain at least one ULID. The canonical event's
+        ULID must not appear in the `retire` list.
       tags: [Admin]
       x-internal: true
       security:
@@ -591,14 +599,18 @@ paths:
               properties:
                 event:
                   description: >
-                    Full event payload to create a new canonical event.
-                    Mutually exclusive with event_ulid.
+                    When `event_ulid` is absent: full event payload to create a new
+                    canonical event. When `event_ulid` is present: partial patch applied
+                    atomically to the promoted canonical event. Patchable fields: name,
+                    description, url, image, keywords, eventDomain. Occurrence-derived
+                    and ingest-only fields (startDate, endDate, occurrences, source,
+                    lifecycle_state) are ignored on the patch path.
                   $ref: '#/components/schemas/EventInput'
                 event_ulid:
                   type: string
                   description: >
                     ULID of an existing event to promote as the canonical event.
-                    Mutually exclusive with event.
+                    May be combined with `event` to apply field edits atomically.
                 retire:
                   type: array
                   items:
@@ -625,7 +637,6 @@ paths:
         '400':
           description: |
             Invalid request. Possible reasons:
-            - Both `event` and `event_ulid` were provided (mutually exclusive)
             - Neither `event` nor `event_ulid` was provided
             - `retire` list is empty or missing
             - Canonical event's ULID appears in `retire`
