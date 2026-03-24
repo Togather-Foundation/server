@@ -225,11 +225,12 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
      ```bash
      curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
        "$BASE/admin/events/consolidate" \
-       -d '{"event_ulid":"<canonical-ulid>","retire":["<absorbed-ulid>"]}'
+       -d '{"event_ulid":"<canonical-ulid>","retire":["<absorbed-ulid>"],"transfer_occurrences":true}'
+     ```
      ```
 3. Verify:
     - [ ] Source event (absorbed event) is soft-deleted.
-    - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence).
+    - [ ] Target event now has **3** occurrences (was 2, absorbed the new event's occurrence). Note: requires `transfer_occurrences: true` in the consolidate request — the default is false.
     - [ ] The companion review entry is also dismissed (`merged` — no stale pending companion row should remain after successful consolidation).
     - [ ] Target event recomputes lifecycle: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
 
@@ -512,11 +513,11 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
    ```bash
    curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
      "$BASE/admin/events/consolidate" \
-     -d '{"event_ulid":"<chosen-canonical-ulid>","retire":["<other-ulid>"]}'
+     -d '{"event_ulid":"<chosen-canonical-ulid>","retire":["<other-ulid>"],"transfer_occurrences":true}'
    ```
 3. Verify:
     - [ ] Source event soft-deleted.
-    - [ ] Target event now has **2** occurrences (was 1; the source event's sole occurrence is added to the target).
+    - [ ] Target event now has **2** occurrences (was 1; the source event's sole occurrence is added to the target). Note: requires `transfer_occurrences: true` in the consolidate request — the default is false.
     - [ ] Companion review dismissed (`merged` status — no stale pending row should remain on the target after successful consolidation).
     - [ ] Target lifecycle recomputes: transitions to `published` if no other pending review rows remain, otherwise stays `pending_review`.
 
