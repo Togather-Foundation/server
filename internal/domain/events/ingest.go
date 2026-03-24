@@ -875,7 +875,7 @@ func parseEventTimes(input EventInput) (time.Time, *time.Time) {
 // Used when creating review queue entries for existing near-duplicate events.
 func parseEventTimesFromEvent(event *Event) (time.Time, *time.Time) {
 	if len(event.Occurrences) == 0 {
-		return time.Now(), nil
+		return time.Time{}, nil
 	}
 	occ := event.Occurrences[0]
 	return occ.StartTime, occ.EndTime
