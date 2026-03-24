@@ -1331,7 +1331,8 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	}
 
 	var companionULID string
-	var companionName, companionStartDate, companionStartTime, companionVenueName string
+	var companionName, companionVenueName string
+	var companionStartTime time.Time // scan timestamptz directly — pgx v5 does not convert to string
 
 	err := queryer.QueryRow(ctx, `
 	SELECT e.ulid,
@@ -1351,28 +1352,30 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	   AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
 	LIMIT 1
 	`, params.VenueID, params.NormalizedName, params.StartTime).Scan(
-		&companionULID, &companionName, &companionStartDate, &companionVenueName,
+		&companionULID, &companionName, &companionStartTime, &companionVenueName,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		_ = r.Rollback(ctx)
-		return nil, nil
+		// Do NOT rollback here: the caller may own the transaction.
+		// Return the error so the caller can decide how to handle it.
+		return nil, fmt.Errorf("find series companion: %w", err)
 	}
 
 	if companionULID == "" || (excludeULID != nil && companionULID == *excludeULID) {
 		return nil, nil
 	}
 
-	startTime, _ := time.Parse(time.RFC3339, companionStartDate)
-	companionStartTime = startTime.Format("15:04:05")
+	// Format start_time as RFC3339 date (calendar date) and local time-of-day.
+	companionStartDate := companionStartTime.UTC().Format("2006-01-02")
+	companionLocalTime := companionStartTime.UTC().Format("15:04:05")
 
 	return &events.CrossWeekCompanion{
 		ULID:      companionULID,
 		Name:      companionName,
 		StartDate: companionStartDate,
-		StartTime: companionStartTime,
+		StartTime: companionLocalTime,
 		VenueName: companionVenueName,
 	}, nil
 }

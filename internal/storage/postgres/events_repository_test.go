@@ -240,6 +240,134 @@ func TestFindSimilarOrganizationsReturnsAddressFields(t *testing.T) {
 	require.Equal(t, "info@torjazz.org", *c.Email)
 }
 
+func TestFindSeriesCompanion(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool}
+
+	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
+	place := insertPlace(t, ctx, pool, "The Rex Jazz Bar", "Toronto", "ON")
+
+	// Week 1: a published companion event at 19:00 UTC on March 31.
+	week1Start := time.Date(2026, 3, 31, 19, 0, 0, 0, time.UTC)
+	week1ULID := insertEvent(t, ctx, pool, "Jazz Jam Session", "Live jazz", org, place, "music", "published", nil, week1Start)
+
+	// Week 2: the incoming event 7 days later at the same time.
+	week2Start := time.Date(2026, 4, 7, 19, 0, 0, 0, time.UTC)
+	week2ULID := insertEvent(t, ctx, pool, "Jazz Jam Session", "Live jazz", org, place, "music", "published", nil, week2Start)
+
+	t.Run("finds companion from previous week", func(t *testing.T) {
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        place.ID,
+			StartTime:      week2Start,
+			ExcludeULID:    week2ULID,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result, "expected companion from week 1 to be found")
+		require.Equal(t, week1ULID, result.ULID)
+		require.Equal(t, "Jazz Jam Session", result.Name)
+		// StartDate must be formatted as "YYYY-MM-DD" — not an RFC3339 timestamp.
+		require.Equal(t, "2026-03-31", result.StartDate)
+		// StartTime must be formatted as "HH:MM:SS".
+		require.Equal(t, "19:00:00", result.StartTime)
+		require.Equal(t, "The Rex Jazz Bar", result.VenueName)
+	})
+
+	t.Run("returns nil when no companion exists (no matching event in window)", func(t *testing.T) {
+		// Look for a companion 7–21 days before a date far in the future — nothing there.
+		farFuture := time.Date(2027, 1, 1, 19, 0, 0, 0, time.UTC)
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        place.ID,
+			StartTime:      farFuture,
+			ExcludeULID:    "",
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when no companion exists in the window")
+	})
+
+	t.Run("returns nil when companion ULID is excluded", func(t *testing.T) {
+		// Exclude the week-1 event — should return nil even though it matches.
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        place.ID,
+			StartTime:      week2Start,
+			ExcludeULID:    week1ULID,
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when the only match is excluded")
+	})
+
+	t.Run("does not match events at a different venue", func(t *testing.T) {
+		otherPlace := insertPlace(t, ctx, pool, "Another Venue", "Toronto", "ON")
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        otherPlace.ID,
+			StartTime:      week2Start,
+			ExcludeULID:    week2ULID,
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when venue does not match")
+	})
+
+	t.Run("does not match events with dissimilar names", func(t *testing.T) {
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "totally different event",
+			VenueID:        place.ID,
+			StartTime:      week2Start,
+			ExcludeULID:    week2ULID,
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when name similarity is too low")
+	})
+
+	t.Run("does not match soft-deleted events", func(t *testing.T) {
+		// Soft-delete the week-1 event, then search — should return nil.
+		_, err := pool.Exec(ctx, `UPDATE events SET deleted_at = NOW() WHERE ulid = $1`, week1ULID)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, _ = pool.Exec(ctx, `UPDATE events SET deleted_at = NULL WHERE ulid = $1`, week1ULID)
+		})
+
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        place.ID,
+			StartTime:      week2Start,
+			ExcludeULID:    week2ULID,
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when companion is soft-deleted")
+	})
+
+	t.Run("returns nil when companion is outside 7–21 day window (too close)", func(t *testing.T) {
+		// 3 days before — inside the 7-day exclusion zone.
+		tooClose := week1Start.AddDate(0, 0, 3)
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        place.ID,
+			StartTime:      tooClose,
+			ExcludeULID:    "",
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when candidate is too close (< 7 days)")
+	})
+
+	t.Run("returns nil when companion is outside 7–21 day window (too far)", func(t *testing.T) {
+		// 30 days after week-2 — both fixtures are now more than 21 days in the past.
+		tooFar := week2Start.AddDate(0, 0, 30)
+		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
+			NormalizedName: "jazz jam session",
+			VenueID:        place.ID,
+			StartTime:      tooFar,
+			ExcludeULID:    "",
+		})
+		require.NoError(t, err)
+		require.Nil(t, result, "expected nil when both fixtures are more than 21 days in the past")
+	})
+}
+
 func TestFindSimilarOrganizationsNullableFieldsAreNilWhenAbsent(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
