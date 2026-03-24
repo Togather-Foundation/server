@@ -58,6 +58,7 @@ type Event struct {
 	AttendanceMode      string
 	EventDomain         string
 	OrganizerID         *string
+	OrganizerULID       *string // ULID from organizations.ulid (for API)
 	PrimaryVenueID      *string // UUID from events.primary_venue_id (for DB operations)
 	PrimaryVenueULID    *string // ULID from places.ulid (for URI building)
 	PrimaryVenueName    *string // Name from places.name (for display/payload reconstruction)

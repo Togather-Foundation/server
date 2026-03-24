@@ -959,18 +959,6 @@
                         ? (thisOccurrences[thisOccurrences.length - 1].endTime || thisOccurrences[0].endTime || normalized.endDate)
                         : normalized.endDate,
                 });
-                if (normalized.primary_venue_ulid && detail.relatedEvents && detail.relatedEvents[0]) {
-                    const rel = detail.relatedEvents[0];
-                    if (rel.venueName) {
-                        normalizedWithDates.location = {
-                            name: normalized.location?.name || rel.venueName,
-                            streetAddress: rel.venueStreetAddress || null,
-                            addressLocality: rel.venueCity || null,
-                            addressRegion: rel.venueRegion || null,
-                            postalCode: rel.venuePostalCode || null,
-                        };
-                    }
-                }
                 window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalizedWithDates, relatedForPicker], {
                     canonicalIndex: canonicalIndex,
                     readOnlyFields: new Set(['location.name', 'organizer.name']),

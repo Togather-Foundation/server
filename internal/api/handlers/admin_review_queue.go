@@ -708,6 +708,59 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, placeRe
 		event = nil
 	}
 
+	// Enrich normalized payload with full venue details from the event's primary venue
+	if event != nil && event.PrimaryVenueULID != nil && placeRepo != nil {
+		venue, err := placeRepo.GetByULID(ctx, *event.PrimaryVenueULID)
+		if err == nil && venue != nil {
+			// Get existing location from normalized or create new
+			location := map[string]any{}
+			if loc, ok := normalized["location"].(map[string]any); ok {
+				for k, v := range loc {
+					location[k] = v
+				}
+			}
+			// Add full venue details
+			if venue.Name != "" {
+				location["name"] = venue.Name
+			}
+			if venue.StreetAddress != "" {
+				location["streetAddress"] = venue.StreetAddress
+			}
+			if venue.City != "" {
+				location["addressLocality"] = venue.City
+			}
+			if venue.Region != "" {
+				location["addressRegion"] = venue.Region
+			}
+			if venue.PostalCode != "" {
+				location["postalCode"] = venue.PostalCode
+			}
+			normalized["location"] = location
+		}
+	}
+
+	// Enrich normalized payload with full organizer details
+	if event != nil && event.OrganizerULID != nil && orgRepo != nil {
+		org, err := orgRepo.GetByULID(ctx, *event.OrganizerULID)
+		if err == nil && org != nil {
+			// Get existing organizer from normalized or create new
+			organizer := map[string]any{}
+			if orgObj, ok := normalized["organizer"].(map[string]any); ok {
+				for k, v := range orgObj {
+					organizer[k] = v
+				}
+			}
+			// Add full organizer details
+			if org.Name != "" {
+				organizer["name"] = org.Name
+			}
+			if org.URL != "" {
+				organizer["url"] = org.URL
+			}
+			normalized["organizer"] = organizer
+		}
+	}
+
 	// Extract and convert occurrences
 	var occurrences []occurrenceDetail
 	if event != nil && len(event.Occurrences) > 0 {

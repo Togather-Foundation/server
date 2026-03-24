@@ -283,13 +283,15 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	   e.keywords, e.in_language, e.is_accessible_for_free,
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
 	   o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
-	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability
+	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability,
+	   org.ulid AS organizer_ulid
 	  FROM events e
 	  LEFT JOIN event_occurrences o ON o.event_id = e.id
 	  LEFT JOIN places pv ON pv.id = e.primary_venue_id
 	  LEFT JOIN places ov ON ov.id = o.venue_id
+	  LEFT JOIN organizations org ON org.id = e.organizer_id
 	 WHERE e.ulid = $1
- ORDER BY o.start_time ASC
+  ORDER BY o.start_time ASC
 `, ulid)
 	if err != nil {
 		return nil, fmt.Errorf("get event: %w", err)
@@ -339,6 +341,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			priceMax            *float64
 			priceCurrency       *string
 			availability        *string
+			organizerULID       *string
 		)
 		if err := rows.Scan(
 			&eventID,
@@ -381,6 +384,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&priceMax,
 			&priceCurrency,
 			&availability,
+			&organizerULID,
 		); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
@@ -399,6 +403,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 				AttendanceMode:      derefString(attendanceMode),
 				EventDomain:         eventDomain,
 				OrganizerID:         organizerID,
+				OrganizerULID:       organizerULID,
 				PrimaryVenueID:      primaryVenueID,
 				PrimaryVenueULID:    primaryVenueULID,
 				PrimaryVenueName:    primaryVenueName,
