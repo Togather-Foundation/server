@@ -65,6 +65,7 @@ func TestConsolidate_200_PromotePatchPath(t *testing.T) {
 	repo.On("LockEventForUpdate", mock.Anything, "uuid-retire").Return(nil).Once()
 
 	// Step 4: promote path — get & lock canonical.
+	// The canonicalEvent is mutated in place by UpdateEvent mock to simulate DB behavior
 	canonicalEvent := &events.Event{
 		ID:             "uuid-canon",
 		ULID:           canonicalULID,
@@ -77,11 +78,16 @@ func TestConsolidate_200_PromotePatchPath(t *testing.T) {
 		Name:           patchedName,
 		LifecycleState: "published",
 	}
-	repo.On("GetByULID", mock.Anything, canonicalULID).Return(canonicalEvent, nil).Times(2)
+	repo.On("GetByULID", mock.Anything, canonicalULID).Return(canonicalEvent, nil).Times(3)
 	repo.On("LockEventForUpdate", mock.Anything, "uuid-canon").Return(nil).Once()
 
 	// Step 4b: apply event patch atomically inside transaction.
+	// The UpdateEvent mock updates canonicalEvent in-place to simulate DB behavior,
+	// so subsequent GetByULID calls return the patched event.
 	repo.On("UpdateEvent", mock.Anything, canonicalULID, mock.MatchedBy(func(p events.UpdateEventParams) bool {
+		if p.Name != nil {
+			canonicalEvent.Name = *p.Name
+		}
 		return p.Name != nil && *p.Name == patchedName
 	})).Return(patchedEvent, nil).Once()
 
