@@ -105,6 +105,11 @@ curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/js
   "$BASE/admin/events/consolidate" \
   -d '{"event_ulid":"<canonical-ulid>","retire":["<dup-ulid-1>","<dup-ulid-2>"]}'
 
+# Consolidate: promote + patch — promote existing event AND apply field overrides atomically
+curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  "$BASE/admin/events/consolidate" \
+  -d '{"event_ulid":"<canonical-ulid>","event":{"name":"Corrected Name","description":"Better desc"},"retire":["<dup-ulid>"]}'
+
 # Consolidate: create new canonical event, retire source events
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   "$BASE/admin/events/consolidate" \
@@ -650,18 +655,32 @@ Consolidate each same-day pair independently — earlier time (Morning, 6am) as 
 
 **Test C — Error Cases:**
 
-1. Both event and event_ulid → 400
-2. Neither event nor event_ulid → 400
-3. Empty retire list → 400
-4. Canonical ULID in retire list → 400
-5. Non-existent retire ULID → 404
-6. Already-deleted retire target → 422
+1. Neither event nor event_ulid → 400
+2. Empty retire list → 400
+3. Canonical ULID in retire list → 400
+4. Non-existent retire ULID → 404
+5. Already-deleted retire target → 422
+
+**Test D — Promote + Patch Path:**
+
+1. Identify two events where one is canonical but needs a field update (e.g., name or description from the non-canonical is better).
+2. Consolidate with both `event_ulid` and `event` (partial override payload):
+   ```bash
+   curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+     "$BASE/admin/events/consolidate" \
+     -d '{"event_ulid":"<canonical-ulid>","event":{"name":"Better Name","description":"Better desc"},"retire":["<dup-ulid>"]}'
+   ```
+3. Verify:
+   - [ ] Response 200. Canonical event has the patched field values.
+   - [ ] Retired event soft-deleted with tombstone (`deletion_reason = 'consolidated'`).
+   - [ ] Patch and promotion applied atomically — no intermediate state visible.
+   - [ ] Fields not listed in `event` (e.g. `startDate`, `endDate`) are unchanged on the canonical.
 
 ```bash
-# Test: both fields
+# Test: missing event_ulid on promote path
 curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   "$BASE/admin/events/consolidate" \
-  -d '{"event_ulid":"<ulid>","event":{"name":"test"},"retire":["<ulid2>"]}'
+  -d '{"event":{"name":"test"},"retire":["<ulid>"]}'
 # Expect 400
 
 # Test: empty retire

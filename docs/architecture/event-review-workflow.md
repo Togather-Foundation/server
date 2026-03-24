@@ -351,12 +351,13 @@ Companion dismissal in `add-occurrence` targets only the **exact counterpart row
 
 Atomically resolve N duplicate events into a single canonical event. This is the preferred resolution path for duplicate detection — it supersedes the per-review-entry `merge` and `add-occurrence` actions for that use case.
 
-**Two dispatch paths:**
+**Three dispatch paths:**
 
 | Path | When to use | How to invoke |
 |------|-------------|---------------|
 | **Create** | The duplicates do not have a clear winner; build the canonical from scratch | Supply `event` (full event payload) in the request body; omit `event_ulid` |
 | **Promote** | One of the duplicates is already the best version and should survive | Supply `event_ulid` (ULID of the event to promote); omit `event` |
+| **Promote + patch** | Promote an existing event AND atomically apply field overrides in the same transaction | Supply both `event_ulid` and `event` (partial payload with patchable fields: `name`, `description`, `url`, `image`, `keywords`, `eventDomain`) |
 
 **`retire` list (required on both paths):** An array of ULIDs to retire. Each retired event is:
 1. Soft-deleted (`lifecycle_state = 'deleted'`, tombstone reason `"consolidated"`, `superseded_by` → canonical event URI).
@@ -375,7 +376,7 @@ If any warnings are generated, the canonical is stored with `lifecycle_state = '
 
 **Promote path — post-promotion pipeline:**
 
-The promoted event is not re-normalized or re-validated (it already exists). Only the Layer 2 near-duplicate check runs post-promotion (same filtering: skip self, skip retired events). Matches produce `potential_duplicate` warnings and flip the canonical to `pending_review`.
+The promoted event is not re-normalized or re-validated (it already exists). When `event` is supplied alongside `event_ulid` (promote + patch), the patchable fields (`name`, `description`, `url`, `image`, `keywords`, `eventDomain`) are applied to the canonical inside the same database transaction, and the canonical is re-read post-patch before the dedup checks run. Only the Layer 2 near-duplicate check runs post-promotion (same filtering: skip self, skip retired events). Matches produce `potential_duplicate` warnings and flip the canonical to `pending_review`.
 
 **Transaction scope:**
 
@@ -396,7 +397,7 @@ All steps — locking retired events, resolving/creating the canonical, soft-del
 
 **Error responses:**
 
-- `400 Bad Request` — both or neither of `event`/`event_ulid` supplied; retire list empty; canonical ULID in the retire list
+- `400 Bad Request` — neither `event` nor `event_ulid` supplied; retire list empty; canonical ULID in the retire list
 - `404 Not Found` — canonical or any retire-target not found
 - `409 Conflict` — any retire-target is already deleted; canonical is deleted (promote path)
 - `422 Unprocessable Entity` — payload validation failure on the create path
@@ -406,6 +407,7 @@ All steps — locking retired events, resolving/creating the canonical, soft-del
 | Scenario | Preferred action |
 |----------|-----------------|
 | Exact duplicates — one is clearly best | `POST /admin/events/consolidate` (promote path) |
+| Exact duplicates — one is best but fields need touching up | `POST /admin/events/consolidate` (promote + patch path: `event_ulid` + `event`) |
 | Exact duplicates — neither is best; want a clean canonical | `POST /admin/events/consolidate` (create path) |
 | Near-duplicates from review queue — want to merge one into the other | `POST /admin/events/consolidate` (promote path) replaces per-entry `merge` |
 | Two events that are legitimately separate occurrences of a series | `POST .../add-occurrence` (still the right tool) |

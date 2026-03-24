@@ -13,7 +13,7 @@ Admin UI for resolving events flagged for review. The review queue is the **prim
 2. **Show occurrences.** The existing occurrence list of the event under review — and any related events — must be shown. An admin cannot make a good dedup decision without knowing whether Event A already has 4 weekly dates and Event B is week 5.
 3. **Show related events.** When a review entry has a duplicate-type warning, the related event(s) are fetched and shown side by side with field diffs highlighted.
 4. **One action set, all warning types.** The UI offers the full set of resolution actions for every review entry. Availability of specific actions is gated by the backend (it returns 422 with a clear reason when an action is not applicable); the UI does not hide buttons based on warning codes, except where the backend has already rejected a path as ambiguous.
-5. **Duplicate resolution uses a pre-flight patch + consolidate sequence.** The old "Add as Occurrence" / "Merge Duplicate" two-button model is replaced by a single **Consolidate** action. The flow is: (1) `PUT /api/v1/admin/events/{ulid}` if the admin selected any field overrides or edited field values, (2) `POST /api/v1/admin/events/{ulid}/occurrences` for each related occurrence the admin included, (3) `POST /api/v1/admin/events/consolidate` with `event_ulid` (promote existing, never create) and `transfer_occurrences: false`. The old `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` endpoints are removed and must not be called.
+5. **Duplicate resolution uses an atomic consolidate request.** The old "Add as Occurrence" / "Merge Duplicate" two-button model is replaced by a single **Consolidate** action. The flow is: (1) `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}` for each excluded canonical occurrence, (2) `POST /api/v1/admin/events/{ulid}/occurrences` for each related occurrence the admin included, (3) `POST /api/v1/admin/events/consolidate` with `event_ulid` (canonical to promote) and optionally an `event` object carrying field overrides — field patches and promotion happen atomically in a single transaction. The old `/review-queue/{id}/add-occurrence` and `/review-queue/{id}/merge` endpoints are removed and must not be called.
 
 ---
 
@@ -152,11 +152,10 @@ Each blue or green chip shows a ✎ pencil icon on its right edge. Clicking the 
 - **Chip colour states:** Blue (`btn-primary`) = auto-included (not yet user-touched), Green (`btn-success`) = user explicitly locked in, Outline (`btn-outline-secondary`) = excluded.
 - **Overlap conflict:** A ⚠ icon in a fixed 1.5rem slot on the inner edge (using `visibility:hidden` when no overlap so chip text stays centred) shows when `overlapsWith` is non-empty. Enabling an excluded chip is silently blocked client-side if any peer in its `overlapsWith` list is currently included. One chip per occurrence — never merged.
 
-**Consolidate** — executes a four-step sequence:
-1. **Patch fields** (conditional): if the admin selected any field value from the non-canonical event, `PUT /api/v1/admin/events/{ulid}` with the patched fields (`name`, `description`, `public_url`, `image_url` — venue and organizer are not patchable). Aborts on failure.
-2. **Delete excluded canonical occurrences**: for each canonical-side occurrence the admin excluded, `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}`. Shows a toast on failure but continues.
-3. **Add included non-canonical occurrences**: for each non-canonical occurrence marked included, `POST /api/v1/admin/events/{ulid}/occurrences`. On 409 (overlap) shows a toast error and continues; does not abort the overall operation.
-4. **Retire the duplicate**: `POST /api/v1/admin/events/consolidate` with `{ "event_ulid": "<canonical-ulid>", "retire": ["<other-ulid>"], "transfer_occurrences": false }` — on success dismisses both review entries and reloads the queue.
+**Consolidate** — executes a three-step sequence:
+1. **Delete excluded canonical occurrences**: for each canonical-side occurrence the admin excluded, `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}`. Shows a toast on failure but continues.
+2. **Add included non-canonical occurrences**: for each non-canonical occurrence marked included, `POST /api/v1/admin/events/{ulid}/occurrences`. On 409 (overlap) shows a toast error and continues; does not abort the overall operation.
+3. **Promote + optional field patch**: `POST /api/v1/admin/events/consolidate` with `{ "event_ulid": "<canonical-ulid>", "retire": ["<other-ulid>"], "transfer_occurrences": false }` and, if the admin selected any field override from the non-canonical event, an `"event"` object carrying those overrides (`name`, `description`, `url`, `image`, `keywords`, `eventDomain`) — field patch and promotion are applied atomically in a single transaction. On success dismisses both review entries and reloads the queue.
 
 **Not a Duplicate** — calls `POST /api/v1/admin/review-queue/{id}/approve` with `{ "record_not_duplicates": true }`. Both events are published. A `not_duplicates` record is created to suppress future false positives.
 
@@ -216,10 +215,9 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 | Expand fold-down (detail) | `GET /api/v1/admin/review-queue/{id}` |
 | Fetch live event data + occurrences | `GET /api/v1/events/{ulid}` (public) |
 | Fetch related event data + occurrences | `GET /api/v1/events/{ulid}` (public, per warning match ULID) |
-| **Consolidate: patch field overrides** (conditional, step 1) | `PUT /api/v1/admin/events/{ulid}` |
-| **Consolidate: delete excluded canonical occurrences** (per occurrence, step 2) | `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}` |
-| **Consolidate: add selected non-canonical occurrences** (per occurrence, step 3) | `POST /api/v1/admin/events/{ulid}/occurrences` |
-| **Consolidate: retire duplicate** (step 4) | `POST /api/v1/admin/events/consolidate` with `event_ulid`, `transfer_occurrences: false` |
+| **Consolidate: delete excluded canonical occurrences** (per occurrence, step 1) | `DELETE /api/v1/admin/events/{ulid}/occurrences/{id}` |
+| **Consolidate: add selected non-canonical occurrences** (per occurrence, step 2) | `POST /api/v1/admin/events/{ulid}/occurrences` |
+| **Consolidate: promote + optional field patch** (step 3) | `POST /api/v1/admin/events/consolidate` with `event_ulid`, and optionally `event` (field overrides), `transfer_occurrences: false` |
 | Not a Duplicate (approve both) | `POST /api/v1/admin/review-queue/{id}/approve` with `record_not_duplicates: true` |
 | Approve (data quality only) | `POST /api/v1/admin/review-queue/{id}/approve` |
 | Edit & Approve | `PUT /api/v1/admin/events/{ulid}` → `POST /api/v1/admin/review-queue/{id}/approve` |
@@ -228,7 +226,7 @@ When a review entry's related event is itself paired with a third event (e.g. Po
 **Removed — do not use:**
 - `POST /api/v1/admin/review-queue/{id}/add-occurrence` — removed
 - `POST /api/v1/admin/review-queue/{id}/merge` — removed
-- `POST /api/v1/admin/events/consolidate` with `event:` create path — never used from review queue UI; always use `event_ulid` (promote existing)
+- `POST /api/v1/admin/events/consolidate` with `event` only (create path) — never used from review queue UI; always use `event_ulid` (promote existing). Supplying `event` alongside `event_ulid` is valid and sends field overrides as an atomic patch on the promote path.
 
 ---
 
@@ -250,7 +248,7 @@ This section tracks what has been built vs. what remains. The "What Needs to Cha
 
 **review-queue.js:**
 - `occurrencePicker` module-level state map; `buildOccurrencePicker` with symmetric `overlapsWith` cross-event annotation; `toggleOccurrence` with silent block on overlap conflict; `rebuildPickers` preserving `userToggled` across canonical radio changes.
-- `consolidate()` four-step sequence: (1) field patch, (2) delete excluded canonical occs, (3) add included non-canonical occs, (4) POST consolidate.
+- `consolidate()` three-step sequence: (1) delete excluded canonical occs, (2) add included non-canonical occs, (3) POST consolidate with `event_ulid` + optional `event` field-patch object (atomic promote+patch in one transaction).
 - `imageUrl` bug fixed: `relatedEvent.image` → `relatedEvent.imageUrl` in both initial render and `rebuildPickers`.
 - Old `Add as Occurrence` / `Merge Duplicate` buttons and associated API methods removed.
 
@@ -312,11 +310,10 @@ This section tracks what has been built vs. what remains. The "What Needs to Cha
 - ✅ Single `[Consolidate]` button (`data-action="consolidate"`), keeping `[Not a Duplicate]` and `[Reject]`
 - ✅ Side-by-side event cards continue to show occurrences read-only (context only) via existing `OccurrenceRendering.renderList(..., false)`
 - ✅ New event delegation cases: `'consolidate'`, `'toggle-occurrence'`, `'canonical-select'`
-- ✅ New `consolidate(entryId)` async function — four steps:
-  1. Build field patch from `fieldOverrides` where `override.eventIndex !== canonicalIndex` — map `name→name`, `description→description`, `url→public_url`, `image→image_url`; skip `location.name`, `organizer.name`. If patch non-empty: `PUT /api/v1/admin/events/{canonicalUlid}` — show inline error and abort on fail.
-  2. For each canonical-side occurrence that was excluded: `DELETE /api/v1/admin/events/{canonicalUlid}/occurrences/{id}` — toast on error, continue.
-  3. For each non-canonical occurrence with `included === true`: `POST /api/v1/admin/events/{canonicalUlid}/occurrences` — toast on 409, continue.
-  4. `POST /api/v1/admin/events/consolidate` with `{ event_ulid: canonicalUlid, retire: [retireUlid], transfer_occurrences: false }` — inline error on failure; on success: dismiss entries, `loadEntries()`
+- ✅ New `consolidate(entryId)` async function — three steps:
+  1. For each canonical-side occurrence that was excluded: `DELETE /api/v1/admin/events/{canonicalUlid}/occurrences/{id}` — toast on error, continue.
+  2. For each non-canonical occurrence with `included === true`: `POST /api/v1/admin/events/{canonicalUlid}/occurrences` — toast on 409, continue.
+  3. `POST /api/v1/admin/events/consolidate` with `{ event_ulid: canonicalUlid, retire: [retireUlid], transfer_occurrences: false }` and, if the admin selected any field value from the non-canonical event, an `event` object carrying the overrides (`name`, `description`, `url`, `image`, `keywords`, `eventDomain`) — field patch and promotion run atomically in a single transaction. Inline error on failure; on success: dismiss entries, `loadEntries()`
 - ✅ Helper `buildOccurrencePicker(thisEventOccs, relatedEventOccs, canonicalIndex)` — merges, annotates source, computes symmetric `overlapsWith` via interval intersection, sorts by `startTime`; both sides default-included based on `canonicalIndex`
 - ✅ `collapseDetail` update: `delete occurrencePicker[expandedId]`
 - ✅ `API.reviewQueue.addOccurrence` and `API.reviewQueue.merge` removed (srv-bexw4).
@@ -364,4 +361,4 @@ This section tracks what has been built vs. what remains. The "What Needs to Cha
 
 ---
 
-*Last updated: 2026-03-23. Inline chip editing implemented: pencil icon on blue/green chips; blue pencil atomically selects+opens editor; textarea for description field; edited flag threaded through onPick and consolidate patch logic. Edit & Approve added to Case 1 fold-down. Date display fixed: startDate/endDate now derived from live occurrences (last occurrence for endDate); removed from field picker chip rows. ingest.go endDate bug fixed. See srv-7roii.*
+*Last updated: 2026-03-24. Consolidate step reduced from 4 to 3: pre-flight PUT removed; field overrides sent inline as `event` in the consolidate body, applied atomically with promotion in a single transaction (srv-7roii, ccb6cbd). Inline chip editing implemented: pencil icon on blue/green chips; blue pencil atomically selects+opens editor; textarea for description field; edited flag threaded through onPick and consolidate patch logic. Edit & Approve added to Case 1 fold-down. Date display fixed: startDate/endDate now derived from live occurrences (last occurrence for endDate); removed from field picker chip rows. ingest.go endDate bug fixed. See srv-7roii.*
