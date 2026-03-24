@@ -1347,8 +1347,11 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	   AND e.primary_venue_id = $1
 	   AND normalize_name(e.name) % normalize_name($2)
 	   AND similarity(normalize_name(e.name), normalize_name($2)) >= 0.8
-	   AND o.start_time >= $3::timestamptz - INTERVAL '21 days'
-	   AND o.start_time <= $3::timestamptz - INTERVAL '7 days'
+	   AND (
+	       (o.start_time >= $3::timestamptz - INTERVAL '21 days' AND o.start_time < $3::timestamptz - INTERVAL '6 days')
+	       OR
+	       (o.start_time > $3::timestamptz + INTERVAL '6 days' AND o.start_time <= $3::timestamptz + INTERVAL '21 days')
+	   )
 	   AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
 	LIMIT 1
 	`, params.VenueID, params.NormalizedName, params.StartTime).Scan(

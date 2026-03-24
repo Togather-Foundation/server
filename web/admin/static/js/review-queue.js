@@ -731,7 +731,15 @@
                 endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
                     ? (relatedEvent.occurrences[relatedEvent.occurrences.length - 1].endTime || relatedEvent.occurrences[0].endTime)
                     : null,
-                location: relatedEvent.venueName ? { name: relatedEvent.venueName } : null,
+                location: relatedEvent.venueName
+                    ? {
+                        name: relatedEvent.venueName,
+                        streetAddress: relatedEvent.venueStreetAddress || null,
+                        addressLocality: relatedEvent.venueCity || null,
+                        addressRegion: relatedEvent.venueRegion || null,
+                        postalCode: relatedEvent.venuePostalCode || null,
+                    }
+                    : null,
             };
 
             relatedEventPanelHtml = `
@@ -917,9 +925,20 @@
                         ? (relatedEvent.occurrences[relatedEvent.occurrences.length - 1].endTime || relatedEvent.occurrences[0].endTime)
                         : null,
                     location: relatedEvent.venueName
-                        ? { name: relatedEvent.venueName }
+                        ? {
+                            name: relatedEvent.venueName,
+                            streetAddress: relatedEvent.venueStreetAddress || null,
+                            addressLocality: relatedEvent.venueCity || null,
+                            addressRegion: relatedEvent.venueRegion || null,
+                            postalCode: relatedEvent.venuePostalCode || null,
+                        }
                         : (relatedEvent.location || null),
-                    organizer: relatedEvent.organizer || null,
+                    organizer: (relatedEvent.organizerName || relatedEvent.organizerUrl)
+                        ? {
+                            name: relatedEvent.organizerName || null,
+                            url: relatedEvent.organizerUrl || null,
+                        }
+                        : (relatedEvent.organizer || null),
                     url: relatedEvent.url || null,
                     image: relatedEvent.imageUrl || null,
                 };
@@ -940,6 +959,18 @@
                         ? (thisOccurrences[thisOccurrences.length - 1].endTime || thisOccurrences[0].endTime || normalized.endDate)
                         : normalized.endDate,
                 });
+                if (normalized.primary_venue_ulid && detail.relatedEvents && detail.relatedEvents[0]) {
+                    const rel = detail.relatedEvents[0];
+                    if (rel.venueName) {
+                        normalizedWithDates.location = {
+                            name: normalized.location?.name || rel.venueName,
+                            streetAddress: rel.venueStreetAddress || null,
+                            addressLocality: rel.venueCity || null,
+                            addressRegion: rel.venueRegion || null,
+                            postalCode: rel.venuePostalCode || null,
+                        };
+                    }
+                }
                 window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalizedWithDates, relatedForPicker], {
                     canonicalIndex: canonicalIndex,
                     readOnlyFields: new Set(['location.name', 'organizer.name']),

@@ -371,7 +371,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
 
 	// Create Admin Review Queue handler (srv-bjo)
-	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, auditLogger, cfg.Environment, cfg.Server.BaseURL)
+	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, repo.Places(), repo.Organizations(), auditLogger, cfg.Environment, cfg.Server.BaseURL)
 
 	// Create scraper submission handlers (srv-1cxmi); uses the shared submissionRepo declared above.
 	submissionService := domainScraper.NewSubmissionService(submissionRepo, cfg.RateLimit.SubmissionsPerIPPer24h)

@@ -831,6 +831,7 @@ func nearDuplicateWarnings(existingEvent *Event, newEventULID string, newEvent n
 
 	details := map[string]any{
 		"new_event_name": newEvent.Name,
+		"new_event_ulid": newEventULID,
 	}
 	if newEvent.StartDate != "" {
 		details["new_event_startDate"] = newEvent.StartDate

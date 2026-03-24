@@ -176,15 +176,16 @@ make run   # or make dev for live reload
 
 ## Phase 6: REFLECT
 
-**Goal:** Capture design hindsight while context is fresh.
+**Goal:** Capture design and workflow hindsight while context is fresh.
 
 Reflect on what you'd do differently now: awkward abstractions, package boundaries,
-tech debt shortcuts, performance concerns, test coverage gaps.
+tech debt, performance concerns, test coverage gaps, missing docs,
+confusing or missing instructions, and evaluate workflow for actionable improvements.
 
 - Present a brief summary to the user (not a file).
 - Create follow-up beads for actionable items:
   `bd create --title="<improvement>" --description="Discovered during <bead-id>: <context>" --type=task --priority=3`
-- Do NOT block the current workflow on these. They are future work.
+- Do not block on these, except for critical tests that are missing, which should be done now.
 
 ---
 

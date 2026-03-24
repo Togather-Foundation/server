@@ -1726,11 +1726,14 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 			if err := s.validateUpdateParams(patch); err != nil {
 				return nil, fmt.Errorf("validate event patch: %w", err)
 			}
-			patched, err := txRepo.UpdateEvent(ctx, canonicalEvent.ULID, patch)
+			_, err := txRepo.UpdateEvent(ctx, canonicalEvent.ULID, patch)
 			if err != nil {
 				return nil, fmt.Errorf("apply event patch to canonical event %s: %w", canonicalEvent.ULID, err)
 			}
-			canonicalEvent = patched
+			canonicalEvent, err = txRepo.GetByULID(ctx, canonicalEvent.ULID)
+			if err != nil {
+				return nil, fmt.Errorf("re-fetch canonical after patch: %w", err)
+			}
 		}
 
 		if canonicalEvent.PrimaryVenueID != nil && len(canonicalEvent.Occurrences) > 0 {

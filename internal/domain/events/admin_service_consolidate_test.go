@@ -57,11 +57,16 @@ func makeConsolidateRepo(knownEvents map[string]*Event) *mockTransactionalRepo {
 
 // makePublishedEvent returns a minimal Event in "published" state.
 func makePublishedEvent(id, ulid, name string) *Event {
+	venueID := "venue-uuid-1"
+	venueName := "The Tranzac"
 	return &Event{
-		ID:             id,
-		ULID:           ulid,
-		Name:           name,
-		LifecycleState: "published",
+		ID:               id,
+		ULID:             ulid,
+		Name:             name,
+		LifecycleState:   "published",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC)}},
 	}
 }
 
@@ -1829,10 +1834,16 @@ func TestConsolidate_PromotePath_WithEventPatch_AppliedInTransaction(t *testing.
 			t.Errorf("UpdateEvent called with wrong Name: got %v, want %q", params.Name, patchedName)
 		}
 		updateEventCalled = true
-		// Return canonical event with the patched name.
-		patched := *known[consolidateCanonULID]
-		patched.Name = patchedName
-		return &patched, nil
+		// Update the stored event so GetByULID returns the patched version.
+		known[ulid].Name = patchedName
+		return known[ulid], nil
+	}
+	// Also need to override GetByULID to return from known map.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ev, ok := known[ulid]; ok {
+			return ev, nil
+		}
+		return nil, ErrNotFound
 	}
 
 	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
@@ -1872,13 +1883,19 @@ func TestConsolidate_PromotePath_WithEventPatch_RefreshesReviewPayload(t *testin
 	}
 	repo := makeConsolidateRepo(known)
 
-	// UpdateEvent applies the patch and returns the updated event.
-	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
-		patched := *known[consolidateCanonULID]
+	// UpdateEvent applies the patch and updates the stored event.
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
 		if params.Name != nil {
-			patched.Name = *params.Name
+			known[ulid].Name = *params.Name
 		}
-		return &patched, nil
+		return known[ulid], nil
+	}
+	// Also need to override GetByULID to return from known map.
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		if ev, ok := known[ulid]; ok {
+			return ev, nil
+		}
+		return nil, ErrNotFound
 	}
 
 	// Canonical already has a pending review entry (the RS-11 morning session scenario).

@@ -14,25 +14,31 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/internal/domain/places"
 )
 
 // AdminReviewQueueHandler handles admin review queue operations
 type AdminReviewQueueHandler struct {
-	Repository   events.Repository
-	AdminService *events.AdminService
-	AuditLogger  *audit.Logger
-	Env          string
-	BaseURL      string
+	Repository             events.Repository
+	AdminService           *events.AdminService
+	PlaceRepository        places.Repository
+	OrganizationRepository organizations.Repository
+	AuditLogger            *audit.Logger
+	Env                    string
+	BaseURL                string
 }
 
 // NewAdminReviewQueueHandler creates a new review queue handler
-func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.AdminService, auditLogger *audit.Logger, env string, baseURL string) *AdminReviewQueueHandler {
+func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.AdminService, placeRepo places.Repository, orgRepo organizations.Repository, auditLogger *audit.Logger, env string, baseURL string) *AdminReviewQueueHandler {
 	return &AdminReviewQueueHandler{
-		Repository:   repo,
-		AdminService: adminService,
-		AuditLogger:  auditLogger,
-		Env:          env,
-		BaseURL:      baseURL,
+		Repository:             repo,
+		AdminService:           adminService,
+		PlaceRepository:        placeRepo,
+		OrganizationRepository: orgRepo,
+		AuditLogger:            auditLogger,
+		Env:                    env,
+		BaseURL:                baseURL,
 	}
 }
 
@@ -92,15 +98,21 @@ type occurrenceDetail struct {
 
 // relatedEventDetail represents a related event in the API response, including full event data.
 type relatedEventDetail struct {
-	ULID        string             `json:"ulid"`
-	Name        string             `json:"name,omitempty"`
-	Description string             `json:"description,omitempty"`
-	URL         string             `json:"url,omitempty"`
-	ImageURL    string             `json:"imageUrl,omitempty"`
-	VenueName   string             `json:"venueName,omitempty"`
-	VenueULID   string             `json:"venueUlid,omitempty"`
-	Occurrences []occurrenceDetail `json:"occurrences,omitempty"`
-	Similarity  *float64           `json:"similarity,omitempty"`
+	ULID               string             `json:"ulid"`
+	Name               string             `json:"name,omitempty"`
+	Description        string             `json:"description,omitempty"`
+	URL                string             `json:"url,omitempty"`
+	ImageURL           string             `json:"imageUrl,omitempty"`
+	VenueName          string             `json:"venueName,omitempty"`
+	VenueULID          string             `json:"venueUlid,omitempty"`
+	VenueStreetAddress string             `json:"venueStreetAddress,omitempty"`
+	VenueCity          string             `json:"venueCity,omitempty"`
+	VenueRegion        string             `json:"venueRegion,omitempty"`
+	VenuePostalCode    string             `json:"venuePostalCode,omitempty"`
+	OrganizerName      string             `json:"organizerName,omitempty"`
+	OrganizerURL       string             `json:"organizerUrl,omitempty"`
+	Occurrences        []occurrenceDetail `json:"occurrences,omitempty"`
+	Similarity         *float64           `json:"similarity,omitempty"`
 }
 
 // relatedEventSummary carries a ULID and its associated similarity score (if any)
@@ -232,7 +244,7 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	}
 
 	// Build detailed response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *review)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *review)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("build review queue detail for id=%d: %w", id, err), h.Env)
 		return
@@ -346,7 +358,7 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("approve review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -456,7 +468,7 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	h.recordNotDuplicatesFromWarnings(r.Context(), review, reviewedBy)
 
 	// Build response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("reject review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -579,7 +591,7 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, *updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("fix review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -662,7 +674,7 @@ func buildReviewQueueItem(ctx context.Context, repo events.Repository, review ev
 	return item, nil
 }
 
-func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review events.ReviewQueueEntry) (reviewQueueDetail, error) {
+func buildReviewQueueDetail(ctx context.Context, repo events.Repository, placeRepo places.Repository, orgRepo organizations.Repository, review events.ReviewQueueEntry) (reviewQueueDetail, error) {
 	// Parse warnings
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
@@ -743,6 +755,15 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review 
 			}
 			if relEvent.PrimaryVenueULID != nil {
 				rd.VenueULID = *relEvent.PrimaryVenueULID
+				if placeRepo != nil {
+					venue, err := placeRepo.GetByULID(ctx, *relEvent.PrimaryVenueULID)
+					if err == nil && venue != nil {
+						rd.VenueStreetAddress = venue.StreetAddress
+						rd.VenueCity = venue.City
+						rd.VenueRegion = venue.Region
+						rd.VenuePostalCode = venue.PostalCode
+					}
+				}
 			}
 			if len(relEvent.Occurrences) > 0 {
 				occs := make([]occurrenceDetail, len(relEvent.Occurrences))
@@ -820,6 +841,15 @@ func extractRelatedEventSummaries(warnings []events.ValidationWarning, duplicate
 			continue
 		}
 		if w.Details == nil {
+			continue
+		}
+
+		// For near_duplicate_of_new_event, extract new_event_ulid directly from details
+		if w.Code == "near_duplicate_of_new_event" {
+			if newEventULID, ok := w.Details["new_event_ulid"].(string); ok && newEventULID != "" && !seen[newEventULID] {
+				seen[newEventULID] = true
+				summaries = append(summaries, relatedEventSummary{ULID: newEventULID})
+			}
 			continue
 		}
 

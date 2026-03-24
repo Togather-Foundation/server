@@ -26,6 +26,9 @@ You MUST update docs as needed.
 ## Fast Path
 
 ```bash
+# test locally
+make run
+
 # CI before pushing (required)
 scripts/agent-run.sh make ci
 
