@@ -1398,3 +1398,60 @@ func TestConsolidate_NoTransfer_DoesNotCopyOccurrences(t *testing.T) {
 		t.Error("Commit must be called on success")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests for srv-2snn7: FindSeriesCompanion must not poison tx
+// ---------------------------------------------------------------------------
+
+// TestConsolidate_FindSeriesCompanionErrorDoesNotPoisonTx is the direct
+// regression test for the "tx is closed" bug (srv-2snn7).
+//
+// Before the fix, FindSeriesCompanion called r.Rollback on any scan error,
+// poisoning the caller's transaction. Subsequent operations (e.g.
+// SoftDeleteEvent) then returned "tx is closed".
+//
+// This test simulates the scan error and verifies:
+// 1. Consolidate still succeeds (FindSeriesCompanion errors are non-fatal).
+// 2. SoftDeleteEvent is reached — the transaction is NOT poisoned.
+// 3. Commit is called.
+func TestConsolidate_FindSeriesCompanionErrorDoesNotPoisonTx(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+
+	canon := makeVenueCanonEvent("uuid-canon", consolidateCanonULID, "Jazz Jam Session", now)
+	known := map[string]*Event{
+		consolidateCanonULID:  canon,
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Jazz Jam Session"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	// Simulate a pgx scan error (e.g. timestamptz scanned into string).
+	repo.findSeriesCompanionFunc = func(_ context.Context, _ SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		return nil, errors.New("simulated pgx scan error")
+	}
+
+	softDeleteCalled := false
+	repo.softDeleteEventFunc = func(_ context.Context, _, _ string) error {
+		softDeleteCalled = true
+		return nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{consolidateRetireULID},
+	})
+
+	if err != nil {
+		t.Fatalf("expected success (FindSeriesCompanion error is non-fatal), got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if !softDeleteCalled {
+		t.Error("SoftDeleteEvent must be called — tx must not be poisoned by FindSeriesCompanion error")
+	}
+	if !repo.commitCalled {
+		t.Error("Commit must be called on overall success")
+	}
+}
