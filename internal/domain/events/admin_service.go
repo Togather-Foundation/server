@@ -1231,6 +1231,36 @@ func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID str
 		return nil, fmt.Errorf("review entry %d has already been %s: %w", reviewID, review.Status, ErrConflict)
 	}
 
+	// If the review entry references a companion event via duplicate_of_event_id
+	// (i.e. this review has a near-dup warning pointing to another event), look up
+	// and lock the companion event's pending review entry BEFORE locking any event
+	// rows.  Lock ordering: review → companion review → event (consistent across all
+	// admin methods to prevent deadlocks).
+	//
+	// When this review is for event A (potential_duplicate warning) and has
+	// duplicate_of_event_id = B, event B may have a near_duplicate_of_new_event
+	// companion review pointing back to A.  Approving A must dismiss that companion
+	// entry so it doesn't remain orphaned in the queue.
+	var lockedCompanion *ReviewQueueEntry
+	if review.DuplicateOfEventULID != nil && *review.DuplicateOfEventULID != "" {
+		companionULID := *review.DuplicateOfEventULID
+		companionReview, compErr := txRepo.GetPendingReviewByEventUlidAndDuplicateUlid(ctx, companionULID, eventULID)
+		if compErr != nil && !errors.Is(compErr, ErrNotFound) {
+			return nil, fmt.Errorf("lookup companion review for %s: %w", companionULID, compErr)
+		}
+		if companionReview != nil {
+			lc, lockErr := txRepo.LockReviewQueueEntryForUpdate(ctx, companionReview.ID)
+			if lockErr != nil {
+				if !errors.Is(lockErr, ErrNotFound) {
+					return nil, fmt.Errorf("lock companion review id=%d: %w", companionReview.ID, lockErr)
+				}
+				// Companion was concurrently deleted — treat as if there is no companion.
+			} else {
+				lockedCompanion = lc
+			}
+		}
+	}
+
 	// Publish the event within the transaction
 	existing, err := txRepo.GetByULID(ctx, eventULID)
 	if err != nil {
@@ -1253,13 +1283,127 @@ func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID str
 		return nil, fmt.Errorf("approve review: %w", err)
 	}
 
-	// Commit transaction — both operations succeed or neither does
+	// Dismiss the companion review entry (if found and still pending).
+	// The companion holds a near_duplicate_of_new_event warning pointing at the
+	// event we just approved.  Since the event is now published, the warning is
+	// resolved — strip it and dismiss the companion if no other warnings remain.
+	if lockedCompanion != nil && lockedCompanion.Status == "pending" {
+		if _, dismissErr := s.approveStripCompanionDupWarning(ctx, txRepo, lockedCompanion, eventULID, reviewedBy); dismissErr != nil {
+			if errors.Is(dismissErr, ErrNotFound) || errors.Is(dismissErr, ErrConflict) {
+				// Race: companion was already processed by a concurrent request.
+				_ = dismissErr
+			} else {
+				return nil, fmt.Errorf("dismiss companion review id=%d: %w", lockedCompanion.ID, dismissErr)
+			}
+		}
+	}
+
+	// Commit transaction — all operations succeed or none do
 	err = txCommitter.Commit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return reviewEntry, nil
+}
+
+// approveStripCompanionDupWarning removes the near-dup warning(s) that reference
+// approvedEventULID from the companion review entry.  If stripping leaves zero
+// warnings the entry is dismissed (approved) and the companion event is published.
+// Returns the updated companion review entry (nil if unchanged/not applicable).
+//
+// Must be called inside an active transaction. The companion review row must
+// already be locked via LockReviewQueueEntryForUpdate.
+func (s *AdminService) approveStripCompanionDupWarning(
+	ctx context.Context,
+	txRepo Repository,
+	companion *ReviewQueueEntry,
+	approvedEventULID string,
+	reviewedBy string,
+) (*ReviewQueueEntry, error) {
+	var warnings []ValidationWarning
+	if len(companion.Warnings) > 0 {
+		if err := json.Unmarshal(companion.Warnings, &warnings); err != nil {
+			log.Warn().Err(err).
+				Int("companion_review_id", companion.ID).
+				Msg("ApproveEventWithReview: failed to parse companion warnings; skipping strip")
+			return nil, nil
+		}
+	}
+
+	// Filter out dup warnings that reference the just-approved event.
+	filtered := warnings[:0]
+	changed := false
+	for _, w := range warnings {
+		referencesApproved := false
+		switch w.Code {
+		case "near_duplicate_of_new_event":
+			// The warning message embeds the new event ULID, and duplicate_of_event_id
+			// is set on the entry itself.  Strip if this warning's companion is the
+			// just-approved event.
+			if companion.DuplicateOfEventULID != nil && *companion.DuplicateOfEventULID == approvedEventULID {
+				referencesApproved = true
+			}
+		case "potential_duplicate":
+			// potential_duplicate carries matches[].ulid in Details.
+			if details, ok := w.Details["matches"]; ok {
+				matchesRaw, _ := json.Marshal(details)
+				var matchList []map[string]any
+				if json.Unmarshal(matchesRaw, &matchList) == nil {
+					for _, m := range matchList {
+						if ulid, ok := m["ulid"].(string); ok && ulid == approvedEventULID {
+							referencesApproved = true
+							break
+						}
+					}
+				}
+			}
+		case "cross_week_series_companion":
+			if companionULID, ok := w.Details["companion_ulid"].(string); ok && companionULID == approvedEventULID {
+				referencesApproved = true
+			}
+		}
+		if referencesApproved {
+			changed = true
+			// Do not append — strip this warning.
+		} else {
+			filtered = append(filtered, w)
+		}
+	}
+
+	if !changed {
+		return nil, nil
+	}
+
+	if len(filtered) == 0 {
+		// All warnings stripped — dismiss the companion entry and publish its event.
+		entry, dismissErr := txRepo.ApproveReview(ctx, companion.ID, reviewedBy, nil)
+		if dismissErr != nil {
+			return nil, dismissErr
+		}
+		published := "published"
+		if _, updateErr := txRepo.UpdateEvent(ctx, companion.EventULID, UpdateEventParams{
+			LifecycleState: &published,
+		}); updateErr != nil {
+			return nil, fmt.Errorf("restore companion event %s to published: %w", companion.EventULID, updateErr)
+		}
+		return entry, nil
+	}
+
+	// Warnings remain — update the entry with pruned warnings, clear duplicate_of_event_id
+	// if it still points at the just-approved event.
+	updatedJSON, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("marshal pruned companion warnings: %w", err)
+	}
+	clearDup := companion.DuplicateOfEventULID != nil && *companion.DuplicateOfEventULID == approvedEventULID
+	if _, err := txRepo.UpdateReviewQueueEntry(ctx, companion.ID, ReviewQueueUpdateParams{
+		Warnings:         &updatedJSON,
+		ClearDuplicateOf: clearDup,
+	}); err != nil {
+		return nil, fmt.Errorf("update companion review entry %d with pruned warnings: %w", companion.ID, err)
+	}
+	return nil, nil
 }
 
 // RejectEventWithReview atomically soft-deletes an event with a tombstone AND marks its

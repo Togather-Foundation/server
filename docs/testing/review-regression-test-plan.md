@@ -146,7 +146,7 @@ scripts/agent-cleanup.sh    # remove agent output files if run by an agent
 | RS-08 | Community Potluck | 2 | exact duplicate — consolidate, related occurrence excluded | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.49) |
 | RS-09 | Film Screening | 1 | multi-session detection | `multi_session_likely` | N/A (single event) |
 | RS-10 | Choir Rehearsal | 2 | order-independent consolidation (include related occurrence) | `near_duplicate_of_new_event`, `potential_duplicate` | Yes (similarity ~0.88) |
-| RS-11 | Pottery Studio | 4 | same-day-different-times cluster + cross-week series | `near_duplicate_of_new_event`, `potential_duplicate`, `multi_session_likely` (cross-week companion) | Yes (same-day pairs + cross-week series companion via `multi_session_likely`) |
+| RS-11 | Pottery Studio | 4 | same-day-different-times cluster | `near_duplicate_of_new_event`, `potential_duplicate` (same-day pairs only; no `multi_session_likely` — fixture names don't match multi-session keyword patterns) | Yes (same-day pairs only) |
 | RS-12 | Consolidation Endpoint | 2+ | consolidate (promote + create paths) | _(varies)_ | N/A (tests consolidation itself) |
 
 ---
@@ -545,28 +545,29 @@ Instead of the manual occurrence API + SQL soft-delete workflow above, use the c
 All are from Eventbrite, at The Tranzac, with similar names but different times.
 
 **Expected after ingest:**
-- Near-duplicate detection fires on **same-day pairs** (similarity ~0.80 + same venue + same date → well above 0.4 threshold):
-  - Mon 10am ↔ Mon 2pm (same Monday)
-  - Mon+7 10am ↔ Mon+7 2pm (same following Monday)
-- Cross-week series detection fires on **cross-week pairs** (Mon 10am ↔ Mon+7 10am and Mon 2pm ↔ Mon+7 2pm): same venue + same time-of-day ±30min + date offset 7-14 days → adds `multi_session_likely` warning with `cross_week_series_companion` detail on each cross-week pair member.
+- Near-duplicate detection fires on **same-day pairs** (similarity ~0.64 + same venue + same date → above 0.4 threshold):
+  - Morning Session ↔ Afternoon Session (same Monday)
+  - Morning Session (Mon+7) ↔ Afternoon Session (Mon+7)
+- Cross-week series detection does **not** fire for this fixture: the RS-11 event names ("Morning Session", "Afternoon Session") don't match any `multiSessionPatterns` in `normalize.go`. `cross_week_series_companion` is a separate warning code generated only when cross-week companion detection fires — it does **not** use `multi_session_likely`.
 - All 4 events are `pending_review`. Each same-day pair has companion near-duplicate review entries:
-  - Mon 10am: `near_duplicate_of_new_event` (paired with Mon 2pm) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon+7 10am)
-  - Mon 2pm: `potential_duplicate` (paired with Mon 10am) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon+7 2pm)
-  - Mon+7 10am: `near_duplicate_of_new_event` (paired with Mon+7 2pm) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon 10am)
-  - Mon+7 2pm: `potential_duplicate` (paired with Mon+7 10am) **AND** `multi_session_likely` with `cross_week_series_companion` (paired with Mon 2pm)
+  - Morning Session: `near_duplicate_of_new_event` (pointing at the Afternoon Session ingested after it)
+  - Afternoon Session: `potential_duplicate` (pointing at the Morning Session already in DB)
+  - Same pattern for Mon+7 pair.
+- **No `multi_session_likely` warnings** on any RS-11 entry. That warning fires only when an event name/description matches patterns like `(?i)\bweekly\b` or `(?i)\(\d+\s+sessions?\)`.
+
+**Bug fix note (srv-h9joe):** Prior to the fix in `ApproveEventWithReview`, approving one event of a same-day pair left the companion's `near_duplicate_of_new_event` entry orphaned as `pending`. The fix auto-dismisses the companion review when its only remaining warnings reference the just-approved event.
 
 **Test steps:**
-1. Open the review queue. Identify all RS-11 entries.
+1. Open the review queue. Identify all RS-11 entries (4 events, 2 same-day pairs).
 2. Determine the correct consolidation:
-   - **2 series** (morning series + afternoon series): use the **Consolidate** UI (or consolidate API) twice — once per same-day pair, with the related occurrence **included** in the picker. The `multi_session_likely` warning on each event flags it as part of a cross-week series.
-   - **1 series** with 4 occurrences: use **Consolidate** three times, promoting the earliest event. Include all related occurrences in the picker each time.
-   - **4 separate events**: click **Not a Duplicate** on each pair (or approve with `record_not_duplicates: true` via API). The `multi_session_likely` warning will be cleared after recording not-duplicates.
-   - **Cross-week series consolidation**: use the `multi_session_likely` warning details (`cross_week_series_companion` with companion event name/date/time/venue) to identify the cross-week pairs. Consolidate each pair via the UI or the API, then optionally approve as a series.
+   - **2 series** (morning series + afternoon series): use **Consolidate** twice — once per same-day pair, promoting the earlier event and retiring the later.
+   - **4 separate events**: click **Not a Duplicate** on each same-day pair (or approve with `record_not_duplicates: true` via API). After approving one of a pair, the companion entry is **auto-dismissed** by the fix in `ApproveEventWithReview` (srv-h9joe).
 3. Execute your chosen consolidation strategy.
 4. Verify:
    - [ ] Final state matches your intent (correct number of events, correct occurrences on each).
    - [ ] All review entries are resolved (no orphaned pending reviews).
    - [ ] Surviving events are `published`.
+   - [ ] **Critical (regression check):** After approving one event of a same-day pair, the companion review entry is automatically dismissed. No orphaned `pending` entry remains pointing at the now-published event.
 
 **Consolidation example (2 morning+afternoon series):**
 
@@ -574,27 +575,26 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
    ```bash
    curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
      "$BASE/admin/events/consolidate" \
-     -d '{"event_ulid":"<mon-10am-ulid>","retire":["<mon7-10am-ulid>"]}'
+     -d '{"event_ulid":"<morning-session-ulid>","retire":["<morning-session-mon7-ulid>"]}'
    ```
-   Then manually add the Mon+7 occurrence to the morning series.
 
 2. Consolidate the afternoon pair similarly:
    ```bash
    curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
      "$BASE/admin/events/consolidate" \
-     -d '{"event_ulid":"<mon-2pm-ulid>","retire":["<mon7-2pm-ulid>"]}'
+     -d '{"event_ulid":"<afternoon-session-ulid>","retire":["<afternoon-session-mon7-ulid>"]}'
    ```
-   Then manually add the Mon+7 occurrence to the afternoon series.
 
-3. If instead you want all 4 as one series:
+**Approve-separately example (4 separate events):**
    ```bash
+   # Approve one of the morning pair — companion auto-dismissed
    curl -s -X POST -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
-     "$BASE/admin/events/consolidate" \
-     -d '{"event_ulid":"<mon-10am-ulid>","retire":["<mon-2pm-ulid>","<mon7-10am-ulid>","<mon7-2pm-ulid>"]}'
+     "$BASE/admin/review-queue/<morning-session-review-id>/approve" \
+     -d '{"record_not_duplicates": true}'
+   # Verify: companion review entry is now "approved" (not "pending")
    ```
-   Then manually add 3 occurrences from the retired events to the canonical. Consolidation retires whole events; occurrence migration is a manual step.
 
-**This scenario intentionally has no single "right" answer -- it tests the system's ability to support multiple valid consolidation paths.**
+**This scenario intentionally has no single "right" answer — it tests the system's ability to support multiple valid consolidation paths.**
 
 ---
 

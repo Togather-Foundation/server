@@ -971,6 +971,102 @@ func TestApproveEventWithReview_SuccessLockFirst(t *testing.T) {
 	}
 }
 
+// TestApproveEventWithReview_DismissesCompanionNearDupEntry verifies that when the
+// review being approved has a DuplicateOfEventULID (i.e. it is a potential_duplicate
+// companion pair), the corresponding near_duplicate_of_new_event entry on the other
+// event is dismissed automatically.
+//
+// Regression test for: "approve does not dismiss companion review → orphaned pending entry"
+func TestApproveEventWithReview_DismissesCompanionNearDupEntry(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		approvedULID  = "01HEVENT000000000000000001"
+		companionULID = "01HEVENT000000000000000002"
+	)
+	companionULIDPtr := companionULID
+
+	// The review being approved: potential_duplicate warning, duplicateOf = companion event.
+	approvedReview := &ReviewQueueEntry{
+		ID:                   1,
+		Status:               "pending",
+		EventULID:            approvedULID,
+		DuplicateOfEventULID: &companionULIDPtr,
+	}
+	// The companion review: near_duplicate_of_new_event, duplicateOf = approved event.
+	companionDupULID := approvedULID
+	companionReview := &ReviewQueueEntry{
+		ID:                   2,
+		Status:               "pending",
+		EventULID:            companionULID,
+		DuplicateOfEventULID: &companionDupULID,
+		Warnings: func() []byte {
+			b, _ := json.Marshal([]ValidationWarning{{
+				Code:    "near_duplicate_of_new_event",
+				Field:   "near_duplicate",
+				Message: "test",
+			}})
+			return b
+		}(),
+	}
+
+	var companionApproveID int
+	var companionEventPublished bool
+
+	repo := makeReviewLockRepo(approvedULID)
+
+	// First lock call → returns approved review; second lock call → returns companion.
+	lockCallCount := 0
+	repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		lockCallCount++
+		if id == 1 {
+			return approvedReview, nil
+		}
+		return &ReviewQueueEntry{ID: companionReview.ID, Status: "pending", EventULID: companionULID, DuplicateOfEventULID: &companionDupULID, Warnings: companionReview.Warnings}, nil
+	}
+
+	repo.getPendingReviewByEventUlidAndDuplicateUlidFunc = func(_ context.Context, eventULID, duplicateULID string) (*ReviewQueueEntry, error) {
+		if eventULID == companionULID && duplicateULID == approvedULID {
+			return companionReview, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+		return &Event{ID: "event-uuid", ULID: ulid, LifecycleState: "pending_review"}, nil
+	}
+
+	repo.approveReviewFunc = func(_ context.Context, id int, _ string, _ *string) (*ReviewQueueEntry, error) {
+		if id == companionReview.ID {
+			companionApproveID = id
+		}
+		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
+	}
+
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if ulid == companionULID {
+			companionEventPublished = true
+		}
+		return &Event{ULID: ulid}, nil
+	}
+
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	_, err := service.ApproveEventWithReview(ctx, approvedULID, 1, "admin", nil)
+
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !repo.commitCalled {
+		t.Error("commit should be called on success")
+	}
+	if companionApproveID != companionReview.ID {
+		t.Errorf("companion review %d should have been approved, got approveID=%d", companionReview.ID, companionApproveID)
+	}
+	if !companionEventPublished {
+		t.Error("companion event should have been published after all warnings stripped")
+	}
+}
+
 // TestRejectEventWithReview_ConflictOnAlreadyProcessed verifies that when the
 // review row is already processed, RejectEventWithReview returns ErrConflict.
 func TestRejectEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
